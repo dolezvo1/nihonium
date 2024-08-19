@@ -1,0 +1,26 @@
+
+The source code, documentation and binaries (the "software") are provided
+free of charge for personal and firsthand commercial use under following
+conditions:
+
+The source code and documentation may generally be copied, modified, and
+distributed without restriction. This license and permission notice, as well as
+change provenance must, however, be included in all copies or portions thereof.
+It is therefore forbidden to use the source code, machine code, or
+documentation in any way which could under any circumstances result in any part
+of the materials being misattributed or mislicensed.
+
+Secondhand commercial use (e.g. cloud operation, resale as a part of a whole)
+is prohibited. Binary distribution without source code is prohibited. Binary
+distribution with respective source code is generally allowed.
+
+The original author (Vojtěch Doležal) reserves the right to grant exclusive
+or nonexclusive licenses with different conditions.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
