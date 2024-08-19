@@ -265,7 +265,14 @@ pub trait NHCanvas {
         color: egui::Color32,
         stroke: Stroke,
     );
-    // TODO: split into a measurement and a draw method
+    
+    fn measure_text(
+        &mut self,
+        position: egui::Pos2,
+        anchor: egui::Align2,
+        text: &str,
+        font_size: f32,
+    ) -> egui::Rect;
     fn draw_text(
         &mut self,
         position: egui::Pos2,
@@ -273,9 +280,8 @@ pub trait NHCanvas {
         text: &str,
         font_size: f32,
         text_color: egui::Color32,
-    ) -> egui::Rect;
+    );
     
-    // These implementations are subobtimal for SVG/PDF (text is written twice)
     fn draw_class(
         &mut self,
         position: egui::Pos2,
@@ -285,42 +291,82 @@ pub trait NHCanvas {
         items: &[&[(&str, &str)]],
         stroke: Stroke,
     ) -> egui::Rect {
-        let mut offsets = vec![0.0];
-        let (mut max_width, mut global_offset): (f32, f32) = (0.0, 0.0);
-        let mut rect = egui::Rect::ZERO;
-        let mut category_separators = vec![];
-        let itemalign = items.iter()
-            .flat_map(|c| c.iter())
-            .map(|e| self.draw_text(position, egui::Align2::LEFT_CENTER, e.0, CLASS_ITEM_FONT_SIZE, egui::Color32::TRANSPARENT).width())
-            .fold(0.0 as f32, |a, b| a.max(b));
+        // Measure phase
+        let (offsets, global_offset, max_width, itemalign, category_separators, rect) = {
+            let mut offsets = vec![0.0];
+            let mut max_width: f32 = 0.0;
+            let mut category_separators = vec![];
+            let itemalign = items.iter()
+                .flat_map(|c| c.iter())
+                .map(|e| self.measure_text(position, egui::Align2::LEFT_CENTER, e.0, CLASS_ITEM_FONT_SIZE).width())
+                .fold(0.0 as f32, |a, b| a.max(b));
+            
+            if let Some(top_label) = top_label {
+                let r = self.measure_text(egui::Pos2::ZERO, egui::Align2::CENTER_TOP, &top_label, CLASS_TOP_FONT_SIZE);
+                offsets.push(r.height());
+                max_width = max_width.max(r.width());
+            }
+            
+            {
+                let r = self.measure_text(egui::Pos2::ZERO, egui::Align2::CENTER_TOP, &main_label, CLASS_MIDDLE_FONT_SIZE);
+                offsets.push(r.height());
+                max_width = max_width.max(r.width());
+            }
+            
+            if let Some(bottom_label) = bottom_label {
+                let r = self.measure_text(egui::Pos2::ZERO, egui::Align2::CENTER_TOP, &bottom_label, CLASS_BOTTOM_FONT_SIZE);
+                offsets.push(r.height());
+                max_width = max_width.max(r.width());
+            }
+            
+            for category in items.iter().filter(|e| e.len() > 0) {
+                category_separators.push(offsets.iter().sum::<f32>());
+                
+                for (_center, left) in *category {
+                    let r = self.measure_text(egui::Pos2::ZERO, egui::Align2::LEFT_TOP, left, CLASS_ITEM_FONT_SIZE);
+                    offsets.push(r.height());
+                    max_width = max_width.max(itemalign + r.width());
+                }
+            }
+            
+            // Process, draw bounds
+            offsets.iter_mut().fold(0.0, |acc, x| {*x += acc; *x});
+            let global_offset = offsets.last().unwrap() / 2.0;
+            let rect = egui::Rect::from_center_size(
+                position, egui::Vec2::new(max_width + 4.0, 2.0 * global_offset),
+            );
+            self.draw_rectangle(
+                rect,
+                egui::Rounding::ZERO,
+                egui::Color32::WHITE,
+                stroke.into(),
+            );
+            
+            (offsets, global_offset, max_width, itemalign, category_separators, rect)
+        };
         
-        for c in [egui::Color32::TRANSPARENT, egui::Color32::BLACK] {
+        // Draw phase
+        {
             let mut offset_counter = 0;
             
             if let Some(top_label) = top_label {
-                let r = self.draw_text(
+                self.draw_text(
                     position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &top_label, CLASS_TOP_FONT_SIZE, c);
-                offsets.push(r.height());
-                max_width = max_width.max(r.width());
+                    egui::Align2::CENTER_TOP, &top_label, CLASS_TOP_FONT_SIZE, egui::Color32::BLACK);
                 offset_counter += 1;
             }
             
             {
-                let r = self.draw_text(
+                self.draw_text(
                     position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &main_label, CLASS_MIDDLE_FONT_SIZE, c);
-                offsets.push(r.height());
-                max_width = max_width.max(r.width());
+                    egui::Align2::CENTER_TOP, &main_label, CLASS_MIDDLE_FONT_SIZE, egui::Color32::BLACK);
                 offset_counter += 1;
             }
             
             if let Some(bottom_label) = bottom_label {
-                let r = self.draw_text(
+                self.draw_text(
                     position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &bottom_label, CLASS_BOTTOM_FONT_SIZE, c);
-                offsets.push(r.height());
-                max_width = max_width.max(r.width());
+                    egui::Align2::CENTER_TOP, &bottom_label, CLASS_BOTTOM_FONT_SIZE, egui::Color32::BLACK);
                 offset_counter += 1;
             }
             
@@ -333,8 +379,6 @@ pub trait NHCanvas {
                                         position.y - global_offset + catline_offset)],
                         Stroke::new_solid(1.0, egui::Color32::BLACK)
                     );
-                } else {
-                    category_separators.push(offsets.iter().sum::<f32>());
                 }
                 
                 for (center, left) in *category {
@@ -343,31 +387,15 @@ pub trait NHCanvas {
                             position.x - max_width / 2.0 + itemalign / 2.0,
                             position.y - global_offset + offsets[offset_counter]
                         ),
-                        egui::Align2::CENTER_TOP, center, CLASS_ITEM_FONT_SIZE, c);
-                    let r = self.draw_text(
+                        egui::Align2::CENTER_TOP, center, CLASS_ITEM_FONT_SIZE, egui::Color32::BLACK);
+                    self.draw_text(
                         egui::Pos2::new(
-                            position.x - max_width/2.0 + itemalign,
+                            position.x - max_width / 2.0 + itemalign,
                             position.y - global_offset + offsets[offset_counter]
                         ),
-                        egui::Align2::LEFT_TOP, left, CLASS_ITEM_FONT_SIZE, c);
-                    offsets.push(r.height());
-                    max_width = max_width.max(itemalign + r.width());
+                        egui::Align2::LEFT_TOP, left, CLASS_ITEM_FONT_SIZE, egui::Color32::BLACK);
                     offset_counter += 1;
                 }
-            }
-            
-            if c == egui::Color32::TRANSPARENT {
-                offsets.iter_mut().fold(0.0, |acc, x| {*x += acc; *x});
-                global_offset = offsets.last().unwrap() / 2.0;
-                rect = egui::Rect::from_center_size(
-                    position, egui::Vec2::new(max_width + 4.0, 2.0*global_offset),
-                );
-                self.draw_rectangle(
-                    rect,
-                    egui::Rounding::ZERO,
-                    egui::Color32::WHITE,
-                    stroke.into(),
-                );
             }
         }
         
@@ -597,6 +625,20 @@ impl NHCanvas for UiCanvas {
         self.painter.add(egui::Shape::convex_polygon(vertices, color, egui::Stroke::from(stroke)));
     }
     
+    fn measure_text(
+        &mut self,
+        position: egui::Pos2,
+        anchor: egui::Align2,
+        text: &str,
+        font_size: f32,
+    ) -> egui::Rect {
+        self.painter.text(
+            self.sc_tr(position),
+            anchor, text, egui::FontId::proportional(font_size * self.camera_scale), egui::Color32::TRANSPARENT,
+        )
+        .translate(- self.canvas.min.to_vec2() - self.camera_offset.to_vec2())
+        / self.camera_scale
+    }
     fn draw_text(
         &mut self,
         position: egui::Pos2,
@@ -604,13 +646,11 @@ impl NHCanvas for UiCanvas {
         text: &str,
         font_size: f32,
         text_color: egui::Color32,
-    ) -> egui::Rect {
+    ) {
         self.painter.text(
             self.sc_tr(position),
             anchor, text, egui::FontId::proportional(font_size * self.camera_scale), text_color,
-        )
-        .translate(- self.canvas.min.to_vec2() - self.camera_offset.to_vec2())
-        / self.camera_scale
+        );
     }
 }
 
@@ -699,6 +739,16 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
 "#, polygon_points, color.to_hex(), stroke.color.to_hex()));
     }
     
+    fn measure_text(
+        &mut self,
+        position: egui::Pos2,
+        anchor: egui::Align2,
+        text: &str,
+        font_size: f32,
+    ) -> egui::Rect {
+        self.painter.text(position, anchor, text, egui::FontId::proportional(font_size), egui::Color32::TRANSPARENT,
+        )
+    }
     fn draw_text(
         &mut self,
         position: egui::Pos2,
@@ -706,7 +756,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         text: &str,
         font_size: f32,
         text_color: egui::Color32,
-    ) -> egui::Rect {
+    ) {
         // TODO: use SVG alignment to minimize differences in fonts
         let rect = self.painter.text(position, anchor, text, egui::FontId::proportional(font_size), egui::Color32::TRANSPARENT);
 
@@ -717,156 +767,5 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
                                 .replace("\"", "&quot;");
         self.element_buffer.push(format!(r#"<text x="{}" y="{}" font-size="{}" fill="{}" text-anchor="middle" dominant-baseline="middle">{}</text>
 "#, rect.center().x, rect.center().y, font_size, text_color.to_hex(), escaped_text));
-        
-        rect
-    }
-    
-    // The default implementation does not work for formats with text support
-    fn draw_class(
-        &mut self,
-        position: egui::Pos2,
-        top_label: Option<&str>,
-        main_label: &str,
-        bottom_label: Option<&str>,
-        items: &[&[(&str, &str)]],
-        stroke: Stroke,
-    ) -> egui::Rect {
-        let mut offsets = vec![0.0];
-        let (mut max_width, mut global_offset): (f32, f32) = (0.0, 0.0);
-        let mut category_separators = vec![];
-        let itemalign = items.iter()
-            .flat_map(|c| c.iter())
-            .map(|e| self.painter.text(position, egui::Align2::LEFT_CENTER, e.0, egui::FontId::proportional(CLASS_ITEM_FONT_SIZE), egui::Color32::TRANSPARENT).width())
-            .fold(0.0 as f32, |a, b| a.max(b));
-        
-        // Measure phase
-        {
-            let mut offset_counter = 0;
-            
-            if let Some(top_label) = top_label {
-                let r = self.painter.text(
-                    position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &top_label, egui::FontId::proportional(CLASS_TOP_FONT_SIZE), egui::Color32::TRANSPARENT);
-                offsets.push(r.height());
-                max_width = max_width.max(r.width());
-                offset_counter += 1;
-            }
-            
-            {
-                let r = self.painter.text(
-                    position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &main_label, egui::FontId::proportional(CLASS_MIDDLE_FONT_SIZE), egui::Color32::TRANSPARENT);
-                offsets.push(r.height());
-                max_width = max_width.max(r.width());
-                offset_counter += 1;
-            }
-            
-            if let Some(bottom_label) = bottom_label {
-                let r = self.painter.text(
-                    position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &bottom_label, egui::FontId::proportional(CLASS_BOTTOM_FONT_SIZE), egui::Color32::TRANSPARENT);
-                offsets.push(r.height());
-                max_width = max_width.max(r.width());
-                offset_counter += 1;
-            }
-            
-            for (_idx, category) in items.iter().filter(|e| e.len() > 0).enumerate() {
-                category_separators.push(offsets.iter().sum::<f32>());
-                
-                for (center, left) in *category {
-                    self.painter.text(
-                        egui::Pos2::new(
-                            position.x - max_width / 2.0 + itemalign / 2.0,
-                            position.y - global_offset + offsets[offset_counter]
-                        ),
-                        egui::Align2::CENTER_TOP, center, egui::FontId::proportional(CLASS_ITEM_FONT_SIZE), egui::Color32::TRANSPARENT);
-                    let r = self.painter.text(
-                        egui::Pos2::new(
-                            position.x - max_width/2.0 + itemalign,
-                            position.y - global_offset + offsets[offset_counter]
-                        ),
-                        egui::Align2::LEFT_TOP, left, egui::FontId::proportional(CLASS_ITEM_FONT_SIZE), egui::Color32::TRANSPARENT);
-                    offsets.push(r.height());
-                    max_width = max_width.max(itemalign + r.width());
-                    offset_counter += 1;
-                }
-            }
-        }
-        
-        offsets.iter_mut().fold(0.0, |acc, x| {*x += acc; *x});
-        global_offset = offsets.last().unwrap() / 2.0;
-        let rect = egui::Rect::from_center_size(
-            position, egui::Vec2::new(max_width + 4.0, 2.0*global_offset),
-        );
-        self.draw_rectangle(
-            rect,
-            egui::Rounding::ZERO,
-            egui::Color32::WHITE,
-            stroke.into(),
-        );
-        
-        // Draw phase
-        {
-            let mut offset_counter = 0;
-            
-            if let Some(top_label) = top_label {
-                let r = self.draw_text(
-                    position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &top_label, CLASS_TOP_FONT_SIZE, egui::Color32::BLACK);
-                offsets.push(r.height());
-                max_width = max_width.max(r.width());
-                offset_counter += 1;
-            }
-            
-            {
-                let r = self.draw_text(
-                    position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &main_label, CLASS_MIDDLE_FONT_SIZE, egui::Color32::BLACK);
-                offsets.push(r.height());
-                max_width = max_width.max(r.width());
-                offset_counter += 1;
-            }
-            
-            if let Some(bottom_label) = bottom_label {
-                let r = self.draw_text(
-                    position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &bottom_label, CLASS_BOTTOM_FONT_SIZE, egui::Color32::BLACK);
-                offsets.push(r.height());
-                max_width = max_width.max(r.width());
-                offset_counter += 1;
-            }
-            
-            for (idx, category) in items.iter().filter(|e| e.len() > 0).enumerate() {
-                if let Some(catline_offset) = category_separators.get(idx) {
-                    self.draw_line(
-                        [egui::Pos2::new(position.x - rect.width() / 2.0,
-                                        position.y - global_offset + catline_offset),
-                        egui::Pos2::new(position.x + rect.width() / 2.0,
-                                        position.y - global_offset + catline_offset)],
-                        Stroke::new_solid(1.0, egui::Color32::BLACK)
-                    );
-                }
-                
-                for (center, left) in *category {
-                    self.draw_text(
-                        egui::Pos2::new(
-                            position.x - max_width / 2.0 + itemalign / 2.0,
-                            position.y - global_offset + offsets[offset_counter]
-                        ),
-                        egui::Align2::CENTER_TOP, center, CLASS_ITEM_FONT_SIZE, egui::Color32::BLACK);
-                    let r = self.draw_text(
-                        egui::Pos2::new(
-                            position.x - max_width/2.0 + itemalign,
-                            position.y - global_offset + offsets[offset_counter]
-                        ),
-                        egui::Align2::LEFT_TOP, left, CLASS_ITEM_FONT_SIZE, egui::Color32::BLACK);
-                    offsets.push(r.height());
-                    max_width = max_width.max(itemalign + r.width());
-                    offset_counter += 1;
-                }
-            }
-        }
-        
-        rect
     }
 }

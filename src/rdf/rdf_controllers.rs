@@ -392,13 +392,11 @@ pub struct RdfNodeController {
 
 impl Drawable for RdfNodeController {
     fn draw_in(&mut self, canvas: &mut dyn NHCanvas) {
-        // TODO: this is wrong when drawing to SVG
-        let text_bounds = canvas.draw_text(
+        let text_bounds = canvas.measure_text(
             self.position,
             egui::Align2::CENTER_CENTER,
             &self.model.read().unwrap().iri,
             20.0,
-            egui::Color32::BLACK,
         );
         self.bounds_radius = text_bounds.size() / 1.5;
         
