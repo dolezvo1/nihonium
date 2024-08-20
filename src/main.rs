@@ -552,13 +552,13 @@ impl MyContext {
     fn diagram_tab(&mut self, uuid: &uuid::Uuid, ui: &mut Ui) {
         let diagram_controller = self.diagram_controllers.get_mut(uuid).unwrap();
         
-        let (mut ui_canvas, response) = diagram_controller.new_ui_canvas(ui);
+        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(ui);
         
         if response.clicked() || response.drag_started() {
             self.last_focused_diagram = Some(uuid.clone());
         }
         
-        diagram_controller.draw_in(ui_canvas.as_mut());
+        diagram_controller.draw_in(ui_canvas.as_mut(), pos);
         
         diagram_controller.handle_input(ui, &response);
         
@@ -708,7 +708,7 @@ impl eframe::App for MyApp {
                                                     .add_filter("All files", &["*"])
                                                     .save_file() {
                                     let mut canvas = SVGCanvas::new(ui.painter());
-                                    e.draw_in(&mut canvas);
+                                    e.draw_in(&mut canvas, None);
                                     let _ = canvas.save_to(path);
                                 }
                                 ui.close_menu();

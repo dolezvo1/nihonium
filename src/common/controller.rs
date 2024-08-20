@@ -1,17 +1,17 @@
 use eframe::egui;
 use std::sync::{Arc, RwLock};
-use crate::common::canvas::{Drawable, NHCanvas, NHShape};
+use crate::common::canvas::{NHCanvas, NHShape};
 
-pub trait DiagramController: Drawable {
+pub trait DiagramController {
     fn uuid(&self) -> uuid::Uuid;
     fn model_name(&self) -> String;
     
-    fn new_ui_canvas(&self, ui: &mut egui::Ui) -> (Box<dyn NHCanvas>, egui::Response);
+    fn new_ui_canvas(&self, ui: &mut egui::Ui) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response);
     fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool;
     fn context_menu(&mut self, ui: &mut egui::Ui);
     
-    fn show_toolbar(&self, ui: &mut egui::Ui);
+    fn show_toolbar(&mut self, ui: &mut egui::Ui);
     fn show_properties(&mut self, ui: &mut egui::Ui);
     fn show_layers(&self, ui: &mut egui::Ui);
     fn list_in_project_hierarchy(&self, ui: &mut egui::Ui);
@@ -20,9 +20,11 @@ pub trait DiagramController: Drawable {
     fn outgoing_for<'a>(&'a self, _uuid: &'a uuid::Uuid) -> Box<dyn Iterator<Item=Arc<RwLock<dyn ElementController>>> + 'a> {
         Box::new(std::iter::empty::<Arc<RwLock<dyn ElementController>>>())
     }
+    
+    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, mouse_pos: Option<egui::Pos2>);
 }
 
-pub trait ElementController: Drawable {
+pub trait ElementController {
     fn uuid(&self) -> uuid::Uuid;
     fn model_name(&self) -> String;
     

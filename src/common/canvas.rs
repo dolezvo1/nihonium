@@ -482,10 +482,6 @@ pub trait NHCanvas {
     }
 }
 
-pub trait Drawable {
-    fn draw_in(&mut self, canvas: &mut dyn NHCanvas);
-}
-
 pub struct UiCanvas {
     painter: egui::Painter,
     canvas: egui::Rect,

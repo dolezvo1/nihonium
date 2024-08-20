@@ -8,7 +8,7 @@ use super::umlclass_models::{
     UmlClassDiagram, UmlClass, UmlClassLink, UmlClassLinkType,
 };
 use crate::common::canvas::{
-    self, NHCanvas, UiCanvas, Drawable, NHShape
+    self, NHCanvas, UiCanvas, NHShape,
 };
 use crate::common::controller::{
     DiagramController, ElementController,
@@ -227,7 +227,9 @@ pub trait UmlClassElementController: ElementController {
     fn list_in_project_hierarchy(&self, _parent: &UmlClassDiagramController, _ui: &mut egui::Ui) {}
 
     fn is_connection_from(&self, _uuid: &uuid::Uuid) -> bool { false }
-    fn target_name(&self) -> Option<String> { None }
+    fn connection_target_name(&self) -> Option<String> { None }
+    
+    fn draw_in(&mut self, canvas: &mut dyn NHCanvas);
 }
 
 pub struct UmlClassDiagramController {
@@ -281,14 +283,6 @@ impl UmlClassDiagramController {
     }
 }
 
-impl Drawable for UmlClassDiagramController {
-    fn draw_in(&mut self, canvas: &mut dyn NHCanvas) {
-        self.owned_controllers.iter_mut()
-            .filter(|_| true) // TODO: filter by layers
-            .for_each(|uc| uc.1.write().unwrap().draw_in(canvas));
-    }
-}
-
 impl DiagramController for UmlClassDiagramController {
     fn uuid(&self) -> uuid::Uuid {
         self.model.read().unwrap().uuid.clone()
@@ -297,7 +291,7 @@ impl DiagramController for UmlClassDiagramController {
         self.model.read().unwrap().name.clone()
     }
     
-    fn new_ui_canvas(&self, ui: &mut egui::Ui) -> (Box<dyn NHCanvas>, egui::Response) {
+    fn new_ui_canvas(&self, ui: &mut egui::Ui) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
         let canvas_pos = ui.next_widget_position();
         let canvas_size = ui.available_size();
         let canvas_rect = egui::Rect{ min: canvas_pos, max: canvas_pos + canvas_size };
@@ -317,7 +311,7 @@ impl DiagramController for UmlClassDiagramController {
             Some((50.0, egui::Color32::from_rgb(220,220,220))),
                                  Some((50.0, egui::Color32::from_rgb(220,220,220)))
         );
-        (Box::new(ui_canvas), painter_response)
+        (Box::new(ui_canvas), painter_response, None)
     }
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response) {
         // Handle camera and element clicks/drags
@@ -394,7 +388,7 @@ impl DiagramController for UmlClassDiagramController {
         }
     }
     
-    fn show_toolbar(&self, ui: &mut egui::Ui) {
+    fn show_toolbar(&mut self, ui: &mut egui::Ui) {
         let width = ui.available_width();
         
         if ui.add_sized([width, 20.0], egui::Button::new("Select")).clicked() {
@@ -453,6 +447,12 @@ impl DiagramController for UmlClassDiagramController {
             }
         });
     }
+    
+    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, _mouse_pos: Option<egui::Pos2>) {
+        self.owned_controllers.iter_mut()
+            .filter(|_| true) // TODO: filter by layers
+            .for_each(|uc| uc.1.write().unwrap().draw_in(canvas));
+    }
 }
 
 pub struct UmlClassController {
@@ -460,26 +460,6 @@ pub struct UmlClassController {
     
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
-}
-
-impl Drawable for UmlClassController {
-    fn draw_in(&mut self, canvas: &mut dyn NHCanvas) {
-        let read = self.model.read().unwrap();
-        let stereotype = if read.stereotype != "" {
-            Some(format!("<<{}>>", read.stereotype))
-        } else { None };
-        
-        self.bounds_rect = canvas.draw_class(
-            self.position,
-            if let Some(stereotype) = &stereotype {
-                Some(&stereotype)
-            } else { None },
-            &read.name,
-            None,
-            &[&read.parse_properties(), &read.parse_functions()],
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-        );
-    }
 }
 
 impl ElementController for UmlClassController {
@@ -536,9 +516,27 @@ impl UmlClassElementController for UmlClassController {
         .show(ui, |ui| {
             for connection in parent.outgoing_for(&model.uuid) {
                 let connection = connection.read().unwrap();
-                ui.label(format!("{} (-> {})", connection.model_name(), connection.target_name().unwrap()));
+                ui.label(format!("{} (-> {})", connection.model_name(), connection.connection_target_name().unwrap()));
             }
         });
+    }
+    
+    fn draw_in(&mut self, canvas: &mut dyn NHCanvas) {
+        let read = self.model.read().unwrap();
+        let stereotype = if read.stereotype != "" {
+            Some(format!("<<{}>>", read.stereotype))
+        } else { None };
+        
+        self.bounds_rect = canvas.draw_class(
+            self.position,
+            if let Some(stereotype) = &stereotype {
+                Some(&stereotype)
+            } else { None },
+            &read.name,
+            None,
+            &[&read.parse_properties(), &read.parse_functions()],
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+        );
     }
 }
 
@@ -558,10 +556,6 @@ impl UmlClassLinkController {
     fn destinations(&mut self) -> &mut [Vec<egui::Pos2>] {
         &mut self.dest_points
     }
-}
-
-impl Drawable for UmlClassLinkController {
-    crate::common::controller::macros::multiconnection_draw_in!();
 }
 
 impl ElementController for UmlClassLinkController {
@@ -642,7 +636,9 @@ impl UmlClassElementController for UmlClassLinkController {
         self.source.read().unwrap().uuid() == *uuid
     }
     
-    fn target_name(&self) -> Option<String> { 
+    fn connection_target_name(&self) -> Option<String> { 
         Some(self.destination.read().unwrap().model_name())
     }
+    
+    crate::common::controller::macros::multiconnection_draw_in!();
 }
