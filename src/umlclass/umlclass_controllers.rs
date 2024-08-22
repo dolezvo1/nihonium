@@ -230,6 +230,7 @@ pub trait UmlClassElementController: ElementController {
     fn connection_target_name(&self) -> Option<String> { None }
     
     fn draw_in(&mut self, canvas: &mut dyn NHCanvas);
+    fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool;
 }
 
 pub struct UmlClassDiagramController {
@@ -477,7 +478,6 @@ impl ElementController for UmlClassController {
     fn position(&self) -> egui::Pos2 {
         self.position
     }
-    crate::common::controller::macros::simple_element_drag!();
 }
 
 impl UmlClassElementController for UmlClassController {
@@ -538,6 +538,8 @@ impl UmlClassElementController for UmlClassController {
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
         );
     }
+    
+    crate::common::controller::macros::simple_element_drag!();
 }
 
 pub struct UmlClassLinkController {
@@ -579,7 +581,6 @@ impl ElementController for UmlClassLinkController {
             None => (self.source_points[0][0] + self.dest_points[0][0].to_vec2()) / 2.0,
         }
     }
-    crate::common::controller::macros::multiconnection_element_drag!(center_point, sources, destinations);
 }
 
 impl UmlClassElementController for UmlClassLinkController {
@@ -641,4 +642,9 @@ impl UmlClassElementController for UmlClassLinkController {
     }
     
     crate::common::controller::macros::multiconnection_draw_in!();
+    
+    fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
+        crate::common::controller::macros::multiconnection_element_drag!(self, last_pos, delta, center_point, sources, destinations);
+        false
+    }
 }

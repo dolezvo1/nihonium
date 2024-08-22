@@ -225,10 +225,10 @@ impl From<Stroke> for egui::Stroke {
     }
 }
 
-const CLASS_TOP_FONT_SIZE: f32 = 15.0;
-const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
-const CLASS_BOTTOM_FONT_SIZE: f32 = 15.0;
-const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
+pub const CLASS_TOP_FONT_SIZE: f32 = 15.0;
+pub const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
+pub const CLASS_BOTTOM_FONT_SIZE: f32 = 15.0;
+pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 
 pub trait NHCanvas {
     // These functions are must haves
@@ -462,7 +462,7 @@ pub trait NHCanvas {
                     fp,
                     egui::Align2::CENTER_CENTER,
                     label,
-                    15.0,
+                    CLASS_MIDDLE_FONT_SIZE,
                     egui::Color32::BLACK,
                 );
             }
@@ -475,7 +475,7 @@ pub trait NHCanvas {
                 central_point,
                 egui::Align2::CENTER_CENTER,
                 mid_label,
-                20.0,
+                CLASS_MIDDLE_FONT_SIZE,
                 egui::Color32::BLACK,
             );
         }

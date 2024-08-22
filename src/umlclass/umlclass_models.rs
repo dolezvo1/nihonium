@@ -3,6 +3,10 @@ use std::{collections::VecDeque, sync::{Arc,RwLock}};
 use crate::common::observer::{Observer, Observable, impl_observable};
 use crate::common::canvas::{ArrowheadType, LineType};
 
+pub trait UmlClassElement: Observable {
+    fn uuid(&self) -> uuid::Uuid;
+}
+
 pub struct UmlClassDiagram {
     pub uuid: uuid::Uuid,
     pub name: String,
@@ -111,6 +115,12 @@ impl UmlClass {
 
 impl_observable!(UmlClass);
 
+impl UmlClassElement for UmlClass {
+    fn uuid(&self) -> uuid::Uuid {
+        self.uuid
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum UmlClassLinkType {
     Association,
@@ -188,3 +198,9 @@ impl UmlClassLink {
 }
 
 impl_observable!(UmlClassLink);
+
+impl UmlClassElement for UmlClassLink {
+    fn uuid(&self) -> uuid::Uuid {
+        self.uuid
+    }
+}

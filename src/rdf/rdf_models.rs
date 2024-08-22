@@ -2,6 +2,10 @@
 use std::{collections::VecDeque, sync::{Arc,RwLock}};
 use crate::common::observer::{Observer, Observable, impl_observable};
 
+pub trait RdfElement: Observable {
+    fn uuid(&self) -> uuid::Uuid;
+}
+
 pub struct RdfDiagram {
     pub uuid: uuid::Uuid,
     pub name: String,
@@ -76,6 +80,12 @@ impl RdfLiteral {
 
 impl_observable!(RdfLiteral);
 
+impl RdfElement for RdfLiteral {
+    fn uuid(&self) -> uuid::Uuid {
+        self.uuid
+    }
+}
+
 pub struct RdfNode {
     pub uuid: uuid::Uuid,
     pub iri: String,
@@ -99,6 +109,12 @@ impl RdfNode {
 }
 
 impl_observable!(RdfNode);
+
+impl RdfElement for RdfNode {
+    fn uuid(&self) -> uuid::Uuid {
+        self.uuid
+    }
+}
 
 pub struct RdfPredicate {
     pub uuid: uuid::Uuid,
@@ -129,3 +145,9 @@ impl RdfPredicate {
 }
 
 impl_observable!(RdfPredicate);
+
+impl RdfElement for RdfPredicate {
+    fn uuid(&self) -> uuid::Uuid {
+        self.uuid
+    }
+}
