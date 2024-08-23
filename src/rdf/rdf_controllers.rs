@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
-use super::rdf_models::{RdfDiagram, RdfElement, RdfLiteral, RdfNode, RdfPredicate};
+use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfNode, RdfLiteral, RdfPredicate};
 use crate::common::canvas::{self, ArrowheadType, Stroke, NHCanvas, UiCanvas, NHShape};
 use crate::common::controller::{
     DiagramController, ElementController,
@@ -69,16 +69,29 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
         dest_points: vec![vec![egui::Pos2::ZERO]],
     }));
     
+    let graph_uuid = uuid::Uuid::now_v7();
+    let graph = Arc::new(RwLock::new(RdfGraph::new(
+        graph_uuid.clone(),
+        "a graph".to_owned(),
+        vec![],
+    )));
+    let graph_controller = Arc::new(RwLock::new(RdfGraphController {
+        model: graph.clone(),
+        bounds_rect: egui::Rect::from_min_max(egui::Pos2::new(400.0, 50.0),
+                                              egui::Pos2::new(500.0, 150.0),)
+    }));
+    
     let mut owned_controllers = HashMap::<_, Arc<RwLock<dyn RdfElementController>>>::new();
     owned_controllers.insert(node_uuid, node_controller);
     owned_controllers.insert(literal_uuid, literal_controller);
     owned_controllers.insert(predicate_uuid, predicate_controller);
+    owned_controllers.insert(graph_uuid, graph_controller);
     
     let diagram_uuid = uuid::Uuid::now_v7();
     let diagram = Arc::new(RwLock::new(RdfDiagram::new(
         diagram_uuid.clone(),
         format!("Demo RDF diagram {}", no),
-        vec![node, literal, predicate],
+        vec![node, literal, predicate, graph],
     )));
     (
         diagram_uuid,
@@ -97,7 +110,8 @@ pub enum RdfToolStage {
     Node,
     PredicateStart,
     PredicateEnd,
-    Graph,
+    GraphStart,
+    GraphEnd,
     Note,
 }
 
@@ -105,6 +119,7 @@ enum PartialRdfElement {
     None,
     Some(Arc<RwLock<dyn RdfElementController>>),
     Predicate{source: Arc<RwLock<dyn RdfElement>>, dest: Option<Arc<RwLock<dyn RdfElement>>>},
+    Graph{a: egui::Pos2, b: Option<egui::Pos2>},
 }
 
 pub trait RdfTool {
@@ -112,11 +127,13 @@ pub trait RdfTool {
 
     fn targetting_for_node(&self) -> egui::Color32;
     fn targetting_for_literal(&self) -> egui::Color32;
+    fn targetting_for_graph(&self) -> egui::Color32;
     fn targetting_for_diagram(&self) -> egui::Color32;
     
     fn add_by_position(&mut self, pos: egui::Pos2);
     fn add_node(&mut self, model: Arc<RwLock<RdfNode>>);
     fn add_literal(&mut self, model: Arc<RwLock<RdfLiteral>>);
+    fn add_graph(&mut self, model: Arc<RwLock<RdfGraph>>);
     
     fn try_construct(&mut self, into: &RdfDiagramController) -> Option<Arc<RwLock<dyn RdfElementController>>>;
 }
@@ -138,7 +155,7 @@ impl RdfTool for NaiveRdfTool {
             RdfToolStage::Move => egui::Color32::TRANSPARENT,
             RdfToolStage::Select | RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
             RdfToolStage::Literal | RdfToolStage::Node
-            | RdfToolStage::Graph | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
+            | RdfToolStage::GraphStart | RdfToolStage::GraphEnd | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
         }
     }
     fn targetting_for_literal(&self) -> egui::Color32 {
@@ -146,23 +163,30 @@ impl RdfTool for NaiveRdfTool {
             RdfToolStage::Move => egui::Color32::TRANSPARENT,
             RdfToolStage::Select | RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
             RdfToolStage::Literal | RdfToolStage::Node | RdfToolStage::PredicateStart
-            | RdfToolStage::Graph | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
+            | RdfToolStage::GraphStart | RdfToolStage::GraphEnd | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
+        }
+    }
+    fn targetting_for_graph(&self) -> egui::Color32 {
+        match self.current_stage {
+            RdfToolStage::Move => egui::Color32::TRANSPARENT,
+            RdfToolStage::Literal | RdfToolStage::Node | RdfToolStage::Note => TARGETTABLE_COLOR,
+            RdfToolStage::Select | RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd
+            | RdfToolStage::GraphStart | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
         }
     }
     fn targetting_for_diagram(&self) -> egui::Color32 {
         match self.current_stage {
             RdfToolStage::Move => egui::Color32::TRANSPARENT,
             RdfToolStage::Literal | RdfToolStage::Node
-            | RdfToolStage::Graph | RdfToolStage::Note => TARGETTABLE_COLOR,
-            RdfToolStage::Select | RdfToolStage::PredicateStart
-            | RdfToolStage::PredicateEnd => NON_TARGETTABLE_COLOR,
+            | RdfToolStage::GraphStart | RdfToolStage::GraphEnd | RdfToolStage::Note => TARGETTABLE_COLOR,
+            RdfToolStage::Select | RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => NON_TARGETTABLE_COLOR,
         }
     }
     
     fn add_by_position(&mut self, pos: egui::Pos2) {
         let uuid = uuid::Uuid::now_v7();
-        match self.current_stage {
-            RdfToolStage::Literal => {
+        match (self.current_stage, &mut self.result) {
+            (RdfToolStage::Literal, _) => {
                 let literal = Arc::new(RwLock::new(RdfLiteral::new(
                     uuid,
                     "Eric Miller".to_owned(),
@@ -175,7 +199,7 @@ impl RdfTool for NaiveRdfTool {
                     bounds_rect: egui::Rect::ZERO,
                 })));
             },
-            RdfToolStage::Node => {
+            (RdfToolStage::Node, _) => {
                 let node = Arc::new(RwLock::new(RdfNode::new(
                     uuid,
                     "http://www.w3.org/People/EM/contact#me".to_owned(),
@@ -186,8 +210,14 @@ impl RdfTool for NaiveRdfTool {
                     bounds_radius: egui::Vec2::ZERO,
                 })));
             },
-            RdfToolStage::Graph => {},
-            RdfToolStage::Note => {},
+            (RdfToolStage::GraphStart, _) => {
+                self.result = PartialRdfElement::Graph{a: pos, b: None};
+                self.current_stage = RdfToolStage::GraphEnd;
+            },
+            (RdfToolStage::GraphEnd, PartialRdfElement::Graph{ref mut b, ..}) => {
+                *b = Some(pos)
+            },
+            (RdfToolStage::Note, _) => {},
             _ => {},
         }
     }
@@ -211,6 +241,7 @@ impl RdfTool for NaiveRdfTool {
             _ => {}
         }
     }
+    fn add_graph(&mut self, _model: Arc<RwLock<RdfGraph>>) {}
     
     fn try_construct(&mut self, into: &RdfDiagramController) -> Option<Arc<RwLock<dyn RdfElementController>>> {
         match &self.result {
@@ -241,6 +272,23 @@ impl RdfTool for NaiveRdfTool {
                 self.result = PartialRdfElement::None;
                 Some(predicate_controller)
             },
+            PartialRdfElement::Graph{a, b: Some(b)} => {
+                self.current_stage = RdfToolStage::GraphStart;
+                
+                let uuid = uuid::Uuid::now_v7();
+                let graph = Arc::new(RwLock::new(RdfGraph::new(
+                    uuid.clone(),
+                    "a graph".to_owned(),
+                    vec![],
+                )));
+                let graph_controller = Arc::new(RwLock::new(RdfGraphController {
+                    model: graph.clone(),
+                    bounds_rect: egui::Rect::from_two_pos(*a, *b),
+                }));
+                
+                self.result = PartialRdfElement::None;
+                Some(graph_controller)
+            }
             _ => { None },
         }
     }
@@ -410,12 +458,12 @@ impl DiagramController for RdfDiagramController {
             .is_ok();
         
         if !handled && delta == egui::Vec2::ZERO {
-            if let Some(mut t) = self.current_tool.as_mut() {
+            if let Some(t) = self.current_tool.as_mut() {
                 t.add_by_position(last_pos);
             }
         }
         let mut tool = self.current_tool.take();
-        if let Some(new) = tool.as_mut().and_then(|mut e| e.try_construct(&self)) {
+        if let Some(new) = tool.as_mut().and_then(|e| e.try_construct(&self)) {
             let uuid = new.read().unwrap().uuid();
             self.owned_controllers.insert(uuid, new);
             return true;
@@ -437,7 +485,7 @@ impl DiagramController for RdfDiagramController {
         
         for (stage, name) in [(RdfToolStage::Select, "Select"), (RdfToolStage::Move, "Move"),
                               (RdfToolStage::Literal, "Literal"), (RdfToolStage::Node, "Node"),
-                              (RdfToolStage::PredicateStart, "Predicate"), (RdfToolStage::Graph, "Graph"),
+                              (RdfToolStage::PredicateStart, "Predicate"), (RdfToolStage::GraphStart, "Graph"),
                               (RdfToolStage::Note, "Note")] {
             if ui.add_sized([width, 20.0], egui::Button::new(name).fill(c(stage))).clicked() {
                 self.current_tool = Some(Box::new(NaiveRdfTool { initial_stage: stage, current_stage: stage, result: PartialRdfElement::None }));
@@ -502,75 +550,80 @@ impl DiagramController for RdfDiagramController {
     }
 }
 
-pub struct RdfLiteralController {
-    pub model: Arc<RwLock<RdfLiteral>>,
+pub struct RdfGraphController {
+    pub model: Arc<RwLock<RdfGraph>>,
     
-    pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
 }
 
-impl ElementController for RdfLiteralController {
+impl ElementController for RdfGraphController {
     fn uuid(&self) -> uuid::Uuid {
         self.model.read().unwrap().uuid.clone()
     }
     fn model_name(&self) -> String {
-        self.model.read().unwrap().content.clone()
+        self.model.read().unwrap().name.clone()
     }
-
+    
     fn min_shape(&self) -> NHShape {
         NHShape::Rect{ inner: self.bounds_rect }
     }
     
     fn position(&self) -> egui::Pos2 {
-        self.position
+        self.bounds_rect.center()
     }
 }
 
-impl RdfElementController for RdfLiteralController {
+impl RdfElementController for RdfGraphController {
     fn show_properties(&mut self, _parent: &RdfDiagramController, ui: &mut egui::Ui) {
         let mut model = self.model.write().unwrap();
         
-        ui.label("Content:");
+        ui.label("IRI:");
         let r1 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.content));
-        ui.label("Datatype:");
-        let r2 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::singleline(&mut model.datatype));
-        
-        ui.label("Language:");
-        let r3 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::singleline(&mut model.language));
+                              egui::TextEdit::multiline(&mut model.name));
         
         ui.label("Comment:");
-        let r4 = ui.add_sized((ui.available_width(), 20.0),
+        let r2 = ui.add_sized((ui.available_width(), 20.0),
                               egui::TextEdit::multiline(&mut model.comment));
         
-        if r1.union(r2).union(r3).union(r4).changed() {
+        if r1.union(r2).changed() {
             model.notify_observers();
         }
     }
+    fn list_in_project_hierarchy(&self, parent: &RdfDiagramController, ui: &mut egui::Ui) {
+        let model = self.model.read().unwrap();
     
-    fn list_in_project_hierarchy(&self, _parent: &RdfDiagramController, ui: &mut egui::Ui) {
-        ui.label(&self.model.read().unwrap().content);
+        egui::CollapsingHeader::new(format!("{} ({})", model.name, model.uuid))
+        .show(ui, |_ui| {
+            // TODO: child elements in project view
+            /*for connection in parent.outgoing_for(&model.uuid) {
+                let connection = connection.read().unwrap();
+                ui.label(format!("{} (-> {})", connection.model_name(), connection.connection_target_name().unwrap()));
+            }*/
+        });
     }
-    
     fn draw_in(&mut self, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &dyn RdfTool)>) -> bool {
         // Draw shape and text
-        self.bounds_rect = canvas.draw_class(
-            self.position,
-            None,
-            &self.model.read().unwrap().content,
-            None,
-            &[],
+        canvas.draw_rectangle(
+            self.bounds_rect,
+            egui::Rounding::ZERO,
+            egui::Color32::WHITE,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
         );
         
-        // Draw targetting rectangle
+        canvas.draw_text(
+            self.position(),
+            egui::Align2::CENTER_CENTER,
+            &self.model.read().unwrap().name,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+        
+        // Draw targetting ellipse
         if let Some(t) = tool.as_ref().filter(|e| self.min_shape().contains(e.0)).map(|e| e.1) {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::Rounding::ZERO,
-                t.targetting_for_literal(),
+                t.targetting_for_graph(),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             );
             true
@@ -582,16 +635,26 @@ impl RdfElementController for RdfLiteralController {
         
         match (tool, delta) {
             (Some(tool), egui::Vec2::ZERO) => {
-                tool.add_literal(self.model.clone());
+                tool.add_by_position(last_pos);
+                tool.add_graph(self.model.clone());
+                
+                // TODO: refactor to allow to contruct elements in a graph
+                /*
+                if let Some(new) = tool.try_construct(&self) {
+                    let uuid = new.read().unwrap().uuid();
+                    self.owned_controllers.insert(uuid, new);
+                }
+                */
             }
             _ => {
-                self.position += delta;
+                self.bounds_rect.set_center(self.position() + delta);
             }
         }
         
         true
     }
 }
+
 
 pub struct RdfNodeController {
     pub model: Arc<RwLock<RdfNode>>,
@@ -697,10 +760,101 @@ impl RdfElementController for RdfNodeController {
     }
 }
 
+pub struct RdfLiteralController {
+    pub model: Arc<RwLock<RdfLiteral>>,
+    
+    pub position: egui::Pos2,
+    pub bounds_rect: egui::Rect,
+}
+
+impl ElementController for RdfLiteralController {
+    fn uuid(&self) -> uuid::Uuid {
+        self.model.read().unwrap().uuid.clone()
+    }
+    fn model_name(&self) -> String {
+        self.model.read().unwrap().content.clone()
+    }
+
+    fn min_shape(&self) -> NHShape {
+        NHShape::Rect{ inner: self.bounds_rect }
+    }
+    
+    fn position(&self) -> egui::Pos2 {
+        self.position
+    }
+}
+
+impl RdfElementController for RdfLiteralController {
+    fn show_properties(&mut self, _parent: &RdfDiagramController, ui: &mut egui::Ui) {
+        let mut model = self.model.write().unwrap();
+        
+        ui.label("Content:");
+        let r1 = ui.add_sized((ui.available_width(), 20.0),
+                              egui::TextEdit::multiline(&mut model.content));
+        ui.label("Datatype:");
+        let r2 = ui.add_sized((ui.available_width(), 20.0),
+                              egui::TextEdit::singleline(&mut model.datatype));
+        
+        ui.label("Language:");
+        let r3 = ui.add_sized((ui.available_width(), 20.0),
+                              egui::TextEdit::singleline(&mut model.language));
+        
+        ui.label("Comment:");
+        let r4 = ui.add_sized((ui.available_width(), 20.0),
+                              egui::TextEdit::multiline(&mut model.comment));
+        
+        if r1.union(r2).union(r3).union(r4).changed() {
+            model.notify_observers();
+        }
+    }
+    
+    fn list_in_project_hierarchy(&self, _parent: &RdfDiagramController, ui: &mut egui::Ui) {
+        ui.label(&self.model.read().unwrap().content);
+    }
+    
+    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &dyn RdfTool)>) -> bool {
+        // Draw shape and text
+        self.bounds_rect = canvas.draw_class(
+            self.position,
+            None,
+            &self.model.read().unwrap().content,
+            None,
+            &[],
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+        );
+        
+        // Draw targetting rectangle
+        if let Some(t) = tool.as_ref().filter(|e| self.min_shape().contains(e.0)).map(|e| e.1) {
+            canvas.draw_rectangle(
+                self.bounds_rect,
+                egui::Rounding::ZERO,
+                t.targetting_for_literal(),
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            );
+            true
+        } else { false }
+    }
+    
+    fn drag(&mut self, tool: Option<&mut Box<dyn RdfTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
+        if !self.min_shape().contains(last_pos) { return false; }
+        
+        match (tool, delta) {
+            (Some(tool), egui::Vec2::ZERO) => {
+                tool.add_literal(self.model.clone());
+            }
+            _ => {
+                self.position += delta;
+            }
+        }
+        
+        true
+    }
+}
+
 pub struct RdfPredicateController {
     pub model: Arc<RwLock<RdfPredicate>>,
-    pub source: Arc<RwLock<dyn ElementController>>,
-    pub destination: Arc<RwLock<dyn ElementController>>,
+    pub source: Arc<RwLock<dyn RdfElementController>>,
+    pub destination: Arc<RwLock<dyn RdfElementController>>,
     pub center_point: Option<egui::Pos2>,
     pub source_points: Vec<Vec<egui::Pos2>>,
     pub dest_points: Vec<Vec<egui::Pos2>>,

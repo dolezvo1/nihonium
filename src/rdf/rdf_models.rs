@@ -9,7 +9,7 @@ pub trait RdfElement: Observable {
 pub struct RdfDiagram {
     pub uuid: uuid::Uuid,
     pub name: String,
-    pub contained_elements: Vec<Arc<RwLock<dyn Observable>>>,
+    pub contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
 
     pub comment: String,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
@@ -19,7 +19,7 @@ impl RdfDiagram {
     pub fn new(
         uuid: uuid::Uuid,
         name: String,
-        contained_elements: Vec<Arc<RwLock<dyn Observable>>>,
+        contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
     ) -> Self {
         Self {
             uuid,
@@ -30,7 +30,7 @@ impl RdfDiagram {
         }
     }
     
-    pub fn add_element(&mut self, element: Arc<RwLock<dyn Observable>>) {
+    pub fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
         self.contained_elements.push(element);
         self.notify_observers();
     }
@@ -38,17 +38,44 @@ impl RdfDiagram {
 
 impl_observable!(RdfDiagram);
 
-/*
+
 pub struct RdfGraph {
+    pub uuid: uuid::Uuid,
     pub name: String,
-    pub contained_elements: Vec<Arc<RwLock<dyn Observable>>>,
+    pub contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
     
     pub comment: String,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
+impl RdfGraph {
+    pub fn new(
+        uuid: uuid::Uuid,
+        name: String,
+        contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
+    ) -> Self {
+        Self {
+            uuid,
+            name,
+            contained_elements,
+            comment: "".to_owned(),
+            observers: VecDeque::new(),
+        }
+    }
+    
+    pub fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
+        self.contained_elements.push(element);
+        self.notify_observers();
+    }
+}
+
 impl_observable!(RdfGraph);
-*/
+
+impl RdfElement for RdfGraph {
+    fn uuid(&self) -> uuid::Uuid {
+        self.uuid
+    }
+}
 
 pub struct RdfLiteral {
     pub uuid: uuid::Uuid,
@@ -119,8 +146,8 @@ impl RdfElement for RdfNode {
 pub struct RdfPredicate {
     pub uuid: uuid::Uuid,
     pub iri: String,
-    pub source: Arc<RwLock<dyn Observable>>,
-    pub destination: Arc<RwLock<dyn Observable>>,
+    pub source: Arc<RwLock<dyn RdfElement>>,
+    pub destination: Arc<RwLock<dyn RdfElement>>,
     
     pub comment: String,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
@@ -130,8 +157,8 @@ impl RdfPredicate {
     pub fn new(
         uuid: uuid::Uuid,
         iri: String,
-        source: Arc<RwLock<dyn Observable>>,
-        destination: Arc<RwLock<dyn Observable>>,
+        source: Arc<RwLock<dyn RdfElement>>,
+        destination: Arc<RwLock<dyn RdfElement>>,
     ) -> Self {
         Self {
             uuid,
