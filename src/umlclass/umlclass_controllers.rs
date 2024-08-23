@@ -593,13 +593,18 @@ impl DiagramController for UmlClassDiagramController {
             if stage.is_some_and(|e| e == s) { egui::Color32::BLUE } else { egui::Color32::BLACK }
         };
         
-        for (stage, name) in [(UmlClassToolStage::Select, "Select"), (UmlClassToolStage::Move, "Move"),
-                              (UmlClassToolStage::Class, "Class"), (UmlClassToolStage::LinkStart, "Association"),
-                              (UmlClassToolStage::PackageStart, "Package"), (UmlClassToolStage::Note, "Note")] {
-            if ui.add_sized([width, 20.0], egui::Button::new(name).fill(c(stage))).clicked() {
-                self.current_tool = Some(Box::new(NaiveUmlClassTool { initial_stage: stage, current_stage: stage, result: PartialUmlClassElement::None }));
+        for cat in [&[(UmlClassToolStage::Select, "Select"), (UmlClassToolStage::Move, "Move")][..],
+                    &[(UmlClassToolStage::Class, "Class"), (UmlClassToolStage::PackageStart, "Package")][..],
+                    &[(UmlClassToolStage::LinkStart, "Association"),][..],
+                    &[(UmlClassToolStage::Note, "Note")][..],] {
+            for (stage, name) in cat {
+                if ui.add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage))).clicked() {
+                    self.current_tool = Some(Box::new(NaiveUmlClassTool { initial_stage: *stage, current_stage: *stage, result: PartialUmlClassElement::None }));
+                }
             }
+            ui.separator();
         }
+        
     }
     fn show_properties(&mut self, ui: &mut egui::Ui) {
         if let Some(element) = self.last_selected_element() {

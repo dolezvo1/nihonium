@@ -489,14 +489,18 @@ impl DiagramController for RdfDiagramController {
             if stage.is_some_and(|e| e == s) { egui::Color32::BLUE } else { egui::Color32::BLACK }
         };
         
-        for (stage, name) in [(RdfToolStage::Select, "Select"), (RdfToolStage::Move, "Move"),
-                              (RdfToolStage::Literal, "Literal"), (RdfToolStage::Node, "Node"),
-                              (RdfToolStage::PredicateStart, "Predicate"), (RdfToolStage::GraphStart, "Graph"),
-                              (RdfToolStage::Note, "Note")] {
-            if ui.add_sized([width, 20.0], egui::Button::new(name).fill(c(stage))).clicked() {
-                self.current_tool = Some(Box::new(NaiveRdfTool { initial_stage: stage, current_stage: stage, result: PartialRdfElement::None }));
+        for cat in [&[(RdfToolStage::Select, "Select"), (RdfToolStage::Move, "Move"),][..],
+                    &[(RdfToolStage::Literal, "Literal"), (RdfToolStage::Node, "Node"),
+                      (RdfToolStage::PredicateStart, "Predicate"), (RdfToolStage::GraphStart, "Graph"),][..],
+                    &[(RdfToolStage::Note, "Note")][..]] {
+            for (stage, name) in cat {
+                if ui.add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage))).clicked() {
+                    self.current_tool = Some(Box::new(NaiveRdfTool { initial_stage: *stage, current_stage: *stage, result: PartialRdfElement::None }));
+                }
             }
+            ui.separator();
         }
+        
     }
     fn show_properties(&mut self, ui: &mut egui::Ui) {
         if let Some(element) = self.last_selected_element() {
