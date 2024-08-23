@@ -402,10 +402,13 @@ impl DiagramController for UmlClassDiagramController {
         
         ui.separator();
         
-        if ui.add_sized([width, 20.0], egui::Button::new("UML Class")).clicked() {
+        if ui.add_sized([width, 20.0], egui::Button::new("Class")).clicked() {
             println!("asdf");
         }
-        if ui.add_sized([width, 20.0], egui::Button::new("UML Association")).clicked() {
+        if ui.add_sized([width, 20.0], egui::Button::new("Association")).clicked() {
+            println!("asdf");
+        }
+        if ui.add_sized([width, 20.0], egui::Button::new("Package")).clicked() {
             println!("asdf");
         }
         

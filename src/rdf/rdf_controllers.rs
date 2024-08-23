@@ -77,6 +77,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     )));
     let graph_controller = Arc::new(RwLock::new(RdfGraphController {
         model: graph.clone(),
+        owned_controllers: HashMap::new(),
         bounds_rect: egui::Rect::from_min_max(egui::Pos2::new(400.0, 50.0),
                                               egui::Pos2::new(500.0, 150.0),)
     }));
@@ -135,7 +136,7 @@ pub trait RdfTool {
     fn add_literal(&mut self, model: Arc<RwLock<RdfLiteral>>);
     fn add_graph(&mut self, model: Arc<RwLock<RdfGraph>>);
     
-    fn try_construct(&mut self, into: &RdfDiagramController) -> Option<Arc<RwLock<dyn RdfElementController>>>;
+    fn try_construct(&mut self, into: &dyn RdfContainerController) -> Option<Arc<RwLock<dyn RdfElementController>>>;
 }
 
 pub struct NaiveRdfTool {
@@ -243,7 +244,7 @@ impl RdfTool for NaiveRdfTool {
     }
     fn add_graph(&mut self, _model: Arc<RwLock<RdfGraph>>) {}
     
-    fn try_construct(&mut self, into: &RdfDiagramController) -> Option<Arc<RwLock<dyn RdfElementController>>> {
+    fn try_construct(&mut self, into: &dyn RdfContainerController) -> Option<Arc<RwLock<dyn RdfElementController>>> {
         match &self.result {
             PartialRdfElement::Some(x) => {
                 let x = x.clone();
@@ -283,6 +284,7 @@ impl RdfTool for NaiveRdfTool {
                 )));
                 let graph_controller = Arc::new(RwLock::new(RdfGraphController {
                     model: graph.clone(),
+                    owned_controllers: HashMap::new(),
                     bounds_rect: egui::Rect::from_two_pos(*a, *b),
                 }));
                 
@@ -303,6 +305,10 @@ pub trait RdfElementController: ElementController {
     
     fn draw_in(&mut self, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &dyn RdfTool)>) -> bool;
     fn drag(&mut self, tool: Option<&mut Box<dyn RdfTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> bool;
+}
+
+pub trait RdfContainerController {
+    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn RdfElementController>>>;
 }
 
 pub struct RdfDiagramController {
@@ -355,10 +361,6 @@ impl RdfDiagramController {
         Box::new(self.owned_controllers.iter()
                     .filter(|e| e.1.read().unwrap().is_connection_from(uuid))
                     .map(|e| e.1.clone()))
-    }
-    
-    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn RdfElementController>>> {
-        self.owned_controllers.get(uuid).cloned()
     }
 }
 
@@ -463,7 +465,7 @@ impl DiagramController for RdfDiagramController {
             }
         }
         let mut tool = self.current_tool.take();
-        if let Some(new) = tool.as_mut().and_then(|e| e.try_construct(&self)) {
+        if let Some(new) = tool.as_mut().and_then(|e| e.try_construct(self)) {
             let uuid = new.read().unwrap().uuid();
             self.owned_controllers.insert(uuid, new);
             return true;
@@ -550,8 +552,15 @@ impl DiagramController for RdfDiagramController {
     }
 }
 
+impl RdfContainerController for RdfDiagramController {
+    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn RdfElementController>>> {
+        self.owned_controllers.get(uuid).cloned()
+    }
+}
+
 pub struct RdfGraphController {
     pub model: Arc<RwLock<RdfGraph>>,
+    pub owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn RdfElementController>>>,
     
     pub bounds_rect: egui::Rect,
 }
@@ -618,16 +627,32 @@ impl RdfElementController for RdfGraphController {
             egui::Color32::BLACK,
         );
         
-        // Draw targetting ellipse
-        if let Some(t) = tool.as_ref().filter(|e| self.min_shape().contains(e.0)).map(|e| e.1) {
-            canvas.draw_rectangle(
-                self.bounds_rect,
-                egui::Rounding::ZERO,
-                t.targetting_for_graph(),
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            );
-            true
-        } else { false }
+        let mut drawn_child_targetting = false;
+        
+        canvas.offset_by(self.bounds_rect.left_top().to_vec2());
+        self.owned_controllers.iter_mut()
+            .filter(|_| true) // TODO: filter by layers
+            .for_each(|uc| if uc.1.write().unwrap().draw_in(canvas, &tool) { drawn_child_targetting = true; });
+        canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
+        
+        match (drawn_child_targetting, tool) {
+            (false, Some((pos, t))) if self.min_shape().contains(*pos) => {
+                canvas.draw_rectangle(
+                    self.bounds_rect,
+                    egui::Rounding::ZERO,
+                    t.targetting_for_diagram(),
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                );
+                
+                canvas.offset_by(self.bounds_rect.left_top().to_vec2());
+                self.owned_controllers.iter_mut()
+                    .filter(|_| true) // TODO: filter by layers
+                    .for_each(|uc| if uc.1.write().unwrap().draw_in(canvas, &tool) { drawn_child_targetting = true; });
+                canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
+                true
+            },
+            _ => { false },
+        }
     }
     
     fn drag(&mut self, tool: Option<&mut Box<dyn RdfTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
@@ -635,16 +660,13 @@ impl RdfElementController for RdfGraphController {
         
         match (tool, delta) {
             (Some(tool), egui::Vec2::ZERO) => {
-                tool.add_by_position(last_pos);
+                tool.add_by_position(last_pos - self.bounds_rect.left_top().to_vec2());
                 tool.add_graph(self.model.clone());
                 
-                // TODO: refactor to allow to contruct elements in a graph
-                /*
-                if let Some(new) = tool.try_construct(&self) {
+                if let Some(new) = tool.try_construct(self) {
                     let uuid = new.read().unwrap().uuid();
                     self.owned_controllers.insert(uuid, new);
                 }
-                */
             }
             _ => {
                 self.bounds_rect.set_center(self.position() + delta);
@@ -652,6 +674,12 @@ impl RdfElementController for RdfGraphController {
         }
         
         true
+    }
+}
+
+impl RdfContainerController for RdfGraphController {
+    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn RdfElementController>>> {
+        self.owned_controllers.get(uuid).cloned()
     }
 }
 

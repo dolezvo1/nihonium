@@ -232,6 +232,8 @@ pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 
 pub trait NHCanvas {
     // These functions are must haves
+    fn offset_by(&mut self, delta: egui::Vec2);
+    
     fn draw_line(
         &mut self,
         points: [egui::Pos2; 2],
@@ -542,6 +544,10 @@ impl UiCanvas {
 }
 
 impl NHCanvas for UiCanvas {
+    fn offset_by(&mut self, delta: egui::Vec2) {
+        self.camera_offset += delta * self.camera_scale;
+    }
+
     fn draw_line(
         &mut self,
         points: [egui::Pos2; 2],
@@ -652,6 +658,7 @@ impl NHCanvas for UiCanvas {
 
 // TODO: offset the canvas so that it would cover all elements (negative coords)
 pub struct SVGCanvas<'a> {
+    camera_offset: egui::Pos2,
     element_buffer: Vec<String>,
     painter: &'a egui::Painter,
 }
@@ -659,6 +666,7 @@ pub struct SVGCanvas<'a> {
 impl<'a> SVGCanvas<'a> {
     pub fn new(painter: &'a egui::Painter) -> Self {
         Self {
+            camera_offset: egui::Pos2::ZERO,
             element_buffer: Vec::new(),
             painter,
         }
@@ -686,6 +694,10 @@ impl<'a> SVGCanvas<'a> {
 }
 
 impl<'a> NHCanvas for SVGCanvas<'a> {
+    fn offset_by(&mut self, delta: egui::Vec2) {
+        self.camera_offset += delta;
+    }
+
     fn draw_line(
         &mut self,
         points: [egui::Pos2; 2],
@@ -697,7 +709,8 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         };
         
         self.element_buffer.push(format!(r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-dasharray="{}"/>
-"#, points[0].x, points[0].y, points[1].x, points[1].y, stroke.color.to_hex(), stroke_dasharray));
+"#, points[0].x + self.camera_offset.x, points[0].y + self.camera_offset.y,
+    points[1].x + self.camera_offset.x, points[1].y + self.camera_offset.y, stroke.color.to_hex(), stroke_dasharray));
     }
     
     fn draw_rectangle(
@@ -710,7 +723,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         // TODO: implement rounding (not directly supported by SVG, potentially hard)
         let top_left = rect.left_top();
         self.element_buffer.push(format!(r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}"/>
-"#, top_left.x, top_left.y, rect.width(), rect.height(), color.to_hex(), stroke.color.to_hex()));
+"#, top_left.x + self.camera_offset.x, top_left.y + self.camera_offset.y, rect.width(), rect.height(), color.to_hex(), stroke.color.to_hex()));
     }
     
     fn draw_ellipse(
@@ -721,7 +734,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         stroke: Stroke,
     ) {
         self.element_buffer.push(format!(r#"<ellipse cx="{}" cy="{}" rx="{}" ry="{}" fill="{}" stroke="{}"/>
-"#, position.x, position.y, radius.x, radius.y, color.to_hex(), stroke.color.to_hex()));
+"#, position.x + self.camera_offset.x, position.y + self.camera_offset.y, radius.x, radius.y, color.to_hex(), stroke.color.to_hex()));
     }
     
     fn draw_polygon(
@@ -730,7 +743,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         color: egui::Color32,
         stroke: Stroke,
     ) {
-        let polygon_points = vertices.iter().map(|&p| format!("{},{}", p.x, p.y)).collect::<Vec<_>>().join(" ");
+        let polygon_points = vertices.iter().map(|&p| format!("{},{}", p.x + self.camera_offset.x, p.y + self.camera_offset.y)).collect::<Vec<_>>().join(" ");
         self.element_buffer.push(format!(r#"<polygon points="{}" fill="{}" stroke="{}"/>
 "#, polygon_points, color.to_hex(), stroke.color.to_hex()));
     }
@@ -762,6 +775,6 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
                                 .replace("'", "&apos;")
                                 .replace("\"", "&quot;");
         self.element_buffer.push(format!(r#"<text x="{}" y="{}" font-size="{}" fill="{}" text-anchor="middle" dominant-baseline="middle">{}</text>
-"#, rect.center().x, rect.center().y, font_size, text_color.to_hex(), escaped_text));
+"#, rect.center().x + self.camera_offset.x, rect.center().y + self.camera_offset.y, font_size, text_color.to_hex(), escaped_text));
     }
 }
