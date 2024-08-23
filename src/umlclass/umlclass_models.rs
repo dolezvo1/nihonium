@@ -10,7 +10,7 @@ pub trait UmlClassElement: Observable {
 pub struct UmlClassDiagram {
     pub uuid: uuid::Uuid,
     pub name: String,
-    pub contained_elements: Vec<Arc<RwLock<dyn Observable>>>,
+    pub contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
 
     pub comment: String,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
@@ -20,7 +20,7 @@ impl UmlClassDiagram {
     pub fn new(
         uuid: uuid::Uuid,
         name: String,
-        contained_elements: Vec<Arc<RwLock<dyn Observable>>>,
+        contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
     ) -> Self {
         Self {
             uuid,
@@ -31,13 +31,45 @@ impl UmlClassDiagram {
         }
     }
     
-    pub fn add_element(&mut self, element: Arc<RwLock<dyn Observable>>) {
+    pub fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
         self.contained_elements.push(element);
         self.notify_observers();
     }
 }
 
 impl_observable!(UmlClassDiagram);
+
+pub struct UmlClassPackage {
+    pub uuid: uuid::Uuid,
+    pub name: String,
+    pub contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
+
+    pub comment: String,
+    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
+}
+
+impl UmlClassPackage {
+    pub fn new(
+        uuid: uuid::Uuid,
+        name: String,
+        contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
+    ) -> Self {
+        Self {
+            uuid,
+            name,
+            contained_elements,
+            comment: "".to_owned(),
+            observers: VecDeque::new(),
+        }
+    }
+    
+    pub fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
+        self.contained_elements.push(element);
+        self.notify_observers();
+    }
+}
+
+impl_observable!(UmlClassPackage);
 
 pub enum UMLClassAccessModifier {
     Public,
@@ -168,9 +200,9 @@ impl UmlClassLinkType {
 pub struct UmlClassLink {
     pub uuid: uuid::Uuid,
     pub link_type: UmlClassLinkType,
-    pub source: Arc<RwLock<dyn Observable>>,
+    pub source: Arc<RwLock<dyn UmlClassElement>>,
     pub source_arrowhead_label: String,
-    pub destination: Arc<RwLock<dyn Observable>>,
+    pub destination: Arc<RwLock<dyn UmlClassElement>>,
     pub destination_arrowhead_label: String,
     
     pub comment: String,
@@ -181,8 +213,8 @@ impl UmlClassLink {
     pub fn new(
         uuid: uuid::Uuid,
         link_type: UmlClassLinkType,
-        source: Arc<RwLock<dyn Observable>>,
-        destination: Arc<RwLock<dyn Observable>>,
+        source: Arc<RwLock<dyn UmlClassElement>>,
+        destination: Arc<RwLock<dyn UmlClassElement>>,
     ) -> Self {
         Self {
             uuid,

@@ -55,65 +55,51 @@ fn arrowhead_combo(ui: &mut egui::Ui, name: &str, val: &mut ArrowheadType) -> eg
 */
 
 pub mod macros {
-    // position: egui::Pos2
-    macro_rules! simple_element_drag {
-        () => {
-            fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
-                self.min_shape().contains(last_pos)
-                    .then(|| {self.position += delta;} )
-                    .is_some()
-            }
-        }
-    }
-    pub(crate) use simple_element_drag;
-    
     // TODO: parametrize
     macro_rules! multiconnection_draw_in {
-        () => {
-            fn draw_in(&mut self, canvas: &mut dyn NHCanvas) {
-                let model = self.model.read().unwrap();
-                let (source_pos, source_bounds) = {
-                    let lock = self.source.read().unwrap();
-                    (lock.position(), lock.min_shape())
-                };
-                let (dest_pos, dest_bounds) = {
-                    let lock = self.destination.read().unwrap();
-                    (lock.position(), lock.min_shape())
-                };
-                let (source_next_point, dest_next_point)
-                    = match (self.source_points[0].get(1).map(|e| *e).or(self.center_point),
-                            self.dest_points[0].get(1).map(|e| *e).or(self.center_point)) {
-                        (None, None) => {
-                            let pos_avg = (source_pos + dest_pos.to_vec2()) / 2.0;
-                            (pos_avg, pos_avg)
-                        },
-                        (source_next_point, dest_next_point) => {
-                            (source_next_point.unwrap_or(dest_pos), dest_next_point.unwrap_or(source_pos))
-                        },
-                    };
-                
-                match (source_bounds.orthogonal_intersect(source_next_point)
-                        .or_else(|| source_bounds.center_intersect(source_next_point)),
-                    dest_bounds.orthogonal_intersect(dest_next_point)
-                        .or_else(|| dest_bounds.center_intersect(dest_next_point))) {
-                    (Some(source_intersect), Some(dest_intersect)) => {
-                        self.source_points[0][0] = source_intersect;
-                        self.dest_points[0][0] = dest_intersect;
-                        canvas.draw_multiconnection(
-                            &[(model.link_type.source_arrowhead_type(),
-                                crate::common::canvas::Stroke { width: 1.0, color: egui::Color32::BLACK, line_type: model.link_type.line_type() },
-                                &self.source_points[0],
-                                Some(&model.source_arrowhead_label))],
-                            &[(model.link_type.destination_arrowhead_type(),
-                                crate::common::canvas::Stroke { width: 1.0, color: egui::Color32::BLACK, line_type: model.link_type.line_type() },
-                                &self.dest_points[0],
-                                Some(&model.destination_arrowhead_label),)],
-                            self.position(),
-                            None,
-                        );
+        ($self:ident, $canvas:ident) => {
+            let model = $self.model.read().unwrap();
+            let (source_pos, source_bounds) = {
+                let lock = $self.source.read().unwrap();
+                (lock.position(), lock.min_shape())
+            };
+            let (dest_pos, dest_bounds) = {
+                let lock = $self.destination.read().unwrap();
+                (lock.position(), lock.min_shape())
+            };
+            let (source_next_point, dest_next_point)
+                = match ($self.source_points[0].get(1).map(|e| *e).or($self.center_point),
+                        $self.dest_points[0].get(1).map(|e| *e).or($self.center_point)) {
+                    (None, None) => {
+                        let pos_avg = (source_pos + dest_pos.to_vec2()) / 2.0;
+                        (pos_avg, pos_avg)
                     },
-                    _ => {},
-                }
+                    (source_next_point, dest_next_point) => {
+                        (source_next_point.unwrap_or(dest_pos), dest_next_point.unwrap_or(source_pos))
+                    },
+                };
+            
+            match (source_bounds.orthogonal_intersect(source_next_point)
+                    .or_else(|| source_bounds.center_intersect(source_next_point)),
+                dest_bounds.orthogonal_intersect(dest_next_point)
+                    .or_else(|| dest_bounds.center_intersect(dest_next_point))) {
+                (Some(source_intersect), Some(dest_intersect)) => {
+                    $self.source_points[0][0] = source_intersect;
+                    $self.dest_points[0][0] = dest_intersect;
+                    $canvas.draw_multiconnection(
+                        &[(model.link_type.source_arrowhead_type(),
+                            crate::common::canvas::Stroke { width: 1.0, color: egui::Color32::BLACK, line_type: model.link_type.line_type() },
+                            &$self.source_points[0],
+                            Some(&model.source_arrowhead_label))],
+                        &[(model.link_type.destination_arrowhead_type(),
+                            crate::common::canvas::Stroke { width: 1.0, color: egui::Color32::BLACK, line_type: model.link_type.line_type() },
+                            &$self.dest_points[0],
+                            Some(&model.destination_arrowhead_label),)],
+                        $self.position(),
+                        None,
+                    );
+                },
+                _ => {},
             }
         }
     }
