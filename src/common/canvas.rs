@@ -657,18 +657,104 @@ impl NHCanvas for UiCanvas {
 }
 
 // TODO: offset the canvas so that it would cover all elements (negative coords)
-pub struct SVGCanvas<'a> {
+pub struct MeasuringCanvas<'a> {
     camera_offset: egui::Pos2,
-    element_buffer: Vec<String>,
     painter: &'a egui::Painter,
+    bounds: egui::Rect,
 }
 
-impl<'a> SVGCanvas<'a> {
+impl<'a> MeasuringCanvas<'a> {
     pub fn new(painter: &'a egui::Painter) -> Self {
         Self {
             camera_offset: egui::Pos2::ZERO,
-            element_buffer: Vec::new(),
             painter,
+            bounds: egui::Rect::ZERO,
+        }
+    }
+    
+    pub fn bounds(&self) -> egui::Rect { self.bounds }
+}
+
+impl<'a> NHCanvas for MeasuringCanvas<'a> {
+    fn offset_by(&mut self, delta: egui::Vec2) {
+        self.camera_offset += delta;
+    }
+    
+    fn draw_line(
+        &mut self,
+        points: [egui::Pos2; 2],
+        _stroke: Stroke,
+    ) {
+        self.bounds.extend_with(points[0] + self.camera_offset.to_vec2());
+        self.bounds.extend_with(points[1] + self.camera_offset.to_vec2());
+    }
+    
+    fn draw_rectangle(
+        &mut self,
+        rect: egui::Rect,
+        _rounding: egui::Rounding,
+        _color: egui::Color32,
+        _stroke: Stroke
+    ) {
+        self.bounds = self.bounds.union(rect.translate(self.camera_offset.to_vec2()));
+    }
+    
+    fn draw_ellipse(
+        &mut self,
+        position: egui::Pos2,
+        radius: egui::Vec2,
+        _color: egui::Color32,
+        _stroke: Stroke,
+    ) {
+        let rect = egui::Rect::from_center_size(position, 2.0 * radius);
+        self.bounds = self.bounds.union(rect.translate(self.camera_offset.to_vec2()));
+    }
+    
+    fn draw_polygon(
+        &mut self,
+        vertices: Vec<egui::Pos2>,
+        _color: egui::Color32,
+        _stroke: Stroke,
+    ) {
+        for p in vertices {
+            self.bounds.extend_with(p + self.camera_offset.to_vec2());
+        }
+    }
+    
+    fn measure_text(
+        &mut self,
+        position: egui::Pos2,
+        anchor: egui::Align2,
+        text: &str,
+        font_size: f32,
+    ) -> egui::Rect {
+        self.painter.text(position, anchor, text, egui::FontId::proportional(font_size), egui::Color32::TRANSPARENT)
+    }
+    fn draw_text(
+        &mut self,
+        position: egui::Pos2,
+        anchor: egui::Align2,
+        text: &str,
+        font_size: f32,
+        _text_color: egui::Color32,
+    ) {
+        let rect = self.measure_text(position, anchor, text, font_size);
+        self.bounds = self.bounds.union(rect.translate(self.camera_offset.to_vec2()));
+    }
+}
+
+pub struct SVGCanvas<'a> {
+    camera_offset: egui::Pos2,
+    painter: &'a egui::Painter,
+    element_buffer: Vec<String>,
+}
+
+impl<'a> SVGCanvas<'a> {
+    pub fn new(painter: &'a egui::Painter, offset: egui::Pos2) -> Self {
+        Self {
+            camera_offset: offset,
+            painter,
+            element_buffer: Vec::new(),
         }
     }
     
@@ -755,8 +841,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         text: &str,
         font_size: f32,
     ) -> egui::Rect {
-        self.painter.text(position, anchor, text, egui::FontId::proportional(font_size), egui::Color32::TRANSPARENT,
-        )
+        self.painter.text(position, anchor, text, egui::FontId::proportional(font_size), egui::Color32::TRANSPARENT)
     }
     fn draw_text(
         &mut self,

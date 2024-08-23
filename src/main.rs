@@ -17,7 +17,7 @@ mod common;
 mod rdf;
 mod umlclass;
 
-use crate::common::canvas::SVGCanvas;
+use crate::common::canvas::{MeasuringCanvas, SVGCanvas};
 use crate::common::controller::DiagramController;
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
@@ -706,9 +706,11 @@ impl eframe::App for MyApp {
                                                     .add_filter("SVG files", &["svg"])
                                                     .add_filter("All files", &["*"])
                                                     .save_file() {
-                                    let mut canvas = SVGCanvas::new(ui.painter());
-                                    e.draw_in(&mut canvas, None);
-                                    let _ = canvas.save_to(path);
+                                    let mut measuring_canvas = MeasuringCanvas::new(ui.painter());
+                                    e.draw_in(&mut measuring_canvas, None);
+                                    let mut svg_canvas = SVGCanvas::new(ui.painter(), -1.0 * measuring_canvas.bounds().min);
+                                    e.draw_in(&mut svg_canvas, None);
+                                    let _ = svg_canvas.save_to(path);
                                 }
                                 ui.close_menu();
                             }
