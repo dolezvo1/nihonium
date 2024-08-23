@@ -261,17 +261,21 @@ impl RdfTool for NaiveRdfTool {
                     source.clone(),
                     dest.clone(),
                 )));
-                let predicate_controller = Arc::new(RwLock::new(RdfPredicateController {
-                    model: predicate.clone(),
-                    source: into.controller_for(&source.read().unwrap().uuid()).unwrap(),
-                    destination: into.controller_for(&dest.read().unwrap().uuid()).unwrap(),
-                    center_point: None,
-                    source_points: vec![vec![egui::Pos2::ZERO]],
-                    dest_points: vec![vec![egui::Pos2::ZERO]],
-                }));
+                let predicate_controller: Option<Arc<RwLock<dyn RdfElementController>>>
+                    = if let (Some(source_controller), Some(dest_controller))
+                        = (into.controller_for(&source.read().unwrap().uuid()), into.controller_for(&dest.read().unwrap().uuid())) {
+                    Some(Arc::new(RwLock::new(RdfPredicateController {
+                        model: predicate.clone(),
+                        source: source_controller,
+                        destination: dest_controller,
+                        center_point: None,
+                        source_points: vec![vec![egui::Pos2::ZERO]],
+                        dest_points: vec![vec![egui::Pos2::ZERO]],
+                    })))
+                } else { None };
                 
                 self.result = PartialRdfElement::None;
-                Some(predicate_controller)
+                predicate_controller
             },
             PartialRdfElement::Graph{a, b: Some(b)} => {
                 self.current_stage = RdfToolStage::GraphStart;
@@ -620,19 +624,20 @@ impl RdfElementController for RdfGraphController {
         );
         
         canvas.draw_text(
-            self.position(),
-            egui::Align2::CENTER_CENTER,
+            self.bounds_rect.center_top(),
+            egui::Align2::CENTER_TOP,
             &self.model.read().unwrap().name,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
         
+        let offset_tool = tool.map(|(p, t)| (p - self.bounds_rect.left_top().to_vec2(), t));
         let mut drawn_child_targetting = false;
         
         canvas.offset_by(self.bounds_rect.left_top().to_vec2());
         self.owned_controllers.iter_mut()
             .filter(|_| true) // TODO: filter by layers
-            .for_each(|uc| if uc.1.write().unwrap().draw_in(canvas, &tool) { drawn_child_targetting = true; });
+            .for_each(|uc| if uc.1.write().unwrap().draw_in(canvas, &offset_tool) { drawn_child_targetting = true; });
         canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
         
         match (drawn_child_targetting, tool) {
@@ -647,19 +652,35 @@ impl RdfElementController for RdfGraphController {
                 canvas.offset_by(self.bounds_rect.left_top().to_vec2());
                 self.owned_controllers.iter_mut()
                     .filter(|_| true) // TODO: filter by layers
-                    .for_each(|uc| if uc.1.write().unwrap().draw_in(canvas, &tool) { drawn_child_targetting = true; });
+                    .for_each(|uc| if uc.1.write().unwrap().draw_in(canvas, &offset_tool) { drawn_child_targetting = true; });
                 canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
                 true
             },
-            _ => { false },
+            _ => { drawn_child_targetting },
         }
     }
     
-    fn drag(&mut self, tool: Option<&mut Box<dyn RdfTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
-        if !self.min_shape().contains(last_pos) { return false; }
+    fn drag(&mut self, mut tool: Option<&mut Box<dyn RdfTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
+        //if !self.min_shape().contains(last_pos) { return false; }
         
-        match (tool, delta) {
-            (Some(tool), egui::Vec2::ZERO) => {
+        let offset_pos = last_pos - self.bounds_rect.left_top().to_vec2();
+        let handled = self.owned_controllers.iter_mut()
+            .find(|uc| match tool.take() {
+                Some(inner) => {
+                    let r = uc.1.write().unwrap().drag(Some(inner), offset_pos, delta);
+                    tool = Some(inner);
+                    r
+                },
+                None => uc.1.write().unwrap().drag(None, offset_pos, delta),
+            })
+            //.map(|uc| {self.last_selected_element = Some(uc.0.clone());})
+            //.ok_or_else(|| {self.last_selected_element = None;})
+            .is_some();
+        // TODO: drag children
+        // otherwise drag self:
+        
+        match (handled, self.min_shape().contains(last_pos), tool, delta) {
+            (_, true, Some(tool), egui::Vec2::ZERO) => {
                 tool.add_by_position(last_pos - self.bounds_rect.left_top().to_vec2());
                 tool.add_graph(self.model.clone());
                 
@@ -667,13 +688,16 @@ impl RdfElementController for RdfGraphController {
                     let uuid = new.read().unwrap().uuid();
                     self.owned_controllers.insert(uuid, new);
                 }
-            }
-            _ => {
+                return true;
+            },
+            (false, true, _, _) => {
                 self.bounds_rect.set_center(self.position() + delta);
-            }
+                return true;
+            },
+            _ => {},
         }
         
-        true
+        handled
     }
 }
 
