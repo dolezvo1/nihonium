@@ -668,7 +668,7 @@ impl<'a> MeasuringCanvas<'a> {
         Self {
             camera_offset: egui::Pos2::ZERO,
             painter,
-            bounds: egui::Rect::ZERO,
+            bounds: egui::Rect::NOTHING,
         }
     }
     
@@ -745,14 +745,16 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
 
 pub struct SVGCanvas<'a> {
     camera_offset: egui::Pos2,
+    export_size: egui::Vec2,
     painter: &'a egui::Painter,
     element_buffer: Vec<String>,
 }
 
 impl<'a> SVGCanvas<'a> {
-    pub fn new(painter: &'a egui::Painter, offset: egui::Pos2) -> Self {
+    pub fn new(painter: &'a egui::Painter, offset: egui::Pos2, size: egui::Vec2) -> Self {
         Self {
             camera_offset: offset,
+            export_size: size,
             painter,
             element_buffer: Vec::new(),
         }
@@ -764,9 +766,9 @@ impl<'a> SVGCanvas<'a> {
                             .truncate(true)
                             .write(true)
                             .open(path)?;
-        file.write_all(r#"<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg">
-"#.as_bytes())?;
+        file.write_all(format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+<svg width="{}" height="{}" xmlns="http://www.w3.org/2000/svg">
+"#, self.export_size.x, self.export_size.y).as_bytes())?;
         
         for line in &self.element_buffer {
             file.write_all(line.as_bytes())?;

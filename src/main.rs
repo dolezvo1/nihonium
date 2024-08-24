@@ -708,7 +708,15 @@ impl eframe::App for MyApp {
                                                     .save_file() {
                                     let mut measuring_canvas = MeasuringCanvas::new(ui.painter());
                                     e.draw_in(&mut measuring_canvas, None);
-                                    let mut svg_canvas = SVGCanvas::new(ui.painter(), -1.0 * measuring_canvas.bounds().min);
+                                    
+                                    const PADDING_WIDTH: f32 = 10.0;
+                                    let mut svg_canvas = SVGCanvas::new(
+                                        ui.painter(),
+                                        -1.0 * measuring_canvas.bounds().min
+                                            + egui::Vec2::new(PADDING_WIDTH, PADDING_WIDTH),
+                                        measuring_canvas.bounds().size()
+                                            + egui::Vec2::new(2.0 * PADDING_WIDTH, 2.0 * PADDING_WIDTH),
+                                    );
                                     e.draw_in(&mut svg_canvas, None);
                                     let _ = svg_canvas.save_to(path);
                                 }
