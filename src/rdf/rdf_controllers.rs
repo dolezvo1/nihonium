@@ -83,17 +83,71 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
                                               egui::Pos2::new(500.0, 150.0),)
     }));
     
+    //<stress test>
+    let mut models_st = Vec::<Arc<RwLock<dyn RdfElement>>>::new();
+    let mut controllers_st = HashMap::<_, Arc<RwLock<dyn RdfElementController>>>::new();
+    
+    for xx in 0..=10 {
+        for yy in 300..=400 {
+            let node_st_uuid = uuid::Uuid::now_v7();
+            let node_st = Arc::new(RwLock::new(RdfNode::new(
+                node_st_uuid.clone(),
+                "http://www.w3.org/People/EM/contact#me".to_owned(),
+            )));
+            let node_st_controller = Arc::new(RwLock::new(RdfNodeController {
+                model: node_st.clone(),
+                position: egui::Pos2::new(xx as f32, yy as f32),
+                bounds_radius: egui::Vec2::ZERO,
+            }));
+            models_st.push(node_st);
+            controllers_st.insert(node_st_uuid, node_st_controller);
+        }
+    }
+    
+    for xx in 3000..=3100 {
+        for yy in 3000..=3100 {
+            let node_st_uuid = uuid::Uuid::now_v7();
+            let node_st = Arc::new(RwLock::new(RdfNode::new(
+                node_st_uuid.clone(),
+                "http://www.w3.org/People/EM/contact#me".to_owned(),
+            )));
+            let node_st_controller = Arc::new(RwLock::new(RdfNodeController {
+                model: node_st.clone(),
+                position: egui::Pos2::new(xx as f32, yy as f32),
+                bounds_radius: egui::Vec2::ZERO,
+            }));
+            models_st.push(node_st);
+            controllers_st.insert(node_st_uuid, node_st_controller);
+        }
+    }
+    
+    let graph_st_uuid = uuid::Uuid::now_v7();
+    let graph_st = Arc::new(RwLock::new(RdfGraph::new(
+        graph_st_uuid.clone(),
+        "a graph".to_owned(),
+        models_st,
+    )));
+    let graph_st_controller = Arc::new(RwLock::new(RdfGraphController {
+        model: graph.clone(),
+        owned_controllers: controllers_st,
+        bounds_rect: egui::Rect::from_min_max(egui::Pos2::new(0.0, 300.0),
+                                              egui::Pos2::new(3000.0, 3300.0),)
+    }));
+    //</stress test>
+    
+    
     let mut owned_controllers = HashMap::<_, Arc<RwLock<dyn RdfElementController>>>::new();
     owned_controllers.insert(node_uuid, node_controller);
     owned_controllers.insert(literal_uuid, literal_controller);
     owned_controllers.insert(predicate_uuid, predicate_controller);
     owned_controllers.insert(graph_uuid, graph_controller);
+    owned_controllers.insert(graph_st_uuid, graph_st_controller);
     
     let diagram_uuid = uuid::Uuid::now_v7();
     let diagram = Arc::new(RwLock::new(RdfDiagram::new(
         diagram_uuid.clone(),
         format!("Demo RDF diagram {}", no),
-        vec![node, literal, predicate, graph],
+        vec![node, literal, predicate, graph, graph_st],
     )));
     (
         diagram_uuid,
