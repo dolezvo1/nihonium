@@ -545,6 +545,7 @@ impl DiagramController for UmlClassDiagramController {
             }
         }
     }
+    fn click(&mut self, pos: egui::Pos2) -> bool { false }
     // TODO: this repeats a lot, move to trait?
     fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
         let handled = self.owned_controllers.iter_mut()
@@ -1030,7 +1031,9 @@ impl UmlClassElementController for UmlClassLinkController {
     }
     
     fn drag(&mut self, _tool: Option<&mut Box<dyn UmlClassTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
-        crate::common::controller::macros::multiconnection_element_drag!(self, last_pos, delta, center_point, sources, destinations);
+        crate::common::controller::macros::multiconnection_element_drag!(
+            self, last_pos, delta, center_point, sources, destinations, true
+        );
         false
     }
 }

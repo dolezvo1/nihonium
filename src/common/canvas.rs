@@ -196,13 +196,13 @@ impl ArrowheadType {
 }
 
 // TODO: dotted, double, squiggly
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum LineType {
     Solid,
     Dashed,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Stroke {
     pub width: f32,
     pub color: egui::Color32,
@@ -578,13 +578,22 @@ impl NHCanvas for UiCanvas {
         color: egui::Color32,
         stroke: Stroke
     ) {
-        self.painter.rect(
-            (rect * self.camera_scale)
-            .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2())
-            .intersect(self.canvas),
-            rounding, color,
-            // TODO: shouldn't stroke be recalculated?
-            egui::Stroke::from(stroke));
+        if color == egui::Color32::TRANSPARENT && stroke.line_type != LineType::Solid {
+            for (p1, p2) in [(rect.left_top(), rect.right_top()),
+                             (rect.left_bottom(), rect.right_bottom()),
+                             (rect.right_top(), rect.right_bottom()),
+                             (rect.left_top(), rect.left_bottom()),] {
+                self.draw_line([p1, p2], stroke);
+            }
+        } else {
+            self.painter.rect(
+                (rect * self.camera_scale)
+                    .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2())
+                    .intersect(self.canvas),
+                rounding, color,
+                // TODO: shouldn't stroke be recalculated?
+                egui::Stroke::from(stroke));
+        }
     }
     
     fn draw_ellipse(

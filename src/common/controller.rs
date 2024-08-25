@@ -8,6 +8,7 @@ pub trait DiagramController {
     
     fn new_ui_canvas(&self, ui: &mut egui::Ui) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response);
+    fn click(&mut self, pos: egui::Pos2) -> bool;
     fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool;
     fn context_menu(&mut self, ui: &mut egui::Ui);
     
@@ -36,6 +37,33 @@ pub trait ElementController {
     // Position makes sense even for elements such as connections,
     // e.g. when a connection is a target of a connection
     fn position(&self) -> egui::Pos2;
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum TargettingStatus {
+    NotDrawn,
+    Drawn,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub struct ModifierKeys {
+    pub control: bool,
+}
+
+impl ModifierKeys {
+    pub const NONE: Self = Self { control: false };
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum ClickHandlingStatus {
+    NotHandled,
+    Handled,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum DragHandlingStatus {
+    NotHandled,
+    Handled,
 }
 
 // TODO: a generic DiagramController implementation
@@ -109,7 +137,7 @@ pub mod macros {
     // fn sources(&mut self) -> &mut [Vec<egui::Pos2>];
     // fn destinations(&mut self) -> &mut [Vec<egui::Pos2>];
     macro_rules! multiconnection_element_drag {
-        ($self:ident, $last_pos:ident, $delta:ident, $center_point:ident, $sources:ident, $destinations:ident) => {
+        ($self:ident, $last_pos:ident, $delta:ident, $center_point:ident, $sources:ident, $destinations:ident, $ret:expr) => {
             const DISTANCE_THRESHOLD: f32 = 3.0;
             
             fn is_over(a: egui::Pos2, b: egui::Pos2) -> bool {
@@ -120,7 +148,7 @@ pub mod macros {
                 // Check whether over center point, if so move it
                 Some(pos) => if is_over($last_pos, pos) {
                     $self.center_point = Some(pos + $delta);
-                    return true;
+                    return $ret;
                 },
                 // Check whether over a midpoint, if so set center point
                 None => {
@@ -128,7 +156,7 @@ pub mod macros {
                     let midpoint = $self.position();
                     if is_over($last_pos, midpoint) {
                         $self.center_point = Some(midpoint + $delta);
-                        return true;
+                        return $ret;
                     }
                 }
             }
@@ -141,7 +169,7 @@ pub mod macros {
                         for joint in &mut path[1..stop_idx] {
                             if is_over($last_pos, *joint) {
                                 *joint += $delta;
-                                return true;
+                                return $ret;
                             }
                         }
                     }
@@ -164,7 +192,7 @@ pub mod macros {
                             let midpoint = (u + v.to_vec2()) / 2.0;
                             if is_over($last_pos, midpoint) {
                                 path.insert(idx+1, midpoint + $delta);
-                                return true;
+                                return $ret;
                             }
                         }
                     }
@@ -197,7 +225,7 @@ pub mod macros {
                             let v = if let Some(v) = iter.peek() { *v } else { break; };
                             
                             if dist_to_line_segment($last_pos, u, v) <= DISTANCE_THRESHOLD {
-                                return true;
+                                return $ret;
                             }
                         }
                     }
