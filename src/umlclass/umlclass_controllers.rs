@@ -227,7 +227,7 @@ pub enum UmlClassToolStage {
     Select,
     Move,
     Class,
-    LinkStart,
+    LinkStart{ link_type: UmlClassLinkType },
     LinkEnd,
     PackageStart,
     PackageEnd,
@@ -237,8 +237,9 @@ pub enum UmlClassToolStage {
 enum PartialUmlClassElement {
     None,
     Some(Arc<RwLock<dyn UmlClassElementController>>),
-    Link{source: Arc<RwLock<dyn UmlClassElement>>, dest: Option<Arc<RwLock<dyn UmlClassElement>>>},
-    Package{a: egui::Pos2, b: Option<egui::Pos2>},
+    Link{link_type: UmlClassLinkType, source: Arc<RwLock<dyn UmlClassElement>>,
+         source_pos: egui::Pos2, dest: Option<Arc<RwLock<dyn UmlClassElement>>>},
+    Package{a: egui::Pos2, a_display: egui::Pos2, b: Option<egui::Pos2>},
 }
 
 pub trait UmlClassTool {
@@ -248,17 +249,31 @@ pub trait UmlClassTool {
     fn targetting_for_package(&self) -> egui::Color32;
     fn targetting_for_diagram(&self) -> egui::Color32;
     
+    fn offset_by(&mut self, delta: egui::Vec2);
     fn add_by_position(&mut self, pos: egui::Pos2);
-    fn add_class(&mut self, model: Arc<RwLock<UmlClass>>);
-    fn add_package(&mut self, model: Arc<RwLock<UmlClassPackage>>);
+    fn add_class(&mut self, model: Arc<RwLock<UmlClass>>, pos: egui::Pos2);
+    fn add_package(&mut self, model: Arc<RwLock<UmlClassPackage>>, pos: egui::Pos2);
     
     fn try_construct(&mut self, into: &dyn UmlClassContainerController) -> Option<Arc<RwLock<dyn UmlClassElementController>>>;
+    fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2);
 }
 
 pub struct NaiveUmlClassTool {
     initial_stage: UmlClassToolStage,
     current_stage: UmlClassToolStage,
+    offset: egui::Pos2,
     result: PartialUmlClassElement,
+}
+
+impl NaiveUmlClassTool {
+    pub fn new(initial_stage: UmlClassToolStage) -> Self {
+        Self {
+            initial_stage,
+            current_stage: initial_stage,
+            offset: egui::Pos2::ZERO,
+            result: PartialUmlClassElement::None,
+        }
+    }
 }
 
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
@@ -270,7 +285,7 @@ impl UmlClassTool for NaiveUmlClassTool {
     fn targetting_for_class(&self) -> egui::Color32 {
         match self.current_stage {
             UmlClassToolStage::Move => egui::Color32::TRANSPARENT,
-            UmlClassToolStage::Select | UmlClassToolStage::LinkStart | UmlClassToolStage::LinkEnd => TARGETTABLE_COLOR,
+            UmlClassToolStage::Select | UmlClassToolStage::LinkStart{..} | UmlClassToolStage::LinkEnd => TARGETTABLE_COLOR,
             UmlClassToolStage::Class | UmlClassToolStage::Note
             | UmlClassToolStage::PackageStart | UmlClassToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
         }
@@ -279,7 +294,7 @@ impl UmlClassTool for NaiveUmlClassTool {
         match self.current_stage {
             UmlClassToolStage::Move => egui::Color32::TRANSPARENT,
             UmlClassToolStage::Select | UmlClassToolStage::Class | UmlClassToolStage::Note => TARGETTABLE_COLOR,
-            UmlClassToolStage::LinkStart | UmlClassToolStage::LinkEnd
+            UmlClassToolStage::LinkStart{..} | UmlClassToolStage::LinkEnd
             | UmlClassToolStage::PackageStart | UmlClassToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
         }
     }
@@ -288,10 +303,13 @@ impl UmlClassTool for NaiveUmlClassTool {
             UmlClassToolStage::Move => egui::Color32::TRANSPARENT,
             UmlClassToolStage::Class | UmlClassToolStage::Note
             | UmlClassToolStage::PackageStart | UmlClassToolStage::PackageEnd => TARGETTABLE_COLOR,
-            UmlClassToolStage::Select | UmlClassToolStage::LinkStart | UmlClassToolStage::LinkEnd => NON_TARGETTABLE_COLOR,
+            UmlClassToolStage::Select | UmlClassToolStage::LinkStart{..} | UmlClassToolStage::LinkEnd => NON_TARGETTABLE_COLOR,
         }
     }
     
+    fn offset_by(&mut self, delta: egui::Vec2) {
+        self.offset += delta;
+    }
     fn add_by_position(&mut self, pos: egui::Pos2) {
         let uuid = uuid::Uuid::now_v7();
         match (self.current_stage, &mut self.result) {
@@ -308,7 +326,7 @@ impl UmlClassTool for NaiveUmlClassTool {
                 })));
             },
             (UmlClassToolStage::PackageStart, _) => {
-                self.result = PartialUmlClassElement::Package{a: pos, b: None};
+                self.result = PartialUmlClassElement::Package{a: pos, a_display: self.offset + pos.to_vec2(), b: None};
                 self.current_stage = UmlClassToolStage::PackageEnd;
             },
             (UmlClassToolStage::PackageEnd, PartialUmlClassElement::Package{ref mut b, ..}) => {
@@ -318,10 +336,10 @@ impl UmlClassTool for NaiveUmlClassTool {
             _ => {},
         }
     }
-    fn add_class(&mut self, model: Arc<RwLock<UmlClass>>) {
+    fn add_class(&mut self, model: Arc<RwLock<UmlClass>>, pos: egui::Pos2) {
         match (self.current_stage, &mut self.result) {
-            (UmlClassToolStage::LinkStart, PartialUmlClassElement::None) => {
-                self.result = PartialUmlClassElement::Link{source: model, dest: None};
+            (UmlClassToolStage::LinkStart{ link_type }, PartialUmlClassElement::None) => {
+                self.result = PartialUmlClassElement::Link{link_type, source: model, source_pos: self.offset + pos.to_vec2(), dest: None};
                 self.current_stage = UmlClassToolStage::LinkEnd;
             },
             (UmlClassToolStage::LinkEnd, PartialUmlClassElement::Link{ref mut dest, ..}) => {
@@ -330,7 +348,7 @@ impl UmlClassTool for NaiveUmlClassTool {
             _ => {}
         }
     }
-    fn add_package(&mut self, _model: Arc<RwLock<UmlClassPackage>>) {}
+    fn add_package(&mut self, _model: Arc<RwLock<UmlClassPackage>>, _pos: egui::Pos2) {}
     
     fn try_construct(&mut self, into: &dyn UmlClassContainerController) -> Option<Arc<RwLock<dyn UmlClassElementController>>> {
         match &self.result {
@@ -339,13 +357,13 @@ impl UmlClassTool for NaiveUmlClassTool {
                 self.result = PartialUmlClassElement::None;
                 Some(x)
             }
-            PartialUmlClassElement::Link{source, dest: Some(dest)} => {
-                self.current_stage = UmlClassToolStage::LinkStart;
+            PartialUmlClassElement::Link{link_type, source, dest: Some(dest), ..} => {
+                self.current_stage = UmlClassToolStage::LinkStart{ link_type: *link_type };
                 
                 let uuid = uuid::Uuid::now_v7();
                 let association = Arc::new(RwLock::new(UmlClassLink::new(
                     uuid.clone(),
-                    UmlClassLinkType::Association,
+                    *link_type,
                     source.clone(),
                     dest.clone(),
                 )));
@@ -365,7 +383,7 @@ impl UmlClassTool for NaiveUmlClassTool {
                 self.result = PartialUmlClassElement::None;
                 association_controller
             },
-            PartialUmlClassElement::Package{a, b: Some(b)} => {
+            PartialUmlClassElement::Package{a, b: Some(b), ..} => {
                 self.current_stage = UmlClassToolStage::PackageStart;
                 
                 let uuid = uuid::Uuid::now_v7();
@@ -384,6 +402,27 @@ impl UmlClassTool for NaiveUmlClassTool {
                 Some(package_controller)
             }
             _ => { None },
+        }
+    }
+    
+    fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
+        match self.result {
+            PartialUmlClassElement::Link{source_pos, link_type, ..} => {
+                canvas.draw_line(
+                    [source_pos, pos],
+                    // TODO: draw correct hint line type
+                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                );
+            },
+            PartialUmlClassElement::Package{a_display, ..} => {
+                canvas.draw_rectangle(
+                    egui::Rect::from_two_pos(a_display, pos),
+                    egui::Rounding::ZERO,
+                    egui::Color32::TRANSPARENT,
+                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                );
+            },
+            _ => {},
         }
     }
 }
@@ -594,13 +633,16 @@ impl DiagramController for UmlClassDiagramController {
             if stage.is_some_and(|e| e == s) { egui::Color32::BLUE } else { egui::Color32::BLACK }
         };
         
+        // TODO: Definitely needs interface realization and usage for quick usage
         for cat in [&[(UmlClassToolStage::Select, "Select"), (UmlClassToolStage::Move, "Move")][..],
                     &[(UmlClassToolStage::Class, "Class"), (UmlClassToolStage::PackageStart, "Package")][..],
-                    &[(UmlClassToolStage::LinkStart, "Association"),][..],
+                    &[(UmlClassToolStage::LinkStart{ link_type: UmlClassLinkType::Association }, "Association"),
+                      (UmlClassToolStage::LinkStart{ link_type: UmlClassLinkType::InterfaceRealization }, "IntReal"),
+                      (UmlClassToolStage::LinkStart{ link_type: UmlClassLinkType::Usage }, "Usage"),][..],
                     &[(UmlClassToolStage::Note, "Note")][..],] {
             for (stage, name) in cat {
                 if ui.add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage))).clicked() {
-                    self.current_tool = Some(Box::new(NaiveUmlClassTool { initial_stage: *stage, current_stage: *stage, result: PartialUmlClassElement::None }));
+                    self.current_tool = Some(Box::new(NaiveUmlClassTool::new(*stage)));
                 }
             }
             ui.separator();
@@ -651,16 +693,19 @@ impl DiagramController for UmlClassDiagramController {
             .filter(|_| true) // TODO: filter by layers
             .for_each(|uc| if uc.1.write().unwrap().draw_in(canvas, &tool) { drawn_targetting = true; });
         
-        if !drawn_targetting && tool.is_some() {
-            canvas.draw_rectangle(
-                egui::Rect::EVERYTHING,
-                egui::Rounding::ZERO,
-                tool.unwrap().1.targetting_for_diagram(),
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            );
-            self.owned_controllers.iter_mut()
-                .filter(|_| true) // TODO: filter by layers
-                .for_each(|uc| if uc.1.write().unwrap().draw_in(canvas, &tool) { drawn_targetting = true; });
+        if let Some((pos, tool)) = tool {
+            if !drawn_targetting {
+                canvas.draw_rectangle(
+                    egui::Rect::EVERYTHING,
+                    egui::Rounding::ZERO,
+                    tool.targetting_for_diagram(),
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                );
+                self.owned_controllers.iter_mut()
+                    .filter(|_| true) // TODO: filter by layers
+                    .for_each(|uc| { uc.1.write().unwrap().draw_in(canvas, &Some((pos, tool))); });
+            }
+            tool.draw_status_hint(canvas, pos);
         }
     }
 }
@@ -770,7 +815,7 @@ impl UmlClassElementController for UmlClassPackageController {
     }
     
     fn drag(&mut self, mut tool: Option<&mut Box<dyn UmlClassTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
-        //if !self.min_shape().contains(last_pos) { return false; }
+        tool.as_mut().map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
         
         let offset_pos = last_pos - self.bounds_rect.left_top().to_vec2();
         let handled = self.owned_controllers.iter_mut()
@@ -787,11 +832,14 @@ impl UmlClassElementController for UmlClassPackageController {
             .is_some();
         // TODO: drag children
         // otherwise drag self:
+        tool.as_mut().map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
         
         match (handled, self.min_shape().contains(last_pos), tool, delta) {
             (_, true, Some(tool), egui::Vec2::ZERO) => {
+                tool.offset_by(self.bounds_rect.left_top().to_vec2());
                 tool.add_by_position(last_pos - self.bounds_rect.left_top().to_vec2());
-                tool.add_package(self.model.clone());
+                tool.offset_by(-self.bounds_rect.left_top().to_vec2());
+                tool.add_package(self.model.clone(), last_pos);
                 
                 if let Some(new) = tool.try_construct(self) {
                     let uuid = new.read().unwrap().uuid();
@@ -915,7 +963,7 @@ impl UmlClassElementController for UmlClassController {
         
         match (tool, delta) {
             (Some(tool), egui::Vec2::ZERO) => {
-                tool.add_class(self.model.clone());
+                tool.add_class(self.model.clone(), last_pos);
             }
             _ => {
                 self.position += delta;

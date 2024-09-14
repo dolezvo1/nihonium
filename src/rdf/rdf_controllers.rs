@@ -284,7 +284,7 @@ impl RdfTool for NaiveRdfTool {
                 })));
             },
             (RdfToolStage::GraphStart, _) => {
-                self.result = PartialRdfElement::Graph{a: pos, b: None};
+                self.result = PartialRdfElement::Graph{a: self.offset + pos.to_vec2(), b: None};
                 self.current_stage = RdfToolStage::GraphEnd;
             },
             (RdfToolStage::GraphEnd, PartialRdfElement::Graph{ref mut b, ..}) => {
@@ -411,6 +411,8 @@ pub trait RdfContainerController {
 
 pub struct RdfDiagramController {
     pub model: Arc<RwLock<RdfDiagram>>,
+    // NOTE: using Arc<RwLock<_>> seems inefficient, but using Boxes leads to BC issues
+    //       and doesn't improve the performance in significant way
     pub owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn RdfElementController>>>,
     
     pub _layers: Vec<bool>,
@@ -785,7 +787,9 @@ impl RdfElementController for RdfGraphController {
         
         match (self.min_shape().contains(pos), tool) {
             (true, Some(tool)) => {
-                tool.add_by_position(pos - self.bounds_rect.left_top().to_vec2());
+                tool.offset_by(self.bounds_rect.left_top().to_vec2());
+                tool.add_by_position(pos);
+                tool.offset_by(-self.bounds_rect.left_top().to_vec2());
                 tool.add_graph(self.model.clone(), pos);
                 
                 if let Some(new) = tool.try_construct(self) {

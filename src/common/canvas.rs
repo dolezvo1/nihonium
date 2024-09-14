@@ -658,14 +658,33 @@ impl NHCanvas for UiCanvas {
         font_size: f32,
         text_color: egui::Color32,
     ) {
-        self.painter.text(
-            self.sc_tr(position),
-            anchor, text, egui::FontId::proportional(font_size * self.camera_scale), text_color,
-        );
+        if font_size * self.camera_scale >= 4.0 {
+            self.painter.text(
+                self.sc_tr(position),
+                anchor, text, egui::FontId::proportional(font_size * self.camera_scale), text_color,
+            );
+        } else {
+            let size = egui::Vec2::new(font_size * text.len() as f32 / 2.0, font_size);
+            let pos = egui::Pos2::new(position.x - match anchor.x() {
+                    egui::Align::Min => - size.x / 2.0,
+                    egui::Align::Center => 0.0,
+                    egui::Align::Max => size.x / 2.0,
+                },
+                position.y - match anchor.y() {
+                    egui::Align::Min => - size.y / 2.0,
+                    egui::Align::Center => 0.0,
+                    egui::Align::Max => size.y / 2.0,
+                });
+            self.draw_rectangle(
+                egui::Rect::from_center_size(pos, size),
+                egui::Rounding::ZERO,
+                text_color,
+                Stroke::new_solid(1.0, text_color.gamma_multiply(0.25)),
+            );
+        }
     }
 }
 
-// TODO: offset the canvas so that it would cover all elements (negative coords)
 pub struct MeasuringCanvas<'a> {
     camera_offset: egui::Pos2,
     painter: &'a egui::Painter,
