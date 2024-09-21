@@ -1,6 +1,7 @@
 use eframe::egui;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
-use crate::common::canvas::{NHCanvas, NHShape};
+use crate::common::canvas::{self, NHCanvas, NHShape, UiCanvas};
 
 pub trait DiagramController {
     fn uuid(&self) -> uuid::Uuid;
@@ -66,7 +67,299 @@ pub enum DragHandlingStatus {
     Handled,
 }
 
-// TODO: a generic DiagramController implementation
+pub trait Model {
+    // TODO: There must be some way to optimize the Clone, right?
+    fn uuid(&self) -> uuid::Uuid;
+    fn name(&self) -> String;
+}
+
+pub trait KindedElement<'a> {
+    type DiagramType;
+    
+    fn diagram(_: &'a Self::DiagramType) -> Self;
+    fn package() -> Self;
+}
+
+pub trait Tool<QueryableT> {
+    type KindedElement<'a>: KindedElement<'a>;
+    type Stage;
+    
+    fn initial_stage(&self) -> Self::Stage;
+
+    fn targetting_for_element<'a>(&self, controller: Self::KindedElement<'a>) -> egui::Color32;
+    fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2);
+    
+    fn offset_by(&mut self, delta: egui::Vec2);
+    fn add_position(&mut self, pos: egui::Pos2);
+    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>, pos: egui::Pos2);
+    fn try_construct(&mut self, into: &dyn ContainerGen2<QueryableT, Self>) -> Option<Arc<RwLock<dyn ElementControllerGen2<QueryableT, Self>>>>;
+    fn reset_constructed_state(&mut self);
+}
+
+pub trait ElementControllerGen2<QueryableT, ToolT>: ElementController
+where
+    ToolT: Tool<QueryableT>,
+{
+    fn show_properties(&mut self, _: &dyn ContainerGen2<QueryableT, ToolT>, _ui: &mut egui::Ui) {}
+    fn list_in_project_hierarchy(&self, _: &dyn ContainerGen2<QueryableT, ToolT>, _ui: &mut egui::Ui) {}
+    
+    fn draw_in(&mut self, _: &QueryableT, canvas: &mut dyn NHCanvas , tool: &Option<(egui::Pos2, &ToolT)>) -> TargettingStatus;
+    fn click(&mut self, tool: Option<&mut ToolT>, pos: egui::Pos2, modifiers: ModifierKeys) -> ClickHandlingStatus;
+    fn drag(&mut self, tool: Option<&mut ToolT>, last_pos: egui::Pos2, delta: egui::Vec2) -> DragHandlingStatus;
+}
+
+pub trait ContainerGen2<QueryableT, ToolT> {
+    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn ElementControllerGen2<QueryableT, ToolT>>>>;
+}
+
+/// This is a generic DiagramController implementation.
+/// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
+pub struct DiagramControllerGen2<DiagramModelT, QueryableT, ToolT>
+where
+    DiagramModelT: Model,
+    ToolT: Tool<QueryableT>,
+{
+    model: Arc<RwLock<DiagramModelT>>,
+    owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<QueryableT, ToolT>>>>,
+    
+    pub _layers: Vec<bool>,
+    
+    pub camera_offset: egui::Pos2,
+    pub camera_scale: f32,
+    last_unhandled_mouse_pos: Option<egui::Pos2>,
+    selected_elements: HashSet<uuid::Uuid>,
+    current_tool: Option<ToolT>,
+    
+    // q: dyn Fn(&Vec<DomainElementT>) -> QueryableT,
+    queryable: QueryableT,
+    show_props_fun: fn(&mut DiagramModelT, &mut egui::Ui),
+    tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
+}
+
+impl<DiagramModelT, QueryableT, ToolT> DiagramControllerGen2<DiagramModelT, QueryableT, ToolT>
+where
+    DiagramModelT: Model,
+    ToolT: Tool<QueryableT>,
+{
+    pub fn new(
+        model: Arc<RwLock<DiagramModelT>>,
+        owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<QueryableT, ToolT>>>>,
+        queryable: QueryableT,
+        show_props_fun: fn(&mut DiagramModelT, &mut egui::Ui),
+        tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
+    ) -> Self {
+        Self {
+            model,
+            owned_controllers,
+            
+            _layers: vec![true],
+            
+            camera_offset: egui::Pos2::ZERO,
+            camera_scale: 1.0,
+            last_unhandled_mouse_pos: None,
+            selected_elements: HashSet::new(),
+            current_tool: None,
+            
+            queryable,
+            show_props_fun,
+            tool_change_fun,
+        }
+    }
+    
+    fn last_selected_element(&self) -> Option<Arc<RwLock<dyn ElementControllerGen2<QueryableT, ToolT>>>> {
+        if self.selected_elements.len() != 1 {
+            return None;
+        }
+        let id = self.selected_elements.iter().next()?;
+        self.owned_controllers.get(&id).cloned()
+    }
+}
+
+impl<DiagramModelT, QueryableT, ToolT> DiagramController for DiagramControllerGen2<DiagramModelT, QueryableT, ToolT>
+where
+    DiagramModelT: Model,
+    ToolT: for<'a> Tool<QueryableT, KindedElement<'a>: KindedElement<'a, DiagramType = Self>>,
+{
+    // TODO: I'm not sure if these passthrough methods make sense
+    fn uuid(&self) -> uuid::Uuid {
+        self.model.read().unwrap().uuid()
+    }
+    fn model_name(&self) -> String {
+        self.model.read().unwrap().name()
+    }
+    
+    fn new_ui_canvas(&self, ui: &mut egui::Ui) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
+        let canvas_pos = ui.next_widget_position();
+        let canvas_size = ui.available_size();
+        let canvas_rect = egui::Rect{ min: canvas_pos, max: canvas_pos + canvas_size };
+        
+        let (painter_response, painter) = ui.allocate_painter(ui.available_size(),
+                                                              egui::Sense::click_and_drag());
+        let ui_canvas = UiCanvas::new(
+            painter,
+            canvas_rect,
+            self.camera_offset,
+            self.camera_scale,
+            ui.ctx().pointer_interact_pos()
+                .map(|e| ((e - self.camera_offset - painter_response.rect.min.to_vec2()) / self.camera_scale).to_pos2()),
+        );
+        ui_canvas.clear(egui::Color32::WHITE);
+        ui_canvas.draw_gridlines(
+            Some((50.0, egui::Color32::from_rgb(220,220,220))),
+            Some((50.0, egui::Color32::from_rgb(220,220,220))),
+        );
+        
+        let inner_mouse = ui.ctx().pointer_interact_pos()
+                .filter(|e| canvas_rect.contains(*e))
+                .map(|e| ((e - self.camera_offset - canvas_pos.to_vec2()) / self.camera_scale).to_pos2());
+        
+        (
+            Box::new(ui_canvas),
+            painter_response,
+            inner_mouse,
+        )
+    }
+    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response) {
+        // Handle camera and element clicks/drags
+        if response.clicked() {
+            if let Some(pos) = ui.ctx().pointer_interact_pos() {
+                self.click(
+                     ((pos - self.camera_offset - response.rect.min.to_vec2()) / self.camera_scale).to_pos2(),
+                );
+            }
+        } else if response.dragged_by(egui::PointerButton::Middle) {
+            self.camera_offset += response.drag_delta();
+        } else if response.drag_started_by(egui::PointerButton::Primary) {
+            self.last_unhandled_mouse_pos = ui.ctx().pointer_interact_pos();
+        } else if response.dragged_by(egui::PointerButton::Primary) {
+            if let Some(cursor_pos) = &self.last_unhandled_mouse_pos {
+                let last_down_pos =
+                (*cursor_pos - self.camera_offset - response.rect.min.to_vec2())
+                / self.camera_scale;
+                self.drag(
+                    last_down_pos.to_pos2(),
+                    response.drag_delta() / self.camera_scale,
+                );
+                self.last_unhandled_mouse_pos = ui.ctx().pointer_interact_pos();
+            }
+        } else if response.drag_stopped() {
+            self.last_unhandled_mouse_pos = None;
+        }
+        
+        // Handle zoom
+        if response.hovered() {
+            let scroll_delta = ui.ctx().input(|i| i.raw_scroll_delta);
+            
+            let factor = if scroll_delta.y > 0.0 && self.camera_scale < 10.0 {
+                1.5
+            } else if scroll_delta.y < 0.0 && self.camera_scale > 0.01 {
+                0.66
+            } else { 0.0 };
+            
+            if factor != 0.0 {
+                if let Some(cursor_pos) = ui.ctx().pointer_interact_pos() {
+                    let old_factor = self.camera_scale;
+                    self.camera_scale *= factor;
+                    self.camera_offset -= 
+                    ((cursor_pos - self.camera_offset - response.rect.min.to_vec2()) / old_factor)
+                    * (self.camera_scale - old_factor);
+                }
+            }
+        }
+    }
+    fn click(&mut self, pos: egui::Pos2) -> bool {
+        let handled = self.owned_controllers.iter_mut()
+            .find(|uc| uc.1.write().unwrap().click(self.current_tool.as_mut(), pos, ModifierKeys::NONE) == ClickHandlingStatus::Handled)
+            .map(|uc| {self.selected_elements.insert(uc.0.clone());})
+            .ok_or_else(|| {self.selected_elements.clear();})
+            .is_ok();
+        
+        if !handled {
+            if let Some(t) = self.current_tool.as_mut() {
+                t.add_position(pos);
+            }
+        }
+        let mut tool = self.current_tool.take();
+        if let Some(new) = tool.as_mut().and_then(|e| e.try_construct(self)) {
+            let uuid = new.read().unwrap().uuid();
+            self.owned_controllers.insert(uuid, new);
+            return true;
+        }
+        self.current_tool = tool;
+        handled
+    }
+    fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
+        self.owned_controllers.iter_mut()
+            .find(|uc| uc.1.write().unwrap().drag(self.current_tool.as_mut(), last_pos, delta) == DragHandlingStatus::Handled)
+            .is_some()
+    }
+    fn context_menu(&mut self, ui: &mut egui::Ui) {
+        ui.label("asdf");
+    }
+    
+    fn show_toolbar(&mut self, ui: &mut egui::Ui) {
+        (self.tool_change_fun)(&mut self.current_tool, ui);
+    }
+    fn show_properties(&mut self, ui: &mut egui::Ui) {
+        if let Some(element) = self.last_selected_element() {
+            element.write().unwrap().show_properties(self, ui);
+        } else {
+            let mut model = self.model.write().unwrap();
+        
+            (self.show_props_fun)(&mut model, ui);
+        }
+    }
+    fn show_layers(&self, _ui: &mut egui::Ui) {
+        // TODO: Layers???
+    }
+    
+    fn list_in_project_hierarchy(&self, ui: &mut egui::Ui) {
+        let model = self.model.read().unwrap();
+        
+        egui::CollapsingHeader::new(format!("{} ({})", model.name(), model.uuid()))
+        .show(ui, |ui| {
+            for uc in &self.owned_controllers {
+                uc.1.read().unwrap().list_in_project_hierarchy(self, ui);
+            }
+        });
+    }
+    
+    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, mouse_pos: Option<egui::Pos2>) {
+        let tool = if let (Some(pos), Some(stage)) = (mouse_pos, self.current_tool.as_ref()) {
+            Some((pos, stage))
+        } else { None };
+        let mut drawn_targetting = TargettingStatus::NotDrawn;
+        
+        self.owned_controllers.iter_mut()
+            .filter(|_| true) // TODO: filter by layers
+            .for_each(|uc| if uc.1.write().unwrap().draw_in(&self.queryable, canvas, &tool) == TargettingStatus::Drawn { drawn_targetting = TargettingStatus::Drawn; });
+        
+        if let Some((pos, tool)) = tool {
+            if drawn_targetting == TargettingStatus::NotDrawn {
+                canvas.draw_rectangle(
+                    egui::Rect::EVERYTHING,
+                    egui::Rounding::ZERO,
+                    tool.targetting_for_element(ToolT::KindedElement::diagram(&self)),
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                );
+                self.owned_controllers.iter_mut()
+                    .filter(|_| true) // TODO: filter by layers
+                    .for_each(|uc| { uc.1.write().unwrap().draw_in(&self.queryable, canvas, &Some((pos, tool))); });
+            }
+            tool.draw_status_hint(canvas, pos);
+        }
+    }
+}
+
+impl<DiagramModelT, QueryableT, ToolT> ContainerGen2<QueryableT, ToolT> for DiagramControllerGen2<DiagramModelT, QueryableT, ToolT>
+where
+    DiagramModelT: Model,
+    ToolT: Tool<QueryableT>,
+{
+    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn ElementControllerGen2<QueryableT, ToolT>>>> {
+        todo!()
+    }
+}
 
 /*
 fn arrowhead_combo(ui: &mut egui::Ui, name: &str, val: &mut ArrowheadType) -> egui::Response {

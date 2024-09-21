@@ -1,5 +1,6 @@
 
 use std::{collections::VecDeque, sync::{Arc,RwLock}};
+use crate::common::controller::Model;
 use crate::common::observer::{Observer, Observable, impl_observable};
 
 pub trait RdfElement: Observable {
@@ -33,6 +34,15 @@ impl RdfDiagram {
     pub fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
         self.contained_elements.push(element);
         self.notify_observers();
+    }
+}
+
+impl Model for RdfDiagram {
+    fn uuid(&self) -> uuid::Uuid {
+        self.uuid.clone()
+    }
+    fn name(&self) -> String {
+        self.name.clone()
     }
 }
 

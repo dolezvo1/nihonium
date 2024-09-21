@@ -1,18 +1,58 @@
 
 use eframe::egui;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, RwLock},
 };
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfNode, RdfLiteral, RdfPredicate};
-use crate::common::canvas::{self, ArrowheadType, Stroke, NHCanvas, UiCanvas, NHShape};
+use crate::common::canvas::{self, ArrowheadType, Stroke, NHCanvas, NHShape};
 use crate::common::controller::{
     DiagramController, ElementController,
     TargettingStatus, ClickHandlingStatus, DragHandlingStatus, ModifierKeys,
 };
 use crate::common::observer::Observable;
+use crate::common::controller::{
+    KindedElement, Tool, DiagramControllerGen2, ElementControllerGen2, ContainerGen2,
+};
+
+pub struct RdfQueryable {}
+
+fn show_props_fun(model: &mut RdfDiagram, ui: &mut egui::Ui) {
+    ui.label("Name:");
+    let r1 = ui.add_sized((ui.available_width(), 20.0),
+                        egui::TextEdit::singleline(&mut model.name));
+    
+    ui.label("Comment:");
+    let r2 = ui.add_sized((ui.available_width(), 20.0),
+                        egui::TextEdit::multiline(&mut model.comment));
+    
+    if r1.union(r2).changed() {
+        model.notify_observers();
+    }
+}
+fn tool_change_fun(tool: &mut Option<NaiveRdfTool>, ui: &mut egui::Ui) {
+    let width = ui.available_width();
+    
+    let stage = tool.as_ref().map(|e| e.initial_stage());
+    let c = |s: RdfToolStage| -> egui::Color32 {
+        if stage.is_some_and(|e| e == s) { egui::Color32::BLUE } else { egui::Color32::BLACK }
+    };
+    
+    for cat in [&[(RdfToolStage::Select, "Select"), (RdfToolStage::Move, "Move"),][..],
+                &[(RdfToolStage::Literal, "Literal"), (RdfToolStage::Node, "Node"),
+                    (RdfToolStage::PredicateStart, "Predicate"), (RdfToolStage::GraphStart, "Graph"),][..],
+                &[(RdfToolStage::Note, "Note")][..]] {
+        for (stage, name) in cat {
+            if ui.add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage))).clicked() {
+                *tool = Some(NaiveRdfTool::new(*stage));
+            }
+        }
+        ui.separator();
+    }
+}
 
 pub fn new(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
+
     let uuid = uuid::Uuid::now_v7();
     
     let diagram = Arc::new(RwLock::new(RdfDiagram::new(
@@ -22,9 +62,12 @@ pub fn new(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     )));
     (
         uuid,
-        Box::new(RdfDiagramController::new(
+        Box::new(DiagramControllerGen2::new(
             diagram.clone(),
             HashMap::new(),
+            RdfQueryable{},
+            show_props_fun,
+            tool_change_fun,
         )),
     )
 }
@@ -85,7 +128,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     
     //<stress test>
     let mut models_st = Vec::<Arc<RwLock<dyn RdfElement>>>::new();
-    let mut controllers_st = HashMap::<_, Arc<RwLock<dyn RdfElementController>>>::new();
+    let mut controllers_st = HashMap::<_, Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, NaiveRdfTool>>>>::new();
     
     for xx in 0..=10 {
         for yy in 300..=400 {
@@ -136,7 +179,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     //</stress test>
     
     
-    let mut owned_controllers = HashMap::<_, Arc<RwLock<dyn RdfElementController>>>::new();
+    let mut owned_controllers = HashMap::<_, Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, NaiveRdfTool>>>>::new();
     owned_controllers.insert(node_uuid, node_controller);
     owned_controllers.insert(literal_uuid, literal_controller);
     owned_controllers.insert(predicate_uuid, predicate_controller);
@@ -151,11 +194,34 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     )));
     (
         diagram_uuid,
-        Box::new(RdfDiagramController::new(
+        Box::new(DiagramControllerGen2::new(
             diagram.clone(),
             owned_controllers,
+            RdfQueryable{},
+            show_props_fun,
+            tool_change_fun,
         ))
     )
+}
+
+#[derive(Clone, Copy)]
+pub enum KindedRdfElement<'a> {
+    Diagram{},
+    Graph{},
+    Literal{inner: &'a RdfLiteralController},
+    Node{inner: &'a RdfNodeController},
+    Predicate{inner: &'a RdfPredicateController},
+}
+
+impl<'a> KindedElement<'a> for KindedRdfElement<'a> {
+    type DiagramType = DiagramControllerGen2<RdfDiagram, RdfQueryable, NaiveRdfTool>;
+    
+    fn diagram(_: &'a Self::DiagramType) -> Self {
+        Self::Diagram{}
+    }
+    fn package() -> Self {
+        Self::Graph{}
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -173,27 +239,9 @@ pub enum RdfToolStage {
 
 enum PartialRdfElement {
     None,
-    Some(Arc<RwLock<dyn RdfElementController>>),
+    Some(Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, NaiveRdfTool>>>),
     Predicate{source: Arc<RwLock<dyn RdfElement>>, source_pos: egui::Pos2, dest: Option<Arc<RwLock<dyn RdfElement>>>},
     Graph{a: egui::Pos2, b: Option<egui::Pos2>},
-}
-
-pub trait RdfTool {
-    fn initial_stage(&self) -> RdfToolStage;
-
-    fn targetting_for_node(&self) -> egui::Color32;
-    fn targetting_for_literal(&self) -> egui::Color32;
-    fn targetting_for_graph(&self) -> egui::Color32;
-    fn targetting_for_diagram(&self) -> egui::Color32;
-    
-    fn offset_by(&mut self, delta: egui::Vec2);
-    fn add_by_position(&mut self, pos: egui::Pos2);
-    fn add_node(&mut self, model: Arc<RwLock<RdfNode>>, pos: egui::Pos2);
-    fn add_literal(&mut self, model: Arc<RwLock<RdfLiteral>>, pos: egui::Pos2);
-    fn add_graph(&mut self, model: Arc<RwLock<RdfGraph>>, pos: egui::Pos2);
-    
-    fn try_construct(&mut self, into: &dyn RdfContainerController) -> Option<Arc<RwLock<dyn RdfElementController>>>;
-    fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2);
 }
 
 pub struct NaiveRdfTool {
@@ -201,6 +249,7 @@ pub struct NaiveRdfTool {
     current_stage: RdfToolStage,
     offset: egui::Pos2,
     result: PartialRdfElement,
+    construction_lock: bool,
 }
 
 impl NaiveRdfTool {
@@ -210,6 +259,7 @@ impl NaiveRdfTool {
             current_stage: initial_stage,
             offset: egui::Pos2::ZERO,
             result: PartialRdfElement::None,
+            construction_lock: false,
         }
     }
 }
@@ -217,46 +267,65 @@ impl NaiveRdfTool {
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
 const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
 
-impl RdfTool for NaiveRdfTool {
+impl Tool<RdfQueryable> for NaiveRdfTool {
+    type KindedElement<'a> = KindedRdfElement<'a>;
+    type Stage = RdfToolStage;
+    
     fn initial_stage(&self) -> RdfToolStage { self.initial_stage }
 
-    fn targetting_for_node(&self) -> egui::Color32 {
-        match self.current_stage {
-            RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
-            RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
-            RdfToolStage::Literal | RdfToolStage::Node
-            | RdfToolStage::GraphStart | RdfToolStage::GraphEnd | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
+    fn targetting_for_element<'a>(&self, controller: Self::KindedElement<'a>) -> egui::Color32 {
+        match controller {
+            KindedRdfElement::Diagram{..} => match self.current_stage {
+                RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
+                RdfToolStage::Literal | RdfToolStage::Node
+                | RdfToolStage::GraphStart | RdfToolStage::GraphEnd | RdfToolStage::Note => TARGETTABLE_COLOR,
+                RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => NON_TARGETTABLE_COLOR,
+            },
+            KindedRdfElement::Graph{..} => match self.current_stage {
+                RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
+                RdfToolStage::Literal | RdfToolStage::Node | RdfToolStage::Note => TARGETTABLE_COLOR,
+                RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd
+                | RdfToolStage::GraphStart | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
+            },
+            KindedRdfElement::Literal{..} => match self.current_stage {
+                RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
+                RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
+                RdfToolStage::Literal | RdfToolStage::Node | RdfToolStage::PredicateStart
+                | RdfToolStage::GraphStart | RdfToolStage::GraphEnd | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
+            }
+            KindedRdfElement::Node{..} => match self.current_stage {
+                RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
+                RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
+                RdfToolStage::Literal | RdfToolStage::Node
+                | RdfToolStage::GraphStart | RdfToolStage::GraphEnd | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
+            },
+            KindedRdfElement::Predicate{..} => todo!(),
         }
     }
-    fn targetting_for_literal(&self) -> egui::Color32 {
-        match self.current_stage {
-            RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
-            RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
-            RdfToolStage::Literal | RdfToolStage::Node | RdfToolStage::PredicateStart
-            | RdfToolStage::GraphStart | RdfToolStage::GraphEnd | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
-        }
-    }
-    fn targetting_for_graph(&self) -> egui::Color32 {
-        match self.current_stage {
-            RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
-            RdfToolStage::Literal | RdfToolStage::Node | RdfToolStage::Note => TARGETTABLE_COLOR,
-            RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd
-            | RdfToolStage::GraphStart | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
-        }
-    }
-    fn targetting_for_diagram(&self) -> egui::Color32 {
-        match self.current_stage {
-            RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
-            RdfToolStage::Literal | RdfToolStage::Node
-            | RdfToolStage::GraphStart | RdfToolStage::GraphEnd | RdfToolStage::Note => TARGETTABLE_COLOR,
-            RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => NON_TARGETTABLE_COLOR,
+    fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
+        match self.result {
+            PartialRdfElement::Predicate{source_pos, ..} => {
+                canvas.draw_line(
+                    [source_pos, pos],
+                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                );
+            },
+            PartialRdfElement::Graph{a, ..} => {
+                canvas.draw_rectangle(
+                    egui::Rect::from_two_pos(a, pos),
+                    egui::Rounding::ZERO,
+                    egui::Color32::TRANSPARENT,
+                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                );
+            },
+            _ => {},
         }
     }
     
     fn offset_by(&mut self, delta: egui::Vec2) {
         self.offset += delta;
     }
-    fn add_by_position(&mut self, pos: egui::Pos2) {
+    fn add_position(&mut self, pos: egui::Pos2) {
         let uuid = uuid::Uuid::now_v7();
         match (self.current_stage, &mut self.result) {
             (RdfToolStage::Literal, _) => {
@@ -294,33 +363,38 @@ impl RdfTool for NaiveRdfTool {
             _ => {},
         }
     }
-    fn add_node(&mut self, model: Arc<RwLock<RdfNode>>, pos: egui::Pos2) {
-        match (self.current_stage, &mut self.result) {
-            (RdfToolStage::PredicateStart, PartialRdfElement::None) => {
-                self.result = PartialRdfElement::Predicate{source: model, source_pos: self.offset + pos.to_vec2(), dest: None};
-                self.current_stage = RdfToolStage::PredicateEnd;
+    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>, pos: egui::Pos2) {
+        match controller {
+            KindedRdfElement::Diagram{..} => {},
+            KindedRdfElement::Graph{..} => {},
+            KindedRdfElement::Literal{inner} => match (self.current_stage, &mut self.result) {
+                (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate{ref mut dest, ..}) => {
+                    *dest = Some(inner.model.clone());
+                }
+                _ => {}
             },
-            (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate{ref mut dest, ..}) => {
-                *dest = Some(model);
-            }
-            _ => {}
+            KindedRdfElement::Node{inner} => match (self.current_stage, &mut self.result) {
+                (RdfToolStage::PredicateStart, PartialRdfElement::None) => {
+                    self.result = PartialRdfElement::Predicate{source: inner.model.clone(), source_pos: self.offset + pos.to_vec2(), dest: None};
+                    self.current_stage = RdfToolStage::PredicateEnd;
+                },
+                (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate{ref mut dest, ..}) => {
+                    *dest = Some(inner.model.clone());
+                }
+                _ => {}
+            },
+            KindedRdfElement::Predicate{..} => {},
         }
     }
-    fn add_literal(&mut self, model: Arc<RwLock<RdfLiteral>>, _pos: egui::Pos2) {
-        match (self.current_stage, &mut self.result) {
-            (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate{ref mut dest, ..}) => {
-                *dest = Some(model);
-            }
-            _ => {}
-        }
-    }
-    fn add_graph(&mut self, _model: Arc<RwLock<RdfGraph>>, _pos: egui::Pos2) {}
     
-    fn try_construct(&mut self, into: &dyn RdfContainerController) -> Option<Arc<RwLock<dyn RdfElementController>>> {
+    fn try_construct(&mut self, into: &dyn ContainerGen2<RdfQueryable, Self>) -> Option<Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, Self>>>> {
+        if self.construction_lock { return None; }
+        
         match &self.result {
             PartialRdfElement::Some(x) => {
                 let x = x.clone();
                 self.result = PartialRdfElement::None;
+                self.construction_lock = true;
                 Some(x)
             }
             // TODO: check for source == dest case
@@ -334,7 +408,7 @@ impl RdfTool for NaiveRdfTool {
                     source.clone(),
                     dest.clone(),
                 )));
-                let predicate_controller: Option<Arc<RwLock<dyn RdfElementController>>>
+                let predicate_controller: Option<Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, Self>>>>
                     = if let (Some(source_controller), Some(dest_controller))
                         = (into.controller_for(&source.read().unwrap().uuid()), into.controller_for(&dest.read().unwrap().uuid())) {
                     Some(Arc::new(RwLock::new(RdfPredicateController {
@@ -348,6 +422,7 @@ impl RdfTool for NaiveRdfTool {
                 } else { None };
                 
                 self.result = PartialRdfElement::None;
+                self.construction_lock = true;
                 predicate_controller
             },
             PartialRdfElement::Graph{a, b: Some(b)} => {
@@ -366,294 +441,33 @@ impl RdfTool for NaiveRdfTool {
                 }));
                 
                 self.result = PartialRdfElement::None;
+                self.construction_lock = true;
                 Some(graph_controller)
             }
             _ => { None },
         }
     }
     
-    fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
-        match self.result {
-            PartialRdfElement::Predicate{source_pos, ..} => {
-                canvas.draw_line(
-                    [source_pos, pos],
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
-                );
-            },
-            PartialRdfElement::Graph{a, ..} => {
-                canvas.draw_rectangle(
-                    egui::Rect::from_two_pos(a, pos),
-                    egui::Rounding::ZERO,
-                    egui::Color32::TRANSPARENT,
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
-                );
-            },
-            _ => {},
-        }
+    fn reset_constructed_state(&mut self) {
+        self.construction_lock = false;
     }
 }
 
-pub trait RdfElementController: ElementController {
-    fn show_properties(&mut self, _parent: &RdfDiagramController, _ui: &mut egui::Ui) {}
-    fn list_in_project_hierarchy(&self, _parent: &RdfDiagramController, _ui: &mut egui::Ui) {}
-
+pub trait RdfElementController: ElementControllerGen2<RdfQueryable, NaiveRdfTool> {
     fn is_connection_from(&self, _uuid: &uuid::Uuid) -> bool { false }
     fn connection_target_name(&self) -> Option<String> { None }
-    
-    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &dyn RdfTool)>) -> TargettingStatus;
-    fn click(&mut self, tool: Option<&mut Box<dyn RdfTool>>, pos: egui::Pos2, modifiers: ModifierKeys) -> ClickHandlingStatus;
-    fn drag(&mut self, tool: Option<&mut Box<dyn RdfTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> DragHandlingStatus;
 }
 
 pub trait RdfContainerController {
     fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn RdfElementController>>>;
 }
 
-pub struct RdfDiagramController {
-    pub model: Arc<RwLock<RdfDiagram>>,
-    // NOTE: using Arc<RwLock<_>> seems inefficient, but using Boxes leads to BC issues
-    //       and doesn't improve the performance in significant way
-    pub owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn RdfElementController>>>,
-    
-    pub _layers: Vec<bool>,
-    
-    pub camera_offset: egui::Pos2,
-    pub camera_scale: f32,
-    last_unhandled_mouse_pos: Option<egui::Pos2>,
-    selected_elements: HashSet<uuid::Uuid>,
-    current_tool: Option<Box<dyn RdfTool>>,
-}
-
-impl RdfDiagramController {
-    pub fn new(
-        model: Arc<RwLock<RdfDiagram>>,
-        owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn RdfElementController>>>,
-    ) -> Self {
-        Self {
-            model,
-            owned_controllers,
-            
-            _layers: vec![true],
-            
-            camera_offset: egui::Pos2::ZERO,
-            camera_scale: 1.0,
-            last_unhandled_mouse_pos: None,
-            selected_elements: HashSet::new(),
-            current_tool: None,
-        }
-    }
-    
-    fn last_selected_element(&self) -> Option<Arc<RwLock<dyn RdfElementController>>> {
-        if self.selected_elements.len() != 1 {
-            return None;
-        }
-        let id = self.selected_elements.iter().next()?;
-        self.owned_controllers.get(&id).cloned()
-    }
-    
+/*
+impl RdfDiagramController {    
     fn outgoing_for<'a>(&'a self, uuid: &'a uuid::Uuid) -> Box<dyn Iterator<Item=Arc<RwLock<dyn RdfElementController>>> + 'a> {
         Box::new(self.owned_controllers.iter()
                     .filter(|e| e.1.read().unwrap().is_connection_from(uuid))
                     .map(|e| e.1.clone()))
-    }
-}
-
-impl DiagramController for RdfDiagramController {
-    fn uuid(&self) -> uuid::Uuid {
-        self.model.read().unwrap().uuid.clone()
-    }
-    fn model_name(&self) -> String {
-        self.model.read().unwrap().name.clone()
-    }
-    
-    fn new_ui_canvas(&self, ui: &mut egui::Ui) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
-        let canvas_pos = ui.next_widget_position();
-        let canvas_size = ui.available_size();
-        let canvas_rect = egui::Rect{ min: canvas_pos, max: canvas_pos + canvas_size };
-        
-        let (painter_response, painter) = ui.allocate_painter(ui.available_size(),
-                                                              egui::Sense::click_and_drag());
-        let ui_canvas = UiCanvas::new(
-            painter,
-            canvas_rect,
-            self.camera_offset,
-            self.camera_scale,
-            ui.ctx().pointer_interact_pos()
-                .map(|e| ((e - self.camera_offset - painter_response.rect.min.to_vec2()) / self.camera_scale).to_pos2()),
-        );
-        ui_canvas.clear(egui::Color32::WHITE);
-        ui_canvas.draw_gridlines(
-            Some((50.0, egui::Color32::from_rgb(220,220,220))),
-            Some((50.0, egui::Color32::from_rgb(220,220,220))),
-        );
-        
-        let inner_mouse = ui.ctx().pointer_interact_pos()
-                .filter(|e| canvas_rect.contains(*e))
-                .map(|e| ((e - self.camera_offset - canvas_pos.to_vec2()) / self.camera_scale).to_pos2());
-        
-        (
-            Box::new(ui_canvas),
-            painter_response,
-            inner_mouse,
-        )
-    }
-    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response) {
-        // Handle camera and element clicks/drags
-        if response.clicked() {
-            if let Some(pos) = ui.ctx().pointer_interact_pos() {
-                self.click(
-                     ((pos - self.camera_offset - response.rect.min.to_vec2()) / self.camera_scale).to_pos2(),
-                );
-            }
-        } else if response.dragged_by(egui::PointerButton::Middle) {
-            self.camera_offset += response.drag_delta();
-        } else if response.drag_started_by(egui::PointerButton::Primary) {
-            self.last_unhandled_mouse_pos = ui.ctx().pointer_interact_pos();
-        } else if response.dragged_by(egui::PointerButton::Primary) {
-            if let Some(cursor_pos) = &self.last_unhandled_mouse_pos {
-                let last_down_pos =
-                (*cursor_pos - self.camera_offset - response.rect.min.to_vec2())
-                / self.camera_scale;
-                self.drag(
-                    last_down_pos.to_pos2(),
-                    response.drag_delta() / self.camera_scale,
-                );
-                self.last_unhandled_mouse_pos = ui.ctx().pointer_interact_pos();
-            }
-        } else if response.drag_stopped() {
-            self.last_unhandled_mouse_pos = None;
-        }
-        
-        // Handle zoom
-        if response.hovered() {
-            let scroll_delta = ui.ctx().input(|i| i.raw_scroll_delta);
-            
-            let factor = if scroll_delta.y > 0.0 && self.camera_scale < 10.0 {
-                1.5
-            } else if scroll_delta.y < 0.0 && self.camera_scale > 0.01 {
-                0.66
-            } else { 0.0 };
-            
-            if factor != 0.0 {
-                if let Some(cursor_pos) = ui.ctx().pointer_interact_pos() {
-                    let old_factor = self.camera_scale;
-                    self.camera_scale *= factor;
-                    self.camera_offset -= 
-                    ((cursor_pos - self.camera_offset - response.rect.min.to_vec2()) / old_factor)
-                    * (self.camera_scale - old_factor);
-                }
-            }
-        }
-    }
-    fn click(&mut self, pos: egui::Pos2) -> bool {
-        let handled = self.owned_controllers.iter_mut()
-            .find(|uc| uc.1.write().unwrap().click(self.current_tool.as_mut(), pos, ModifierKeys::NONE) == ClickHandlingStatus::Handled)
-            .map(|uc| {self.selected_elements.insert(uc.0.clone());})
-            .ok_or_else(|| {self.selected_elements.clear();})
-            .is_ok();
-        
-        if !handled {
-            if let Some(t) = self.current_tool.as_mut() {
-                t.add_by_position(pos);
-            }
-        }
-        let mut tool = self.current_tool.take();
-        if let Some(new) = tool.as_mut().and_then(|e| e.try_construct(self)) {
-            let uuid = new.read().unwrap().uuid();
-            self.owned_controllers.insert(uuid, new);
-            return true;
-        }
-        self.current_tool = tool;
-        handled
-    }
-    fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
-        self.owned_controllers.iter_mut()
-            .find(|uc| uc.1.write().unwrap().drag(self.current_tool.as_mut(), last_pos, delta) == DragHandlingStatus::Handled)
-            .is_some()
-    }
-    fn context_menu(&mut self, ui: &mut egui::Ui) {
-        ui.label("asdf");
-    }
-    
-    fn show_toolbar(&mut self, ui: &mut egui::Ui) {
-        let width = ui.available_width();
-        
-        let stage = self.current_tool.as_ref().map(|e| e.initial_stage());
-        let c = |s: RdfToolStage| -> egui::Color32 {
-            if stage.is_some_and(|e| e == s) { egui::Color32::BLUE } else { egui::Color32::BLACK }
-        };
-        
-        for cat in [&[(RdfToolStage::Select, "Select"), (RdfToolStage::Move, "Move"),][..],
-                    &[(RdfToolStage::Literal, "Literal"), (RdfToolStage::Node, "Node"),
-                      (RdfToolStage::PredicateStart, "Predicate"), (RdfToolStage::GraphStart, "Graph"),][..],
-                    &[(RdfToolStage::Note, "Note")][..]] {
-            for (stage, name) in cat {
-                if ui.add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage))).clicked() {
-                    self.current_tool = Some(Box::new(NaiveRdfTool::new(*stage)));
-                }
-            }
-            ui.separator();
-        }
-        
-    }
-    fn show_properties(&mut self, ui: &mut egui::Ui) {
-        if let Some(element) = self.last_selected_element() {
-            element.write().unwrap().show_properties(self, ui);
-        } else {
-            let mut model = self.model.write().unwrap();
-        
-            ui.label("Name:");
-            let r1 = ui.add_sized((ui.available_width(), 20.0),
-                                egui::TextEdit::singleline(&mut model.name));
-            
-            ui.label("Comment:");
-            let r2 = ui.add_sized((ui.available_width(), 20.0),
-                                egui::TextEdit::multiline(&mut model.comment));
-            
-            if r1.union(r2).changed() {
-                model.notify_observers();
-            }
-        }
-    }
-    fn show_layers(&self, _ui: &mut egui::Ui) {
-        // TODO: Layers???
-    }
-    
-    fn list_in_project_hierarchy(&self, ui: &mut egui::Ui) {
-        let model = self.model.read().unwrap();
-        
-        egui::CollapsingHeader::new(format!("{} ({})", model.name, model.uuid))
-        .show(ui, |ui| {
-            for uc in &self.owned_controllers {
-                uc.1.read().unwrap().list_in_project_hierarchy(self, ui);
-            }
-        });
-    }
-    
-    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, mouse_pos: Option<egui::Pos2>) {
-        let tool = if let (Some(pos), Some(stage)) = (mouse_pos, self.current_tool.as_ref().map(|e| e.as_ref())) {
-            Some((pos, stage))
-        } else { None };
-        let mut drawn_targetting = TargettingStatus::NotDrawn;
-        
-        self.owned_controllers.iter_mut()
-            .filter(|_| true) // TODO: filter by layers
-            .for_each(|uc| if uc.1.write().unwrap().draw_in(canvas, &tool) == TargettingStatus::Drawn { drawn_targetting = TargettingStatus::Drawn; });
-        
-        if let Some((pos, tool)) = tool {
-            if drawn_targetting == TargettingStatus::NotDrawn {
-                canvas.draw_rectangle(
-                    egui::Rect::EVERYTHING,
-                    egui::Rounding::ZERO,
-                    tool.targetting_for_diagram(),
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                );
-                self.owned_controllers.iter_mut()
-                    .filter(|_| true) // TODO: filter by layers
-                    .for_each(|uc| { uc.1.write().unwrap().draw_in(canvas, &Some((pos, tool))); });
-            }
-            tool.draw_status_hint(canvas, pos);
-        }
     }
 }
 
@@ -662,10 +476,11 @@ impl RdfContainerController for RdfDiagramController {
         self.owned_controllers.get(uuid).cloned()
     }
 }
+*/
 
 pub struct RdfGraphController {
     pub model: Arc<RwLock<RdfGraph>>,
-    pub owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn RdfElementController>>>,
+    pub owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, NaiveRdfTool>>>>,
     
     pub bounds_rect: egui::Rect,
 }
@@ -687,8 +502,8 @@ impl ElementController for RdfGraphController {
     }
 }
 
-impl RdfElementController for RdfGraphController {
-    fn show_properties(&mut self, _parent: &RdfDiagramController, ui: &mut egui::Ui) {
+impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfGraphController {
+    fn show_properties(&mut self, _parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
         let mut model = self.model.write().unwrap();
         
         ui.label("IRI:");
@@ -703,7 +518,7 @@ impl RdfElementController for RdfGraphController {
             model.notify_observers();
         }
     }
-    fn list_in_project_hierarchy(&self, parent: &RdfDiagramController, ui: &mut egui::Ui) {
+    fn list_in_project_hierarchy(&self, parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
         let model = self.model.read().unwrap();
     
         egui::CollapsingHeader::new(format!("{} ({})", model.name, model.uuid))
@@ -715,7 +530,7 @@ impl RdfElementController for RdfGraphController {
             }*/
         });
     }
-    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &dyn RdfTool)>) -> TargettingStatus {
+    fn draw_in(&mut self, q: &RdfQueryable, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &NaiveRdfTool)>) -> TargettingStatus {
         // Draw shape and text
         canvas.draw_rectangle(
             self.bounds_rect,
@@ -738,7 +553,7 @@ impl RdfElementController for RdfGraphController {
         canvas.offset_by(self.bounds_rect.left_top().to_vec2());
         self.owned_controllers.iter_mut()
             .filter(|_| true) // TODO: filter by layers
-            .for_each(|uc| if uc.1.write().unwrap().draw_in(canvas, &offset_tool) == TargettingStatus::Drawn { drawn_child_targetting = TargettingStatus::Drawn; });
+            .for_each(|uc| if uc.1.write().unwrap().draw_in(q, canvas, &offset_tool) == TargettingStatus::Drawn { drawn_child_targetting = TargettingStatus::Drawn; });
         canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
         
         match (drawn_child_targetting, tool) {
@@ -746,14 +561,14 @@ impl RdfElementController for RdfGraphController {
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::Rounding::ZERO,
-                    t.targetting_for_diagram(),
+                    t.targetting_for_element(KindedRdfElement::Graph{}),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 );
                 
                 canvas.offset_by(self.bounds_rect.left_top().to_vec2());
                 self.owned_controllers.iter_mut()
                     .filter(|_| true) // TODO: filter by layers
-                    .for_each(|uc| { uc.1.write().unwrap().draw_in(canvas, &offset_tool); });
+                    .for_each(|uc| { uc.1.write().unwrap().draw_in(q, canvas, &offset_tool); });
                 canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
                 
                 TargettingStatus::Drawn
@@ -762,7 +577,7 @@ impl RdfElementController for RdfGraphController {
         }
     }
     
-    fn click(&mut self, mut tool: Option<&mut Box<dyn RdfTool>>, pos: egui::Pos2, modifiers: ModifierKeys) -> ClickHandlingStatus {
+    fn click(&mut self, mut tool: Option<&mut NaiveRdfTool>, pos: egui::Pos2, modifiers: ModifierKeys) -> ClickHandlingStatus {
         tool.as_mut().map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
         let offset_pos = pos - self.bounds_rect.left_top().to_vec2();
         
@@ -788,9 +603,9 @@ impl RdfElementController for RdfGraphController {
         match (self.min_shape().contains(pos), tool) {
             (true, Some(tool)) => {
                 tool.offset_by(self.bounds_rect.left_top().to_vec2());
-                tool.add_by_position(pos);
+                tool.add_position(pos);
                 tool.offset_by(-self.bounds_rect.left_top().to_vec2());
-                tool.add_graph(self.model.clone(), pos);
+                tool.add_element(KindedRdfElement::Graph{}, pos);
                 
                 if let Some(new) = tool.try_construct(self) {
                     let uuid = new.read().unwrap().uuid();
@@ -803,7 +618,7 @@ impl RdfElementController for RdfGraphController {
         
         handled
     }
-    fn drag(&mut self, mut tool: Option<&mut Box<dyn RdfTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> DragHandlingStatus {
+    fn drag(&mut self, mut tool: Option<&mut NaiveRdfTool>, last_pos: egui::Pos2, delta: egui::Vec2) -> DragHandlingStatus {
         tool.as_mut().map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
         let offset_pos = last_pos - self.bounds_rect.left_top().to_vec2();
         
@@ -838,8 +653,8 @@ impl RdfElementController for RdfGraphController {
     }
 }
 
-impl RdfContainerController for RdfGraphController {
-    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn RdfElementController>>> {
+impl ContainerGen2<RdfQueryable, NaiveRdfTool> for RdfGraphController {
+    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, NaiveRdfTool>>>> {
         self.owned_controllers.get(uuid).cloned()
     }
 }
@@ -869,8 +684,8 @@ impl ElementController for RdfNodeController {
     }
 }
 
-impl RdfElementController for RdfNodeController {
-    fn show_properties(&mut self, _parent: &RdfDiagramController, ui: &mut egui::Ui) {
+impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfNodeController {
+    fn show_properties(&mut self, _parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
         let mut model = self.model.write().unwrap();
         
         ui.label("IRI:");
@@ -885,18 +700,20 @@ impl RdfElementController for RdfNodeController {
             model.notify_observers();
         }
     }
-    fn list_in_project_hierarchy(&self, parent: &RdfDiagramController, ui: &mut egui::Ui) {
+    fn list_in_project_hierarchy(&self, parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
         let model = self.model.read().unwrap();
     
         egui::CollapsingHeader::new(format!("{} ({})", model.iri, model.uuid))
         .show(ui, |ui| {
+            /* TODO: parent -> queryable
             for connection in parent.outgoing_for(&model.uuid) {
                 let connection = connection.read().unwrap();
                 ui.label(format!("{} (-> {})", connection.model_name(), connection.connection_target_name().unwrap()));
             }
+            */
         });
     }
-    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &dyn RdfTool)>) -> TargettingStatus {
+    fn draw_in(&mut self, _: &RdfQueryable, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &NaiveRdfTool)>) -> TargettingStatus {
         // Draw shape and text
         let text_bounds = canvas.measure_text(
             self.position,
@@ -926,23 +743,23 @@ impl RdfElementController for RdfNodeController {
             canvas.draw_ellipse(
                 self.position,
                 self.bounds_radius,
-                t.targetting_for_node(),
+                t.targetting_for_element(KindedRdfElement::Node{inner: self}),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             );
             TargettingStatus::Drawn
         } else { TargettingStatus::NotDrawn }
     }
     
-    fn click(&mut self, tool: Option<&mut Box<dyn RdfTool>>, pos: egui::Pos2, _modifiers: ModifierKeys) -> ClickHandlingStatus {
+    fn click(&mut self, tool: Option<&mut NaiveRdfTool>, pos: egui::Pos2, _modifiers: ModifierKeys) -> ClickHandlingStatus {
         if !self.min_shape().contains(pos) { return ClickHandlingStatus::NotHandled; }
         
         if let Some(tool) = tool {
-            tool.add_node(self.model.clone(), pos);
+            tool.add_element(KindedRdfElement::Node{inner: self}, pos);
         }
         
         ClickHandlingStatus::Handled
     }
-    fn drag(&mut self, _tool: Option<&mut Box<dyn RdfTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> DragHandlingStatus {
+    fn drag(&mut self, _tool: Option<&mut NaiveRdfTool>, last_pos: egui::Pos2, delta: egui::Vec2) -> DragHandlingStatus {
         if !self.min_shape().contains(last_pos) { return DragHandlingStatus::NotHandled; }
         
         self.position += delta;
@@ -975,8 +792,8 @@ impl ElementController for RdfLiteralController {
     }
 }
 
-impl RdfElementController for RdfLiteralController {
-    fn show_properties(&mut self, _parent: &RdfDiagramController, ui: &mut egui::Ui) {
+impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfLiteralController {
+    fn show_properties(&mut self, _parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
         let mut model = self.model.write().unwrap();
         
         ui.label("Content:");
@@ -999,11 +816,11 @@ impl RdfElementController for RdfLiteralController {
         }
     }
     
-    fn list_in_project_hierarchy(&self, _parent: &RdfDiagramController, ui: &mut egui::Ui) {
+    fn list_in_project_hierarchy(&self, _parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
         ui.label(&self.model.read().unwrap().content);
     }
     
-    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &dyn RdfTool)>) -> TargettingStatus {
+    fn draw_in(&mut self, _: &RdfQueryable, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &NaiveRdfTool)>) -> TargettingStatus {
         // Draw shape and text
         self.bounds_rect = canvas.draw_class(
             self.position,
@@ -1019,23 +836,23 @@ impl RdfElementController for RdfLiteralController {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::Rounding::ZERO,
-                t.targetting_for_literal(),
+                t.targetting_for_element(KindedRdfElement::Literal{inner: self}),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             );
             TargettingStatus::Drawn
         } else { TargettingStatus::NotDrawn }
     }
     
-    fn click(&mut self, tool: Option<&mut Box<dyn RdfTool>>, pos: egui::Pos2, _modifiers: ModifierKeys) -> ClickHandlingStatus {
+    fn click(&mut self, tool: Option<&mut NaiveRdfTool>, pos: egui::Pos2, _modifiers: ModifierKeys) -> ClickHandlingStatus {
         if !self.min_shape().contains(pos) { return ClickHandlingStatus::NotHandled; }
         
         if let Some(tool) = tool {
-            tool.add_literal(self.model.clone(), pos);
+            tool.add_element(KindedRdfElement::Literal{inner: self}, pos);
         }
         
         ClickHandlingStatus::Handled
     }
-    fn drag(&mut self, _tool: Option<&mut Box<dyn RdfTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> DragHandlingStatus {
+    fn drag(&mut self, _tool: Option<&mut NaiveRdfTool>, last_pos: egui::Pos2, delta: egui::Vec2) -> DragHandlingStatus {
         if !self.min_shape().contains(last_pos) { return DragHandlingStatus::NotHandled; }
         
         self.position += delta;
@@ -1046,8 +863,8 @@ impl RdfElementController for RdfLiteralController {
 
 pub struct RdfPredicateController {
     pub model: Arc<RwLock<RdfPredicate>>,
-    pub source: Arc<RwLock<dyn RdfElementController>>,
-    pub destination: Arc<RwLock<dyn RdfElementController>>,
+    pub source: Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, NaiveRdfTool>>>,
+    pub destination: Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, NaiveRdfTool>>>,
     pub center_point: Option<egui::Pos2>,
     pub source_points: Vec<Vec<egui::Pos2>>,
     pub dest_points: Vec<Vec<egui::Pos2>>,
@@ -1085,8 +902,8 @@ impl ElementController for RdfPredicateController {
     }
 }
 
-impl RdfElementController for RdfPredicateController {
-    fn show_properties(&mut self, _parent: &RdfDiagramController, ui: &mut egui::Ui) {
+impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfPredicateController {
+    fn show_properties(&mut self, _parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
         let mut model = self.model.write().unwrap();
         
         ui.label("IRI:");
@@ -1109,16 +926,8 @@ impl RdfElementController for RdfPredicateController {
             model.notify_observers();
         }
     }
-
-    fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
-        self.source.read().unwrap().uuid() == *uuid
-    }
     
-    fn connection_target_name(&self) -> Option<String> { 
-        Some(self.destination.read().unwrap().model_name())
-    }
-    
-    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, _tool: &Option<(egui::Pos2, &dyn RdfTool)>) -> TargettingStatus {
+    fn draw_in(&mut self, _: &RdfQueryable, canvas: &mut dyn NHCanvas, _tool: &Option<(egui::Pos2, &NaiveRdfTool)>) -> TargettingStatus {
         let (source_pos, source_bounds) = {
             let lock = self.source.read().unwrap();
             (lock.position(), lock.min_shape())
@@ -1148,13 +957,23 @@ impl RdfElementController for RdfPredicateController {
         TargettingStatus::NotDrawn
     }
     
-    fn click(&mut self, _tool: Option<&mut Box<dyn RdfTool>>, _pos: egui::Pos2, _modifiers: ModifierKeys) -> ClickHandlingStatus {
+    fn click(&mut self, _tool: Option<&mut NaiveRdfTool>, _pos: egui::Pos2, _modifiers: ModifierKeys) -> ClickHandlingStatus {
         ClickHandlingStatus::NotHandled
     }
-    fn drag(&mut self, _tool: Option<&mut Box<dyn RdfTool>>, last_pos: egui::Pos2, delta: egui::Vec2) -> DragHandlingStatus {
+    fn drag(&mut self, _tool: Option<&mut NaiveRdfTool>, last_pos: egui::Pos2, delta: egui::Vec2) -> DragHandlingStatus {
         crate::common::controller::macros::multiconnection_element_drag!(
             self, last_pos, delta, center_point, sources, destinations, DragHandlingStatus::Handled
         );
         DragHandlingStatus::NotHandled
+    }
+}
+
+impl RdfElementController for RdfPredicateController {
+    fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
+        self.source.read().unwrap().uuid() == *uuid
+    }
+    
+    fn connection_target_name(&self) -> Option<String> { 
+        Some(self.destination.read().unwrap().model_name())
     }
 }
