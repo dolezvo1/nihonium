@@ -503,7 +503,7 @@ impl ElementController for RdfGraphController {
 }
 
 impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfGraphController {
-    fn show_properties(&mut self, _parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
+    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
         let mut model = self.model.write().unwrap();
         
         ui.label("IRI:");
@@ -518,7 +518,7 @@ impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfGraphController {
             model.notify_observers();
         }
     }
-    fn list_in_project_hierarchy(&self, parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
+    fn list_in_project_hierarchy(&self, parent: &RdfQueryable, ui: &mut egui::Ui) {
         let model = self.model.read().unwrap();
     
         egui::CollapsingHeader::new(format!("{} ({})", model.name, model.uuid))
@@ -685,7 +685,7 @@ impl ElementController for RdfNodeController {
 }
 
 impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfNodeController {
-    fn show_properties(&mut self, _parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
+    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
         let mut model = self.model.write().unwrap();
         
         ui.label("IRI:");
@@ -700,7 +700,7 @@ impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfNodeController {
             model.notify_observers();
         }
     }
-    fn list_in_project_hierarchy(&self, parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
+    fn list_in_project_hierarchy(&self, parent: &RdfQueryable, ui: &mut egui::Ui) {
         let model = self.model.read().unwrap();
     
         egui::CollapsingHeader::new(format!("{} ({})", model.iri, model.uuid))
@@ -793,7 +793,7 @@ impl ElementController for RdfLiteralController {
 }
 
 impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfLiteralController {
-    fn show_properties(&mut self, _parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
+    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
         let mut model = self.model.write().unwrap();
         
         ui.label("Content:");
@@ -816,7 +816,7 @@ impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfLiteralController 
         }
     }
     
-    fn list_in_project_hierarchy(&self, _parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
+    fn list_in_project_hierarchy(&self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
         ui.label(&self.model.read().unwrap().content);
     }
     
@@ -903,7 +903,7 @@ impl ElementController for RdfPredicateController {
 }
 
 impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfPredicateController {
-    fn show_properties(&mut self, _parent: &dyn ContainerGen2<RdfQueryable, NaiveRdfTool>, ui: &mut egui::Ui) {
+    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
         let mut model = self.model.write().unwrap();
         
         ui.label("IRI:");

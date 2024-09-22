@@ -100,8 +100,8 @@ pub trait ElementControllerGen2<QueryableT, ToolT>: ElementController
 where
     ToolT: Tool<QueryableT>,
 {
-    fn show_properties(&mut self, _: &dyn ContainerGen2<QueryableT, ToolT>, _ui: &mut egui::Ui) {}
-    fn list_in_project_hierarchy(&self, _: &dyn ContainerGen2<QueryableT, ToolT>, _ui: &mut egui::Ui) {}
+    fn show_properties(&mut self, _: &QueryableT, _ui: &mut egui::Ui) {}
+    fn list_in_project_hierarchy(&self, _: &QueryableT, _ui: &mut egui::Ui) {}
     
     fn draw_in(&mut self, _: &QueryableT, canvas: &mut dyn NHCanvas , tool: &Option<(egui::Pos2, &ToolT)>) -> TargettingStatus;
     fn click(&mut self, tool: Option<&mut ToolT>, pos: egui::Pos2, modifiers: ModifierKeys) -> ClickHandlingStatus;
@@ -302,7 +302,7 @@ where
     }
     fn show_properties(&mut self, ui: &mut egui::Ui) {
         if let Some(element) = self.last_selected_element() {
-            element.write().unwrap().show_properties(self, ui);
+            element.write().unwrap().show_properties(&self.queryable, ui);
         } else {
             let mut model = self.model.write().unwrap();
         
@@ -319,7 +319,7 @@ where
         egui::CollapsingHeader::new(format!("{} ({})", model.name(), model.uuid()))
         .show(ui, |ui| {
             for uc in &self.owned_controllers {
-                uc.1.read().unwrap().list_in_project_hierarchy(self, ui);
+                uc.1.read().unwrap().list_in_project_hierarchy(&self.queryable, ui);
             }
         });
     }

@@ -2,6 +2,7 @@
 use std::{collections::VecDeque, sync::{Arc,RwLock}};
 use crate::common::observer::{Observer, Observable, impl_observable};
 use crate::common::canvas::{ArrowheadType, LineType};
+use crate::common::controller::Model;
 
 pub trait UmlClassElement: Observable {
     fn uuid(&self) -> uuid::Uuid;
@@ -34,6 +35,15 @@ impl UmlClassDiagram {
     pub fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
         self.contained_elements.push(element);
         self.notify_observers();
+    }
+}
+
+impl Model for UmlClassDiagram {
+    fn uuid(&self) -> uuid::Uuid {
+        self.uuid.clone()
+    }
+    fn name(&self) -> String {
+        self.name.clone()
     }
 }
 
