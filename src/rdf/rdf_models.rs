@@ -4,15 +4,15 @@ use crate::common::controller::Model;
 use crate::common::observer::{Observer, Observable, impl_observable};
 
 pub trait RdfElement: Observable {
-    fn uuid(&self) -> uuid::Uuid;
+    fn uuid(&self) -> Arc<uuid::Uuid>;
 }
 
 pub struct RdfDiagram {
-    pub uuid: uuid::Uuid,
-    pub name: String,
+    pub uuid: Arc<uuid::Uuid>,
+    pub name: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
 
-    pub comment: String,
+    pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
@@ -23,10 +23,10 @@ impl RdfDiagram {
         contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
     ) -> Self {
         Self {
-            uuid,
-            name,
+            uuid: Arc::new(uuid),
+            name: Arc::new(name),
             contained_elements,
-            comment: "".to_owned(),
+            comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
@@ -38,10 +38,10 @@ impl RdfDiagram {
 }
 
 impl Model for RdfDiagram {
-    fn uuid(&self) -> uuid::Uuid {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
         self.uuid.clone()
     }
-    fn name(&self) -> String {
+    fn name(&self) -> Arc<String> {
         self.name.clone()
     }
 }
@@ -50,11 +50,11 @@ impl_observable!(RdfDiagram);
 
 
 pub struct RdfGraph {
-    pub uuid: uuid::Uuid,
-    pub name: String,
+    pub uuid: Arc<uuid::Uuid>,
+    pub name: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
     
-    pub comment: String,
+    pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
@@ -65,10 +65,10 @@ impl RdfGraph {
         contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
     ) -> Self {
         Self {
-            uuid,
-            name,
+            uuid: Arc::new(uuid),
+            name: Arc::new(name),
             contained_elements,
-            comment: "".to_owned(),
+            comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
@@ -82,18 +82,18 @@ impl RdfGraph {
 impl_observable!(RdfGraph);
 
 impl RdfElement for RdfGraph {
-    fn uuid(&self) -> uuid::Uuid {
-        self.uuid
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
     }
 }
 
 pub struct RdfLiteral {
-    pub uuid: uuid::Uuid,
-    pub content: String,
-    pub datatype: String,
-    pub language: String,
+    pub uuid: Arc<uuid::Uuid>,
+    pub content: Arc<String>,
+    pub datatype: Arc<String>,
+    pub language: Arc<String>,
     
-    pub comment: String,
+    pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
@@ -105,11 +105,11 @@ impl RdfLiteral {
         language: String,
     ) -> Self {
         Self {
-            uuid,
-            content,
-            datatype,
-            language,
-            comment: "".to_owned(),
+            uuid: Arc::new(uuid),
+            content: Arc::new(content),
+            datatype: Arc::new(datatype),
+            language: Arc::new(language),
+            comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
@@ -118,16 +118,16 @@ impl RdfLiteral {
 impl_observable!(RdfLiteral);
 
 impl RdfElement for RdfLiteral {
-    fn uuid(&self) -> uuid::Uuid {
-        self.uuid
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
     }
 }
 
 pub struct RdfNode {
-    pub uuid: uuid::Uuid,
-    pub iri: String,
+    pub uuid: Arc<uuid::Uuid>,
+    pub iri: Arc<String>,
     
-    pub comment: String,
+    pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
@@ -137,9 +137,9 @@ impl RdfNode {
         iri: String,
     ) -> Self {
         Self {
-            uuid,
-            iri,
-            comment: "".to_owned(),
+            uuid: Arc::new(uuid),
+            iri: Arc::new(iri),
+            comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
@@ -148,18 +148,18 @@ impl RdfNode {
 impl_observable!(RdfNode);
 
 impl RdfElement for RdfNode {
-    fn uuid(&self) -> uuid::Uuid {
-        self.uuid
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
     }
 }
 
 pub struct RdfPredicate {
-    pub uuid: uuid::Uuid,
-    pub iri: String,
+    pub uuid: Arc<uuid::Uuid>,
+    pub iri: Arc<String>,
     pub source: Arc<RwLock<dyn RdfElement>>,
     pub destination: Arc<RwLock<dyn RdfElement>>,
     
-    pub comment: String,
+    pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
@@ -171,11 +171,11 @@ impl RdfPredicate {
         destination: Arc<RwLock<dyn RdfElement>>,
     ) -> Self {
         Self {
-            uuid,
-            iri,
+            uuid: Arc::new(uuid),
+            iri: Arc::new(iri),
             source,
             destination,
-            comment: "".to_owned(),
+            comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
@@ -184,7 +184,7 @@ impl RdfPredicate {
 impl_observable!(RdfPredicate);
 
 impl RdfElement for RdfPredicate {
-    fn uuid(&self) -> uuid::Uuid {
-        self.uuid
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
     }
 }

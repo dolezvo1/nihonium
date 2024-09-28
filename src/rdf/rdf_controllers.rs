@@ -17,14 +17,27 @@ use crate::common::controller::{
 
 pub struct RdfQueryable {}
 
-fn show_props_fun(model: &mut RdfDiagram, ui: &mut egui::Ui) {
+pub struct RdfDiagramBuffer {
+    name: String,
+    comment: String,
+}
+
+fn show_props_fun(model: &mut RdfDiagram, buffer_object: &mut RdfDiagramBuffer, ui: &mut egui::Ui) {
     ui.label("Name:");
     let r1 = ui.add_sized((ui.available_width(), 20.0),
-                        egui::TextEdit::singleline(&mut model.name));
+                        egui::TextEdit::singleline(&mut buffer_object.name));
+    
+    if r1.changed() {
+        model.name = Arc::new(buffer_object.name.clone());
+    }
     
     ui.label("Comment:");
     let r2 = ui.add_sized((ui.available_width(), 20.0),
-                        egui::TextEdit::multiline(&mut model.comment));
+                        egui::TextEdit::multiline(&mut buffer_object.comment));
+    
+    if r2.changed() {
+        model.comment = Arc::new(buffer_object.comment.clone());
+    }
     
     if r1.union(r2).changed() {
         model.notify_observers();
@@ -54,10 +67,11 @@ fn tool_change_fun(tool: &mut Option<NaiveRdfTool>, ui: &mut egui::Ui) {
 pub fn new(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
 
     let uuid = uuid::Uuid::now_v7();
+    let name = format!("New RDF diagram {}", no);
     
     let diagram = Arc::new(RwLock::new(RdfDiagram::new(
         uuid.clone(),
-        format!("New RDF diagram {}", no),
+        name.clone(),
         vec![],
     )));
     (
@@ -66,6 +80,10 @@ pub fn new(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
             diagram.clone(),
             HashMap::new(),
             RdfQueryable{},
+            RdfDiagramBuffer{
+                name,
+                comment: "".to_owned(),
+            },
             show_props_fun,
             tool_change_fun,
         )),
@@ -80,6 +98,9 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     )));
     let node_controller = Arc::new(RwLock::new(RdfNodeController {
         model: node.clone(),
+        iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         position: egui::Pos2::new(300.0, 100.0),
         bounds_radius: egui::Vec2::ZERO,
     }));
@@ -93,6 +114,11 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     )));
     let literal_controller = Arc::new(RwLock::new(RdfLiteralController {
         model: literal.clone(),
+        content_buffer: "Eric Miller".to_owned(),
+        datatype_buffer: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
+        language_buffer: "en".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         position: egui::Pos2::new(300.0, 200.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -106,6 +132,9 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     )));
     let predicate_controller = Arc::new(RwLock::new(RdfPredicateController {
         model: predicate.clone(),
+        iri_buffer: "http://www.w3.org/2000/10/swap/pim/contact#fullName".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         source: node_controller.clone(),
         destination: literal_controller.clone(),
         center_point: None,
@@ -122,6 +151,9 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     let graph_controller = Arc::new(RwLock::new(RdfGraphController {
         model: graph.clone(),
         owned_controllers: HashMap::new(),
+        name_buffer: "a graph".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         bounds_rect: egui::Rect::from_min_max(egui::Pos2::new(400.0, 50.0),
                                               egui::Pos2::new(500.0, 150.0),)
     }));
@@ -139,6 +171,9 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
             )));
             let node_st_controller = Arc::new(RwLock::new(RdfNodeController {
                 model: node_st.clone(),
+                iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
+                comment_buffer: "".to_owned(),
+                
                 position: egui::Pos2::new(xx as f32, yy as f32),
                 bounds_radius: egui::Vec2::ZERO,
             }));
@@ -156,6 +191,9 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
             )));
             let node_st_controller = Arc::new(RwLock::new(RdfNodeController {
                 model: node_st.clone(),
+                iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
+                comment_buffer: "".to_owned(),
+                
                 position: egui::Pos2::new(xx as f32, yy as f32),
                 bounds_radius: egui::Vec2::ZERO,
             }));
@@ -173,6 +211,8 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     let graph_st_controller = Arc::new(RwLock::new(RdfGraphController {
         model: graph.clone(),
         owned_controllers: controllers_st,
+        name_buffer: "a graph".to_owned(),
+        comment_buffer: "".to_owned(),
         bounds_rect: egui::Rect::from_min_max(egui::Pos2::new(0.0, 300.0),
                                               egui::Pos2::new(3000.0, 3300.0),)
     }));
@@ -186,10 +226,11 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     owned_controllers.insert(graph_uuid, graph_controller);
     owned_controllers.insert(graph_st_uuid, graph_st_controller);
     
+    let name = format!("Demo RDF diagram {}", no);
     let diagram_uuid = uuid::Uuid::now_v7();
     let diagram = Arc::new(RwLock::new(RdfDiagram::new(
         diagram_uuid.clone(),
-        format!("Demo RDF diagram {}", no),
+        name.clone(),
         vec![node, literal, predicate, graph, graph_st],
     )));
     (
@@ -198,6 +239,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
             diagram.clone(),
             owned_controllers,
             RdfQueryable{},
+            RdfDiagramBuffer{
+                name,
+                comment: "".to_owned(),
+            },
             show_props_fun,
             tool_change_fun,
         ))
@@ -214,7 +259,7 @@ pub enum KindedRdfElement<'a> {
 }
 
 impl<'a> KindedElement<'a> for KindedRdfElement<'a> {
-    type DiagramType = DiagramControllerGen2<RdfDiagram, RdfQueryable, NaiveRdfTool>;
+    type DiagramType = DiagramControllerGen2<RdfDiagram, RdfQueryable, RdfDiagramBuffer, NaiveRdfTool>;
     
     fn diagram(_: &'a Self::DiagramType) -> Self {
         Self::Diagram{}
@@ -337,6 +382,11 @@ impl Tool<RdfQueryable> for NaiveRdfTool {
                 )));
                 self.result = PartialRdfElement::Some(Arc::new(RwLock::new(RdfLiteralController {
                     model: literal.clone(),
+                    content_buffer: "Eric Miller".to_owned(),
+                    datatype_buffer: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
+                    language_buffer: "en".to_owned(),
+                    comment_buffer: "".to_owned(),
+                    
                     position: pos,
                     bounds_rect: egui::Rect::ZERO,
                 })));
@@ -348,6 +398,9 @@ impl Tool<RdfQueryable> for NaiveRdfTool {
                 )));
                 self.result = PartialRdfElement::Some(Arc::new(RwLock::new(RdfNodeController {
                     model: node.clone(),
+                    iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
+                    comment_buffer: "".to_owned(),
+                    
                     position: pos,
                     bounds_radius: egui::Vec2::ZERO,
                 })));
@@ -413,6 +466,9 @@ impl Tool<RdfQueryable> for NaiveRdfTool {
                         = (into.controller_for(&source.read().unwrap().uuid()), into.controller_for(&dest.read().unwrap().uuid())) {
                     Some(Arc::new(RwLock::new(RdfPredicateController {
                         model: predicate.clone(),
+                        iri_buffer: "http://www.w3.org/2000/10/swap/pim/contact#fullName".to_owned(),
+                        comment_buffer: "".to_owned(),
+                        
                         source: source_controller,
                         destination: dest_controller,
                         center_point: None,
@@ -437,6 +493,8 @@ impl Tool<RdfQueryable> for NaiveRdfTool {
                 let graph_controller = Arc::new(RwLock::new(RdfGraphController {
                     model: graph.clone(),
                     owned_controllers: HashMap::new(),
+                    name_buffer: "a graph".to_owned(),
+                    comment_buffer: "".to_owned(),
                     bounds_rect: egui::Rect::from_two_pos(*a, *b),
                 }));
                 
@@ -455,7 +513,7 @@ impl Tool<RdfQueryable> for NaiveRdfTool {
 
 pub trait RdfElementController: ElementControllerGen2<RdfQueryable, NaiveRdfTool> {
     fn is_connection_from(&self, _uuid: &uuid::Uuid) -> bool { false }
-    fn connection_target_name(&self) -> Option<String> { None }
+    fn connection_target_name(&self) -> Option<Arc<String>> { None }
 }
 
 pub trait RdfContainerController {
@@ -481,15 +539,17 @@ impl RdfContainerController for RdfDiagramController {
 pub struct RdfGraphController {
     pub model: Arc<RwLock<RdfGraph>>,
     pub owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, NaiveRdfTool>>>>,
+    name_buffer: String,
+    comment_buffer: String,
     
     pub bounds_rect: egui::Rect,
 }
 
 impl ElementController for RdfGraphController {
-    fn uuid(&self) -> uuid::Uuid {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
-    fn model_name(&self) -> String {
+    fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
     }
     
@@ -504,17 +564,25 @@ impl ElementController for RdfGraphController {
 
 impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfGraphController {
     fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
-        let mut model = self.model.write().unwrap();
-        
         ui.label("IRI:");
         let r1 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.name));
+                              egui::TextEdit::multiline(&mut self.name_buffer));
         
         ui.label("Comment:");
         let r2 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.comment));
+                              egui::TextEdit::multiline(&mut self.comment_buffer));
         
-        if r1.union(r2).changed() {
+        if r1.changed() || r2.changed() {
+            let mut model = self.model.write().unwrap();
+            
+            if r1.changed() {
+                model.name = Arc::new(self.name_buffer.clone());
+            }
+            
+            if r2.changed() {
+                model.comment = Arc::new(self.comment_buffer.clone());
+            }
+            
             model.notify_observers();
         }
     }
@@ -609,7 +677,7 @@ impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfGraphController {
                 
                 if let Some(new) = tool.try_construct(self) {
                     let uuid = new.read().unwrap().uuid();
-                    self.owned_controllers.insert(uuid, new);
+                    self.owned_controllers.insert(*uuid, new);
                 }
                 return ClickHandlingStatus::Handled;
             },
@@ -662,16 +730,18 @@ impl ContainerGen2<RdfQueryable, NaiveRdfTool> for RdfGraphController {
 
 pub struct RdfNodeController {
     pub model: Arc<RwLock<RdfNode>>,
+    iri_buffer: String,
+    comment_buffer: String,
     
     pub position: egui::Pos2,
     pub bounds_radius: egui::Vec2,
 }
 
 impl ElementController for RdfNodeController {
-    fn uuid(&self) -> uuid::Uuid {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
-    fn model_name(&self) -> String {
+    fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().iri.clone()
     }
     
@@ -686,17 +756,25 @@ impl ElementController for RdfNodeController {
 
 impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfNodeController {
     fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
-        let mut model = self.model.write().unwrap();
-        
         ui.label("IRI:");
         let r1 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.iri));
+                              egui::TextEdit::multiline(&mut self.iri_buffer));
         
         ui.label("Comment:");
         let r2 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.comment));
+                              egui::TextEdit::multiline(&mut self.comment_buffer));
         
-        if r1.union(r2).changed() {
+        if r1.changed() || r2.changed() {
+            let mut model = self.model.write().unwrap();
+            
+            if r1.changed() {
+                model.iri = Arc::new(self.iri_buffer.clone());
+            }
+            
+            if r2.changed() {
+                model.comment = Arc::new(self.comment_buffer.clone());
+            }
+            
             model.notify_observers();
         }
     }
@@ -771,15 +849,20 @@ impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfNodeController {
 pub struct RdfLiteralController {
     pub model: Arc<RwLock<RdfLiteral>>,
     
+    content_buffer: String,
+    datatype_buffer: String,
+    language_buffer: String,
+    comment_buffer: String,
+    
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
 }
 
 impl ElementController for RdfLiteralController {
-    fn uuid(&self) -> uuid::Uuid {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
-    fn model_name(&self) -> String {
+    fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().content.clone()
     }
 
@@ -794,30 +877,46 @@ impl ElementController for RdfLiteralController {
 
 impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfLiteralController {
     fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
-        let mut model = self.model.write().unwrap();
-        
         ui.label("Content:");
         let r1 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.content));
+                              egui::TextEdit::multiline(&mut self.content_buffer));
         ui.label("Datatype:");
         let r2 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::singleline(&mut model.datatype));
+                              egui::TextEdit::singleline(&mut self.datatype_buffer));
         
         ui.label("Language:");
         let r3 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::singleline(&mut model.language));
+                              egui::TextEdit::singleline(&mut self.language_buffer));
         
         ui.label("Comment:");
         let r4 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.comment));
+                              egui::TextEdit::multiline(&mut self.comment_buffer));
         
-        if r1.union(r2).union(r3).union(r4).changed() {
+        if r1.changed() || r2.changed() || r3.changed() || r4.changed() {
+            let mut model = self.model.write().unwrap();
+            
+            if r1.changed() {
+                model.content = Arc::new(self.content_buffer.clone());
+            }
+            
+            if r2.changed() {
+                model.datatype = Arc::new(self.datatype_buffer.clone());
+            }
+            
+            if r3.changed() {
+                model.language = Arc::new(self.language_buffer.clone());
+            }
+            
+            if r4.changed() {
+                model.comment = Arc::new(self.comment_buffer.clone());
+            }
+            
             model.notify_observers();
         }
     }
     
     fn list_in_project_hierarchy(&self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
-        ui.label(&self.model.read().unwrap().content);
+        ui.label(&*self.model.read().unwrap().content);
     }
     
     fn draw_in(&mut self, _: &RdfQueryable, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &NaiveRdfTool)>) -> TargettingStatus {
@@ -863,6 +962,9 @@ impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfLiteralController 
 
 pub struct RdfPredicateController {
     pub model: Arc<RwLock<RdfPredicate>>,
+    iri_buffer: String,
+    comment_buffer: String,
+    
     pub source: Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, NaiveRdfTool>>>,
     pub destination: Arc<RwLock<dyn ElementControllerGen2<RdfQueryable, NaiveRdfTool>>>,
     pub center_point: Option<egui::Pos2>,
@@ -880,10 +982,10 @@ impl RdfPredicateController {
 }
 
 impl ElementController for RdfPredicateController {
-    fn uuid(&self) -> uuid::Uuid {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
-    fn model_name(&self) -> String {
+    fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().iri.clone()
     }
     
@@ -904,25 +1006,34 @@ impl ElementController for RdfPredicateController {
 
 impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfPredicateController {
     fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
-        let mut model = self.model.write().unwrap();
-        
         ui.label("IRI:");
         let r1 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.iri));
+                              egui::TextEdit::multiline(&mut self.iri_buffer));
         
         ui.label("Comment:");
         let r2 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.comment));
+                              egui::TextEdit::multiline(&mut self.comment_buffer));
         
         let r3 = if ui.button("Switch source and destination").clicked()
             && /* TODO: must check if target isn't a literal */ true
         {
+            let mut model = self.model.write().unwrap();
             (model.source, model.destination) = (model.destination.clone(), model.source.clone());
             (self.source, self.destination) = (self.destination.clone(), self.source.clone());
             true
         } else { false };
         
-        if r1.union(r2).changed() || r3 {
+        if r1.changed() || r2.changed() || r3 {
+            let mut model = self.model.write().unwrap();
+            
+            if r1.changed() {
+                model.iri = Arc::new(self.iri_buffer.clone());
+            }
+            
+            if r2.changed() {
+                model.comment = Arc::new(self.comment_buffer.clone());
+            }
+            
             model.notify_observers();
         }
     }
@@ -970,10 +1081,10 @@ impl ElementControllerGen2<RdfQueryable, NaiveRdfTool> for RdfPredicateControlle
 
 impl RdfElementController for RdfPredicateController {
     fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
-        self.source.read().unwrap().uuid() == *uuid
+        *self.source.read().unwrap().uuid() == *uuid
     }
     
-    fn connection_target_name(&self) -> Option<String> { 
+    fn connection_target_name(&self) -> Option<Arc<String>> { 
         Some(self.destination.read().unwrap().model_name())
     }
 }

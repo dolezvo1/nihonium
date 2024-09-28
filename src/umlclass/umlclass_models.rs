@@ -1,19 +1,19 @@
 
-use std::{collections::VecDeque, sync::{Arc,RwLock}};
+use std::{collections::VecDeque, sync::{Arc,LazyLock,RwLock}};
 use crate::common::observer::{Observer, Observable, impl_observable};
 use crate::common::canvas::{ArrowheadType, LineType};
 use crate::common::controller::Model;
 
 pub trait UmlClassElement: Observable {
-    fn uuid(&self) -> uuid::Uuid;
+    fn uuid(&self) -> Arc<uuid::Uuid>;
 }
 
 pub struct UmlClassDiagram {
-    pub uuid: uuid::Uuid,
-    pub name: String,
+    pub uuid: Arc<uuid::Uuid>,
+    pub name: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
 
-    pub comment: String,
+    pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
@@ -24,10 +24,10 @@ impl UmlClassDiagram {
         contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
     ) -> Self {
         Self {
-            uuid,
-            name,
+            uuid: Arc::new(uuid),
+            name: Arc::new(name),
             contained_elements,
-            comment: "".to_owned(),
+            comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
@@ -39,10 +39,10 @@ impl UmlClassDiagram {
 }
 
 impl Model for UmlClassDiagram {
-    fn uuid(&self) -> uuid::Uuid {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
         self.uuid.clone()
     }
-    fn name(&self) -> String {
+    fn name(&self) -> Arc<String> {
         self.name.clone()
     }
 }
@@ -50,11 +50,11 @@ impl Model for UmlClassDiagram {
 impl_observable!(UmlClassDiagram);
 
 pub struct UmlClassPackage {
-    pub uuid: uuid::Uuid,
-    pub name: String,
+    pub uuid: Arc<uuid::Uuid>,
+    pub name: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
 
-    pub comment: String,
+    pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
@@ -65,10 +65,10 @@ impl UmlClassPackage {
         contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
     ) -> Self {
         Self {
-            uuid,
-            name,
+            uuid: Arc::new(uuid),
+            name: Arc::new(name),
             contained_elements,
-            comment: "".to_owned(),
+            comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
@@ -101,13 +101,13 @@ impl UMLClassAccessModifier {
 
 
 pub struct UmlClass {
-    pub uuid: uuid::Uuid,
-    pub name: String,
-    pub stereotype: String,
-    pub properties: String,
-    pub functions: String,
+    pub uuid: Arc<uuid::Uuid>,
+    pub name: Arc<String>,
+    pub stereotype: Arc<String>,
+    pub properties: Arc<String>,
+    pub functions: Arc<String>,
     
-    pub comment: String,
+    pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
@@ -118,12 +118,12 @@ impl UmlClass {
         stereotype: String,
     ) -> Self {
         Self {
-            uuid,
-            name,
-            stereotype,
-            properties: "".to_owned(),
-            functions: "".to_owned(),
-            comment: "".to_owned(),
+            uuid: Arc::new(uuid),
+            name: Arc::new(name),
+            stereotype: Arc::new(stereotype),
+            properties: Arc::new("".to_owned()),
+            functions: Arc::new("".to_owned()),
+            comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
@@ -158,8 +158,8 @@ impl UmlClass {
 impl_observable!(UmlClass);
 
 impl UmlClassElement for UmlClass {
-    fn uuid(&self) -> uuid::Uuid {
-        self.uuid
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
     }
 }
 
@@ -173,15 +173,23 @@ pub enum UmlClassLinkType {
     Usage,
 }
 
+// I hate this so much
+static ASSOCIATION_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Assocation".to_owned()));
+static AGGREGATION_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Aggregation".to_owned()));
+static COMPOSITION_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Composition".to_owned()));
+static GENERALIZATION_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Generalization".to_owned()));
+static INTERFACE_REALIZATION_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Interface Realization".to_owned()));
+static USAGE_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Usage".to_owned()));
+
 impl UmlClassLinkType {
-    pub fn name(&self) -> &'static str {
+    pub fn name(&self) -> Arc<String> {
         match self {
-            UmlClassLinkType::Association => "Association",
-            UmlClassLinkType::Aggregation => "Aggregation",
-            UmlClassLinkType::Composition => "Composition",
-            UmlClassLinkType::Generalization => "Generalization",
-            UmlClassLinkType::InterfaceRealization => "Interface Realization",
-            UmlClassLinkType::Usage => "Usage",
+            UmlClassLinkType::Association => ASSOCIATION_TEXT.clone(),
+            UmlClassLinkType::Aggregation => AGGREGATION_TEXT.clone(),
+            UmlClassLinkType::Composition => COMPOSITION_TEXT.clone(),
+            UmlClassLinkType::Generalization => GENERALIZATION_TEXT.clone(),
+            UmlClassLinkType::InterfaceRealization => INTERFACE_REALIZATION_TEXT.clone(),
+            UmlClassLinkType::Usage => USAGE_TEXT.clone(),
         }
     }
     
@@ -208,14 +216,14 @@ impl UmlClassLinkType {
 }
 
 pub struct UmlClassLink {
-    pub uuid: uuid::Uuid,
+    pub uuid: Arc<uuid::Uuid>,
     pub link_type: UmlClassLinkType,
     pub source: Arc<RwLock<dyn UmlClassElement>>,
-    pub source_arrowhead_label: String,
+    pub source_arrowhead_label: Arc<String>,
     pub destination: Arc<RwLock<dyn UmlClassElement>>,
-    pub destination_arrowhead_label: String,
+    pub destination_arrowhead_label: Arc<String>,
     
-    pub comment: String,
+    pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
@@ -227,13 +235,13 @@ impl UmlClassLink {
         destination: Arc<RwLock<dyn UmlClassElement>>,
     ) -> Self {
         Self {
-            uuid,
+            uuid: Arc::new(uuid),
             link_type,
             source,
-            source_arrowhead_label: "".to_owned(),
+            source_arrowhead_label: Arc::new("".to_owned()),
             destination,
-            destination_arrowhead_label: "".to_owned(),
-            comment: "".to_owned(),
+            destination_arrowhead_label: Arc::new("".to_owned()),
+            comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
@@ -242,7 +250,7 @@ impl UmlClassLink {
 impl_observable!(UmlClassLink);
 
 impl UmlClassElement for UmlClassLink {
-    fn uuid(&self) -> uuid::Uuid {
-        self.uuid
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
     }
 }

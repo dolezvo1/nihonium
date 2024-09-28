@@ -18,14 +18,27 @@ use crate::common::observer::Observable;
 
 pub struct UmlClassQueryable {}
 
-fn show_props_fun(model: &mut UmlClassDiagram, ui: &mut egui::Ui) {
+pub struct UmlClassDiagramBuffer {
+    name: String,
+    comment: String,
+}
+
+fn show_props_fun(model: &mut UmlClassDiagram, buffer_object: &mut UmlClassDiagramBuffer, ui: &mut egui::Ui) {
     ui.label("Name:");
     let r1 = ui.add_sized((ui.available_width(), 20.0),
-                        egui::TextEdit::singleline(&mut model.name));
+                        egui::TextEdit::singleline(&mut buffer_object.name));
+    
+    if r1.changed() {
+        model.name = Arc::new(buffer_object.name.clone());
+    }
     
     ui.label("Comment:");
     let r2 = ui.add_sized((ui.available_width(), 20.0),
-                        egui::TextEdit::multiline(&mut model.comment));
+                        egui::TextEdit::multiline(&mut buffer_object.comment));
+    
+    if r2.changed() {
+        model.comment = Arc::new(buffer_object.comment.clone());
+    }
     
     if r1.union(r2).changed() {
         model.notify_observers();
@@ -56,10 +69,10 @@ fn tool_change_fun(tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
 
 pub fn new(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     let uuid = uuid::Uuid::now_v7();
-                            
+    let name = format!("New UML class diagram {}", no);
     let diagram = Arc::new(RwLock::new(UmlClassDiagram::new(
         uuid.clone(),
-        format!("New UML class diagram {}", no),
+        name.clone(),
         vec![],
     )));
     (
@@ -68,6 +81,10 @@ pub fn new(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
             diagram.clone(),
             HashMap::new(),
             UmlClassQueryable{},
+            UmlClassDiagramBuffer {
+                name,
+                comment: "".to_owned(),
+            },
             show_props_fun,
             tool_change_fun,
         )),
@@ -82,11 +99,17 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     let class_af = Arc::new(RwLock::new(UmlClass::new(
         class_af_uuid.clone(),
         "AbstractFactory".to_owned(),
-        "interface".to_string(),
+        "interface".to_owned(),
     )));
-    class_af.write().unwrap().functions = "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned();
+    class_af.write().unwrap().functions = Arc::new("+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned());
     let class_af_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_af.clone(),
+        name_buffer: "AbstractFactory".to_owned(),
+        stereotype_buffer: "interface".to_owned(),
+        properties_buffer: "".to_owned(),
+        functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         position: egui::Pos2::new(200.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -97,9 +120,15 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
         "ConcreteFactoryX".to_owned(),
         "".to_string(),
     )));
-    class_cfx.write().unwrap().functions = "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned();
+    class_cfx.write().unwrap().functions = Arc::new("+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned());
     let class_cfx_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_cfx.clone(),
+        name_buffer: "ConcreteFactoryX".to_owned(),
+        stereotype_buffer: "".to_owned(),
+        properties_buffer: "".to_owned(),
+        functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         position: egui::Pos2::new(100.0, 250.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -110,9 +139,15 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
         "ConcreteFactoryY".to_owned(),
         "".to_string(),
     )));
-    class_cfy.write().unwrap().functions = "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned();
+    class_cfy.write().unwrap().functions = Arc::new("+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned());
     let class_cfy_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_cfy.clone(),
+        name_buffer: "ConcreteFactoryY".to_owned(),
+        stereotype_buffer: "".to_owned(),
+        properties_buffer: "".to_owned(),
+        functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         position: egui::Pos2::new(300.0, 250.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -128,6 +163,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
         model: realization_cfx.clone(),
         source: class_cfx_controller.clone(),
         destination: class_af_controller.clone(),
+        source_arrowhead_label_buffer: "".to_owned(),
+        destination_arrowhead_label_buffer: "".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         center_point: None,
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -144,6 +183,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
         model: association_cfy.clone(),
         source: class_cfy_controller.clone(),
         destination: class_af_controller.clone(),
+        source_arrowhead_label_buffer: "".to_owned(),
+        destination_arrowhead_label_buffer: "".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         center_point: None,
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -157,6 +200,12 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     )));
     let class_client_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_client.clone(),
+        name_buffer: "Client".to_owned(),
+        stereotype_buffer: "".to_owned(),
+        properties_buffer: "".to_owned(),
+        functions_buffer: "".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         position: egui::Pos2::new(300.0, 50.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -172,6 +221,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
         model: usage_client_af.clone(),
         source: class_client_controller.clone(),
         destination: class_af_controller.clone(),
+        source_arrowhead_label_buffer: "".to_owned(),
+        destination_arrowhead_label_buffer: "".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         center_point: Some(egui::Pos2::new(200.0, 50.0)),
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -185,6 +238,12 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     )));
     let class_producta_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_producta.clone(),
+        name_buffer: "ProductA".to_owned(),
+        stereotype_buffer: "interface".to_owned(),
+        properties_buffer: "".to_owned(),
+        functions_buffer: "".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         position: egui::Pos2::new(450.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -200,6 +259,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
         model: usage_client_producta.clone(),
         source: class_client_controller.clone(),
         destination: class_producta_controller.clone(),
+        source_arrowhead_label_buffer: "".to_owned(),
+        destination_arrowhead_label_buffer: "".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         center_point: Some(egui::Pos2::new(450.0, 52.0)),
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -213,6 +276,12 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     )));
     let class_productb_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_productb.clone(),
+        name_buffer: "ProductB".to_owned(),
+        stereotype_buffer: "interface".to_owned(),
+        properties_buffer: "".to_owned(),
+        functions_buffer: "".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         position: egui::Pos2::new(650.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -228,6 +297,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
         model: usage_client_productb.clone(),
         source: class_client_controller.clone(),
         destination: class_productb_controller.clone(),
+        source_arrowhead_label_buffer: "".to_owned(),
+        destination_arrowhead_label_buffer: "".to_owned(),
+        comment_buffer: "".to_owned(),
+        
         center_point: Some(egui::Pos2::new(650.0, 48.0)),
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -247,9 +320,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     owned_controllers.insert(usage_client_productb_uuid, usage_client_productb_controller);
     
     let diagram_uuid = uuid::Uuid::now_v7();
+    let name = format!("Demo UML class diagram {}", no);
     let diagram2 = Arc::new(RwLock::new(UmlClassDiagram::new(
         diagram_uuid.clone(),
-        format!("Demo UML class diagram {}", no),
+        name.clone(),
         vec![class_af, class_cfx, class_cfy, realization_cfx, association_cfy,
             class_client, usage_client_af,
             class_producta, usage_client_producta,
@@ -261,6 +335,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
             diagram2.clone(),
             owned_controllers,
             UmlClassQueryable{},
+            UmlClassDiagramBuffer {
+                name,
+                comment: "".to_owned(),
+            },
             show_props_fun,
             tool_change_fun,
         ))
@@ -276,7 +354,7 @@ pub enum KindedUmlClassElement<'a> {
 }
 
 impl<'a> KindedElement<'a> for KindedUmlClassElement<'a> {
-    type DiagramType = DiagramControllerGen2<UmlClassDiagram, UmlClassQueryable, NaiveUmlClassTool>;
+    type DiagramType = DiagramControllerGen2<UmlClassDiagram, UmlClassQueryable, UmlClassDiagramBuffer, NaiveUmlClassTool>;
     
     fn diagram(_: &'a Self::DiagramType) -> Self {
         Self::Diagram{}
@@ -393,6 +471,12 @@ impl Tool<UmlClassQueryable> for NaiveUmlClassTool {
                 )));
                 self.result = PartialUmlClassElement::Some(Arc::new(RwLock::new(UmlClassController {
                     model: node.clone(),
+                    name_buffer: "a class".to_owned(),
+                    stereotype_buffer: "".to_owned(),
+                    properties_buffer: "".to_owned(),
+                    functions_buffer: "".to_owned(),
+                    comment_buffer: "".to_owned(),
+                    
                     position: pos,
                     bounds_rect: egui::Rect::ZERO,
                 })));
@@ -407,7 +491,7 @@ impl Tool<UmlClassQueryable> for NaiveUmlClassTool {
             (UmlClassToolStage::Note, _) => {},
             _ => {},
         }
-    }    
+    }
     fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>, pos: egui::Pos2) {
         match controller {
             KindedUmlClassElement::Diagram{..} => {},
@@ -450,6 +534,10 @@ impl Tool<UmlClassQueryable> for NaiveUmlClassTool {
                         model: association.clone(),
                         source: source_controller,
                         destination: dest_controller,
+                        source_arrowhead_label_buffer: "".to_owned(),
+                        destination_arrowhead_label_buffer: "".to_owned(),
+                        comment_buffer: "".to_owned(),
+                        
                         center_point: None,
                         source_points: vec![vec![egui::Pos2::ZERO]],
                         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -472,6 +560,9 @@ impl Tool<UmlClassQueryable> for NaiveUmlClassTool {
                 let package_controller = Arc::new(RwLock::new(UmlClassPackageController {
                     model: package.clone(),
                     owned_controllers: HashMap::new(),
+                    name_buffer: "a package".to_owned(),
+                    comment_buffer: "".to_owned(),
+                    
                     bounds_rect: egui::Rect::from_two_pos(*a, *b),
                 }));
                 
@@ -489,21 +580,23 @@ impl Tool<UmlClassQueryable> for NaiveUmlClassTool {
 
 pub trait UmlClassElementController: ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> {
     fn is_connection_from(&self, _uuid: &uuid::Uuid) -> bool { false }
-    fn connection_target_name(&self) -> Option<String> { None }
+    fn connection_target_name(&self) -> Option<Arc<String>> { None }
 }
 
 pub struct UmlClassPackageController {
     pub model: Arc<RwLock<UmlClassPackage>>,
     pub owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool>>>>,
+    name_buffer: String,
+    comment_buffer: String,
     
     pub bounds_rect: egui::Rect,
 }
 
 impl ElementController for UmlClassPackageController {
-    fn uuid(&self) -> uuid::Uuid {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
-    fn model_name(&self) -> String {
+    fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
     }
     
@@ -518,17 +611,25 @@ impl ElementController for UmlClassPackageController {
 
 impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassPackageController {
     fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
-        let mut model = self.model.write().unwrap();
-        
-        ui.label("IRI:");
+        ui.label("Name:");
         let r1 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.name));
+                              egui::TextEdit::multiline(&mut self.name_buffer));
         
         ui.label("Comment:");
         let r2 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.comment));
+                              egui::TextEdit::multiline(&mut self.comment_buffer));
         
-        if r1.union(r2).changed() {
+        if r1.changed() || r2.changed() {
+            let mut model = self.model.write().unwrap();
+            
+            if r1.changed() {
+                model.name = Arc::new(self.name_buffer.clone());
+            }
+            
+            if r2.changed() {
+                model.comment = Arc::new(self.comment_buffer.clone());
+            }
+            
             model.notify_observers();
         }
     }
@@ -623,7 +724,7 @@ impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassPac
                 
                 if let Some(new) = tool.try_construct(self) {
                     let uuid = new.read().unwrap().uuid();
-                    self.owned_controllers.insert(uuid, new);
+                    self.owned_controllers.insert(*uuid, new);
                 }
                 return ClickHandlingStatus::Handled;
             },
@@ -675,16 +776,21 @@ impl ContainerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassPackageCont
 
 pub struct UmlClassController {
     pub model: Arc<RwLock<UmlClass>>,
+    name_buffer: String,
+    stereotype_buffer: String,
+    properties_buffer: String,
+    functions_buffer: String,
+    comment_buffer: String,
     
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
 }
 
 impl ElementController for UmlClassController {
-    fn uuid(&self) -> uuid::Uuid {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
-    fn model_name(&self) -> String {
+    fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
     }
 
@@ -698,30 +804,50 @@ impl ElementController for UmlClassController {
 }
 
 impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassController {
-    fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
-        let mut model = self.model.write().unwrap();
-        
+    fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {        
         ui.label("Name:");
         let r1 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.name));
+                              egui::TextEdit::multiline(&mut self.name_buffer));
         
         ui.label("Stereotype:");
         let r2 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.stereotype));
+                              egui::TextEdit::multiline(&mut self.stereotype_buffer));
         
         ui.label("Properties:");
         let r3 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.properties));
+                              egui::TextEdit::multiline(&mut self.properties_buffer));
         
         ui.label("Functions:");
         let r4 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.functions));
+                              egui::TextEdit::multiline(&mut self.functions_buffer));
         
         ui.label("Comment:");
         let r5 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.comment));
+                              egui::TextEdit::multiline(&mut self.comment_buffer));
         
-        if r1.union(r2).union(r3).union(r4).union(r5).changed() {
+        if r1.changed() || r2.changed() || r3.changed() || r4.changed() || r5.changed() {
+            let mut model = self.model.write().unwrap();
+            
+            if r1.changed() {
+                model.name = Arc::new(self.name_buffer.clone());
+            }
+            
+            if r2.changed() {
+                model.stereotype = Arc::new(self.stereotype_buffer.clone());
+            }
+            
+            if r3.changed() {
+                model.properties = Arc::new(self.properties_buffer.clone());
+            }
+            
+            if r4.changed() {
+                model.functions = Arc::new(self.functions_buffer.clone());
+            }
+            
+            if r5.changed() {
+                model.comment = Arc::new(self.comment_buffer.clone());
+            }
+            
             model.notify_observers();
         }
     }
@@ -742,7 +868,7 @@ impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassCon
     
     fn draw_in(&mut self,  _: &UmlClassQueryable, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>) -> TargettingStatus {
         let read = self.model.read().unwrap();
-        let stereotype = if read.stereotype != "" {
+        let stereotype = if !read.stereotype.is_empty() {
             Some(format!("<<{}>>", read.stereotype))
         } else { None };
         
@@ -792,6 +918,10 @@ pub struct UmlClassLinkController {
     pub model: Arc<RwLock<UmlClassLink>>,
     pub source: Arc<RwLock<dyn ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool>>>,
     pub destination: Arc<RwLock<dyn ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool>>>,
+    source_arrowhead_label_buffer: String,
+    destination_arrowhead_label_buffer: String,
+    comment_buffer: String,
+    
     pub center_point: Option<egui::Pos2>,
     pub source_points: Vec<Vec<egui::Pos2>>,
     pub dest_points: Vec<Vec<egui::Pos2>>,
@@ -807,11 +937,11 @@ impl UmlClassLinkController {
 }
 
 impl ElementController for UmlClassLinkController {
-    fn uuid(&self) -> uuid::Uuid {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
-    fn model_name(&self) -> String {
-        self.model.read().unwrap().link_type.name().to_string()
+    fn model_name(&self) -> Arc<String> {
+        self.model.read().unwrap().link_type.name()
     }
 
     fn min_shape(&self) -> NHShape {
@@ -835,7 +965,7 @@ impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassLin
         
         ui.label("Link type:");
         let r1 = egui::ComboBox::from_id_source("link type")
-            .selected_text(model.link_type.name())
+            .selected_text(&*model.link_type.name())
             .show_ui(ui, |ui| {
                 for sv in [UmlClassLinkType::Association,
                            UmlClassLinkType::Aggregation,
@@ -843,18 +973,18 @@ impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassLin
                            UmlClassLinkType::Generalization,
                            UmlClassLinkType::InterfaceRealization,
                            UmlClassLinkType::Usage,] {
-                    ui.selectable_value(&mut model.link_type, sv, sv.name());
+                    ui.selectable_value(&mut model.link_type, sv, &*sv.name());
                 }
             }).response;
         
         ui.label("Source:");
         let r2 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::singleline(&mut model.source_arrowhead_label));
+                              egui::TextEdit::singleline(&mut self.source_arrowhead_label_buffer));
         ui.separator();
         
         ui.label("Destination:");
         let r3 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::singleline(&mut model.destination_arrowhead_label));
+                              egui::TextEdit::singleline(&mut self.destination_arrowhead_label_buffer));
         ui.separator();
         
         /*
@@ -872,9 +1002,21 @@ impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassLin
         
         ui.label("Comment:");
         let r5 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut model.comment));
+                              egui::TextEdit::multiline(&mut self.comment_buffer));
         
-        if r1.union(r2).union(r3).union(r5).changed() || r4 {
+        if r1.changed() || r2.changed() || r3.changed() || r4 || r5.changed() {
+            if r2.changed() {
+                model.source_arrowhead_label = Arc::new(self.source_arrowhead_label_buffer.clone());
+            }
+            
+            if r3.changed() {
+                model.destination_arrowhead_label = Arc::new(self.destination_arrowhead_label_buffer.clone());
+            }
+            
+            if r5.changed() {
+                model.comment = Arc::new(self.comment_buffer.clone());
+            }
+            
             model.notify_observers();
         }
     }
@@ -897,10 +1039,10 @@ impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassLin
 
 impl UmlClassElementController for UmlClassLinkController {
     fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
-        self.source.read().unwrap().uuid() == *uuid
+        *self.source.read().unwrap().uuid() == *uuid
     }
     
-    fn connection_target_name(&self) -> Option<String> { 
+    fn connection_target_name(&self) -> Option<Arc<String>> { 
         Some(self.destination.read().unwrap().model_name())
     }
 }

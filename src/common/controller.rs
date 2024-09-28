@@ -4,8 +4,8 @@ use std::sync::{Arc, RwLock};
 use crate::common::canvas::{self, NHCanvas, NHShape, UiCanvas};
 
 pub trait DiagramController {
-    fn uuid(&self) -> uuid::Uuid;
-    fn model_name(&self) -> String;
+    fn uuid(&self) -> Arc<uuid::Uuid>;
+    fn model_name(&self) -> Arc<String>;
     
     fn new_ui_canvas(&self, ui: &mut egui::Ui) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response);
@@ -27,8 +27,8 @@ pub trait DiagramController {
 }
 
 pub trait ElementController {
-    fn uuid(&self) -> uuid::Uuid;
-    fn model_name(&self) -> String;
+    fn uuid(&self) -> Arc<uuid::Uuid>;
+    fn model_name(&self) -> Arc<String>;
     
     fn min_shape(&self) -> NHShape;
     fn max_shape(&self) -> NHShape {
@@ -68,9 +68,8 @@ pub enum DragHandlingStatus {
 }
 
 pub trait Model {
-    // TODO: There must be some way to optimize the Clone, right?
-    fn uuid(&self) -> uuid::Uuid;
-    fn name(&self) -> String;
+    fn uuid(&self) -> Arc<uuid::Uuid>;
+    fn name(&self) -> Arc<String>;
 }
 
 pub trait KindedElement<'a> {
@@ -114,7 +113,7 @@ pub trait ContainerGen2<QueryableT, ToolT> {
 
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
-pub struct DiagramControllerGen2<DiagramModelT, QueryableT, ToolT>
+pub struct DiagramControllerGen2<DiagramModelT, QueryableT, BufferT, ToolT>
 where
     DiagramModelT: Model,
     ToolT: Tool<QueryableT>,
@@ -132,11 +131,12 @@ where
     
     // q: dyn Fn(&Vec<DomainElementT>) -> QueryableT,
     queryable: QueryableT,
-    show_props_fun: fn(&mut DiagramModelT, &mut egui::Ui),
+    buffer: BufferT,
+    show_props_fun: fn(&mut DiagramModelT, &mut BufferT, &mut egui::Ui),
     tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
 }
 
-impl<DiagramModelT, QueryableT, ToolT> DiagramControllerGen2<DiagramModelT, QueryableT, ToolT>
+impl<DiagramModelT, QueryableT, BufferT, ToolT> DiagramControllerGen2<DiagramModelT, QueryableT, BufferT, ToolT>
 where
     DiagramModelT: Model,
     ToolT: Tool<QueryableT>,
@@ -145,7 +145,8 @@ where
         model: Arc<RwLock<DiagramModelT>>,
         owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<QueryableT, ToolT>>>>,
         queryable: QueryableT,
-        show_props_fun: fn(&mut DiagramModelT, &mut egui::Ui),
+        buffer: BufferT,
+        show_props_fun: fn(&mut DiagramModelT, &mut BufferT, &mut egui::Ui),
         tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
     ) -> Self {
         Self {
@@ -161,6 +162,7 @@ where
             current_tool: None,
             
             queryable,
+            buffer,
             show_props_fun,
             tool_change_fun,
         }
@@ -175,16 +177,15 @@ where
     }
 }
 
-impl<DiagramModelT, QueryableT, ToolT> DiagramController for DiagramControllerGen2<DiagramModelT, QueryableT, ToolT>
+impl<DiagramModelT, QueryableT, BufferT, ToolT> DiagramController for DiagramControllerGen2<DiagramModelT, QueryableT, BufferT, ToolT>
 where
     DiagramModelT: Model,
     ToolT: for<'a> Tool<QueryableT, KindedElement<'a>: KindedElement<'a, DiagramType = Self>>,
 {
-    // TODO: I'm not sure if these passthrough methods make sense
-    fn uuid(&self) -> uuid::Uuid {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid()
     }
-    fn model_name(&self) -> String {
+    fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name()
     }
     
@@ -282,7 +283,7 @@ where
         let mut tool = self.current_tool.take();
         if let Some(new) = tool.as_mut().and_then(|e| e.try_construct(self)) {
             let uuid = new.read().unwrap().uuid();
-            self.owned_controllers.insert(uuid, new);
+            self.owned_controllers.insert(*uuid, new);
             return true;
         }
         self.current_tool = tool;
@@ -306,7 +307,7 @@ where
         } else {
             let mut model = self.model.write().unwrap();
         
-            (self.show_props_fun)(&mut model, ui);
+            (self.show_props_fun)(&mut model, &mut self.buffer, ui);
         }
     }
     fn show_layers(&self, _ui: &mut egui::Ui) {
@@ -351,7 +352,7 @@ where
     }
 }
 
-impl<DiagramModelT, QueryableT, ToolT> ContainerGen2<QueryableT, ToolT> for DiagramControllerGen2<DiagramModelT, QueryableT, ToolT>
+impl<DiagramModelT, QueryableT, BufferT, ToolT> ContainerGen2<QueryableT, ToolT> for DiagramControllerGen2<DiagramModelT, QueryableT, BufferT, ToolT>
 where
     DiagramModelT: Model,
     ToolT: Tool<QueryableT>,

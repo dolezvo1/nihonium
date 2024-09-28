@@ -122,7 +122,7 @@ impl TabViewer for MyContext {
 
     fn title(&mut self, tab: &mut Self::Tab) -> WidgetText {
         match tab {
-            NHTab::Diagram{ uuid } => self.diagram_controllers.get(uuid).unwrap().model_name().into(),
+            NHTab::Diagram{ uuid } => (&*self.diagram_controllers.get(uuid).unwrap().model_name()).into(),
             t => t.name().into(),
         }
     }
