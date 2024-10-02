@@ -1,9 +1,11 @@
 use eframe::egui;
+use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 use crate::common::canvas::{self, NHCanvas, NHShape, UiCanvas};
+use crate::NHApp;
 
-pub trait DiagramController {
+pub trait DiagramController: Any {
     fn uuid(&self) -> Arc<uuid::Uuid>;
     fn model_name(&self) -> Arc<String>;
     
@@ -16,19 +18,21 @@ pub trait DiagramController {
     fn show_toolbar(&mut self, ui: &mut egui::Ui);
     fn show_properties(&mut self, ui: &mut egui::Ui);
     fn show_layers(&self, ui: &mut egui::Ui);
+    fn show_menubar_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui);
     fn list_in_project_hierarchy(&self, ui: &mut egui::Ui);
     
     // This hurts me at least as much as it hurts you
-    fn outgoing_for<'a>(&'a self, _uuid: &'a uuid::Uuid) -> Box<dyn Iterator<Item=Arc<RwLock<dyn ElementController>>> + 'a> {
-        Box::new(std::iter::empty::<Arc<RwLock<dyn ElementController>>>())
-    }
+    //fn outgoing_for<'a>(&'a self, _uuid: &'a uuid::Uuid) -> Box<dyn Iterator<Item=Arc<RwLock<dyn ElementController>>> + 'a> {
+    //    Box::new(std::iter::empty::<Arc<RwLock<dyn ElementController>>>())
+    //}
     
     fn draw_in(&mut self, canvas: &mut dyn NHCanvas, mouse_pos: Option<egui::Pos2>);
 }
 
-pub trait ElementController {
+pub trait ElementController<CommonElementT: ?Sized> {
     fn uuid(&self) -> Arc<uuid::Uuid>;
     fn model_name(&self) -> Arc<String>;
+    fn model(&self) -> Arc<RwLock<CommonElementT>>;
     
     fn min_shape(&self) -> NHShape;
     fn max_shape(&self) -> NHShape {
@@ -67,9 +71,13 @@ pub enum DragHandlingStatus {
     Handled,
 }
 
-pub trait Model {
+pub trait Model: 'static {
     fn uuid(&self) -> Arc<uuid::Uuid>;
     fn name(&self) -> Arc<String>;
+}
+
+pub trait ContainerModel<ModelT: ?Sized>: Model {
+    fn add_element(&mut self, _: Arc<RwLock<ModelT>>);
 }
 
 pub trait KindedElement<'a> {
@@ -79,7 +87,7 @@ pub trait KindedElement<'a> {
     fn package() -> Self;
 }
 
-pub trait Tool<QueryableT> {
+pub trait Tool<CommonElementT: ?Sized, QueryableT> {
     type KindedElement<'a>: KindedElement<'a>;
     type Stage;
     
@@ -91,13 +99,13 @@ pub trait Tool<QueryableT> {
     fn offset_by(&mut self, delta: egui::Vec2);
     fn add_position(&mut self, pos: egui::Pos2);
     fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>, pos: egui::Pos2);
-    fn try_construct(&mut self, into: &dyn ContainerGen2<QueryableT, Self>) -> Option<Arc<RwLock<dyn ElementControllerGen2<QueryableT, Self>>>>;
+    fn try_construct(&mut self, into: &dyn ContainerGen2<CommonElementT, QueryableT, Self>) -> Option<Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, Self>>>>;
     fn reset_constructed_state(&mut self);
 }
 
-pub trait ElementControllerGen2<QueryableT, ToolT>: ElementController
+pub trait ElementControllerGen2<CommonElementT: ?Sized, QueryableT, ToolT>: ElementController<CommonElementT>
 where
-    ToolT: Tool<QueryableT>,
+    ToolT: Tool<CommonElementT, QueryableT>,
 {
     fn show_properties(&mut self, _: &QueryableT, _ui: &mut egui::Ui) {}
     fn list_in_project_hierarchy(&self, _: &QueryableT, _ui: &mut egui::Ui) {}
@@ -107,19 +115,19 @@ where
     fn drag(&mut self, tool: Option<&mut ToolT>, last_pos: egui::Pos2, delta: egui::Vec2) -> DragHandlingStatus;
 }
 
-pub trait ContainerGen2<QueryableT, ToolT> {
-    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn ElementControllerGen2<QueryableT, ToolT>>>>;
+pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT> {
+    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT>>>>;
 }
 
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
-pub struct DiagramControllerGen2<DiagramModelT, QueryableT, BufferT, ToolT>
+pub struct DiagramControllerGen2<DiagramModelT, ElementModelT: ?Sized + 'static, QueryableT, BufferT, ToolT>
 where
-    DiagramModelT: Model,
-    ToolT: Tool<QueryableT>,
+    DiagramModelT: ContainerModel<ElementModelT>,
+    ToolT: Tool<ElementModelT, QueryableT>,
 {
     model: Arc<RwLock<DiagramModelT>>,
-    owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<QueryableT, ToolT>>>>,
+    owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>>,
     
     pub _layers: Vec<bool>,
     
@@ -134,20 +142,23 @@ where
     buffer: BufferT,
     show_props_fun: fn(&mut DiagramModelT, &mut BufferT, &mut egui::Ui),
     tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
+    menubar_options_fun: fn(&mut Self, &mut NHApp, &mut egui::Ui),
 }
 
-impl<DiagramModelT, QueryableT, BufferT, ToolT> DiagramControllerGen2<DiagramModelT, QueryableT, BufferT, ToolT>
+impl<DiagramModelT, ElementModelT: ?Sized + 'static, QueryableT: 'static, BufferT: 'static, ToolT> 
+    DiagramControllerGen2<DiagramModelT, ElementModelT, QueryableT, BufferT, ToolT>
 where
-    DiagramModelT: Model,
-    ToolT: Tool<QueryableT>,
+    DiagramModelT: ContainerModel<ElementModelT>,
+    ToolT: Tool<ElementModelT, QueryableT>,
 {
     pub fn new(
         model: Arc<RwLock<DiagramModelT>>,
-        owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<QueryableT, ToolT>>>>,
+        owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>>,
         queryable: QueryableT,
         buffer: BufferT,
         show_props_fun: fn(&mut DiagramModelT, &mut BufferT, &mut egui::Ui),
         tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
+        menubar_options_fun: fn(&mut Self, &mut NHApp, &mut egui::Ui),
     ) -> Self {
         Self {
             model,
@@ -165,10 +176,15 @@ where
             buffer,
             show_props_fun,
             tool_change_fun,
+            menubar_options_fun,
         }
     }
     
-    fn last_selected_element(&self) -> Option<Arc<RwLock<dyn ElementControllerGen2<QueryableT, ToolT>>>> {
+    pub fn model(&self) -> Arc<RwLock<DiagramModelT>> {
+        self.model.clone()
+    }
+    
+    fn last_selected_element(&self) -> Option<Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>> {
         if self.selected_elements.len() != 1 {
             return None;
         }
@@ -177,10 +193,11 @@ where
     }
 }
 
-impl<DiagramModelT, QueryableT, BufferT, ToolT> DiagramController for DiagramControllerGen2<DiagramModelT, QueryableT, BufferT, ToolT>
+impl<DiagramModelT, ElementModelT: ?Sized + 'static, QueryableT: 'static, BufferT: 'static, ToolT> DiagramController
+for DiagramControllerGen2<DiagramModelT, ElementModelT, QueryableT, BufferT, ToolT>
 where
-    DiagramModelT: Model,
-    ToolT: for<'a> Tool<QueryableT, KindedElement<'a>: KindedElement<'a, DiagramType = Self>>,
+    DiagramModelT: ContainerModel<ElementModelT>,
+    ToolT: for<'a> Tool<ElementModelT, QueryableT, KindedElement<'a>: KindedElement<'a, DiagramType = Self>> + 'static,
 {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid()
@@ -281,9 +298,15 @@ where
             }
         }
         let mut tool = self.current_tool.take();
-        if let Some(new) = tool.as_mut().and_then(|e| e.try_construct(self)) {
-            let uuid = new.read().unwrap().uuid();
-            self.owned_controllers.insert(*uuid, new);
+        if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
+            let new_c = new_a.read().unwrap();
+            let uuid = *new_c.uuid();
+            
+            let mut self_m = self.model.write().unwrap();
+            self_m.add_element(new_c.model());
+            drop(new_c);
+            
+            self.owned_controllers.insert(uuid, new_a);
             return true;
         }
         self.current_tool = tool;
@@ -312,6 +335,9 @@ where
     }
     fn show_layers(&self, _ui: &mut egui::Ui) {
         // TODO: Layers???
+    }
+    fn show_menubar_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui) {
+        (self.menubar_options_fun)(self, context, ui);
     }
     
     fn list_in_project_hierarchy(&self, ui: &mut egui::Ui) {
@@ -352,13 +378,14 @@ where
     }
 }
 
-impl<DiagramModelT, QueryableT, BufferT, ToolT> ContainerGen2<QueryableT, ToolT> for DiagramControllerGen2<DiagramModelT, QueryableT, BufferT, ToolT>
+impl<DiagramModelT, ElementModelT: ?Sized + 'static, QueryableT: 'static, BufferT: 'static, ToolT> ContainerGen2<ElementModelT, QueryableT, ToolT>
+for DiagramControllerGen2<DiagramModelT, ElementModelT, QueryableT, BufferT, ToolT>
 where
-    DiagramModelT: Model,
-    ToolT: Tool<QueryableT>,
+    DiagramModelT: ContainerModel<ElementModelT>,
+    ToolT: Tool<ElementModelT, QueryableT>,
 {
-    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn ElementControllerGen2<QueryableT, ToolT>>>> {
-        todo!()
+    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>> {
+        self.owned_controllers.get(uuid).cloned()
     }
 }
 

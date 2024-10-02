@@ -2,7 +2,7 @@
 use std::{collections::VecDeque, sync::{Arc,LazyLock,RwLock}};
 use crate::common::observer::{Observer, Observable, impl_observable};
 use crate::common::canvas::{ArrowheadType, LineType};
-use crate::common::controller::Model;
+use crate::common::controller::{Model, ContainerModel};
 
 pub trait UmlClassElement: Observable {
     fn uuid(&self) -> Arc<uuid::Uuid>;
@@ -31,11 +31,6 @@ impl UmlClassDiagram {
             observers: VecDeque::new(),
         }
     }
-    
-    pub fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
-        self.contained_elements.push(element);
-        self.notify_observers();
-    }
 }
 
 impl Model for UmlClassDiagram {
@@ -44,6 +39,13 @@ impl Model for UmlClassDiagram {
     }
     fn name(&self) -> Arc<String> {
         self.name.clone()
+    }
+}
+
+impl ContainerModel<dyn UmlClassElement> for UmlClassDiagram {
+    fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
+        self.contained_elements.push(element);
+        self.notify_observers();
     }
 }
 
@@ -81,6 +83,13 @@ impl UmlClassPackage {
 
 impl_observable!(UmlClassPackage);
 
+impl UmlClassElement for UmlClassPackage {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
+    }
+}
+
+
 pub enum UMLClassAccessModifier {
     Public,
     Package,
@@ -98,7 +107,6 @@ impl UMLClassAccessModifier {
         }
     }
 }
-
 
 pub struct UmlClass {
     pub uuid: Arc<uuid::Uuid>,

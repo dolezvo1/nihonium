@@ -15,6 +15,7 @@ use crate::common::controller::{
     ClickHandlingStatus, DragHandlingStatus, ModifierKeys, TargettingStatus,
 };
 use crate::common::observer::Observable;
+use crate::NHApp;
 
 pub struct UmlClassQueryable {}
 
@@ -66,8 +67,34 @@ fn tool_change_fun(tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
         ui.separator();
     }
 }
+fn menubar_options_fun(
+    controller: &mut DiagramControllerGen2<UmlClassDiagram, dyn UmlClassElement, UmlClassQueryable, UmlClassDiagramBuffer, NaiveUmlClassTool>,
+    context: &mut NHApp,
+    ui: &mut egui::Ui
+) {
+    // TODO: add a window that would emit PlantUML for given diagram - I think that should be straightforward
+    // https://www.webdevtutor.net/blog/beginner-guide-plantuml-class-diagrams
+    /*
+    interface X {
 
-pub fn new(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
+    }
+
+    class MyClass1 implements X {
+    + attribute1: DataType
+    + method1(): ReturnType
+    }
+
+    class MyClass2 implements X {
+    + attribute2: DataType
+    + method2(): ReturnType
+    }
+
+    MyClass1 "1" -- "0..*" MyClass2
+
+    */
+}
+
+pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let uuid = uuid::Uuid::now_v7();
     let name = format!("New UML class diagram {}", no);
     let diagram = Arc::new(RwLock::new(UmlClassDiagram::new(
@@ -77,7 +104,7 @@ pub fn new(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     )));
     (
         uuid,
-        Box::new(DiagramControllerGen2::new(
+        Arc::new(RwLock::new(DiagramControllerGen2::new(
             diagram.clone(),
             HashMap::new(),
             UmlClassQueryable{},
@@ -87,11 +114,12 @@ pub fn new(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
             },
             show_props_fun,
             tool_change_fun,
-        )),
+            menubar_options_fun,
+        ))),
     )
 }
 
-pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
+pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
     
@@ -306,7 +334,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
         dest_points: vec![vec![egui::Pos2::ZERO]],
     }));
     
-    let mut owned_controllers = HashMap::<_, Arc<RwLock<dyn ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool>>>>::new();
+    let mut owned_controllers = HashMap::<_, Arc<RwLock<dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>>>>::new();
     owned_controllers.insert(class_af_uuid, class_af_controller);
     owned_controllers.insert(class_cfx_uuid, class_cfx_controller);
     owned_controllers.insert(class_cfy_uuid, class_cfy_controller);
@@ -331,7 +359,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
     )));
     (
         diagram_uuid,
-        Box::new(DiagramControllerGen2::new(
+        Arc::new(RwLock::new(DiagramControllerGen2::new(
             diagram2.clone(),
             owned_controllers,
             UmlClassQueryable{},
@@ -341,7 +369,8 @@ pub fn demo(no: u32) -> (uuid::Uuid, Box<dyn DiagramController>) {
             },
             show_props_fun,
             tool_change_fun,
-        ))
+            menubar_options_fun,
+        ))),
     )
 }
 
@@ -354,7 +383,7 @@ pub enum KindedUmlClassElement<'a> {
 }
 
 impl<'a> KindedElement<'a> for KindedUmlClassElement<'a> {
-    type DiagramType = DiagramControllerGen2<UmlClassDiagram, UmlClassQueryable, UmlClassDiagramBuffer, NaiveUmlClassTool>;
+    type DiagramType = DiagramControllerGen2<UmlClassDiagram, dyn UmlClassElement, UmlClassQueryable, UmlClassDiagramBuffer, NaiveUmlClassTool>;
     
     fn diagram(_: &'a Self::DiagramType) -> Self {
         Self::Diagram{}
@@ -378,7 +407,7 @@ pub enum UmlClassToolStage {
 
 enum PartialUmlClassElement {
     None,
-    Some(Arc<RwLock<dyn ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool>>>),
+    Some(Arc<RwLock<dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>>>),
     Link{link_type: UmlClassLinkType, source: Arc<RwLock<dyn UmlClassElement>>,
          source_pos: egui::Pos2, dest: Option<Arc<RwLock<dyn UmlClassElement>>>},
     Package{a: egui::Pos2, a_display: egui::Pos2, b: Option<egui::Pos2>},
@@ -407,7 +436,7 @@ impl NaiveUmlClassTool {
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
 const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
 
-impl Tool<UmlClassQueryable> for NaiveUmlClassTool {
+impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
     type KindedElement<'a> = KindedUmlClassElement<'a>;
     type Stage = UmlClassToolStage;
     
@@ -509,7 +538,7 @@ impl Tool<UmlClassQueryable> for NaiveUmlClassTool {
             KindedUmlClassElement::Link{..} => {},
         }
     }
-    fn try_construct(&mut self, into: &dyn ContainerGen2<UmlClassQueryable, Self>) -> Option<Arc<RwLock<dyn ElementControllerGen2<UmlClassQueryable, Self>>>> {
+    fn try_construct(&mut self, into: &dyn ContainerGen2<dyn UmlClassElement, UmlClassQueryable, Self>) -> Option<Arc<RwLock<dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, Self>>>> {
         match &self.result {
             PartialUmlClassElement::Some(x) => {
                 let x = x.clone();
@@ -527,7 +556,7 @@ impl Tool<UmlClassQueryable> for NaiveUmlClassTool {
                     source.clone(),
                     dest.clone(),
                 )));
-                let association_controller: Option<Arc<RwLock<dyn ElementControllerGen2<UmlClassQueryable, Self>>>>
+                let association_controller: Option<Arc<RwLock<dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, Self>>>>
                     = if let (Some(source_controller), Some(dest_controller))
                         = (into.controller_for(&source.read().unwrap().uuid()), into.controller_for(&dest.read().unwrap().uuid())) {
                     Some(Arc::new(RwLock::new(UmlClassLinkController {
@@ -578,26 +607,29 @@ impl Tool<UmlClassQueryable> for NaiveUmlClassTool {
     }
 }
 
-pub trait UmlClassElementController: ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> {
+pub trait UmlClassElementController: ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool> {
     fn is_connection_from(&self, _uuid: &uuid::Uuid) -> bool { false }
     fn connection_target_name(&self) -> Option<Arc<String>> { None }
 }
 
 pub struct UmlClassPackageController {
     pub model: Arc<RwLock<UmlClassPackage>>,
-    pub owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool>>>>,
+    pub owned_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>>>>,
     name_buffer: String,
     comment_buffer: String,
     
     pub bounds_rect: egui::Rect,
 }
 
-impl ElementController for UmlClassPackageController {
+impl ElementController<dyn UmlClassElement> for UmlClassPackageController {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
+    }
+    fn model(&self) -> Arc<RwLock<dyn UmlClassElement>> {
+        self.model.clone()
     }
     
     fn min_shape(&self) -> NHShape {
@@ -609,7 +641,7 @@ impl ElementController for UmlClassPackageController {
     }
 }
 
-impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassPackageController {
+impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool> for UmlClassPackageController {
     fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
         ui.label("Name:");
         let r1 = ui.add_sized((ui.available_width(), 20.0),
@@ -768,8 +800,8 @@ impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassPac
     }
 }
 
-impl ContainerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassPackageController {
-    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool>>>> {
+impl ContainerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool> for UmlClassPackageController {
+    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>>>> {
         self.owned_controllers.get(uuid).cloned()
     }
 }
@@ -786,12 +818,15 @@ pub struct UmlClassController {
     pub bounds_rect: egui::Rect,
 }
 
-impl ElementController for UmlClassController {
+impl ElementController<dyn UmlClassElement> for UmlClassController {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
+    }
+    fn model(&self) -> Arc<RwLock<dyn UmlClassElement>> {
+        self.model.clone()
     }
 
     fn min_shape(&self) -> NHShape {
@@ -803,7 +838,7 @@ impl ElementController for UmlClassController {
     }
 }
 
-impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassController {
+impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool> for UmlClassController {
     fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {        
         ui.label("Name:");
         let r1 = ui.add_sized((ui.available_width(), 20.0),
@@ -916,8 +951,8 @@ impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassCon
 
 pub struct UmlClassLinkController {
     pub model: Arc<RwLock<UmlClassLink>>,
-    pub source: Arc<RwLock<dyn ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool>>>,
-    pub destination: Arc<RwLock<dyn ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool>>>,
+    pub source: Arc<RwLock<dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>>>,
+    pub destination: Arc<RwLock<dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>>>,
     source_arrowhead_label_buffer: String,
     destination_arrowhead_label_buffer: String,
     comment_buffer: String,
@@ -936,12 +971,15 @@ impl UmlClassLinkController {
     }
 }
 
-impl ElementController for UmlClassLinkController {
+impl ElementController<dyn UmlClassElement> for UmlClassLinkController {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().link_type.name()
+    }
+    fn model(&self) -> Arc<RwLock<dyn UmlClassElement>> {
+        self.model.clone()
     }
 
     fn min_shape(&self) -> NHShape {
@@ -959,7 +997,7 @@ impl ElementController for UmlClassLinkController {
     }
 }
 
-impl ElementControllerGen2<UmlClassQueryable, NaiveUmlClassTool> for UmlClassLinkController {
+impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool> for UmlClassLinkController {
     fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
         let mut model = self.model.write().unwrap();
         

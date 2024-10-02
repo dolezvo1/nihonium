@@ -1,16 +1,32 @@
 
-use std::{collections::VecDeque, sync::{Arc,RwLock}};
-use crate::common::controller::Model;
+use std::{collections::{HashMap, VecDeque}, sync::{Arc,RwLock}};
 use crate::common::observer::{Observer, Observable, impl_observable};
+use crate::common::controller::{Model, ContainerModel};
+
+use sophia_api::{MownStr, term::{GraphName, SimpleTerm, IriRef, LanguageTag}};
+
+struct RdfCollector<'a> {
+    data: Vec<([SimpleTerm<'a>; 3], GraphName<SimpleTerm<'a>>)>,
+    current_graph: GraphName<SimpleTerm<'a>>,
+}
+
+impl<'a> RdfCollector<'a> {
+    fn add_triple(&mut self, triple: [SimpleTerm<'a>; 3]) {
+        self.data.push((triple, self.current_graph.clone()));
+    }
+}
 
 pub trait RdfElement: Observable {
     fn uuid(&self) -> Arc<uuid::Uuid>;
+    fn term_repr(&self) -> SimpleTerm<'static>;
+    fn accept_collector(&self, collector: &mut RdfCollector<'static>);
 }
 
 pub struct RdfDiagram {
     pub uuid: Arc<uuid::Uuid>,
     pub name: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
+    pub stored_queries: HashMap<uuid::Uuid, (String, String)>,
 
     pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
@@ -26,14 +42,28 @@ impl RdfDiagram {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
             contained_elements,
+            stored_queries: {
+                let mut hm = HashMap::new();
+                hm.insert(uuid::Uuid::now_v7(), ("all".to_owned(), "SELECT * WHERE { ?s ?p ?o }".to_owned()));
+                hm
+            },
             comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
     
-    pub fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
-        self.contained_elements.push(element);
-        self.notify_observers();
+    pub fn graph(&self) -> Vec<([SimpleTerm; 3], GraphName<SimpleTerm>)> {
+        let mut collector = RdfCollector {
+            data: Vec::new(),
+            current_graph: None,
+        };
+        
+        for c in &self.contained_elements {
+            let c = c.read().unwrap();
+            c.accept_collector(&mut collector);
+        }
+        
+        collector.data
     }
 }
 
@@ -46,12 +76,19 @@ impl Model for RdfDiagram {
     }
 }
 
+impl ContainerModel<dyn RdfElement> for RdfDiagram {
+    fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
+        self.contained_elements.push(element);
+        self.notify_observers();
+    }
+}
+
 impl_observable!(RdfDiagram);
 
 
 pub struct RdfGraph {
     pub uuid: Arc<uuid::Uuid>,
-    pub name: Arc<String>,
+    pub iri: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
     
     pub comment: Arc<String>,
@@ -61,18 +98,19 @@ pub struct RdfGraph {
 impl RdfGraph {
     pub fn new(
         uuid: uuid::Uuid,
-        name: String,
+        iri: String,
         contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(name),
+            iri: Arc::new(iri),
             contained_elements,
             comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
     
+    // TODO: use this
     pub fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
         self.contained_elements.push(element);
         self.notify_observers();
@@ -84,6 +122,21 @@ impl_observable!(RdfGraph);
 impl RdfElement for RdfGraph {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.uuid.clone()
+    }
+    
+    fn term_repr(&self) -> SimpleTerm<'static> {
+        panic!()
+    }
+    
+    fn accept_collector(&self, collector: &mut RdfCollector<'static>) {
+        let old_graph = collector.current_graph.replace(SimpleTerm::Iri(IriRef::new(MownStr::from((*self.iri).clone())).unwrap()));
+        
+        for c in &self.contained_elements {
+            let c = c.read().unwrap();
+            c.accept_collector(collector);
+        }
+        
+        collector.current_graph = old_graph;
     }
 }
 
@@ -121,6 +174,21 @@ impl RdfElement for RdfLiteral {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.uuid.clone()
     }
+    
+    fn term_repr(&self) -> SimpleTerm<'static> {
+        if !self.language.is_empty() {
+            SimpleTerm::LiteralLanguage(MownStr::from((*self.content).clone()), LanguageTag::new(MownStr::from((*self.language).clone())).unwrap())
+        } else {
+            let datatype = if !self.datatype.is_empty() {
+                &self.datatype
+            } else {
+                "asdf"
+            }.to_owned();
+            SimpleTerm::LiteralDatatype(MownStr::from((*self.content).clone()), IriRef::new(MownStr::from(datatype)).unwrap())
+        }
+    }
+    
+    fn accept_collector(&self, collector: &mut RdfCollector) {}
 }
 
 pub struct RdfNode {
@@ -151,6 +219,12 @@ impl RdfElement for RdfNode {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.uuid.clone()
     }
+    
+    fn term_repr(&self) -> SimpleTerm<'static> {
+        SimpleTerm::Iri(IriRef::new(MownStr::from((*self.iri).clone())).unwrap())
+    }
+    
+    fn accept_collector(&self, collector: &mut RdfCollector) {}
 }
 
 pub struct RdfPredicate {
@@ -186,5 +260,26 @@ impl_observable!(RdfPredicate);
 impl RdfElement for RdfPredicate {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.uuid.clone()
+    }
+    
+    fn term_repr(&self) -> SimpleTerm<'static> {
+        panic!()
+    }
+    
+    fn accept_collector(&self, collector: &mut RdfCollector<'static>) {
+        let subject = {
+            let s = self.source.read().unwrap();
+            s.term_repr()
+        };
+        let object = {
+            let o = self.destination.read().unwrap();
+            o.term_repr()
+        };
+        
+        collector.add_triple([
+            subject,
+            SimpleTerm::Iri(IriRef::new(MownStr::from((*self.iri).clone())).unwrap()),
+            object,
+        ]);
     }
 }

@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, RwLock};
 
 use eframe::NativeOptions;
 use eframe::egui::{
@@ -66,37 +67,51 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "113",
         options,
-        Box::new(|_cc| Ok(Box::<MyApp>::default())),
+        Box::new(|_cc| Ok(Box::<NHApp>::default())),
     )
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
 enum NHTab {
-    Hierarchy,
+    StyleEditor,
+    
+    ProjectHierarchy,
+    
     Toolbar,
     Properties,
     Layers,
-    StyleEditor,
     
     Diagram { uuid: uuid::Uuid },
+    CustomTab { uuid: uuid::Uuid },
 }
 
 impl NHTab {
     pub fn name(&self) -> &str {
         match self {
-            NHTab::Hierarchy => "Project Hierarchy",
+            NHTab::StyleEditor => "Style Editor",
+            
+            NHTab::ProjectHierarchy => "Project Hierarchy",
+            
             NHTab::Toolbar => "Toolbar",
             NHTab::Properties => "Properties",
             NHTab::Layers => "Layers",
-            NHTab::StyleEditor => "Style Editor",
+            
             NHTab::Diagram{..} => "Diagram",
+            NHTab::CustomTab{..} => todo!(),
         }
     }
 }
 
-struct MyContext {
-    pub diagram_controllers: HashMap<uuid::Uuid, Box<dyn DiagramController>>,
+pub trait CustomTab {
+    fn title(&self) -> String;
+    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui);
+    //fn on_close(&mut self, context: &mut NHApp);
+}
+
+struct NHContext {
+    pub diagram_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn DiagramController>>>,
     new_diagram_no: u32,
+    pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
     
     pub style: Option<Style>,
     
@@ -112,29 +127,40 @@ struct MyContext {
     show_window_collapse: bool,
 }
 
-struct MyApp {
-    context: MyContext,
+struct NHApp {
+    context: NHContext,
     tree: DockState<NHTab>,
 }
 
-impl TabViewer for MyContext {
+impl TabViewer for NHContext {
     type Tab = NHTab;
 
     fn title(&mut self, tab: &mut Self::Tab) -> WidgetText {
         match tab {
-            NHTab::Diagram{ uuid } => (&*self.diagram_controllers.get(uuid).unwrap().model_name()).into(),
+            NHTab::Diagram{uuid} => {
+                let c = self.diagram_controllers.get(uuid).unwrap().read().unwrap();
+                (&*c.model_name()).into()
+            },
+            NHTab::CustomTab{uuid} => {
+                let c = self.custom_tabs.get(uuid).unwrap().read().unwrap();
+                c.title().into()
+            },
             t => t.name().into(),
         }
     }
 
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
         match tab {
-            NHTab::Hierarchy => self.hierarchy(ui),
+            NHTab::StyleEditor => self.style_editor_tab(ui),
+            
+            NHTab::ProjectHierarchy => self.hierarchy(ui),
+            
             NHTab::Toolbar => self.toolbar(ui),
             NHTab::Properties => self.properties(ui),
             NHTab::Layers => self.layers(ui),
-            NHTab::StyleEditor => self.style_editor_tab(ui),
+            
             NHTab::Diagram{uuid} => self.diagram_tab(uuid, ui),
+            NHTab::CustomTab{uuid} => self.custom_tab(uuid, ui),
         }
     }
 
@@ -163,31 +189,41 @@ impl TabViewer for MyContext {
     }
 }
 
-impl MyContext {
-    fn hierarchy(&mut self, ui: &mut Ui) {
+impl NHContext {
+    fn hierarchy(&self, ui: &mut Ui) {
         for (_uiid, controller) in &self.diagram_controllers {
-            controller.list_in_project_hierarchy(ui);
+            let controller_lock = controller.write().unwrap();
+            controller_lock.list_in_project_hierarchy(ui);
         }
     }
     
-    fn toolbar(&mut self, ui: &mut Ui) {
+    fn toolbar(&self, ui: &mut Ui) {
         if let Some(last_focused_diagram) = &self.last_focused_diagram {
-            self.diagram_controllers.get_mut(last_focused_diagram)
-                .map(|c| c.show_toolbar(ui));
+            self.diagram_controllers.get(last_focused_diagram)
+                .map(|c| {
+                    let mut controller_lock = c.write().unwrap();
+                    controller_lock.show_toolbar(ui)
+                });
         }
     }
     
-    fn properties(&mut self, ui: &mut Ui) {
+    fn properties(&self, ui: &mut Ui) {
         if let Some(last_focused_diagram) = &self.last_focused_diagram {
-            self.diagram_controllers.get_mut(last_focused_diagram)
-                .map(|c| c.show_properties(ui));
+            self.diagram_controllers.get(last_focused_diagram)
+                .map(|c| {
+                    let mut controller_lock = c.write().unwrap();
+                    controller_lock.show_properties(ui)
+                });
         }
     }
     
-    fn layers(&mut self, ui: &mut Ui) {
+    fn layers(&self, ui: &mut Ui) {
         if let Some(last_focused_diagram) = &self.last_focused_diagram {
-            self.diagram_controllers.get_mut(last_focused_diagram)
-                .map(|c| c.show_layers(ui));
+            self.diagram_controllers.get(last_focused_diagram)
+                .map(|c| {
+                    let mut controller_lock = c.write().unwrap();
+                    controller_lock.show_layers(ui)
+                });
         }
     }
     
@@ -549,7 +585,7 @@ impl MyContext {
     
     // In general it should draw first and handle input second, right?
     fn diagram_tab(&mut self, uuid: &uuid::Uuid, ui: &mut Ui) {
-        let diagram_controller = self.diagram_controllers.get_mut(uuid).unwrap();
+        let mut diagram_controller = self.diagram_controllers.get(uuid).unwrap().write().unwrap();
         
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(ui);
         
@@ -564,12 +600,18 @@ impl MyContext {
         response.context_menu(|ui| diagram_controller.context_menu(ui));
     }
     
-    fn last_focused_diagram(&mut self) -> Option<&mut Box<dyn DiagramController>> {
-        self.last_focused_diagram.as_ref().and_then(|e| self.diagram_controllers.get_mut(e))
+    fn custom_tab(&mut self, uuid: &uuid::Uuid, ui: &mut Ui) {
+        let x = self.custom_tabs.get(uuid).map(|e| e.clone()).unwrap();
+        let mut custom_tab = x.write().unwrap();
+        custom_tab.show(/*self,*/ ui);
+    }
+    
+    fn last_focused_diagram(&mut self) -> Option<Arc<RwLock<dyn DiagramController>>> {
+        self.last_focused_diagram.as_ref().and_then(|e| self.diagram_controllers.get(e).cloned())
     }
 }
 
-impl Default for MyApp {
+impl Default for NHApp {
     fn default() -> Self {
         let (rdf_uuid, rdf_demo) = crate::rdf::rdf_controllers::demo(1);
         let (umlclass_uuid, umlclass_demo) = crate::umlclass::umlclass_controllers::demo(2);
@@ -590,9 +632,9 @@ impl Default for MyApp {
         let [a, b] = dock_state.main_surface_mut().split_left(
             NodeIndex::root(),
             0.2,
-            vec![NHTab::Hierarchy],
+            vec![NHTab::ProjectHierarchy],
         );
-        open_unique_tabs.insert(NHTab::Hierarchy);
+        open_unique_tabs.insert(NHTab::ProjectHierarchy);
         let [_, _] = dock_state.main_surface_mut().split_right(
             a,
             0.7,
@@ -606,9 +648,10 @@ impl Default for MyApp {
         );
         open_unique_tabs.insert(NHTab::Toolbar);
         
-        let context = MyContext {
+        let context = NHContext {
             diagram_controllers,
             new_diagram_no: 3,
+            custom_tabs: HashMap::new(),
             style: None,
             
             open_unique_tabs,
@@ -630,7 +673,18 @@ impl Default for MyApp {
     }
 }
 
-impl eframe::App for MyApp {
+impl NHApp {
+    pub fn add_custom_tab(&mut self, uuid: uuid::Uuid, tab: Arc<RwLock<dyn CustomTab>>) {
+        self.context.custom_tabs.insert(uuid, tab);
+        
+        let tab = NHTab::CustomTab{uuid};
+        
+        self.tree[SurfaceIndex::main()]
+            .push_to_focused_leaf(tab);
+    }
+}
+
+impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -651,7 +705,7 @@ impl eframe::App for MyApp {
                     */
                     
                     ui.menu_button("Add New Diagram", |ui| {
-                        type NDC = fn(u32) -> (uuid::Uuid, Box<(dyn DiagramController + 'static)>);
+                        type NDC = fn(u32) -> (uuid::Uuid, Arc<RwLock<(dyn DiagramController + 'static)>>);
                         for (label, fun) in [("Add New UML class diagram", crate::umlclass::umlclass_controllers::new as NDC),
                                              //("Add New OntoUML diagram"),
                                              ("Add New RDF diagram", crate::rdf::rdf_controllers::new as NDC),] {
@@ -697,7 +751,11 @@ impl eframe::App for MyApp {
                 
                 ui.menu_button("Diagram", |ui| {
                     self.context.last_focused_diagram().map(|e| {
-                        ui.menu_button(format!("Export Diagram `{}` to", e.model_name()), |ui| {
+                        let mut controller = e.write().unwrap();
+                        
+                        controller.show_menubar_options(self, ui);
+                        
+                        ui.menu_button(format!("Export Diagram `{}` to", controller.model_name()), |ui| {
                             if ui.button("SVG").clicked() {
                                 // NOTE: This does not work on WASM, and in its current state it never will.
                                 //       This will be possible to fix once this is fixed on rfd side (#128).
@@ -707,7 +765,7 @@ impl eframe::App for MyApp {
                                                     .add_filter("All files", &["*"])
                                                     .save_file() {
                                     let mut measuring_canvas = MeasuringCanvas::new(ui.painter());
-                                    e.draw_in(&mut measuring_canvas, None);
+                                    controller.draw_in(&mut measuring_canvas, None);
                                     
                                     const PADDING_WIDTH: f32 = 10.0;
                                     let mut svg_canvas = SVGCanvas::new(
@@ -717,7 +775,7 @@ impl eframe::App for MyApp {
                                         measuring_canvas.bounds().size()
                                             + egui::Vec2::new(2.0 * PADDING_WIDTH, 2.0 * PADDING_WIDTH),
                                     );
-                                    e.draw_in(&mut svg_canvas, None);
+                                    controller.draw_in(&mut svg_canvas, None);
                                     let _ = svg_canvas.save_to(path);
                                 }
                                 ui.close_menu();
@@ -738,8 +796,9 @@ impl eframe::App for MyApp {
                 
                 ui.menu_button("Windows", |ui| {
                     // allow certain tabs to be toggled
-                    for tab in &[NHTab::Hierarchy, NHTab::Toolbar, NHTab::Properties,
-                                 NHTab::Layers, NHTab::StyleEditor] {
+                    for tab in &[NHTab::StyleEditor,
+                                 NHTab::ProjectHierarchy,
+                                 NHTab::Toolbar, NHTab::Properties, NHTab::Layers] {
                         if ui
                             .selectable_label(
                                 self.context.open_unique_tabs.contains(tab),

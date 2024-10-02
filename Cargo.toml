@@ -7,6 +7,11 @@ edition = "2021"
 
 [dependencies]
 eframe = "0.28"
+egui_extras = "0.28"
 egui_dock = "0.13"
 rfd = "0.14.1"
 uuid = { version = "1.10.0", features = [ "std", "v7" ] }
+
+# RDF
+sophia_api = "0.8.0"
+sophia_sparql = "0.1.0-alpha.0"
