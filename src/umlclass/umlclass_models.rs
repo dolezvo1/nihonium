@@ -46,29 +46,11 @@ impl UmlClassCollector {
                 self.absolute_with_current_stack(&*class.name),
             );
         } else {
-            // https://www.webdevtutor.net/blog/beginner-guide-plantuml-class-diagrams
-            /*
-            interface X {
-
-            }
-
-            class MyClass1 implements X {
-            + attribute1: DataType
-            + method1(): ReturnType
-            }
-
-            class MyClass2 implements X {
-            + attribute2: DataType
-            + method2(): ReturnType
-            }
-            */
-
-            self.plantuml_data.push_str(&format!(
-                "{} {:?} {{\n{}}}\n",
-                class.stereotype.name(),
-                class.name,
-                ""
-            ));
+            self.plantuml_data.push_str(&format!("{} {:?} {{\n", class.stereotype.name(), class.name));
+            self.plantuml_data.push_str(&class.properties);
+            self.plantuml_data.push_str("\n");
+            self.plantuml_data.push_str(&class.functions);
+            self.plantuml_data.push_str("}\n");
         }
     }
     fn visit_link(&mut self, link: &UmlClassLink) {
@@ -97,7 +79,7 @@ impl UmlClassCollector {
             });
             if !link.destination_arrowhead_label.is_empty() {
                 self.plantuml_data
-                    .push_str(&format!(" {:?}", link.destination_arrowhead_label));
+                    .push_str(&format!("{:?} ", link.destination_arrowhead_label));
             }
             self.plantuml_data.push_str(dest_name);
             self.plantuml_data.push_str("\n");
