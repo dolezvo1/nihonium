@@ -4,15 +4,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-use eframe::NativeOptions;
 use eframe::egui::{
-    self,
-    vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
+    self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
+use eframe::NativeOptions;
 
-use egui_dock::{
-    AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer,
-};
+use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
 
 mod common;
 mod rdf;
@@ -57,30 +54,25 @@ macro_rules! unit_slider {
     };
 }
 
-
 fn main() -> eframe::Result<()> {
     std::env::set_var("RUST_BACKTRACE", "1");
     let options = NativeOptions {
         viewport: ViewportBuilder::default().with_inner_size(vec2(1024.0, 1024.0)),
         ..Default::default()
     };
-    eframe::run_native(
-        "113",
-        options,
-        Box::new(|_cc| Ok(Box::<NHApp>::default())),
-    )
+    eframe::run_native("113", options, Box::new(|_cc| Ok(Box::<NHApp>::default())))
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
 enum NHTab {
     StyleEditor,
-    
+
     ProjectHierarchy,
-    
+
     Toolbar,
     Properties,
     Layers,
-    
+
     Diagram { uuid: uuid::Uuid },
     CustomTab { uuid: uuid::Uuid },
 }
@@ -89,15 +81,15 @@ impl NHTab {
     pub fn name(&self) -> &str {
         match self {
             NHTab::StyleEditor => "Style Editor",
-            
+
             NHTab::ProjectHierarchy => "Project Hierarchy",
-            
+
             NHTab::Toolbar => "Toolbar",
             NHTab::Properties => "Properties",
             NHTab::Layers => "Layers",
-            
-            NHTab::Diagram{..} => "Diagram",
-            NHTab::CustomTab{..} => todo!(),
+
+            NHTab::Diagram { .. } => "Diagram",
+            NHTab::CustomTab { .. } => todo!(),
         }
     }
 }
@@ -112,12 +104,12 @@ struct NHContext {
     pub diagram_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn DiagramController>>>,
     new_diagram_no: u32,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
-    
+
     pub style: Option<Style>,
-    
+
     open_unique_tabs: HashSet<NHTab>,
     last_focused_diagram: Option<uuid::Uuid>,
-    
+
     show_close_buttons: bool,
     show_add_buttons: bool,
     draggable_tabs: bool,
@@ -137,14 +129,14 @@ impl TabViewer for NHContext {
 
     fn title(&mut self, tab: &mut Self::Tab) -> WidgetText {
         match tab {
-            NHTab::Diagram{uuid} => {
+            NHTab::Diagram { uuid } => {
                 let c = self.diagram_controllers.get(uuid).unwrap().read().unwrap();
                 (&*c.model_name()).into()
-            },
-            NHTab::CustomTab{uuid} => {
+            }
+            NHTab::CustomTab { uuid } => {
                 let c = self.custom_tabs.get(uuid).unwrap().read().unwrap();
                 c.title().into()
-            },
+            }
             t => t.name().into(),
         }
     }
@@ -152,15 +144,15 @@ impl TabViewer for NHContext {
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
         match tab {
             NHTab::StyleEditor => self.style_editor_tab(ui),
-            
+
             NHTab::ProjectHierarchy => self.hierarchy(ui),
-            
+
             NHTab::Toolbar => self.toolbar(ui),
             NHTab::Properties => self.properties(ui),
             NHTab::Layers => self.layers(ui),
-            
-            NHTab::Diagram{uuid} => self.diagram_tab(uuid, ui),
-            NHTab::CustomTab{uuid} => self.custom_tab(uuid, ui),
+
+            NHTab::Diagram { uuid } => self.diagram_tab(uuid, ui),
+            NHTab::CustomTab { uuid } => self.custom_tab(uuid, ui),
         }
     }
 
@@ -174,15 +166,15 @@ impl TabViewer for NHContext {
         ui.label("asdfasdf");
         ui.label("This is a tab context menu");
     }
-    
+
     fn on_tab_button(&mut self, tab: &mut Self::Tab, response: &egui::Response) {
-        if let NHTab::Diagram{uuid} = tab {
+        if let NHTab::Diagram { uuid } = tab {
             if response.clicked() || response.drag_started() {
                 self.last_focused_diagram = Some(uuid.clone());
             }
         }
     }
-    
+
     fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
         self.open_unique_tabs.remove(tab);
         true
@@ -196,37 +188,34 @@ impl NHContext {
             controller_lock.list_in_project_hierarchy(ui);
         }
     }
-    
+
     fn toolbar(&self, ui: &mut Ui) {
         if let Some(last_focused_diagram) = &self.last_focused_diagram {
-            self.diagram_controllers.get(last_focused_diagram)
-                .map(|c| {
-                    let mut controller_lock = c.write().unwrap();
-                    controller_lock.show_toolbar(ui)
-                });
+            self.diagram_controllers.get(last_focused_diagram).map(|c| {
+                let mut controller_lock = c.write().unwrap();
+                controller_lock.show_toolbar(ui)
+            });
         }
     }
-    
+
     fn properties(&self, ui: &mut Ui) {
         if let Some(last_focused_diagram) = &self.last_focused_diagram {
-            self.diagram_controllers.get(last_focused_diagram)
-                .map(|c| {
-                    let mut controller_lock = c.write().unwrap();
-                    controller_lock.show_properties(ui)
-                });
+            self.diagram_controllers.get(last_focused_diagram).map(|c| {
+                let mut controller_lock = c.write().unwrap();
+                controller_lock.show_properties(ui)
+            });
         }
     }
-    
+
     fn layers(&self, ui: &mut Ui) {
         if let Some(last_focused_diagram) = &self.last_focused_diagram {
-            self.diagram_controllers.get(last_focused_diagram)
-                .map(|c| {
-                    let mut controller_lock = c.write().unwrap();
-                    controller_lock.show_layers(ui)
-                });
+            self.diagram_controllers.get(last_focused_diagram).map(|c| {
+                let controller_lock = c.write().unwrap();
+                controller_lock.show_layers(ui)
+            });
         }
     }
-    
+
     fn style_editor_tab(&mut self, ui: &mut Ui) {
         ui.heading("Style Editor");
 
@@ -301,15 +290,27 @@ impl NHContext {
                 ui.end_row();
 
                 ui.label("Idle color:");
-                egui::color_picker::color_edit_button_srgba(ui, &mut style.separator.color_idle, egui::color_picker::Alpha::OnlyBlend);
+                egui::color_picker::color_edit_button_srgba(
+                    ui,
+                    &mut style.separator.color_idle,
+                    egui::color_picker::Alpha::OnlyBlend,
+                );
                 ui.end_row();
 
                 ui.label("Hovered color:");
-                egui::color_picker::color_edit_button_srgba(ui, &mut style.separator.color_hovered, egui::color_picker::Alpha::OnlyBlend);
+                egui::color_picker::color_edit_button_srgba(
+                    ui,
+                    &mut style.separator.color_hovered,
+                    egui::color_picker::Alpha::OnlyBlend,
+                );
                 ui.end_row();
 
                 ui.label("Dragged color:");
-                egui::color_picker::color_edit_button_srgba(ui, &mut style.separator.color_dragged, egui::color_picker::Alpha::OnlyBlend);
+                egui::color_picker::color_edit_button_srgba(
+                    ui,
+                    &mut style.separator.color_dragged,
+                    egui::color_picker::Alpha::OnlyBlend,
+                );
                 ui.end_row();
             });
         });
@@ -374,16 +375,28 @@ impl NHContext {
 
                 egui::Grid::new("tabs_colors").show(ui, |ui| {
                     ui.label("Title text color:");
-                    egui::color_picker::color_edit_button_srgba(ui, &mut tab_style.text_color, egui::color_picker::Alpha::OnlyBlend);
+                    egui::color_picker::color_edit_button_srgba(
+                        ui,
+                        &mut tab_style.text_color,
+                        egui::color_picker::Alpha::OnlyBlend,
+                    );
                     ui.end_row();
 
                     ui.label("Outline color:")
                         .on_hover_text("The outline around the active tab name.");
-                    egui::color_picker::color_edit_button_srgba(ui, &mut tab_style.outline_color, egui::color_picker::Alpha::OnlyBlend);
+                    egui::color_picker::color_edit_button_srgba(
+                        ui,
+                        &mut tab_style.outline_color,
+                        egui::color_picker::Alpha::OnlyBlend,
+                    );
                     ui.end_row();
 
                     ui.label("Background color:");
-                    egui::color_picker::color_edit_button_srgba(ui, &mut tab_style.bg_fill, egui::color_picker::Alpha::OnlyBlend);
+                    egui::color_picker::color_edit_button_srgba(
+                        ui,
+                        &mut tab_style.bg_fill,
+                        egui::color_picker::Alpha::OnlyBlend,
+                    );
                     ui.end_row();
                 });
             }
@@ -408,7 +421,11 @@ impl NHContext {
 
             egui::Grid::new("tabs_colors").show(ui, |ui| {
                 ui.label("Close button color unfocused:");
-                egui::color_picker::color_edit_button_srgba(ui, &mut style.buttons.close_tab_color, egui::color_picker::Alpha::OnlyBlend);
+                egui::color_picker::color_edit_button_srgba(
+                    ui,
+                    &mut style.buttons.close_tab_color,
+                    egui::color_picker::Alpha::OnlyBlend,
+                );
                 ui.end_row();
 
                 ui.label("Close button color focused:");
@@ -420,17 +437,29 @@ impl NHContext {
                 ui.end_row();
 
                 ui.label("Close button background color:");
-                egui::color_picker::color_edit_button_srgba(ui, &mut style.buttons.close_tab_bg_fill, egui::color_picker::Alpha::OnlyBlend);
+                egui::color_picker::color_edit_button_srgba(
+                    ui,
+                    &mut style.buttons.close_tab_bg_fill,
+                    egui::color_picker::Alpha::OnlyBlend,
+                );
                 ui.end_row();
 
                 ui.label("Bar background color:");
-                egui::color_picker::color_edit_button_srgba(ui, &mut style.tab_bar.bg_fill, egui::color_picker::Alpha::OnlyBlend);
+                egui::color_picker::color_edit_button_srgba(
+                    ui,
+                    &mut style.tab_bar.bg_fill,
+                    egui::color_picker::Alpha::OnlyBlend,
+                );
                 ui.end_row();
 
                 ui.label("Horizontal line color:").on_hover_text(
                     "The line separating the tab name area from the tab content area",
                 );
-                egui::color_picker::color_edit_button_srgba(ui, &mut style.tab_bar.hline_color, egui::color_picker::Alpha::OnlyBlend);
+                egui::color_picker::color_edit_button_srgba(
+                    ui,
+                    &mut style.tab_bar.hline_color,
+                    egui::color_picker::Alpha::OnlyBlend,
+                );
                 ui.end_row();
             });
         });
@@ -450,11 +479,19 @@ impl NHContext {
 
             egui::Grid::new("tab_body_colors").show(ui, |ui| {
                 ui.label("Stroke color:");
-                egui::color_picker::color_edit_button_srgba(ui, &mut style.tab.tab_body.stroke.color, egui::color_picker::Alpha::OnlyBlend);
+                egui::color_picker::color_edit_button_srgba(
+                    ui,
+                    &mut style.tab.tab_body.stroke.color,
+                    egui::color_picker::Alpha::OnlyBlend,
+                );
                 ui.end_row();
 
                 ui.label("Background color:");
-                egui::color_picker::color_edit_button_srgba(ui, &mut style.tab.tab_body.bg_fill, egui::color_picker::Alpha::OnlyBlend);
+                egui::color_picker::color_edit_button_srgba(
+                    ui,
+                    &mut style.tab.tab_body.bg_fill,
+                    egui::color_picker::Alpha::OnlyBlend,
+                );
                 ui.end_row();
             });
         });
@@ -582,32 +619,34 @@ impl NHContext {
             })
         });
     }
-    
+
     // In general it should draw first and handle input second, right?
     fn diagram_tab(&mut self, uuid: &uuid::Uuid, ui: &mut Ui) {
         let mut diagram_controller = self.diagram_controllers.get(uuid).unwrap().write().unwrap();
-        
+
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(ui);
-        
+
         if response.clicked() || response.drag_started() {
             self.last_focused_diagram = Some(uuid.clone());
         }
-        
+
         diagram_controller.draw_in(ui_canvas.as_mut(), pos);
-        
+
         diagram_controller.handle_input(ui, &response);
-        
+
         response.context_menu(|ui| diagram_controller.context_menu(ui));
     }
-    
+
     fn custom_tab(&mut self, uuid: &uuid::Uuid, ui: &mut Ui) {
         let x = self.custom_tabs.get(uuid).map(|e| e.clone()).unwrap();
         let mut custom_tab = x.write().unwrap();
         custom_tab.show(/*self,*/ ui);
     }
-    
+
     fn last_focused_diagram(&mut self) -> Option<Arc<RwLock<dyn DiagramController>>> {
-        self.last_focused_diagram.as_ref().and_then(|e| self.diagram_controllers.get(e).cloned())
+        self.last_focused_diagram
+            .as_ref()
+            .and_then(|e| self.diagram_controllers.get(e).cloned())
     }
 }
 
@@ -615,45 +654,44 @@ impl Default for NHApp {
     fn default() -> Self {
         let (rdf_uuid, rdf_demo) = crate::rdf::rdf_controllers::demo(1);
         let (umlclass_uuid, umlclass_demo) = crate::umlclass::umlclass_controllers::demo(2);
-        
+
         let mut diagram_controllers = HashMap::new();
         diagram_controllers.insert(rdf_uuid.clone(), rdf_demo);
         diagram_controllers.insert(umlclass_uuid.clone(), umlclass_demo);
-        
-        let mut dock_state =
-            DockState::new(vec![NHTab::StyleEditor,
-                                NHTab::Diagram{uuid: rdf_uuid},
-                                NHTab::Diagram{uuid: umlclass_uuid}]);
+
+        let mut dock_state = DockState::new(vec![
+            NHTab::StyleEditor,
+            NHTab::Diagram { uuid: rdf_uuid },
+            NHTab::Diagram {
+                uuid: umlclass_uuid,
+            },
+        ]);
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
-        
+
         let mut open_unique_tabs = HashSet::new();
         open_unique_tabs.insert(NHTab::StyleEditor);
-        
+
         let [a, b] = dock_state.main_surface_mut().split_left(
             NodeIndex::root(),
             0.2,
             vec![NHTab::ProjectHierarchy],
         );
         open_unique_tabs.insert(NHTab::ProjectHierarchy);
-        let [_, _] = dock_state.main_surface_mut().split_right(
-            a,
-            0.7,
-            vec![NHTab::Properties],
-        );
+        let [_, _] = dock_state
+            .main_surface_mut()
+            .split_right(a, 0.7, vec![NHTab::Properties]);
         open_unique_tabs.insert(NHTab::Properties);
-        let [_, _] = dock_state.main_surface_mut().split_below(
-            b,
-            0.7,
-            vec![NHTab::Toolbar],
-        );
+        let [_, _] = dock_state
+            .main_surface_mut()
+            .split_below(b, 0.7, vec![NHTab::Toolbar]);
         open_unique_tabs.insert(NHTab::Toolbar);
-        
+
         let context = NHContext {
             diagram_controllers,
             new_diagram_no: 3,
             custom_tabs: HashMap::new(),
             style: None,
-            
+
             open_unique_tabs,
             last_focused_diagram: None,
 
@@ -676,11 +714,10 @@ impl Default for NHApp {
 impl NHApp {
     pub fn add_custom_tab(&mut self, uuid: uuid::Uuid, tab: Arc<RwLock<dyn CustomTab>>) {
         self.context.custom_tabs.insert(uuid, tab);
-        
-        let tab = NHTab::CustomTab{uuid};
-        
-        self.tree[SurfaceIndex::main()]
-            .push_to_focused_leaf(tab);
+
+        let tab = NHTab::CustomTab { uuid };
+
+        self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
     }
 }
 
@@ -703,29 +740,39 @@ impl eframe::App for NHApp {
                     });
                     ui.separator();
                     */
-                    
+
                     ui.menu_button("Add New Diagram", |ui| {
-                        type NDC = fn(u32) -> (uuid::Uuid, Arc<RwLock<(dyn DiagramController + 'static)>>);
-                        for (label, fun) in [("Add New UML class diagram", crate::umlclass::umlclass_controllers::new as NDC),
-                                             //("Add New OntoUML diagram"),
-                                             ("Add New RDF diagram", crate::rdf::rdf_controllers::new as NDC),] {
+                        type NDC =
+                            fn(u32) -> (uuid::Uuid, Arc<RwLock<(dyn DiagramController + 'static)>>);
+                        for (label, fun) in [
+                            (
+                                "Add New UML class diagram",
+                                crate::umlclass::umlclass_controllers::new as NDC,
+                            ),
+                            //("Add New OntoUML diagram"),
+                            (
+                                "Add New RDF diagram",
+                                crate::rdf::rdf_controllers::new as NDC,
+                            ),
+                        ] {
                             if ui.button(label).clicked() {
                                 let (uuid, diagram_controller) = fun(self.context.new_diagram_no);
                                 self.context.new_diagram_no += 1;
-                                self.context.diagram_controllers.insert(uuid.clone(), diagram_controller);
-                                
-                                let tab = NHTab::Diagram{uuid};
-                                
-                                self.tree[SurfaceIndex::main()]
-                                    .push_to_focused_leaf(tab);
+                                self.context
+                                    .diagram_controllers
+                                    .insert(uuid.clone(), diagram_controller);
+
+                                let tab = NHTab::Diagram { uuid };
+
+                                self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
                                 // TODO: set as last_focused_diagram
-                                
+
                                 ui.close_menu();
                             }
                         }
                     });
                     ui.separator();
-                    
+
                     /*
                     if ui.button("Save to").clicked() {
                         println!("yes");
@@ -734,13 +781,13 @@ impl eframe::App for NHApp {
                         println!("yes");
                     }
                     ui.separator();
-                    
+
                     if ui.button("Exit").clicked() {
                         println!("yes");
                     }
                     */
                 });
-                
+
                 ui.menu_button("View", |_ui| {
                     /*
                     if ui.button("Reset").clicked() {
@@ -748,61 +795,73 @@ impl eframe::App for NHApp {
                     }
                     */
                 });
-                
+
                 ui.menu_button("Diagram", |ui| {
                     self.context.last_focused_diagram().map(|e| {
                         let mut controller = e.write().unwrap();
-                        
+
                         controller.show_menubar_options(self, ui);
-                        
-                        ui.menu_button(format!("Export Diagram `{}` to", controller.model_name()), |ui| {
-                            if ui.button("SVG").clicked() {
-                                // NOTE: This does not work on WASM, and in its current state it never will.
-                                //       This will be possible to fix once this is fixed on rfd side (#128).
-                                if let Some(path) = rfd::FileDialog::new()
-                                                    .set_directory(std::env::current_dir().unwrap())
-                                                    .add_filter("SVG files", &["svg"])
-                                                    .add_filter("All files", &["*"])
-                                                    .save_file() {
-                                    let mut measuring_canvas = MeasuringCanvas::new(ui.painter());
-                                    controller.draw_in(&mut measuring_canvas, None);
-                                    
-                                    const PADDING_WIDTH: f32 = 10.0;
-                                    let mut svg_canvas = SVGCanvas::new(
-                                        ui.painter(),
-                                        -1.0 * measuring_canvas.bounds().min
-                                            + egui::Vec2::new(PADDING_WIDTH, PADDING_WIDTH),
-                                        measuring_canvas.bounds().size()
-                                            + egui::Vec2::new(2.0 * PADDING_WIDTH, 2.0 * PADDING_WIDTH),
-                                    );
-                                    controller.draw_in(&mut svg_canvas, None);
-                                    let _ = svg_canvas.save_to(path);
+
+                        ui.menu_button(
+                            format!("Export Diagram `{}` to", controller.model_name()),
+                            |ui| {
+                                if ui.button("SVG").clicked() {
+                                    // NOTE: This does not work on WASM, and in its current state it never will.
+                                    //       This will be possible to fix once this is fixed on rfd side (#128).
+                                    if let Some(path) = rfd::FileDialog::new()
+                                        .set_directory(std::env::current_dir().unwrap())
+                                        .add_filter("SVG files", &["svg"])
+                                        .add_filter("All files", &["*"])
+                                        .save_file()
+                                    {
+                                        let mut measuring_canvas =
+                                            MeasuringCanvas::new(ui.painter());
+                                        controller.draw_in(&mut measuring_canvas, None);
+
+                                        const PADDING_WIDTH: f32 = 10.0;
+                                        let mut svg_canvas = SVGCanvas::new(
+                                            ui.painter(),
+                                            -1.0 * measuring_canvas.bounds().min
+                                                + egui::Vec2::new(PADDING_WIDTH, PADDING_WIDTH),
+                                            measuring_canvas.bounds().size()
+                                                + egui::Vec2::new(
+                                                    2.0 * PADDING_WIDTH,
+                                                    2.0 * PADDING_WIDTH,
+                                                ),
+                                        );
+                                        controller.draw_in(&mut svg_canvas, None);
+                                        let _ = svg_canvas.save_to(path);
+                                    }
+                                    ui.close_menu();
                                 }
-                                ui.close_menu();
-                            }
-                            /*
-                            if ui.button("PNG").clicked() {
-                                println!("yes");
-                                ui.close_menu();
-                            }
-                            if ui.button("PDF").clicked() {
-                                println!("yes");
-                                ui.close_menu();
-                            }
-                            */
-                        })
+                                /*
+                                if ui.button("PNG").clicked() {
+                                    println!("yes");
+                                    ui.close_menu();
+                                }
+                                if ui.button("PDF").clicked() {
+                                    println!("yes");
+                                    ui.close_menu();
+                                }
+                                */
+                            },
+                        )
                     });
                 });
-                
+
                 ui.menu_button("Windows", |ui| {
                     // allow certain tabs to be toggled
-                    for tab in &[NHTab::StyleEditor,
-                                 NHTab::ProjectHierarchy,
-                                 NHTab::Toolbar, NHTab::Properties, NHTab::Layers] {
+                    for tab in &[
+                        NHTab::StyleEditor,
+                        NHTab::ProjectHierarchy,
+                        NHTab::Toolbar,
+                        NHTab::Properties,
+                        NHTab::Layers,
+                    ] {
                         if ui
                             .selectable_label(
                                 self.context.open_unique_tabs.contains(tab),
-                                tab.name()
+                                tab.name(),
                             )
                             .clicked()
                         {
@@ -810,8 +869,7 @@ impl eframe::App for NHApp {
                                 self.tree.remove_tab(index);
                                 self.context.open_unique_tabs.remove(tab);
                             } else {
-                                self.tree[SurfaceIndex::main()]
-                                    .push_to_focused_leaf(tab.clone());
+                                self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab.clone());
                                 self.context.open_unique_tabs.insert(tab.clone());
                             }
 

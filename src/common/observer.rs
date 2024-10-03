@@ -1,4 +1,4 @@
-use std::sync::{Arc,RwLock};
+use std::sync::{Arc, RwLock};
 
 // The Observer trait
 pub trait Observer {
@@ -25,9 +25,10 @@ macro_rules! impl_observable {
                 self.observers.push_back(observer);
             }
             fn unregister_observer(&mut self, observer: &Arc<RwLock<dyn Observer>>) {
-                self.observers.retain(|o| !std::ptr::addr_eq(Arc::as_ptr(&o), Arc::as_ptr(&observer)));
+                self.observers
+                    .retain(|o| !std::ptr::addr_eq(Arc::as_ptr(&o), Arc::as_ptr(&observer)));
             }
         }
-    }
+    };
 }
 pub(crate) use impl_observable;

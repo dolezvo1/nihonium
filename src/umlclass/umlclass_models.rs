@@ -1,11 +1,12 @@
-
-use std::{collections::{HashMap, VecDeque}, sync::{Arc, LazyLock, RwLock}};
-use crate::common::observer::{Observer, Observable, impl_observable};
 use crate::common::canvas::{ArrowheadType, LineType};
-use crate::common::controller::{Model, ContainerModel};
+use crate::common::controller::{ContainerModel, Model};
+use crate::common::observer::{impl_observable, Observable, Observer};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::{Arc, LazyLock, RwLock},
+};
 
-
-struct UmlClassCollector {
+pub struct UmlClassCollector {
     collecting_absolute_paths: bool,
     package_stack: Vec<String>,
     absolute_paths: HashMap<uuid::Uuid, String>,
@@ -15,51 +16,59 @@ struct UmlClassCollector {
 impl UmlClassCollector {
     fn absolute_with_current_stack(&self, name: &str) -> String {
         if self.package_stack.is_empty() {
-            name.to_string()
+            format!("{:?}", name)
         } else {
-            self.package_stack.join(".") + "." + name
+            format!("{:?}", self.package_stack.join(".") + "." + name)
         }
     }
 
     fn visit_package(&mut self, package: &UmlClassPackage) {
         self.package_stack.push((*package.name).clone());
         if !self.collecting_absolute_paths {
-            self.plantuml_data.push_str(&format!("package {:?} {{\n", package.name));
+            self.plantuml_data
+                .push_str(&format!("package {:?} {{\n", package.name));
         }
-        
+
         for e in &package.contained_elements {
             let e = e.read().unwrap();
             e.accept(self);
         }
-        
+
         self.package_stack.pop();
         if !self.collecting_absolute_paths {
             self.plantuml_data.push_str("}\n");
         }
     }
     fn visit_class(&mut self, class: &UmlClass) {
-        // https://www.webdevtutor.net/blog/beginner-guide-plantuml-class-diagrams
-        /*
-        interface X {
-
-        }
-
-        class MyClass1 implements X {
-        + attribute1: DataType
-        + method1(): ReturnType
-        }
-
-        class MyClass2 implements X {
-        + attribute2: DataType
-        + method2(): ReturnType
-        }
-
-        */
-        
         if self.collecting_absolute_paths {
-            self.absolute_paths.insert((*class.uuid).clone(), self.absolute_with_current_stack(&*class.name));
+            self.absolute_paths.insert(
+                (*class.uuid).clone(),
+                self.absolute_with_current_stack(&*class.name),
+            );
         } else {
-            self.plantuml_data.push_str(&format!("{} {:?} {{\n{}}}\n", class.stereotype.name(), class.name, ""));
+            // https://www.webdevtutor.net/blog/beginner-guide-plantuml-class-diagrams
+            /*
+            interface X {
+
+            }
+
+            class MyClass1 implements X {
+            + attribute1: DataType
+            + method1(): ReturnType
+            }
+
+            class MyClass2 implements X {
+            + attribute2: DataType
+            + method2(): ReturnType
+            }
+            */
+
+            self.plantuml_data.push_str(&format!(
+                "{} {:?} {{\n{}}}\n",
+                class.stereotype.name(),
+                class.name,
+                ""
+            ));
         }
     }
     fn visit_link(&mut self, link: &UmlClassLink) {
@@ -72,10 +81,11 @@ impl UmlClassCollector {
                 let d = link.destination.read().unwrap();
                 self.absolute_paths.get(&d.uuid()).unwrap()
             };
-            
+
             self.plantuml_data.push_str(source_name);
             if !link.source_arrowhead_label.is_empty() {
-                self.plantuml_data.push_str(&format!(" {:?}", link.source_arrowhead_label));
+                self.plantuml_data
+                    .push_str(&format!(" {:?}", link.source_arrowhead_label));
             }
             self.plantuml_data.push_str(match link.link_type {
                 UmlClassLinkType::Association => " -- ",
@@ -86,14 +96,14 @@ impl UmlClassCollector {
                 UmlClassLinkType::Usage => " ..> ",
             });
             if !link.destination_arrowhead_label.is_empty() {
-                self.plantuml_data.push_str(&format!(" {:?}", link.destination_arrowhead_label));
+                self.plantuml_data
+                    .push_str(&format!(" {:?}", link.destination_arrowhead_label));
             }
             self.plantuml_data.push_str(dest_name);
             self.plantuml_data.push_str("\n");
         }
     }
 }
-
 
 pub trait UmlClassElement: Observable {
     fn uuid(&self) -> Arc<uuid::Uuid>;
@@ -123,7 +133,7 @@ impl UmlClassDiagram {
             observers: VecDeque::new(),
         }
     }
-    
+
     pub fn plantuml(&self) -> String {
         let mut collector = UmlClassCollector {
             collecting_absolute_paths: true,
@@ -131,21 +141,19 @@ impl UmlClassDiagram {
             absolute_paths: HashMap::new(),
             plantuml_data: "".to_owned(),
         };
-        
+
         for e in &self.contained_elements {
             let e = e.read().unwrap();
             e.accept(&mut collector);
         }
-        
-        println!("{:?}", collector.absolute_paths);
-        
+
         collector.collecting_absolute_paths = false;
-        
+
         for e in &self.contained_elements {
             let e = e.read().unwrap();
             e.accept(&mut collector);
         }
-        
+
         collector.plantuml_data
     }
 }
@@ -191,7 +199,7 @@ impl UmlClassPackage {
             observers: VecDeque::new(),
         }
     }
-    
+
     pub(super) fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
         self.contained_elements.push(element);
         self.notify_observers();
@@ -204,7 +212,7 @@ impl UmlClassElement for UmlClassPackage {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.uuid.clone()
     }
-    
+
     fn accept(&self, visitor: &mut UmlClassCollector) {
         visitor.visit_package(&self);
     }
@@ -231,7 +239,7 @@ impl UmlClassStereotype {
             UmlClassStereotype::Interface => "<<interface>>",
         }
     }
-    
+
     pub fn name(&self) -> &'static str {
         match self {
             UmlClassStereotype::Abstract => "abstract",
@@ -269,17 +277,13 @@ pub struct UmlClass {
     pub stereotype: UmlClassStereotype,
     pub properties: Arc<String>,
     pub functions: Arc<String>,
-    
+
     pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl UmlClass {
-    pub fn new(
-        uuid: uuid::Uuid,
-        stereotype: UmlClassStereotype,
-        name: String,
-    ) -> Self {
+    pub fn new(uuid: uuid::Uuid, stereotype: UmlClassStereotype, name: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
             stereotype: stereotype,
@@ -290,31 +294,35 @@ impl UmlClass {
             observers: VecDeque::new(),
         }
     }
-    
+
     pub fn parse_properties(&self) -> Vec<(&str, &str)> {
         Self::parse_string(&self.properties)
     }
-    
-    pub fn parse_functions(&self) -> Vec<(&str,  &str)> {
+
+    pub fn parse_functions(&self) -> Vec<(&str, &str)> {
         Self::parse_string(&self.functions)
     }
-    
+
     fn parse_string(input: &str) -> Vec<(&str, &str)> {
-        input.split("\n")
+        input
+            .split("\n")
             .filter(|e| e.len() > 0)
-            .map(Self::strip_access_modifiers).collect()
+            .map(Self::strip_access_modifiers)
+            .collect()
     }
-    
+
     fn strip_access_modifiers(input: &str) -> (&str, &str) {
-        for m in [UMLClassAccessModifier::Public,
-                  UMLClassAccessModifier::Package,
-                  UMLClassAccessModifier::Protected,
-                  UMLClassAccessModifier::Private] {
+        for m in [
+            UMLClassAccessModifier::Public,
+            UMLClassAccessModifier::Package,
+            UMLClassAccessModifier::Protected,
+            UMLClassAccessModifier::Private,
+        ] {
             if let Some(r) = input.strip_prefix(m.char()) {
-                return (m.char(), r.trim())
+                return (m.char(), r.trim());
             }
         }
-        return ("", input.trim())
+        return ("", input.trim());
     }
 }
 
@@ -324,7 +332,7 @@ impl UmlClassElement for UmlClass {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.uuid.clone()
     }
-    
+
     fn accept(&self, visitor: &mut UmlClassCollector) {
         visitor.visit_class(&self);
     }
@@ -341,11 +349,16 @@ pub enum UmlClassLinkType {
 }
 
 // I hate this so much
-static ASSOCIATION_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Assocation".to_owned()));
-static AGGREGATION_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Aggregation".to_owned()));
-static COMPOSITION_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Composition".to_owned()));
-static GENERALIZATION_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Generalization".to_owned()));
-static INTERFACE_REALIZATION_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Interface Realization".to_owned()));
+static ASSOCIATION_TEXT: LazyLock<Arc<String>> =
+    LazyLock::new(|| Arc::new("Assocation".to_owned()));
+static AGGREGATION_TEXT: LazyLock<Arc<String>> =
+    LazyLock::new(|| Arc::new("Aggregation".to_owned()));
+static COMPOSITION_TEXT: LazyLock<Arc<String>> =
+    LazyLock::new(|| Arc::new("Composition".to_owned()));
+static GENERALIZATION_TEXT: LazyLock<Arc<String>> =
+    LazyLock::new(|| Arc::new("Generalization".to_owned()));
+static INTERFACE_REALIZATION_TEXT: LazyLock<Arc<String>> =
+    LazyLock::new(|| Arc::new("Interface Realization".to_owned()));
 static USAGE_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Usage".to_owned()));
 
 impl UmlClassLinkType {
@@ -359,23 +372,25 @@ impl UmlClassLinkType {
             UmlClassLinkType::Usage => USAGE_TEXT.clone(),
         }
     }
-    
+
     pub fn line_type(&self) -> LineType {
         match self {
             UmlClassLinkType::InterfaceRealization | UmlClassLinkType::Usage => LineType::Dashed,
             _ => LineType::Solid,
         }
     }
-    
+
     pub fn source_arrowhead_type(&self) -> ArrowheadType {
         ArrowheadType::None
     }
-    
+
     pub fn destination_arrowhead_type(&self) -> ArrowheadType {
         match self {
             UmlClassLinkType::Association => ArrowheadType::None,
             UmlClassLinkType::Usage => ArrowheadType::OpenTriangle,
-            UmlClassLinkType::Generalization | UmlClassLinkType::InterfaceRealization => ArrowheadType::EmptyTriangle,
+            UmlClassLinkType::Generalization | UmlClassLinkType::InterfaceRealization => {
+                ArrowheadType::EmptyTriangle
+            }
             UmlClassLinkType::Aggregation => ArrowheadType::EmptyRhombus,
             UmlClassLinkType::Composition => ArrowheadType::FullRhombus,
         }
@@ -389,7 +404,7 @@ pub struct UmlClassLink {
     pub source_arrowhead_label: Arc<String>,
     pub destination: Arc<RwLock<dyn UmlClassElement>>,
     pub destination_arrowhead_label: Arc<String>,
-    
+
     pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
@@ -420,7 +435,7 @@ impl UmlClassElement for UmlClassLink {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.uuid.clone()
     }
-    
+
     fn accept(&self, visitor: &mut UmlClassCollector) {
         visitor.visit_link(&self)
     }

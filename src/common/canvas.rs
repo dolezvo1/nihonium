@@ -1,4 +1,3 @@
-
 use eframe::egui;
 
 use std::io::Write;
@@ -6,39 +5,57 @@ use std::io::Write;
 // rect intersection between segment from p to the center of rect
 // based on https://stackoverflow.com/a/31254199 by TWiStErRob
 fn segment_rect_point(p: egui::Pos2, rect: &egui::Rect) -> Option<egui::Pos2> {
-    if rect.contains(p) { return None }
+    if rect.contains(p) {
+        return None;
+    }
     let m = {
         let m = rect.center() - p;
-        m.y/m.x
+        m.y / m.x
     };
-    if p.x <= rect.center().x { // check "left" side
+    if p.x <= rect.center().x {
+        // check "left" side
         let min_xy = m * (rect.min.x - p.x) + p.y;
         if rect.min.y <= min_xy && min_xy <= rect.max.y {
-            return Some(egui::Pos2 {x: rect.min.x, y: min_xy});
+            return Some(egui::Pos2 {
+                x: rect.min.x,
+                y: min_xy,
+            });
         }
     }
-    
-    if p.x >= rect.center().x { // check "right" side
+
+    if p.x >= rect.center().x {
+        // check "right" side
         let max_xy = m * (rect.max.x - p.x) + p.y;
         if rect.min.y <= max_xy && max_xy <= rect.max.y {
-            return Some(egui::Pos2 {x: rect.max.x, y: max_xy});
+            return Some(egui::Pos2 {
+                x: rect.max.x,
+                y: max_xy,
+            });
         }
     }
-    
-    if p.y <= rect.center().y { // check "top" side
+
+    if p.y <= rect.center().y {
+        // check "top" side
         let min_yx = (rect.min.y - p.y) / m + p.x;
         if rect.min.x <= min_yx && min_yx <= rect.max.x {
-            return Some(egui::Pos2 {x: min_yx, y: rect.min.y});
+            return Some(egui::Pos2 {
+                x: min_yx,
+                y: rect.min.y,
+            });
         }
     }
-    
-    if p.y >= rect.center().y { // check "bottom" side
+
+    if p.y >= rect.center().y {
+        // check "bottom" side
         let max_yx = (rect.max.y - p.y) / m + p.x;
         if rect.min.x <= max_yx && max_yx <= rect.max.x {
-            return Some(egui::Pos2 {x: max_yx, y: rect.max.y});
+            return Some(egui::Pos2 {
+                x: max_yx,
+                y: rect.max.y,
+            });
         }
     }
-    
+
     return None;
 }
 
@@ -51,42 +68,57 @@ fn segment_ellipse_point(
     let r = ((center.y - p.y).powf(2.0) + (center.x - p.x).powf(2.0)).sqrt()
         - ((radius.x * radius.y)
             / ((radius.y * theta.cos()).powf(2.0) + (radius.x * theta.sin()).powf(2.0)).sqrt());
-    return Some(egui::Pos2::new(p.x + r * theta.cos(), p.y + r * theta.sin()));
+    return Some(egui::Pos2::new(
+        p.x + r * theta.cos(),
+        p.y + r * theta.sin(),
+    ));
 }
 
 pub enum NHShape {
-    Rect{inner: egui::Rect},
-    Ellipse{position: egui::Pos2, bounds_radius: egui::Vec2},
+    Rect {
+        inner: egui::Rect,
+    },
+    Ellipse {
+        position: egui::Pos2,
+        bounds_radius: egui::Vec2,
+    },
 }
 
 impl NHShape {
     pub fn center_intersect(&self, point: egui::Pos2) -> Option<egui::Pos2> {
         match &self {
-            NHShape::Rect{inner} => segment_rect_point(point, inner),
-            NHShape::Ellipse{position, bounds_radius} =>
-                segment_ellipse_point(point, (position, bounds_radius)),
+            NHShape::Rect { inner } => segment_rect_point(point, inner),
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
+            } => segment_ellipse_point(point, (position, bounds_radius)),
         }
     }
     pub fn orthogonal_intersect(&self, point: egui::Pos2) -> Option<egui::Pos2> {
         match &self {
-            NHShape::Rect{inner} => match point {
-                egui::Pos2{x,y} if inner.left() < x && x < inner.right() => {
-                    Some(egui::Pos2{x,y: y.clamp(inner.top(), inner.bottom())})
-                }
-                egui::Pos2{x,y} if inner.top() < y && y < inner.bottom() => {
-                    Some(egui::Pos2{x: x.clamp(inner.left(), inner.right()), y})
-                }
+            NHShape::Rect { inner } => match point {
+                egui::Pos2 { x, y } if inner.left() < x && x < inner.right() => Some(egui::Pos2 {
+                    x,
+                    y: y.clamp(inner.top(), inner.bottom()),
+                }),
+                egui::Pos2 { x, y } if inner.top() < y && y < inner.bottom() => Some(egui::Pos2 {
+                    x: x.clamp(inner.left(), inner.right()),
+                    y,
+                }),
                 _ => None,
             },
-            NHShape::Ellipse{..} => todo!(),
+            NHShape::Ellipse { .. } => todo!(),
         }
     }
     pub fn contains(&self, point: egui::Pos2) -> bool {
         match &self {
-            NHShape::Rect{inner} => inner.contains(point),
-            NHShape::Ellipse{position, bounds_radius} => {
-                let d = (point.x - position.x).powf(2.0)/(bounds_radius.x).powf(2.0)
-                      + (point.y - position.y).powf(2.0)/(bounds_radius.y).powf(2.0);
+            NHShape::Rect { inner } => inner.contains(point),
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
+            } => {
+                let d = (point.x - position.x).powf(2.0) / (bounds_radius.x).powf(2.0)
+                    + (point.y - position.y).powf(2.0) / (bounds_radius.y).powf(2.0);
                 d <= 1.0
             }
         }
@@ -121,34 +153,33 @@ impl ArrowheadType {
             ArrowheadType::FullRhombus => "Full Rhombus",
         }
     }
-    
+
     // Get intersection of line between focal_point and other point
     // that is the furthest from the focal_point
-    pub fn get_intersect(
-        &self,
-        focal_point: egui::Pos2,
-        other: egui::Pos2,
-    ) -> egui::Pos2 {
+    pub fn get_intersect(&self, focal_point: egui::Pos2, other: egui::Pos2) -> egui::Pos2 {
         match self {
             ArrowheadType::None | ArrowheadType::OpenTriangle => focal_point,
-            ArrowheadType::EmptyTriangle | ArrowheadType::FullTriangle
-            | ArrowheadType::EmptyRhombus | ArrowheadType::FullRhombus => {
+            ArrowheadType::EmptyTriangle
+            | ArrowheadType::FullTriangle
+            | ArrowheadType::EmptyRhombus
+            | ArrowheadType::FullRhombus => {
                 let outward_angle = atan2(focal_point, other);
                 let [p1, p2] = [-ARROWHEAD_INNER_ANGLE, ARROWHEAD_INNER_ANGLE]
                     .map(|e| e * std::f32::consts::PI / 180.0 + outward_angle)
-                    .map(|a| focal_point + egui::Vec2::new(a.cos(), a.sin()) * ARROWHEAD_SIDE_LENGTH);
+                    .map(|a| {
+                        focal_point + egui::Vec2::new(a.cos(), a.sin()) * ARROWHEAD_SIDE_LENGTH
+                    });
                 let p3 = p2 + (p1 - focal_point);
-                
-                if *self == ArrowheadType::EmptyRhombus
-                    || *self == ArrowheadType::FullRhombus {
+
+                if *self == ArrowheadType::EmptyRhombus || *self == ArrowheadType::FullRhombus {
                     p3
                 } else {
                     (p3 + focal_point.to_vec2()) / 2.0
                 }
-            },
+            }
         }
     }
-    
+
     pub fn draw_in(
         &self,
         canvas: &mut (impl NHCanvas + ?Sized),
@@ -163,11 +194,17 @@ impl ArrowheadType {
             .map(|e| e * std::f32::consts::PI / 180.0 + outward_angle)
             .map(|a| focal_point + egui::Vec2::new(a.cos(), a.sin()) * ARROWHEAD_SIDE_LENGTH);
         match self {
-            ArrowheadType::None => {},
+            ArrowheadType::None => {}
             ArrowheadType::OpenTriangle => {
-                canvas.draw_line([focal_point, p1], Stroke::new_solid(1.0, egui::Color32::BLACK));
-                canvas.draw_line([focal_point, p2], Stroke::new_solid(1.0, egui::Color32::BLACK));
-            },
+                canvas.draw_line(
+                    [focal_point, p1],
+                    Stroke::new_solid(1.0, egui::Color32::BLACK),
+                );
+                canvas.draw_line(
+                    [focal_point, p2],
+                    Stroke::new_solid(1.0, egui::Color32::BLACK),
+                );
+            }
             ArrowheadType::EmptyTriangle | ArrowheadType::FullTriangle => {
                 canvas.draw_polygon(
                     vec![focal_point, p1, p2],
@@ -178,7 +215,7 @@ impl ArrowheadType {
                     },
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
                 );
-            },
+            }
             ArrowheadType::EmptyRhombus | ArrowheadType::FullRhombus => {
                 let p3 = p2 + (p1 - focal_point);
                 canvas.draw_polygon(
@@ -190,7 +227,7 @@ impl ArrowheadType {
                     },
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
                 );
-            },
+            }
         }
     }
 }
@@ -211,17 +248,28 @@ pub struct Stroke {
 
 impl Stroke {
     pub fn new_solid(width: f32, color: egui::Color32) -> Self {
-        Self { width, color, line_type: LineType::Solid }
+        Self {
+            width,
+            color,
+            line_type: LineType::Solid,
+        }
     }
-    
+
     pub fn new_dashed(width: f32, color: egui::Color32) -> Self {
-        Self { width, color, line_type: LineType::Dashed }
+        Self {
+            width,
+            color,
+            line_type: LineType::Dashed,
+        }
     }
 }
 
 impl From<Stroke> for egui::Stroke {
     fn from(value: Stroke) -> egui::Stroke {
-        egui::Stroke { width: value.width, color: value.color }
+        egui::Stroke {
+            width: value.width,
+            color: value.color,
+        }
     }
 }
 
@@ -233,12 +281,8 @@ pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 pub trait NHCanvas {
     // These functions are must haves
     fn offset_by(&mut self, delta: egui::Vec2);
-    
-    fn draw_line(
-        &mut self,
-        points: [egui::Pos2; 2],
-        stroke: Stroke,
-    );
+
+    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke);
     fn draw_rectangle(
         &mut self,
         rect: egui::Rect,
@@ -260,14 +304,10 @@ pub trait NHCanvas {
         _color: egui::Color32,
         _stroke: Stroke,
         _max_distance: f32,
-    ) {}
-    fn draw_polygon(
-        &mut self,
-        vertices: Vec<egui::Pos2>,
-        color: egui::Color32,
-        stroke: Stroke,
-    );
-    
+    ) {
+    }
+    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, color: egui::Color32, stroke: Stroke);
+
     fn measure_text(
         &mut self,
         position: egui::Pos2,
@@ -283,7 +323,7 @@ pub trait NHCanvas {
         font_size: f32,
         text_color: egui::Color32,
     );
-    
+
     fn draw_class(
         &mut self,
         position: egui::Pos2,
@@ -298,44 +338,77 @@ pub trait NHCanvas {
             let mut offsets = vec![0.0];
             let mut max_width: f32 = 0.0;
             let mut category_separators = vec![];
-            let itemalign = items.iter()
+            let itemalign = items
+                .iter()
                 .flat_map(|c| c.iter())
-                .map(|e| self.measure_text(position, egui::Align2::LEFT_CENTER, e.0, CLASS_ITEM_FONT_SIZE).width())
+                .map(|e| {
+                    self.measure_text(
+                        position,
+                        egui::Align2::LEFT_CENTER,
+                        e.0,
+                        CLASS_ITEM_FONT_SIZE,
+                    )
+                    .width()
+                })
                 .fold(0.0 as f32, |a, b| a.max(b));
-            
+
             if let Some(top_label) = top_label {
-                let r = self.measure_text(egui::Pos2::ZERO, egui::Align2::CENTER_TOP, &top_label, CLASS_TOP_FONT_SIZE);
+                let r = self.measure_text(
+                    egui::Pos2::ZERO,
+                    egui::Align2::CENTER_TOP,
+                    &top_label,
+                    CLASS_TOP_FONT_SIZE,
+                );
                 offsets.push(r.height());
                 max_width = max_width.max(r.width());
             }
-            
+
             {
-                let r = self.measure_text(egui::Pos2::ZERO, egui::Align2::CENTER_TOP, &main_label, CLASS_MIDDLE_FONT_SIZE);
+                let r = self.measure_text(
+                    egui::Pos2::ZERO,
+                    egui::Align2::CENTER_TOP,
+                    &main_label,
+                    CLASS_MIDDLE_FONT_SIZE,
+                );
                 offsets.push(r.height());
                 max_width = max_width.max(r.width());
             }
-            
+
             if let Some(bottom_label) = bottom_label {
-                let r = self.measure_text(egui::Pos2::ZERO, egui::Align2::CENTER_TOP, &bottom_label, CLASS_BOTTOM_FONT_SIZE);
+                let r = self.measure_text(
+                    egui::Pos2::ZERO,
+                    egui::Align2::CENTER_TOP,
+                    &bottom_label,
+                    CLASS_BOTTOM_FONT_SIZE,
+                );
                 offsets.push(r.height());
                 max_width = max_width.max(r.width());
             }
-            
+
             for category in items.iter().filter(|e| e.len() > 0) {
                 category_separators.push(offsets.iter().sum::<f32>());
-                
+
                 for (_center, left) in *category {
-                    let r = self.measure_text(egui::Pos2::ZERO, egui::Align2::LEFT_TOP, left, CLASS_ITEM_FONT_SIZE);
+                    let r = self.measure_text(
+                        egui::Pos2::ZERO,
+                        egui::Align2::LEFT_TOP,
+                        left,
+                        CLASS_ITEM_FONT_SIZE,
+                    );
                     offsets.push(r.height());
                     max_width = max_width.max(itemalign + r.width());
                 }
             }
-            
+
             // Process, draw bounds
-            offsets.iter_mut().fold(0.0, |acc, x| {*x += acc; *x});
+            offsets.iter_mut().fold(0.0, |acc, x| {
+                *x += acc;
+                *x
+            });
             let global_offset = offsets.last().unwrap() / 2.0;
             let rect = egui::Rect::from_center_size(
-                position, egui::Vec2::new(max_width + 4.0, 2.0 * global_offset),
+                position,
+                egui::Vec2::new(max_width + 4.0, 2.0 * global_offset),
             );
             self.draw_rectangle(
                 rect,
@@ -343,67 +416,100 @@ pub trait NHCanvas {
                 egui::Color32::WHITE,
                 stroke.into(),
             );
-            
-            (offsets, global_offset, max_width, itemalign, category_separators, rect)
+
+            (
+                offsets,
+                global_offset,
+                max_width,
+                itemalign,
+                category_separators,
+                rect,
+            )
         };
-        
+
         // Draw phase
         {
             let mut offset_counter = 0;
-            
+
             if let Some(top_label) = top_label {
                 self.draw_text(
                     position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &top_label, CLASS_TOP_FONT_SIZE, egui::Color32::BLACK);
+                    egui::Align2::CENTER_TOP,
+                    &top_label,
+                    CLASS_TOP_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
                 offset_counter += 1;
             }
-            
+
             {
                 self.draw_text(
                     position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &main_label, CLASS_MIDDLE_FONT_SIZE, egui::Color32::BLACK);
+                    egui::Align2::CENTER_TOP,
+                    &main_label,
+                    CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
                 offset_counter += 1;
             }
-            
+
             if let Some(bottom_label) = bottom_label {
                 self.draw_text(
                     position - egui::Vec2::new(0.0, global_offset - offsets[offset_counter]),
-                    egui::Align2::CENTER_TOP, &bottom_label, CLASS_BOTTOM_FONT_SIZE, egui::Color32::BLACK);
+                    egui::Align2::CENTER_TOP,
+                    &bottom_label,
+                    CLASS_BOTTOM_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
                 offset_counter += 1;
             }
-            
+
             for (idx, category) in items.iter().filter(|e| e.len() > 0).enumerate() {
                 if let Some(catline_offset) = category_separators.get(idx) {
                     self.draw_line(
-                        [egui::Pos2::new(position.x - rect.width() / 2.0,
-                                        position.y - global_offset + catline_offset),
-                        egui::Pos2::new(position.x + rect.width() / 2.0,
-                                        position.y - global_offset + catline_offset)],
-                        Stroke::new_solid(1.0, egui::Color32::BLACK)
+                        [
+                            egui::Pos2::new(
+                                position.x - rect.width() / 2.0,
+                                position.y - global_offset + catline_offset,
+                            ),
+                            egui::Pos2::new(
+                                position.x + rect.width() / 2.0,
+                                position.y - global_offset + catline_offset,
+                            ),
+                        ],
+                        Stroke::new_solid(1.0, egui::Color32::BLACK),
                     );
                 }
-                
+
                 for (center, left) in *category {
                     self.draw_text(
                         egui::Pos2::new(
                             position.x - max_width / 2.0 + itemalign / 2.0,
-                            position.y - global_offset + offsets[offset_counter]
+                            position.y - global_offset + offsets[offset_counter],
                         ),
-                        egui::Align2::CENTER_TOP, center, CLASS_ITEM_FONT_SIZE, egui::Color32::BLACK);
+                        egui::Align2::CENTER_TOP,
+                        center,
+                        CLASS_ITEM_FONT_SIZE,
+                        egui::Color32::BLACK,
+                    );
                     self.draw_text(
                         egui::Pos2::new(
                             position.x - max_width / 2.0 + itemalign,
-                            position.y - global_offset + offsets[offset_counter]
+                            position.y - global_offset + offsets[offset_counter],
                         ),
-                        egui::Align2::LEFT_TOP, left, CLASS_ITEM_FONT_SIZE, egui::Color32::BLACK);
+                        egui::Align2::LEFT_TOP,
+                        left,
+                        CLASS_ITEM_FONT_SIZE,
+                        egui::Color32::BLACK,
+                    );
                     offset_counter += 1;
                 }
             }
         }
-        
+
         rect
     }
-    
+
     // TODO: refactor to allow for line types (solid/dotted/dashed/double/squiggly)
     fn draw_multiconnection<'a>(
         &mut self,
@@ -412,29 +518,48 @@ pub trait NHCanvas {
         central_point: egui::Pos2,
         mid_label: Option<&str>,
     ) {
-        fn a<'a>(central_point: egui::Pos2, e: &'a (ArrowheadType, Stroke, &'a Vec<egui::Pos2>, Option<&'a str>))
-            -> (ArrowheadType, Stroke, egui::Pos2, impl Iterator<Item=egui::Pos2> + 'a, Option<&'a str>) {
+        fn a<'a>(
+            central_point: egui::Pos2,
+            e: &'a (ArrowheadType, Stroke, &'a Vec<egui::Pos2>, Option<&'a str>),
+        ) -> (
+            ArrowheadType,
+            Stroke,
+            egui::Pos2,
+            impl Iterator<Item = egui::Pos2> + 'a,
+            Option<&'a str>,
+        ) {
             let focal_point = e.2.first().unwrap();
-            let path = std::iter::once(e.0.get_intersect(*focal_point, *e.2.get(1).unwrap_or(&central_point)))
-                        .chain(e.2.iter().skip(1).map(|e| *e))
-                        .chain(std::iter::once(central_point));
+            let path = std::iter::once(
+                e.0.get_intersect(*focal_point, *e.2.get(1).unwrap_or(&central_point)),
+            )
+            .chain(e.2.iter().skip(1).map(|e| *e))
+            .chain(std::iter::once(central_point));
             (e.0, e.1, *focal_point, path, e.3)
         }
-        
-        for (ah, ls, fp, iter, label) in sources.iter().map(|e| a(central_point, e))
-                                        .chain(destinations.iter().map(|e| a(central_point, e))) {
+
+        for (ah, ls, fp, iter, label) in sources
+            .iter()
+            .map(|e| a(central_point, e))
+            .chain(destinations.iter().map(|e| a(central_point, e)))
+        {
             let mut iter_peekable = iter.peekable();
             let mut first = true;
-            
+
             while let Some(u) = iter_peekable.next() {
-                let v = if let Some(v) = iter_peekable.peek() { *v } else { break; };
-                
-                if first { ah.draw_in(self, fp, v); }
-                
+                let v = if let Some(v) = iter_peekable.peek() {
+                    *v
+                } else {
+                    break;
+                };
+
+                if first {
+                    ah.draw_in(self, fp, v);
+                }
+
                 self.draw_line([u, v], ls);
-                
+
                 const HANDLE_PROXIMITY: f32 = 20.0;
-                
+
                 // TODO(important): draw based on midpoint existence
                 self.draw_ellipse_proximity(
                     (if first { fp } else { u } + v.to_vec2()) / 2.0,
@@ -443,7 +568,7 @@ pub trait NHCanvas {
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
                     HANDLE_PROXIMITY,
                 );
-                
+
                 self.draw_ellipse_proximity(
                     v,
                     egui::Vec2::new(1.0, 1.0),
@@ -451,11 +576,11 @@ pub trait NHCanvas {
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
                     HANDLE_PROXIMITY,
                 );
-                
+
                 first = false;
             }
-            
-            // TODO: This is decisively not good enough: 
+
+            // TODO: This is decisively not good enough:
             //          labels overlap with lines, classes, other lines, etc.
             //       As a solution, I propose storing label offset from FP in VC
             //          and setting it to a good value when layouting/change happens
@@ -469,7 +594,7 @@ pub trait NHCanvas {
                 );
             }
         }
-        
+
         // TODO: Blur the line around center to make the mid label more readable?
         //       Alternatively labels could have an angle to fit it better.
         if let Some(mid_label) = mid_label {
@@ -500,44 +625,55 @@ impl UiCanvas {
         camera_scale: f32,
         cursor: Option<egui::Pos2>,
     ) -> Self {
-        Self { painter, canvas, camera_offset, camera_scale, cursor }
+        Self {
+            painter,
+            canvas,
+            camera_offset,
+            camera_scale,
+            cursor,
+        }
     }
-    
+
     pub fn clear(&self, color: egui::Color32) {
-        self.painter.rect(self.canvas, egui::Rounding::ZERO, color, egui::Stroke::NONE);
+        self.painter
+            .rect(self.canvas, egui::Rounding::ZERO, color, egui::Stroke::NONE);
     }
-    
+
     pub fn draw_gridlines(
         &self,
         vertical: Option<(f32, egui::Color32)>,
-        horizontal: Option<(f32, egui::Color32)>
+        horizontal: Option<(f32, egui::Color32)>,
     ) {
         let canvas_size_scaled = (self.canvas.max - self.canvas.min) / self.camera_scale;
-        
+
         if let Some((distance_x, color)) = vertical {
-            for x in (0..((canvas_size_scaled.x / distance_x) as u32 + 1))
-                .map(|e| distance_x * e as f32)
+            for x in
+                (0..((canvas_size_scaled.x / distance_x) as u32 + 1)).map(|e| distance_x * e as f32)
             {
                 self.painter.vline(
-                    self.canvas.min.x + self.camera_offset.x % (distance_x * self.camera_scale)
+                    self.canvas.min.x
+                        + self.camera_offset.x % (distance_x * self.camera_scale)
                         + x * self.camera_scale,
                     egui::Rangef::new(self.canvas.min.y, self.canvas.max.y),
-                    egui::Stroke::new(1.0, color));
+                    egui::Stroke::new(1.0, color),
+                );
             }
         }
         if let Some((distance_y, color)) = horizontal {
-            for y in (0..((canvas_size_scaled.y / distance_y) as u32 + 1))
-                .map(|e| distance_y * e as f32)
+            for y in
+                (0..((canvas_size_scaled.y / distance_y) as u32 + 1)).map(|e| distance_y * e as f32)
             {
                 self.painter.hline(
                     egui::Rangef::new(self.canvas.min.x, self.canvas.max.x),
-                    self.canvas.min.y + self.camera_offset.y % (distance_y * self.camera_scale)
+                    self.canvas.min.y
+                        + self.camera_offset.y % (distance_y * self.camera_scale)
                         + y * self.camera_scale,
-                    egui::Stroke::new(1.0, color));
+                    egui::Stroke::new(1.0, color),
+                );
             }
         }
     }
-    
+
     pub fn sc_tr(&self, pos: egui::Pos2) -> egui::Pos2 {
         (pos * self.camera_scale) + self.canvas.min.to_vec2() + self.camera_offset.to_vec2()
     }
@@ -548,41 +684,42 @@ impl NHCanvas for UiCanvas {
         self.camera_offset += delta * self.camera_scale;
     }
 
-    fn draw_line(
-        &mut self,
-        points: [egui::Pos2; 2],
-        stroke: Stroke,
-    ) {
+    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke) {
         let offset = self.canvas.min.to_vec2() + self.camera_offset.to_vec2();
-        let (p1, p2) = (points[0] * self.camera_scale + offset, points[1] * self.camera_scale + offset);
+        let (p1, p2) = (
+            points[0] * self.camera_scale + offset,
+            points[1] * self.camera_scale + offset,
+        );
         match stroke.line_type {
             LineType::Solid => {
-                self.painter.line_segment([p1, p2], egui::Stroke::from(stroke));
-            },
+                self.painter
+                    .line_segment([p1, p2], egui::Stroke::from(stroke));
+            }
             LineType::Dashed => {
-                self.painter.add(
-                    eframe::epaint::Shape::dashed_line(
-                        &[p1, p2],
-                        egui::Stroke::from(stroke),
-                        10.0, 10.0,
-                    )
-                );
+                self.painter.add(eframe::epaint::Shape::dashed_line(
+                    &[p1, p2],
+                    egui::Stroke::from(stroke),
+                    10.0,
+                    10.0,
+                ));
             }
         }
     }
-    
+
     fn draw_rectangle(
         &mut self,
         rect: egui::Rect,
         rounding: egui::Rounding,
         color: egui::Color32,
-        stroke: Stroke
+        stroke: Stroke,
     ) {
         if color == egui::Color32::TRANSPARENT && stroke.line_type != LineType::Solid {
-            for (p1, p2) in [(rect.left_top(), rect.right_top()),
-                             (rect.left_bottom(), rect.right_bottom()),
-                             (rect.right_top(), rect.right_bottom()),
-                             (rect.left_top(), rect.left_bottom()),] {
+            for (p1, p2) in [
+                (rect.left_top(), rect.right_top()),
+                (rect.left_bottom(), rect.right_bottom()),
+                (rect.right_top(), rect.right_bottom()),
+                (rect.left_top(), rect.left_bottom()),
+            ] {
                 self.draw_line([p1, p2], stroke);
             }
         } else {
@@ -590,12 +727,14 @@ impl NHCanvas for UiCanvas {
                 (rect * self.camera_scale)
                     .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2())
                     .intersect(self.canvas),
-                rounding, color,
+                rounding,
+                color,
                 // TODO: shouldn't stroke be recalculated?
-                egui::Stroke::from(stroke));
+                egui::Stroke::from(stroke),
+            );
         }
     }
-    
+
     fn draw_ellipse(
         &mut self,
         position: egui::Pos2,
@@ -610,7 +749,7 @@ impl NHCanvas for UiCanvas {
             stroke: egui::Stroke::from(stroke),
         });
     }
-    
+
     fn draw_ellipse_proximity(
         &mut self,
         position: egui::Pos2,
@@ -619,23 +758,24 @@ impl NHCanvas for UiCanvas {
         stroke: Stroke,
         max_distance: f32,
     ) {
-        if self.cursor.filter(|e| e.distance(position) <= max_distance).is_some() {
+        if self
+            .cursor
+            .filter(|e| e.distance(position) <= max_distance)
+            .is_some()
+        {
             self.draw_ellipse(position, radius, color, stroke);
         }
     }
-    
-    fn draw_polygon(
-        &mut self,
-        vertices: Vec<egui::Pos2>,
-        color: egui::Color32,
-        stroke: Stroke,
-    ) {
-        let vertices = vertices.into_iter()
-            .map(|p| self.sc_tr(p))
-            .collect();
-        self.painter.add(egui::Shape::convex_polygon(vertices, color, egui::Stroke::from(stroke)));
+
+    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, color: egui::Color32, stroke: Stroke) {
+        let vertices = vertices.into_iter().map(|p| self.sc_tr(p)).collect();
+        self.painter.add(egui::Shape::convex_polygon(
+            vertices,
+            color,
+            egui::Stroke::from(stroke),
+        ));
     }
-    
+
     fn measure_text(
         &mut self,
         position: egui::Pos2,
@@ -643,12 +783,16 @@ impl NHCanvas for UiCanvas {
         text: &str,
         font_size: f32,
     ) -> egui::Rect {
-        self.painter.text(
-            self.sc_tr(position),
-            anchor, text, egui::FontId::proportional(font_size * self.camera_scale), egui::Color32::TRANSPARENT,
-        )
-        .translate(- self.canvas.min.to_vec2() - self.camera_offset.to_vec2())
-        / self.camera_scale
+        self.painter
+            .text(
+                self.sc_tr(position),
+                anchor,
+                text,
+                egui::FontId::proportional(font_size * self.camera_scale),
+                egui::Color32::TRANSPARENT,
+            )
+            .translate(-self.canvas.min.to_vec2() - self.camera_offset.to_vec2())
+            / self.camera_scale
     }
     fn draw_text(
         &mut self,
@@ -661,20 +805,27 @@ impl NHCanvas for UiCanvas {
         if font_size * self.camera_scale >= 4.0 {
             self.painter.text(
                 self.sc_tr(position),
-                anchor, text, egui::FontId::proportional(font_size * self.camera_scale), text_color,
+                anchor,
+                text,
+                egui::FontId::proportional(font_size * self.camera_scale),
+                text_color,
             );
         } else {
             let size = egui::Vec2::new(font_size * text.len() as f32 / 2.0, font_size);
-            let pos = egui::Pos2::new(position.x - match anchor.x() {
-                    egui::Align::Min => - size.x / 2.0,
-                    egui::Align::Center => 0.0,
-                    egui::Align::Max => size.x / 2.0,
-                },
-                position.y - match anchor.y() {
-                    egui::Align::Min => - size.y / 2.0,
-                    egui::Align::Center => 0.0,
-                    egui::Align::Max => size.y / 2.0,
-                });
+            let pos = egui::Pos2::new(
+                position.x
+                    - match anchor.x() {
+                        egui::Align::Min => -size.x / 2.0,
+                        egui::Align::Center => 0.0,
+                        egui::Align::Max => size.x / 2.0,
+                    },
+                position.y
+                    - match anchor.y() {
+                        egui::Align::Min => -size.y / 2.0,
+                        egui::Align::Center => 0.0,
+                        egui::Align::Max => size.y / 2.0,
+                    },
+            );
             self.draw_rectangle(
                 egui::Rect::from_center_size(pos, size),
                 egui::Rounding::ZERO,
@@ -699,34 +850,36 @@ impl<'a> MeasuringCanvas<'a> {
             bounds: egui::Rect::NOTHING,
         }
     }
-    
-    pub fn bounds(&self) -> egui::Rect { self.bounds }
+
+    pub fn bounds(&self) -> egui::Rect {
+        self.bounds
+    }
 }
 
 impl<'a> NHCanvas for MeasuringCanvas<'a> {
     fn offset_by(&mut self, delta: egui::Vec2) {
         self.camera_offset += delta;
     }
-    
-    fn draw_line(
-        &mut self,
-        points: [egui::Pos2; 2],
-        _stroke: Stroke,
-    ) {
-        self.bounds.extend_with(points[0] + self.camera_offset.to_vec2());
-        self.bounds.extend_with(points[1] + self.camera_offset.to_vec2());
+
+    fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke) {
+        self.bounds
+            .extend_with(points[0] + self.camera_offset.to_vec2());
+        self.bounds
+            .extend_with(points[1] + self.camera_offset.to_vec2());
     }
-    
+
     fn draw_rectangle(
         &mut self,
         rect: egui::Rect,
         _rounding: egui::Rounding,
         _color: egui::Color32,
-        _stroke: Stroke
+        _stroke: Stroke,
     ) {
-        self.bounds = self.bounds.union(rect.translate(self.camera_offset.to_vec2()));
+        self.bounds = self
+            .bounds
+            .union(rect.translate(self.camera_offset.to_vec2()));
     }
-    
+
     fn draw_ellipse(
         &mut self,
         position: egui::Pos2,
@@ -735,20 +888,17 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         _stroke: Stroke,
     ) {
         let rect = egui::Rect::from_center_size(position, 2.0 * radius);
-        self.bounds = self.bounds.union(rect.translate(self.camera_offset.to_vec2()));
+        self.bounds = self
+            .bounds
+            .union(rect.translate(self.camera_offset.to_vec2()));
     }
-    
-    fn draw_polygon(
-        &mut self,
-        vertices: Vec<egui::Pos2>,
-        _color: egui::Color32,
-        _stroke: Stroke,
-    ) {
+
+    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, _color: egui::Color32, _stroke: Stroke) {
         for p in vertices {
             self.bounds.extend_with(p + self.camera_offset.to_vec2());
         }
     }
-    
+
     fn measure_text(
         &mut self,
         position: egui::Pos2,
@@ -756,7 +906,13 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         text: &str,
         font_size: f32,
     ) -> egui::Rect {
-        self.painter.text(position, anchor, text, egui::FontId::proportional(font_size), egui::Color32::TRANSPARENT)
+        self.painter.text(
+            position,
+            anchor,
+            text,
+            egui::FontId::proportional(font_size),
+            egui::Color32::TRANSPARENT,
+        )
     }
     fn draw_text(
         &mut self,
@@ -767,7 +923,9 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         _text_color: egui::Color32,
     ) {
         let rect = self.measure_text(position, anchor, text, font_size);
-        self.bounds = self.bounds.union(rect.translate(self.camera_offset.to_vec2()));
+        self.bounds = self
+            .bounds
+            .union(rect.translate(self.camera_offset.to_vec2()));
     }
 }
 
@@ -787,24 +945,33 @@ impl<'a> SVGCanvas<'a> {
             element_buffer: Vec::new(),
         }
     }
-    
+
     pub fn save_to(&self, path: std::path::PathBuf) -> Result<(), std::io::Error> {
         let mut file = std::fs::OpenOptions::new()
-                            .create(true)
-                            .truncate(true)
-                            .write(true)
-                            .open(path)?;
-        file.write_all(format!(r#"<?xml version="1.0" encoding="UTF-8"?>
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(path)?;
+        file.write_all(
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
 <svg width="{}" height="{}" xmlns="http://www.w3.org/2000/svg">
-"#, self.export_size.x, self.export_size.y).as_bytes())?;
-        
+"#,
+                self.export_size.x, self.export_size.y
+            )
+            .as_bytes(),
+        )?;
+
         for line in &self.element_buffer {
             file.write_all(line.as_bytes())?;
         }
-        
-        file.write_all(r#"</svg>
-"#.as_bytes())?;
-        
+
+        file.write_all(
+            r#"</svg>
+"#
+            .as_bytes(),
+        )?;
+
         Ok(())
     }
 }
@@ -814,34 +981,45 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         self.camera_offset += delta;
     }
 
-    fn draw_line(
-        &mut self,
-        points: [egui::Pos2; 2],
-        stroke: Stroke,
-    ) {
+    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke) {
         let stroke_dasharray = match stroke.line_type {
             LineType::Solid => "none",
             LineType::Dashed => "10,5",
         };
-        
-        self.element_buffer.push(format!(r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-dasharray="{}"/>
-"#, points[0].x + self.camera_offset.x, points[0].y + self.camera_offset.y,
-    points[1].x + self.camera_offset.x, points[1].y + self.camera_offset.y, stroke.color.to_hex(), stroke_dasharray));
+
+        self.element_buffer.push(format!(
+            r#"<line x1="{}" y1="{}" x2="{}" y2="{}" stroke="{}" stroke-dasharray="{}"/>
+"#,
+            points[0].x + self.camera_offset.x,
+            points[0].y + self.camera_offset.y,
+            points[1].x + self.camera_offset.x,
+            points[1].y + self.camera_offset.y,
+            stroke.color.to_hex(),
+            stroke_dasharray
+        ));
     }
-    
+
     fn draw_rectangle(
         &mut self,
         rect: egui::Rect,
         _rounding: egui::Rounding,
         color: egui::Color32,
-        stroke: Stroke
+        stroke: Stroke,
     ) {
         // TODO: implement rounding (not directly supported by SVG, potentially hard)
         let top_left = rect.left_top();
-        self.element_buffer.push(format!(r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}"/>
-"#, top_left.x + self.camera_offset.x, top_left.y + self.camera_offset.y, rect.width(), rect.height(), color.to_hex(), stroke.color.to_hex()));
+        self.element_buffer.push(format!(
+            r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}"/>
+"#,
+            top_left.x + self.camera_offset.x,
+            top_left.y + self.camera_offset.y,
+            rect.width(),
+            rect.height(),
+            color.to_hex(),
+            stroke.color.to_hex()
+        ));
     }
-    
+
     fn draw_ellipse(
         &mut self,
         position: egui::Pos2,
@@ -849,21 +1027,39 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         color: egui::Color32,
         stroke: Stroke,
     ) {
-        self.element_buffer.push(format!(r#"<ellipse cx="{}" cy="{}" rx="{}" ry="{}" fill="{}" stroke="{}"/>
-"#, position.x + self.camera_offset.x, position.y + self.camera_offset.y, radius.x, radius.y, color.to_hex(), stroke.color.to_hex()));
+        self.element_buffer.push(format!(
+            r#"<ellipse cx="{}" cy="{}" rx="{}" ry="{}" fill="{}" stroke="{}"/>
+"#,
+            position.x + self.camera_offset.x,
+            position.y + self.camera_offset.y,
+            radius.x,
+            radius.y,
+            color.to_hex(),
+            stroke.color.to_hex()
+        ));
     }
-    
-    fn draw_polygon(
-        &mut self,
-        vertices: Vec<egui::Pos2>,
-        color: egui::Color32,
-        stroke: Stroke,
-    ) {
-        let polygon_points = vertices.iter().map(|&p| format!("{},{}", p.x + self.camera_offset.x, p.y + self.camera_offset.y)).collect::<Vec<_>>().join(" ");
-        self.element_buffer.push(format!(r#"<polygon points="{}" fill="{}" stroke="{}"/>
-"#, polygon_points, color.to_hex(), stroke.color.to_hex()));
+
+    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, color: egui::Color32, stroke: Stroke) {
+        let polygon_points = vertices
+            .iter()
+            .map(|&p| {
+                format!(
+                    "{},{}",
+                    p.x + self.camera_offset.x,
+                    p.y + self.camera_offset.y
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        self.element_buffer.push(format!(
+            r#"<polygon points="{}" fill="{}" stroke="{}"/>
+"#,
+            polygon_points,
+            color.to_hex(),
+            stroke.color.to_hex()
+        ));
     }
-    
+
     fn measure_text(
         &mut self,
         position: egui::Pos2,
@@ -871,7 +1067,13 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         text: &str,
         font_size: f32,
     ) -> egui::Rect {
-        self.painter.text(position, anchor, text, egui::FontId::proportional(font_size), egui::Color32::TRANSPARENT)
+        self.painter.text(
+            position,
+            anchor,
+            text,
+            egui::FontId::proportional(font_size),
+            egui::Color32::TRANSPARENT,
+        )
     }
     fn draw_text(
         &mut self,
@@ -882,13 +1084,20 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         text_color: egui::Color32,
     ) {
         // TODO: use SVG alignment to minimize differences in fonts
-        let rect = self.painter.text(position, anchor, text, egui::FontId::proportional(font_size), egui::Color32::TRANSPARENT);
+        let rect = self.painter.text(
+            position,
+            anchor,
+            text,
+            egui::FontId::proportional(font_size),
+            egui::Color32::TRANSPARENT,
+        );
 
-        let escaped_text = text.replace("&", "&amp;")
-                                .replace("<", "&lt;")
-                                .replace(">", "&gt;")
-                                .replace("'", "&apos;")
-                                .replace("\"", "&quot;");
+        let escaped_text = text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("'", "&apos;")
+            .replace("\"", "&quot;");
         self.element_buffer.push(format!(r#"<text x="{}" y="{}" font-size="{}" fill="{}" text-anchor="middle" dominant-baseline="middle">{}</text>
 "#, rect.center().x + self.camera_offset.x, rect.center().y + self.camera_offset.y, font_size, text_color.to_hex(), escaped_text));
     }
