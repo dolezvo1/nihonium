@@ -351,7 +351,7 @@ where
         }
     }
     fn click(&mut self, pos: egui::Pos2) -> bool {
-        // TODO: reset construction lock
+        self.current_tool.as_mut().map(|e| e.reset_constructed_state());
 
         let handled = self
             .owned_controllers
@@ -362,7 +362,10 @@ where
                     .click(self.current_tool.as_mut(), pos, ModifierKeys::NONE)
                     == ClickHandlingStatus::Handled
             })
-            .map(|uc| {
+            .map(|uc| if /*TODO: !ModifierKeys::CTRL*/ true {
+                self.selected_elements.clear();
+                self.selected_elements.insert(uc.0.clone());
+            } else {
                 self.selected_elements.insert(uc.0.clone());
             })
             .ok_or_else(|| {
@@ -599,6 +602,68 @@ pub mod macros {
     // center_point: Option<egui::Pos2>
     // fn sources(&mut self) -> &mut [Vec<egui::Pos2>];
     // fn destinations(&mut self) -> &mut [Vec<egui::Pos2>];
+    macro_rules! multiconnection_element_click {
+        ($self:ident, $last_pos:ident, $delta:ident, $center_point:ident, $sources:ident, $destinations:ident, $ret:expr) => {
+            const DISTANCE_THRESHOLD: f32 = 3.0;
+
+            fn dist_to_line_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
+                fn dist2(a: egui::Pos2, b: egui::Pos2) -> f32 {
+                    (a.x - b.x).powf(2.0) + (a.y - b.y).powf(2.0)
+                }
+                let l2 = dist2(a, b);
+                let distance_squared = if l2 == 0.0 {
+                    dist2(p, a)
+                } else {
+                    let t = (((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2)
+                        .clamp(0.0, 1.0);
+                    dist2(
+                        p,
+                        egui::Pos2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)),
+                    )
+                };
+                return distance_squared.sqrt();
+            }
+
+            // Check segments on paths
+            macro_rules! check_path_segments {
+                ($v:ident) => {
+                    let center_point = $self.center_point.clone();
+                    for path in $self.$v() {
+                        // Iterates over 2-windows
+                        let mut iter = path.iter().map(|e| *e).chain(center_point).peekable();
+                        while let Some(u) = iter.next() {
+                            let v = if let Some(v) = iter.peek() {
+                                *v
+                            } else {
+                                break;
+                            };
+
+                            if dist_to_line_segment($last_pos, u, v) <= DISTANCE_THRESHOLD {
+                                return $ret;
+                            }
+                        }
+                    }
+                };
+            }
+            check_path_segments!(sources);
+            check_path_segments!(destinations);
+            
+            // In case there is no center_point, also check all-to-all of last points
+            if $self.center_point == None {
+                // TODO: this shouldn't have to clone, but probably not that big of a deal
+                let destinations: Vec<egui::Pos2> = $self.destinations().iter().flat_map(|e| e.last().cloned()).collect();
+                for u in $self.sources().iter().flat_map(|e| e.last()) {
+                    for v in &destinations {
+                        if dist_to_line_segment($last_pos, *u, *v) <= DISTANCE_THRESHOLD {
+                            return $ret;
+                        }
+                    }
+                }
+            }
+        };
+    }
+    pub(crate) use multiconnection_element_click;
+    
     macro_rules! multiconnection_element_drag {
         ($self:ident, $last_pos:ident, $delta:ident, $center_point:ident, $sources:ident, $destinations:ident, $ret:expr) => {
             const DISTANCE_THRESHOLD: f32 = 3.0;
@@ -673,48 +738,6 @@ pub mod macros {
             }
             check_midpoints!(sources);
             check_midpoints!(destinations);
-
-            fn dist_to_line_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
-                fn dist2(a: egui::Pos2, b: egui::Pos2) -> f32 {
-                    (a.x - b.x).powf(2.0) + (a.y - b.y).powf(2.0)
-                }
-                let l2 = dist2(a, b);
-                let distance_squared = if l2 == 0.0 {
-                    dist2(p, a)
-                } else {
-                    let t = (((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2)
-                        .clamp(0.0, 1.0);
-                    dist2(
-                        p,
-                        egui::Pos2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)),
-                    )
-                };
-                return distance_squared.sqrt();
-            }
-
-            // TODO: this doesn't actually work in the situation where there is no center_point
-            macro_rules! check_segments {
-                ($v:ident) => {
-                    let center_point = $self.center_point.clone();
-                    for path in $self.$v() {
-                        // Iterates over 2-windows
-                        let mut iter = path.iter().map(|e| *e).chain(center_point).peekable();
-                        while let Some(u) = iter.next() {
-                            let v = if let Some(v) = iter.peek() {
-                                *v
-                            } else {
-                                break;
-                            };
-
-                            if dist_to_line_segment($last_pos, u, v) <= DISTANCE_THRESHOLD {
-                                return $ret;
-                            }
-                        }
-                    }
-                };
-            }
-            check_segments!(sources);
-            check_segments!(destinations);
         };
     }
     pub(crate) use multiconnection_element_drag;

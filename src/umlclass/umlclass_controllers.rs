@@ -1380,10 +1380,18 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn click(
         &mut self,
         _tool: Option<&mut NaiveUmlClassTool>,
-        _pos: egui::Pos2,
+        pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
-        // TODO: the links should at least be selected
+        crate::common::controller::macros::multiconnection_element_click!(
+            self,
+            pos,
+            delta,
+            center_point,
+            sources,
+            destinations,
+            ClickHandlingStatus::Handled
+        );
         ClickHandlingStatus::NotHandled
     }
     fn drag(

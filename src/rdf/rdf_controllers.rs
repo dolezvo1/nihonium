@@ -1519,9 +1519,18 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
     fn click(
         &mut self,
         _tool: Option<&mut NaiveRdfTool>,
-        _pos: egui::Pos2,
+        pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
+        crate::common::controller::macros::multiconnection_element_click!(
+            self,
+            pos,
+            delta,
+            center_point,
+            sources,
+            destinations,
+            ClickHandlingStatus::Handled
+        );
         ClickHandlingStatus::NotHandled
     }
     fn drag(
