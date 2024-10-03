@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 use super::umlclass_models::{
-    UmlClassDiagram, UmlClassPackage, UmlClassElement, UmlClass, UmlClassLink, UmlClassLinkType,
+    UmlClassDiagram, UmlClassPackage, UmlClassElement, UmlClass, UmlClassLink, UmlClassLinkType, UmlClassStereotype,
 };
 use crate::common::canvas::{
     self, NHCanvas, NHShape,
@@ -16,6 +16,7 @@ use crate::common::controller::{
 };
 use crate::common::observer::Observable;
 use crate::NHApp;
+use crate::CustomTab;
 
 pub struct UmlClassQueryable {}
 
@@ -72,26 +73,38 @@ fn menubar_options_fun(
     context: &mut NHApp,
     ui: &mut egui::Ui
 ) {
-    // TODO: add a window that would emit PlantUML for given diagram - I think that should be straightforward
-    // https://www.webdevtutor.net/blog/beginner-guide-plantuml-class-diagrams
-    /*
-    interface X {
-
+    if ui.button("PlantUML description").clicked() {
+        let uuid = uuid::Uuid::now_v7();
+        context.add_custom_tab(uuid,
+            Arc::new(RwLock::new(
+                PlantUmlTab {
+                    diagram: controller.model(),
+                    plantuml_description: "".to_owned(),
+                }
+            ))
+        );
     }
+}
 
-    class MyClass1 implements X {
-    + attribute1: DataType
-    + method1(): ReturnType
+struct PlantUmlTab {
+    diagram: Arc<RwLock<UmlClassDiagram>>,
+    plantuml_description: String,
+}
+
+impl CustomTab for PlantUmlTab {
+    fn title(&self) -> String {
+        "PlantUML description".to_owned()
     }
-
-    class MyClass2 implements X {
-    + attribute2: DataType
-    + method2(): ReturnType
+    
+    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui) {
+        if ui.button("Refresh").clicked() {
+            let diagram = self.diagram.read().unwrap();
+            self.plantuml_description = diagram.plantuml();
+        }
+        
+        ui.add_sized((ui.available_width(), 20.0),
+                        egui::TextEdit::multiline(&mut self.plantuml_description.as_str()));
     }
-
-    MyClass1 "1" -- "0..*" MyClass2
-
-    */
 }
 
 pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
@@ -126,14 +139,14 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let class_af_uuid = uuid::Uuid::now_v7();
     let class_af = Arc::new(RwLock::new(UmlClass::new(
         class_af_uuid.clone(),
+        UmlClassStereotype::Interface,
         "AbstractFactory".to_owned(),
-        "interface".to_owned(),
     )));
     class_af.write().unwrap().functions = Arc::new("+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned());
     let class_af_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_af.clone(),
+        stereotype_buffer: UmlClassStereotype::Interface,
         name_buffer: "AbstractFactory".to_owned(),
-        stereotype_buffer: "interface".to_owned(),
         properties_buffer: "".to_owned(),
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
@@ -145,14 +158,14 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let class_cfx_uuid = uuid::Uuid::now_v7();
     let class_cfx = Arc::new(RwLock::new(UmlClass::new(
         class_cfx_uuid.clone(),
+        UmlClassStereotype::Class,
         "ConcreteFactoryX".to_owned(),
-        "".to_string(),
     )));
     class_cfx.write().unwrap().functions = Arc::new("+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned());
     let class_cfx_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_cfx.clone(),
+        stereotype_buffer: UmlClassStereotype::Class,
         name_buffer: "ConcreteFactoryX".to_owned(),
-        stereotype_buffer: "".to_owned(),
         properties_buffer: "".to_owned(),
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
@@ -164,14 +177,14 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let class_cfy_uuid = uuid::Uuid::now_v7();
     let class_cfy = Arc::new(RwLock::new(UmlClass::new(
         class_cfy_uuid.clone(),
+        UmlClassStereotype::Class,
         "ConcreteFactoryY".to_owned(),
-        "".to_string(),
     )));
     class_cfy.write().unwrap().functions = Arc::new("+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned());
     let class_cfy_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_cfy.clone(),
+        stereotype_buffer: UmlClassStereotype::Class,
         name_buffer: "ConcreteFactoryY".to_owned(),
-        stereotype_buffer: "".to_owned(),
         properties_buffer: "".to_owned(),
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
@@ -223,13 +236,13 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let class_client_uuid = uuid::Uuid::now_v7();
     let class_client = Arc::new(RwLock::new(UmlClass::new(
         class_client_uuid.clone(),
+        UmlClassStereotype::Class,
         "Client".to_owned(),
-        "".to_string(),
     )));
     let class_client_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_client.clone(),
+        stereotype_buffer: UmlClassStereotype::Class,
         name_buffer: "Client".to_owned(),
-        stereotype_buffer: "".to_owned(),
         properties_buffer: "".to_owned(),
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
@@ -261,13 +274,13 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let class_producta_uuid = uuid::Uuid::now_v7();
     let class_producta = Arc::new(RwLock::new(UmlClass::new(
         class_producta_uuid.clone(),
+        UmlClassStereotype::Interface,
         "ProductA".to_owned(),
-        "interface".to_string(),
     )));
     let class_producta_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_producta.clone(),
+        stereotype_buffer: UmlClassStereotype::Interface,
         name_buffer: "ProductA".to_owned(),
-        stereotype_buffer: "interface".to_owned(),
         properties_buffer: "".to_owned(),
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
@@ -299,13 +312,13 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let class_productb_uuid = uuid::Uuid::now_v7();
     let class_productb = Arc::new(RwLock::new(UmlClass::new(
         class_productb_uuid.clone(),
+        UmlClassStereotype::Interface,
         "ProductB".to_owned(),
-        "interface".to_string(),
     )));
     let class_productb_controller = Arc::new(RwLock::new(UmlClassController {
         model: class_productb.clone(),
+        stereotype_buffer: UmlClassStereotype::Interface,
         name_buffer: "ProductB".to_owned(),
-        stereotype_buffer: "interface".to_owned(),
         properties_buffer: "".to_owned(),
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
@@ -495,13 +508,13 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
             (UmlClassToolStage::Class, _) => {
                 let node = Arc::new(RwLock::new(UmlClass::new(
                     uuid,
+                    UmlClassStereotype::Class,
                     "a class".to_owned(),
-                    "".to_owned(),
                 )));
                 self.result = PartialUmlClassElement::Some(Arc::new(RwLock::new(UmlClassController {
                     model: node.clone(),
+                    stereotype_buffer: UmlClassStereotype::Class,
                     name_buffer: "a class".to_owned(),
-                    stereotype_buffer: "".to_owned(),
                     properties_buffer: "".to_owned(),
                     functions_buffer: "".to_owned(),
                     comment_buffer: "".to_owned(),
@@ -754,10 +767,17 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                 tool.offset_by(-self.bounds_rect.left_top().to_vec2());
                 tool.add_element(KindedUmlClassElement::Package{}, pos);
                 
-                if let Some(new) = tool.try_construct(self) {
-                    let uuid = new.read().unwrap().uuid();
-                    self.owned_controllers.insert(*uuid, new);
+                if let Some(new_a) = tool.try_construct(self) {
+                    let new_c = new_a.read().unwrap();
+                    let uuid = *new_c.uuid();
+                    
+                    let mut self_m = self.model.write().unwrap();
+                    self_m.add_element(new_c.model());
+                    drop(new_c);
+                    
+                    self.owned_controllers.insert(uuid, new_a);
                 }
+                
                 return ClickHandlingStatus::Handled;
             },
             _ => {},
@@ -808,8 +828,8 @@ impl ContainerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool> fo
 
 pub struct UmlClassController {
     pub model: Arc<RwLock<UmlClass>>,
+    stereotype_buffer: UmlClassStereotype,
     name_buffer: String,
-    stereotype_buffer: String,
     properties_buffer: String,
     functions_buffer: String,
     comment_buffer: String,
@@ -839,14 +859,23 @@ impl ElementController<dyn UmlClassElement> for UmlClassController {
 }
 
 impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool> for UmlClassController {
-    fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {        
-        ui.label("Name:");
-        let r1 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut self.name_buffer));
-        
+    fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
         ui.label("Stereotype:");
+        let mut r1 = false;
+        egui::ComboBox::from_id_source("Stereotype:")
+            .selected_text(self.stereotype_buffer.char())
+            .show_ui(ui, |ui| {
+                for value in [UmlClassStereotype::Abstract, UmlClassStereotype::AbstractClass, UmlClassStereotype::Class,
+                           UmlClassStereotype::Entity, UmlClassStereotype::Enum, UmlClassStereotype::Interface,] {
+                    if ui.selectable_value(&mut self.stereotype_buffer, value, value.char()).clicked() {
+                        r1 = true;
+                    }
+                }
+            });
+        
+        ui.label("Name:");
         let r2 = ui.add_sized((ui.available_width(), 20.0),
-                              egui::TextEdit::multiline(&mut self.stereotype_buffer));
+                              egui::TextEdit::multiline(&mut self.name_buffer));
         
         ui.label("Properties:");
         let r3 = ui.add_sized((ui.available_width(), 20.0),
@@ -860,15 +889,15 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         let r5 = ui.add_sized((ui.available_width(), 20.0),
                               egui::TextEdit::multiline(&mut self.comment_buffer));
         
-        if r1.changed() || r2.changed() || r3.changed() || r4.changed() || r5.changed() {
+        if r1 || r2.changed() || r3.changed() || r4.changed() || r5.changed() {
             let mut model = self.model.write().unwrap();
             
-            if r1.changed() {
-                model.name = Arc::new(self.name_buffer.clone());
+            if r1 {
+                model.stereotype = self.stereotype_buffer.clone();
             }
             
             if r2.changed() {
-                model.stereotype = Arc::new(self.stereotype_buffer.clone());
+                model.name = Arc::new(self.name_buffer.clone());
             }
             
             if r3.changed() {
@@ -903,15 +932,10 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     
     fn draw_in(&mut self,  _: &UmlClassQueryable, canvas: &mut dyn NHCanvas, tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>) -> TargettingStatus {
         let read = self.model.read().unwrap();
-        let stereotype = if !read.stereotype.is_empty() {
-            Some(format!("<<{}>>", read.stereotype))
-        } else { None };
         
         self.bounds_rect = canvas.draw_class(
             self.position,
-            if let Some(stereotype) = &stereotype {
-                Some(&stereotype)
-            } else { None },
+            Some(read.stereotype.char()),
             &read.name,
             None,
             &[&read.parse_properties(), &read.parse_functions()],

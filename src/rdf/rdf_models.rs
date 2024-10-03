@@ -110,8 +110,7 @@ impl RdfGraph {
         }
     }
     
-    // TODO: use this
-    pub fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
+    pub(super) fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
         self.contained_elements.push(element);
         self.notify_observers();
     }
