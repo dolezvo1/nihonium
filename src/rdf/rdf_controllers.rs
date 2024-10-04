@@ -12,7 +12,7 @@ use crate::{CustomTab, NHApp};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, RwLock},
 };
 
@@ -383,6 +383,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let graph_controller = Arc::new(RwLock::new(RdfGraphController {
         model: graph.clone(),
         owned_controllers: HashMap::new(),
+        selected_elements: HashSet::new(),
         iri_buffer: "http://graph".to_owned(),
         comment_buffer: "".to_owned(),
 
@@ -448,6 +449,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let graph_st_controller = Arc::new(RwLock::new(RdfGraphController {
         model: graph_st.clone(),
         owned_controllers: controllers_st,
+        selected_elements: HashSet::new(),
         iri_buffer: "http://stresstestgraph".to_owned(),
         comment_buffer: "".to_owned(),
         bounds_rect: egui::Rect::from_min_max(
@@ -785,6 +787,7 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                 let graph_controller = Arc::new(RwLock::new(RdfGraphController {
                     model: graph.clone(),
                     owned_controllers: HashMap::new(),
+                    selected_elements: HashSet::new(),
                     iri_buffer: "a graph".to_owned(),
                     comment_buffer: "".to_owned(),
                     bounds_rect: egui::Rect::from_two_pos(*a, *b),
@@ -840,10 +843,24 @@ pub struct RdfGraphController {
         uuid::Uuid,
         Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool>>>,
     >,
+    selected_elements: HashSet<uuid::Uuid>,
     iri_buffer: String,
     comment_buffer: String,
 
     pub bounds_rect: egui::Rect,
+}
+
+impl RdfGraphController {
+    pub fn last_selected_element(
+        &self,
+    ) -> Option<Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool>>>>
+    {
+        if self.selected_elements.len() != 1 {
+            return None;
+        }
+        let id = self.selected_elements.iter().next()?;
+        self.owned_controllers.get(&id).cloned()
+    }
 }
 
 impl ElementController<dyn RdfElement> for RdfGraphController {
@@ -869,31 +886,35 @@ impl ElementController<dyn RdfElement> for RdfGraphController {
 }
 
 impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGraphController {
-    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
-        ui.label("IRI:");
-        let r1 = ui.add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::multiline(&mut self.iri_buffer),
-        );
+    fn show_properties(&mut self, parent: &RdfQueryable, ui: &mut egui::Ui) {
+        if let Some(element) = self.last_selected_element() {
+            element.write().unwrap().show_properties(parent, ui);
+        } else {
+            ui.label("IRI:");
+            let r1 = ui.add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.iri_buffer),
+            );
 
-        ui.label("Comment:");
-        let r2 = ui.add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::multiline(&mut self.comment_buffer),
-        );
+            ui.label("Comment:");
+            let r2 = ui.add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.comment_buffer),
+            );
 
-        if r1.changed() || r2.changed() {
-            let mut model = self.model.write().unwrap();
+            if r1.changed() || r2.changed() {
+                let mut model = self.model.write().unwrap();
 
-            if r1.changed() {
-                model.iri = Arc::new(self.iri_buffer.clone());
+                if r1.changed() {
+                    model.iri = Arc::new(self.iri_buffer.clone());
+                }
+
+                if r2.changed() {
+                    model.comment = Arc::new(self.comment_buffer.clone());
+                }
+
+                model.notify_observers();
             }
-
-            if r2.changed() {
-                model.comment = Arc::new(self.comment_buffer.clone());
-            }
-
-            model.notify_observers();
         }
     }
     fn list_in_project_hierarchy(&self, parent: &RdfQueryable, ui: &mut egui::Ui) {
@@ -931,7 +952,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
         let offset_tool = tool.map(|(p, t)| (p - self.bounds_rect.left_top().to_vec2(), t));
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
-        canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
+        canvas.offset_by(self.bounds_rect.left_top().to_vec2());
         self.owned_controllers
             .iter_mut()
             .filter(|_| true) // TODO: filter by layers
@@ -941,7 +962,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
                     drawn_child_targetting = TargettingStatus::Drawn;
                 }
             });
-        canvas.offset_by(self.bounds_rect.left_top().to_vec2());
+        canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
 
         match (drawn_child_targetting, tool) {
             (TargettingStatus::NotDrawn, Some((pos, t))) if self.min_shape().contains(*pos) => {
@@ -952,14 +973,14 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 );
 
-                canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
+                canvas.offset_by(self.bounds_rect.left_top().to_vec2());
                 self.owned_controllers
                     .iter_mut()
                     .filter(|_| true) // TODO: filter by layers
                     .for_each(|uc| {
                         uc.1.write().unwrap().draw_in(q, canvas, &offset_tool);
                     });
-                canvas.offset_by(self.bounds_rect.left_top().to_vec2());
+                canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
 
                 TargettingStatus::Drawn
             }
@@ -986,9 +1007,16 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
                 },
                 None => uc.1.write().unwrap().click(None, offset_pos, modifiers),
             } == ClickHandlingStatus::Handled)
-            //.map(|uc| {self.last_selected_element = Some(uc.0.clone());})
-            //.ok_or_else(|| {self.last_selected_element = None;})
-            .is_some();
+            .map(|uc| if !modifiers.command {
+                self.selected_elements.clear();
+                self.selected_elements.insert(uc.0.clone());
+            } else if self.selected_elements.contains(&uc.0) {
+                self.selected_elements.remove(&uc.0);
+            } else {
+                self.selected_elements.insert(uc.0.clone());
+            })
+            .ok_or_else(|| {self.selected_elements.clear();})
+            .is_ok();
         let handled = match handled {
             true => ClickHandlingStatus::Handled,
             false => ClickHandlingStatus::NotHandled,

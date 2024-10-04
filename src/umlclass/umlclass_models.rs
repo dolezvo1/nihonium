@@ -46,7 +46,11 @@ impl UmlClassCollector {
                 self.absolute_with_current_stack(&*class.name),
             );
         } else {
-            self.plantuml_data.push_str(&format!("{} {:?} {{\n", class.stereotype.name(), class.name));
+            self.plantuml_data.push_str(&format!(
+                "{} {:?} {{\n",
+                class.stereotype.name(),
+                class.name
+            ));
             self.plantuml_data.push_str(&class.properties);
             self.plantuml_data.push_str("\n");
             self.plantuml_data.push_str(&class.functions);

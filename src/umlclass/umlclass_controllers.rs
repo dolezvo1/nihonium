@@ -13,7 +13,7 @@ use crate::CustomTab;
 use crate::NHApp;
 use eframe::egui;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, RwLock},
 };
 
@@ -753,6 +753,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                 let package_controller = Arc::new(RwLock::new(UmlClassPackageController {
                     model: package.clone(),
                     owned_controllers: HashMap::new(),
+                    selected_elements: HashSet::new(),
                     name_buffer: "a package".to_owned(),
                     comment_buffer: "".to_owned(),
 
@@ -796,10 +797,33 @@ pub struct UmlClassPackageController {
             >,
         >,
     >,
+    selected_elements: HashSet<uuid::Uuid>,
     name_buffer: String,
     comment_buffer: String,
 
     pub bounds_rect: egui::Rect,
+}
+
+impl UmlClassPackageController {
+    pub fn last_selected_element(
+        &self,
+    ) -> Option<
+        Arc<
+            RwLock<
+                dyn ElementControllerGen2<
+                    dyn UmlClassElement,
+                    UmlClassQueryable,
+                    NaiveUmlClassTool,
+                >,
+            >,
+        >,
+    > {
+        if self.selected_elements.len() != 1 {
+            return None;
+        }
+        let id = self.selected_elements.iter().next()?;
+        self.owned_controllers.get(&id).cloned()
+    }
 }
 
 impl ElementController<dyn UmlClassElement> for UmlClassPackageController {
@@ -827,31 +851,35 @@ impl ElementController<dyn UmlClassElement> for UmlClassPackageController {
 impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>
     for UmlClassPackageController
 {
-    fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
-        ui.label("Name:");
-        let r1 = ui.add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::multiline(&mut self.name_buffer),
-        );
+    fn show_properties(&mut self, parent: &UmlClassQueryable, ui: &mut egui::Ui) {
+        if let Some(element) = self.last_selected_element() {
+            element.write().unwrap().show_properties(parent, ui);
+        } else {
+            ui.label("Name:");
+            let r1 = ui.add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.name_buffer),
+            );
 
-        ui.label("Comment:");
-        let r2 = ui.add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::multiline(&mut self.comment_buffer),
-        );
+            ui.label("Comment:");
+            let r2 = ui.add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.comment_buffer),
+            );
 
-        if r1.changed() || r2.changed() {
-            let mut model = self.model.write().unwrap();
+            if r1.changed() || r2.changed() {
+                let mut model = self.model.write().unwrap();
 
-            if r1.changed() {
-                model.name = Arc::new(self.name_buffer.clone());
+                if r1.changed() {
+                    model.name = Arc::new(self.name_buffer.clone());
+                }
+
+                if r2.changed() {
+                    model.comment = Arc::new(self.comment_buffer.clone());
+                }
+
+                model.notify_observers();
             }
-
-            if r2.changed() {
-                model.comment = Arc::new(self.comment_buffer.clone());
-            }
-
-            model.notify_observers();
         }
     }
     fn list_in_project_hierarchy(&self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
@@ -945,9 +973,18 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                 },
                 None => uc.1.write().unwrap().click(None, offset_pos, modifiers),
             } == ClickHandlingStatus::Handled)
-            //.map(|uc| {self.last_selected_element = Some(uc.0.clone());})
-            //.ok_or_else(|| {self.last_selected_element = None;})
-            .is_some();
+            .map(|uc| if !modifiers.command {
+                self.selected_elements.clear();
+                self.selected_elements.insert(uc.0.clone());
+            } else if self.selected_elements.contains(&uc.0) {
+                self.selected_elements.remove(&uc.0);
+            } else {
+                self.selected_elements.insert(uc.0.clone());
+            })
+            .ok_or_else(|| {
+                self.selected_elements.clear();
+            })
+            .is_ok();
         let handled = match handled {
             true => ClickHandlingStatus::Handled,
             false => ClickHandlingStatus::NotHandled,

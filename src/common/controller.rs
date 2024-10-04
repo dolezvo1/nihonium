@@ -14,7 +14,7 @@ pub trait DiagramController: Any {
         ui: &mut egui::Ui,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response);
-    fn click(&mut self, pos: egui::Pos2) -> bool;
+    fn click(&mut self, pos: egui::Pos2, modifiers: ModifierKeys) -> bool;
     fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool;
     fn context_menu(&mut self, ui: &mut egui::Ui);
 
@@ -53,13 +53,42 @@ pub enum TargettingStatus {
     Drawn,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 pub struct ModifierKeys {
-    pub control: bool,
+    pub alt: bool,
+    pub command: bool, // mac_cmd || win_ctrl || linux_ctrl
+    pub shift: bool,
 }
 
 impl ModifierKeys {
-    pub const NONE: Self = Self { control: false };
+    pub const NONE: Self = Self {
+        alt: false,
+        command: false,
+        shift: false,
+    };
+    pub const ALT: Self = Self {
+        alt: true,
+        command: false,
+        shift: false,
+    };
+    pub const COMMAND: Self = Self {
+        alt: false,
+        command: true,
+        shift: false,
+    };
+    pub const SHIFT: Self = Self {
+        alt: false,
+        command: false,
+        shift: true,
+    };
+
+    pub fn from_egui(source: &egui::Modifiers) -> Self {
+        Self {
+            alt: source.alt,
+            command: source.command,
+            shift: source.shift,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -305,6 +334,7 @@ where
                 self.click(
                     ((pos - self.camera_offset - response.rect.min.to_vec2()) / self.camera_scale)
                         .to_pos2(),
+                    ui.input(|i| ModifierKeys::from_egui(&i.modifiers)),
                 );
             }
         } else if response.dragged_by(egui::PointerButton::Middle) {
@@ -350,8 +380,10 @@ where
             }
         }
     }
-    fn click(&mut self, pos: egui::Pos2) -> bool {
-        self.current_tool.as_mut().map(|e| e.reset_constructed_state());
+    fn click(&mut self, pos: egui::Pos2, modifiers: ModifierKeys) -> bool {
+        self.current_tool
+            .as_mut()
+            .map(|e| e.reset_constructed_state());
 
         let handled = self
             .owned_controllers
@@ -359,14 +391,18 @@ where
             .find(|uc| {
                 uc.1.write()
                     .unwrap()
-                    .click(self.current_tool.as_mut(), pos, ModifierKeys::NONE)
+                    .click(self.current_tool.as_mut(), pos, modifiers)
                     == ClickHandlingStatus::Handled
             })
-            .map(|uc| if /*TODO: !ModifierKeys::CTRL*/ true {
-                self.selected_elements.clear();
-                self.selected_elements.insert(uc.0.clone());
-            } else {
-                self.selected_elements.insert(uc.0.clone());
+            .map(|uc| {
+                if !modifiers.command {
+                    self.selected_elements.clear();
+                    self.selected_elements.insert(uc.0.clone());
+                } else if self.selected_elements.contains(&uc.0) {
+                    self.selected_elements.remove(&uc.0);
+                } else {
+                    self.selected_elements.insert(uc.0.clone());
+                }
             })
             .ok_or_else(|| {
                 self.selected_elements.clear();
@@ -647,11 +683,15 @@ pub mod macros {
             }
             check_path_segments!(sources);
             check_path_segments!(destinations);
-            
+
             // In case there is no center_point, also check all-to-all of last points
             if $self.center_point == None {
                 // TODO: this shouldn't have to clone, but probably not that big of a deal
-                let destinations: Vec<egui::Pos2> = $self.destinations().iter().flat_map(|e| e.last().cloned()).collect();
+                let destinations: Vec<egui::Pos2> = $self
+                    .destinations()
+                    .iter()
+                    .flat_map(|e| e.last().cloned())
+                    .collect();
                 for u in $self.sources().iter().flat_map(|e| e.last()) {
                     for v in &destinations {
                         if dist_to_line_segment($last_pos, *u, *v) <= DISTANCE_THRESHOLD {
@@ -663,7 +703,7 @@ pub mod macros {
         };
     }
     pub(crate) use multiconnection_element_click;
-    
+
     macro_rules! multiconnection_element_drag {
         ($self:ident, $last_pos:ident, $delta:ident, $center_point:ident, $sources:ident, $destinations:ident, $ret:expr) => {
             const DISTANCE_THRESHOLD: f32 = 3.0;
