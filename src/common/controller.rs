@@ -94,13 +94,23 @@ impl ModifierKeys {
 #[derive(Clone, Copy, PartialEq)]
 pub enum ClickHandlingStatus {
     NotHandled,
-    Handled,
+    HandledByElement,
+    HandledByContainer,
 }
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum DragHandlingStatus {
     NotHandled,
     Handled,
+}
+
+#[derive(PartialEq, Debug)]
+pub enum DiagramCommand {
+    SelectAll,
+    UnselectAll,
+    Select(uuid::Uuid),
+    Unselect(uuid::Uuid),
+    MoveSelectedElements(egui::Vec2),
 }
 
 pub trait Model: 'static {
@@ -155,15 +165,18 @@ where
     fn click(
         &mut self,
         tool: Option<&mut ToolT>,
+        commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus;
     fn drag(
         &mut self,
         tool: Option<&mut ToolT>,
+        commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus;
+    fn apply_command(&mut self, command: &DiagramCommand);
 }
 
 pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT> {
@@ -262,6 +275,15 @@ where
         }
         let id = self.selected_elements.iter().next()?;
         self.owned_controllers.get(&id).cloned()
+    }
+    
+    fn apply_commands(&mut self, commands: Vec<DiagramCommand>) {
+        for c in &commands {
+            for e in &self.owned_controllers {
+                let mut e = e.1.write().unwrap();
+                e.apply_command(c);
+            }
+        }
     }
 }
 
@@ -385,30 +407,35 @@ where
             .as_mut()
             .map(|e| e.reset_constructed_state());
 
+        let mut commands = Vec::new();
+        
         let handled = self
             .owned_controllers
             .iter_mut()
-            .find(|uc| {
-                uc.1.write()
-                    .unwrap()
-                    .click(self.current_tool.as_mut(), pos, modifiers)
-                    == ClickHandlingStatus::Handled
-            })
-            .map(|uc| {
-                if !modifiers.command {
-                    self.selected_elements.clear();
-                    self.selected_elements.insert(uc.0.clone());
-                } else if self.selected_elements.contains(&uc.0) {
-                    self.selected_elements.remove(&uc.0);
-                } else {
-                    self.selected_elements.insert(uc.0.clone());
+            .map(|uc| match uc.1.write().unwrap()
+                    .click(self.current_tool.as_mut(), &mut commands, pos, modifiers)
+            {
+                ClickHandlingStatus::HandledByElement => {
+                    if !modifiers.command {
+                        commands.push(DiagramCommand::UnselectAll);
+                        commands.push(DiagramCommand::Select(*uc.0));
+                    } else if self.selected_elements.contains(&uc.0) {
+                        commands.push(DiagramCommand::Unselect(*uc.0));
+                    } else {
+                        commands.push(DiagramCommand::Select(*uc.0));
+                    };
+                    ClickHandlingStatus::HandledByContainer
                 }
+                a => a
             })
+            .find(|e| *e == ClickHandlingStatus::HandledByContainer)
             .ok_or_else(|| {
-                self.selected_elements.clear();
+                commands.push(DiagramCommand::UnselectAll);
             })
             .is_ok();
-
+        
+        self.apply_commands(commands);
+        
         if !handled {
             if let Some(t) = self.current_tool.as_mut() {
                 t.add_position(pos);
@@ -430,15 +457,21 @@ where
         handled
     }
     fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
-        self.owned_controllers
+        let mut commands = Vec::new();
+        
+        let ret = self.owned_controllers
             .iter_mut()
             .find(|uc| {
                 uc.1.write()
                     .unwrap()
-                    .drag(self.current_tool.as_mut(), last_pos, delta)
+                    .drag(self.current_tool.as_mut(), &mut commands, last_pos, delta)
                     == DragHandlingStatus::Handled
             })
-            .is_some()
+            .is_some();
+        
+        self.apply_commands(commands);
+        
+        ret
     }
     fn context_menu(&mut self, ui: &mut egui::Ui) {
         ui.label("asdf");

@@ -5,7 +5,7 @@ use super::umlclass_models::{
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     ClickHandlingStatus, ContainerGen2, DiagramController, DiagramControllerGen2,
-    DragHandlingStatus, ElementController, ElementControllerGen2, KindedElement, ModifierKeys,
+    DiagramCommand, DragHandlingStatus, ElementController, ElementControllerGen2, KindedElement, ModifierKeys,
     TargettingStatus, Tool,
 };
 use crate::common::observer::Observable;
@@ -198,6 +198,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         position: egui::Pos2::new(200.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -218,6 +219,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         position: egui::Pos2::new(100.0, 250.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -238,6 +240,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         position: egui::Pos2::new(300.0, 250.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -257,6 +260,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         destination_arrowhead_label_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         center_point: None,
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -277,6 +281,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         destination_arrowhead_label_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         center_point: None,
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -296,6 +301,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         position: egui::Pos2::new(300.0, 50.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -315,6 +321,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         destination_arrowhead_label_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         center_point: Some(egui::Pos2::new(200.0, 50.0)),
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -334,6 +341,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         position: egui::Pos2::new(450.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -353,6 +361,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         destination_arrowhead_label_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         center_point: Some(egui::Pos2::new(450.0, 52.0)),
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -372,6 +381,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         position: egui::Pos2::new(650.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -391,6 +401,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         destination_arrowhead_label_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         center_point: Some(egui::Pos2::new(650.0, 48.0)),
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -632,6 +643,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                         functions_buffer: "".to_owned(),
                         comment_buffer: "".to_owned(),
 
+                        is_selected: false,
                         position: pos,
                         bounds_rect: egui::Rect::ZERO,
                     })));
@@ -729,6 +741,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                         destination_arrowhead_label_buffer: "".to_owned(),
                         comment_buffer: "".to_owned(),
 
+                        is_selected: false,
                         center_point: None,
                         source_points: vec![vec![egui::Pos2::ZERO]],
                         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -757,6 +770,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                     name_buffer: "a package".to_owned(),
                     comment_buffer: "".to_owned(),
 
+                    is_selected: false,
                     bounds_rect: egui::Rect::from_two_pos(*a, *b),
                 }));
 
@@ -798,9 +812,11 @@ pub struct UmlClassPackageController {
         >,
     >,
     selected_elements: HashSet<uuid::Uuid>,
+    
     name_buffer: String,
     comment_buffer: String,
 
+    is_selected: bool,
     pub bounds_rect: egui::Rect,
 }
 
@@ -957,36 +973,44 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn click(
         &mut self,
         mut tool: Option<&mut NaiveUmlClassTool>,
+        commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
         tool.as_mut()
             .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
         let offset_pos = pos - self.bounds_rect.left_top().to_vec2();
-
+        
         let handled = self.owned_controllers.iter_mut()
-            .find(|uc| match tool.take() {
-                Some(inner) => {
-                    let r = uc.1.write().unwrap().click(Some(inner), offset_pos, modifiers);
-                    tool = Some(inner);
+            .map(|uc| match { match tool.take() {
+                Some(t) => {
+                    let r = uc.1.write().unwrap().click(Some(t), commands, offset_pos, modifiers);
+                    tool = Some(t);
                     r
-                },
-                None => uc.1.write().unwrap().click(None, offset_pos, modifiers),
-            } == ClickHandlingStatus::Handled)
-            .map(|uc| if !modifiers.command {
-                self.selected_elements.clear();
-                self.selected_elements.insert(uc.0.clone());
-            } else if self.selected_elements.contains(&uc.0) {
-                self.selected_elements.remove(&uc.0);
-            } else {
-                self.selected_elements.insert(uc.0.clone());
+                }
+                None => uc.1.write().unwrap().click(None, commands, offset_pos, modifiers)
+            }
+            } {
+                ClickHandlingStatus::HandledByElement => {
+                    if !modifiers.command {
+                        commands.push(DiagramCommand::UnselectAll);
+                        commands.push(DiagramCommand::Select(*uc.0));
+                    } else if self.selected_elements.contains(&uc.0) {
+                        commands.push(DiagramCommand::Unselect(*uc.0));
+                    } else {
+                        commands.push(DiagramCommand::Select(*uc.0));
+                    };
+                    ClickHandlingStatus::HandledByContainer
+                }
+                a => a
             })
+            .find(|e| *e == ClickHandlingStatus::HandledByContainer)
             .ok_or_else(|| {
-                self.selected_elements.clear();
+                commands.push(DiagramCommand::UnselectAll);
             })
             .is_ok();
         let handled = match handled {
-            true => ClickHandlingStatus::Handled,
+            true => ClickHandlingStatus::HandledByContainer,
             false => ClickHandlingStatus::NotHandled,
         };
 
@@ -1011,7 +1035,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                     self.owned_controllers.insert(uuid, new_a);
                 }
 
-                return ClickHandlingStatus::Handled;
+                return ClickHandlingStatus::HandledByContainer;
             }
             _ => {}
         }
@@ -1021,6 +1045,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn drag(
         &mut self,
         mut tool: Option<&mut NaiveUmlClassTool>,
+        commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1031,11 +1056,11 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         let handled = self.owned_controllers.iter_mut()
             .find(|uc| match tool.take() {
                 Some(inner) => {
-                    let r = uc.1.write().unwrap().drag(Some(inner), offset_pos, delta);
+                    let r = uc.1.write().unwrap().drag(Some(inner), commands, offset_pos, delta);
                     tool = Some(inner);
                     r
                 },
-                None => uc.1.write().unwrap().drag(None, offset_pos, delta),
+                None => uc.1.write().unwrap().drag(None, commands, offset_pos, delta),
             } == DragHandlingStatus::Handled)
             //.map(|uc| {self.last_selected_element = Some(uc.0.clone());})
             //.ok_or_else(|| {self.last_selected_element = None;})
@@ -1057,6 +1082,55 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         }
 
         handled
+    }
+    
+    fn apply_command(&mut self, command: &DiagramCommand) {
+        fn recurse(this: &mut UmlClassPackageController, command: &DiagramCommand) {
+            for e in &this.owned_controllers {
+                let mut e = e.1.write().unwrap();
+                e.apply_command(command);
+            }
+        }
+        
+        match command {
+            DiagramCommand::SelectAll => {
+                self.is_selected = true;
+                self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect();
+                recurse(self, command);
+            },
+            DiagramCommand::UnselectAll => {
+                self.is_selected = false;
+                self.selected_elements.clear();
+                recurse(self, command);
+            },
+            DiagramCommand::Select(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = true;
+                } else if let Some(e) = self.owned_controllers.get(&uuid) {
+                    self.selected_elements.insert(*uuid);
+                    e.write().unwrap().apply_command(command);
+                } else {
+                    recurse(self, command);
+                }
+            },
+            DiagramCommand::Unselect(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = false;
+                } else if let Some(e) = self.owned_controllers.get(&uuid) {
+                    self.selected_elements.remove(uuid);
+                    e.write().unwrap().apply_command(command);
+                } else {
+                    recurse(self, command);
+                }
+            },
+            DiagramCommand::MoveSelectedElements(delta) => {
+                if self.is_selected {
+                    self.bounds_rect.set_center(self.position() + *delta);
+                } else {
+                    recurse(self, command);
+                }
+            }
+        }
     }
 }
 
@@ -1083,12 +1157,14 @@ impl ContainerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>
 
 pub struct UmlClassController {
     pub model: Arc<RwLock<UmlClass>>,
+
     stereotype_buffer: UmlClassStereotype,
     name_buffer: String,
     properties_buffer: String,
     functions_buffer: String,
     comment_buffer: String,
 
+    is_selected: bool,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
 }
@@ -1219,7 +1295,12 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             &read.name,
             None,
             &[&read.parse_properties(), &read.parse_functions()],
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            // TODO: split into two
+            if self.is_selected {
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLUE)
+            } else {
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
+            },
         );
 
         // Draw targetting rectangle
@@ -1243,8 +1324,9 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn click(
         &mut self,
         tool: Option<&mut NaiveUmlClassTool>,
+        commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
-        _modifiers: ModifierKeys,
+        modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
         if !self.min_shape().contains(pos) {
             return ClickHandlingStatus::NotHandled;
@@ -1252,14 +1334,21 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
         if let Some(tool) = tool {
             tool.add_element(KindedUmlClassElement::Class { inner: self }, pos);
+        } else {
+            if !modifiers.command {
+                self.is_selected = true;
+            } else {
+                self.is_selected = !self.is_selected;
+            } 
         }
 
-        ClickHandlingStatus::Handled
+        ClickHandlingStatus::HandledByElement
     }
 
     fn drag(
         &mut self,
         _tool: Option<&mut NaiveUmlClassTool>,
+        commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1267,9 +1356,39 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             return DragHandlingStatus::NotHandled;
         }
 
-        self.position += delta;
+        if self.is_selected {
+            commands.push(DiagramCommand::MoveSelectedElements(delta));
+        } else {
+            self.position += delta;
+        }
 
         DragHandlingStatus::Handled
+    }
+    
+    fn apply_command(&mut self, command: &DiagramCommand) {
+        match command {
+            DiagramCommand::SelectAll => {
+                self.is_selected = true;
+            },
+            DiagramCommand::UnselectAll => {
+                self.is_selected = false
+            },
+            DiagramCommand::Select(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = true;
+                }
+            },
+            DiagramCommand::Unselect(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = false;
+                }
+            },
+            DiagramCommand::MoveSelectedElements(delta) => {
+                if self.is_selected {
+                    self.position += *delta;
+                }
+            }
+        }
     }
 }
 
@@ -1289,6 +1408,7 @@ pub struct UmlClassLinkController {
     destination_arrowhead_label_buffer: String,
     comment_buffer: String,
 
+    is_selected: bool,
     pub center_point: Option<egui::Pos2>,
     pub source_points: Vec<Vec<egui::Pos2>>,
     pub dest_points: Vec<Vec<egui::Pos2>>,
@@ -1417,6 +1537,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn click(
         &mut self,
         _tool: Option<&mut NaiveUmlClassTool>,
+        commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1427,13 +1548,14 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             center_point,
             sources,
             destinations,
-            ClickHandlingStatus::Handled
+            ClickHandlingStatus::HandledByElement
         );
         ClickHandlingStatus::NotHandled
     }
     fn drag(
         &mut self,
         _tool: Option<&mut NaiveUmlClassTool>,
+        _commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1447,6 +1569,32 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             DragHandlingStatus::Handled
         );
         DragHandlingStatus::NotHandled
+    }
+    
+    fn apply_command(&mut self, command: &DiagramCommand) {
+        match command {
+            DiagramCommand::SelectAll => {
+                self.is_selected = true;
+            },
+            DiagramCommand::UnselectAll => {
+                self.is_selected = false
+            },
+            DiagramCommand::Select(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = true;
+                }
+            },
+            DiagramCommand::Unselect(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = false;
+                }
+            },
+            DiagramCommand::MoveSelectedElements(delta) => {
+                if self.is_selected {
+                    todo!("moving selected Link not implemented yet");
+                }
+            }
+        }
     }
 }
 

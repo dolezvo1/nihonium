@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, ArrowheadType, NHCanvas, NHShape, Stroke};
 use crate::common::controller::{
-    ClickHandlingStatus, DiagramController, DragHandlingStatus, ElementController, ModifierKeys,
+    DiagramCommand, ClickHandlingStatus, DiagramController, DragHandlingStatus, ElementController, ModifierKeys,
     TargettingStatus,
 };
 use crate::common::controller::{
@@ -333,6 +333,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         position: egui::Pos2::new(300.0, 100.0),
         bounds_radius: egui::Vec2::ZERO,
     }));
@@ -351,6 +352,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         language_buffer: "en".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         position: egui::Pos2::new(300.0, 200.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -369,6 +371,8 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 
         source: node_controller.clone(),
         destination: literal_controller.clone(),
+        
+        is_selected: false,
         center_point: None,
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -387,6 +391,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         iri_buffer: "http://graph".to_owned(),
         comment_buffer: "".to_owned(),
 
+        is_selected: false,
         bounds_rect: egui::Rect::from_min_max(
             egui::Pos2::new(400.0, 50.0),
             egui::Pos2::new(500.0, 150.0),
@@ -412,6 +417,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                 iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
                 comment_buffer: "".to_owned(),
 
+                is_selected: false,
                 position: egui::Pos2::new(xx as f32, yy as f32),
                 bounds_radius: egui::Vec2::ZERO,
             }));
@@ -432,6 +438,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                 iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
                 comment_buffer: "".to_owned(),
 
+                is_selected: false,
                 position: egui::Pos2::new(xx as f32, yy as f32),
                 bounds_radius: egui::Vec2::ZERO,
             }));
@@ -452,6 +459,8 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         selected_elements: HashSet::new(),
         iri_buffer: "http://stresstestgraph".to_owned(),
         comment_buffer: "".to_owned(),
+        
+        is_selected: false,
         bounds_rect: egui::Rect::from_min_max(
             egui::Pos2::new(0.0, 300.0),
             egui::Pos2::new(3000.0, 3300.0),
@@ -661,6 +670,7 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                         language_buffer: "en".to_owned(),
                         comment_buffer: "".to_owned(),
 
+                        is_selected: false,
                         position: pos,
                         bounds_rect: egui::Rect::ZERO,
                     })));
@@ -675,6 +685,7 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                     iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
                     comment_buffer: "".to_owned(),
 
+                    is_selected: false,
                     position: pos,
                     bounds_radius: egui::Vec2::ZERO,
                 })));
@@ -763,6 +774,8 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
 
                         source: source_controller,
                         destination: dest_controller,
+                        
+                        is_selected: false,
                         center_point: None,
                         source_points: vec![vec![egui::Pos2::ZERO]],
                         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -790,6 +803,8 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                     selected_elements: HashSet::new(),
                     iri_buffer: "a graph".to_owned(),
                     comment_buffer: "".to_owned(),
+                    
+                    is_selected: false,
                     bounds_rect: egui::Rect::from_two_pos(*a, *b),
                 }));
 
@@ -844,9 +859,11 @@ pub struct RdfGraphController {
         Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool>>>,
     >,
     selected_elements: HashSet<uuid::Uuid>,
+    
     iri_buffer: String,
     comment_buffer: String,
 
+    is_selected: bool,
     pub bounds_rect: egui::Rect,
 }
 
@@ -991,6 +1008,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
     fn click(
         &mut self,
         mut tool: Option<&mut NaiveRdfTool>,
+        commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -999,26 +1017,35 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
         let offset_pos = pos - self.bounds_rect.left_top().to_vec2();
 
         let handled = self.owned_controllers.iter_mut()
-            .find(|uc| match tool.take() {
-                Some(inner) => {
-                    let r = uc.1.write().unwrap().click(Some(inner), offset_pos, modifiers);
-                    tool = Some(inner);
+            .map(|uc| match { match tool.take() {
+                Some(t) => {
+                    let r = uc.1.write().unwrap().click(Some(t), commands, offset_pos, modifiers);
+                    tool = Some(t);
                     r
-                },
-                None => uc.1.write().unwrap().click(None, offset_pos, modifiers),
-            } == ClickHandlingStatus::Handled)
-            .map(|uc| if !modifiers.command {
-                self.selected_elements.clear();
-                self.selected_elements.insert(uc.0.clone());
-            } else if self.selected_elements.contains(&uc.0) {
-                self.selected_elements.remove(&uc.0);
-            } else {
-                self.selected_elements.insert(uc.0.clone());
+                }
+                None => uc.1.write().unwrap().click(None, commands, offset_pos, modifiers)
+            }
+            } {
+                ClickHandlingStatus::HandledByElement => {
+                    if !modifiers.command {
+                        commands.push(DiagramCommand::UnselectAll);
+                        commands.push(DiagramCommand::Select(*uc.0));
+                    } else if self.selected_elements.contains(&uc.0) {
+                        commands.push(DiagramCommand::Unselect(*uc.0));
+                    } else {
+                        commands.push(DiagramCommand::Select(*uc.0));
+                    };
+                    ClickHandlingStatus::HandledByContainer
+                }
+                a => a
             })
-            .ok_or_else(|| {self.selected_elements.clear();})
+            .find(|e| *e == ClickHandlingStatus::HandledByContainer)
+            .ok_or_else(|| {
+                commands.push(DiagramCommand::UnselectAll);
+            })
             .is_ok();
         let handled = match handled {
-            true => ClickHandlingStatus::Handled,
+            true => ClickHandlingStatus::HandledByContainer,
             false => ClickHandlingStatus::NotHandled,
         };
 
@@ -1036,7 +1063,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
                     let uuid = new.read().unwrap().uuid();
                     self.owned_controllers.insert(*uuid, new);
                 }
-                return ClickHandlingStatus::Handled;
+                return ClickHandlingStatus::HandledByContainer;
             }
             _ => {}
         }
@@ -1046,6 +1073,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
     fn drag(
         &mut self,
         mut tool: Option<&mut NaiveRdfTool>,
+        commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1056,11 +1084,11 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
         let handled = self.owned_controllers.iter_mut()
             .find(|uc| match tool.take() {
                 Some(inner) => {
-                    let r = uc.1.write().unwrap().drag(Some(inner), offset_pos, delta);
+                    let r = uc.1.write().unwrap().drag(Some(inner), commands, offset_pos, delta);
                     tool = Some(inner);
                     r
                 },
-                None => uc.1.write().unwrap().drag(None, offset_pos, delta),
+                None => uc.1.write().unwrap().drag(None, commands, offset_pos, delta),
             } == DragHandlingStatus::Handled)
             //.map(|uc| {self.last_selected_element = Some(uc.0.clone());})
             //.ok_or_else(|| {self.last_selected_element = None;})
@@ -1083,6 +1111,55 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
 
         handled
     }
+    
+    fn apply_command(&mut self, command: &DiagramCommand) {
+        fn recurse(this: &mut RdfGraphController, command: &DiagramCommand) {
+            for e in &this.owned_controllers {
+                let mut e = e.1.write().unwrap();
+                e.apply_command(command);
+            }
+        }
+        
+        match command {
+            DiagramCommand::SelectAll => {
+                self.is_selected = true;
+                self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect();
+                recurse(self, command);
+            },
+            DiagramCommand::UnselectAll => {
+                self.is_selected = false;
+                self.selected_elements.clear();
+                recurse(self, command);
+            },
+            DiagramCommand::Select(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = true;
+                } else if let Some(e) = self.owned_controllers.get(&uuid) {
+                    self.selected_elements.insert(*uuid);
+                    e.write().unwrap().apply_command(command);
+                } else {
+                    recurse(self, command);
+                }
+            },
+            DiagramCommand::Unselect(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = false;
+                } else if let Some(e) = self.owned_controllers.get(&uuid) {
+                    self.selected_elements.remove(uuid);
+                    e.write().unwrap().apply_command(command);
+                } else {
+                    recurse(self, command);
+                }
+            },
+            DiagramCommand::MoveSelectedElements(delta) => {
+                if self.is_selected {
+                    self.bounds_rect.set_center(self.position() + *delta);
+                } else {
+                    recurse(self, command);
+                }
+            }
+        }
+    }
 }
 
 impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGraphController {
@@ -1097,9 +1174,11 @@ impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGraphContr
 
 pub struct RdfNodeController {
     pub model: Arc<RwLock<RdfNode>>,
+    
     iri_buffer: String,
     comment_buffer: String,
 
+    is_selected: bool,
     pub position: egui::Pos2,
     pub bounds_radius: egui::Vec2,
 }
@@ -1218,6 +1297,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
     fn click(
         &mut self,
         tool: Option<&mut NaiveRdfTool>,
+        commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1229,11 +1309,12 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
             tool.add_element(KindedRdfElement::Node { inner: self }, pos);
         }
 
-        ClickHandlingStatus::Handled
+        ClickHandlingStatus::HandledByElement
     }
     fn drag(
         &mut self,
         _tool: Option<&mut NaiveRdfTool>,
+        commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1241,9 +1322,39 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
             return DragHandlingStatus::NotHandled;
         }
 
-        self.position += delta;
+        if self.is_selected {
+            commands.push(DiagramCommand::MoveSelectedElements(delta));
+        } else {
+            self.position += delta;
+        }
 
         DragHandlingStatus::Handled
+    }
+    
+    fn apply_command(&mut self, command: &DiagramCommand) {
+        match command {
+            DiagramCommand::SelectAll => {
+                self.is_selected = true;
+            },
+            DiagramCommand::UnselectAll => {
+                self.is_selected = false
+            },
+            DiagramCommand::Select(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = true;
+                }
+            },
+            DiagramCommand::Unselect(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = false;
+                }
+            },
+            DiagramCommand::MoveSelectedElements(delta) => {
+                if self.is_selected {
+                    self.position += *delta;
+                }
+            }
+        }
     }
 }
 
@@ -1255,6 +1366,7 @@ pub struct RdfLiteralController {
     language_buffer: String,
     comment_buffer: String,
 
+    is_selected: bool,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
 }
@@ -1370,6 +1482,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
     fn click(
         &mut self,
         tool: Option<&mut NaiveRdfTool>,
+        commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1381,11 +1494,12 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
             tool.add_element(KindedRdfElement::Literal { inner: self }, pos);
         }
 
-        ClickHandlingStatus::Handled
+        ClickHandlingStatus::HandledByElement
     }
     fn drag(
         &mut self,
         _tool: Option<&mut NaiveRdfTool>,
+        commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1393,9 +1507,39 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
             return DragHandlingStatus::NotHandled;
         }
 
-        self.position += delta;
+        if self.is_selected {
+            commands.push(DiagramCommand::MoveSelectedElements(delta));
+        } else {
+            self.position += delta;
+        }
 
         DragHandlingStatus::Handled
+    }
+    
+    fn apply_command(&mut self, command: &DiagramCommand) {
+        match command {
+            DiagramCommand::SelectAll => {
+                self.is_selected = true;
+            },
+            DiagramCommand::UnselectAll => {
+                self.is_selected = false
+            },
+            DiagramCommand::Select(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = true;
+                }
+            },
+            DiagramCommand::Unselect(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = false;
+                }
+            },
+            DiagramCommand::MoveSelectedElements(delta) => {
+                if self.is_selected {
+                    self.position += *delta;
+                }
+            }
+        }
     }
 }
 
@@ -1407,6 +1551,8 @@ pub struct RdfPredicateController {
     pub source: Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool>>>,
     pub destination:
         Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool>>>,
+    
+    is_selected: bool,
     pub center_point: Option<egui::Pos2>,
     pub source_points: Vec<Vec<egui::Pos2>>,
     pub dest_points: Vec<Vec<egui::Pos2>>,
@@ -1547,6 +1693,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
     fn click(
         &mut self,
         _tool: Option<&mut NaiveRdfTool>,
+        commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1557,13 +1704,14 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
             center_point,
             sources,
             destinations,
-            ClickHandlingStatus::Handled
+            ClickHandlingStatus::HandledByElement
         );
         ClickHandlingStatus::NotHandled
     }
     fn drag(
         &mut self,
         _tool: Option<&mut NaiveRdfTool>,
+        _commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1577,6 +1725,32 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
             DragHandlingStatus::Handled
         );
         DragHandlingStatus::NotHandled
+    }
+    
+    fn apply_command(&mut self, command: &DiagramCommand) {
+        match command {
+            DiagramCommand::SelectAll => {
+                self.is_selected = true;
+            },
+            DiagramCommand::UnselectAll => {
+                self.is_selected = false
+            },
+            DiagramCommand::Select(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = true;
+                }
+            },
+            DiagramCommand::Unselect(uuid) => {
+                if *self.uuid() == *uuid {
+                    self.is_selected = false;
+                }
+            },
+            DiagramCommand::MoveSelectedElements(delta) => {
+                if self.is_selected {
+                    todo!("moving selected Predicate not implemented yet");
+                }
+            }
+        }
     }
 }
 
