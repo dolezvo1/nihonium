@@ -903,10 +903,12 @@ impl ElementController<dyn RdfElement> for RdfGraphController {
 }
 
 impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGraphController {
-    fn show_properties(&mut self, parent: &RdfQueryable, ui: &mut egui::Ui) {
-        if let Some(element) = self.last_selected_element() {
-            element.write().unwrap().show_properties(parent, ui);
-        } else {
+    fn show_properties(&mut self, parent: &RdfQueryable, ui: &mut egui::Ui) -> bool {
+        if self.owned_controllers.iter().find(|e| {
+                e.1.write().unwrap().show_properties(parent, ui)
+            }).is_some() {
+            true
+        } else if self.is_selected {
             ui.label("IRI:");
             let r1 = ui.add_sized(
                 (ui.available_width(), 20.0),
@@ -932,6 +934,9 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
 
                 model.notify_observers();
             }
+            true
+        } else {
+            false
         }
     }
     fn list_in_project_hierarchy(&self, parent: &RdfQueryable, ui: &mut egui::Ui) {
@@ -1218,7 +1223,11 @@ impl ElementController<dyn RdfElement> for RdfNodeController {
 }
 
 impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNodeController {
-    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
+    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) -> bool {
+        if !self.is_selected {
+            return false;
+        }
+        
         ui.label("IRI:");
         let r1 = ui.add_sized(
             (ui.available_width(), 20.0),
@@ -1244,6 +1253,8 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
 
             model.notify_observers();
         }
+        
+        true
     }
     fn list_in_project_hierarchy(&self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
         let model = self.model.read().unwrap();
@@ -1313,7 +1324,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
     fn click(
         &mut self,
         tool: Option<&mut NaiveRdfTool>,
-        commands: &mut Vec<DiagramCommand>,
+        _commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1410,7 +1421,11 @@ impl ElementController<dyn RdfElement> for RdfLiteralController {
 }
 
 impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLiteralController {
-    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
+    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) -> bool {
+        if !self.is_selected {
+            return false;
+        }
+        
         ui.label("Content:");
         let r1 = ui.add_sized(
             (ui.available_width(), 20.0),
@@ -1455,6 +1470,8 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
 
             model.notify_observers();
         }
+        
+        true
     }
 
     fn list_in_project_hierarchy(&self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
@@ -1498,7 +1515,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
     fn click(
         &mut self,
         tool: Option<&mut NaiveRdfTool>,
-        commands: &mut Vec<DiagramCommand>,
+        _commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1612,7 +1629,11 @@ impl ElementController<dyn RdfElement> for RdfPredicateController {
 }
 
 impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPredicateController {
-    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
+    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) -> bool {
+        if !self.is_selected {
+            return false;
+        }
+        
         ui.label("IRI:");
         let r1 = ui.add_sized(
             (ui.available_width(), 20.0),
@@ -1649,6 +1670,8 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
 
             model.notify_observers();
         }
+        
+        true
     }
 
     fn draw_in(
@@ -1709,7 +1732,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
     fn click(
         &mut self,
         _tool: Option<&mut NaiveRdfTool>,
-        commands: &mut Vec<DiagramCommand>,
+        _commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1761,7 +1784,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
                     self.is_selected = false;
                 }
             },
-            DiagramCommand::MoveSelectedElements(delta) => {
+            DiagramCommand::MoveSelectedElements(_delta) => {
                 if self.is_selected {
                     todo!("moving selected Predicate not implemented yet");
                 }

@@ -867,10 +867,12 @@ impl ElementController<dyn UmlClassElement> for UmlClassPackageController {
 impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>
     for UmlClassPackageController
 {
-    fn show_properties(&mut self, parent: &UmlClassQueryable, ui: &mut egui::Ui) {
-        if let Some(element) = self.last_selected_element() {
-            element.write().unwrap().show_properties(parent, ui);
-        } else {
+    fn show_properties(&mut self, parent: &UmlClassQueryable, ui: &mut egui::Ui) -> bool {
+        if self.owned_controllers.iter().find(|e| {
+                e.1.write().unwrap().show_properties(parent, ui)
+            }).is_some() {
+            true
+        } else if self.is_selected {
             ui.label("Name:");
             let r1 = ui.add_sized(
                 (ui.available_width(), 20.0),
@@ -896,6 +898,9 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
                 model.notify_observers();
             }
+            true
+        } else {
+            false
         }
     }
     fn list_in_project_hierarchy(&self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
@@ -1199,7 +1204,11 @@ impl ElementController<dyn UmlClassElement> for UmlClassController {
 impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>
     for UmlClassController
 {
-    fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
+    fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) -> bool {
+        if !self.is_selected {
+            return false;
+        }
+        
         ui.label("Stereotype:");
         let mut r1 = false;
         egui::ComboBox::from_id_source("Stereotype:")
@@ -1271,6 +1280,8 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
             model.notify_observers();
         }
+        
+        true
     }
 
     fn list_in_project_hierarchy(&self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
@@ -1329,7 +1340,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn click(
         &mut self,
         tool: Option<&mut NaiveUmlClassTool>,
-        commands: &mut Vec<DiagramCommand>,
+        _commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1459,7 +1470,11 @@ impl ElementController<dyn UmlClassElement> for UmlClassLinkController {
 impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>
     for UmlClassLinkController
 {
-    fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
+    fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) -> bool {
+        if !self.is_selected {
+            return false;
+        }
+        
         let mut model = self.model.write().unwrap();
 
         ui.label("Link type:");
@@ -1527,6 +1542,8 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
             model.notify_observers();
         }
+        
+        true
     }
 
     fn draw_in(
@@ -1542,7 +1559,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn click(
         &mut self,
         _tool: Option<&mut NaiveUmlClassTool>,
-        commands: &mut Vec<DiagramCommand>,
+        _commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1594,7 +1611,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                     self.is_selected = false;
                 }
             },
-            DiagramCommand::MoveSelectedElements(delta) => {
+            DiagramCommand::MoveSelectedElements(_delta) => {
                 if self.is_selected {
                     todo!("moving selected Link not implemented yet");
                 }

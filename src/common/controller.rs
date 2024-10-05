@@ -153,7 +153,7 @@ pub trait ElementControllerGen2<CommonElementT: ?Sized, QueryableT, ToolT>:
 where
     ToolT: Tool<CommonElementT, QueryableT>,
 {
-    fn show_properties(&mut self, _: &QueryableT, _ui: &mut egui::Ui) {}
+    fn show_properties(&mut self, _: &QueryableT, _ui: &mut egui::Ui) -> bool { false }
     fn list_in_project_hierarchy(&self, _: &QueryableT, _ui: &mut egui::Ui) {}
 
     fn draw_in(
@@ -481,13 +481,9 @@ where
         (self.tool_change_fun)(&mut self.current_tool, ui);
     }
     fn show_properties(&mut self, ui: &mut egui::Ui) {
-        // TODO: This is wrong now, doesn't show anything
-        if let Some(element) = self.last_selected_element() {
-            element
-                .write()
-                .unwrap()
-                .show_properties(&self.queryable, ui);
-        } else {
+        if self.owned_controllers.iter().find(|e| {
+                e.1.write().unwrap().show_properties(&self.queryable, ui)
+            }).is_none() {
             let mut model = self.model.write().unwrap();
 
             (self.show_props_fun)(&mut model, &mut self.buffer, ui);
