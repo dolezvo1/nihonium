@@ -166,14 +166,14 @@ where
     ) -> TargettingStatus;
     fn click(
         &mut self,
-        tool: Option<&mut ToolT>,
+        tool: &mut Option<ToolT>,
         commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus;
     fn drag(
         &mut self,
-        tool: Option<&mut ToolT>,
+        tool: &mut Option<ToolT>,
         commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
@@ -267,16 +267,6 @@ where
 
     pub fn model(&self) -> Arc<RwLock<DiagramModelT>> {
         self.model.clone()
-    }
-
-    fn last_selected_element(
-        &self,
-    ) -> Option<Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>> {
-        if self.selected_elements.len() != 1 {
-            return None;
-        }
-        let id = self.selected_elements.iter().next()?;
-        self.owned_controllers.get(&id).cloned()
     }
 
     fn apply_commands(&mut self, commands: Vec<DiagramCommand>) {
@@ -416,7 +406,7 @@ where
             .iter_mut()
             .map(|uc| {
                 match uc.1.write().unwrap().click(
-                    self.current_tool.as_mut(),
+                    &mut self.current_tool,
                     &mut commands,
                     pos,
                     modifiers,
@@ -458,6 +448,7 @@ where
             drop(new_c);
 
             self.owned_controllers.insert(uuid, new_a);
+            self.current_tool = tool;
             return true;
         }
         self.current_tool = tool;
@@ -471,7 +462,7 @@ where
             .iter_mut()
             .find(|uc| {
                 uc.1.write().unwrap().drag(
-                    self.current_tool.as_mut(),
+                    &mut self.current_tool,
                     &mut commands,
                     last_pos,
                     delta,

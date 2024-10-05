@@ -880,19 +880,6 @@ pub struct RdfGraphController {
     pub bounds_rect: egui::Rect,
 }
 
-impl RdfGraphController {
-    pub fn last_selected_element(
-        &self,
-    ) -> Option<Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool>>>>
-    {
-        if self.selected_elements.len() != 1 {
-            return None;
-        }
-        let id = self.selected_elements.iter().next()?;
-        self.owned_controllers.get(&id).cloned()
-    }
-}
-
 impl ElementController<dyn RdfElement> for RdfGraphController {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
@@ -1030,7 +1017,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
 
     fn click(
         &mut self,
-        mut tool: Option<&mut NaiveRdfTool>,
+        mut tool: &mut Option<NaiveRdfTool>,
         commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
@@ -1045,23 +1032,9 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
             .map(|uc| {
                 (
                     uc,
-                    match tool.take() {
-                        Some(t) => {
-                            let r = uc.1.write().unwrap().click(
-                                Some(t),
-                                commands,
-                                offset_pos,
-                                modifiers,
-                            );
-                            tool = Some(t);
-                            r
-                        }
-                        None => {
-                            uc.1.write()
-                                .unwrap()
-                                .click(None, commands, offset_pos, modifiers)
-                        }
-                    },
+                    uc.1.write()
+                        .unwrap()
+                        .click(tool, commands, offset_pos, modifiers),
                 )
             })
             .find(|e| e.1 != ClickHandlingStatus::NotHandled);
@@ -1109,7 +1082,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
     }
     fn drag(
         &mut self,
-        mut tool: Option<&mut NaiveRdfTool>,
+        tool: &mut Option<NaiveRdfTool>,
         commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
@@ -1119,14 +1092,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
         let offset_pos = last_pos - self.bounds_rect.left_top().to_vec2();
 
         let handled = self.owned_controllers.iter_mut()
-            .find(|uc| match tool.take() {
-                Some(inner) => {
-                    let r = uc.1.write().unwrap().drag(Some(inner), commands, offset_pos, delta);
-                    tool = Some(inner);
-                    r
-                },
-                None => uc.1.write().unwrap().drag(None, commands, offset_pos, delta),
-            } == DragHandlingStatus::Handled)
+            .find(|uc| uc.1.write().unwrap().drag(tool, commands, offset_pos, delta) == DragHandlingStatus::Handled)
             //.map(|uc| {self.last_selected_element = Some(uc.0.clone());})
             //.ok_or_else(|| {self.last_selected_element = None;})
             .is_some();
@@ -1341,7 +1307,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
 
     fn click(
         &mut self,
-        tool: Option<&mut NaiveRdfTool>,
+        tool: &mut Option<NaiveRdfTool>,
         _commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
@@ -1358,7 +1324,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
     }
     fn drag(
         &mut self,
-        _tool: Option<&mut NaiveRdfTool>,
+        _tool: &mut Option<NaiveRdfTool>,
         commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
@@ -1532,7 +1498,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
 
     fn click(
         &mut self,
-        tool: Option<&mut NaiveRdfTool>,
+        tool: &mut Option<NaiveRdfTool>,
         _commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
@@ -1549,7 +1515,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
     }
     fn drag(
         &mut self,
-        _tool: Option<&mut NaiveRdfTool>,
+        _tool: &mut Option<NaiveRdfTool>,
         commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
@@ -1748,7 +1714,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
 
     fn click(
         &mut self,
-        _tool: Option<&mut NaiveRdfTool>,
+        _tool: &mut Option<NaiveRdfTool>,
         _commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
@@ -1766,7 +1732,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
     }
     fn drag(
         &mut self,
-        _tool: Option<&mut NaiveRdfTool>,
+        _tool: &mut Option<NaiveRdfTool>,
         _commands: &mut Vec<DiagramCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
