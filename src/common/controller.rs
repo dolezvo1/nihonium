@@ -270,10 +270,34 @@ where
     }
 
     fn apply_commands(&mut self, commands: Vec<DiagramCommand>) {
-        for c in &commands {
+        for command in &commands {
+            match command {
+                DiagramCommand::SelectAll => {
+                    self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect();
+                },
+                DiagramCommand::UnselectAll => {
+                    self.selected_elements.clear();
+                },
+                DiagramCommand::Select(uuid) => {
+                    if let Some(e) = self.owned_controllers.get(&uuid) {
+                        self.selected_elements.insert(*uuid);
+                        e.write().unwrap().apply_command(command);
+                        continue;
+                    }
+                },
+                DiagramCommand::Unselect(uuid) => {
+                    if let Some(e) = self.owned_controllers.get(&uuid) {
+                        self.selected_elements.remove(uuid);
+                        e.write().unwrap().apply_command(command);
+                        continue;
+                    }
+                },
+                DiagramCommand::MoveSelectedElements(_) => {},
+            }
+        
             for e in &self.owned_controllers {
                 let mut e = e.1.write().unwrap();
-                e.apply_command(c);
+                e.apply_command(command);
             }
         }
     }
