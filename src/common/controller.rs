@@ -481,6 +481,7 @@ where
         (self.tool_change_fun)(&mut self.current_tool, ui);
     }
     fn show_properties(&mut self, ui: &mut egui::Ui) {
+        // TODO: This is wrong now, doesn't show anything
         if let Some(element) = self.last_selected_element() {
             element
                 .write()

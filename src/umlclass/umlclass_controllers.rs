@@ -920,7 +920,12 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             self.bounds_rect,
             egui::Rounding::ZERO,
             egui::Color32::WHITE,
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            // TODO: split into two
+            if self.is_selected {
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLUE)
+            } else {
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
+            },
         );
 
         canvas.draw_text(
@@ -1005,20 +1010,18 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                 a => a
             })
             .find(|e| *e == ClickHandlingStatus::HandledByContainer)
-            .ok_or_else(|| {
-                commands.push(DiagramCommand::UnselectAll);
-            })
+            .ok_or_else(|| {})
             .is_ok();
-        let handled = match handled {
-            true => ClickHandlingStatus::HandledByContainer,
-            false => ClickHandlingStatus::NotHandled,
-        };
 
         tool.as_mut()
             .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
+        
+        if handled {
+            return ClickHandlingStatus::HandledByContainer;
+        }
 
-        match (self.min_shape().contains(pos), tool) {
-            (true, Some(tool)) => {
+        if self.min_shape().contains(pos) {
+            if let Some(tool) = tool {
                 tool.offset_by(self.bounds_rect.left_top().to_vec2());
                 tool.add_position(offset_pos);
                 tool.offset_by(-self.bounds_rect.left_top().to_vec2());
@@ -1034,13 +1037,14 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
                     self.owned_controllers.insert(uuid, new_a);
                 }
-
+                
                 return ClickHandlingStatus::HandledByContainer;
+            } else {
+                return ClickHandlingStatus::HandledByElement;
             }
-            _ => {}
         }
 
-        handled
+        ClickHandlingStatus::NotHandled
     }
     fn drag(
         &mut self,
@@ -1073,12 +1077,13 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         tool.as_mut()
             .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
 
-        match (handled, self.min_shape().contains(last_pos)) {
-            (DragHandlingStatus::NotHandled, true) => {
+        if handled == DragHandlingStatus::NotHandled && self.min_shape().contains(last_pos) {
+            if self.is_selected {
+                commands.push(DiagramCommand::MoveSelectedElements(delta));
+            } else {
                 self.bounds_rect.set_center(self.position() + delta);
-                return DragHandlingStatus::Handled;
             }
-            _ => {}
+            return DragHandlingStatus::Handled;
         }
 
         handled
