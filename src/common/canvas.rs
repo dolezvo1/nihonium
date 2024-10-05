@@ -185,6 +185,7 @@ impl ArrowheadType {
         canvas: &mut (impl NHCanvas + ?Sized),
         focal_point: egui::Pos2,
         other: egui::Pos2,
+        highlight: Highlight,
     ) {
         let outward_angle = atan2(focal_point, other);
         if matches!(self, ArrowheadType::OpenTriangle) {
@@ -199,10 +200,12 @@ impl ArrowheadType {
                 canvas.draw_line(
                     [focal_point, p1],
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    highlight,
                 );
                 canvas.draw_line(
                     [focal_point, p2],
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    highlight,
                 );
             }
             ArrowheadType::EmptyTriangle | ArrowheadType::FullTriangle => {
@@ -214,6 +217,7 @@ impl ArrowheadType {
                         egui::Color32::BLACK
                     },
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    highlight,
                 );
             }
             ArrowheadType::EmptyRhombus | ArrowheadType::FullRhombus => {
@@ -226,6 +230,7 @@ impl ArrowheadType {
                         egui::Color32::BLACK
                     },
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    highlight,
                 );
             }
         }
@@ -273,6 +278,23 @@ impl From<Stroke> for egui::Stroke {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Highlight {
+    pub selected: bool,// "blue"
+    pub valid: bool,   // "green"
+    pub invalid: bool, // "red"
+    pub warning: bool, // "yellow"
+}
+
+impl Highlight {
+    pub const NONE: Self = Self {
+        selected: false,// "blue"
+        valid: false,   // "green"
+        invalid: false, // "red"
+        warning: false, // "yellow"
+    };
+}
+
 pub const CLASS_TOP_FONT_SIZE: f32 = 15.0;
 pub const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
 pub const CLASS_BOTTOM_FONT_SIZE: f32 = 15.0;
@@ -282,13 +304,14 @@ pub trait NHCanvas {
     // These functions are must haves
     fn offset_by(&mut self, delta: egui::Vec2);
 
-    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke);
+    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight);
     fn draw_rectangle(
         &mut self,
         rect: egui::Rect,
         rounding: egui::Rounding,
         color: egui::Color32,
         stroke: Stroke,
+        highlight: Highlight,
     );
     fn draw_ellipse(
         &mut self,
@@ -296,6 +319,7 @@ pub trait NHCanvas {
         radius: egui::Vec2,
         color: egui::Color32,
         stroke: Stroke,
+        highlight: Highlight,
     );
     fn draw_ellipse_proximity(
         &mut self,
@@ -304,9 +328,16 @@ pub trait NHCanvas {
         _color: egui::Color32,
         _stroke: Stroke,
         _max_distance: f32,
+        _highlight: Highlight,
     ) {
     }
-    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, color: egui::Color32, stroke: Stroke);
+    fn draw_polygon(
+        &mut self,
+        vertices: Vec<egui::Pos2>,
+        color: egui::Color32,
+        stroke: Stroke,
+        highlight: Highlight,
+    );
 
     fn measure_text(
         &mut self,
@@ -332,6 +363,7 @@ pub trait NHCanvas {
         bottom_label: Option<&str>,
         items: &[&[(&str, &str)]],
         stroke: Stroke,
+        highlight: Highlight,
     ) -> egui::Rect {
         // Measure phase
         let (offsets, global_offset, max_width, itemalign, category_separators, rect) = {
@@ -415,6 +447,7 @@ pub trait NHCanvas {
                 egui::Rounding::ZERO,
                 egui::Color32::WHITE,
                 stroke.into(),
+                highlight,
             );
 
             (
@@ -478,6 +511,7 @@ pub trait NHCanvas {
                             ),
                         ],
                         Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        highlight,
                     );
                 }
 
@@ -517,6 +551,7 @@ pub trait NHCanvas {
         destinations: &[(ArrowheadType, Stroke, &Vec<egui::Pos2>, Option<&'a str>)],
         central_point: egui::Pos2,
         mid_label: Option<&str>,
+        highlight: Highlight,
     ) {
         fn a<'a>(
             central_point: egui::Pos2,
@@ -553,10 +588,10 @@ pub trait NHCanvas {
                 };
 
                 if first {
-                    ah.draw_in(self, fp, v);
+                    ah.draw_in(self, fp, v, highlight,);
                 }
 
-                self.draw_line([u, v], ls);
+                self.draw_line([u, v], ls, highlight,);
 
                 const HANDLE_PROXIMITY: f32 = 20.0;
 
@@ -567,6 +602,7 @@ pub trait NHCanvas {
                     egui::Color32::BLACK,
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
                     HANDLE_PROXIMITY,
+                    highlight,
                 );
 
                 self.draw_ellipse_proximity(
@@ -575,6 +611,7 @@ pub trait NHCanvas {
                     egui::Color32::BLACK,
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
                     HANDLE_PROXIMITY,
+                    highlight,
                 );
 
                 first = false;
@@ -610,6 +647,7 @@ pub trait NHCanvas {
 }
 
 pub struct UiCanvas {
+    highlight_colors: [egui::Color32; 4],
     painter: egui::Painter,
     canvas: egui::Rect,
     camera_offset: egui::Pos2,
@@ -626,6 +664,7 @@ impl UiCanvas {
         cursor: Option<egui::Pos2>,
     ) -> Self {
         Self {
+            highlight_colors: [egui::Color32::BLUE, egui::Color32::GREEN, egui::Color32::RED, egui::Color32::YELLOW,],
             painter,
             canvas,
             camera_offset,
@@ -684,12 +723,18 @@ impl NHCanvas for UiCanvas {
         self.camera_offset += delta * self.camera_scale;
     }
 
-    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke) {
+    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight,) {
         let offset = self.canvas.min.to_vec2() + self.camera_offset.to_vec2();
         let (p1, p2) = (
             points[0] * self.camera_scale + offset,
             points[1] * self.camera_scale + offset,
         );
+        
+        if highlight.selected {
+            self.painter
+                .line_segment([p1, p2], egui::Stroke::from(Stroke::new_solid(stroke.width + 1.0, self.highlight_colors[0])));
+        }
+        
         match stroke.line_type {
             LineType::Solid => {
                 self.painter
@@ -712,7 +757,19 @@ impl NHCanvas for UiCanvas {
         rounding: egui::Rounding,
         color: egui::Color32,
         stroke: Stroke,
+        highlight: Highlight,
     ) {
+        if highlight.selected {
+            for (p1, p2) in [
+                (rect.left_top() + egui::Vec2::new(-1.0, -1.0), rect.right_top() + egui::Vec2::new(1.0, -1.0)),
+                (rect.left_bottom() + egui::Vec2::new(-1.0, 1.0), rect.right_bottom() + egui::Vec2::new(1.0, 1.0)),
+                (rect.right_top() + egui::Vec2::new(1.0, -1.0), rect.right_bottom() + egui::Vec2::new(1.0, 1.0)),
+                (rect.left_top() + egui::Vec2::new(-1.0, -1.0), rect.left_bottom() + egui::Vec2::new(-1.0, 1.0)),
+            ] {
+                self.draw_line([p1, p2], Stroke::new_solid(stroke.width, self.highlight_colors[0]), Highlight::NONE,);
+            }
+        }
+        
         if color == egui::Color32::TRANSPARENT && stroke.line_type != LineType::Solid {
             for (p1, p2) in [
                 (rect.left_top(), rect.right_top()),
@@ -720,7 +777,7 @@ impl NHCanvas for UiCanvas {
                 (rect.right_top(), rect.right_bottom()),
                 (rect.left_top(), rect.left_bottom()),
             ] {
-                self.draw_line([p1, p2], stroke);
+                self.draw_line([p1, p2], stroke, highlight,);
             }
         } else {
             self.painter.rect(
@@ -741,7 +798,17 @@ impl NHCanvas for UiCanvas {
         radius: egui::Vec2,
         color: egui::Color32,
         stroke: Stroke,
+        highlight: Highlight,
     ) {
+        if highlight.selected {
+            self.painter.add(eframe::epaint::EllipseShape {
+                center: self.sc_tr(position),
+                radius: (radius + egui::Vec2::new(1.0, 1.0)) * self.camera_scale ,
+                fill: color,
+                stroke: egui::Stroke::from(Stroke::new_solid(stroke.width, self.highlight_colors[0])),
+            });
+        }
+        
         self.painter.add(eframe::epaint::EllipseShape {
             center: self.sc_tr(position),
             radius: radius * self.camera_scale,
@@ -757,17 +824,18 @@ impl NHCanvas for UiCanvas {
         color: egui::Color32,
         stroke: Stroke,
         max_distance: f32,
+        highlight: Highlight,
     ) {
         if self
             .cursor
             .filter(|e| e.distance(position) <= max_distance)
             .is_some()
         {
-            self.draw_ellipse(position, radius, color, stroke);
+            self.draw_ellipse(position, radius, color, stroke, highlight);
         }
     }
 
-    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, color: egui::Color32, stroke: Stroke) {
+    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, color: egui::Color32, stroke: Stroke, highlight: Highlight,) {
         let vertices = vertices.into_iter().map(|p| self.sc_tr(p)).collect();
         self.painter.add(egui::Shape::convex_polygon(
             vertices,
@@ -831,6 +899,7 @@ impl NHCanvas for UiCanvas {
                 egui::Rounding::ZERO,
                 text_color,
                 Stroke::new_solid(1.0, text_color.gamma_multiply(0.25)),
+                Highlight::NONE,
             );
         }
     }
@@ -861,7 +930,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         self.camera_offset += delta;
     }
 
-    fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke) {
+    fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke, highlight: Highlight,) {
         self.bounds
             .extend_with(points[0] + self.camera_offset.to_vec2());
         self.bounds
@@ -874,6 +943,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         _rounding: egui::Rounding,
         _color: egui::Color32,
         _stroke: Stroke,
+        highlight: Highlight,
     ) {
         self.bounds = self
             .bounds
@@ -886,6 +956,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         radius: egui::Vec2,
         _color: egui::Color32,
         _stroke: Stroke,
+        highlight: Highlight,
     ) {
         let rect = egui::Rect::from_center_size(position, 2.0 * radius);
         self.bounds = self
@@ -893,7 +964,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
             .union(rect.translate(self.camera_offset.to_vec2()));
     }
 
-    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, _color: egui::Color32, _stroke: Stroke) {
+    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, _color: egui::Color32, _stroke: Stroke, highlight: Highlight,) {
         for p in vertices {
             self.bounds.extend_with(p + self.camera_offset.to_vec2());
         }
@@ -981,7 +1052,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         self.camera_offset += delta;
     }
 
-    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke) {
+    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight,) {
         let stroke_dasharray = match stroke.line_type {
             LineType::Solid => "none",
             LineType::Dashed => "10,5",
@@ -1005,6 +1076,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         _rounding: egui::Rounding,
         color: egui::Color32,
         stroke: Stroke,
+        highlight: Highlight,
     ) {
         // TODO: implement rounding (not directly supported by SVG, potentially hard)
         let top_left = rect.left_top();
@@ -1026,6 +1098,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         radius: egui::Vec2,
         color: egui::Color32,
         stroke: Stroke,
+        highlight: Highlight,
     ) {
         self.element_buffer.push(format!(
             r#"<ellipse cx="{}" cy="{}" rx="{}" ry="{}" fill="{}" stroke="{}"/>
@@ -1039,7 +1112,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         ));
     }
 
-    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, color: egui::Color32, stroke: Stroke) {
+    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, color: egui::Color32, stroke: Stroke, highlight: Highlight,) {
         let polygon_points = vertices
             .iter()
             .map(|&p| {

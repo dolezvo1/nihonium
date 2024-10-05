@@ -198,7 +198,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
 
-        is_selected: false,
+        highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(200.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -219,7 +219,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
 
-        is_selected: false,
+        highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(100.0, 250.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -240,7 +240,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
 
-        is_selected: false,
+        highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(300.0, 250.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -260,7 +260,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         destination_arrowhead_label_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
-        is_selected: false,
+        highlight: canvas::Highlight::NONE,
         center_point: None,
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -281,7 +281,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         destination_arrowhead_label_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
-        is_selected: false,
+        highlight: canvas::Highlight::NONE,
         center_point: None,
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -301,7 +301,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
-        is_selected: false,
+        highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(300.0, 50.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -321,7 +321,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         destination_arrowhead_label_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
-        is_selected: false,
+        highlight: canvas::Highlight::NONE,
         center_point: Some(egui::Pos2::new(200.0, 50.0)),
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -341,7 +341,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
-        is_selected: false,
+        highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(450.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -361,7 +361,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         destination_arrowhead_label_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
-        is_selected: false,
+        highlight: canvas::Highlight::NONE,
         center_point: Some(egui::Pos2::new(450.0, 52.0)),
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -381,7 +381,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
-        is_selected: false,
+        highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(650.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
     }));
@@ -401,7 +401,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         destination_arrowhead_label_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
-        is_selected: false,
+        highlight: canvas::Highlight::NONE,
         center_point: Some(egui::Pos2::new(650.0, 48.0)),
         source_points: vec![vec![egui::Pos2::ZERO]],
         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -608,6 +608,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                     [source_pos, pos],
                     // TODO: draw correct hint line type
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
                 );
             }
             PartialUmlClassElement::Package { a_display, .. } => {
@@ -616,6 +617,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                     egui::Rounding::ZERO,
                     egui::Color32::TRANSPARENT,
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
                 );
             }
             _ => {}
@@ -643,7 +645,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                         functions_buffer: "".to_owned(),
                         comment_buffer: "".to_owned(),
 
-                        is_selected: false,
+                        highlight: canvas::Highlight::NONE,
                         position: pos,
                         bounds_rect: egui::Rect::ZERO,
                     })));
@@ -741,7 +743,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                         destination_arrowhead_label_buffer: "".to_owned(),
                         comment_buffer: "".to_owned(),
 
-                        is_selected: false,
+                        highlight: canvas::Highlight::NONE,
                         center_point: None,
                         source_points: vec![vec![egui::Pos2::ZERO]],
                         dest_points: vec![vec![egui::Pos2::ZERO]],
@@ -770,7 +772,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                     name_buffer: "a package".to_owned(),
                     comment_buffer: "".to_owned(),
 
-                    is_selected: false,
+                    highlight: canvas::Highlight::NONE,
                     bounds_rect: egui::Rect::from_two_pos(*a, *b),
                 }));
 
@@ -816,7 +818,7 @@ pub struct UmlClassPackageController {
     name_buffer: String,
     comment_buffer: String,
 
-    is_selected: bool,
+    highlight: canvas::Highlight,
     pub bounds_rect: egui::Rect,
 }
 
@@ -872,7 +874,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                 e.1.write().unwrap().show_properties(parent, ui)
             }).is_some() {
             true
-        } else if self.is_selected {
+        } else if self.highlight.selected {
             ui.label("Name:");
             let r1 = ui.add_sized(
                 (ui.available_width(), 20.0),
@@ -925,12 +927,8 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             self.bounds_rect,
             egui::Rounding::ZERO,
             egui::Color32::WHITE,
-            // TODO: split into two
-            if self.is_selected {
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLUE)
-            } else {
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
-            },
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.highlight,
         );
 
         canvas.draw_text(
@@ -963,6 +961,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                     egui::Rounding::ZERO,
                     t.targetting_for_element(KindedUmlClassElement::Package {}),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
                 );
 
                 canvas.offset_by(self.bounds_rect.left_top().to_vec2());
@@ -1083,7 +1082,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
 
         if handled == DragHandlingStatus::NotHandled && self.min_shape().contains(last_pos) {
-            if self.is_selected {
+            if self.highlight.selected {
                 commands.push(DiagramCommand::MoveSelectedElements(delta));
             } else {
                 self.bounds_rect.set_center(self.position() + delta);
@@ -1104,18 +1103,18 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         
         match command {
             DiagramCommand::SelectAll => {
-                self.is_selected = true;
+                self.highlight.selected = true;
                 self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect();
                 recurse(self, command);
             },
             DiagramCommand::UnselectAll => {
-                self.is_selected = false;
+                self.highlight.selected = false;
                 self.selected_elements.clear();
                 recurse(self, command);
             },
             DiagramCommand::Select(uuid) => {
                 if *self.uuid() == *uuid {
-                    self.is_selected = true;
+                    self.highlight.selected = true;
                 } else if let Some(e) = self.owned_controllers.get(&uuid) {
                     self.selected_elements.insert(*uuid);
                     e.write().unwrap().apply_command(command);
@@ -1125,7 +1124,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             },
             DiagramCommand::Unselect(uuid) => {
                 if *self.uuid() == *uuid {
-                    self.is_selected = false;
+                    self.highlight.selected = false;
                 } else if let Some(e) = self.owned_controllers.get(&uuid) {
                     self.selected_elements.remove(uuid);
                     e.write().unwrap().apply_command(command);
@@ -1134,7 +1133,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                 }
             },
             DiagramCommand::MoveSelectedElements(delta) => {
-                if self.is_selected {
+                if self.highlight.selected {
                     self.bounds_rect.set_center(self.position() + *delta);
                 } else {
                     recurse(self, command);
@@ -1174,7 +1173,7 @@ pub struct UmlClassController {
     functions_buffer: String,
     comment_buffer: String,
 
-    is_selected: bool,
+    highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
 }
@@ -1205,7 +1204,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     for UmlClassController
 {
     fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) -> bool {
-        if !self.is_selected {
+        if !self.highlight.selected {
             return false;
         }
         
@@ -1311,12 +1310,8 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             &read.name,
             None,
             &[&read.parse_properties(), &read.parse_functions()],
-            // TODO: split into two
-            if self.is_selected {
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLUE)
-            } else {
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
-            },
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.highlight,
         );
 
         // Draw targetting rectangle
@@ -1330,6 +1325,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                 egui::Rounding::ZERO,
                 t.targetting_for_element(KindedUmlClassElement::Class { inner: self }),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
             );
             TargettingStatus::Drawn
         } else {
@@ -1352,9 +1348,9 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             tool.add_element(KindedUmlClassElement::Class { inner: self }, pos);
         } else {
             if !modifiers.command {
-                self.is_selected = true;
+                self.highlight.selected = true;
             } else {
-                self.is_selected = !self.is_selected;
+                self.highlight.selected = !self.highlight.selected;
             } 
         }
 
@@ -1372,7 +1368,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             return DragHandlingStatus::NotHandled;
         }
 
-        if self.is_selected {
+        if self.highlight.selected {
             commands.push(DiagramCommand::MoveSelectedElements(delta));
         } else {
             self.position += delta;
@@ -1384,23 +1380,23 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn apply_command(&mut self, command: &DiagramCommand) {
         match command {
             DiagramCommand::SelectAll => {
-                self.is_selected = true;
+                self.highlight.selected = true;
             },
             DiagramCommand::UnselectAll => {
-                self.is_selected = false
+                self.highlight.selected = false
             },
             DiagramCommand::Select(uuid) => {
                 if *self.uuid() == *uuid {
-                    self.is_selected = true;
+                    self.highlight.selected = true;
                 }
             },
             DiagramCommand::Unselect(uuid) => {
                 if *self.uuid() == *uuid {
-                    self.is_selected = false;
+                    self.highlight.selected = false;
                 }
             },
             DiagramCommand::MoveSelectedElements(delta) => {
-                if self.is_selected {
+                if self.highlight.selected {
                     self.position += *delta;
                 }
             }
@@ -1424,7 +1420,7 @@ pub struct UmlClassLinkController {
     destination_arrowhead_label_buffer: String,
     comment_buffer: String,
 
-    is_selected: bool,
+    highlight: canvas::Highlight,
     pub center_point: Option<egui::Pos2>,
     pub source_points: Vec<Vec<egui::Pos2>>,
     pub dest_points: Vec<Vec<egui::Pos2>>,
@@ -1471,7 +1467,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     for UmlClassLinkController
 {
     fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) -> bool {
-        if !self.is_selected {
+        if !self.highlight.selected {
             return false;
         }
         
@@ -1596,24 +1592,38 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn apply_command(&mut self, command: &DiagramCommand) {
         match command {
             DiagramCommand::SelectAll => {
-                self.is_selected = true;
+                self.highlight.selected = true;
             },
             DiagramCommand::UnselectAll => {
-                self.is_selected = false
+                self.highlight.selected = false
             },
             DiagramCommand::Select(uuid) => {
                 if *self.uuid() == *uuid {
-                    self.is_selected = true;
+                    self.highlight.selected = true;
                 }
             },
             DiagramCommand::Unselect(uuid) => {
                 if *self.uuid() == *uuid {
-                    self.is_selected = false;
+                    self.highlight.selected = false;
                 }
             },
-            DiagramCommand::MoveSelectedElements(_delta) => {
-                if self.is_selected {
-                    todo!("moving selected Link not implemented yet");
+            DiagramCommand::MoveSelectedElements(delta) => {
+                if self.highlight.selected {
+                    if let Some(center_point) = self.center_point.as_mut() {
+                        *center_point += *delta;
+                    }
+                    
+                    for path in self.source_points.iter_mut() {
+                        for p in path.iter_mut() {
+                            *p += *delta;
+                        }
+                    }
+                    
+                    for path in self.dest_points.iter_mut() {
+                        for p in path.iter_mut() {
+                            *p += *delta;
+                        }
+                    }
                 }
             }
         }

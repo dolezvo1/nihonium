@@ -541,6 +541,7 @@ where
                     egui::Rounding::ZERO,
                     tool.targetting_for_element(ToolT::KindedElement::diagram(&self)),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
                 );
                 self.owned_controllers
                     .iter_mut()
@@ -657,6 +658,7 @@ pub mod macros {
                         )],
                         $self.position(),
                         None,
+                        $self.highlight,
                     );
                 }
                 _ => {}
