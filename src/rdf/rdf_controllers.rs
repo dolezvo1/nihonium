@@ -66,7 +66,7 @@ fn tool_change_fun(tool: &mut Option<NaiveRdfTool>, ui: &mut egui::Ui) {
     if ui
         .add_sized(
             [width, 20.0],
-            egui::Button::new("Select").fill(if stage == None {
+            egui::Button::new("Select/Move").fill(if stage == None {
                 egui::Color32::BLUE
             } else {
                 egui::Color32::BLACK
@@ -76,9 +76,9 @@ fn tool_change_fun(tool: &mut Option<NaiveRdfTool>, ui: &mut egui::Ui) {
     {
         *tool = None;
     }
+    ui.separator();
 
     for cat in [
-        &[(RdfToolStage::Move, "Move")][..],
         &[
             (RdfToolStage::Literal, "Literal"),
             (RdfToolStage::Node, "Node"),
@@ -541,8 +541,6 @@ impl<'a> KindedElement<'a> for KindedRdfElement<'a> {
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum RdfToolStage {
-    Select,
-    Move,
     Literal,
     Node,
     PredicateStart,
@@ -571,7 +569,7 @@ pub struct NaiveRdfTool {
     current_stage: RdfToolStage,
     offset: egui::Pos2,
     result: PartialRdfElement,
-    construction_lock: bool,
+    event_lock: bool,
 }
 
 impl NaiveRdfTool {
@@ -581,7 +579,7 @@ impl NaiveRdfTool {
             current_stage: initial_stage,
             offset: egui::Pos2::ZERO,
             result: PartialRdfElement::None,
-            construction_lock: false,
+            event_lock: false,
         }
     }
 }
@@ -600,7 +598,6 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
     fn targetting_for_element<'a>(&self, controller: Self::KindedElement<'a>) -> egui::Color32 {
         match controller {
             KindedRdfElement::Diagram { .. } => match self.current_stage {
-                RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
                 RdfToolStage::Literal
                 | RdfToolStage::Node
                 | RdfToolStage::GraphStart
@@ -609,7 +606,6 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                 RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => NON_TARGETTABLE_COLOR,
             },
             KindedRdfElement::Graph { .. } => match self.current_stage {
-                RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
                 RdfToolStage::Literal | RdfToolStage::Node | RdfToolStage::Note => {
                     TARGETTABLE_COLOR
                 }
@@ -619,7 +615,6 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
             KindedRdfElement::Literal { .. } => match self.current_stage {
-                RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
                 RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
                 RdfToolStage::Literal
                 | RdfToolStage::Node
@@ -629,7 +624,6 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                 | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
             },
             KindedRdfElement::Node { .. } => match self.current_stage {
-                RdfToolStage::Select | RdfToolStage::Move => egui::Color32::TRANSPARENT,
                 RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
                 RdfToolStage::Literal
                 | RdfToolStage::Node
@@ -666,6 +660,8 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
         self.offset += delta;
     }
     fn add_position(&mut self, pos: egui::Pos2) {
+        if self.event_lock { return; }
+    
         let uuid = uuid::Uuid::now_v7();
         match (self.current_stage, &mut self.result) {
             (RdfToolStage::Literal, _) => {
@@ -687,6 +683,7 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                         position: pos,
                         bounds_rect: egui::Rect::ZERO,
                     })));
+                self.event_lock = true;
             }
             (RdfToolStage::Node, _) => {
                 let node = Arc::new(RwLock::new(RdfNode::new(
@@ -702,6 +699,7 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                     position: pos,
                     bounds_radius: egui::Vec2::ZERO,
                 })));
+                self.event_lock = true;
             }
             (RdfToolStage::GraphStart, _) => {
                 self.result = PartialRdfElement::Graph {
@@ -709,6 +707,7 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                     b: None,
                 };
                 self.current_stage = RdfToolStage::GraphEnd;
+                self.event_lock = true;
             }
             (RdfToolStage::GraphEnd, PartialRdfElement::Graph { ref mut b, .. }) => *b = Some(pos),
             (RdfToolStage::Note, _) => {}
@@ -716,12 +715,15 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
         }
     }
     fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>, pos: egui::Pos2) {
+        if self.event_lock { return; }
+        
         match controller {
             KindedRdfElement::Diagram { .. } => {}
             KindedRdfElement::Graph { .. } => {}
             KindedRdfElement::Literal { inner } => match (self.current_stage, &mut self.result) {
                 (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { ref mut dest, .. }) => {
                     *dest = Some(inner.model.clone());
+                    self.event_lock = true;
                 }
                 _ => {}
             },
@@ -733,6 +735,7 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                         dest: None,
                     };
                     self.current_stage = RdfToolStage::PredicateEnd;
+                    self.event_lock = true;
                 }
                 (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { ref mut dest, .. }) => {
                     *dest = Some(inner.model.clone());
@@ -747,15 +750,10 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
         &mut self,
         into: &dyn ContainerGen2<dyn RdfElement, RdfQueryable, Self>,
     ) -> Option<Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, Self>>>> {
-        if self.construction_lock {
-            return None;
-        }
-
         match &self.result {
             PartialRdfElement::Some(x) => {
                 let x = x.clone();
                 self.result = PartialRdfElement::None;
-                self.construction_lock = true;
                 Some(x)
             }
             // TODO: check for source == dest case, set points?
@@ -798,7 +796,6 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                 };
 
                 self.result = PartialRdfElement::None;
-                self.construction_lock = true;
                 predicate_controller
             }
             PartialRdfElement::Graph { a, b: Some(b) } => {
@@ -822,15 +819,14 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
                 }));
 
                 self.result = PartialRdfElement::None;
-                self.construction_lock = true;
                 Some(graph_controller)
             }
             _ => None,
         }
     }
 
-    fn reset_constructed_state(&mut self) {
-        self.construction_lock = false;
+    fn reset_event_lock(&mut self) {
+        self.event_lock = false;
     }
 }
 
@@ -1017,7 +1013,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
 
     fn click(
         &mut self,
-        mut tool: &mut Option<NaiveRdfTool>,
+        tool: &mut Option<NaiveRdfTool>,
         commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,

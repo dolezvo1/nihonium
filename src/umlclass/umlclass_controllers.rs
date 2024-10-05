@@ -68,7 +68,7 @@ fn tool_change_fun(tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
     if ui
         .add_sized(
             [width, 20.0],
-            egui::Button::new("Select").fill(if stage == None {
+            egui::Button::new("Select/Move").fill(if stage == None {
                 egui::Color32::BLUE
             } else {
                 egui::Color32::BLACK
@@ -78,9 +78,9 @@ fn tool_change_fun(tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
     {
         *tool = None;
     }
+    ui.separator();
 
     for cat in [
-        &[(UmlClassToolStage::Move, "Move")][..],
         &[
             (UmlClassToolStage::Class, "Class"),
             (UmlClassToolStage::PackageStart, "Package"),
@@ -505,8 +505,6 @@ impl<'a> KindedElement<'a> for KindedUmlClassElement<'a> {
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum UmlClassToolStage {
-    Select,
-    Move,
     Class,
     LinkStart { link_type: UmlClassLinkType },
     LinkEnd,
@@ -546,7 +544,7 @@ pub struct NaiveUmlClassTool {
     current_stage: UmlClassToolStage,
     offset: egui::Pos2,
     result: PartialUmlClassElement,
-    construction_lock: bool,
+    event_lock: bool,
 }
 
 impl NaiveUmlClassTool {
@@ -556,7 +554,7 @@ impl NaiveUmlClassTool {
             current_stage: initial_stage,
             offset: egui::Pos2::ZERO,
             result: PartialUmlClassElement::None,
-            construction_lock: false,
+            event_lock: false,
         }
     }
 }
@@ -575,19 +573,15 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
     fn targetting_for_element<'a>(&self, controller: Self::KindedElement<'a>) -> egui::Color32 {
         match controller {
             KindedUmlClassElement::Diagram { .. } => match self.current_stage {
-                UmlClassToolStage::Move => egui::Color32::TRANSPARENT,
                 UmlClassToolStage::Class
                 | UmlClassToolStage::Note
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd => TARGETTABLE_COLOR,
-                UmlClassToolStage::Select
-                | UmlClassToolStage::LinkStart { .. }
+                UmlClassToolStage::LinkStart { .. }
                 | UmlClassToolStage::LinkEnd => NON_TARGETTABLE_COLOR,
             },
             KindedUmlClassElement::Package { .. } => match self.current_stage {
-                UmlClassToolStage::Move => egui::Color32::TRANSPARENT,
-                UmlClassToolStage::Select
-                | UmlClassToolStage::Class
+                UmlClassToolStage::Class
                 | UmlClassToolStage::Note
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd => TARGETTABLE_COLOR,
@@ -596,9 +590,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                 }
             },
             KindedUmlClassElement::Class { .. } => match self.current_stage {
-                UmlClassToolStage::Move => egui::Color32::TRANSPARENT,
-                UmlClassToolStage::Select
-                | UmlClassToolStage::LinkStart { .. }
+                UmlClassToolStage::LinkStart { .. }
                 | UmlClassToolStage::LinkEnd => TARGETTABLE_COLOR,
                 UmlClassToolStage::Class
                 | UmlClassToolStage::Note
@@ -639,6 +631,8 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
         self.offset += delta;
     }
     fn add_position(&mut self, pos: egui::Pos2) {
+        if self.event_lock { return; }
+        
         let uuid = uuid::Uuid::now_v7();
         match (self.current_stage, &mut self.result) {
             (UmlClassToolStage::Class, _) => {
@@ -660,6 +654,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                         position: pos,
                         bounds_rect: egui::Rect::ZERO,
                     })));
+                self.event_lock = true;
             }
             (UmlClassToolStage::PackageStart, _) => {
                 self.result = PartialUmlClassElement::Package {
@@ -668,15 +663,19 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                     b: None,
                 };
                 self.current_stage = UmlClassToolStage::PackageEnd;
+                self.event_lock = true;
             }
             (UmlClassToolStage::PackageEnd, PartialUmlClassElement::Package { ref mut b, .. }) => {
-                *b = Some(pos)
+                *b = Some(pos);
+                self.event_lock = true;
             }
             (UmlClassToolStage::Note, _) => {}
             _ => {}
         }
     }
     fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>, pos: egui::Pos2) {
+        if self.event_lock { return; }
+        
         match controller {
             KindedUmlClassElement::Diagram { .. } => {}
             KindedUmlClassElement::Package { .. } => {}
@@ -690,12 +689,14 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                             dest: None,
                         };
                         self.current_stage = UmlClassToolStage::LinkEnd;
+                        self.event_lock = true;
                     }
                     (
                         UmlClassToolStage::LinkEnd,
                         PartialUmlClassElement::Link { ref mut dest, .. },
                     ) => {
                         *dest = Some(inner.model.clone());
+                        self.event_lock = true;
                     }
                     _ => {}
                 }
@@ -708,15 +709,10 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
         into: &dyn ContainerGen2<dyn UmlClassElement, UmlClassQueryable, Self>,
     ) -> Option<Arc<RwLock<dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, Self>>>>
     {
-        if self.construction_lock {
-            return None;
-        }
-
         match &self.result {
             PartialUmlClassElement::Some(x) => {
                 let x = x.clone();
                 self.result = PartialUmlClassElement::None;
-                self.construction_lock = true;
                 Some(x)
             }
             PartialUmlClassElement::Link {
@@ -764,7 +760,6 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                 };
 
                 self.result = PartialUmlClassElement::None;
-                self.construction_lock = true;
                 association_controller
             }
             PartialUmlClassElement::Package { a, b: Some(b), .. } => {
@@ -788,14 +783,13 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                 }));
 
                 self.result = PartialUmlClassElement::None;
-                self.construction_lock = true;
                 Some(package_controller)
             }
             _ => None,
         }
     }
-    fn reset_constructed_state(&mut self) {
-        self.construction_lock = false;
+    fn reset_event_lock(&mut self) {
+        self.event_lock = false;
     }
 }
 
@@ -973,7 +967,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
     fn click(
         &mut self,
-        mut tool: &mut Option<NaiveUmlClassTool>,
+        tool: &mut Option<NaiveUmlClassTool>,
         commands: &mut Vec<DiagramCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,

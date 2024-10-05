@@ -145,7 +145,7 @@ pub trait Tool<CommonElementT: ?Sized, QueryableT> {
         &mut self,
         into: &dyn ContainerGen2<CommonElementT, QueryableT, Self>,
     ) -> Option<Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, Self>>>>;
-    fn reset_constructed_state(&mut self);
+    fn reset_event_lock(&mut self);
 }
 
 pub trait ElementControllerGen2<CommonElementT: ?Sized, QueryableT, ToolT>:
@@ -397,7 +397,7 @@ where
     fn click(&mut self, pos: egui::Pos2, modifiers: ModifierKeys) -> bool {
         self.current_tool
             .as_mut()
-            .map(|e| e.reset_constructed_state());
+            .map(|e| e.reset_event_lock());
 
         let mut commands = Vec::new();
 
