@@ -280,18 +280,18 @@ impl From<Stroke> for egui::Stroke {
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Highlight {
-    pub selected: bool,// "blue"
-    pub valid: bool,   // "green"
-    pub invalid: bool, // "red"
-    pub warning: bool, // "yellow"
+    pub selected: bool, // "blue"
+    pub valid: bool,    // "green"
+    pub invalid: bool,  // "red"
+    pub warning: bool,  // "yellow"
 }
 
 impl Highlight {
     pub const NONE: Self = Self {
-        selected: false,// "blue"
-        valid: false,   // "green"
-        invalid: false, // "red"
-        warning: false, // "yellow"
+        selected: false, // "blue"
+        valid: false,    // "green"
+        invalid: false,  // "red"
+        warning: false,  // "yellow"
     };
 }
 
@@ -588,10 +588,10 @@ pub trait NHCanvas {
                 };
 
                 if first {
-                    ah.draw_in(self, fp, v, highlight,);
+                    ah.draw_in(self, fp, v, highlight);
                 }
 
-                self.draw_line([u, v], ls, highlight,);
+                self.draw_line([u, v], ls, highlight);
 
                 const HANDLE_PROXIMITY: f32 = 20.0;
 
@@ -664,7 +664,12 @@ impl UiCanvas {
         cursor: Option<egui::Pos2>,
     ) -> Self {
         Self {
-            highlight_colors: [egui::Color32::BLUE, egui::Color32::GREEN, egui::Color32::RED, egui::Color32::YELLOW,],
+            highlight_colors: [
+                egui::Color32::BLUE,
+                egui::Color32::GREEN,
+                egui::Color32::RED,
+                egui::Color32::YELLOW,
+            ],
             painter,
             canvas,
             camera_offset,
@@ -723,18 +728,23 @@ impl NHCanvas for UiCanvas {
         self.camera_offset += delta * self.camera_scale;
     }
 
-    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight,) {
+    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
         let offset = self.canvas.min.to_vec2() + self.camera_offset.to_vec2();
         let (p1, p2) = (
             points[0] * self.camera_scale + offset,
             points[1] * self.camera_scale + offset,
         );
-        
+
         if highlight.selected {
-            self.painter
-                .line_segment([p1, p2], egui::Stroke::from(Stroke::new_solid(stroke.width + 1.0, self.highlight_colors[0])));
+            self.painter.line_segment(
+                [p1, p2],
+                egui::Stroke::from(Stroke::new_solid(
+                    stroke.width + 1.0,
+                    self.highlight_colors[0],
+                )),
+            );
         }
-        
+
         match stroke.line_type {
             LineType::Solid => {
                 self.painter
@@ -761,15 +771,31 @@ impl NHCanvas for UiCanvas {
     ) {
         if highlight.selected {
             for (p1, p2) in [
-                (rect.left_top() + egui::Vec2::new(-1.0, -1.0), rect.right_top() + egui::Vec2::new(1.0, -1.0)),
-                (rect.left_bottom() + egui::Vec2::new(-1.0, 1.0), rect.right_bottom() + egui::Vec2::new(1.0, 1.0)),
-                (rect.right_top() + egui::Vec2::new(1.0, -1.0), rect.right_bottom() + egui::Vec2::new(1.0, 1.0)),
-                (rect.left_top() + egui::Vec2::new(-1.0, -1.0), rect.left_bottom() + egui::Vec2::new(-1.0, 1.0)),
+                (
+                    rect.left_top() + egui::Vec2::new(-1.0, -1.0),
+                    rect.right_top() + egui::Vec2::new(1.0, -1.0),
+                ),
+                (
+                    rect.left_bottom() + egui::Vec2::new(-1.0, 1.0),
+                    rect.right_bottom() + egui::Vec2::new(1.0, 1.0),
+                ),
+                (
+                    rect.right_top() + egui::Vec2::new(1.0, -1.0),
+                    rect.right_bottom() + egui::Vec2::new(1.0, 1.0),
+                ),
+                (
+                    rect.left_top() + egui::Vec2::new(-1.0, -1.0),
+                    rect.left_bottom() + egui::Vec2::new(-1.0, 1.0),
+                ),
             ] {
-                self.draw_line([p1, p2], Stroke::new_solid(stroke.width, self.highlight_colors[0]), Highlight::NONE,);
+                self.draw_line(
+                    [p1, p2],
+                    Stroke::new_solid(stroke.width, self.highlight_colors[0]),
+                    Highlight::NONE,
+                );
             }
         }
-        
+
         if color == egui::Color32::TRANSPARENT && stroke.line_type != LineType::Solid {
             for (p1, p2) in [
                 (rect.left_top(), rect.right_top()),
@@ -777,7 +803,7 @@ impl NHCanvas for UiCanvas {
                 (rect.right_top(), rect.right_bottom()),
                 (rect.left_top(), rect.left_bottom()),
             ] {
-                self.draw_line([p1, p2], stroke, highlight,);
+                self.draw_line([p1, p2], stroke, highlight);
             }
         } else {
             self.painter.rect(
@@ -803,12 +829,15 @@ impl NHCanvas for UiCanvas {
         if highlight.selected {
             self.painter.add(eframe::epaint::EllipseShape {
                 center: self.sc_tr(position),
-                radius: (radius + egui::Vec2::new(1.0, 1.0)) * self.camera_scale ,
+                radius: (radius + egui::Vec2::new(1.0, 1.0)) * self.camera_scale,
                 fill: color,
-                stroke: egui::Stroke::from(Stroke::new_solid(stroke.width, self.highlight_colors[0])),
+                stroke: egui::Stroke::from(Stroke::new_solid(
+                    stroke.width,
+                    self.highlight_colors[0],
+                )),
             });
         }
-        
+
         self.painter.add(eframe::epaint::EllipseShape {
             center: self.sc_tr(position),
             radius: radius * self.camera_scale,
@@ -835,7 +864,13 @@ impl NHCanvas for UiCanvas {
         }
     }
 
-    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, color: egui::Color32, stroke: Stroke, highlight: Highlight,) {
+    fn draw_polygon(
+        &mut self,
+        vertices: Vec<egui::Pos2>,
+        color: egui::Color32,
+        stroke: Stroke,
+        highlight: Highlight,
+    ) {
         let vertices = vertices.into_iter().map(|p| self.sc_tr(p)).collect();
         self.painter.add(egui::Shape::convex_polygon(
             vertices,
@@ -930,7 +965,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         self.camera_offset += delta;
     }
 
-    fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke, highlight: Highlight,) {
+    fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke, highlight: Highlight) {
         self.bounds
             .extend_with(points[0] + self.camera_offset.to_vec2());
         self.bounds
@@ -964,7 +999,13 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
             .union(rect.translate(self.camera_offset.to_vec2()));
     }
 
-    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, _color: egui::Color32, _stroke: Stroke, highlight: Highlight,) {
+    fn draw_polygon(
+        &mut self,
+        vertices: Vec<egui::Pos2>,
+        _color: egui::Color32,
+        _stroke: Stroke,
+        highlight: Highlight,
+    ) {
         for p in vertices {
             self.bounds.extend_with(p + self.camera_offset.to_vec2());
         }
@@ -1052,7 +1093,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         self.camera_offset += delta;
     }
 
-    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight,) {
+    fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
         let stroke_dasharray = match stroke.line_type {
             LineType::Solid => "none",
             LineType::Dashed => "10,5",
@@ -1112,7 +1153,13 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         ));
     }
 
-    fn draw_polygon(&mut self, vertices: Vec<egui::Pos2>, color: egui::Color32, stroke: Stroke, highlight: Highlight,) {
+    fn draw_polygon(
+        &mut self,
+        vertices: Vec<egui::Pos2>,
+        color: egui::Color32,
+        stroke: Stroke,
+        highlight: Highlight,
+    ) {
         let polygon_points = vertices
             .iter()
             .map(|&p| {

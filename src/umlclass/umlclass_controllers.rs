@@ -4,8 +4,8 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ClickHandlingStatus, ContainerGen2, DiagramController, DiagramControllerGen2,
-    DiagramCommand, DragHandlingStatus, ElementController, ElementControllerGen2, KindedElement, ModifierKeys,
+    ClickHandlingStatus, ContainerGen2, DiagramCommand, DiagramController, DiagramControllerGen2,
+    DragHandlingStatus, ElementController, ElementControllerGen2, KindedElement, ModifierKeys,
     TargettingStatus, Tool,
 };
 use crate::common::observer::Observable;
@@ -65,11 +65,22 @@ fn tool_change_fun(tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
         }
     };
 
+    if ui
+        .add_sized(
+            [width, 20.0],
+            egui::Button::new("Select").fill(if stage == None {
+                egui::Color32::BLUE
+            } else {
+                egui::Color32::BLACK
+            }),
+        )
+        .clicked()
+    {
+        *tool = None;
+    }
+
     for cat in [
-        &[
-            (UmlClassToolStage::Select, "Select"),
-            (UmlClassToolStage::Move, "Move"),
-        ][..],
+        &[(UmlClassToolStage::Move, "Move")][..],
         &[
             (UmlClassToolStage::Class, "Class"),
             (UmlClassToolStage::PackageStart, "Package"),
@@ -814,7 +825,7 @@ pub struct UmlClassPackageController {
         >,
     >,
     selected_elements: HashSet<uuid::Uuid>,
-    
+
     name_buffer: String,
     comment_buffer: String,
 
@@ -870,9 +881,12 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     for UmlClassPackageController
 {
     fn show_properties(&mut self, parent: &UmlClassQueryable, ui: &mut egui::Ui) -> bool {
-        if self.owned_controllers.iter().find(|e| {
-                e.1.write().unwrap().show_properties(parent, ui)
-            }).is_some() {
+        if self
+            .owned_controllers
+            .iter()
+            .find(|e| e.1.write().unwrap().show_properties(parent, ui))
+            .is_some()
+        {
             true
         } else if self.highlight.selected {
             ui.label("Name:");
@@ -989,40 +1003,36 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         tool.as_mut()
             .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
         let offset_pos = pos - self.bounds_rect.left_top().to_vec2();
-        
-        let handled = self.owned_controllers.iter_mut()
-            .map(|uc| match { match tool.take() {
-                Some(t) => {
-                    let r = uc.1.write().unwrap().click(Some(t), commands, offset_pos, modifiers);
-                    tool = Some(t);
-                    r
-                }
-                None => uc.1.write().unwrap().click(None, commands, offset_pos, modifiers)
-            }
-            } {
-                ClickHandlingStatus::HandledByElement => {
-                    if !modifiers.command {
-                        commands.push(DiagramCommand::UnselectAll);
-                        commands.push(DiagramCommand::Select(*uc.0));
-                    } else if self.selected_elements.contains(&uc.0) {
-                        commands.push(DiagramCommand::Unselect(*uc.0));
-                    } else {
-                        commands.push(DiagramCommand::Select(*uc.0));
-                    };
-                    ClickHandlingStatus::HandledByContainer
-                }
-                a => a
+
+        let uc_status = self
+            .owned_controllers
+            .iter()
+            .map(|uc| {
+                (
+                    uc,
+                    match tool.take() {
+                        Some(t) => {
+                            let r = uc.1.write().unwrap().click(
+                                Some(t),
+                                commands,
+                                offset_pos,
+                                modifiers,
+                            );
+                            tool = Some(t);
+                            r
+                        }
+                        None => {
+                            uc.1.write()
+                                .unwrap()
+                                .click(None, commands, offset_pos, modifiers)
+                        }
+                    },
+                )
             })
-            .find(|e| *e == ClickHandlingStatus::HandledByContainer)
-            .ok_or_else(|| {})
-            .is_ok();
+            .find(|e| e.1 != ClickHandlingStatus::NotHandled);
 
         tool.as_mut()
             .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
-        
-        if handled {
-            return ClickHandlingStatus::HandledByContainer;
-        }
 
         if self.min_shape().contains(pos) {
             if let Some(tool) = tool {
@@ -1041,7 +1051,19 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
                     self.owned_controllers.insert(uuid, new_a);
                 }
-                
+
+                return ClickHandlingStatus::HandledByContainer;
+            } else if let Some((uc, status)) = uc_status {
+                if status == ClickHandlingStatus::HandledByElement {
+                    if !modifiers.command {
+                        commands.push(DiagramCommand::UnselectAll);
+                        commands.push(DiagramCommand::Select(*uc.0));
+                    } else if self.selected_elements.contains(&uc.0) {
+                        commands.push(DiagramCommand::Unselect(*uc.0));
+                    } else {
+                        commands.push(DiagramCommand::Select(*uc.0));
+                    }
+                }
                 return ClickHandlingStatus::HandledByContainer;
             } else {
                 return ClickHandlingStatus::HandledByElement;
@@ -1092,7 +1114,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
         handled
     }
-    
+
     fn apply_command(&mut self, command: &DiagramCommand) {
         fn recurse(this: &mut UmlClassPackageController, command: &DiagramCommand) {
             for e in &this.owned_controllers {
@@ -1100,18 +1122,18 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                 e.apply_command(command);
             }
         }
-        
+
         match command {
             DiagramCommand::SelectAll => {
                 self.highlight.selected = true;
                 self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect();
                 recurse(self, command);
-            },
+            }
             DiagramCommand::UnselectAll => {
                 self.highlight.selected = false;
                 self.selected_elements.clear();
                 recurse(self, command);
-            },
+            }
             DiagramCommand::Select(uuid) => {
                 if *self.uuid() == *uuid {
                     self.highlight.selected = true;
@@ -1121,7 +1143,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                 } else {
                     recurse(self, command);
                 }
-            },
+            }
             DiagramCommand::Unselect(uuid) => {
                 if *self.uuid() == *uuid {
                     self.highlight.selected = false;
@@ -1131,7 +1153,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                 } else {
                     recurse(self, command);
                 }
-            },
+            }
             DiagramCommand::MoveSelectedElements(delta) => {
                 if self.highlight.selected {
                     self.bounds_rect.set_center(self.position() + *delta);
@@ -1207,7 +1229,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         if !self.highlight.selected {
             return false;
         }
-        
+
         ui.label("Stereotype:");
         let mut r1 = false;
         egui::ComboBox::from_id_source("Stereotype:")
@@ -1279,7 +1301,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
             model.notify_observers();
         }
-        
+
         true
     }
 
@@ -1351,7 +1373,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                 self.highlight.selected = true;
             } else {
                 self.highlight.selected = !self.highlight.selected;
-            } 
+            }
         }
 
         ClickHandlingStatus::HandledByElement
@@ -1376,25 +1398,23 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
         DragHandlingStatus::Handled
     }
-    
+
     fn apply_command(&mut self, command: &DiagramCommand) {
         match command {
             DiagramCommand::SelectAll => {
                 self.highlight.selected = true;
-            },
-            DiagramCommand::UnselectAll => {
-                self.highlight.selected = false
-            },
+            }
+            DiagramCommand::UnselectAll => self.highlight.selected = false,
             DiagramCommand::Select(uuid) => {
                 if *self.uuid() == *uuid {
                     self.highlight.selected = true;
                 }
-            },
+            }
             DiagramCommand::Unselect(uuid) => {
                 if *self.uuid() == *uuid {
                     self.highlight.selected = false;
                 }
-            },
+            }
             DiagramCommand::MoveSelectedElements(delta) => {
                 if self.highlight.selected {
                     self.position += *delta;
@@ -1470,7 +1490,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         if !self.highlight.selected {
             return false;
         }
-        
+
         let mut model = self.model.write().unwrap();
 
         ui.label("Link type:");
@@ -1538,7 +1558,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
             model.notify_observers();
         }
-        
+
         true
     }
 
@@ -1588,37 +1608,35 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         );
         DragHandlingStatus::NotHandled
     }
-    
+
     fn apply_command(&mut self, command: &DiagramCommand) {
         match command {
             DiagramCommand::SelectAll => {
                 self.highlight.selected = true;
-            },
-            DiagramCommand::UnselectAll => {
-                self.highlight.selected = false
-            },
+            }
+            DiagramCommand::UnselectAll => self.highlight.selected = false,
             DiagramCommand::Select(uuid) => {
                 if *self.uuid() == *uuid {
                     self.highlight.selected = true;
                 }
-            },
+            }
             DiagramCommand::Unselect(uuid) => {
                 if *self.uuid() == *uuid {
                     self.highlight.selected = false;
                 }
-            },
+            }
             DiagramCommand::MoveSelectedElements(delta) => {
                 if self.highlight.selected {
                     if let Some(center_point) = self.center_point.as_mut() {
                         *center_point += *delta;
                     }
-                    
+
                     for path in self.source_points.iter_mut() {
                         for p in path.iter_mut() {
                             *p += *delta;
                         }
                     }
-                    
+
                     for path in self.dest_points.iter_mut() {
                         for p in path.iter_mut() {
                             *p += *delta;

@@ -153,7 +153,9 @@ pub trait ElementControllerGen2<CommonElementT: ?Sized, QueryableT, ToolT>:
 where
     ToolT: Tool<CommonElementT, QueryableT>,
 {
-    fn show_properties(&mut self, _: &QueryableT, _ui: &mut egui::Ui) -> bool { false }
+    fn show_properties(&mut self, _: &QueryableT, _ui: &mut egui::Ui) -> bool {
+        false
+    }
     fn list_in_project_hierarchy(&self, _: &QueryableT, _ui: &mut egui::Ui) {}
 
     fn draw_in(
@@ -276,7 +278,7 @@ where
         let id = self.selected_elements.iter().next()?;
         self.owned_controllers.get(&id).cloned()
     }
-    
+
     fn apply_commands(&mut self, commands: Vec<DiagramCommand>) {
         for c in &commands {
             for e in &self.owned_controllers {
@@ -408,34 +410,39 @@ where
             .map(|e| e.reset_constructed_state());
 
         let mut commands = Vec::new();
-        
+
         let handled = self
             .owned_controllers
             .iter_mut()
-            .map(|uc| match uc.1.write().unwrap()
-                    .click(self.current_tool.as_mut(), &mut commands, pos, modifiers)
-            {
-                ClickHandlingStatus::HandledByElement => {
-                    if !modifiers.command {
-                        commands.push(DiagramCommand::UnselectAll);
-                        commands.push(DiagramCommand::Select(*uc.0));
-                    } else if self.selected_elements.contains(&uc.0) {
-                        commands.push(DiagramCommand::Unselect(*uc.0));
-                    } else {
-                        commands.push(DiagramCommand::Select(*uc.0));
-                    };
-                    ClickHandlingStatus::HandledByContainer
+            .map(|uc| {
+                match uc.1.write().unwrap().click(
+                    self.current_tool.as_mut(),
+                    &mut commands,
+                    pos,
+                    modifiers,
+                ) {
+                    ClickHandlingStatus::HandledByElement => {
+                        if !modifiers.command {
+                            commands.push(DiagramCommand::UnselectAll);
+                            commands.push(DiagramCommand::Select(*uc.0));
+                        } else if self.selected_elements.contains(&uc.0) {
+                            commands.push(DiagramCommand::Unselect(*uc.0));
+                        } else {
+                            commands.push(DiagramCommand::Select(*uc.0));
+                        };
+                        ClickHandlingStatus::HandledByContainer
+                    }
+                    a => a,
                 }
-                a => a
             })
             .find(|e| *e == ClickHandlingStatus::HandledByContainer)
             .ok_or_else(|| {
                 commands.push(DiagramCommand::UnselectAll);
             })
             .is_ok();
-        
+
         self.apply_commands(commands);
-        
+
         if !handled {
             if let Some(t) = self.current_tool.as_mut() {
                 t.add_position(pos);
@@ -458,19 +465,22 @@ where
     }
     fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
         let mut commands = Vec::new();
-        
-        let ret = self.owned_controllers
+
+        let ret = self
+            .owned_controllers
             .iter_mut()
             .find(|uc| {
-                uc.1.write()
-                    .unwrap()
-                    .drag(self.current_tool.as_mut(), &mut commands, last_pos, delta)
-                    == DragHandlingStatus::Handled
+                uc.1.write().unwrap().drag(
+                    self.current_tool.as_mut(),
+                    &mut commands,
+                    last_pos,
+                    delta,
+                ) == DragHandlingStatus::Handled
             })
             .is_some();
-        
+
         self.apply_commands(commands);
-        
+
         ret
     }
     fn context_menu(&mut self, ui: &mut egui::Ui) {
@@ -481,9 +491,12 @@ where
         (self.tool_change_fun)(&mut self.current_tool, ui);
     }
     fn show_properties(&mut self, ui: &mut egui::Ui) {
-        if self.owned_controllers.iter().find(|e| {
-                e.1.write().unwrap().show_properties(&self.queryable, ui)
-            }).is_none() {
+        if self
+            .owned_controllers
+            .iter()
+            .find(|e| e.1.write().unwrap().show_properties(&self.queryable, ui))
+            .is_none()
+        {
             let mut model = self.model.write().unwrap();
 
             (self.show_props_fun)(&mut model, &mut self.buffer, ui);
