@@ -122,15 +122,8 @@ pub trait ContainerModel<ModelT: ?Sized>: Model {
     fn add_element(&mut self, _: Arc<RwLock<ModelT>>);
 }
 
-pub trait KindedElement<'a> {
-    type DiagramType;
-
-    fn diagram(_: &'a Self::DiagramType) -> Self;
-    fn package() -> Self;
-}
-
 pub trait Tool<CommonElementT: ?Sized, QueryableT> {
-    type KindedElement<'a>: KindedElement<'a>;
+    type KindedElement<'a>;
     type Stage;
 
     fn initial_stage(&self) -> Self::Stage;
@@ -316,7 +309,7 @@ where
     ToolT: for<'a> Tool<
             ElementModelT,
             QueryableT,
-            KindedElement<'a>: KindedElement<'a, DiagramType = Self>,
+            KindedElement<'a>: From<&'a Self>,
         > + 'static,
 {
     fn uuid(&self) -> Arc<uuid::Uuid> {
@@ -567,7 +560,7 @@ where
                 canvas.draw_rectangle(
                     egui::Rect::EVERYTHING,
                     egui::Rounding::ZERO,
-                    tool.targetting_for_element(ToolT::KindedElement::diagram(&self)),
+                    tool.targetting_for_element(ToolT::KindedElement::from(self)),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -604,6 +597,7 @@ where
         self.owned_controllers.get(uuid).cloned()
     }
 }
+
 
 /*
 fn arrowhead_combo(ui: &mut egui::Ui, name: &str, val: &mut ArrowheadType) -> egui::Response {

@@ -5,7 +5,7 @@ use crate::common::controller::{
     ModifierKeys, TargettingStatus,
 };
 use crate::common::controller::{
-    ContainerGen2, DiagramControllerGen2, ElementControllerGen2, KindedElement, Tool,
+    ContainerGen2, DiagramControllerGen2, ElementControllerGen2, Tool,
 };
 use crate::common::observer::Observable;
 use crate::{CustomTab, NHApp};
@@ -522,19 +522,26 @@ pub enum KindedRdfElement<'a> {
     Predicate { inner: &'a RdfPredicateController },
 }
 
-impl<'a> KindedElement<'a> for KindedRdfElement<'a> {
-    type DiagramType = DiagramControllerGen2<
+impl<'a> From<&'a DiagramControllerGen2<
         RdfDiagram,
         dyn RdfElement,
         RdfQueryable,
         RdfDiagramBuffer,
         NaiveRdfTool,
-    >;
-
-    fn diagram(_: &'a Self::DiagramType) -> Self {
+    >> for KindedRdfElement<'a> {
+    fn from(from: &'a DiagramControllerGen2<
+        RdfDiagram,
+        dyn RdfElement,
+        RdfQueryable,
+        RdfDiagramBuffer,
+        NaiveRdfTool,
+    >) -> Self {
         Self::Diagram {}
     }
-    fn package() -> Self {
+}
+
+impl<'a> From<&'a RdfGraphController> for KindedRdfElement<'a> {
+    fn from(from: &'a RdfGraphController) -> Self {
         Self::Graph {}
     }
 }
@@ -991,7 +998,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::Rounding::ZERO,
-                    t.targetting_for_element(KindedRdfElement::Graph {}),
+                    t.targetting_for_element(KindedRdfElement::from(&*self)),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );

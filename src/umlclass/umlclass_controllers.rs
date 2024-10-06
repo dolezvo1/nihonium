@@ -5,7 +5,7 @@ use super::umlclass_models::{
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     ClickHandlingStatus, ContainerGen2, DiagramCommand, DiagramController, DiagramControllerGen2,
-    DragHandlingStatus, ElementController, ElementControllerGen2, KindedElement, ModifierKeys,
+    DragHandlingStatus, ElementController, ElementControllerGen2, ModifierKeys,
     TargettingStatus, Tool,
 };
 use crate::common::observer::Observable;
@@ -486,19 +486,26 @@ pub enum KindedUmlClassElement<'a> {
     Link { inner: &'a UmlClassLinkController },
 }
 
-impl<'a> KindedElement<'a> for KindedUmlClassElement<'a> {
-    type DiagramType = DiagramControllerGen2<
+impl<'a> From<&'a DiagramControllerGen2<
         UmlClassDiagram,
         dyn UmlClassElement,
         UmlClassQueryable,
         UmlClassDiagramBuffer,
         NaiveUmlClassTool,
-    >;
-
-    fn diagram(_: &'a Self::DiagramType) -> Self {
+    >> for KindedUmlClassElement<'a> {
+    fn from(from: &'a DiagramControllerGen2<
+        UmlClassDiagram,
+        dyn UmlClassElement,
+        UmlClassQueryable,
+        UmlClassDiagramBuffer,
+        NaiveUmlClassTool,
+    >) -> Self {
         Self::Diagram {}
     }
-    fn package() -> Self {
+}
+
+impl<'a> From<&'a UmlClassPackageController> for KindedUmlClassElement<'a> {
+    fn from(from: &'a UmlClassPackageController) -> Self {
         Self::Package {}
     }
 }
@@ -945,7 +952,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::Rounding::ZERO,
-                    t.targetting_for_element(KindedUmlClassElement::Package {}),
+                    t.targetting_for_element(KindedUmlClassElement::from(&*self)),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
