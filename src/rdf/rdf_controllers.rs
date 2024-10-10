@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, ArrowheadType, NHCanvas, NHShape, Stroke};
 use crate::common::controller::{
-    ClickHandlingStatus, DiagramCommand, DiagramController, DragHandlingStatus, ElementController,
+    ClickHandlingStatus, HighLevelCommand, DiagramController, DragHandlingStatus, ElementController,
     ModifierKeys, TargettingStatus,
 };
 use crate::common::controller::{
@@ -1021,7 +1021,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
     fn click(
         &mut self,
         tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<DiagramCommand>,
+        commands: &mut Vec<HighLevelCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1067,12 +1067,10 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
             } else if let Some((uc, status)) = uc_status {
                 if status == ClickHandlingStatus::HandledByElement {
                     if !modifiers.command {
-                        commands.push(DiagramCommand::UnselectAll);
-                        commands.push(DiagramCommand::Select(*uc.0));
-                    } else if self.selected_elements.contains(&uc.0) {
-                        commands.push(DiagramCommand::Unselect(*uc.0));
+                        commands.push(HighLevelCommand::SelectAll(false));
+                        commands.push(HighLevelCommand::Select(std::iter::once(*uc.0).collect(), true));
                     } else {
-                        commands.push(DiagramCommand::Select(*uc.0));
+                        commands.push(HighLevelCommand::Select(std::iter::once(*uc.0).collect(), !self.selected_elements.contains(&uc.0)));
                     }
                 }
                 return ClickHandlingStatus::HandledByContainer;
@@ -1086,7 +1084,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
     fn drag(
         &mut self,
         tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<DiagramCommand>,
+        commands: &mut Vec<HighLevelCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1118,8 +1116,8 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
         handled
     }
 
-    fn apply_command(&mut self, command: &DiagramCommand) {
-        fn recurse(this: &mut RdfGraphController, command: &DiagramCommand) {
+    fn apply_command(&mut self, command: &HighLevelCommand) {
+        fn recurse(this: &mut RdfGraphController, command: &HighLevelCommand) {
             for e in &this.owned_controllers {
                 let mut e = e.1.write().unwrap();
                 e.apply_command(command);
@@ -1127,43 +1125,46 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
         }
 
         match command {
-            DiagramCommand::SelectAll => {
-                self.highlight.selected = true;
-                self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect();
+            HighLevelCommand::SelectAll(select) => {
+                self.highlight.selected = *select;
+                match select {
+                    true => self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect(),
+                    false => self.selected_elements.clear(),
+                }
+                recurse(self, command);
+            },
+            HighLevelCommand::Select(uuids, select) => {
+                if uuids.contains(&*self.uuid()) {
+                    self.highlight.selected = *select;
+                }
+                
+                for uuid in self.owned_controllers.keys().filter(|k| uuids.contains(k)) {
+                    match select {
+                        true => self.selected_elements.insert(*uuid),
+                        false => self.selected_elements.remove(uuid),
+                    };
+                }
+                
                 recurse(self, command);
             }
-            DiagramCommand::UnselectAll => {
-                self.highlight.selected = false;
-                self.selected_elements.clear();
-                recurse(self, command);
-            }
-            DiagramCommand::Select(uuid) => {
-                if *self.uuid() == *uuid {
-                    self.highlight.selected = true;
-                } else if let Some(e) = self.owned_controllers.get(&uuid) {
-                    self.selected_elements.insert(*uuid);
-                    e.write().unwrap().apply_command(command);
-                } else {
-                    recurse(self, command);
-                }
-            }
-            DiagramCommand::Unselect(uuid) => {
-                if *self.uuid() == *uuid {
-                    self.highlight.selected = false;
-                } else if let Some(e) = self.owned_controllers.get(&uuid) {
-                    self.selected_elements.remove(uuid);
-                    e.write().unwrap().apply_command(command);
-                } else {
-                    recurse(self, command);
-                }
-            }
-            DiagramCommand::MoveSelectedElements(delta) => {
+            HighLevelCommand::MoveSelectedElements(delta) => {
                 if self.highlight.selected {
                     self.bounds_rect.set_center(self.position() + *delta);
                 } else {
                     recurse(self, command);
                 }
             }
+        }
+    }
+    
+    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
+        if self.highlight.selected {
+            into.insert(*self.uuid());
+        }
+        
+        for e in &self.owned_controllers {
+            let mut e = e.1.write().unwrap();
+            e.collect_all_selected_elements(into);
         }
     }
 }
@@ -1311,7 +1312,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
     fn click(
         &mut self,
         tool: &mut Option<NaiveRdfTool>,
-        _commands: &mut Vec<DiagramCommand>,
+        _commands: &mut Vec<HighLevelCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1328,7 +1329,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
     fn drag(
         &mut self,
         _tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<DiagramCommand>,
+        commands: &mut Vec<HighLevelCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1337,7 +1338,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
         }
 
         if self.highlight.selected {
-            commands.push(DiagramCommand::MoveSelectedElements(delta));
+            commands.push(HighLevelCommand::MoveSelectedElements(delta));
         } else {
             self.position += delta;
         }
@@ -1345,27 +1346,27 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
         DragHandlingStatus::Handled
     }
 
-    fn apply_command(&mut self, command: &DiagramCommand) {
+    fn apply_command(&mut self, command: &HighLevelCommand) {
         match command {
-            DiagramCommand::SelectAll => {
-                self.highlight.selected = true;
+            HighLevelCommand::SelectAll(select) => {
+                self.highlight.selected = *select;
             }
-            DiagramCommand::UnselectAll => self.highlight.selected = false,
-            DiagramCommand::Select(uuid) => {
-                if *self.uuid() == *uuid {
-                    self.highlight.selected = true;
+            HighLevelCommand::Select(uuids, select) => {
+                if uuids.contains(&*self.uuid()) {
+                    self.highlight.selected = *select;
                 }
             }
-            DiagramCommand::Unselect(uuid) => {
-                if *self.uuid() == *uuid {
-                    self.highlight.selected = false;
-                }
-            }
-            DiagramCommand::MoveSelectedElements(delta) => {
+            HighLevelCommand::MoveSelectedElements(delta) => {
                 if self.highlight.selected {
                     self.position += *delta;
                 }
             }
+        }
+    }
+    
+    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
+        if self.highlight.selected {
+            into.insert(*self.uuid());
         }
     }
 }
@@ -1502,7 +1503,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
     fn click(
         &mut self,
         tool: &mut Option<NaiveRdfTool>,
-        _commands: &mut Vec<DiagramCommand>,
+        _commands: &mut Vec<HighLevelCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1519,7 +1520,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
     fn drag(
         &mut self,
         _tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<DiagramCommand>,
+        commands: &mut Vec<HighLevelCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1528,7 +1529,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
         }
 
         if self.highlight.selected {
-            commands.push(DiagramCommand::MoveSelectedElements(delta));
+            commands.push(HighLevelCommand::MoveSelectedElements(delta));
         } else {
             self.position += delta;
         }
@@ -1536,27 +1537,27 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
         DragHandlingStatus::Handled
     }
 
-    fn apply_command(&mut self, command: &DiagramCommand) {
+    fn apply_command(&mut self, command: &HighLevelCommand) {
         match command {
-            DiagramCommand::SelectAll => {
-                self.highlight.selected = true;
+            HighLevelCommand::SelectAll(select) => {
+                self.highlight.selected = *select;
             }
-            DiagramCommand::UnselectAll => self.highlight.selected = false,
-            DiagramCommand::Select(uuid) => {
-                if *self.uuid() == *uuid {
-                    self.highlight.selected = true;
+            HighLevelCommand::Select(uuids, select) => {
+                if uuids.contains(&*self.uuid()) {
+                    self.highlight.selected = *select;
                 }
             }
-            DiagramCommand::Unselect(uuid) => {
-                if *self.uuid() == *uuid {
-                    self.highlight.selected = false;
-                }
-            }
-            DiagramCommand::MoveSelectedElements(delta) => {
+            HighLevelCommand::MoveSelectedElements(delta) => {
                 if self.highlight.selected {
                     self.position += *delta;
                 }
             }
+        }
+    }
+    
+    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
+        if self.highlight.selected {
+            into.insert(*self.uuid());
         }
     }
 }
@@ -1718,7 +1719,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
     fn click(
         &mut self,
         _tool: &mut Option<NaiveRdfTool>,
-        _commands: &mut Vec<DiagramCommand>,
+        _commands: &mut Vec<HighLevelCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1736,7 +1737,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
     fn drag(
         &mut self,
         _tool: &mut Option<NaiveRdfTool>,
-        _commands: &mut Vec<DiagramCommand>,
+        _commands: &mut Vec<HighLevelCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1752,23 +1753,17 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
         DragHandlingStatus::NotHandled
     }
 
-    fn apply_command(&mut self, command: &DiagramCommand) {
+    fn apply_command(&mut self, command: &HighLevelCommand) {
         match command {
-            DiagramCommand::SelectAll => {
-                self.highlight.selected = true;
+            HighLevelCommand::SelectAll(select) => {
+                self.highlight.selected = *select;
             }
-            DiagramCommand::UnselectAll => self.highlight.selected = false,
-            DiagramCommand::Select(uuid) => {
-                if *self.uuid() == *uuid {
-                    self.highlight.selected = true;
+            HighLevelCommand::Select(uuids, select) => {
+                if uuids.contains(&*self.uuid()) {
+                    self.highlight.selected = *select;
                 }
             }
-            DiagramCommand::Unselect(uuid) => {
-                if *self.uuid() == *uuid {
-                    self.highlight.selected = false;
-                }
-            }
-            DiagramCommand::MoveSelectedElements(delta) => {
+            HighLevelCommand::MoveSelectedElements(delta) => {
                 if self.highlight.selected {
                     if let Some(center_point) = self.center_point.as_mut() {
                         *center_point += *delta;
@@ -1787,6 +1782,12 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
                     }
                 }
             }
+        }
+    }
+    
+    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
+        if self.highlight.selected {
+            into.insert(*self.uuid());
         }
     }
 }

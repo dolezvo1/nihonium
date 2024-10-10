@@ -726,20 +726,21 @@ impl eframe::App for NHApp {
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    /*
+                    // TODO: implement
                     if ui.button("New Project").clicked() {
-                        println!("yes");
+                        println!("TODO");
                     }
+                    // TODO: implement
                     if ui.button("Open Project").clicked() {
-                        println!("yes");
+                        println!("TODO");
                     }
+                    // TODO: implement
                     ui.menu_button("Recent Projects", |ui| {
                         if ui.button("asdf").clicked() {
-                            println!("yes");
+                            println!("TODO");
                         }
                     });
                     ui.separator();
-                    */
 
                     ui.menu_button("Add New Diagram", |ui| {
                         type NDC =
@@ -787,6 +788,13 @@ impl eframe::App for NHApp {
                     }
                     */
                 });
+                
+                ui.menu_button("Edit", |ui| {
+                    if let Some(d) = self.context.last_focused_diagram() {
+                        let mut d = d.write().unwrap();
+                        d.show_menubar_edit_options(self, ui);
+                    }
+                });
 
                 ui.menu_button("View", |_ui| {
                     /*
@@ -800,7 +808,7 @@ impl eframe::App for NHApp {
                     self.context.last_focused_diagram().map(|e| {
                         let mut controller = e.write().unwrap();
 
-                        controller.show_menubar_options(self, ui);
+                        controller.show_menubar_diagram_options(self, ui);
 
                         ui.menu_button(
                             format!("Export Diagram `{}` to", controller.model_name()),

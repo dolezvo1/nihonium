@@ -21,7 +21,8 @@ pub trait DiagramController: Any {
     fn show_toolbar(&mut self, ui: &mut egui::Ui);
     fn show_properties(&mut self, ui: &mut egui::Ui);
     fn show_layers(&self, ui: &mut egui::Ui);
-    fn show_menubar_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui);
+    fn show_menubar_edit_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui);
+    fn show_menubar_diagram_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui);
     fn list_in_project_hierarchy(&self, ui: &mut egui::Ui);
 
     // This hurts me at least as much as it hurts you
@@ -105,12 +106,60 @@ pub enum DragHandlingStatus {
 }
 
 #[derive(PartialEq, Debug)]
-pub enum DiagramCommand {
-    SelectAll,
-    UnselectAll,
-    Select(uuid::Uuid),
-    Unselect(uuid::Uuid),
+pub enum HighLevelCommand {
+    SelectAll(bool),
+    Select(HashSet<uuid::Uuid>, bool),
     MoveSelectedElements(egui::Vec2),
+}
+
+impl HighLevelCommand {
+    fn to_revertible(&self, all_selected_elements: &HashSet<uuid::Uuid>) -> Option<RevertibleCommand> {
+        match self {
+            HighLevelCommand::SelectAll(..)
+            | HighLevelCommand::Select(..) => None,
+            HighLevelCommand::MoveSelectedElements(delta) => Some(RevertibleCommand::MoveElements(all_selected_elements.clone(), *delta)),
+        }
+    }
+}
+
+#[derive(PartialEq, Debug)]
+pub enum RevertibleCommand {
+    MoveElements(HashSet<uuid::Uuid>, egui::Vec2),
+}
+
+impl RevertibleCommand {
+    fn merge(&self, other: &Self) -> Option<Self> {
+        match (self, other) {
+            (RevertibleCommand::MoveElements(uuids1, delta1), RevertibleCommand::MoveElements(uuids2, delta2)) if uuids1 == uuids2 => {
+                Some(RevertibleCommand::MoveElements(uuids1.clone(), *delta1 + *delta2))
+            }
+            _ => { None }
+        }
+    }
+    
+    fn info_text(&self) -> String {
+        match self {
+            RevertibleCommand::MoveElements(uuids, delta) => format!("Move {} elements", uuids.len()),
+        }
+    }
+    
+    fn inverse(&self) -> Self {
+        match self {
+            RevertibleCommand::MoveElements(uuids, delta) => RevertibleCommand::MoveElements(uuids.clone(), -*delta),
+        }
+    }
+    
+    fn to_high_level(&self) -> Vec<HighLevelCommand> {
+        match self {
+            RevertibleCommand::MoveElements(uuids, delta) => {
+                vec![
+                    HighLevelCommand::SelectAll(false),
+                    HighLevelCommand::Select(uuids.clone(), true),
+                    HighLevelCommand::MoveSelectedElements(*delta)
+                ]
+            }
+        }
+    }
 }
 
 pub trait Model: 'static {
@@ -160,18 +209,19 @@ where
     fn click(
         &mut self,
         tool: &mut Option<ToolT>,
-        commands: &mut Vec<DiagramCommand>,
+        commands: &mut Vec<HighLevelCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus;
     fn drag(
         &mut self,
         tool: &mut Option<ToolT>,
-        commands: &mut Vec<DiagramCommand>,
+        commands: &mut Vec<HighLevelCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus;
-    fn apply_command(&mut self, command: &DiagramCommand);
+    fn apply_command(&mut self, command: &HighLevelCommand);
+    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>);
 }
 
 pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT> {
@@ -205,7 +255,12 @@ pub struct DiagramControllerGen2<
     pub camera_scale: f32,
     last_unhandled_mouse_pos: Option<egui::Pos2>,
     selected_elements: HashSet<uuid::Uuid>,
+    all_selected_elements: HashSet<uuid::Uuid>,
     current_tool: Option<ToolT>,
+    undo_stack: Vec<RevertibleCommand>,
+    redo_stack: Vec<RevertibleCommand>,
+    undo_shortcut: egui::KeyboardShortcut,
+    redo_shortcut: egui::KeyboardShortcut,
 
     // q: dyn Fn(&Vec<DomainElementT>) -> QueryableT,
     queryable: QueryableT,
@@ -248,7 +303,12 @@ where
             camera_scale: 1.0,
             last_unhandled_mouse_pos: None,
             selected_elements: HashSet::new(),
+            all_selected_elements: HashSet::new(),
             current_tool: None,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            undo_shortcut: egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z),
+            redo_shortcut: egui::KeyboardShortcut::new(egui::Modifiers{ alt: false, ctrl: false, shift: true, mac_cmd: false, command: true }, egui::Key::Z),
 
             queryable,
             buffer,
@@ -262,37 +322,65 @@ where
         self.model.clone()
     }
 
-    fn apply_commands(&mut self, commands: Vec<DiagramCommand>) {
+    fn apply_commands(&mut self, commands: Vec<HighLevelCommand>, save_to_undo_stack: bool) {
         for command in &commands {
             match command {
-                DiagramCommand::SelectAll => {
-                    self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect();
-                },
-                DiagramCommand::UnselectAll => {
-                    self.selected_elements.clear();
-                },
-                DiagramCommand::Select(uuid) => {
-                    if let Some(e) = self.owned_controllers.get(&uuid) {
-                        self.selected_elements.insert(*uuid);
-                        e.write().unwrap().apply_command(command);
-                        continue;
+                HighLevelCommand::SelectAll(select) => {
+                    match select {
+                        true => self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect(),
+                        false => self.selected_elements.clear(),
                     }
                 },
-                DiagramCommand::Unselect(uuid) => {
-                    if let Some(e) = self.owned_controllers.get(&uuid) {
-                        self.selected_elements.remove(uuid);
-                        e.write().unwrap().apply_command(command);
-                        continue;
+                HighLevelCommand::Select(uuids, select) => {
+                    for uuid in self.owned_controllers.keys().filter(|k| uuids.contains(k)) {
+                        match select {
+                            true => self.selected_elements.insert(*uuid),
+                            false => self.selected_elements.remove(uuid),
+                        };
                     }
                 },
-                DiagramCommand::MoveSelectedElements(_) => {},
+                HighLevelCommand::MoveSelectedElements(_) => {},
             }
         
             for e in &self.owned_controllers {
                 let mut e = e.1.write().unwrap();
                 e.apply_command(command);
             }
+            
+            if let Some(revertible) = command.to_revertible(&self.all_selected_elements).filter(|_| save_to_undo_stack) {
+                if let Some(merged) = self.undo_stack.last().and_then(|e| e.merge(&revertible)) {
+                    *self.undo_stack.last_mut().unwrap() = merged;
+                } else {
+                    self.undo_stack.push(revertible);
+                }
+            }
+            
+            match command {
+                HighLevelCommand::SelectAll(..)
+                | HighLevelCommand::Select(..) => {
+                    self.all_selected_elements = HashSet::new();
+                    for (_, c) in &self.owned_controllers {
+                        let mut c = c.write().unwrap();
+                        c.collect_all_selected_elements(&mut self.all_selected_elements);
+                    }
+                },
+                HighLevelCommand::MoveSelectedElements(_) => {},
+            }
         }
+    }
+    
+    fn undo(&mut self, n: usize) {
+        let n = n.min(self.undo_stack.len());
+        let commands: Vec<_> = self.undo_stack.drain(self.undo_stack.len() - n..).rev().collect();
+        self.apply_commands(commands.iter().flat_map(|e| e.inverse().to_high_level()).collect(), false);
+        self.redo_stack.extend(commands);
+    }
+    
+    fn redo(&mut self, n: usize) {
+        let n = n.min(self.redo_stack.len());
+        let commands: Vec<_> = self.redo_stack.drain(self.redo_stack.len() - n..).rev().collect();
+        self.apply_commands(commands.iter().flat_map(|e| e.to_high_level()).collect(), false);
+        self.undo_stack.extend(commands);
     }
 }
 
@@ -360,7 +448,13 @@ where
     }
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response) {
         // Handle camera and element clicks/drags
-        if response.clicked() {
+        
+        // TODO: This is generally wrong. Depends on redo_shortcut not being a subset of undo_shortcut.
+        if ui.input_mut(|i| i.consume_shortcut(&self.redo_shortcut)) {
+            self.redo(1);
+        } else if ui.input_mut(|i| i.consume_shortcut(&self.undo_shortcut)) {
+            self.undo(1);
+        } else if response.clicked() {
             if let Some(pos) = ui.ctx().pointer_interact_pos() {
                 self.click(
                     ((pos - self.camera_offset - response.rect.min.to_vec2()) / self.camera_scale)
@@ -430,13 +524,11 @@ where
                 ) {
                     ClickHandlingStatus::HandledByElement => {
                         if !modifiers.command {
-                            commands.push(DiagramCommand::UnselectAll);
-                            commands.push(DiagramCommand::Select(*uc.0));
-                        } else if self.selected_elements.contains(&uc.0) {
-                            commands.push(DiagramCommand::Unselect(*uc.0));
+                            commands.push(HighLevelCommand::SelectAll(false));
+                            commands.push(HighLevelCommand::Select(std::iter::once(*uc.0).collect(), true));
                         } else {
-                            commands.push(DiagramCommand::Select(*uc.0));
-                        };
+                            commands.push(HighLevelCommand::Select(std::iter::once(*uc.0).collect(), !self.selected_elements.contains(&uc.0)));
+                        }
                         ClickHandlingStatus::HandledByContainer
                     }
                     a => a,
@@ -444,11 +536,11 @@ where
             })
             .find(|e| *e == ClickHandlingStatus::HandledByContainer)
             .ok_or_else(|| {
-                commands.push(DiagramCommand::UnselectAll);
+                commands.push(HighLevelCommand::SelectAll(false));
             })
             .is_ok();
 
-        self.apply_commands(commands);
+        self.apply_commands(commands, true);
 
         if !handled {
             if let Some(t) = self.current_tool.as_mut() {
@@ -487,7 +579,7 @@ where
             })
             .is_some();
 
-        self.apply_commands(commands);
+        self.apply_commands(commands, true);
 
         ret
     }
@@ -513,7 +605,39 @@ where
     fn show_layers(&self, _ui: &mut egui::Ui) {
         // TODO: Layers???
     }
-    fn show_menubar_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui) {
+    fn show_menubar_edit_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui) {
+        ui.menu_button("Undo", |ui| {
+            for (ii, c) in self.undo_stack.iter().rev().enumerate() {
+                if ui.button(c.info_text()).clicked() {
+                    self.undo(ii+1);
+                    break;
+                }
+            }
+        });
+        ui.menu_button("Redo", |ui| {
+            for (ii, c) in self.redo_stack.iter().rev().enumerate() {
+                if ui.button(c.info_text()).clicked() {
+                    self.redo(ii+1);
+                    break;
+                }
+            }
+        });
+        ui.separator();
+        
+        // TODO: implement
+        if ui.button("Cut").clicked() {
+            println!("no");
+        }
+        // TODO: implement
+        if ui.button("Copy").clicked() {
+            println!("no");
+        }
+        // TODO: implement
+        if ui.button("Paste").clicked() {
+            println!("no");
+        }
+    }
+    fn show_menubar_diagram_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui) {
         (self.menubar_options_fun)(self, context, ui);
     }
 
