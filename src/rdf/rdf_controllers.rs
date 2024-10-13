@@ -385,8 +385,9 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 
         highlight: canvas::Highlight::NONE,
         center_point: None,
-        source_points: vec![vec![egui::Pos2::ZERO]],
-        dest_points: vec![vec![egui::Pos2::ZERO]],
+        selected_vertices: HashSet::new(),
+        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
     }));
 
     let graph_uuid = uuid::Uuid::now_v7();
@@ -795,8 +796,9 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
 
                         highlight: canvas::Highlight::NONE,
                         center_point: None,
-                        source_points: vec![vec![egui::Pos2::ZERO]],
-                        dest_points: vec![vec![egui::Pos2::ZERO]],
+                        selected_vertices: HashSet::new(),
+                        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+                        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
                     })))
                 } else {
                     None
@@ -1572,16 +1574,17 @@ pub struct RdfPredicateController {
         Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool>>>,
 
     highlight: canvas::Highlight,
-    pub center_point: Option<egui::Pos2>,
-    pub source_points: Vec<Vec<egui::Pos2>>,
-    pub dest_points: Vec<Vec<egui::Pos2>>,
+    selected_vertices: HashSet<uuid::Uuid>,
+    pub center_point: Option<(uuid::Uuid, egui::Pos2)>,
+    pub source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
+    pub dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
 }
 
 impl RdfPredicateController {
-    fn sources(&mut self) -> &mut [Vec<egui::Pos2>] {
+    fn sources(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>] {
         &mut self.source_points
     }
-    fn destinations(&mut self) -> &mut [Vec<egui::Pos2>] {
+    fn destinations(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>] {
         &mut self.dest_points
     }
 }
@@ -1608,8 +1611,8 @@ impl ElementController<dyn RdfElement> for RdfPredicateController {
 
     fn position(&self) -> egui::Pos2 {
         match &self.center_point {
-            Some(point) => *point,
-            None => (self.source_points[0][0] + self.dest_points[0][0].to_vec2()) / 2.0,
+            Some(point) => point.1,
+            None => (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
         }
     }
 }
@@ -1680,6 +1683,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
                     .get(1)
                     .map(|e| *e)
                     .or(self.center_point)
+                    .map(|e| e.1)
                     .unwrap_or(dest_pos),
             ),
             dest_bounds.center_intersect(
@@ -1687,13 +1691,15 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
                     .get(1)
                     .map(|e| *e)
                     .or(self.center_point)
+                    .map(|e| e.1)
                     .unwrap_or(source_pos),
             ),
         ) {
             (Some(source_intersect), Some(dest_intersect)) => {
-                self.source_points[0][0] = source_intersect;
-                self.dest_points[0][0] = dest_intersect;
+                self.source_points[0][0].1 = source_intersect;
+                self.dest_points[0][0].1 = dest_intersect;
                 canvas.draw_multiconnection(
+                    &self.selected_vertices,
                     &[(
                         ArrowheadType::None,
                         Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1706,7 +1712,10 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
                         &self.dest_points[0],
                         None,
                     )],
-                    self.position(),
+                    match &self.center_point {
+                        Some(point) => *point,
+                        None => (uuid::Uuid::nil(), (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0),
+                    },
                     Some(&self.model.read().unwrap().iri),
                     self.highlight,
                 );
@@ -1719,17 +1728,15 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
     fn click(
         &mut self,
         _tool: &mut Option<NaiveRdfTool>,
-        _commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<HighLevelCommand>,
         pos: egui::Pos2,
-        _modifiers: ModifierKeys,
+        modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
         crate::common::controller::macros::multiconnection_element_click!(
             self,
             pos,
-            delta,
-            center_point,
-            sources,
-            destinations,
+            modifiers,
+            commands,
             ClickHandlingStatus::HandledByElement
         );
         ClickHandlingStatus::NotHandled
@@ -1757,27 +1764,89 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
         match command {
             HighLevelCommand::SelectAll(select) => {
                 self.highlight.selected = *select;
+                match select {
+                    false => self.selected_vertices.clear(),
+                    true => {
+                        if let Some(center_point) = self.center_point.as_ref() {
+                            self.selected_vertices.insert(center_point.0);
+                        }
+
+                        for path in self.source_points.iter() {
+                            for p in path.iter() {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+
+                        for path in self.dest_points.iter() {
+                            for p in path.iter() {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+                    }
+                }
             }
             HighLevelCommand::Select(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
+                match select {
+                    false => self.selected_vertices.retain(|e| !uuids.contains(e)),
+                    true => {
+                        if let Some(center_point) = self.center_point.as_ref().filter(|e| uuids.contains(&e.0)) {
+                            self.selected_vertices.insert(center_point.0);
+                        }
+
+                        for path in self.source_points.iter() {
+                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+
+                        for path in self.dest_points.iter() {
+                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+                    }
+                }
             }
             HighLevelCommand::MoveSelectedElements(delta) => {
                 if self.highlight.selected {
                     if let Some(center_point) = self.center_point.as_mut() {
-                        *center_point += *delta;
+                        center_point.1 += *delta;
                     }
 
                     for path in self.source_points.iter_mut() {
                         for p in path.iter_mut() {
-                            *p += *delta;
+                            p.1 += *delta;
                         }
                     }
 
                     for path in self.dest_points.iter_mut() {
                         for p in path.iter_mut() {
-                            *p += *delta;
+                            p.1 += *delta;
+                        }
+                    }
+                } else {
+                    if let Some(center_point) = self.center_point.as_mut()
+                        .filter(|e| self.selected_vertices.contains(&e.0))
+                    {
+                        center_point.1 += *delta;
+                    }
+                    
+                    for path in self.source_points.iter_mut() {
+                        for p in path.iter_mut() {
+                            if self.selected_vertices.contains(&p.0) {
+                                p.1 += *delta;
+                            }
+                        }
+                    }
+                    
+                    for path in self.dest_points.iter_mut() {
+                        for p in path.iter_mut() {
+                            if self.selected_vertices.contains(&p.0) {
+                                p.1 += *delta;
+                            }
                         }
                     }
                 }
@@ -1788,6 +1857,9 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPr
     fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
         if self.highlight.selected {
             into.insert(*self.uuid());
+        }
+        for e in &self.selected_vertices {
+            into.insert(*e);
         }
     }
 }

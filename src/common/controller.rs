@@ -754,11 +754,13 @@ pub mod macros {
                 $self.source_points[0]
                     .get(1)
                     .map(|e| *e)
-                    .or($self.center_point),
+                    .or($self.center_point)
+                    .map(|e| e.1),
                 $self.dest_points[0]
                     .get(1)
                     .map(|e| *e)
-                    .or($self.center_point),
+                    .or($self.center_point)
+                    .map(|e| e.1),
             ) {
                 (None, None) => {
                     let pos_avg = (source_pos + dest_pos.to_vec2()) / 2.0;
@@ -779,9 +781,10 @@ pub mod macros {
                     .or_else(|| dest_bounds.center_intersect(dest_next_point)),
             ) {
                 (Some(source_intersect), Some(dest_intersect)) => {
-                    $self.source_points[0][0] = source_intersect;
-                    $self.dest_points[0][0] = dest_intersect;
+                    $self.source_points[0][0].1 = source_intersect;
+                    $self.dest_points[0][0].1 = dest_intersect;
                     $canvas.draw_multiconnection(
+                        &$self.selected_vertices,
                         &[(
                             model.link_type.source_arrowhead_type(),
                             crate::common::canvas::Stroke {
@@ -802,7 +805,10 @@ pub mod macros {
                             &$self.dest_points[0],
                             Some(&model.destination_arrowhead_label),
                         )],
-                        $self.position(),
+                        match &$self.center_point {
+                            Some(point) => *point,
+                            None => (uuid::Uuid::nil(), ($self.source_points[0][0].1 + $self.dest_points[0][0].1.to_vec2()) / 2.0),
+                        },
                         None,
                         $self.highlight,
                     );
@@ -814,12 +820,47 @@ pub mod macros {
     pub(crate) use multiconnection_draw_in;
 
     // center_point: Option<egui::Pos2>
-    // fn sources(&mut self) -> &mut [Vec<egui::Pos2>];
-    // fn destinations(&mut self) -> &mut [Vec<egui::Pos2>];
+    // fn sources(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>];
+    // fn destinations(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>];
     macro_rules! multiconnection_element_click {
-        ($self:ident, $last_pos:ident, $delta:ident, $center_point:ident, $sources:ident, $destinations:ident, $ret:expr) => {
+        ($self:ident, $last_pos:ident, $modifiers:ident, $commands:ident, $ret:expr) => {
             const DISTANCE_THRESHOLD: f32 = 3.0;
 
+            macro_rules! handle_vertex {
+                ($uuid:expr) => {
+                    if !$modifiers.command {
+                        $commands.push(HighLevelCommand::SelectAll(false));
+                        $commands.push(HighLevelCommand::Select(std::iter::once(*$uuid).collect(), true));
+                    } else {
+                        $commands.push(HighLevelCommand::Select(std::iter::once(*$uuid).collect(), !$self.selected_vertices.contains($uuid)));
+                    }
+                    return ClickHandlingStatus::HandledByContainer;
+                }
+            }
+            
+            fn is_over(a: egui::Pos2, b: egui::Pos2) -> bool {
+                a.distance(b) <= DISTANCE_THRESHOLD
+            }
+            
+            if let Some((uuid, _)) = $self.center_point.as_ref().filter(|e| is_over($last_pos, e.1)) {
+                handle_vertex!(uuid);
+            }
+            
+            macro_rules! check_joints {
+                ($v:ident) => {
+                    for path in &$self.$v {
+                        let stop_idx = path.len();
+                        for joint in &path[1..stop_idx] {
+                            if is_over($last_pos, joint.1) {
+                                handle_vertex!(&joint.0);
+                            }
+                        }
+                    }
+                };
+            }
+            check_joints!(source_points);
+            check_joints!(dest_points);
+            
             fn dist_to_line_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
                 fn dist2(a: egui::Pos2, b: egui::Pos2) -> f32 {
                     (a.x - b.x).powf(2.0) + (a.y - b.y).powf(2.0)
@@ -852,7 +893,7 @@ pub mod macros {
                                 break;
                             };
 
-                            if dist_to_line_segment($last_pos, u, v) <= DISTANCE_THRESHOLD {
+                            if dist_to_line_segment($last_pos, u.1, v.1) <= DISTANCE_THRESHOLD {
                                 return $ret;
                             }
                         }
@@ -865,14 +906,14 @@ pub mod macros {
             // In case there is no center_point, also check all-to-all of last points
             if $self.center_point == None {
                 // TODO: this shouldn't have to clone, but probably not that big of a deal
-                let destinations: Vec<egui::Pos2> = $self
+                let destinations: Vec<(uuid::Uuid, egui::Pos2)> = $self
                     .destinations()
                     .iter()
                     .flat_map(|e| e.last().cloned())
                     .collect();
                 for u in $self.sources().iter().flat_map(|e| e.last()) {
                     for v in &destinations {
-                        if dist_to_line_segment($last_pos, *u, *v) <= DISTANCE_THRESHOLD {
+                        if dist_to_line_segment($last_pos, u.1, v.1) <= DISTANCE_THRESHOLD {
                             return $ret;
                         }
                     }
@@ -893,8 +934,8 @@ pub mod macros {
             match $self.center_point {
                 // Check whether over center point, if so move it
                 Some(pos) => {
-                    if is_over($last_pos, pos) {
-                        $self.center_point = Some(pos + $delta);
+                    if is_over($last_pos, pos.1) {
+                        $self.center_point = Some((pos.0, pos.1 + $delta));
                         return $ret;
                     }
                 }
@@ -903,20 +944,21 @@ pub mod macros {
                     // TODO: this is generally wrong (why??)
                     let midpoint = $self.position();
                     if is_over($last_pos, midpoint) {
-                        $self.center_point = Some(midpoint + $delta);
+                        $self.center_point = Some((uuid::Uuid::now_v7(), midpoint + $delta));
                         return $ret;
                     }
                 }
             }
 
             // Check whether over a joint, if so move it
+            // TODO: make revertible
             macro_rules! check_joints {
                 ($v:ident) => {
                     for path in $self.$v() {
                         let stop_idx = path.len();
                         for joint in &mut path[1..stop_idx] {
-                            if is_over($last_pos, *joint) {
-                                *joint += $delta;
+                            if is_over($last_pos, joint.1) {
+                                joint.1 += $delta;
                                 return $ret;
                             }
                         }
@@ -945,9 +987,9 @@ pub mod macros {
                                 break;
                             };
 
-                            let midpoint = (u + v.to_vec2()) / 2.0;
+                            let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
                             if is_over($last_pos, midpoint) {
-                                path.insert(idx + 1, midpoint + $delta);
+                                path.insert(idx + 1, (uuid::Uuid::now_v7(), midpoint + $delta));
                                 return $ret;
                             }
                         }

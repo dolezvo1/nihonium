@@ -273,8 +273,9 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 
         highlight: canvas::Highlight::NONE,
         center_point: None,
-        source_points: vec![vec![egui::Pos2::ZERO]],
-        dest_points: vec![vec![egui::Pos2::ZERO]],
+        selected_vertices: HashSet::new(),
+        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
     }));
 
     let association_cfy_uuid = uuid::Uuid::now_v7();
@@ -294,8 +295,9 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 
         highlight: canvas::Highlight::NONE,
         center_point: None,
-        source_points: vec![vec![egui::Pos2::ZERO]],
-        dest_points: vec![vec![egui::Pos2::ZERO]],
+        selected_vertices: HashSet::new(),
+        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
     }));
 
     let class_client_uuid = uuid::Uuid::now_v7();
@@ -333,9 +335,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         comment_buffer: "".to_owned(),
 
         highlight: canvas::Highlight::NONE,
-        center_point: Some(egui::Pos2::new(200.0, 50.0)),
-        source_points: vec![vec![egui::Pos2::ZERO]],
-        dest_points: vec![vec![egui::Pos2::ZERO]],
+        center_point: Some((uuid::Uuid::now_v7(), egui::Pos2::new(200.0, 50.0))),
+        selected_vertices: HashSet::new(),
+        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
     }));
 
     let class_producta_uuid = uuid::Uuid::now_v7();
@@ -373,9 +376,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         comment_buffer: "".to_owned(),
 
         highlight: canvas::Highlight::NONE,
-        center_point: Some(egui::Pos2::new(450.0, 52.0)),
-        source_points: vec![vec![egui::Pos2::ZERO]],
-        dest_points: vec![vec![egui::Pos2::ZERO]],
+        center_point: Some((uuid::Uuid::now_v7(), egui::Pos2::new(450.0, 52.0))),
+        selected_vertices: HashSet::new(),
+        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
     }));
 
     let class_productb_uuid = uuid::Uuid::now_v7();
@@ -413,9 +417,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         comment_buffer: "".to_owned(),
 
         highlight: canvas::Highlight::NONE,
-        center_point: Some(egui::Pos2::new(650.0, 48.0)),
-        source_points: vec![vec![egui::Pos2::ZERO]],
-        dest_points: vec![vec![egui::Pos2::ZERO]],
+        center_point: Some((uuid::Uuid::now_v7(), egui::Pos2::new(650.0, 48.0))),
+        selected_vertices: HashSet::new(),
+        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
     }));
 
     let mut owned_controllers = HashMap::<
@@ -759,8 +764,9 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
 
                         highlight: canvas::Highlight::NONE,
                         center_point: None,
-                        source_points: vec![vec![egui::Pos2::ZERO]],
-                        dest_points: vec![vec![egui::Pos2::ZERO]],
+                        selected_vertices: HashSet::new(),
+                        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+                        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
                     })))
                 } else {
                     None
@@ -1403,16 +1409,17 @@ pub struct UmlClassLinkController {
     comment_buffer: String,
 
     highlight: canvas::Highlight,
-    pub center_point: Option<egui::Pos2>,
-    pub source_points: Vec<Vec<egui::Pos2>>,
-    pub dest_points: Vec<Vec<egui::Pos2>>,
+    selected_vertices: HashSet<uuid::Uuid>,
+    pub center_point: Option<(uuid::Uuid, egui::Pos2)>,
+    pub source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
+    pub dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
 }
 
 impl UmlClassLinkController {
-    fn sources(&mut self) -> &mut [Vec<egui::Pos2>] {
+    fn sources(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>] {
         &mut self.source_points
     }
-    fn destinations(&mut self) -> &mut [Vec<egui::Pos2>] {
+    fn destinations(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>] {
         &mut self.dest_points
     }
 }
@@ -1439,8 +1446,8 @@ impl ElementController<dyn UmlClassElement> for UmlClassLinkController {
 
     fn position(&self) -> egui::Pos2 {
         match &self.center_point {
-            Some(point) => *point,
-            None => (self.source_points[0][0] + self.dest_points[0][0].to_vec2()) / 2.0,
+            Some(point) => point.1,
+            None => (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
         }
     }
 }
@@ -1537,17 +1544,15 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn click(
         &mut self,
         _tool: &mut Option<NaiveUmlClassTool>,
-        _commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<HighLevelCommand>,
         pos: egui::Pos2,
-        _modifiers: ModifierKeys,
+        modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
         crate::common::controller::macros::multiconnection_element_click!(
             self,
             pos,
-            delta,
-            center_point,
-            sources,
-            destinations,
+            modifiers,
+            commands,
             ClickHandlingStatus::HandledByElement
         );
         ClickHandlingStatus::NotHandled
@@ -1575,27 +1580,89 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         match command {
             HighLevelCommand::SelectAll(select) => {
                 self.highlight.selected = *select;
+                match select {
+                    false => self.selected_vertices.clear(),
+                    true => {
+                        if let Some(center_point) = self.center_point.as_ref() {
+                            self.selected_vertices.insert(center_point.0);
+                        }
+
+                        for path in self.source_points.iter() {
+                            for p in path.iter() {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+
+                        for path in self.dest_points.iter() {
+                            for p in path.iter() {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+                    }
+                }
             }
             HighLevelCommand::Select(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
+                match select {
+                    false => self.selected_vertices.retain(|e| !uuids.contains(e)),
+                    true => {
+                        if let Some(center_point) = self.center_point.as_ref().filter(|e| uuids.contains(&e.0)) {
+                            self.selected_vertices.insert(center_point.0);
+                        }
+
+                        for path in self.source_points.iter() {
+                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+
+                        for path in self.dest_points.iter() {
+                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+                    }
+                }
             }
             HighLevelCommand::MoveSelectedElements(delta) => {
                 if self.highlight.selected {
                     if let Some(center_point) = self.center_point.as_mut() {
-                        *center_point += *delta;
+                        center_point.1 += *delta;
                     }
 
                     for path in self.source_points.iter_mut() {
                         for p in path.iter_mut() {
-                            *p += *delta;
+                            p.1 += *delta;
                         }
                     }
 
                     for path in self.dest_points.iter_mut() {
                         for p in path.iter_mut() {
-                            *p += *delta;
+                            p.1 += *delta;
+                        }
+                    }
+                } else {
+                    if let Some(center_point) = self.center_point.as_mut()
+                        .filter(|e| self.selected_vertices.contains(&e.0))
+                    {
+                        center_point.1 += *delta;
+                    }
+                    
+                    for path in self.source_points.iter_mut() {
+                        for p in path.iter_mut() {
+                            if self.selected_vertices.contains(&p.0) {
+                                p.1 += *delta;
+                            }
+                        }
+                    }
+                    
+                    for path in self.dest_points.iter_mut() {
+                        for p in path.iter_mut() {
+                            if self.selected_vertices.contains(&p.0) {
+                                p.1 += *delta;
+                            }
                         }
                     }
                 }
@@ -1606,6 +1673,9 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
         if self.highlight.selected {
             into.insert(*self.uuid());
+        }
+        for e in &self.selected_vertices {
+            into.insert(*e);
         }
     }
 }

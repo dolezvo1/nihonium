@@ -1,6 +1,7 @@
 use eframe::egui;
 
 use std::io::Write;
+use std::collections::HashSet;
 
 // rect intersection between segment from p to the center of rect
 // based on https://stackoverflow.com/a/31254199 by TWiStErRob
@@ -293,6 +294,12 @@ impl Highlight {
         invalid: false,  // "red"
         warning: false,  // "yellow"
     };
+    pub const SELECTED: Self = Self {
+        selected: true, // "blue"
+        valid: false,    // "green"
+        invalid: false,  // "red"
+        warning: false,  // "yellow"
+    };
 }
 
 pub const CLASS_TOP_FONT_SIZE: f32 = 15.0;
@@ -547,29 +554,30 @@ pub trait NHCanvas {
     // TODO: refactor to allow for line types (solid/dotted/dashed/double/squiggly)
     fn draw_multiconnection<'a>(
         &mut self,
-        sources: &[(ArrowheadType, Stroke, &Vec<egui::Pos2>, Option<&'a str>)],
-        destinations: &[(ArrowheadType, Stroke, &Vec<egui::Pos2>, Option<&'a str>)],
-        central_point: egui::Pos2,
+        selected_vertices: &HashSet<uuid::Uuid>,
+        sources: &[(ArrowheadType, Stroke, &Vec<(uuid::Uuid, egui::Pos2)>, Option<&'a str>)],
+        destinations: &[(ArrowheadType, Stroke, &Vec<(uuid::Uuid, egui::Pos2)>, Option<&'a str>)],
+        central_point: (uuid::Uuid, egui::Pos2),
         mid_label: Option<&str>,
         highlight: Highlight,
     ) {
         fn a<'a>(
-            central_point: egui::Pos2,
-            e: &'a (ArrowheadType, Stroke, &'a Vec<egui::Pos2>, Option<&'a str>),
+            central_point: (uuid::Uuid, egui::Pos2),
+            e: &'a (ArrowheadType, Stroke, &'a Vec<(uuid::Uuid, egui::Pos2)>, Option<&'a str>),
         ) -> (
             ArrowheadType,
             Stroke,
             egui::Pos2,
-            impl Iterator<Item = egui::Pos2> + 'a,
+            impl Iterator<Item = (uuid::Uuid, egui::Pos2)> + 'a,
             Option<&'a str>,
         ) {
             let focal_point = e.2.first().unwrap();
             let path = std::iter::once(
-                e.0.get_intersect(*focal_point, *e.2.get(1).unwrap_or(&central_point)),
+                (uuid::Uuid::nil(), e.0.get_intersect(focal_point.1, e.2.get(1).unwrap_or(&central_point).1)),
             )
             .chain(e.2.iter().skip(1).map(|e| *e))
             .chain(std::iter::once(central_point));
-            (e.0, e.1, *focal_point, path, e.3)
+            (e.0, e.1, focal_point.1, path, e.3)
         }
 
         for (ah, ls, fp, iter, label) in sources
@@ -586,6 +594,7 @@ pub trait NHCanvas {
                 } else {
                     break;
                 };
+                let (u, v, v_uuid) = (u.1, v.1, v.0);
 
                 if first {
                     ah.draw_in(self, fp, v, highlight);
@@ -602,17 +611,27 @@ pub trait NHCanvas {
                     egui::Color32::BLACK,
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
                     HANDLE_PROXIMITY,
-                    highlight,
+                    Highlight::NONE,
                 );
 
-                self.draw_ellipse_proximity(
-                    v,
-                    egui::Vec2::new(1.0, 1.0),
-                    egui::Color32::BLACK,
-                    Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    HANDLE_PROXIMITY,
-                    highlight,
-                );
+                if selected_vertices.contains(&v_uuid) {
+                    self.draw_ellipse(
+                        v,
+                        egui::Vec2::new(1.0, 1.0),
+                        egui::Color32::BLACK,
+                        Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        Highlight::SELECTED,
+                    );
+                } else {
+                    self.draw_ellipse_proximity(
+                        v,
+                        egui::Vec2::new(1.0, 1.0),
+                        egui::Color32::BLACK,
+                        Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        HANDLE_PROXIMITY,
+                        Highlight::NONE,
+                    );
+                }
 
                 first = false;
             }
@@ -636,7 +655,7 @@ pub trait NHCanvas {
         //       Alternatively labels could have an angle to fit it better.
         if let Some(mid_label) = mid_label {
             self.draw_text(
-                central_point,
+                central_point.1,
                 egui::Align2::CENTER_CENTER,
                 mid_label,
                 CLASS_MIDDLE_FONT_SIZE,
@@ -830,7 +849,7 @@ impl NHCanvas for UiCanvas {
             self.painter.add(eframe::epaint::EllipseShape {
                 center: self.sc_tr(position),
                 radius: (radius + egui::Vec2::new(1.0, 1.0)) * self.camera_scale,
-                fill: color,
+                fill: egui::Color32::TRANSPARENT,
                 stroke: egui::Stroke::from(Stroke::new_solid(
                     stroke.width,
                     self.highlight_colors[0],
