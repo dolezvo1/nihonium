@@ -108,7 +108,21 @@ impl NHShape {
                 }),
                 _ => None,
             },
-            NHShape::Ellipse { .. } => todo!(),
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
+            } => match point {
+                // TODO: yeah, this is wrong. whatever.
+                egui::Pos2 { x, y } if position.x - bounds_radius.x < x && x < position.x + bounds_radius.x => Some(egui::Pos2 {
+                    x,
+                    y: y.clamp(position.y - bounds_radius.y, position.y + bounds_radius.y),
+                }),
+                egui::Pos2 { x, y } if position.y - bounds_radius.y < y && y < position.y + bounds_radius.y => Some(egui::Pos2 {
+                    x: x.clamp(position.x - bounds_radius.x, position.x + bounds_radius.x),
+                    y,
+                }),
+                _ => None,
+            },
         }
     }
     pub fn contains(&self, point: egui::Pos2) -> bool {

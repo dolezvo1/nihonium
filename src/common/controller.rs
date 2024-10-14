@@ -722,6 +722,452 @@ where
     }
 }
 
+pub struct MulticonnectionView<ModelT, ElementModelT: ?Sized + 'static, QueryableT, BufferT, ToolT> {
+    pub model: Arc<RwLock<ModelT>>,
+    pub buffer: BufferT,
+
+    pub source: Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>,
+    pub destination:
+        Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>,
+
+    pub highlight: canvas::Highlight,
+    pub selected_vertices: HashSet<uuid::Uuid>,
+    pub center_point: Option<(uuid::Uuid, egui::Pos2)>,
+    pub source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
+    pub dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
+    
+    pub model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
+    
+    pub show_properties_fun: fn(&mut ModelT, &mut BufferT, &mut egui::Ui),
+    
+    pub model_to_uuid: fn(&ModelT) -> Arc<uuid::Uuid>,
+    pub model_to_name: fn(&ModelT) -> Arc<String>,
+    pub model_to_line_type: fn(&ModelT) -> canvas::LineType,
+    pub model_to_source_arrowhead_type: fn(&ModelT) -> canvas::ArrowheadType,
+    pub model_to_destination_arrowhead_type: fn(&ModelT) -> canvas::ArrowheadType,
+    pub model_to_source_arrowhead_label: fn(&ModelT) -> Option<&str>,
+    pub model_to_destination_arrowhead_label: fn(&ModelT) -> Option<&str>,
+}
+
+impl<ModelT, ElementModelT: ?Sized + 'static, QueryableT, BufferT, ToolT>
+    ElementController<ElementModelT> for MulticonnectionView<ModelT, ElementModelT, QueryableT, BufferT, ToolT> {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        (self.model_to_uuid)(&self.model.read().unwrap())
+    }
+    fn model_name(&self) -> Arc<String> {
+        (self.model_to_name)(&self.model.read().unwrap())
+    }
+    fn model(&self) -> Arc<RwLock<ElementModelT>> {
+        (self.model_to_element_shim)(self.model.clone())
+    }
+
+    fn min_shape(&self) -> NHShape {
+        NHShape::Rect {
+            inner: egui::Rect::NOTHING,
+        }
+    }
+    fn max_shape(&self) -> NHShape {
+        todo!()
+    }
+
+    fn position(&self) -> egui::Pos2 {
+        match &self.center_point {
+            Some(point) => point.1,
+            None => (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
+        }
+    }
+}
+
+impl<ModelT, ElementModelT: ?Sized + 'static, QueryableT, BufferT, ToolT> ElementControllerGen2<ElementModelT, QueryableT, ToolT>
+    for MulticonnectionView<ModelT, ElementModelT, QueryableT, BufferT, ToolT>
+where
+    ToolT: Tool<ElementModelT, QueryableT>,
+{
+    fn show_properties(&mut self, _parent: &QueryableT, ui: &mut egui::Ui) -> bool {
+        if !self.highlight.selected {
+            return false;
+        }
+        
+        let mut c = self.model.write().unwrap();
+        (self.show_properties_fun)(&mut c, &mut self.buffer, ui);
+        
+        true
+    }
+
+    fn draw_in(
+        &mut self,
+        _: &QueryableT,
+        canvas: &mut dyn NHCanvas,
+        _tool: &Option<(egui::Pos2, &ToolT)>,
+    ) -> TargettingStatus {
+        
+        let model = self.model.read().unwrap();
+        let (source_pos, source_bounds) = {
+            let lock = self.source.read().unwrap();
+            (lock.position(), lock.min_shape())
+        };
+        let (dest_pos, dest_bounds) = {
+            let lock = self.destination.read().unwrap();
+            (lock.position(), lock.min_shape())
+        };
+        let (source_next_point, dest_next_point) = match (
+            self.source_points[0]
+                .get(1)
+                .map(|e| *e)
+                .or(self.center_point)
+                .map(|e| e.1),
+            self.dest_points[0]
+                .get(1)
+                .map(|e| *e)
+                .or(self.center_point)
+                .map(|e| e.1),
+        ) {
+            (None, None) => {
+                let pos_avg = (source_pos + dest_pos.to_vec2()) / 2.0;
+                (pos_avg, pos_avg)
+            }
+            (source_next_point, dest_next_point) => (
+                source_next_point.unwrap_or(dest_pos),
+                dest_next_point.unwrap_or(source_pos),
+            ),
+        };
+
+        match (
+            source_bounds
+                .orthogonal_intersect(source_next_point)
+                .or_else(|| source_bounds.center_intersect(source_next_point)),
+            dest_bounds
+                .orthogonal_intersect(dest_next_point)
+                .or_else(|| dest_bounds.center_intersect(dest_next_point)),
+        ) {
+            (Some(source_intersect), Some(dest_intersect)) => {
+                self.source_points[0][0].1 = source_intersect;
+                self.dest_points[0][0].1 = dest_intersect;
+                canvas.draw_multiconnection(
+                    &self.selected_vertices,
+                    &[(
+                        (self.model_to_source_arrowhead_type)(&*model),
+                        crate::common::canvas::Stroke {
+                            width: 1.0,
+                            color: egui::Color32::BLACK,
+                            line_type: (self.model_to_line_type)(&*model),
+                        },
+                        &self.source_points[0],
+                        (self.model_to_source_arrowhead_label)(&*model),
+                    )],
+                    &[(
+                        (self.model_to_destination_arrowhead_type)(&*model),
+                        crate::common::canvas::Stroke {
+                            width: 1.0,
+                            color: egui::Color32::BLACK,
+                            line_type: (self.model_to_line_type)(&*model),
+                        },
+                        &self.dest_points[0],
+                        (self.model_to_destination_arrowhead_label)(&*model),
+                    )],
+                    match &self.center_point {
+                        Some(point) => *point,
+                        None => (uuid::Uuid::nil(), (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0),
+                    },
+                    None,
+                    self.highlight,
+                );
+            }
+            _ => {}
+        }
+        
+        TargettingStatus::NotDrawn
+    }
+
+    fn click(
+        &mut self,
+        _tool: &mut Option<ToolT>,
+        commands: &mut Vec<HighLevelCommand>,
+        pos: egui::Pos2,
+        modifiers: ModifierKeys,
+    ) -> ClickHandlingStatus {
+        const DISTANCE_THRESHOLD: f32 = 3.0;
+
+        macro_rules! handle_vertex {
+            ($uuid:expr) => {
+                if !modifiers.command {
+                    commands.push(HighLevelCommand::SelectAll(false));
+                    commands.push(HighLevelCommand::Select(std::iter::once(*$uuid).collect(), true));
+                } else {
+                    commands.push(HighLevelCommand::Select(std::iter::once(*$uuid).collect(), !self.selected_vertices.contains($uuid)));
+                }
+                return ClickHandlingStatus::HandledByContainer;
+            }
+        }
+        
+        fn is_over(a: egui::Pos2, b: egui::Pos2) -> bool {
+            a.distance(b) <= DISTANCE_THRESHOLD
+        }
+        
+        if let Some((uuid, _)) = self.center_point.as_ref().filter(|e| is_over(pos, e.1)) {
+            handle_vertex!(uuid);
+        }
+        
+        macro_rules! check_joints {
+            ($v:ident) => {
+                for path in &self.$v {
+                    let stop_idx = path.len();
+                    for joint in &path[1..stop_idx] {
+                        if is_over(pos, joint.1) {
+                            handle_vertex!(&joint.0);
+                        }
+                    }
+                }
+            };
+        }
+        check_joints!(source_points);
+        check_joints!(dest_points);
+        
+        fn dist_to_line_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
+            fn dist2(a: egui::Pos2, b: egui::Pos2) -> f32 {
+                (a.x - b.x).powf(2.0) + (a.y - b.y).powf(2.0)
+            }
+            let l2 = dist2(a, b);
+            let distance_squared = if l2 == 0.0 {
+                dist2(p, a)
+            } else {
+                let t = (((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2)
+                    .clamp(0.0, 1.0);
+                dist2(
+                    p,
+                    egui::Pos2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)),
+                )
+            };
+            return distance_squared.sqrt();
+        }
+
+        // Check segments on paths
+        macro_rules! check_path_segments {
+            ($v:ident) => {
+                //let center_point = self.center_point.clone();
+                for path in &self.$v {
+                    // Iterates over 2-windows
+                    let mut iter = path.iter().map(|e| *e).chain(self.center_point).peekable();
+                    while let Some(u) = iter.next() {
+                        let v = if let Some(v) = iter.peek() {
+                            *v
+                        } else {
+                            break;
+                        };
+
+                        if dist_to_line_segment(pos, u.1, v.1) <= DISTANCE_THRESHOLD {
+                            return ClickHandlingStatus::HandledByElement;
+                        }
+                    }
+                }
+            };
+        }
+        check_path_segments!(source_points);
+        check_path_segments!(dest_points);
+
+        // In case there is no center_point, also check all-to-all of last points
+        if self.center_point == None {
+            for u in self.source_points.iter().flat_map(|e| e.last()) {
+                for v in self.dest_points.iter().flat_map(|e| e.last()) {
+                    if dist_to_line_segment(pos, u.1, v.1) <= DISTANCE_THRESHOLD {
+                        return ClickHandlingStatus::HandledByElement;
+                    }
+                }
+            }
+        }
+        ClickHandlingStatus::NotHandled
+    }
+    fn drag(
+        &mut self,
+        _tool: &mut Option<ToolT>,
+        commands: &mut Vec<HighLevelCommand>,
+        last_pos: egui::Pos2,
+        delta: egui::Vec2,
+    ) -> DragHandlingStatus {
+        const DISTANCE_THRESHOLD: f32 = 3.0;
+
+        fn is_over(a: egui::Pos2, b: egui::Pos2) -> bool {
+            a.distance(b) <= DISTANCE_THRESHOLD
+        }
+
+        match self.center_point {
+            // Check whether over center point, if so move it
+            Some(pos) => {
+                if is_over(last_pos, pos.1) {
+                    self.center_point = Some((pos.0, pos.1 + delta));
+                    return DragHandlingStatus::Handled;
+                }
+            }
+            // Check whether over a midpoint, if so set center point
+            None => {
+                // TODO: this is generally wrong (why??)
+                let midpoint = self.position();
+                if is_over(last_pos, midpoint) {
+                    self.center_point = Some((uuid::Uuid::now_v7(), midpoint + delta));
+                    return DragHandlingStatus::Handled;
+                }
+            }
+        }
+
+        // Check whether over a joint, if so move it
+        macro_rules! check_joints {
+            ($v:ident) => {
+                for path in &mut self.$v {
+                    let stop_idx = path.len();
+                    for joint in &mut path[1..stop_idx] {
+                        if is_over(last_pos, joint.1) {
+                            if self.selected_vertices.contains(&joint.0) {
+                                commands.push(HighLevelCommand::MoveSelectedElements(delta));
+                            } else {
+                                joint.1 += delta;
+                            }
+                            
+                            return DragHandlingStatus::Handled;
+                        }
+                    }
+                }
+            };
+        }
+        check_joints!(source_points);
+        check_joints!(dest_points);
+
+        // Check whether over midpoint, if so add a new joint
+        macro_rules! check_midpoints {
+            ($v:ident) => {
+                for path in &mut self.$v {
+                    // Iterates over 2-windows
+                    let mut iter = path
+                        .iter()
+                        .map(|e| *e)
+                        .chain(self.center_point)
+                        .enumerate()
+                        .peekable();
+                    while let Some((idx, u)) = iter.next() {
+                        let v = if let Some((_, v)) = iter.peek() {
+                            *v
+                        } else {
+                            break;
+                        };
+
+                        let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
+                        if is_over(last_pos, midpoint) {
+                            path.insert(idx + 1, (uuid::Uuid::now_v7(), midpoint + delta));
+                            return DragHandlingStatus::Handled;
+                        }
+                    }
+                }
+            };
+        }
+        check_midpoints!(source_points);
+        check_midpoints!(dest_points);
+        
+        DragHandlingStatus::NotHandled
+    }
+
+    fn apply_command(&mut self, command: &HighLevelCommand) {
+        match command {
+            HighLevelCommand::SelectAll(select) => {
+                self.highlight.selected = *select;
+                match select {
+                    false => self.selected_vertices.clear(),
+                    true => {
+                        if let Some(center_point) = self.center_point.as_ref() {
+                            self.selected_vertices.insert(center_point.0);
+                        }
+
+                        for path in self.source_points.iter() {
+                            for p in path.iter() {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+
+                        for path in self.dest_points.iter() {
+                            for p in path.iter() {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+                    }
+                }
+            }
+            HighLevelCommand::Select(uuids, select) => {
+                if uuids.contains(&*self.uuid()) {
+                    self.highlight.selected = *select;
+                }
+                match select {
+                    false => self.selected_vertices.retain(|e| !uuids.contains(e)),
+                    true => {
+                        if let Some(center_point) = self.center_point.as_ref().filter(|e| uuids.contains(&e.0)) {
+                            self.selected_vertices.insert(center_point.0);
+                        }
+
+                        for path in self.source_points.iter() {
+                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+
+                        for path in self.dest_points.iter() {
+                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
+                                self.selected_vertices.insert(p.0);
+                            }
+                        }
+                    }
+                }
+            }
+            HighLevelCommand::MoveSelectedElements(delta) => {
+                if self.highlight.selected {
+                    if let Some(center_point) = self.center_point.as_mut() {
+                        center_point.1 += *delta;
+                    }
+
+                    for path in self.source_points.iter_mut() {
+                        for p in path.iter_mut() {
+                            p.1 += *delta;
+                        }
+                    }
+
+                    for path in self.dest_points.iter_mut() {
+                        for p in path.iter_mut() {
+                            p.1 += *delta;
+                        }
+                    }
+                } else {
+                    if let Some(center_point) = self.center_point.as_mut()
+                        .filter(|e| self.selected_vertices.contains(&e.0))
+                    {
+                        center_point.1 += *delta;
+                    }
+                    
+                    for path in self.source_points.iter_mut() {
+                        for p in path.iter_mut() {
+                            if self.selected_vertices.contains(&p.0) {
+                                p.1 += *delta;
+                            }
+                        }
+                    }
+                    
+                    for path in self.dest_points.iter_mut() {
+                        for p in path.iter_mut() {
+                            if self.selected_vertices.contains(&p.0) {
+                                p.1 += *delta;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
+        if self.highlight.selected {
+            into.insert(*self.uuid());
+        }
+        for e in &self.selected_vertices {
+            into.insert(*e);
+        }
+    }
+}
+
 
 /*
 fn arrowhead_combo(ui: &mut egui::Ui, name: &str, val: &mut ArrowheadType) -> egui::Response {
@@ -736,269 +1182,3 @@ fn arrowhead_combo(ui: &mut egui::Ui, name: &str, val: &mut ArrowheadType) -> eg
         }).response
 }
 */
-
-pub mod macros {
-    // TODO: parametrize
-    macro_rules! multiconnection_draw_in {
-        ($self:ident, $canvas:ident) => {
-            let model = $self.model.read().unwrap();
-            let (source_pos, source_bounds) = {
-                let lock = $self.source.read().unwrap();
-                (lock.position(), lock.min_shape())
-            };
-            let (dest_pos, dest_bounds) = {
-                let lock = $self.destination.read().unwrap();
-                (lock.position(), lock.min_shape())
-            };
-            let (source_next_point, dest_next_point) = match (
-                $self.source_points[0]
-                    .get(1)
-                    .map(|e| *e)
-                    .or($self.center_point)
-                    .map(|e| e.1),
-                $self.dest_points[0]
-                    .get(1)
-                    .map(|e| *e)
-                    .or($self.center_point)
-                    .map(|e| e.1),
-            ) {
-                (None, None) => {
-                    let pos_avg = (source_pos + dest_pos.to_vec2()) / 2.0;
-                    (pos_avg, pos_avg)
-                }
-                (source_next_point, dest_next_point) => (
-                    source_next_point.unwrap_or(dest_pos),
-                    dest_next_point.unwrap_or(source_pos),
-                ),
-            };
-
-            match (
-                source_bounds
-                    .orthogonal_intersect(source_next_point)
-                    .or_else(|| source_bounds.center_intersect(source_next_point)),
-                dest_bounds
-                    .orthogonal_intersect(dest_next_point)
-                    .or_else(|| dest_bounds.center_intersect(dest_next_point)),
-            ) {
-                (Some(source_intersect), Some(dest_intersect)) => {
-                    $self.source_points[0][0].1 = source_intersect;
-                    $self.dest_points[0][0].1 = dest_intersect;
-                    $canvas.draw_multiconnection(
-                        &$self.selected_vertices,
-                        &[(
-                            model.link_type.source_arrowhead_type(),
-                            crate::common::canvas::Stroke {
-                                width: 1.0,
-                                color: egui::Color32::BLACK,
-                                line_type: model.link_type.line_type(),
-                            },
-                            &$self.source_points[0],
-                            Some(&model.source_arrowhead_label),
-                        )],
-                        &[(
-                            model.link_type.destination_arrowhead_type(),
-                            crate::common::canvas::Stroke {
-                                width: 1.0,
-                                color: egui::Color32::BLACK,
-                                line_type: model.link_type.line_type(),
-                            },
-                            &$self.dest_points[0],
-                            Some(&model.destination_arrowhead_label),
-                        )],
-                        match &$self.center_point {
-                            Some(point) => *point,
-                            None => (uuid::Uuid::nil(), ($self.source_points[0][0].1 + $self.dest_points[0][0].1.to_vec2()) / 2.0),
-                        },
-                        None,
-                        $self.highlight,
-                    );
-                }
-                _ => {}
-            }
-        };
-    }
-    pub(crate) use multiconnection_draw_in;
-
-    // center_point: Option<egui::Pos2>
-    // fn sources(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>];
-    // fn destinations(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>];
-    macro_rules! multiconnection_element_click {
-        ($self:ident, $last_pos:ident, $modifiers:ident, $commands:ident, $ret:expr) => {
-            const DISTANCE_THRESHOLD: f32 = 3.0;
-
-            macro_rules! handle_vertex {
-                ($uuid:expr) => {
-                    if !$modifiers.command {
-                        $commands.push(HighLevelCommand::SelectAll(false));
-                        $commands.push(HighLevelCommand::Select(std::iter::once(*$uuid).collect(), true));
-                    } else {
-                        $commands.push(HighLevelCommand::Select(std::iter::once(*$uuid).collect(), !$self.selected_vertices.contains($uuid)));
-                    }
-                    return ClickHandlingStatus::HandledByContainer;
-                }
-            }
-            
-            fn is_over(a: egui::Pos2, b: egui::Pos2) -> bool {
-                a.distance(b) <= DISTANCE_THRESHOLD
-            }
-            
-            if let Some((uuid, _)) = $self.center_point.as_ref().filter(|e| is_over($last_pos, e.1)) {
-                handle_vertex!(uuid);
-            }
-            
-            macro_rules! check_joints {
-                ($v:ident) => {
-                    for path in &$self.$v {
-                        let stop_idx = path.len();
-                        for joint in &path[1..stop_idx] {
-                            if is_over($last_pos, joint.1) {
-                                handle_vertex!(&joint.0);
-                            }
-                        }
-                    }
-                };
-            }
-            check_joints!(source_points);
-            check_joints!(dest_points);
-            
-            fn dist_to_line_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
-                fn dist2(a: egui::Pos2, b: egui::Pos2) -> f32 {
-                    (a.x - b.x).powf(2.0) + (a.y - b.y).powf(2.0)
-                }
-                let l2 = dist2(a, b);
-                let distance_squared = if l2 == 0.0 {
-                    dist2(p, a)
-                } else {
-                    let t = (((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2)
-                        .clamp(0.0, 1.0);
-                    dist2(
-                        p,
-                        egui::Pos2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)),
-                    )
-                };
-                return distance_squared.sqrt();
-            }
-
-            // Check segments on paths
-            macro_rules! check_path_segments {
-                ($v:ident) => {
-                    let center_point = $self.center_point.clone();
-                    for path in $self.$v() {
-                        // Iterates over 2-windows
-                        let mut iter = path.iter().map(|e| *e).chain(center_point).peekable();
-                        while let Some(u) = iter.next() {
-                            let v = if let Some(v) = iter.peek() {
-                                *v
-                            } else {
-                                break;
-                            };
-
-                            if dist_to_line_segment($last_pos, u.1, v.1) <= DISTANCE_THRESHOLD {
-                                return $ret;
-                            }
-                        }
-                    }
-                };
-            }
-            check_path_segments!(sources);
-            check_path_segments!(destinations);
-
-            // In case there is no center_point, also check all-to-all of last points
-            if $self.center_point == None {
-                // TODO: this shouldn't have to clone, but probably not that big of a deal
-                let destinations: Vec<(uuid::Uuid, egui::Pos2)> = $self
-                    .destinations()
-                    .iter()
-                    .flat_map(|e| e.last().cloned())
-                    .collect();
-                for u in $self.sources().iter().flat_map(|e| e.last()) {
-                    for v in &destinations {
-                        if dist_to_line_segment($last_pos, u.1, v.1) <= DISTANCE_THRESHOLD {
-                            return $ret;
-                        }
-                    }
-                }
-            }
-        };
-    }
-    pub(crate) use multiconnection_element_click;
-
-    macro_rules! multiconnection_element_drag {
-        ($self:ident, $last_pos:ident, $delta:ident, $center_point:ident, $sources:ident, $destinations:ident, $ret:expr) => {
-            const DISTANCE_THRESHOLD: f32 = 3.0;
-
-            fn is_over(a: egui::Pos2, b: egui::Pos2) -> bool {
-                a.distance(b) <= DISTANCE_THRESHOLD
-            }
-
-            match $self.center_point {
-                // Check whether over center point, if so move it
-                Some(pos) => {
-                    if is_over($last_pos, pos.1) {
-                        $self.center_point = Some((pos.0, pos.1 + $delta));
-                        return $ret;
-                    }
-                }
-                // Check whether over a midpoint, if so set center point
-                None => {
-                    // TODO: this is generally wrong (why??)
-                    let midpoint = $self.position();
-                    if is_over($last_pos, midpoint) {
-                        $self.center_point = Some((uuid::Uuid::now_v7(), midpoint + $delta));
-                        return $ret;
-                    }
-                }
-            }
-
-            // Check whether over a joint, if so move it
-            // TODO: make revertible
-            macro_rules! check_joints {
-                ($v:ident) => {
-                    for path in $self.$v() {
-                        let stop_idx = path.len();
-                        for joint in &mut path[1..stop_idx] {
-                            if is_over($last_pos, joint.1) {
-                                joint.1 += $delta;
-                                return $ret;
-                            }
-                        }
-                    }
-                };
-            }
-            check_joints!(sources);
-            check_joints!(destinations);
-
-            // Check whether over midpoint, if so add a new joint
-            macro_rules! check_midpoints {
-                ($v:ident) => {
-                    let center_point = $self.center_point.clone();
-                    for path in $self.$v() {
-                        // Iterates over 2-windows
-                        let mut iter = path
-                            .iter()
-                            .map(|e| *e)
-                            .chain(center_point)
-                            .enumerate()
-                            .peekable();
-                        while let Some((idx, u)) = iter.next() {
-                            let v = if let Some((_, v)) = iter.peek() {
-                                *v
-                            } else {
-                                break;
-                            };
-
-                            let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
-                            if is_over($last_pos, midpoint) {
-                                path.insert(idx + 1, (uuid::Uuid::now_v7(), midpoint + $delta));
-                                return $ret;
-                            }
-                        }
-                    }
-                };
-            }
-            check_midpoints!(sources);
-            check_midpoints!(destinations);
-        };
-    }
-    pub(crate) use multiconnection_element_drag;
-}

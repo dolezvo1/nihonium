@@ -747,7 +747,7 @@ impl eframe::App for NHApp {
                             fn(u32) -> (uuid::Uuid, Arc<RwLock<(dyn DiagramController + 'static)>>);
                         for (label, fun) in [
                             (
-                                "Add New UML class diagram",
+                                "Add New UML Class diagram",
                                 crate::umlclass::umlclass_controllers::new as NDC,
                             ),
                             //("Add New OntoUML diagram"),

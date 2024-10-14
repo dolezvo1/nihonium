@@ -6,7 +6,7 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     ClickHandlingStatus, ContainerGen2, HighLevelCommand, DiagramController, DiagramControllerGen2,
     DragHandlingStatus, ElementController, ElementControllerGen2, ModifierKeys,
-    TargettingStatus, Tool,
+    TargettingStatus, Tool, MulticonnectionView,
 };
 use crate::common::observer::Observable;
 use crate::CustomTab;
@@ -256,49 +256,19 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         bounds_rect: egui::Rect::ZERO,
     }));
 
-    let realization_cfx_uuid = uuid::Uuid::now_v7();
-    let realization_cfx = Arc::new(RwLock::new(UmlClassLink::new(
-        realization_cfx_uuid.clone(),
+    let (realization_cfx_uuid, realization_cfx, realization_cfx_controller) = umlclass_link(
         UmlClassLinkType::InterfaceRealization,
-        class_cfx.clone(),
-        class_af.clone(),
-    )));
-    let realization_cfx_controller = Arc::new(RwLock::new(UmlClassLinkController {
-        model: realization_cfx.clone(),
-        source: class_cfx_controller.clone(),
-        destination: class_af_controller.clone(),
-        source_arrowhead_label_buffer: "".to_owned(),
-        destination_arrowhead_label_buffer: "".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        highlight: canvas::Highlight::NONE,
-        center_point: None,
-        selected_vertices: HashSet::new(),
-        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-    }));
-
-    let association_cfy_uuid = uuid::Uuid::now_v7();
-    let association_cfy = Arc::new(RwLock::new(UmlClassLink::new(
-        association_cfy_uuid.clone(),
+        None,
+        (class_cfx.clone(), class_cfx_controller.clone()),
+        (class_af.clone(), class_af_controller.clone()),
+    );
+    
+    let (realization_cfy_uuid, realization_cfy, realization_cfy_controller) = umlclass_link(
         UmlClassLinkType::InterfaceRealization,
-        class_cfy.clone(),
-        class_af.clone(),
-    )));
-    let association_cfy_controller = Arc::new(RwLock::new(UmlClassLinkController {
-        model: association_cfy.clone(),
-        source: class_cfy_controller.clone(),
-        destination: class_af_controller.clone(),
-        source_arrowhead_label_buffer: "".to_owned(),
-        destination_arrowhead_label_buffer: "".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        highlight: canvas::Highlight::NONE,
-        center_point: None,
-        selected_vertices: HashSet::new(),
-        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-    }));
+        None,
+        (class_cfy.clone(), class_cfy_controller.clone()),
+        (class_af.clone(), class_af_controller.clone()),
+    );
 
     let class_client_uuid = uuid::Uuid::now_v7();
     let class_client = Arc::new(RwLock::new(UmlClass::new(
@@ -319,28 +289,13 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         bounds_rect: egui::Rect::ZERO,
     }));
 
-    let usage_client_af_uuid = uuid::Uuid::now_v7();
-    let usage_client_af = Arc::new(RwLock::new(UmlClassLink::new(
-        usage_client_af_uuid.clone(),
+    let (usage_client_af_uuid, usage_client_af, usage_client_af_controller) = umlclass_link(
         UmlClassLinkType::Usage,
-        class_client.clone(),
-        class_af.clone(),
-    )));
-    let usage_client_af_controller = Arc::new(RwLock::new(UmlClassLinkController {
-        model: usage_client_af.clone(),
-        source: class_client_controller.clone(),
-        destination: class_af_controller.clone(),
-        source_arrowhead_label_buffer: "".to_owned(),
-        destination_arrowhead_label_buffer: "".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        highlight: canvas::Highlight::NONE,
-        center_point: Some((uuid::Uuid::now_v7(), egui::Pos2::new(200.0, 50.0))),
-        selected_vertices: HashSet::new(),
-        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-    }));
-
+        Some((uuid::Uuid::now_v7(), egui::Pos2::new(200.0, 50.0))),
+        (class_client.clone(), class_client_controller.clone()),
+        (class_af.clone(), class_af_controller.clone()),
+    );
+    
     let class_producta_uuid = uuid::Uuid::now_v7();
     let class_producta = Arc::new(RwLock::new(UmlClass::new(
         class_producta_uuid.clone(),
@@ -360,27 +315,12 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         bounds_rect: egui::Rect::ZERO,
     }));
 
-    let usage_client_producta_uuid = uuid::Uuid::now_v7();
-    let usage_client_producta = Arc::new(RwLock::new(UmlClassLink::new(
-        usage_client_producta_uuid.clone(),
+    let (usage_client_producta_uuid, usage_client_producta, usage_client_producta_controller) = umlclass_link(
         UmlClassLinkType::Usage,
-        class_client.clone(),
-        class_producta.clone(),
-    )));
-    let usage_client_producta_controller = Arc::new(RwLock::new(UmlClassLinkController {
-        model: usage_client_producta.clone(),
-        source: class_client_controller.clone(),
-        destination: class_producta_controller.clone(),
-        source_arrowhead_label_buffer: "".to_owned(),
-        destination_arrowhead_label_buffer: "".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        highlight: canvas::Highlight::NONE,
-        center_point: Some((uuid::Uuid::now_v7(), egui::Pos2::new(450.0, 52.0))),
-        selected_vertices: HashSet::new(),
-        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-    }));
+        Some((uuid::Uuid::now_v7(), egui::Pos2::new(450.0, 52.0))),
+        (class_client.clone(), class_client_controller.clone()),
+        (class_producta.clone(), class_producta_controller.clone()),
+    );
 
     let class_productb_uuid = uuid::Uuid::now_v7();
     let class_productb = Arc::new(RwLock::new(UmlClass::new(
@@ -401,27 +341,12 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         bounds_rect: egui::Rect::ZERO,
     }));
 
-    let usage_client_productb_uuid = uuid::Uuid::now_v7();
-    let usage_client_productb = Arc::new(RwLock::new(UmlClassLink::new(
-        usage_client_productb_uuid.clone(),
+    let (usage_client_productb_uuid, usage_client_productb, usage_client_productb_controller) = umlclass_link(
         UmlClassLinkType::Usage,
-        class_client.clone(),
-        class_productb.clone(),
-    )));
-    let usage_client_productb_controller = Arc::new(RwLock::new(UmlClassLinkController {
-        model: usage_client_productb.clone(),
-        source: class_client_controller.clone(),
-        destination: class_productb_controller.clone(),
-        source_arrowhead_label_buffer: "".to_owned(),
-        destination_arrowhead_label_buffer: "".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        highlight: canvas::Highlight::NONE,
-        center_point: Some((uuid::Uuid::now_v7(), egui::Pos2::new(650.0, 48.0))),
-        selected_vertices: HashSet::new(),
-        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-    }));
+        Some((uuid::Uuid::now_v7(), egui::Pos2::new(650.0, 48.0))),
+        (class_client.clone(), class_client_controller.clone()),
+        (class_productb.clone(), class_productb_controller.clone()),
+    );
 
     let mut owned_controllers = HashMap::<
         _,
@@ -439,7 +364,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     owned_controllers.insert(class_cfx_uuid, class_cfx_controller);
     owned_controllers.insert(class_cfy_uuid, class_cfy_controller);
     owned_controllers.insert(realization_cfx_uuid, realization_cfx_controller);
-    owned_controllers.insert(association_cfy_uuid, association_cfy_controller);
+    owned_controllers.insert(realization_cfy_uuid, realization_cfy_controller);
     owned_controllers.insert(class_client_uuid, class_client_controller);
     owned_controllers.insert(usage_client_af_uuid, usage_client_af_controller);
     owned_controllers.insert(class_producta_uuid, class_producta_controller);
@@ -457,7 +382,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             class_cfx,
             class_cfy,
             realization_cfx,
-            association_cfy,
+            realization_cfy,
             class_client,
             usage_client_af,
             class_producta,
@@ -488,7 +413,7 @@ pub enum KindedUmlClassElement<'a> {
     Diagram {},
     Package {},
     Class { inner: &'a UmlClassController },
-    Link { inner: &'a UmlClassLinkController },
+    Link { inner: &'a MulticonnectionView<UmlClassLink, dyn UmlClassElement, UmlClassQueryable, UmlClassLinkBuffer, NaiveUmlClassTool> },
 }
 
 impl<'a> From<&'a DiagramControllerGen2<
@@ -736,14 +661,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                 self.current_stage = UmlClassToolStage::LinkStart {
                     link_type: *link_type,
                 };
-
-                let uuid = uuid::Uuid::now_v7();
-                let association = Arc::new(RwLock::new(UmlClassLink::new(
-                    uuid.clone(),
-                    *link_type,
-                    source.clone(),
-                    dest.clone(),
-                )));
+                
                 let association_controller: Option<
                     Arc<
                         RwLock<
@@ -754,20 +672,14 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable> for NaiveUmlClassTool {
                     into.controller_for(&source.read().unwrap().uuid()),
                     into.controller_for(&dest.read().unwrap().uuid()),
                 ) {
-                    Some(Arc::new(RwLock::new(UmlClassLinkController {
-                        model: association.clone(),
-                        source: source_controller,
-                        destination: dest_controller,
-                        source_arrowhead_label_buffer: "".to_owned(),
-                        destination_arrowhead_label_buffer: "".to_owned(),
-                        comment_buffer: "".to_owned(),
-
-                        highlight: canvas::Highlight::NONE,
-                        center_point: None,
-                        selected_vertices: HashSet::new(),
-                        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-                        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-                    })))
+                    let (_, _, controller) = umlclass_link(
+                        *link_type,
+                        None,
+                        (source.clone(), source_controller),
+                        (dest.clone(), dest_controller),
+                    );
+                
+                    Some(controller)
                 } else {
                     None
                 };
@@ -1392,76 +1304,16 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     }
 }
 
-pub struct UmlClassLinkController {
-    pub model: Arc<RwLock<UmlClassLink>>,
-    pub source: Arc<
-        RwLock<
-            dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>,
-        >,
-    >,
-    pub destination: Arc<
-        RwLock<
-            dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>,
-        >,
-    >,
-    source_arrowhead_label_buffer: String,
-    destination_arrowhead_label_buffer: String,
-    comment_buffer: String,
 
-    highlight: canvas::Highlight,
-    selected_vertices: HashSet<uuid::Uuid>,
-    pub center_point: Option<(uuid::Uuid, egui::Pos2)>,
-    pub source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
-    pub dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
-}
+fn umlclass_link(
+    link_type: UmlClassLinkType,
+    center_point: Option<(uuid::Uuid, egui::Pos2)>,
+    source: (Arc<RwLock<dyn UmlClassElement>>, Arc<RwLock<dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>>>),
+    destination: (Arc<RwLock<dyn UmlClassElement>>, Arc<RwLock<dyn ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>>>),
+) -> (uuid::Uuid, Arc<RwLock<UmlClassLink>>, Arc<RwLock<MulticonnectionView<UmlClassLink, dyn UmlClassElement, UmlClassQueryable, UmlClassLinkBuffer, NaiveUmlClassTool>>>){
+    fn model_to_element_shim(a: Arc<RwLock<UmlClassLink>>) -> Arc<RwLock<dyn UmlClassElement>> { a }
 
-impl UmlClassLinkController {
-    fn sources(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>] {
-        &mut self.source_points
-    }
-    fn destinations(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>] {
-        &mut self.dest_points
-    }
-}
-
-impl ElementController<dyn UmlClassElement> for UmlClassLinkController {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
-        self.model.read().unwrap().uuid.clone()
-    }
-    fn model_name(&self) -> Arc<String> {
-        self.model.read().unwrap().link_type.name()
-    }
-    fn model(&self) -> Arc<RwLock<dyn UmlClassElement>> {
-        self.model.clone()
-    }
-
-    fn min_shape(&self) -> NHShape {
-        NHShape::Rect {
-            inner: egui::Rect::NOTHING,
-        }
-    }
-    fn max_shape(&self) -> NHShape {
-        todo!()
-    }
-
-    fn position(&self) -> egui::Pos2 {
-        match &self.center_point {
-            Some(point) => point.1,
-            None => (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
-        }
-    }
-}
-
-impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool>
-    for UmlClassLinkController
-{
-    fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) -> bool {
-        if !self.highlight.selected {
-            return false;
-        }
-
-        let mut model = self.model.write().unwrap();
-
+    fn show_properties_fun(model: &mut UmlClassLink, buffer: &mut UmlClassLinkBuffer, ui: &mut egui::Ui) {
         ui.label("Link type:");
         let r1 = egui::ComboBox::from_id_source("link type")
             .selected_text(&*model.link_type.name())
@@ -1482,23 +1334,25 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         ui.label("Source:");
         let r2 = ui.add_sized(
             (ui.available_width(), 20.0),
-            egui::TextEdit::singleline(&mut self.source_arrowhead_label_buffer),
+            egui::TextEdit::singleline(&mut buffer.source_arrowhead_label),
         );
         ui.separator();
 
         ui.label("Destination:");
         let r3 = ui.add_sized(
             (ui.available_width(), 20.0),
-            egui::TextEdit::singleline(&mut self.destination_arrowhead_label_buffer),
+            egui::TextEdit::singleline(&mut buffer.destination_arrowhead_label),
         );
         ui.separator();
 
         ui.label("Swap source and destination:");
         let r4 = if ui.button("Swap").clicked() {
             (model.source, model.destination) = (model.destination.clone(), model.source.clone());
+            /* TODO:
             (self.source, self.destination) = (self.destination.clone(), self.source.clone());
             (self.source_points, self.dest_points) =
                 (self.dest_points.clone(), self.source_points.clone());
+                */
             true
         } else {
             false
@@ -1508,179 +1362,103 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         ui.label("Comment:");
         let r5 = ui.add_sized(
             (ui.available_width(), 20.0),
-            egui::TextEdit::multiline(&mut self.comment_buffer),
+            egui::TextEdit::multiline(&mut buffer.comment),
         );
 
         if r1.changed() || r2.changed() || r3.changed() || r4 || r5.changed() {
             if r2.changed() {
-                model.source_arrowhead_label = Arc::new(self.source_arrowhead_label_buffer.clone());
+                model.source_arrowhead_label = Arc::new(buffer.source_arrowhead_label.clone());
             }
 
             if r3.changed() {
                 model.destination_arrowhead_label =
-                    Arc::new(self.destination_arrowhead_label_buffer.clone());
+                    Arc::new(buffer.destination_arrowhead_label.clone());
             }
 
             if r5.changed() {
-                model.comment = Arc::new(self.comment_buffer.clone());
+                model.comment = Arc::new(buffer.comment.clone());
             }
 
             model.notify_observers();
         }
-
-        true
-    }
-
-    fn draw_in(
-        &mut self,
-        _: &UmlClassQueryable,
-        canvas: &mut dyn NHCanvas,
-        _tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>,
-    ) -> TargettingStatus {
-        crate::common::controller::macros::multiconnection_draw_in!(self, canvas);
-        TargettingStatus::NotDrawn
-    }
-
-    fn click(
-        &mut self,
-        _tool: &mut Option<NaiveUmlClassTool>,
-        commands: &mut Vec<HighLevelCommand>,
-        pos: egui::Pos2,
-        modifiers: ModifierKeys,
-    ) -> ClickHandlingStatus {
-        crate::common::controller::macros::multiconnection_element_click!(
-            self,
-            pos,
-            modifiers,
-            commands,
-            ClickHandlingStatus::HandledByElement
-        );
-        ClickHandlingStatus::NotHandled
-    }
-    fn drag(
-        &mut self,
-        _tool: &mut Option<NaiveUmlClassTool>,
-        _commands: &mut Vec<HighLevelCommand>,
-        last_pos: egui::Pos2,
-        delta: egui::Vec2,
-    ) -> DragHandlingStatus {
-        crate::common::controller::macros::multiconnection_element_drag!(
-            self,
-            last_pos,
-            delta,
-            center_point,
-            sources,
-            destinations,
-            DragHandlingStatus::Handled
-        );
-        DragHandlingStatus::NotHandled
-    }
-
-    fn apply_command(&mut self, command: &HighLevelCommand) {
-        match command {
-            HighLevelCommand::SelectAll(select) => {
-                self.highlight.selected = *select;
-                match select {
-                    false => self.selected_vertices.clear(),
-                    true => {
-                        if let Some(center_point) = self.center_point.as_ref() {
-                            self.selected_vertices.insert(center_point.0);
-                        }
-
-                        for path in self.source_points.iter() {
-                            for p in path.iter() {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
-
-                        for path in self.dest_points.iter() {
-                            for p in path.iter() {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
-                    }
-                }
-            }
-            HighLevelCommand::Select(uuids, select) => {
-                if uuids.contains(&*self.uuid()) {
-                    self.highlight.selected = *select;
-                }
-                match select {
-                    false => self.selected_vertices.retain(|e| !uuids.contains(e)),
-                    true => {
-                        if let Some(center_point) = self.center_point.as_ref().filter(|e| uuids.contains(&e.0)) {
-                            self.selected_vertices.insert(center_point.0);
-                        }
-
-                        for path in self.source_points.iter() {
-                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
-
-                        for path in self.dest_points.iter() {
-                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
-                    }
-                }
-            }
-            HighLevelCommand::MoveSelectedElements(delta) => {
-                if self.highlight.selected {
-                    if let Some(center_point) = self.center_point.as_mut() {
-                        center_point.1 += *delta;
-                    }
-
-                    for path in self.source_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            p.1 += *delta;
-                        }
-                    }
-
-                    for path in self.dest_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            p.1 += *delta;
-                        }
-                    }
-                } else {
-                    if let Some(center_point) = self.center_point.as_mut()
-                        .filter(|e| self.selected_vertices.contains(&e.0))
-                    {
-                        center_point.1 += *delta;
-                    }
-                    
-                    for path in self.source_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            if self.selected_vertices.contains(&p.0) {
-                                p.1 += *delta;
-                            }
-                        }
-                    }
-                    
-                    for path in self.dest_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            if self.selected_vertices.contains(&p.0) {
-                                p.1 += *delta;
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
     
-    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
-        if self.highlight.selected {
-            into.insert(*self.uuid());
-        }
-        for e in &self.selected_vertices {
-            into.insert(*e);
+    fn model_to_uuid(a: &UmlClassLink) -> Arc<uuid::Uuid> {
+        a.uuid()
+    }
+    fn model_to_name(a: &UmlClassLink) -> Arc<String> {
+        a.link_type.name()
+    }
+    fn model_to_line_type(a: &UmlClassLink) -> canvas::LineType {
+        a.link_type.line_type()
+    }
+    fn model_to_source_arrowhead_type(a: &UmlClassLink) -> canvas::ArrowheadType {
+        a.link_type.source_arrowhead_type()
+    }
+    fn model_to_destination_arrowhead_type(a: &UmlClassLink) -> canvas::ArrowheadType {
+        a.link_type.destination_arrowhead_type()
+    }
+    fn model_to_source_arrowhead_label(a: &UmlClassLink) -> Option<&str> {
+        if !a.source_arrowhead_label.is_empty() {
+            Some(&a.source_arrowhead_label)
+        } else {
+            None
         }
     }
+    fn model_to_destination_arrowhead_label(a: &UmlClassLink) -> Option<&str> {
+        if !a.destination_arrowhead_label.is_empty() {
+            Some(&a.destination_arrowhead_label)
+        } else {
+            None
+        }
+    }
+
+    let link_uuid = uuid::Uuid::now_v7();
+    let link = Arc::new(RwLock::new(UmlClassLink::new(
+        link_uuid.clone(),
+        link_type,
+        source.0,
+        destination.0,
+    )));
+    let link_controller = Arc::new(RwLock::new(MulticonnectionView {
+        model: link.clone(),
+        source: source.1,
+        destination: destination.1,
+        buffer: UmlClassLinkBuffer {
+            source_arrowhead_label: "".to_owned(),
+            destination_arrowhead_label: "".to_owned(),
+            comment: "".to_owned(),
+        },
+
+        highlight: canvas::Highlight::NONE,
+        selected_vertices: HashSet::new(),
+        center_point,
+        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        
+        model_to_element_shim,
+        show_properties_fun,
+        
+        model_to_uuid,
+        model_to_name,
+        model_to_line_type,
+        model_to_source_arrowhead_type,
+        model_to_destination_arrowhead_type,
+        model_to_source_arrowhead_label,
+        model_to_destination_arrowhead_label,
+    }));
+    (link_uuid, link, link_controller)
 }
 
-impl UmlClassElementController for UmlClassLinkController {
+struct UmlClassLinkBuffer {
+    source_arrowhead_label: String,
+    destination_arrowhead_label: String,
+    comment: String,
+}
+
+
+
+impl UmlClassElementController for MulticonnectionView<UmlClassLink, dyn UmlClassElement, UmlClassQueryable, UmlClassLinkBuffer, NaiveUmlClassTool> {
     fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
         *self.source.read().unwrap().uuid() == *uuid
     }

@@ -1,11 +1,11 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
-use crate::common::canvas::{self, ArrowheadType, NHCanvas, NHShape, Stroke};
+use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     ClickHandlingStatus, HighLevelCommand, DiagramController, DragHandlingStatus, ElementController,
     ModifierKeys, TargettingStatus,
 };
 use crate::common::controller::{
-    ContainerGen2, DiagramControllerGen2, ElementControllerGen2, Tool,
+    ContainerGen2, DiagramControllerGen2, ElementControllerGen2, Tool, MulticonnectionView,
 };
 use crate::common::observer::Observable;
 use crate::{CustomTab, NHApp};
@@ -368,27 +368,11 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         bounds_rect: egui::Rect::ZERO,
     }));
 
-    let predicate_uuid = uuid::Uuid::now_v7();
-    let predicate = Arc::new(RwLock::new(RdfPredicate::new(
-        predicate_uuid.clone(),
-        "http://www.w3.org/2000/10/swap/pim/contact#fullName".to_owned(),
-        node.clone(),
-        literal.clone(),
-    )));
-    let predicate_controller = Arc::new(RwLock::new(RdfPredicateController {
-        model: predicate.clone(),
-        iri_buffer: "http://www.w3.org/2000/10/swap/pim/contact#fullName".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        source: node_controller.clone(),
-        destination: literal_controller.clone(),
-
-        highlight: canvas::Highlight::NONE,
-        center_point: None,
-        selected_vertices: HashSet::new(),
-        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-    }));
+    let (predicate_uuid, predicate, predicate_controller) = rdf_predicate(
+        "http://www.w3.org/2000/10/swap/pim/contact#fullName",
+        (node.clone(), node_controller.clone()),
+        (literal.clone(), literal_controller.clone()),
+    );
 
     let graph_uuid = uuid::Uuid::now_v7();
     let graph = Arc::new(RwLock::new(RdfGraph::new(
@@ -520,7 +504,7 @@ pub enum KindedRdfElement<'a> {
     Graph {},
     Literal { inner: &'a RdfLiteralController },
     Node { inner: &'a RdfNodeController },
-    Predicate { inner: &'a RdfPredicateController },
+    Predicate { inner: &'a MulticonnectionView<RdfPredicate, dyn RdfElement, RdfQueryable, RdfPredicateBuffer, NaiveRdfTool> },
 }
 
 impl<'a> From<&'a DiagramControllerGen2<
@@ -772,34 +756,19 @@ impl Tool<dyn RdfElement, RdfQueryable> for NaiveRdfTool {
             } => {
                 self.current_stage = RdfToolStage::PredicateStart;
 
-                let uuid = uuid::Uuid::now_v7();
-                let predicate = Arc::new(RwLock::new(RdfPredicate::new(
-                    uuid.clone(),
-                    "http://www.w3.org/2000/10/swap/pim/contact#fullName".to_owned(),
-                    source.clone(),
-                    dest.clone(),
-                )));
                 let predicate_controller: Option<
                     Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, Self>>>,
                 > = if let (Some(source_controller), Some(dest_controller)) = (
                     into.controller_for(&source.read().unwrap().uuid()),
                     into.controller_for(&dest.read().unwrap().uuid()),
                 ) {
-                    Some(Arc::new(RwLock::new(RdfPredicateController {
-                        model: predicate.clone(),
-                        iri_buffer: "http://www.w3.org/2000/10/swap/pim/contact#fullName"
-                            .to_owned(),
-                        comment_buffer: "".to_owned(),
-
-                        source: source_controller,
-                        destination: dest_controller,
-
-                        highlight: canvas::Highlight::NONE,
-                        center_point: None,
-                        selected_vertices: HashSet::new(),
-                        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-                        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-                    })))
+                    let (_, _, predicate_controller) = rdf_predicate(
+                        "http://www.w3.org/2000/10/swap/pim/contact#fullName",
+                        (source.clone(), source_controller),
+                        (dest.clone(), dest_controller),
+                    );
+                    
+                    Some(predicate_controller)
                 } else {
                     None
                 };
@@ -1564,307 +1533,113 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
     }
 }
 
-pub struct RdfPredicateController {
-    pub model: Arc<RwLock<RdfPredicate>>,
-    iri_buffer: String,
-    comment_buffer: String,
 
-    pub source: Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool>>>,
-    pub destination:
-        Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool>>>,
-
-    highlight: canvas::Highlight,
-    selected_vertices: HashSet<uuid::Uuid>,
-    pub center_point: Option<(uuid::Uuid, egui::Pos2)>,
-    pub source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
-    pub dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
-}
-
-impl RdfPredicateController {
-    fn sources(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>] {
-        &mut self.source_points
-    }
-    fn destinations(&mut self) -> &mut [Vec<(uuid::Uuid, egui::Pos2)>] {
-        &mut self.dest_points
-    }
-}
-
-impl ElementController<dyn RdfElement> for RdfPredicateController {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
-        self.model.read().unwrap().uuid.clone()
-    }
-    fn model_name(&self) -> Arc<String> {
-        self.model.read().unwrap().iri.clone()
-    }
-    fn model(&self) -> Arc<RwLock<dyn RdfElement>> {
-        self.model.clone()
-    }
-
-    fn min_shape(&self) -> NHShape {
-        NHShape::Rect {
-            inner: egui::Rect::NOTHING,
-        }
-    }
-    fn max_shape(&self) -> NHShape {
-        todo!()
-    }
-
-    fn position(&self) -> egui::Pos2 {
-        match &self.center_point {
-            Some(point) => point.1,
-            None => (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
-        }
-    }
-}
-
-impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfPredicateController {
-    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) -> bool {
-        if !self.highlight.selected {
-            return false;
-        }
-
+fn rdf_predicate(
+    iri: &str,
+    source: (Arc<RwLock<dyn RdfElement>>, Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool>>>),
+    destination: (Arc<RwLock<dyn RdfElement>>, Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool>>>),
+) -> (uuid::Uuid, Arc<RwLock<RdfPredicate>>, Arc<RwLock<MulticonnectionView<RdfPredicate, dyn RdfElement, RdfQueryable, RdfPredicateBuffer, NaiveRdfTool>>>) {
+    
+    fn model_to_element_shim(a: Arc<RwLock<RdfPredicate>>) -> Arc<RwLock<dyn RdfElement>> { a }
+    
+    fn show_properties_fun(model: &mut RdfPredicate, buffer: &mut RdfPredicateBuffer, ui: &mut egui::Ui) {
         ui.label("IRI:");
         let r1 = ui.add_sized(
             (ui.available_width(), 20.0),
-            egui::TextEdit::multiline(&mut self.iri_buffer),
+            egui::TextEdit::multiline(&mut buffer.iri),
         );
 
         ui.label("Comment:");
         let r2 = ui.add_sized(
             (ui.available_width(), 20.0),
-            egui::TextEdit::multiline(&mut self.comment_buffer),
+            egui::TextEdit::multiline(&mut buffer.comment),
         );
 
         let r3 = if ui.button("Switch source and destination").clicked()
             && /* TODO: must check if target isn't a literal */ true
         {
-            let mut model = self.model.write().unwrap();
             (model.source, model.destination) = (model.destination.clone(), model.source.clone());
-            (self.source, self.destination) = (self.destination.clone(), self.source.clone());
+            // TODO: (self.source, self.destination) = (self.destination.clone(), self.source.clone());
             true
         } else {
             false
         };
 
         if r1.changed() || r2.changed() || r3 {
-            let mut model = self.model.write().unwrap();
-
             if r1.changed() {
-                model.iri = Arc::new(self.iri_buffer.clone());
+                model.iri = Arc::new(buffer.iri.clone());
             }
 
             if r2.changed() {
-                model.comment = Arc::new(self.comment_buffer.clone());
+                model.comment = Arc::new(buffer.comment.clone());
             }
 
             model.notify_observers();
         }
-
-        true
-    }
-
-    fn draw_in(
-        &mut self,
-        _: &RdfQueryable,
-        canvas: &mut dyn NHCanvas,
-        _tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
-    ) -> TargettingStatus {
-        let (source_pos, source_bounds) = {
-            let lock = self.source.read().unwrap();
-            (lock.position(), lock.min_shape())
-        };
-        let (dest_pos, dest_bounds) = {
-            let lock = self.destination.read().unwrap();
-            (lock.position(), lock.min_shape())
-        };
-        match (
-            source_bounds.center_intersect(
-                self.source_points[0]
-                    .get(1)
-                    .map(|e| *e)
-                    .or(self.center_point)
-                    .map(|e| e.1)
-                    .unwrap_or(dest_pos),
-            ),
-            dest_bounds.center_intersect(
-                self.dest_points[0]
-                    .get(1)
-                    .map(|e| *e)
-                    .or(self.center_point)
-                    .map(|e| e.1)
-                    .unwrap_or(source_pos),
-            ),
-        ) {
-            (Some(source_intersect), Some(dest_intersect)) => {
-                self.source_points[0][0].1 = source_intersect;
-                self.dest_points[0][0].1 = dest_intersect;
-                canvas.draw_multiconnection(
-                    &self.selected_vertices,
-                    &[(
-                        ArrowheadType::None,
-                        Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        &self.source_points[0],
-                        None,
-                    )],
-                    &[(
-                        ArrowheadType::OpenTriangle,
-                        Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        &self.dest_points[0],
-                        None,
-                    )],
-                    match &self.center_point {
-                        Some(point) => *point,
-                        None => (uuid::Uuid::nil(), (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0),
-                    },
-                    Some(&self.model.read().unwrap().iri),
-                    self.highlight,
-                );
-            }
-            _ => {}
-        }
-        TargettingStatus::NotDrawn
-    }
-
-    fn click(
-        &mut self,
-        _tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<HighLevelCommand>,
-        pos: egui::Pos2,
-        modifiers: ModifierKeys,
-    ) -> ClickHandlingStatus {
-        crate::common::controller::macros::multiconnection_element_click!(
-            self,
-            pos,
-            modifiers,
-            commands,
-            ClickHandlingStatus::HandledByElement
-        );
-        ClickHandlingStatus::NotHandled
-    }
-    fn drag(
-        &mut self,
-        _tool: &mut Option<NaiveRdfTool>,
-        _commands: &mut Vec<HighLevelCommand>,
-        last_pos: egui::Pos2,
-        delta: egui::Vec2,
-    ) -> DragHandlingStatus {
-        crate::common::controller::macros::multiconnection_element_drag!(
-            self,
-            last_pos,
-            delta,
-            center_point,
-            sources,
-            destinations,
-            DragHandlingStatus::Handled
-        );
-        DragHandlingStatus::NotHandled
-    }
-
-    fn apply_command(&mut self, command: &HighLevelCommand) {
-        match command {
-            HighLevelCommand::SelectAll(select) => {
-                self.highlight.selected = *select;
-                match select {
-                    false => self.selected_vertices.clear(),
-                    true => {
-                        if let Some(center_point) = self.center_point.as_ref() {
-                            self.selected_vertices.insert(center_point.0);
-                        }
-
-                        for path in self.source_points.iter() {
-                            for p in path.iter() {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
-
-                        for path in self.dest_points.iter() {
-                            for p in path.iter() {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
-                    }
-                }
-            }
-            HighLevelCommand::Select(uuids, select) => {
-                if uuids.contains(&*self.uuid()) {
-                    self.highlight.selected = *select;
-                }
-                match select {
-                    false => self.selected_vertices.retain(|e| !uuids.contains(e)),
-                    true => {
-                        if let Some(center_point) = self.center_point.as_ref().filter(|e| uuids.contains(&e.0)) {
-                            self.selected_vertices.insert(center_point.0);
-                        }
-
-                        for path in self.source_points.iter() {
-                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
-
-                        for path in self.dest_points.iter() {
-                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
-                    }
-                }
-            }
-            HighLevelCommand::MoveSelectedElements(delta) => {
-                if self.highlight.selected {
-                    if let Some(center_point) = self.center_point.as_mut() {
-                        center_point.1 += *delta;
-                    }
-
-                    for path in self.source_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            p.1 += *delta;
-                        }
-                    }
-
-                    for path in self.dest_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            p.1 += *delta;
-                        }
-                    }
-                } else {
-                    if let Some(center_point) = self.center_point.as_mut()
-                        .filter(|e| self.selected_vertices.contains(&e.0))
-                    {
-                        center_point.1 += *delta;
-                    }
-                    
-                    for path in self.source_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            if self.selected_vertices.contains(&p.0) {
-                                p.1 += *delta;
-                            }
-                        }
-                    }
-                    
-                    for path in self.dest_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            if self.selected_vertices.contains(&p.0) {
-                                p.1 += *delta;
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
     
-    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
-        if self.highlight.selected {
-            into.insert(*self.uuid());
-        }
-        for e in &self.selected_vertices {
-            into.insert(*e);
-        }
+    fn model_to_uuid(a: &RdfPredicate) -> Arc<uuid::Uuid> {
+        a.uuid()
     }
+    fn model_to_name(a: &RdfPredicate) -> Arc<String> {
+        a.iri.clone()
+    }
+    fn model_to_line_type(_a: &RdfPredicate) -> canvas::LineType {
+        canvas::LineType::Solid
+    }
+    fn model_to_source_arrowhead_type(_a: &RdfPredicate) -> canvas::ArrowheadType {
+        canvas::ArrowheadType::None
+    }
+    fn model_to_destination_arrowhead_type(_a: &RdfPredicate) -> canvas::ArrowheadType {
+        canvas::ArrowheadType::OpenTriangle
+    }
+    fn model_to_source_arrowhead_label(_a: &RdfPredicate) -> Option<&str> {
+        None
+    }
+    fn model_to_destination_arrowhead_label(_a: &RdfPredicate) -> Option<&str> {
+        None
+    }
+    
+    let predicate_uuid = uuid::Uuid::now_v7();
+    let predicate = Arc::new(RwLock::new(RdfPredicate::new(
+        predicate_uuid.clone(),
+        iri.to_owned(),
+        source.0,
+        destination.0,
+    )));
+    let predicate_controller = Arc::new(RwLock::new(MulticonnectionView {
+        model: predicate.clone(),
+        buffer: RdfPredicateBuffer { iri: iri.to_owned(), comment: "".to_owned() },
+
+        source: source.1,
+        destination: destination.1,
+
+        highlight: canvas::Highlight::NONE,
+        selected_vertices: HashSet::new(),
+        center_point: None,
+        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        
+        model_to_element_shim,
+        show_properties_fun,
+        
+        model_to_uuid,
+        model_to_name,
+        model_to_line_type,
+        model_to_source_arrowhead_type,
+        model_to_destination_arrowhead_type,
+        model_to_source_arrowhead_label,
+        model_to_destination_arrowhead_label,
+    }));
+    (predicate_uuid, predicate, predicate_controller)
 }
 
-impl RdfElementController for RdfPredicateController {
+struct RdfPredicateBuffer {
+    iri: String,
+    comment: String,
+}
+
+impl RdfElementController for MulticonnectionView<RdfPredicate, dyn RdfElement, RdfQueryable, RdfPredicateBuffer, NaiveRdfTool> {
     fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
         *self.source.read().unwrap().uuid() == *uuid
     }
