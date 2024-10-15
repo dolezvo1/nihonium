@@ -4,9 +4,10 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ClickHandlingStatus, ContainerGen2, HighLevelCommand, DiagramController, DiagramControllerGen2,
+    ClickHandlingStatus, ContainerGen2, DiagramController, DiagramControllerGen2,
     DragHandlingStatus, ElementController, ElementControllerGen2, ModifierKeys,
     TargettingStatus, Tool, MulticonnectionView,
+    SensitiveCommand, InsensitiveCommand,
 };
 use crate::common::observer::Observable;
 use crate::CustomTab;
@@ -893,7 +894,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn click(
         &mut self,
         tool: &mut Option<NaiveUmlClassTool>,
-        commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<SensitiveCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -942,10 +943,10 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
             } else if let Some((uc, status)) = uc_status {
                 if status == ClickHandlingStatus::HandledByElement {
                     if !modifiers.command {
-                        commands.push(HighLevelCommand::SelectAll(false));
-                        commands.push(HighLevelCommand::Select(std::iter::once(*uc.0).collect(), true));
+                        commands.push(SensitiveCommand::SelectAll(false));
+                        commands.push(SensitiveCommand::Select(std::iter::once(*uc.0).collect(), true));
                     } else {
-                        commands.push(HighLevelCommand::Select(std::iter::once(*uc.0).collect(), !self.selected_elements.contains(&uc.0)));
+                        commands.push(SensitiveCommand::Select(std::iter::once(*uc.0).collect(), !self.selected_elements.contains(&uc.0)));
                     }
                 }
                 return ClickHandlingStatus::HandledByContainer;
@@ -959,7 +960,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn drag(
         &mut self,
         tool: &mut Option<NaiveUmlClassTool>,
-        commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<SensitiveCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -982,9 +983,9 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
 
         if handled == DragHandlingStatus::NotHandled && self.min_shape().contains(last_pos) {
             if self.highlight.selected {
-                commands.push(HighLevelCommand::MoveSelectedElements(delta));
+                commands.push(SensitiveCommand::MoveSelectedElements(delta));
             } else {
-                self.bounds_rect.set_center(self.position() + delta);
+                commands.push(SensitiveCommand::MoveElements(std::iter::once(*self.uuid()).collect(), delta));
             }
             return DragHandlingStatus::Handled;
         }
@@ -992,24 +993,24 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         handled
     }
 
-    fn apply_command(&mut self, command: &HighLevelCommand) {
-        fn recurse(this: &mut UmlClassPackageController, command: &HighLevelCommand) {
+    fn apply_command(&mut self, command: &InsensitiveCommand, undo_accumulator: &mut Vec<InsensitiveCommand>) {
+        fn recurse(this: &mut UmlClassPackageController, command: &InsensitiveCommand, undo_accumulator: &mut Vec<InsensitiveCommand>) {
             for e in &this.owned_controllers {
                 let mut e = e.1.write().unwrap();
-                e.apply_command(command);
+                e.apply_command(command, undo_accumulator);
             }
         }
 
         match command {
-            HighLevelCommand::SelectAll(select) => {
+            InsensitiveCommand::SelectAll(select) => {
                 self.highlight.selected = *select;
                 match select {
                     true => self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect(),
                     false => self.selected_elements.clear(),
                 }
-                recurse(self, command);
+                recurse(self, command, undo_accumulator);
             },
-            HighLevelCommand::Select(uuids, select) => {
+            InsensitiveCommand::Select(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
@@ -1021,15 +1022,23 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
                     };
                 }
                 
-                recurse(self, command);
+                recurse(self, command, undo_accumulator);
             }
-            HighLevelCommand::MoveSelectedElements(delta) => {
-                if self.highlight.selected {
+            InsensitiveCommand::MoveElements(uuids, delta) => {
+                if uuids.contains(&*self.uuid()) {
                     self.bounds_rect.set_center(self.position() + *delta);
+                    undo_accumulator.push(InsensitiveCommand::MoveElements(std::iter::once(*self.uuid()).collect(), -*delta));
                 } else {
-                    recurse(self, command);
+                    recurse(self, command, undo_accumulator);
                 }
             }
+            InsensitiveCommand::DeleteElements(uuids) => {
+                self.owned_controllers.retain(|k, v| !uuids.contains(&k));
+                // TODO: undo commands
+            }
+            InsensitiveCommand::AddElement(..) => {
+                // TODO: stuff
+            },
         }
     }
     
@@ -1238,7 +1247,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn click(
         &mut self,
         tool: &mut Option<NaiveUmlClassTool>,
-        _commands: &mut Vec<HighLevelCommand>,
+        _commands: &mut Vec<SensitiveCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1262,7 +1271,7 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
     fn drag(
         &mut self,
         _tool: &mut Option<NaiveUmlClassTool>,
-        commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<SensitiveCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1271,29 +1280,32 @@ impl ElementControllerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClass
         }
 
         if self.highlight.selected {
-            commands.push(HighLevelCommand::MoveSelectedElements(delta));
+            commands.push(SensitiveCommand::MoveSelectedElements(delta));
         } else {
-            self.position += delta;
+            commands.push(SensitiveCommand::MoveElements(std::iter::once(*self.uuid()).collect(), delta));
         }
 
         DragHandlingStatus::Handled
     }
 
-    fn apply_command(&mut self, command: &HighLevelCommand) {
+    fn apply_command(&mut self, command: &InsensitiveCommand, undo_accumulator: &mut Vec<InsensitiveCommand>) {
         match command {
-            HighLevelCommand::SelectAll(select) => {
+            InsensitiveCommand::SelectAll(select) => {
                 self.highlight.selected = *select;
             }
-            HighLevelCommand::Select(uuids, select) => {
+            InsensitiveCommand::Select(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
             }
-            HighLevelCommand::MoveSelectedElements(delta) => {
-                if self.highlight.selected {
+            InsensitiveCommand::MoveElements(uuids, delta) => {
+                if uuids.contains(&*self.uuid()) {
                     self.position += *delta;
+                    undo_accumulator.push(InsensitiveCommand::MoveElements(std::iter::once(*self.uuid()).collect(), -*delta));
                 }
             }
+            InsensitiveCommand::DeleteElements(..)
+            | InsensitiveCommand::AddElement(..) => {},
         }
     }
     
@@ -1455,8 +1467,6 @@ struct UmlClassLinkBuffer {
     destination_arrowhead_label: String,
     comment: String,
 }
-
-
 
 impl UmlClassElementController for MulticonnectionView<UmlClassLink, dyn UmlClassElement, UmlClassQueryable, UmlClassLinkBuffer, NaiveUmlClassTool> {
     fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {

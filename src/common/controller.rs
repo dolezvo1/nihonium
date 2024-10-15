@@ -105,59 +105,67 @@ pub enum DragHandlingStatus {
     Handled,
 }
 
-#[derive(PartialEq, Debug)]
-pub enum HighLevelCommand {
+#[derive(Clone, PartialEq, Debug)]
+pub enum SensitiveCommand/*<ElementT>*/ {
     SelectAll(bool),
     Select(HashSet<uuid::Uuid>, bool),
-    MoveSelectedElements(egui::Vec2),
-}
-
-impl HighLevelCommand {
-    fn to_revertible(&self, all_selected_elements: &HashSet<uuid::Uuid>) -> Option<RevertibleCommand> {
-        match self {
-            HighLevelCommand::SelectAll(..)
-            | HighLevelCommand::Select(..) => None,
-            HighLevelCommand::MoveSelectedElements(delta) => Some(RevertibleCommand::MoveElements(all_selected_elements.clone(), *delta)),
-        }
-    }
-}
-
-#[derive(PartialEq, Debug)]
-pub enum RevertibleCommand {
     MoveElements(HashSet<uuid::Uuid>, egui::Vec2),
+    MoveSelectedElements(egui::Vec2),
+    DeleteElements(HashSet<uuid::Uuid>),
+    DeleteSelectedElements,
+    AddElement(uuid::Uuid, u8),
 }
 
-impl RevertibleCommand {
-    fn merge(&self, other: &Self) -> Option<Self> {
-        match (self, other) {
-            (RevertibleCommand::MoveElements(uuids1, delta1), RevertibleCommand::MoveElements(uuids2, delta2)) if uuids1 == uuids2 => {
-                Some(RevertibleCommand::MoveElements(uuids1.clone(), *delta1 + *delta2))
-            }
-            _ => { None }
+impl/*<ElementT>*/ SensitiveCommand/*<ElementT>*/ {
+    fn to_selection_insensitive(self, selected_elements: &HashSet<uuid::Uuid>) -> InsensitiveCommand/*<ElementT>*/ {
+        match self {
+            SensitiveCommand::SelectAll(select) => InsensitiveCommand::SelectAll(select),
+            SensitiveCommand::Select(uuids, select) => InsensitiveCommand::Select(uuids, select),
+            SensitiveCommand::MoveElements(uuids, delta) => InsensitiveCommand::MoveElements(uuids, delta),
+            SensitiveCommand::MoveSelectedElements(delta) => InsensitiveCommand::MoveElements(selected_elements.clone(), delta),
+            SensitiveCommand::DeleteElements(uuids) => InsensitiveCommand::DeleteElements(uuids),
+            SensitiveCommand::DeleteSelectedElements => InsensitiveCommand::DeleteElements(selected_elements.clone()),
+            SensitiveCommand::AddElement(uuid, element) => InsensitiveCommand::AddElement(uuid, element),
         }
     }
-    
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum InsensitiveCommand/*<ElementT>*/ {
+    SelectAll(bool),
+    Select(HashSet<uuid::Uuid>, bool),
+    MoveElements(HashSet<uuid::Uuid>, egui::Vec2),
+    DeleteElements(HashSet<uuid::Uuid>),
+    AddElement(uuid::Uuid, u8),
+}
+
+impl/*<ElementT>*/ InsensitiveCommand/*<ElementT>*/ {
+    fn to_selection_sensitive(self) -> SensitiveCommand/*<ElementT>*/ {
+        match self {
+            InsensitiveCommand::SelectAll(select) => SensitiveCommand::SelectAll(select),
+            InsensitiveCommand::Select(uuids, select) => SensitiveCommand::Select(uuids, select),
+            InsensitiveCommand::MoveElements(uuids, delta) => SensitiveCommand::MoveElements(uuids, delta),
+            InsensitiveCommand::DeleteElements(uuids) => SensitiveCommand::DeleteElements(uuids),
+            InsensitiveCommand::AddElement(uuid, element) => SensitiveCommand::AddElement(uuid, element),
+        }
+    }
+
     fn info_text(&self) -> String {
         match self {
-            RevertibleCommand::MoveElements(uuids, delta) => format!("Move {} elements", uuids.len()),
+            InsensitiveCommand::SelectAll(..)
+            | InsensitiveCommand::Select(..) => format!("Sorry, your undo stack is broken now :/"),
+            InsensitiveCommand::DeleteElements(uuids) => format!("Delete {} elements", uuids.len()),
+            InsensitiveCommand::MoveElements(uuids, delta) => format!("Move {} elements", uuids.len()),
+            InsensitiveCommand::AddElement(..) => format!("Add 1 element"),
         }
     }
-    
-    fn inverse(&self) -> Self {
-        match self {
-            RevertibleCommand::MoveElements(uuids, delta) => RevertibleCommand::MoveElements(uuids.clone(), -*delta),
-        }
-    }
-    
-    fn to_high_level(&self) -> Vec<HighLevelCommand> {
-        match self {
-            RevertibleCommand::MoveElements(uuids, delta) => {
-                vec![
-                    HighLevelCommand::SelectAll(false),
-                    HighLevelCommand::Select(uuids.clone(), true),
-                    HighLevelCommand::MoveSelectedElements(*delta)
-                ]
+
+    fn merge(&self, other: &Self) -> Option<Self> {
+        match (self, other) {
+            (InsensitiveCommand::MoveElements(uuids1, delta1), InsensitiveCommand::MoveElements(uuids2, delta2)) if uuids1 == uuids2 => {
+                Some(InsensitiveCommand::MoveElements(uuids1.clone(), *delta1 + *delta2))
             }
+            _ => { None }
         }
     }
 }
@@ -209,18 +217,18 @@ where
     fn click(
         &mut self,
         tool: &mut Option<ToolT>,
-        commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<SensitiveCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus;
     fn drag(
         &mut self,
         tool: &mut Option<ToolT>,
-        commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<SensitiveCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus;
-    fn apply_command(&mut self, command: &HighLevelCommand);
+    fn apply_command(&mut self, command: &InsensitiveCommand, undo_accumulator: &mut Vec<InsensitiveCommand>);
     fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>);
 }
 
@@ -257,10 +265,11 @@ pub struct DiagramControllerGen2<
     selected_elements: HashSet<uuid::Uuid>,
     all_selected_elements: HashSet<uuid::Uuid>,
     current_tool: Option<ToolT>,
-    undo_stack: Vec<RevertibleCommand>,
-    redo_stack: Vec<RevertibleCommand>,
+    undo_stack: Vec<(InsensitiveCommand, Vec<InsensitiveCommand>)>,
+    redo_stack: Vec<InsensitiveCommand>,
     undo_shortcut: egui::KeyboardShortcut,
     redo_shortcut: egui::KeyboardShortcut,
+    delete_shortcut: egui::KeyboardShortcut,
 
     // q: dyn Fn(&Vec<DomainElementT>) -> QueryableT,
     queryable: QueryableT,
@@ -309,6 +318,7 @@ where
             redo_stack: Vec::new(),
             undo_shortcut: egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z),
             redo_shortcut: egui::KeyboardShortcut::new(egui::Modifiers{ alt: false, ctrl: false, shift: true, mac_cmd: false, command: true }, egui::Key::Z),
+            delete_shortcut: egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete),
 
             queryable,
             buffer,
@@ -322,65 +332,85 @@ where
         self.model.clone()
     }
 
-    fn apply_commands(&mut self, commands: Vec<HighLevelCommand>, save_to_undo_stack: bool) {
-        for command in &commands {
-            match command {
-                HighLevelCommand::SelectAll(select) => {
+    fn apply_commands(&mut self, commands: Vec<SensitiveCommand>, save_to_undo_stack: bool, clear_redo_stack: bool) {
+        for command in commands {
+            let command = command.to_selection_insensitive(&self.all_selected_elements);
+            
+            let mut undo_commands = vec![];
+            
+            match &command {
+                InsensitiveCommand::SelectAll(select) => {
                     match select {
                         true => self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect(),
                         false => self.selected_elements.clear(),
                     }
                 },
-                HighLevelCommand::Select(uuids, select) => {
+                InsensitiveCommand::Select(uuids, select) => {
                     for uuid in self.owned_controllers.keys().filter(|k| uuids.contains(k)) {
                         match select {
-                            true => self.selected_elements.insert(*uuid),
+                            true => self.selected_elements.insert(uuid.clone()),
                             false => self.selected_elements.remove(uuid),
                         };
                     }
                 },
-                HighLevelCommand::MoveSelectedElements(_) => {},
+                InsensitiveCommand::MoveElements(..) => {},
+                InsensitiveCommand::DeleteElements(uuids) => {
+                    self.owned_controllers.retain(|k, v| !uuids.contains(&k));
+                    // TODO: undo_commands
+                },
+                InsensitiveCommand::AddElement(..) => {
+                    // TODO: add element
+                    // TODO: undo_commands
+                }
             }
         
             for e in &self.owned_controllers {
                 let mut e = e.1.write().unwrap();
-                e.apply_command(command);
+                e.apply_command(&command, &mut undo_commands);
             }
             
-            if let Some(revertible) = command.to_revertible(&self.all_selected_elements).filter(|_| save_to_undo_stack) {
-                if let Some(merged) = self.undo_stack.last().and_then(|e| e.merge(&revertible)) {
-                    *self.undo_stack.last_mut().unwrap() = merged;
-                } else {
-                    self.undo_stack.push(revertible);
+            if !undo_commands.is_empty() {
+                if clear_redo_stack {
+                    self.redo_stack.clear();
+                }
+                if save_to_undo_stack {
+                    if let Some(merged) = self.undo_stack.last().and_then(|e| e.0.merge(&command)) {
+                        let last = self.undo_stack.last_mut().unwrap();
+                        last.0 = merged;
+                        last.1.extend(undo_commands);
+                    } else {
+                        self.undo_stack.push((command.clone(), undo_commands));
+                    }
                 }
             }
             
             match command {
-                HighLevelCommand::SelectAll(..)
-                | HighLevelCommand::Select(..) => {
+                InsensitiveCommand::SelectAll(..)
+                | InsensitiveCommand::Select(..)
+                | InsensitiveCommand::DeleteElements(..)
+                | InsensitiveCommand::AddElement(..) => {
                     self.all_selected_elements = HashSet::new();
                     for (_, c) in &self.owned_controllers {
                         let mut c = c.write().unwrap();
                         c.collect_all_selected_elements(&mut self.all_selected_elements);
                     }
                 },
-                HighLevelCommand::MoveSelectedElements(_) => {},
+                InsensitiveCommand::MoveElements(..) => {},
             }
         }
     }
     
     fn undo(&mut self, n: usize) {
         let n = n.min(self.undo_stack.len());
-        let commands: Vec<_> = self.undo_stack.drain(self.undo_stack.len() - n..).rev().collect();
-        self.apply_commands(commands.iter().flat_map(|e| e.inverse().to_high_level()).collect(), false);
+        let (commands, undo_commands): (Vec<_>, Vec<Vec<_>>) = self.undo_stack.drain(self.undo_stack.len() - n..).rev().collect();
+        self.apply_commands(undo_commands.into_iter().flatten().map(|c| c.to_selection_sensitive()).collect(), false, false);
         self.redo_stack.extend(commands);
     }
     
     fn redo(&mut self, n: usize) {
         let n = n.min(self.redo_stack.len());
-        let commands: Vec<_> = self.redo_stack.drain(self.redo_stack.len() - n..).rev().collect();
-        self.apply_commands(commands.iter().flat_map(|e| e.to_high_level()).collect(), false);
-        self.undo_stack.extend(commands);
+        let commands: Vec<_> = self.redo_stack.drain(self.redo_stack.len() - n..).rev().map(|c| c.to_selection_sensitive()).collect();
+        self.apply_commands(commands, true, false);
     }
 }
 
@@ -449,11 +479,13 @@ where
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response) {
         // Handle camera and element clicks/drags
         
-        // TODO: This is generally wrong. Depends on redo_shortcut not being a subset of undo_shortcut.
+        // TODO: This shortcut handling is generally wrong. Depends on redo_shortcut not being a subset of undo_shortcut.
         if ui.input_mut(|i| i.consume_shortcut(&self.redo_shortcut)) {
             self.redo(1);
         } else if ui.input_mut(|i| i.consume_shortcut(&self.undo_shortcut)) {
             self.undo(1);
+        } else if ui.input_mut(|i| i.consume_shortcut(&self.delete_shortcut)) {
+            self.apply_commands(vec![SensitiveCommand::DeleteSelectedElements], true, true);
         } else if response.clicked() {
             if let Some(pos) = ui.ctx().pointer_interact_pos() {
                 self.click(
@@ -524,10 +556,10 @@ where
                 ) {
                     ClickHandlingStatus::HandledByElement => {
                         if !modifiers.command {
-                            commands.push(HighLevelCommand::SelectAll(false));
-                            commands.push(HighLevelCommand::Select(std::iter::once(*uc.0).collect(), true));
+                            commands.push(SensitiveCommand::SelectAll(false));
+                            commands.push(SensitiveCommand::Select(std::iter::once(*uc.0).collect(), true));
                         } else {
-                            commands.push(HighLevelCommand::Select(std::iter::once(*uc.0).collect(), !self.selected_elements.contains(&uc.0)));
+                            commands.push(SensitiveCommand::Select(std::iter::once(*uc.0).collect(), !self.selected_elements.contains(&uc.0)));
                         }
                         ClickHandlingStatus::HandledByContainer
                     }
@@ -536,11 +568,11 @@ where
             })
             .find(|e| *e == ClickHandlingStatus::HandledByContainer)
             .ok_or_else(|| {
-                commands.push(HighLevelCommand::SelectAll(false));
+                commands.push(SensitiveCommand::SelectAll(false));
             })
             .is_ok();
 
-        self.apply_commands(commands, true);
+        self.apply_commands(commands, true, true);
 
         if !handled {
             if let Some(t) = self.current_tool.as_mut() {
@@ -579,7 +611,7 @@ where
             })
             .is_some();
 
-        self.apply_commands(commands, true);
+        self.apply_commands(commands, true, true);
 
         ret
     }
@@ -607,14 +639,16 @@ where
     }
     fn show_menubar_edit_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui) {
         ui.menu_button("Undo", |ui| {
+            ui.set_max_width(200.0);
             for (ii, c) in self.undo_stack.iter().rev().enumerate() {
-                if ui.button(c.info_text()).clicked() {
+                if ui.button(c.0.info_text()).clicked() {
                     self.undo(ii+1);
                     break;
                 }
             }
         });
         ui.menu_button("Redo", |ui| {
+            ui.set_max_width(200.0);
             for (ii, c) in self.redo_stack.iter().rev().enumerate() {
                 if ui.button(c.info_text()).clicked() {
                     self.redo(ii+1);
@@ -882,7 +916,7 @@ where
     fn click(
         &mut self,
         _tool: &mut Option<ToolT>,
-        commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<SensitiveCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -891,10 +925,10 @@ where
         macro_rules! handle_vertex {
             ($uuid:expr) => {
                 if !modifiers.command {
-                    commands.push(HighLevelCommand::SelectAll(false));
-                    commands.push(HighLevelCommand::Select(std::iter::once(*$uuid).collect(), true));
+                    commands.push(SensitiveCommand::SelectAll(false));
+                    commands.push(SensitiveCommand::Select(std::iter::once(*$uuid).collect(), true));
                 } else {
-                    commands.push(HighLevelCommand::Select(std::iter::once(*$uuid).collect(), !self.selected_vertices.contains($uuid)));
+                    commands.push(SensitiveCommand::Select(std::iter::once(*$uuid).collect(), !self.selected_vertices.contains($uuid)));
                 }
                 return ClickHandlingStatus::HandledByContainer;
             }
@@ -980,7 +1014,7 @@ where
     fn drag(
         &mut self,
         _tool: &mut Option<ToolT>,
-        commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<SensitiveCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -992,9 +1026,14 @@ where
 
         match self.center_point {
             // Check whether over center point, if so move it
-            Some(pos) => {
-                if is_over(last_pos, pos.1) {
-                    self.center_point = Some((pos.0, pos.1 + delta));
+            Some((uuid, pos)) => {
+                if is_over(last_pos, pos) {
+                    if self.selected_vertices.contains(&uuid) {
+                        commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                    } else {
+                        commands.push(SensitiveCommand::MoveElements(std::iter::once(uuid).collect(), delta));
+                    }
+
                     return DragHandlingStatus::Handled;
                 }
             }
@@ -1017,9 +1056,9 @@ where
                     for joint in &mut path[1..stop_idx] {
                         if is_over(last_pos, joint.1) {
                             if self.selected_vertices.contains(&joint.0) {
-                                commands.push(HighLevelCommand::MoveSelectedElements(delta));
+                                commands.push(SensitiveCommand::MoveSelectedElements(delta));
                             } else {
-                                joint.1 += delta;
+                                commands.push(SensitiveCommand::MoveElements(std::iter::once(joint.0).collect(), delta));
                             }
                             
                             return DragHandlingStatus::Handled;
@@ -1064,96 +1103,57 @@ where
         DragHandlingStatus::NotHandled
     }
 
-    fn apply_command(&mut self, command: &HighLevelCommand) {
+    fn apply_command(&mut self, command: &InsensitiveCommand, undo_accumulator: &mut Vec<InsensitiveCommand>) {
+        macro_rules! all_pts_mut {
+            ($self:ident) => {
+                $self.center_point.as_mut().into_iter()
+                    .chain($self.source_points.iter_mut().flatten())
+                    .chain($self.dest_points.iter_mut().flatten())
+            }
+        }
         match command {
-            HighLevelCommand::SelectAll(select) => {
+            InsensitiveCommand::SelectAll(select) => {
                 self.highlight.selected = *select;
                 match select {
                     false => self.selected_vertices.clear(),
-                    true => {
-                        if let Some(center_point) = self.center_point.as_ref() {
-                            self.selected_vertices.insert(center_point.0);
-                        }
-
-                        for path in self.source_points.iter() {
-                            for p in path.iter() {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
-
-                        for path in self.dest_points.iter() {
-                            for p in path.iter() {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
+                    true => for p in all_pts_mut!(self) {
+                        self.selected_vertices.insert(p.0);
                     }
                 }
             }
-            HighLevelCommand::Select(uuids, select) => {
+            InsensitiveCommand::Select(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
                 match select {
                     false => self.selected_vertices.retain(|e| !uuids.contains(e)),
-                    true => {
-                        if let Some(center_point) = self.center_point.as_ref().filter(|e| uuids.contains(&e.0)) {
-                            self.selected_vertices.insert(center_point.0);
-                        }
-
-                        for path in self.source_points.iter() {
-                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
-
-                        for path in self.dest_points.iter() {
-                            for p in path.iter().filter(|e| uuids.contains(&e.0)) {
-                                self.selected_vertices.insert(p.0);
-                            }
-                        }
+                    true => for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {
+                        self.selected_vertices.insert(p.0);
                     }
                 }
             }
-            HighLevelCommand::MoveSelectedElements(delta) => {
-                if self.highlight.selected {
-                    if let Some(center_point) = self.center_point.as_mut() {
-                        center_point.1 += *delta;
-                    }
-
-                    for path in self.source_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            p.1 += *delta;
-                        }
-                    }
-
-                    for path in self.dest_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            p.1 += *delta;
-                        }
-                    }
-                } else {
-                    if let Some(center_point) = self.center_point.as_mut()
-                        .filter(|e| self.selected_vertices.contains(&e.0))
-                    {
-                        center_point.1 += *delta;
-                    }
-                    
-                    for path in self.source_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            if self.selected_vertices.contains(&p.0) {
-                                p.1 += *delta;
-                            }
-                        }
-                    }
-                    
-                    for path in self.dest_points.iter_mut() {
-                        for p in path.iter_mut() {
-                            if self.selected_vertices.contains(&p.0) {
-                                p.1 += *delta;
-                            }
-                        }
-                    }
+            InsensitiveCommand::MoveElements(uuids, delta) => {
+                let multiconnection_present = uuids.contains(&*self.uuid());
+                for p in all_pts_mut!(self).filter(|e| multiconnection_present || uuids.contains(&e.0)) {
+                    p.1 += *delta;
+                    undo_accumulator.push(InsensitiveCommand::MoveElements(std::iter::once(p.0).collect(), -*delta));
                 }
+            }
+            InsensitiveCommand::DeleteElements(uuids) => {
+                if self.center_point.as_mut().filter(|e| uuids.contains(&e.0)).is_some() {
+                    self.center_point = None;
+                }
+                
+                for path in self.source_points.iter_mut() {
+                    *path = path.into_iter().filter(|e| !uuids.contains(&e.0)).map(|e| *e).collect();
+                }
+
+                for path in self.dest_points.iter_mut() {
+                    *path = path.into_iter().filter(|e| !uuids.contains(&e.0)).map(|e| *e).collect();
+                }
+            }
+            InsensitiveCommand::AddElement(..) => {
+                // TODO: stuff
             }
         }
     }

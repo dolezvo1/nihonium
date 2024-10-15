@@ -1,8 +1,9 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ClickHandlingStatus, HighLevelCommand, DiagramController, DragHandlingStatus, ElementController,
+    ClickHandlingStatus, DiagramController, DragHandlingStatus, ElementController,
     ModifierKeys, TargettingStatus,
+    SensitiveCommand, InsensitiveCommand,
 };
 use crate::common::controller::{
     ContainerGen2, DiagramControllerGen2, ElementControllerGen2, Tool, MulticonnectionView,
@@ -992,7 +993,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
     fn click(
         &mut self,
         tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<SensitiveCommand>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1038,10 +1039,10 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
             } else if let Some((uc, status)) = uc_status {
                 if status == ClickHandlingStatus::HandledByElement {
                     if !modifiers.command {
-                        commands.push(HighLevelCommand::SelectAll(false));
-                        commands.push(HighLevelCommand::Select(std::iter::once(*uc.0).collect(), true));
+                        commands.push(SensitiveCommand::SelectAll(false));
+                        commands.push(SensitiveCommand::Select(std::iter::once(*uc.0).collect(), true));
                     } else {
-                        commands.push(HighLevelCommand::Select(std::iter::once(*uc.0).collect(), !self.selected_elements.contains(&uc.0)));
+                        commands.push(SensitiveCommand::Select(std::iter::once(*uc.0).collect(), !self.selected_elements.contains(&uc.0)));
                     }
                 }
                 return ClickHandlingStatus::HandledByContainer;
@@ -1055,7 +1056,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
     fn drag(
         &mut self,
         tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<SensitiveCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1076,35 +1077,36 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
         tool.as_mut()
             .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
 
-        match (handled, self.min_shape().contains(last_pos)) {
-            (DragHandlingStatus::NotHandled, true) => {
-                self.bounds_rect.set_center(self.position() + delta);
-                return DragHandlingStatus::Handled;
+        if handled == DragHandlingStatus::NotHandled && self.min_shape().contains(last_pos) {
+            if self.highlight.selected {
+                commands.push(SensitiveCommand::MoveSelectedElements(delta));
+            } else {
+                commands.push(SensitiveCommand::MoveElements(std::iter::once(*self.uuid()).collect(), delta));
             }
-            _ => {}
+            return DragHandlingStatus::Handled;
         }
 
         handled
     }
 
-    fn apply_command(&mut self, command: &HighLevelCommand) {
-        fn recurse(this: &mut RdfGraphController, command: &HighLevelCommand) {
+    fn apply_command(&mut self, command: &InsensitiveCommand, undo_accumulator: &mut Vec<InsensitiveCommand>) {
+        fn recurse(this: &mut RdfGraphController, command: &InsensitiveCommand, undo_accumulator: &mut Vec<InsensitiveCommand>) {
             for e in &this.owned_controllers {
                 let mut e = e.1.write().unwrap();
-                e.apply_command(command);
+                e.apply_command(command, undo_accumulator);
             }
         }
 
         match command {
-            HighLevelCommand::SelectAll(select) => {
+            InsensitiveCommand::SelectAll(select) => {
                 self.highlight.selected = *select;
                 match select {
                     true => self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect(),
                     false => self.selected_elements.clear(),
                 }
-                recurse(self, command);
+                recurse(self, command, undo_accumulator);
             },
-            HighLevelCommand::Select(uuids, select) => {
+            InsensitiveCommand::Select(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
@@ -1116,15 +1118,23 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfGr
                     };
                 }
                 
-                recurse(self, command);
+                recurse(self, command, undo_accumulator);
             }
-            HighLevelCommand::MoveSelectedElements(delta) => {
-                if self.highlight.selected {
+            InsensitiveCommand::MoveElements(uuids, delta) => {
+                if uuids.contains(&*self.uuid()) {
                     self.bounds_rect.set_center(self.position() + *delta);
+                    undo_accumulator.push(InsensitiveCommand::MoveElements(std::iter::once(*self.uuid()).collect(), -*delta));
                 } else {
-                    recurse(self, command);
+                    recurse(self, command, undo_accumulator);
                 }
             }
+            InsensitiveCommand::DeleteElements(uuids) => {
+                self.owned_controllers.retain(|k, v| !uuids.contains(&k));
+                // TODO: undo commands
+            }
+            InsensitiveCommand::AddElement(..) => {
+                // TODO: stuff
+            },
         }
     }
     
@@ -1283,7 +1293,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
     fn click(
         &mut self,
         tool: &mut Option<NaiveRdfTool>,
-        _commands: &mut Vec<HighLevelCommand>,
+        _commands: &mut Vec<SensitiveCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1300,7 +1310,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
     fn drag(
         &mut self,
         _tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<SensitiveCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1309,29 +1319,32 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfNo
         }
 
         if self.highlight.selected {
-            commands.push(HighLevelCommand::MoveSelectedElements(delta));
+            commands.push(SensitiveCommand::MoveSelectedElements(delta));
         } else {
-            self.position += delta;
+            commands.push(SensitiveCommand::MoveElements(std::iter::once(*self.uuid()).collect(), delta));
         }
 
         DragHandlingStatus::Handled
     }
 
-    fn apply_command(&mut self, command: &HighLevelCommand) {
+    fn apply_command(&mut self, command: &InsensitiveCommand, undo_accumulator: &mut Vec<InsensitiveCommand>) {
         match command {
-            HighLevelCommand::SelectAll(select) => {
+            InsensitiveCommand::SelectAll(select) => {
                 self.highlight.selected = *select;
             }
-            HighLevelCommand::Select(uuids, select) => {
+            InsensitiveCommand::Select(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
             }
-            HighLevelCommand::MoveSelectedElements(delta) => {
-                if self.highlight.selected {
+            InsensitiveCommand::MoveElements(uuids, delta) => {
+                if uuids.contains(&*self.uuid()) {
                     self.position += *delta;
+                    undo_accumulator.push(InsensitiveCommand::MoveElements(std::iter::once(*self.uuid()).collect(), -*delta));
                 }
             }
+            InsensitiveCommand::DeleteElements(..)
+            | InsensitiveCommand::AddElement(..) => {},
         }
     }
     
@@ -1474,7 +1487,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
     fn click(
         &mut self,
         tool: &mut Option<NaiveRdfTool>,
-        _commands: &mut Vec<HighLevelCommand>,
+        _commands: &mut Vec<SensitiveCommand>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1491,7 +1504,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
     fn drag(
         &mut self,
         _tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<HighLevelCommand>,
+        commands: &mut Vec<SensitiveCommand>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1500,29 +1513,32 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool> for RdfLi
         }
 
         if self.highlight.selected {
-            commands.push(HighLevelCommand::MoveSelectedElements(delta));
+            commands.push(SensitiveCommand::MoveSelectedElements(delta));
         } else {
-            self.position += delta;
+            commands.push(SensitiveCommand::MoveElements(std::iter::once(*self.uuid()).collect(), delta));
         }
 
         DragHandlingStatus::Handled
     }
 
-    fn apply_command(&mut self, command: &HighLevelCommand) {
+    fn apply_command(&mut self, command: &InsensitiveCommand, undo_accumulator: &mut Vec<InsensitiveCommand>) {
         match command {
-            HighLevelCommand::SelectAll(select) => {
+            InsensitiveCommand::SelectAll(select) => {
                 self.highlight.selected = *select;
             }
-            HighLevelCommand::Select(uuids, select) => {
+            InsensitiveCommand::Select(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
             }
-            HighLevelCommand::MoveSelectedElements(delta) => {
-                if self.highlight.selected {
+            InsensitiveCommand::MoveElements(uuids, delta) => {
+                if uuids.contains(&*self.uuid()) {
                     self.position += *delta;
+                    undo_accumulator.push(InsensitiveCommand::MoveElements(std::iter::once(*self.uuid()).collect(), -*delta));
                 }
             }
+            InsensitiveCommand::DeleteElements(..)
+            | InsensitiveCommand::AddElement(..) => {},
         }
     }
     
