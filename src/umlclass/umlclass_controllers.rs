@@ -4,7 +4,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ClickHandlingStatus, ContainerGen2, DiagramController, DiagramControllerGen2,
+    ClickHandlingStatus, ContainerGen2, DiagramController, DiagramControllerGen2, ContainerModel,
     DragHandlingStatus, ElementController, ElementControllerGen2, InsensitiveCommand, ModifierKeys,
     MulticonnectionView, SensitiveCommand, TargettingStatus, Tool,
 };
@@ -588,7 +588,8 @@ pub enum UmlClassToolStage {
 
 enum PartialUmlClassElement {
     None,
-    Some(
+    Some((
+        uuid::Uuid,
         Arc<
             RwLock<
                 dyn ElementControllerGen2<
@@ -599,7 +600,7 @@ enum PartialUmlClassElement {
                 >,
             >,
         >,
-    ),
+    )),
     Link {
         link_type: UmlClassLinkType,
         source: Arc<RwLock<dyn UmlClassElement>>,
@@ -720,18 +721,21 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex> for N
                     "a class".to_owned(),
                 )));
                 self.result =
-                    PartialUmlClassElement::Some(Arc::new(RwLock::new(UmlClassController {
-                        model: node.clone(),
-                        stereotype_buffer: UmlClassStereotype::Class,
-                        name_buffer: "a class".to_owned(),
-                        properties_buffer: "".to_owned(),
-                        functions_buffer: "".to_owned(),
-                        comment_buffer: "".to_owned(),
+                    PartialUmlClassElement::Some((
+                        uuid,
+                        Arc::new(RwLock::new(UmlClassController {
+                            model: node.clone(),
+                            stereotype_buffer: UmlClassStereotype::Class,
+                            name_buffer: "a class".to_owned(),
+                            properties_buffer: "".to_owned(),
+                            functions_buffer: "".to_owned(),
+                            comment_buffer: "".to_owned(),
 
-                        highlight: canvas::Highlight::NONE,
-                        position: pos,
-                        bounds_rect: egui::Rect::ZERO,
-                    })));
+                            highlight: canvas::Highlight::NONE,
+                            position: pos,
+                            bounds_rect: egui::Rect::ZERO,
+                        }))
+                    ));
                 self.event_lock = true;
             }
             (UmlClassToolStage::PackageStart, _) => {
@@ -793,16 +797,19 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex> for N
             UmlClassElementOrVertex,
         >,
     ) -> Option<
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    dyn UmlClassElement,
-                    UmlClassQueryable,
-                    Self,
-                    UmlClassElementOrVertex,
+        (
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        dyn UmlClassElement,
+                        UmlClassQueryable,
+                        Self,
+                        UmlClassElementOrVertex,
+                    >,
                 >,
             >,
-        >,
+        )
     > {
         match &self.result {
             PartialUmlClassElement::Some(x) => {
@@ -820,7 +827,8 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex> for N
                     link_type: *link_type,
                 };
 
-                let association_controller: Option<
+                let association_controller: Option<(
+                    uuid::Uuid,
                     Arc<
                         RwLock<
                             dyn ElementControllerGen2<
@@ -831,18 +839,18 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex> for N
                             >,
                         >,
                     >,
-                > = if let (Some(source_controller), Some(dest_controller)) = (
+                )> = if let (Some(source_controller), Some(dest_controller)) = (
                     into.controller_for(&source.read().unwrap().uuid()),
                     into.controller_for(&dest.read().unwrap().uuid()),
                 ) {
-                    let (_, _, controller) = umlclass_link(
+                    let (uuid, _, controller) = umlclass_link(
                         *link_type,
                         None,
                         (source.clone(), source_controller),
                         (dest.clone(), dest_controller),
                     );
 
-                    Some(controller)
+                    Some((uuid, controller))
                 } else {
                     None
                 };
@@ -871,7 +879,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex> for N
                 }));
 
                 self.result = PartialUmlClassElement::None;
-                Some(package_controller)
+                Some((uuid, package_controller))
             }
             _ => None,
         }
@@ -1099,14 +1107,7 @@ impl
                 tool.add_element(KindedUmlClassElement::Package {}, pos);
 
                 if let Some(new_a) = tool.try_construct(self) {
-                    let new_c = new_a.read().unwrap();
-                    let uuid = *new_c.uuid();
-
-                    let mut self_m = self.model.write().unwrap();
-                    self_m.add_element(new_c.model());
-                    drop(new_c);
-
-                    self.owned_controllers.insert(uuid, new_a);
+                    commands.push(SensitiveCommand::AddElement(*self.uuid(), new_a.into()));
                 }
 
                 return ClickHandlingStatus::HandledByContainer;
@@ -1233,11 +1234,35 @@ impl
                 }
             }
             InsensitiveCommand::DeleteElements(uuids) => {
+                for (uuid, element) in self
+                    .owned_controllers
+                    .iter()
+                    .filter(|e| uuids.contains(&e.0))
+                {
+                    undo_accumulator.push(InsensitiveCommand::AddElement(
+                        *self.uuid(),
+                        UmlClassElementOrVertex::from((*uuid, element.clone())),
+                    ));
+                }
+                
+                let mut self_m = self.model.write().unwrap();
+                self_m.delete_elements(&uuids);
+                
                 self.owned_controllers.retain(|k, v| !uuids.contains(&k));
-                // TODO: undo commands
             }
-            InsensitiveCommand::AddElement(..) => {
-                // TODO: stuff
+            InsensitiveCommand::AddElement(target, element) => {
+                if *target == *self.uuid() {
+                    if let Ok((uuid, element)) = element.clone().try_into() {
+                        undo_accumulator.push(InsensitiveCommand::DeleteElements(std::iter::once(uuid).collect()));
+                        
+                        let new_c = element.read().unwrap();
+                        let mut self_m = self.model.write().unwrap();
+                        self_m.add_element(new_c.model());
+                        drop(new_c);
+                        
+                        self.owned_controllers.insert(uuid, element);
+                    }
+                }
             }
         }
     }

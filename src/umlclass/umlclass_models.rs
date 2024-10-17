@@ -2,7 +2,7 @@ use crate::common::canvas::{ArrowheadType, LineType};
 use crate::common::controller::{ContainerModel, Model};
 use crate::common::observer::{impl_observable, Observable, Observer};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, LazyLock, RwLock},
 };
 
@@ -158,6 +158,9 @@ impl ContainerModel<dyn UmlClassElement> for UmlClassDiagram {
         self.contained_elements.push(element);
         self.notify_observers();
     }
+    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
+        // TODO
+    }
 }
 
 impl_observable!(UmlClassDiagram);
@@ -185,10 +188,24 @@ impl UmlClassPackage {
             observers: VecDeque::new(),
         }
     }
+}
 
-    pub(super) fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
+impl Model for UmlClassPackage {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
+    }
+    fn name(&self) -> Arc<String> {
+        self.name.clone()
+    }
+}
+
+impl ContainerModel<dyn UmlClassElement> for UmlClassPackage {
+    fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
         self.contained_elements.push(element);
         self.notify_observers();
+    }
+    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
+        // TODO
     }
 }
 

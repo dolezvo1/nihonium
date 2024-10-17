@@ -199,6 +199,7 @@ pub trait Model: 'static {
 
 pub trait ContainerModel<ModelT: ?Sized>: Model {
     fn add_element(&mut self, _: Arc<RwLock<ModelT>>);
+    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>);
 }
 
 pub trait Tool<CommonElementT: ?Sized, QueryableT, AddCommandElementT> {
@@ -217,9 +218,12 @@ pub trait Tool<CommonElementT: ?Sized, QueryableT, AddCommandElementT> {
         &mut self,
         into: &dyn ContainerGen2<CommonElementT, QueryableT, Self, AddCommandElementT>,
     ) -> Option<
-        Arc<
-            RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, Self, AddCommandElementT>>,
-        >,
+        (
+            uuid::Uuid,
+            Arc<
+                RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, Self, AddCommandElementT>>,
+            >,
+        )
     >;
     fn reset_event_lock(&mut self);
 }
@@ -457,16 +461,25 @@ where
                             AddCommandElementT::from((*uuid, element.clone())),
                         ));
                     }
+                    
+                    let mut self_m = self.model.write().unwrap();
+                    self_m.delete_elements(uuids);
 
                     self.owned_controllers.retain(|k, v| !uuids.contains(&k));
                 }
                 InsensitiveCommand::AddElement(target, element) => {
                     if *target == *self.uuid() {
                         if let Ok((uuid, element)) = element.clone().try_into() {
-                            self.owned_controllers.insert(uuid, element);
                             undo_accumulator.push(InsensitiveCommand::DeleteElements(
                                 std::iter::once(uuid).collect(),
                             ));
+                            
+                            let new_c = element.read().unwrap();
+                            let mut self_m = self.model.write().unwrap();
+                            self_m.add_element(new_c.model());
+                            drop(new_c);
+                            
+                            self.owned_controllers.insert(uuid, element);
                         }
                     }
                 }
@@ -690,7 +703,7 @@ where
 
         let mut commands = Vec::new();
 
-        let handled = self
+        let mut handled = self
             .owned_controllers
             .iter_mut()
             .map(|uc| {
@@ -724,8 +737,6 @@ where
             })
             .is_ok();
 
-        self.apply_commands(commands, true, true);
-
         if !handled {
             if let Some(t) = self.current_tool.as_mut() {
                 t.add_position(pos);
@@ -733,18 +744,13 @@ where
         }
         let mut tool = self.current_tool.take();
         if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
-            let new_c = new_a.read().unwrap();
-            let uuid = *new_c.uuid();
-
-            let mut self_m = self.model.write().unwrap();
-            self_m.add_element(new_c.model());
-            drop(new_c);
-
-            self.owned_controllers.insert(uuid, new_a);
-            self.current_tool = tool;
-            return true;
+            commands.push(SensitiveCommand::AddElement(*self.uuid(), AddCommandElementT::from(new_a)));
+            handled = true;
         }
         self.current_tool = tool;
+        
+        self.apply_commands(commands, true, true);
+        
         handled
     }
     fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {

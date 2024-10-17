@@ -1,7 +1,7 @@
 use crate::common::controller::{ContainerModel, Model};
 use crate::common::observer::{impl_observable, Observable, Observer};
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, RwLock},
 };
 
@@ -89,6 +89,9 @@ impl ContainerModel<dyn RdfElement> for RdfDiagram {
         self.contained_elements.push(element);
         self.notify_observers();
     }
+    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
+        // TODO
+    }
 }
 
 impl_observable!(RdfDiagram);
@@ -116,10 +119,24 @@ impl RdfGraph {
             observers: VecDeque::new(),
         }
     }
+}
 
-    pub(super) fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
+impl Model for RdfGraph {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
+    }
+    fn name(&self) -> Arc<String> {
+        self.iri.clone()
+    }
+}
+
+impl ContainerModel<dyn RdfElement> for RdfGraph {
+    fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
         self.contained_elements.push(element);
         self.notify_observers();
+    }
+    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
+        // TODO
     }
 }
 

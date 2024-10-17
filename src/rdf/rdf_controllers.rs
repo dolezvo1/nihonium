@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ClickHandlingStatus, DiagramController, DragHandlingStatus, ElementController,
+    ClickHandlingStatus, DiagramController, DragHandlingStatus, ElementController, ContainerModel,
     InsensitiveCommand, ModifierKeys, SensitiveCommand, TargettingStatus,
 };
 use crate::common::controller::{
@@ -659,16 +659,19 @@ pub enum RdfToolStage {
 enum PartialRdfElement {
     None,
     Some(
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    dyn RdfElement,
-                    RdfQueryable,
-                    NaiveRdfTool,
-                    RdfElementOrVertex,
+        (
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        dyn RdfElement,
+                        RdfQueryable,
+                        NaiveRdfTool,
+                        RdfElementOrVertex,
+                    >,
                 >,
             >,
-        >,
+        )
     ),
     Predicate {
         source: Arc<RwLock<dyn RdfElement>>,
@@ -791,17 +794,20 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
                     "en".to_owned(),
                 )));
                 self.result =
-                    PartialRdfElement::Some(Arc::new(RwLock::new(RdfLiteralController {
-                        model: literal.clone(),
-                        content_buffer: "Eric Miller".to_owned(),
-                        datatype_buffer: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
-                        language_buffer: "en".to_owned(),
-                        comment_buffer: "".to_owned(),
+                    PartialRdfElement::Some((
+                        uuid,
+                        Arc::new(RwLock::new(RdfLiteralController {
+                            model: literal.clone(),
+                            content_buffer: "Eric Miller".to_owned(),
+                            datatype_buffer: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
+                            language_buffer: "en".to_owned(),
+                            comment_buffer: "".to_owned(),
 
-                        highlight: canvas::Highlight::NONE,
-                        position: pos,
-                        bounds_rect: egui::Rect::ZERO,
-                    })));
+                            highlight: canvas::Highlight::NONE,
+                            position: pos,
+                            bounds_rect: egui::Rect::ZERO,
+                        }))
+                    ));
                 self.event_lock = true;
             }
             (RdfToolStage::Node, _) => {
@@ -809,15 +815,18 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
                     uuid,
                     "http://www.w3.org/People/EM/contact#me".to_owned(),
                 )));
-                self.result = PartialRdfElement::Some(Arc::new(RwLock::new(RdfNodeController {
-                    model: node.clone(),
-                    iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
-                    comment_buffer: "".to_owned(),
+                self.result = PartialRdfElement::Some((
+                    uuid,
+                    Arc::new(RwLock::new(RdfNodeController {
+                        model: node.clone(),
+                        iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
+                        comment_buffer: "".to_owned(),
 
-                    highlight: canvas::Highlight::NONE,
-                    position: pos,
-                    bounds_radius: egui::Vec2::ZERO,
-                })));
+                        highlight: canvas::Highlight::NONE,
+                        position: pos,
+                        bounds_radius: egui::Vec2::ZERO,
+                    }))
+                ));
                 self.event_lock = true;
             }
             (RdfToolStage::GraphStart, _) => {
@@ -871,11 +880,14 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
         &mut self,
         into: &dyn ContainerGen2<dyn RdfElement, RdfQueryable, Self, RdfElementOrVertex>,
     ) -> Option<
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, Self, RdfElementOrVertex>,
+        (
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, Self, RdfElementOrVertex>,
+                >,
             >,
-        >,
+        )
     > {
         match &self.result {
             PartialRdfElement::Some(x) => {
@@ -891,7 +903,8 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
             } => {
                 self.current_stage = RdfToolStage::PredicateStart;
 
-                let predicate_controller: Option<
+                let predicate_controller: Option<(
+                    uuid::Uuid,
                     Arc<
                         RwLock<
                             dyn ElementControllerGen2<
@@ -902,17 +915,17 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
                             >,
                         >,
                     >,
-                > = if let (Some(source_controller), Some(dest_controller)) = (
+                )> = if let (Some(source_controller), Some(dest_controller)) = (
                     into.controller_for(&source.read().unwrap().uuid()),
                     into.controller_for(&dest.read().unwrap().uuid()),
                 ) {
-                    let (_, _, predicate_controller) = rdf_predicate(
+                    let (uuid, _, predicate_controller) = rdf_predicate(
                         "http://www.w3.org/2000/10/swap/pim/contact#fullName",
                         (source.clone(), source_controller),
                         (dest.clone(), dest_controller),
                     );
 
-                    Some(predicate_controller)
+                    Some((uuid, predicate_controller))
                 } else {
                     None
                 };
@@ -941,7 +954,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
                 }));
 
                 self.result = PartialRdfElement::None;
-                Some(graph_controller)
+                Some((uuid, graph_controller))
             }
             _ => None,
         }
@@ -1179,14 +1192,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElemen
                 tool.add_element(KindedRdfElement::Graph {}, pos);
 
                 if let Some(new_a) = tool.try_construct(self) {
-                    let new_c = new_a.read().unwrap();
-                    let uuid = *new_c.uuid();
-
-                    let mut self_m = self.model.write().unwrap();
-                    self_m.add_element(new_c.model());
-                    drop(new_c);
-
-                    self.owned_controllers.insert(uuid, new_a);
+                    commands.push(SensitiveCommand::AddElement(*self.uuid(), new_a.into()));
                 }
 
                 return ClickHandlingStatus::HandledByContainer;
@@ -1313,11 +1319,35 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElemen
                 }
             }
             InsensitiveCommand::DeleteElements(uuids) => {
+                for (uuid, element) in self
+                    .owned_controllers
+                    .iter()
+                    .filter(|e| uuids.contains(&e.0))
+                {
+                    undo_accumulator.push(InsensitiveCommand::AddElement(
+                        *self.uuid(),
+                        RdfElementOrVertex::from((*uuid, element.clone())),
+                    ));
+                }
+                
+                let mut self_m = self.model.write().unwrap();
+                self_m.delete_elements(&uuids);
+                
                 self.owned_controllers.retain(|k, v| !uuids.contains(&k));
-                // TODO: undo commands
             }
-            InsensitiveCommand::AddElement(..) => {
-                // TODO: stuff
+            InsensitiveCommand::AddElement(target, element) => {
+                if *target == *self.uuid() {
+                    if let Ok((uuid, element)) = element.clone().try_into() {
+                        undo_accumulator.push(InsensitiveCommand::DeleteElements(std::iter::once(uuid).collect()));
+                        
+                        let new_c = element.read().unwrap();
+                        let mut self_m = self.model.write().unwrap();
+                        self_m.add_element(new_c.model());
+                        drop(new_c);
+                        
+                        self.owned_controllers.insert(uuid, element);
+                    }
+                }
             }
         }
     }
