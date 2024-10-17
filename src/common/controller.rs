@@ -106,66 +106,88 @@ pub enum DragHandlingStatus {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum SensitiveCommand/*<ElementT>*/ {
+pub enum SensitiveCommand<ElementT: Clone> {
     SelectAll(bool),
     Select(HashSet<uuid::Uuid>, bool),
     MoveElements(HashSet<uuid::Uuid>, egui::Vec2),
     MoveSelectedElements(egui::Vec2),
     DeleteElements(HashSet<uuid::Uuid>),
     DeleteSelectedElements,
-    AddElement(uuid::Uuid, u8),
+    AddElement(uuid::Uuid, ElementT),
 }
 
-impl/*<ElementT>*/ SensitiveCommand/*<ElementT>*/ {
-    fn to_selection_insensitive(self, selected_elements: &HashSet<uuid::Uuid>) -> InsensitiveCommand/*<ElementT>*/ {
+impl<ElementT: Clone> SensitiveCommand<ElementT> {
+    fn to_selection_insensitive(
+        self,
+        selected_elements: &HashSet<uuid::Uuid>,
+    ) -> InsensitiveCommand<ElementT> {
         match self {
             SensitiveCommand::SelectAll(select) => InsensitiveCommand::SelectAll(select),
             SensitiveCommand::Select(uuids, select) => InsensitiveCommand::Select(uuids, select),
-            SensitiveCommand::MoveElements(uuids, delta) => InsensitiveCommand::MoveElements(uuids, delta),
-            SensitiveCommand::MoveSelectedElements(delta) => InsensitiveCommand::MoveElements(selected_elements.clone(), delta),
+            SensitiveCommand::MoveElements(uuids, delta) => {
+                InsensitiveCommand::MoveElements(uuids, delta)
+            }
+            SensitiveCommand::MoveSelectedElements(delta) => {
+                InsensitiveCommand::MoveElements(selected_elements.clone(), delta)
+            }
             SensitiveCommand::DeleteElements(uuids) => InsensitiveCommand::DeleteElements(uuids),
-            SensitiveCommand::DeleteSelectedElements => InsensitiveCommand::DeleteElements(selected_elements.clone()),
-            SensitiveCommand::AddElement(uuid, element) => InsensitiveCommand::AddElement(uuid, element),
+            SensitiveCommand::DeleteSelectedElements => {
+                InsensitiveCommand::DeleteElements(selected_elements.clone())
+            }
+            SensitiveCommand::AddElement(uuid, element) => {
+                InsensitiveCommand::AddElement(uuid, element)
+            }
         }
     }
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum InsensitiveCommand/*<ElementT>*/ {
+pub enum InsensitiveCommand<ElementT: Clone> {
     SelectAll(bool),
     Select(HashSet<uuid::Uuid>, bool),
     MoveElements(HashSet<uuid::Uuid>, egui::Vec2),
     DeleteElements(HashSet<uuid::Uuid>),
-    AddElement(uuid::Uuid, u8),
+    AddElement(uuid::Uuid, ElementT),
 }
 
-impl/*<ElementT>*/ InsensitiveCommand/*<ElementT>*/ {
-    fn to_selection_sensitive(self) -> SensitiveCommand/*<ElementT>*/ {
+impl<ElementT: Clone> InsensitiveCommand<ElementT> {
+    fn to_selection_sensitive(self) -> SensitiveCommand<ElementT> {
         match self {
             InsensitiveCommand::SelectAll(select) => SensitiveCommand::SelectAll(select),
             InsensitiveCommand::Select(uuids, select) => SensitiveCommand::Select(uuids, select),
-            InsensitiveCommand::MoveElements(uuids, delta) => SensitiveCommand::MoveElements(uuids, delta),
+            InsensitiveCommand::MoveElements(uuids, delta) => {
+                SensitiveCommand::MoveElements(uuids, delta)
+            }
             InsensitiveCommand::DeleteElements(uuids) => SensitiveCommand::DeleteElements(uuids),
-            InsensitiveCommand::AddElement(uuid, element) => SensitiveCommand::AddElement(uuid, element),
+            InsensitiveCommand::AddElement(uuid, element) => {
+                SensitiveCommand::AddElement(uuid, element)
+            }
         }
     }
 
     fn info_text(&self) -> String {
         match self {
-            InsensitiveCommand::SelectAll(..)
-            | InsensitiveCommand::Select(..) => format!("Sorry, your undo stack is broken now :/"),
+            InsensitiveCommand::SelectAll(..) | InsensitiveCommand::Select(..) => {
+                format!("Sorry, your undo stack is broken now :/")
+            }
             InsensitiveCommand::DeleteElements(uuids) => format!("Delete {} elements", uuids.len()),
-            InsensitiveCommand::MoveElements(uuids, delta) => format!("Move {} elements", uuids.len()),
+            InsensitiveCommand::MoveElements(uuids, delta) => {
+                format!("Move {} elements", uuids.len())
+            }
             InsensitiveCommand::AddElement(..) => format!("Add 1 element"),
         }
     }
 
     fn merge(&self, other: &Self) -> Option<Self> {
         match (self, other) {
-            (InsensitiveCommand::MoveElements(uuids1, delta1), InsensitiveCommand::MoveElements(uuids2, delta2)) if uuids1 == uuids2 => {
-                Some(InsensitiveCommand::MoveElements(uuids1.clone(), *delta1 + *delta2))
-            }
-            _ => { None }
+            (
+                InsensitiveCommand::MoveElements(uuids1, delta1),
+                InsensitiveCommand::MoveElements(uuids2, delta2),
+            ) if uuids1 == uuids2 => Some(InsensitiveCommand::MoveElements(
+                uuids1.clone(),
+                *delta1 + *delta2,
+            )),
+            _ => None,
         }
     }
 }
@@ -179,7 +201,7 @@ pub trait ContainerModel<ModelT: ?Sized>: Model {
     fn add_element(&mut self, _: Arc<RwLock<ModelT>>);
 }
 
-pub trait Tool<CommonElementT: ?Sized, QueryableT> {
+pub trait Tool<CommonElementT: ?Sized, QueryableT, AddCommandElementT> {
     type KindedElement<'a>;
     type Stage;
 
@@ -193,15 +215,22 @@ pub trait Tool<CommonElementT: ?Sized, QueryableT> {
     fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>, pos: egui::Pos2);
     fn try_construct(
         &mut self,
-        into: &dyn ContainerGen2<CommonElementT, QueryableT, Self>,
-    ) -> Option<Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, Self>>>>;
+        into: &dyn ContainerGen2<CommonElementT, QueryableT, Self, AddCommandElementT>,
+    ) -> Option<
+        Arc<
+            RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, Self, AddCommandElementT>>,
+        >,
+    >;
     fn reset_event_lock(&mut self);
 }
 
-pub trait ElementControllerGen2<CommonElementT: ?Sized, QueryableT, ToolT>:
-    ElementController<CommonElementT>
-where
-    ToolT: Tool<CommonElementT, QueryableT>,
+pub trait ElementControllerGen2<
+    CommonElementT: ?Sized,
+    QueryableT,
+    ToolT,
+    AddCommandElementT: Clone,
+>: ElementController<CommonElementT> where
+    ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT>,
 {
     fn show_properties(&mut self, _: &QueryableT, _ui: &mut egui::Ui) -> bool {
         false
@@ -217,44 +246,56 @@ where
     fn click(
         &mut self,
         tool: &mut Option<ToolT>,
-        commands: &mut Vec<SensitiveCommand>,
+        commands: &mut Vec<SensitiveCommand<AddCommandElementT>>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus;
     fn drag(
         &mut self,
         tool: &mut Option<ToolT>,
-        commands: &mut Vec<SensitiveCommand>,
+        commands: &mut Vec<SensitiveCommand<AddCommandElementT>>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus;
-    fn apply_command(&mut self, command: &InsensitiveCommand, undo_accumulator: &mut Vec<InsensitiveCommand>);
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<AddCommandElementT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT>>,
+    );
     fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>);
 }
 
-pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT> {
+pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandElementT> {
     fn controller_for(
         &self,
         uuid: &uuid::Uuid,
-    ) -> Option<Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT>>>>;
+    ) -> Option<
+        Arc<
+            RwLock<
+                dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT>,
+            >,
+        >,
+    >;
 }
 
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
 pub struct DiagramControllerGen2<
-    DiagramModelT,
+    DiagramModelT: ContainerModel<ElementModelT>,
     ElementModelT: ?Sized + 'static,
     QueryableT,
     BufferT,
     ToolT,
+    AddCommandElementT: Clone + 'static,
 > where
-    DiagramModelT: ContainerModel<ElementModelT>,
-    ToolT: Tool<ElementModelT, QueryableT>,
+    ToolT: Tool<ElementModelT, QueryableT, AddCommandElementT>,
 {
     model: Arc<RwLock<DiagramModelT>>,
     owned_controllers: HashMap<
         uuid::Uuid,
-        Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>,
+        Arc<
+            RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>>,
+        >,
     >,
 
     pub _layers: Vec<bool>,
@@ -265,8 +306,11 @@ pub struct DiagramControllerGen2<
     selected_elements: HashSet<uuid::Uuid>,
     all_selected_elements: HashSet<uuid::Uuid>,
     current_tool: Option<ToolT>,
-    undo_stack: Vec<(InsensitiveCommand, Vec<InsensitiveCommand>)>,
-    redo_stack: Vec<InsensitiveCommand>,
+    undo_stack: Vec<(
+        InsensitiveCommand<AddCommandElementT>,
+        Vec<InsensitiveCommand<AddCommandElementT>>,
+    )>,
+    redo_stack: Vec<InsensitiveCommand<AddCommandElementT>>,
     undo_shortcut: egui::KeyboardShortcut,
     redo_shortcut: egui::KeyboardShortcut,
     delete_shortcut: egui::KeyboardShortcut,
@@ -280,21 +324,53 @@ pub struct DiagramControllerGen2<
 }
 
 impl<
-        DiagramModelT,
+        DiagramModelT: ContainerModel<ElementModelT>,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
         BufferT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + 'static,
+    >
+    DiagramControllerGen2<
+        DiagramModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
         ToolT,
-    > DiagramControllerGen2<DiagramModelT, ElementModelT, QueryableT, BufferT, ToolT>
+        AddCommandElementT,
+    >
 where
-    DiagramModelT: ContainerModel<ElementModelT>,
-    ToolT: Tool<ElementModelT, QueryableT>,
+    ToolT: for<'a> Tool<
+        ElementModelT,
+        QueryableT,
+        AddCommandElementT,
+        KindedElement<'a>: From<&'a Self>,
+    >,
+    AddCommandElementT: From<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )>,
 {
     pub fn new(
         model: Arc<RwLock<DiagramModelT>>,
         owned_controllers: HashMap<
             uuid::Uuid,
-            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
         >,
         queryable: QueryableT,
         buffer: BufferT,
@@ -317,7 +393,16 @@ where
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             undo_shortcut: egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z),
-            redo_shortcut: egui::KeyboardShortcut::new(egui::Modifiers{ alt: false, ctrl: false, shift: true, mac_cmd: false, command: true }, egui::Key::Z),
+            redo_shortcut: egui::KeyboardShortcut::new(
+                egui::Modifiers {
+                    alt: false,
+                    ctrl: false,
+                    shift: true,
+                    mac_cmd: false,
+                    command: true,
+                },
+                egui::Key::Z,
+            ),
             delete_shortcut: egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete),
 
             queryable,
@@ -332,18 +417,25 @@ where
         self.model.clone()
     }
 
-    fn apply_commands(&mut self, commands: Vec<SensitiveCommand>, save_to_undo_stack: bool, clear_redo_stack: bool) {
+    fn apply_commands(
+        &mut self,
+        commands: Vec<SensitiveCommand<AddCommandElementT>>,
+        save_to_undo_stack: bool,
+        clear_redo_stack: bool,
+    ) {
         for command in commands {
+            // TODO: transitive closure of dependency when deleting elements
             let command = command.to_selection_insensitive(&self.all_selected_elements);
-            
-            let mut undo_commands = vec![];
-            
+
+            let mut undo_accumulator = vec![];
+
             match &command {
-                InsensitiveCommand::SelectAll(select) => {
-                    match select {
-                        true => self.selected_elements = self.owned_controllers.iter().map(|e| *e.0).collect(),
-                        false => self.selected_elements.clear(),
+                InsensitiveCommand::SelectAll(select) => match select {
+                    true => {
+                        self.selected_elements =
+                            self.owned_controllers.iter().map(|e| *e.0).collect()
                     }
+                    false => self.selected_elements.clear(),
                 },
                 InsensitiveCommand::Select(uuids, select) => {
                     for uuid in self.owned_controllers.keys().filter(|k| uuids.contains(k)) {
@@ -352,24 +444,40 @@ where
                             false => self.selected_elements.remove(uuid),
                         };
                     }
-                },
-                InsensitiveCommand::MoveElements(..) => {},
+                }
+                InsensitiveCommand::MoveElements(..) => {}
                 InsensitiveCommand::DeleteElements(uuids) => {
+                    for (uuid, element) in self
+                        .owned_controllers
+                        .iter()
+                        .filter(|e| uuids.contains(&e.0))
+                    {
+                        undo_accumulator.push(InsensitiveCommand::AddElement(
+                            *self.uuid(),
+                            AddCommandElementT::from((*uuid, element.clone())),
+                        ));
+                    }
+
                     self.owned_controllers.retain(|k, v| !uuids.contains(&k));
-                    // TODO: undo_commands
-                },
-                InsensitiveCommand::AddElement(..) => {
-                    // TODO: add element
-                    // TODO: undo_commands
+                }
+                InsensitiveCommand::AddElement(target, element) => {
+                    if *target == *self.uuid() {
+                        if let Ok((uuid, element)) = element.clone().try_into() {
+                            self.owned_controllers.insert(uuid, element);
+                            undo_accumulator.push(InsensitiveCommand::DeleteElements(
+                                std::iter::once(uuid).collect(),
+                            ));
+                        }
+                    }
                 }
             }
-        
+
             for e in &self.owned_controllers {
                 let mut e = e.1.write().unwrap();
-                e.apply_command(&command, &mut undo_commands);
+                e.apply_command(&command, &mut undo_accumulator);
             }
-            
-            if !undo_commands.is_empty() {
+
+            if !undo_accumulator.is_empty() {
                 if clear_redo_stack {
                     self.redo_stack.clear();
                 }
@@ -377,13 +485,13 @@ where
                     if let Some(merged) = self.undo_stack.last().and_then(|e| e.0.merge(&command)) {
                         let last = self.undo_stack.last_mut().unwrap();
                         last.0 = merged;
-                        last.1.extend(undo_commands);
+                        last.1.extend(undo_accumulator);
                     } else {
-                        self.undo_stack.push((command.clone(), undo_commands));
+                        self.undo_stack.push((command.clone(), undo_accumulator));
                     }
                 }
             }
-            
+
             match command {
                 InsensitiveCommand::SelectAll(..)
                 | InsensitiveCommand::Select(..)
@@ -394,41 +502,81 @@ where
                         let mut c = c.write().unwrap();
                         c.collect_all_selected_elements(&mut self.all_selected_elements);
                     }
-                },
-                InsensitiveCommand::MoveElements(..) => {},
+                }
+                InsensitiveCommand::MoveElements(..) => {}
             }
         }
     }
-    
+
     fn undo(&mut self, n: usize) {
         let n = n.min(self.undo_stack.len());
-        let (commands, undo_commands): (Vec<_>, Vec<Vec<_>>) = self.undo_stack.drain(self.undo_stack.len() - n..).rev().collect();
-        self.apply_commands(undo_commands.into_iter().flatten().map(|c| c.to_selection_sensitive()).collect(), false, false);
+        let (commands, undo_commands): (Vec<_>, Vec<Vec<_>>) = self
+            .undo_stack
+            .drain(self.undo_stack.len() - n..)
+            .rev()
+            .collect();
+        self.apply_commands(
+            undo_commands
+                .into_iter()
+                .flatten()
+                .map(|c| c.to_selection_sensitive())
+                .collect(),
+            false,
+            false,
+        );
         self.redo_stack.extend(commands);
     }
-    
+
     fn redo(&mut self, n: usize) {
         let n = n.min(self.redo_stack.len());
-        let commands: Vec<_> = self.redo_stack.drain(self.redo_stack.len() - n..).rev().map(|c| c.to_selection_sensitive()).collect();
+        let commands: Vec<_> = self
+            .redo_stack
+            .drain(self.redo_stack.len() - n..)
+            .rev()
+            .map(|c| c.to_selection_sensitive())
+            .collect();
         self.apply_commands(commands, true, false);
     }
 }
 
 impl<
-        DiagramModelT,
+        DiagramModelT: ContainerModel<ElementModelT>,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
         BufferT: 'static,
-        ToolT,
+        ToolT: 'static,
+        AddCommandElementT: Clone + 'static,
     > DiagramController
-    for DiagramControllerGen2<DiagramModelT, ElementModelT, QueryableT, BufferT, ToolT>
+    for DiagramControllerGen2<
+        DiagramModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+    >
 where
-    DiagramModelT: ContainerModel<ElementModelT>,
     ToolT: for<'a> Tool<
-            ElementModelT,
-            QueryableT,
-            KindedElement<'a>: From<&'a Self>,
-        > + 'static,
+        ElementModelT,
+        QueryableT,
+        AddCommandElementT,
+        KindedElement<'a>: From<&'a Self>,
+    >,
+    AddCommandElementT: From<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )>,
 {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid()
@@ -478,7 +626,7 @@ where
     }
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response) {
         // Handle camera and element clicks/drags
-        
+
         // TODO: This shortcut handling is generally wrong. Depends on redo_shortcut not being a subset of undo_shortcut.
         if ui.input_mut(|i| i.consume_shortcut(&self.redo_shortcut)) {
             self.redo(1);
@@ -538,9 +686,7 @@ where
         }
     }
     fn click(&mut self, pos: egui::Pos2, modifiers: ModifierKeys) -> bool {
-        self.current_tool
-            .as_mut()
-            .map(|e| e.reset_event_lock());
+        self.current_tool.as_mut().map(|e| e.reset_event_lock());
 
         let mut commands = Vec::new();
 
@@ -557,9 +703,15 @@ where
                     ClickHandlingStatus::HandledByElement => {
                         if !modifiers.command {
                             commands.push(SensitiveCommand::SelectAll(false));
-                            commands.push(SensitiveCommand::Select(std::iter::once(*uc.0).collect(), true));
+                            commands.push(SensitiveCommand::Select(
+                                std::iter::once(*uc.0).collect(),
+                                true,
+                            ));
                         } else {
-                            commands.push(SensitiveCommand::Select(std::iter::once(*uc.0).collect(), !self.selected_elements.contains(&uc.0)));
+                            commands.push(SensitiveCommand::Select(
+                                std::iter::once(*uc.0).collect(),
+                                !self.selected_elements.contains(&uc.0),
+                            ));
                         }
                         ClickHandlingStatus::HandledByContainer
                     }
@@ -602,12 +754,10 @@ where
             .owned_controllers
             .iter_mut()
             .find(|uc| {
-                uc.1.write().unwrap().drag(
-                    &mut self.current_tool,
-                    &mut commands,
-                    last_pos,
-                    delta,
-                ) == DragHandlingStatus::Handled
+                uc.1.write()
+                    .unwrap()
+                    .drag(&mut self.current_tool, &mut commands, last_pos, delta)
+                    == DragHandlingStatus::Handled
             })
             .is_some();
 
@@ -641,8 +791,13 @@ where
         ui.menu_button("Undo", |ui| {
             ui.set_max_width(200.0);
             for (ii, c) in self.undo_stack.iter().rev().enumerate() {
-                if ui.button(c.0.info_text()).clicked() {
-                    self.undo(ii+1);
+                let mut button = egui::Button::new(c.0.info_text());
+                if ii == 0 {
+                    button = button.shortcut_text(ui.ctx().format_shortcut(&self.undo_shortcut));
+                }
+
+                if ui.add(button).clicked() {
+                    self.undo(ii + 1);
                     break;
                 }
             }
@@ -650,14 +805,19 @@ where
         ui.menu_button("Redo", |ui| {
             ui.set_max_width(200.0);
             for (ii, c) in self.redo_stack.iter().rev().enumerate() {
-                if ui.button(c.info_text()).clicked() {
-                    self.redo(ii+1);
+                let mut button = egui::Button::new(c.info_text());
+                if ii == 0 {
+                    button = button.shortcut_text(ui.ctx().format_shortcut(&self.redo_shortcut));
+                }
+
+                if ui.add(button).clicked() {
+                    self.redo(ii + 1);
                     break;
                 }
             }
         });
         ui.separator();
-        
+
         // TODO: implement
         if ui.button("Cut").clicked() {
             println!("no");
@@ -737,43 +897,82 @@ where
 }
 
 impl<
-        DiagramModelT,
+        DiagramModelT: ContainerModel<ElementModelT>,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
         BufferT: 'static,
         ToolT,
-    > ContainerGen2<ElementModelT, QueryableT, ToolT>
-    for DiagramControllerGen2<DiagramModelT, ElementModelT, QueryableT, BufferT, ToolT>
+        AddCommandElementT: Clone,
+    > ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>
+    for DiagramControllerGen2<
+        DiagramModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+    >
 where
-    DiagramModelT: ContainerModel<ElementModelT>,
-    ToolT: Tool<ElementModelT, QueryableT>,
+    ToolT: Tool<ElementModelT, QueryableT, AddCommandElementT>,
+    AddCommandElementT: From<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )>,
 {
     fn controller_for(
         &self,
         uuid: &uuid::Uuid,
-    ) -> Option<Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>> {
+    ) -> Option<
+        Arc<
+            RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>>,
+        >,
+    > {
         self.owned_controllers.get(uuid).cloned()
     }
 }
 
-pub struct MulticonnectionView<ModelT, ElementModelT: ?Sized + 'static, QueryableT, BufferT, ToolT> {
+pub struct MulticonnectionView<
+    ModelT,
+    ElementModelT: ?Sized + 'static,
+    QueryableT,
+    BufferT,
+    ToolT,
+    AddCommandElementT: Clone,
+> where
+    AddCommandElementT:
+        From<(uuid::Uuid, uuid::Uuid, egui::Pos2)> + TryInto<(uuid::Uuid, uuid::Uuid, egui::Pos2)>,
+{
     pub model: Arc<RwLock<ModelT>>,
     pub buffer: BufferT,
 
-    pub source: Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>,
-    pub destination:
-        Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT>>>,
+    pub source: Arc<
+        RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>>,
+    >,
+    pub destination: Arc<
+        RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>>,
+    >,
 
     pub highlight: canvas::Highlight,
     pub selected_vertices: HashSet<uuid::Uuid>,
     pub center_point: Option<(uuid::Uuid, egui::Pos2)>,
     pub source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
     pub dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
-    
+
     pub model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
-    
+
     pub show_properties_fun: fn(&mut ModelT, &mut BufferT, &mut egui::Ui),
-    
+
     pub model_to_uuid: fn(&ModelT) -> Arc<uuid::Uuid>,
     pub model_to_name: fn(&ModelT) -> Arc<String>,
     pub model_to_line_type: fn(&ModelT) -> canvas::LineType,
@@ -783,8 +982,19 @@ pub struct MulticonnectionView<ModelT, ElementModelT: ?Sized + 'static, Queryabl
     pub model_to_destination_arrowhead_label: fn(&ModelT) -> Option<&str>,
 }
 
-impl<ModelT, ElementModelT: ?Sized + 'static, QueryableT, BufferT, ToolT>
-    ElementController<ElementModelT> for MulticonnectionView<ModelT, ElementModelT, QueryableT, BufferT, ToolT> {
+impl<
+        ModelT,
+        ElementModelT: ?Sized + 'static,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT: Clone,
+    > ElementController<ElementModelT>
+    for MulticonnectionView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT>
+where
+    AddCommandElementT:
+        From<(uuid::Uuid, uuid::Uuid, egui::Pos2)> + TryInto<(uuid::Uuid, uuid::Uuid, egui::Pos2)>,
+{
     fn uuid(&self) -> Arc<uuid::Uuid> {
         (self.model_to_uuid)(&self.model.read().unwrap())
     }
@@ -812,19 +1022,28 @@ impl<ModelT, ElementModelT: ?Sized + 'static, QueryableT, BufferT, ToolT>
     }
 }
 
-impl<ModelT, ElementModelT: ?Sized + 'static, QueryableT, BufferT, ToolT> ElementControllerGen2<ElementModelT, QueryableT, ToolT>
-    for MulticonnectionView<ModelT, ElementModelT, QueryableT, BufferT, ToolT>
+impl<
+        ModelT,
+        ElementModelT: ?Sized + 'static,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT: Clone,
+    > ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>
+    for MulticonnectionView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT>
 where
-    ToolT: Tool<ElementModelT, QueryableT>,
+    ToolT: Tool<ElementModelT, QueryableT, AddCommandElementT>,
+    AddCommandElementT:
+        From<(uuid::Uuid, uuid::Uuid, egui::Pos2)> + TryInto<(uuid::Uuid, uuid::Uuid, egui::Pos2)>,
 {
     fn show_properties(&mut self, _parent: &QueryableT, ui: &mut egui::Ui) -> bool {
         if !self.highlight.selected {
             return false;
         }
-        
+
         let mut c = self.model.write().unwrap();
         (self.show_properties_fun)(&mut c, &mut self.buffer, ui);
-        
+
         true
     }
 
@@ -834,7 +1053,6 @@ where
         canvas: &mut dyn NHCanvas,
         _tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus {
-        
         let model = self.model.read().unwrap();
         let (source_pos, source_bounds) = {
             let lock = self.source.read().unwrap();
@@ -901,7 +1119,10 @@ where
                     )],
                     match &self.center_point {
                         Some(point) => *point,
-                        None => (uuid::Uuid::nil(), (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0),
+                        None => (
+                            uuid::Uuid::nil(),
+                            (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
+                        ),
                     },
                     None,
                     self.highlight,
@@ -909,14 +1130,14 @@ where
             }
             _ => {}
         }
-        
+
         TargettingStatus::NotDrawn
     }
 
     fn click(
         &mut self,
         _tool: &mut Option<ToolT>,
-        commands: &mut Vec<SensitiveCommand>,
+        commands: &mut Vec<SensitiveCommand<AddCommandElementT>>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -926,22 +1147,28 @@ where
             ($uuid:expr) => {
                 if !modifiers.command {
                     commands.push(SensitiveCommand::SelectAll(false));
-                    commands.push(SensitiveCommand::Select(std::iter::once(*$uuid).collect(), true));
+                    commands.push(SensitiveCommand::Select(
+                        std::iter::once(*$uuid).collect(),
+                        true,
+                    ));
                 } else {
-                    commands.push(SensitiveCommand::Select(std::iter::once(*$uuid).collect(), !self.selected_vertices.contains($uuid)));
+                    commands.push(SensitiveCommand::Select(
+                        std::iter::once(*$uuid).collect(),
+                        !self.selected_vertices.contains($uuid),
+                    ));
                 }
                 return ClickHandlingStatus::HandledByContainer;
-            }
+            };
         }
-        
+
         fn is_over(a: egui::Pos2, b: egui::Pos2) -> bool {
             a.distance(b) <= DISTANCE_THRESHOLD
         }
-        
+
         if let Some((uuid, _)) = self.center_point.as_ref().filter(|e| is_over(pos, e.1)) {
             handle_vertex!(uuid);
         }
-        
+
         macro_rules! check_joints {
             ($v:ident) => {
                 for path in &self.$v {
@@ -956,7 +1183,7 @@ where
         }
         check_joints!(source_points);
         check_joints!(dest_points);
-        
+
         fn dist_to_line_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
             fn dist2(a: egui::Pos2, b: egui::Pos2) -> f32 {
                 (a.x - b.x).powf(2.0) + (a.y - b.y).powf(2.0)
@@ -965,8 +1192,8 @@ where
             let distance_squared = if l2 == 0.0 {
                 dist2(p, a)
             } else {
-                let t = (((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2)
-                    .clamp(0.0, 1.0);
+                let t =
+                    (((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2).clamp(0.0, 1.0);
                 dist2(
                     p,
                     egui::Pos2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)),
@@ -1014,7 +1241,7 @@ where
     fn drag(
         &mut self,
         _tool: &mut Option<ToolT>,
-        commands: &mut Vec<SensitiveCommand>,
+        commands: &mut Vec<SensitiveCommand<AddCommandElementT>>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1031,7 +1258,10 @@ where
                     if self.selected_vertices.contains(&uuid) {
                         commands.push(SensitiveCommand::MoveSelectedElements(delta));
                     } else {
-                        commands.push(SensitiveCommand::MoveElements(std::iter::once(uuid).collect(), delta));
+                        commands.push(SensitiveCommand::MoveElements(
+                            std::iter::once(uuid).collect(),
+                            delta,
+                        ));
                     }
 
                     return DragHandlingStatus::Handled;
@@ -1042,7 +1272,10 @@ where
                 // TODO: this is generally wrong (why??)
                 let midpoint = self.position();
                 if is_over(last_pos, midpoint) {
-                    self.center_point = Some((uuid::Uuid::now_v7(), midpoint + delta));
+                    commands.push(SensitiveCommand::AddElement(
+                        *self.uuid(),
+                        (uuid::Uuid::nil(), uuid::Uuid::now_v7(), midpoint + delta).into(),
+                    ));
                     return DragHandlingStatus::Handled;
                 }
             }
@@ -1058,9 +1291,12 @@ where
                             if self.selected_vertices.contains(&joint.0) {
                                 commands.push(SensitiveCommand::MoveSelectedElements(delta));
                             } else {
-                                commands.push(SensitiveCommand::MoveElements(std::iter::once(joint.0).collect(), delta));
+                                commands.push(SensitiveCommand::MoveElements(
+                                    std::iter::once(joint.0).collect(),
+                                    delta,
+                                ));
                             }
-                            
+
                             return DragHandlingStatus::Handled;
                         }
                     }
@@ -1090,7 +1326,10 @@ where
 
                         let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
                         if is_over(last_pos, midpoint) {
-                            path.insert(idx + 1, (uuid::Uuid::now_v7(), midpoint + delta));
+                            commands.push(SensitiveCommand::AddElement(
+                                *self.uuid(),
+                                (u.0, uuid::Uuid::now_v7(), midpoint + delta).into(),
+                            ));
                             return DragHandlingStatus::Handled;
                         }
                     }
@@ -1099,25 +1338,34 @@ where
         }
         check_midpoints!(source_points);
         check_midpoints!(dest_points);
-        
+
         DragHandlingStatus::NotHandled
     }
 
-    fn apply_command(&mut self, command: &InsensitiveCommand, undo_accumulator: &mut Vec<InsensitiveCommand>) {
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<AddCommandElementT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT>>,
+    ) {
         macro_rules! all_pts_mut {
             ($self:ident) => {
-                $self.center_point.as_mut().into_iter()
+                $self
+                    .center_point
+                    .as_mut()
+                    .into_iter()
                     .chain($self.source_points.iter_mut().flatten())
                     .chain($self.dest_points.iter_mut().flatten())
-            }
+            };
         }
         match command {
             InsensitiveCommand::SelectAll(select) => {
                 self.highlight.selected = *select;
                 match select {
                     false => self.selected_vertices.clear(),
-                    true => for p in all_pts_mut!(self) {
-                        self.selected_vertices.insert(p.0);
+                    true => {
+                        for p in all_pts_mut!(self) {
+                            self.selected_vertices.insert(p.0);
+                        }
                     }
                 }
             }
@@ -1127,37 +1375,101 @@ where
                 }
                 match select {
                     false => self.selected_vertices.retain(|e| !uuids.contains(e)),
-                    true => for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {
-                        self.selected_vertices.insert(p.0);
+                    true => {
+                        for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {
+                            self.selected_vertices.insert(p.0);
+                        }
                     }
                 }
             }
             InsensitiveCommand::MoveElements(uuids, delta) => {
                 let multiconnection_present = uuids.contains(&*self.uuid());
-                for p in all_pts_mut!(self).filter(|e| multiconnection_present || uuids.contains(&e.0)) {
+                for p in
+                    all_pts_mut!(self).filter(|e| multiconnection_present || uuids.contains(&e.0))
+                {
                     p.1 += *delta;
-                    undo_accumulator.push(InsensitiveCommand::MoveElements(std::iter::once(p.0).collect(), -*delta));
+                    undo_accumulator.push(InsensitiveCommand::MoveElements(
+                        std::iter::once(p.0).collect(),
+                        -*delta,
+                    ));
                 }
             }
             InsensitiveCommand::DeleteElements(uuids) => {
-                if self.center_point.as_mut().filter(|e| uuids.contains(&e.0)).is_some() {
+                let self_uuid = *self.uuid();
+                if let Some(center_point) =
+                    self.center_point.as_mut().filter(|e| uuids.contains(&e.0))
+                {
+                    undo_accumulator.push(InsensitiveCommand::AddElement(
+                        self_uuid,
+                        AddCommandElementT::from((
+                            uuid::Uuid::nil(),
+                            center_point.0,
+                            center_point.1,
+                        )),
+                    ));
                     self.center_point = None;
                 }
-                
-                for path in self.source_points.iter_mut() {
-                    *path = path.into_iter().filter(|e| !uuids.contains(&e.0)).map(|e| *e).collect();
-                }
 
-                for path in self.dest_points.iter_mut() {
-                    *path = path.into_iter().filter(|e| !uuids.contains(&e.0)).map(|e| *e).collect();
+                macro_rules! delete_vertices {
+                    ($self:ident, $v:ident) => {
+                        for path in $self.$v.iter_mut() {
+                            // 2-windows over vertices
+                            let mut iter = path.iter().peekable();
+                            while let Some(a) = iter.next() {
+                                let Some(b) = iter.peek() else {
+                                    break;
+                                };
+                                if uuids.contains(&b.0) {
+                                    undo_accumulator.push(InsensitiveCommand::AddElement(
+                                        self_uuid,
+                                        AddCommandElementT::from((a.0, b.0, b.1)),
+                                    ));
+                                }
+                            }
+
+                            path.retain(|e| !uuids.contains(&e.0));
+                        }
+                    };
                 }
+                delete_vertices!(self, source_points);
+                delete_vertices!(self, dest_points);
             }
-            InsensitiveCommand::AddElement(..) => {
-                // TODO: stuff
+            InsensitiveCommand::AddElement(target, element) => {
+                if *target == *self.uuid() {
+                    if let Ok((a, b, c)) = element.clone().try_into() {
+                        if a.is_nil() {
+                            self.center_point = Some((b, c));
+
+                            undo_accumulator.push(InsensitiveCommand::DeleteElements(
+                                std::iter::once(b).collect(),
+                            ));
+                        } else {
+                            macro_rules! insert_vertex {
+                                ($self:ident, $v:ident) => {
+                                    for path in $self.$v.iter_mut() {
+                                        for (idx, p) in path.iter().enumerate() {
+                                            if p.0 == a {
+                                                path.insert(idx + 1, (b, c));
+                                                undo_accumulator.push(
+                                                    InsensitiveCommand::DeleteElements(
+                                                        std::iter::once(b).collect(),
+                                                    ),
+                                                );
+                                                return;
+                                            }
+                                        }
+                                    }
+                                };
+                            }
+                            insert_vertex!(self, source_points);
+                            insert_vertex!(self, dest_points);
+                        }
+                    }
+                }
             }
         }
     }
-    
+
     fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
         if self.highlight.selected {
             into.insert(*self.uuid());
@@ -1167,7 +1479,6 @@ where
         }
     }
 }
-
 
 /*
 fn arrowhead_combo(ui: &mut egui::Ui, name: &str, val: &mut ArrowheadType) -> egui::Response {

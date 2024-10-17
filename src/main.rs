@@ -788,7 +788,7 @@ impl eframe::App for NHApp {
                     }
                     */
                 });
-                
+
                 ui.menu_button("Edit", |ui| {
                     if let Some(d) = self.context.last_focused_diagram() {
                         let mut d = d.write().unwrap();

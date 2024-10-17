@@ -1,7 +1,7 @@
 use eframe::egui;
 
-use std::io::Write;
 use std::collections::HashSet;
+use std::io::Write;
 
 // rect intersection between segment from p to the center of rect
 // based on https://stackoverflow.com/a/31254199 by TWiStErRob
@@ -113,14 +113,22 @@ impl NHShape {
                 bounds_radius,
             } => match point {
                 // TODO: yeah, this is wrong. whatever.
-                egui::Pos2 { x, y } if position.x - bounds_radius.x < x && x < position.x + bounds_radius.x => Some(egui::Pos2 {
-                    x,
-                    y: y.clamp(position.y - bounds_radius.y, position.y + bounds_radius.y),
-                }),
-                egui::Pos2 { x, y } if position.y - bounds_radius.y < y && y < position.y + bounds_radius.y => Some(egui::Pos2 {
-                    x: x.clamp(position.x - bounds_radius.x, position.x + bounds_radius.x),
-                    y,
-                }),
+                egui::Pos2 { x, y }
+                    if position.x - bounds_radius.x < x && x < position.x + bounds_radius.x =>
+                {
+                    Some(egui::Pos2 {
+                        x,
+                        y: y.clamp(position.y - bounds_radius.y, position.y + bounds_radius.y),
+                    })
+                }
+                egui::Pos2 { x, y }
+                    if position.y - bounds_radius.y < y && y < position.y + bounds_radius.y =>
+                {
+                    Some(egui::Pos2 {
+                        x: x.clamp(position.x - bounds_radius.x, position.x + bounds_radius.x),
+                        y,
+                    })
+                }
                 _ => None,
             },
         }
@@ -310,9 +318,9 @@ impl Highlight {
     };
     pub const SELECTED: Self = Self {
         selected: true, // "blue"
-        valid: false,    // "green"
-        invalid: false,  // "red"
-        warning: false,  // "yellow"
+        valid: false,   // "green"
+        invalid: false, // "red"
+        warning: false, // "yellow"
     };
 }
 
@@ -569,15 +577,30 @@ pub trait NHCanvas {
     fn draw_multiconnection<'a>(
         &mut self,
         selected_vertices: &HashSet<uuid::Uuid>,
-        sources: &[(ArrowheadType, Stroke, &Vec<(uuid::Uuid, egui::Pos2)>, Option<&'a str>)],
-        destinations: &[(ArrowheadType, Stroke, &Vec<(uuid::Uuid, egui::Pos2)>, Option<&'a str>)],
+        sources: &[(
+            ArrowheadType,
+            Stroke,
+            &Vec<(uuid::Uuid, egui::Pos2)>,
+            Option<&'a str>,
+        )],
+        destinations: &[(
+            ArrowheadType,
+            Stroke,
+            &Vec<(uuid::Uuid, egui::Pos2)>,
+            Option<&'a str>,
+        )],
         central_point: (uuid::Uuid, egui::Pos2),
         mid_label: Option<&str>,
         highlight: Highlight,
     ) {
         fn a<'a>(
             central_point: (uuid::Uuid, egui::Pos2),
-            e: &'a (ArrowheadType, Stroke, &'a Vec<(uuid::Uuid, egui::Pos2)>, Option<&'a str>),
+            e: &'a (
+                ArrowheadType,
+                Stroke,
+                &'a Vec<(uuid::Uuid, egui::Pos2)>,
+                Option<&'a str>,
+            ),
         ) -> (
             ArrowheadType,
             Stroke,
@@ -586,9 +609,10 @@ pub trait NHCanvas {
             Option<&'a str>,
         ) {
             let focal_point = e.2.first().unwrap();
-            let path = std::iter::once(
-                (uuid::Uuid::nil(), e.0.get_intersect(focal_point.1, e.2.get(1).unwrap_or(&central_point).1)),
-            )
+            let path = std::iter::once((
+                uuid::Uuid::nil(),
+                e.0.get_intersect(focal_point.1, e.2.get(1).unwrap_or(&central_point).1),
+            ))
             .chain(e.2.iter().skip(1).map(|e| *e))
             .chain(std::iter::once(central_point));
             (e.0, e.1, focal_point.1, path, e.3)
