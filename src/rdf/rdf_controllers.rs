@@ -1043,23 +1043,17 @@ fn rdf_graph(
         iri.to_owned(),
         vec![],
     )));
-    let graph_controller = Arc::new(RwLock::new(PackageView {
-        model: graph.clone(),
-        owned_controllers: HashMap::new(),
-        selected_elements: HashSet::new(),
-
-        buffer: RdfGraphBuffer {
+    let graph_controller = Arc::new(RwLock::new(PackageView::new(
+        graph.clone(),
+        HashMap::new(),
+        RdfGraphBuffer {
             iri: iri.to_owned(),
             comment: "".to_owned(),
         },
-
-        highlight: canvas::Highlight::NONE,
         bounds_rect,
-        
         model_to_element_shim,
-        
         show_properties_fun,
-    }));
+    )));
     
     (uuid, graph, graph_controller)
 }

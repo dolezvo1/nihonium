@@ -977,23 +977,17 @@ fn umlclass_package(
         name.to_owned(),
         vec![],
     )));
-    let package_controller = Arc::new(RwLock::new(PackageView {
-        model: package.clone(),
-        owned_controllers: HashMap::new(),
-        selected_elements: HashSet::new(),
-
-        buffer: UmlClassPackageBuffer {
+    let package_controller = Arc::new(RwLock::new(PackageView::new(
+        package.clone(),
+        HashMap::new(),
+        UmlClassPackageBuffer {
             name: name.to_owned(),
             comment: "".to_owned(),
         },
-
-        highlight: canvas::Highlight::NONE,
         bounds_rect,
-        
         model_to_element_shim,
-        
         show_properties_fun,
-    }));
+    )));
     
     (uuid, package, package_controller)
 }

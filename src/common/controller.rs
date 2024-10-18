@@ -301,14 +301,16 @@ pub struct DiagramControllerGen2<
             RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>>,
         >,
     >,
+    event_order: Vec<uuid::Uuid>,
+    selected_elements: HashSet<uuid::Uuid>,
+    all_selected_elements: HashSet<uuid::Uuid>,
+    sticky_element: Option<uuid::Uuid>,
 
     pub _layers: Vec<bool>,
 
     pub camera_offset: egui::Pos2,
     pub camera_scale: f32,
     last_unhandled_mouse_pos: Option<egui::Pos2>,
-    selected_elements: HashSet<uuid::Uuid>,
-    all_selected_elements: HashSet<uuid::Uuid>,
     current_tool: Option<ToolT>,
     undo_stack: Vec<(
         InsensitiveCommand<AddCommandElementT>,
@@ -382,17 +384,20 @@ where
         tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
         menubar_options_fun: fn(&mut Self, &mut NHApp, &mut egui::Ui),
     ) -> Self {
+        let event_order = owned_controllers.keys().map(|e| *e).collect();
         Self {
             model,
             owned_controllers,
+            event_order,
+            selected_elements: HashSet::new(),
+            all_selected_elements: HashSet::new(),
+            sticky_element: None,
 
             _layers: vec![true],
 
             camera_offset: egui::Pos2::ZERO,
             camera_scale: 1.0,
             last_unhandled_mouse_pos: None,
-            selected_elements: HashSet::new(),
-            all_selected_elements: HashSet::new(),
             current_tool: None,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -466,6 +471,7 @@ where
                     self_m.delete_elements(uuids);
 
                     self.owned_controllers.retain(|k, v| !uuids.contains(&k));
+                    self.event_order.retain(|e| !uuids.contains(&e));
                 }
                 InsensitiveCommand::AddElement(target, element) => {
                     if *target == *self.uuid() {
@@ -480,6 +486,7 @@ where
                             drop(new_c);
                             
                             self.owned_controllers.insert(uuid, element);
+                            self.event_order.push(uuid);
                         }
                     }
                 }
@@ -703,9 +710,9 @@ where
 
         let mut commands = Vec::new();
 
-        let mut handled = self
-            .owned_controllers
-            .iter_mut()
+        let mut handled = self.event_order
+            .iter()
+            .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
             .map(|uc| {
                 match uc.1.write().unwrap().click(
                     &mut self.current_tool,
@@ -717,12 +724,12 @@ where
                         if !modifiers.command {
                             commands.push(SensitiveCommand::SelectAll(false));
                             commands.push(SensitiveCommand::Select(
-                                std::iter::once(*uc.0).collect(),
+                                std::iter::once(uc.0).collect(),
                                 true,
                             ));
                         } else {
                             commands.push(SensitiveCommand::Select(
-                                std::iter::once(*uc.0).collect(),
+                                std::iter::once(uc.0).collect(),
                                 !self.selected_elements.contains(&uc.0),
                             ));
                         }
@@ -756,16 +763,23 @@ where
     fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
         let mut commands = Vec::new();
 
-        let ret = self
-            .owned_controllers
-            .iter_mut()
+        let ret = if let Some(e) = self.sticky_element
+            .and_then(|k| self.owned_controllers.get(&k).map(|e| (k, e)))
+            .iter()
+            .map(|e| e.clone())
+            .chain(self.event_order
+                .iter()
+                .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e))))
             .find(|uc| {
                 uc.1.write()
                     .unwrap()
                     .drag(&mut self.current_tool, &mut commands, last_pos, delta)
                     == DragHandlingStatus::Handled
             })
-            .is_some();
+        {
+            self.sticky_element = Some(e.0);
+            true
+        } else { false };
 
         self.apply_commands(commands, true, true);
 
@@ -864,8 +878,10 @@ where
         };
         let mut drawn_targetting = TargettingStatus::NotDrawn;
 
-        self.owned_controllers
-            .iter_mut()
+        self.event_order
+            .iter()
+            .rev()
+            .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
             .filter(|_| true) // TODO: filter by layers
             .for_each(|uc| {
                 if uc
@@ -888,8 +904,10 @@ where
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-                self.owned_controllers
-                    .iter_mut()
+                self.event_order
+                    .iter()
+                    .rev()
+                    .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
                     .filter(|_| true) // TODO: filter by layers
                     .for_each(|uc| {
                         uc.1.write()
@@ -973,8 +991,8 @@ where AddCommandElementT: From<(
             >,
         )> + Clone + 'static,
 {
-    pub model: Arc<RwLock<ModelT>>,
-    pub owned_controllers: HashMap<
+    model: Arc<RwLock<ModelT>>,
+    owned_controllers: HashMap<
         uuid::Uuid,
         Arc<
             RwLock<
@@ -987,16 +1005,80 @@ where AddCommandElementT: From<(
             >,
         >,
     >,
-    pub selected_elements: HashSet<uuid::Uuid>,
+    event_order: Vec<uuid::Uuid>,
+    selected_elements: HashSet<uuid::Uuid>,
+    sticky_element: Option<uuid::Uuid>,
 
-    pub buffer: BufferT,
+    buffer: BufferT,
 
-    pub highlight: canvas::Highlight,
-    pub bounds_rect: egui::Rect,
+    highlight: canvas::Highlight,
+    bounds_rect: egui::Rect,
     
-    pub model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
+    model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
     
-    pub show_properties_fun: fn(&mut ModelT, &mut BufferT, &mut egui::Ui),
+    show_properties_fun: fn(&mut ModelT, &mut BufferT, &mut egui::Ui),
+}
+
+impl<
+    ModelT: ContainerModel<ElementModelT>,
+    ElementModelT: ?Sized + 'static,
+    QueryableT: 'static,
+    BufferT: 'static,
+    ToolT: 'static,
+    AddCommandElementT,
+> PackageView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT>
+where AddCommandElementT: From<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )> + Clone + 'static,
+{
+    pub fn new(
+        model: Arc<RwLock<ModelT>>,
+        owned_controllers: HashMap<
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                    >,
+                >,
+            >,
+        >,
+        buffer: BufferT,
+        bounds_rect: egui::Rect,
+        model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
+        show_properties_fun: fn(&mut ModelT, &mut BufferT, &mut egui::Ui),
+    ) -> Self {
+        let event_order = owned_controllers.keys().map(|e| *e).collect();
+        Self {
+            model,
+            owned_controllers,
+            event_order,
+            selected_elements: HashSet::new(),
+            sticky_element: None,
+            
+            buffer,
+            highlight: canvas::Highlight::NONE,
+            bounds_rect,
+            
+            model_to_element_shim,
+            show_properties_fun,
+        }
+    }
 }
 
 impl<
@@ -1136,8 +1218,10 @@ where
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
         canvas.offset_by(self.bounds_rect.left_top().to_vec2());
-        self.owned_controllers
-            .iter_mut()
+        self.event_order
+            .iter()
+            .rev()
+            .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
             .filter(|_| true) // TODO: filter by layers
             .for_each(|uc| {
                 if uc.1.write().unwrap().draw_in(q, canvas, &offset_tool) == TargettingStatus::Drawn
@@ -1158,8 +1242,10 @@ where
                 );
 
                 canvas.offset_by(self.bounds_rect.left_top().to_vec2());
-                self.owned_controllers
-                    .iter_mut()
+                self.event_order
+                    .iter()
+                    .rev()
+                    .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
                     .filter(|_| true) // TODO: filter by layers
                     .for_each(|uc| {
                         uc.1.write().unwrap().draw_in(q, canvas, &offset_tool);
@@ -1183,9 +1269,9 @@ where
             .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
         let offset_pos = pos - self.bounds_rect.left_top().to_vec2();
 
-        let uc_status = self
-            .owned_controllers
+        let uc_status = self.event_order
             .iter()
+            .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
             .map(|uc| {
                 (
                     uc,
@@ -1216,12 +1302,12 @@ where
                     if !modifiers.command {
                         commands.push(SensitiveCommand::SelectAll(false));
                         commands.push(SensitiveCommand::Select(
-                            std::iter::once(*uc.0).collect(),
+                            std::iter::once(uc.0).collect(),
                             true,
                         ));
                     } else {
                         commands.push(SensitiveCommand::Select(
-                            std::iter::once(*uc.0).collect(),
+                            std::iter::once(uc.0).collect(),
                             !self.selected_elements.contains(&uc.0),
                         ));
                     }
@@ -1245,18 +1331,22 @@ where
             .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
         let offset_pos = last_pos - self.bounds_rect.left_top().to_vec2();
 
-        let handled = self
-            .owned_controllers
-            .iter_mut()
+        let handled = if let Some(e) = self.sticky_element
+            .and_then(|k| self.owned_controllers.get(&k).map(|e| (k, e)))
+            .iter()
+            .map(|e| e.clone())
+            .chain(self.event_order
+                .iter()
+                .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e))))
             .find(|uc| {
                 uc.1.write()
                     .unwrap()
                     .drag(tool, commands, offset_pos, delta)
                     == DragHandlingStatus::Handled
-            })
-            //.map(|uc| {self.last_selected_element = Some(uc.0.clone());})
-            //.ok_or_else(|| {self.last_selected_element = None;})
-            .is_some();
+            }) {
+            self.sticky_element = Some(e.0);
+            true
+        } else { false };
         let handled = match handled {
             true => DragHandlingStatus::Handled,
             false => DragHandlingStatus::NotHandled,
@@ -1347,6 +1437,7 @@ where
                 self_m.delete_elements(&uuids);
                 
                 self.owned_controllers.retain(|k, v| !uuids.contains(&k));
+                self.event_order.retain(|e| !uuids.contains(&e));
                 
                 recurse!(self);
             }
@@ -1361,6 +1452,7 @@ where
                         drop(new_c);
                         
                         self.owned_controllers.insert(uuid, element);
+                        self.event_order.push(uuid);
                     }
                 }
                 
