@@ -5,7 +5,7 @@ use crate::common::controller::{
     InsensitiveCommand, ModifierKeys, SensitiveCommand, TargettingStatus,
 };
 use crate::common::controller::{
-    ContainerGen2, DiagramControllerGen2, ElementControllerGen2, MulticonnectionView, Tool,
+    ContainerGen2, DiagramControllerGen2, ElementControllerGen2, PackageView, MulticonnectionView, Tool,
 };
 use crate::common::observer::Observable;
 use crate::{CustomTab, NHApp};
@@ -449,25 +449,13 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         (literal.clone(), literal_controller.clone()),
     );
 
-    let graph_uuid = uuid::Uuid::now_v7();
-    let graph = Arc::new(RwLock::new(RdfGraph::new(
-        graph_uuid.clone(),
-        "http://graph".to_owned(),
-        vec![],
-    )));
-    let graph_controller = Arc::new(RwLock::new(RdfGraphController {
-        model: graph.clone(),
-        owned_controllers: HashMap::new(),
-        selected_elements: HashSet::new(),
-        iri_buffer: "http://graph".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        highlight: canvas::Highlight::NONE,
-        bounds_rect: egui::Rect::from_min_max(
+    let (graph_uuid, graph, graph_controller) = rdf_graph(
+        "http://graph",
+        egui::Rect::from_min_max(
             egui::Pos2::new(400.0, 50.0),
             egui::Pos2::new(500.0, 150.0),
         ),
-    }));
+    );
 
     //<stress test>
     let mut models_st = Vec::<Arc<RwLock<dyn RdfElement>>>::new();
@@ -527,25 +515,13 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         }
     }
 
-    let graph_st_uuid = uuid::Uuid::now_v7();
-    let graph_st = Arc::new(RwLock::new(RdfGraph::new(
-        graph_st_uuid.clone(),
-        "http://stresstestgraph".to_owned(),
-        models_st,
-    )));
-    let graph_st_controller = Arc::new(RwLock::new(RdfGraphController {
-        model: graph_st.clone(),
-        owned_controllers: controllers_st,
-        selected_elements: HashSet::new(),
-        iri_buffer: "http://stresstestgraph".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        highlight: canvas::Highlight::NONE,
-        bounds_rect: egui::Rect::from_min_max(
+    let (graph_st_uuid, graph_st, graph_st_controller) = rdf_graph(
+        "http://stresstestgraph",
+        egui::Rect::from_min_max(
             egui::Pos2::new(0.0, 300.0),
             egui::Pos2::new(3000.0, 3300.0),
         ),
-    }));
+    );
     //</stress test>
 
     let mut owned_controllers = HashMap::<
@@ -594,7 +570,16 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 #[derive(Clone, Copy)]
 pub enum KindedRdfElement<'a> {
     Diagram {},
-    Graph {},
+    Graph {
+        inner: &'a PackageView<
+            RdfGraph,
+            dyn RdfElement,
+            RdfQueryable,
+            RdfGraphBuffer,
+            NaiveRdfTool,
+            RdfElementOrVertex,
+        >
+    },
     Literal {
         inner: &'a RdfLiteralController,
     },
@@ -639,9 +624,23 @@ impl<'a>
     }
 }
 
-impl<'a> From<&'a RdfGraphController> for KindedRdfElement<'a> {
-    fn from(from: &'a RdfGraphController) -> Self {
-        Self::Graph {}
+impl<'a> From<&'a PackageView<
+            RdfGraph,
+            dyn RdfElement,
+            RdfQueryable,
+            RdfGraphBuffer,
+            NaiveRdfTool,
+            RdfElementOrVertex,
+        >> for KindedRdfElement<'a> {
+    fn from(from: &'a PackageView<
+            RdfGraph,
+            dyn RdfElement,
+            RdfQueryable,
+            RdfGraphBuffer,
+            NaiveRdfTool,
+            RdfElementOrVertex,
+        >) -> Self {
+        Self::Graph { inner: from }
     }
 }
 
@@ -936,22 +935,10 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
             PartialRdfElement::Graph { a, b: Some(b) } => {
                 self.current_stage = RdfToolStage::GraphStart;
 
-                let uuid = uuid::Uuid::now_v7();
-                let graph = Arc::new(RwLock::new(RdfGraph::new(
-                    uuid.clone(),
-                    "a graph".to_owned(),
-                    vec![],
-                )));
-                let graph_controller = Arc::new(RwLock::new(RdfGraphController {
-                    model: graph.clone(),
-                    owned_controllers: HashMap::new(),
-                    selected_elements: HashSet::new(),
-                    iri_buffer: "a graph".to_owned(),
-                    comment_buffer: "".to_owned(),
-
-                    highlight: canvas::Highlight::NONE,
-                    bounds_rect: egui::Rect::from_two_pos(*a, *b),
-                }));
+                let (uuid, _, graph_controller) = rdf_graph(
+                    "http://a-graph",
+                    egui::Rect::from_two_pos(*a, *b),
+                );
 
                 self.result = PartialRdfElement::None;
                 Some((uuid, graph_controller))
@@ -996,394 +983,85 @@ impl RdfContainerController for RdfDiagramController {
 }
 */
 
-pub struct RdfGraphController {
-    pub model: Arc<RwLock<RdfGraph>>,
-    pub owned_controllers: HashMap<
-        uuid::Uuid,
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    dyn RdfElement,
-                    RdfQueryable,
-                    NaiveRdfTool,
-                    RdfElementOrVertex,
-                >,
+struct RdfGraphBuffer {
+    iri: String,
+    comment: String,
+}
+
+fn rdf_graph(
+    iri: &str,
+    bounds_rect: egui::Rect,
+) -> (
+    uuid::Uuid,
+    Arc<RwLock<RdfGraph>>,
+    Arc<
+        RwLock<
+            PackageView<
+                RdfGraph,
+                dyn RdfElement,
+                RdfQueryable,
+                RdfGraphBuffer,
+                NaiveRdfTool,
+                RdfElementOrVertex,
             >,
         >,
     >,
-    selected_elements: HashSet<uuid::Uuid>,
-
-    iri_buffer: String,
-    comment_buffer: String,
-
-    highlight: canvas::Highlight,
-    pub bounds_rect: egui::Rect,
-}
-
-impl ElementController<dyn RdfElement> for RdfGraphController {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
-        self.model.read().unwrap().uuid.clone()
-    }
-    fn model_name(&self) -> Arc<String> {
-        self.model.read().unwrap().iri.clone()
-    }
-    fn model(&self) -> Arc<RwLock<dyn RdfElement>> {
-        self.model.clone()
+) {
+    fn model_to_element_shim(a: Arc<RwLock<RdfGraph>>) -> Arc<RwLock<dyn RdfElement>> {
+        a
     }
 
-    fn min_shape(&self) -> NHShape {
-        NHShape::Rect {
-            inner: self.bounds_rect,
-        }
-    }
-
-    fn position(&self) -> egui::Pos2 {
-        self.bounds_rect.center()
-    }
-}
-
-impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex>
-    for RdfGraphController
-{
-    fn show_properties(&mut self, parent: &RdfQueryable, ui: &mut egui::Ui) -> bool {
-        if self
-            .owned_controllers
-            .iter()
-            .find(|e| e.1.write().unwrap().show_properties(parent, ui))
-            .is_some()
-        {
-            true
-        } else if self.highlight.selected {
-            ui.label("IRI:");
-            let r1 = ui.add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.iri_buffer),
-            );
-
-            ui.label("Comment:");
-            let r2 = ui.add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            );
-
-            if r1.changed() || r2.changed() {
-                let mut model = self.model.write().unwrap();
-
-                if r1.changed() {
-                    model.iri = Arc::new(self.iri_buffer.clone());
-                }
-
-                if r2.changed() {
-                    model.comment = Arc::new(self.comment_buffer.clone());
-                }
-
-                model.notify_observers();
-            }
-            true
-        } else {
-            false
-        }
-    }
-    fn list_in_project_hierarchy(&self, parent: &RdfQueryable, ui: &mut egui::Ui) {
-        let model = self.model.read().unwrap();
-
-        egui::CollapsingHeader::new(format!("{} ({})", model.iri, model.uuid)).show(ui, |ui| {
-            for (_uuid, c) in &self.owned_controllers {
-                let c = c.read().unwrap();
-                c.list_in_project_hierarchy(parent, ui);
-            }
-        });
-    }
-    fn draw_in(
-        &mut self,
-        q: &RdfQueryable,
-        canvas: &mut dyn NHCanvas,
-        tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
-    ) -> TargettingStatus {
-        // Draw shape and text
-        canvas.draw_rectangle(
-            self.bounds_rect,
-            egui::Rounding::ZERO,
-            egui::Color32::WHITE,
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+    fn show_properties_fun(model: &mut RdfGraph, buffer: &mut RdfGraphBuffer, ui: &mut egui::Ui) {
+        ui.label("IRI:");
+        let r1 = ui.add_sized(
+            (ui.available_width(), 20.0),
+            egui::TextEdit::multiline(&mut buffer.iri),
         );
 
-        canvas.draw_text(
-            self.bounds_rect.center_top(),
-            egui::Align2::CENTER_TOP,
-            &self.model.read().unwrap().iri,
-            canvas::CLASS_MIDDLE_FONT_SIZE,
-            egui::Color32::BLACK,
+        ui.label("Comment:");
+        let r2 = ui.add_sized(
+            (ui.available_width(), 20.0),
+            egui::TextEdit::multiline(&mut buffer.comment),
         );
 
-        let offset_tool = tool.map(|(p, t)| (p - self.bounds_rect.left_top().to_vec2(), t));
-        let mut drawn_child_targetting = TargettingStatus::NotDrawn;
-
-        canvas.offset_by(self.bounds_rect.left_top().to_vec2());
-        self.owned_controllers
-            .iter_mut()
-            .filter(|_| true) // TODO: filter by layers
-            .for_each(|uc| {
-                if uc.1.write().unwrap().draw_in(q, canvas, &offset_tool) == TargettingStatus::Drawn
-                {
-                    drawn_child_targetting = TargettingStatus::Drawn;
-                }
-            });
-        canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
-
-        match (drawn_child_targetting, tool) {
-            (TargettingStatus::NotDrawn, Some((pos, t))) if self.min_shape().contains(*pos) => {
-                canvas.draw_rectangle(
-                    self.bounds_rect,
-                    egui::Rounding::ZERO,
-                    t.targetting_for_element(KindedRdfElement::from(&*self)),
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
-
-                canvas.offset_by(self.bounds_rect.left_top().to_vec2());
-                self.owned_controllers
-                    .iter_mut()
-                    .filter(|_| true) // TODO: filter by layers
-                    .for_each(|uc| {
-                        uc.1.write().unwrap().draw_in(q, canvas, &offset_tool);
-                    });
-                canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
-
-                TargettingStatus::Drawn
+        if r1.changed() || r2.changed() {
+            if r1.changed() {
+                model.iri = Arc::new(buffer.iri.clone());
             }
-            _ => drawn_child_targetting,
+
+            if r2.changed() {
+                model.comment = Arc::new(buffer.comment.clone());
+            }
+
+            model.notify_observers();
         }
     }
+    
+    let uuid = uuid::Uuid::now_v7();
+    let graph = Arc::new(RwLock::new(RdfGraph::new(
+        uuid.clone(),
+        iri.to_owned(),
+        vec![],
+    )));
+    let graph_controller = Arc::new(RwLock::new(PackageView {
+        model: graph.clone(),
+        owned_controllers: HashMap::new(),
+        selected_elements: HashSet::new(),
 
-    fn click(
-        &mut self,
-        tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex>>,
-        pos: egui::Pos2,
-        modifiers: ModifierKeys,
-    ) -> ClickHandlingStatus {
-        tool.as_mut()
-            .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
-        let offset_pos = pos - self.bounds_rect.left_top().to_vec2();
+        buffer: RdfGraphBuffer {
+            iri: iri.to_owned(),
+            comment: "".to_owned(),
+        },
 
-        let uc_status = self
-            .owned_controllers
-            .iter()
-            .map(|uc| {
-                (
-                    uc,
-                    uc.1.write()
-                        .unwrap()
-                        .click(tool, commands, offset_pos, modifiers),
-                )
-            })
-            .find(|e| e.1 != ClickHandlingStatus::NotHandled);
-
-        tool.as_mut()
-            .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
-
-        if self.min_shape().contains(pos) {
-            if let Some(tool) = tool {
-                tool.offset_by(self.bounds_rect.left_top().to_vec2());
-                tool.add_position(offset_pos);
-                tool.offset_by(-self.bounds_rect.left_top().to_vec2());
-                tool.add_element(KindedRdfElement::Graph {}, pos);
-
-                if let Some(new_a) = tool.try_construct(self) {
-                    commands.push(SensitiveCommand::AddElement(*self.uuid(), new_a.into()));
-                }
-
-                return ClickHandlingStatus::HandledByContainer;
-            } else if let Some((uc, status)) = uc_status {
-                if status == ClickHandlingStatus::HandledByElement {
-                    if !modifiers.command {
-                        commands.push(SensitiveCommand::SelectAll(false));
-                        commands.push(SensitiveCommand::Select(
-                            std::iter::once(*uc.0).collect(),
-                            true,
-                        ));
-                    } else {
-                        commands.push(SensitiveCommand::Select(
-                            std::iter::once(*uc.0).collect(),
-                            !self.selected_elements.contains(&uc.0),
-                        ));
-                    }
-                }
-                return ClickHandlingStatus::HandledByContainer;
-            } else {
-                return ClickHandlingStatus::HandledByElement;
-            }
-        }
-
-        ClickHandlingStatus::NotHandled
-    }
-    fn drag(
-        &mut self,
-        tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex>>,
-        last_pos: egui::Pos2,
-        delta: egui::Vec2,
-    ) -> DragHandlingStatus {
-        tool.as_mut()
-            .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
-        let offset_pos = last_pos - self.bounds_rect.left_top().to_vec2();
-
-        let handled = self
-            .owned_controllers
-            .iter_mut()
-            .find(|uc| {
-                uc.1.write()
-                    .unwrap()
-                    .drag(tool, commands, offset_pos, delta)
-                    == DragHandlingStatus::Handled
-            })
-            //.map(|uc| {self.last_selected_element = Some(uc.0.clone());})
-            //.ok_or_else(|| {self.last_selected_element = None;})
-            .is_some();
-        let handled = match handled {
-            true => DragHandlingStatus::Handled,
-            false => DragHandlingStatus::NotHandled,
-        };
-
-        tool.as_mut()
-            .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
-
-        if handled == DragHandlingStatus::NotHandled && self.min_shape().contains(last_pos) {
-            if self.highlight.selected {
-                commands.push(SensitiveCommand::MoveSelectedElements(delta));
-            } else {
-                commands.push(SensitiveCommand::MoveElements(
-                    std::iter::once(*self.uuid()).collect(),
-                    delta,
-                ));
-            }
-            return DragHandlingStatus::Handled;
-        }
-
-        handled
-    }
-
-    fn apply_command(
-        &mut self,
-        command: &InsensitiveCommand<RdfElementOrVertex>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex>>,
-    ) {
-        fn recurse(
-            this: &mut RdfGraphController,
-            command: &InsensitiveCommand<RdfElementOrVertex>,
-            undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex>>,
-        ) {
-            for e in &this.owned_controllers {
-                let mut e = e.1.write().unwrap();
-                e.apply_command(command, undo_accumulator);
-            }
-        }
-
-        match command {
-            InsensitiveCommand::SelectAll(select) => {
-                self.highlight.selected = *select;
-                match select {
-                    true => {
-                        self.selected_elements =
-                            self.owned_controllers.iter().map(|e| *e.0).collect()
-                    }
-                    false => self.selected_elements.clear(),
-                }
-                recurse(self, command, undo_accumulator);
-            }
-            InsensitiveCommand::Select(uuids, select) => {
-                if uuids.contains(&*self.uuid()) {
-                    self.highlight.selected = *select;
-                }
-
-                for uuid in self.owned_controllers.keys().filter(|k| uuids.contains(k)) {
-                    match select {
-                        true => self.selected_elements.insert(*uuid),
-                        false => self.selected_elements.remove(uuid),
-                    };
-                }
-
-                recurse(self, command, undo_accumulator);
-            }
-            InsensitiveCommand::MoveElements(uuids, delta) => {
-                if uuids.contains(&*self.uuid()) {
-                    self.bounds_rect.set_center(self.position() + *delta);
-                    undo_accumulator.push(InsensitiveCommand::MoveElements(
-                        std::iter::once(*self.uuid()).collect(),
-                        -*delta,
-                    ));
-                } else {
-                    recurse(self, command, undo_accumulator);
-                }
-            }
-            InsensitiveCommand::DeleteElements(uuids) => {
-                for (uuid, element) in self
-                    .owned_controllers
-                    .iter()
-                    .filter(|e| uuids.contains(&e.0))
-                {
-                    undo_accumulator.push(InsensitiveCommand::AddElement(
-                        *self.uuid(),
-                        RdfElementOrVertex::from((*uuid, element.clone())),
-                    ));
-                }
-                
-                let mut self_m = self.model.write().unwrap();
-                self_m.delete_elements(&uuids);
-                
-                self.owned_controllers.retain(|k, v| !uuids.contains(&k));
-            }
-            InsensitiveCommand::AddElement(target, element) => {
-                if *target == *self.uuid() {
-                    if let Ok((uuid, element)) = element.clone().try_into() {
-                        undo_accumulator.push(InsensitiveCommand::DeleteElements(std::iter::once(uuid).collect()));
-                        
-                        let new_c = element.read().unwrap();
-                        let mut self_m = self.model.write().unwrap();
-                        self_m.add_element(new_c.model());
-                        drop(new_c);
-                        
-                        self.owned_controllers.insert(uuid, element);
-                    }
-                }
-            }
-        }
-    }
-
-    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
-        if self.highlight.selected {
-            into.insert(*self.uuid());
-        }
-
-        for e in &self.owned_controllers {
-            let mut e = e.1.write().unwrap();
-            e.collect_all_selected_elements(into);
-        }
-    }
-}
-
-impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex>
-    for RdfGraphController
-{
-    fn controller_for(
-        &self,
-        uuid: &uuid::Uuid,
-    ) -> Option<
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    dyn RdfElement,
-                    RdfQueryable,
-                    NaiveRdfTool,
-                    RdfElementOrVertex,
-                >,
-            >,
-        >,
-    > {
-        self.owned_controllers.get(uuid).cloned()
-    }
+        highlight: canvas::Highlight::NONE,
+        bounds_rect,
+        
+        model_to_element_shim,
+        
+        show_properties_fun,
+    }));
+    
+    (uuid, graph, graph_controller)
 }
 
 pub struct RdfNodeController {

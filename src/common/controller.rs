@@ -948,6 +948,485 @@ where
     }
 }
 
+
+pub struct PackageView<
+    ModelT: ContainerModel<ElementModelT>,
+    ElementModelT: ?Sized + 'static,
+    QueryableT: 'static,
+    BufferT: 'static,
+    ToolT: 'static,
+    AddCommandElementT,
+>
+where AddCommandElementT: From<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )> + Clone + 'static,
+{
+    pub model: Arc<RwLock<ModelT>>,
+    pub owned_controllers: HashMap<
+        uuid::Uuid,
+        Arc<
+            RwLock<
+                dyn ElementControllerGen2<
+                    ElementModelT,
+                    QueryableT,
+                    ToolT,
+                    AddCommandElementT,
+                >,
+            >,
+        >,
+    >,
+    pub selected_elements: HashSet<uuid::Uuid>,
+
+    pub buffer: BufferT,
+
+    pub highlight: canvas::Highlight,
+    pub bounds_rect: egui::Rect,
+    
+    pub model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
+    
+    pub show_properties_fun: fn(&mut ModelT, &mut BufferT, &mut egui::Ui),
+}
+
+impl<
+    ModelT: ContainerModel<ElementModelT>,
+    ElementModelT: ?Sized + 'static,
+    QueryableT: 'static,
+    BufferT: 'static,
+    ToolT: 'static,
+    AddCommandElementT: Clone + 'static
+> ElementController<ElementModelT> for PackageView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT>
+where
+    ToolT: for<'a> Tool<
+        ElementModelT,
+        QueryableT,
+        AddCommandElementT,
+        KindedElement<'a>: From<&'a Self>,
+    >,
+    AddCommandElementT: From<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )>,
+{
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.model.read().unwrap().uuid()
+    }
+    fn model_name(&self) -> Arc<String> {
+        self.model.read().unwrap().name()
+    }
+    fn model(&self) -> Arc<RwLock<ElementModelT>> {
+        (self.model_to_element_shim)(self.model.clone())
+    }
+
+    fn min_shape(&self) -> NHShape {
+        NHShape::Rect {
+            inner: self.bounds_rect,
+        }
+    }
+
+    fn position(&self) -> egui::Pos2 {
+        self.bounds_rect.center()
+    }
+}
+
+impl<
+    ModelT: ContainerModel<ElementModelT>,
+    ElementModelT: ?Sized + 'static,
+    QueryableT: 'static,
+    BufferT: 'static,
+    ToolT: 'static,
+    AddCommandElementT: Clone + 'static
+> ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>
+    for PackageView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT>
+where
+    ToolT: for<'a> Tool<
+        ElementModelT,
+        QueryableT,
+        AddCommandElementT,
+        KindedElement<'a>: From<&'a Self>,
+    >, 
+    AddCommandElementT: From<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+                >,
+            >,
+        )>,
+{
+    fn show_properties(&mut self, parent: &QueryableT, ui: &mut egui::Ui) -> bool {
+        if self
+            .owned_controllers
+            .iter()
+            .find(|e| e.1.write().unwrap().show_properties(parent, ui))
+            .is_some()
+        {
+            true
+        } else if self.highlight.selected {
+            let mut c = self.model.write().unwrap();
+            (self.show_properties_fun)(&mut c, &mut self.buffer, ui);
+            true
+        } else {
+            false
+        }
+    }
+    fn list_in_project_hierarchy(&self, parent: &QueryableT, ui: &mut egui::Ui) {
+        let model = self.model.read().unwrap();
+
+        egui::CollapsingHeader::new(format!("{} ({})", *model.name(), *model.name())).show(ui, |ui| {
+            for (_uuid, c) in &self.owned_controllers {
+                let c = c.read().unwrap();
+                c.list_in_project_hierarchy(parent, ui);
+            }
+        });
+    }
+    fn draw_in(
+        &mut self,
+        q: &QueryableT,
+        canvas: &mut dyn NHCanvas,
+        tool: &Option<(egui::Pos2, &ToolT)>,
+    ) -> TargettingStatus {
+        // Draw shape and text
+        canvas.draw_rectangle(
+            self.bounds_rect,
+            egui::Rounding::ZERO,
+            egui::Color32::WHITE,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.highlight,
+        );
+
+        canvas.draw_text(
+            self.bounds_rect.center_top(),
+            egui::Align2::CENTER_TOP,
+            &self.model.read().unwrap().name(),
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+
+        let offset_tool = tool.map(|(p, t)| (p - self.bounds_rect.left_top().to_vec2(), t));
+        let mut drawn_child_targetting = TargettingStatus::NotDrawn;
+
+        canvas.offset_by(self.bounds_rect.left_top().to_vec2());
+        self.owned_controllers
+            .iter_mut()
+            .filter(|_| true) // TODO: filter by layers
+            .for_each(|uc| {
+                if uc.1.write().unwrap().draw_in(q, canvas, &offset_tool) == TargettingStatus::Drawn
+                {
+                    drawn_child_targetting = TargettingStatus::Drawn;
+                }
+            });
+        canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
+
+        match (drawn_child_targetting, tool) {
+            (TargettingStatus::NotDrawn, Some((pos, t))) if self.min_shape().contains(*pos) => {
+                canvas.draw_rectangle(
+                    self.bounds_rect,
+                    egui::Rounding::ZERO,
+                    t.targetting_for_element(ToolT::KindedElement::from(&*self)),
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+
+                canvas.offset_by(self.bounds_rect.left_top().to_vec2());
+                self.owned_controllers
+                    .iter_mut()
+                    .filter(|_| true) // TODO: filter by layers
+                    .for_each(|uc| {
+                        uc.1.write().unwrap().draw_in(q, canvas, &offset_tool);
+                    });
+                canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
+
+                TargettingStatus::Drawn
+            }
+            _ => drawn_child_targetting,
+        }
+    }
+
+    fn click(
+        &mut self,
+        tool: &mut Option<ToolT>,
+        commands: &mut Vec<SensitiveCommand<AddCommandElementT>>,
+        pos: egui::Pos2,
+        modifiers: ModifierKeys,
+    ) -> ClickHandlingStatus {
+        tool.as_mut()
+            .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
+        let offset_pos = pos - self.bounds_rect.left_top().to_vec2();
+
+        let uc_status = self
+            .owned_controllers
+            .iter()
+            .map(|uc| {
+                (
+                    uc,
+                    uc.1.write()
+                        .unwrap()
+                        .click(tool, commands, offset_pos, modifiers),
+                )
+            })
+            .find(|e| e.1 != ClickHandlingStatus::NotHandled);
+
+        tool.as_mut()
+            .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
+
+        if self.min_shape().contains(pos) {
+            if let Some(tool) = tool {
+                tool.offset_by(self.bounds_rect.left_top().to_vec2());
+                tool.add_position(offset_pos);
+                tool.offset_by(-self.bounds_rect.left_top().to_vec2());
+                tool.add_element(ToolT::KindedElement::from(self), pos);
+
+                if let Some(new_a) = tool.try_construct(self) {
+                    commands.push(SensitiveCommand::AddElement(*self.uuid(), new_a.into()));
+                }
+
+                return ClickHandlingStatus::HandledByContainer;
+            } else if let Some((uc, status)) = uc_status {
+                if status == ClickHandlingStatus::HandledByElement {
+                    if !modifiers.command {
+                        commands.push(SensitiveCommand::SelectAll(false));
+                        commands.push(SensitiveCommand::Select(
+                            std::iter::once(*uc.0).collect(),
+                            true,
+                        ));
+                    } else {
+                        commands.push(SensitiveCommand::Select(
+                            std::iter::once(*uc.0).collect(),
+                            !self.selected_elements.contains(&uc.0),
+                        ));
+                    }
+                }
+                return ClickHandlingStatus::HandledByContainer;
+            } else {
+                return ClickHandlingStatus::HandledByElement;
+            }
+        }
+
+        ClickHandlingStatus::NotHandled
+    }
+    fn drag(
+        &mut self,
+        tool: &mut Option<ToolT>,
+        commands: &mut Vec<SensitiveCommand<AddCommandElementT>>,
+        last_pos: egui::Pos2,
+        delta: egui::Vec2,
+    ) -> DragHandlingStatus {
+        tool.as_mut()
+            .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
+        let offset_pos = last_pos - self.bounds_rect.left_top().to_vec2();
+
+        let handled = self
+            .owned_controllers
+            .iter_mut()
+            .find(|uc| {
+                uc.1.write()
+                    .unwrap()
+                    .drag(tool, commands, offset_pos, delta)
+                    == DragHandlingStatus::Handled
+            })
+            //.map(|uc| {self.last_selected_element = Some(uc.0.clone());})
+            //.ok_or_else(|| {self.last_selected_element = None;})
+            .is_some();
+        let handled = match handled {
+            true => DragHandlingStatus::Handled,
+            false => DragHandlingStatus::NotHandled,
+        };
+
+        tool.as_mut()
+            .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
+
+        if handled == DragHandlingStatus::NotHandled && self.min_shape().contains(last_pos) {
+            if self.highlight.selected {
+                commands.push(SensitiveCommand::MoveSelectedElements(delta));
+            } else {
+                commands.push(SensitiveCommand::MoveElements(
+                    std::iter::once(*self.uuid()).collect(),
+                    delta,
+                ));
+            }
+            return DragHandlingStatus::Handled;
+        }
+
+        handled
+    }
+
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<AddCommandElementT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT>>,
+    ) {
+        macro_rules! recurse {
+            ($self:ident) => {
+                for e in &$self.owned_controllers {
+                    let mut e = e.1.write().unwrap();
+                    e.apply_command(command, undo_accumulator);
+                }
+            }
+        }
+
+        match command {
+            InsensitiveCommand::SelectAll(select) => {
+                self.highlight.selected = *select;
+                match select {
+                    true => {
+                        self.selected_elements =
+                            self.owned_controllers.iter().map(|e| *e.0).collect()
+                    }
+                    false => self.selected_elements.clear(),
+                }
+                recurse!(self);
+            }
+            InsensitiveCommand::Select(uuids, select) => {
+                if uuids.contains(&*self.uuid()) {
+                    self.highlight.selected = *select;
+                }
+
+                for uuid in self.owned_controllers.keys().filter(|k| uuids.contains(k)) {
+                    match select {
+                        true => self.selected_elements.insert(*uuid),
+                        false => self.selected_elements.remove(uuid),
+                    };
+                }
+
+                recurse!(self);
+            }
+            InsensitiveCommand::MoveElements(uuids, delta) => {
+                if uuids.contains(&*self.uuid()) {
+                    self.bounds_rect.set_center(self.position() + *delta);
+                    undo_accumulator.push(InsensitiveCommand::MoveElements(
+                        std::iter::once(*self.uuid()).collect(),
+                        -*delta,
+                    ));
+                } else {
+                    recurse!(self);
+                }
+            }
+            InsensitiveCommand::DeleteElements(uuids) => {
+                for (uuid, element) in self
+                    .owned_controllers
+                    .iter()
+                    .filter(|e| uuids.contains(&e.0))
+                {
+                    undo_accumulator.push(InsensitiveCommand::AddElement(
+                        *self.uuid(),
+                        AddCommandElementT::from((*uuid, element.clone())),
+                    ));
+                }
+                
+                let mut self_m = self.model.write().unwrap();
+                self_m.delete_elements(&uuids);
+                
+                self.owned_controllers.retain(|k, v| !uuids.contains(&k));
+                
+                recurse!(self);
+            }
+            InsensitiveCommand::AddElement(target, element) => {
+                if *target == *self.uuid() {
+                    if let Ok((uuid, element)) = element.clone().try_into() {
+                        undo_accumulator.push(InsensitiveCommand::DeleteElements(std::iter::once(uuid).collect()));
+                        
+                        let new_c = element.read().unwrap();
+                        let mut self_m = self.model.write().unwrap();
+                        self_m.add_element(new_c.model());
+                        drop(new_c);
+                        
+                        self.owned_controllers.insert(uuid, element);
+                    }
+                }
+                
+                recurse!(self);
+            }
+        }
+    }
+
+    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
+        if self.highlight.selected {
+            into.insert(*self.uuid());
+        }
+
+        for e in &self.owned_controllers {
+            let mut e = e.1.write().unwrap();
+            e.collect_all_selected_elements(into);
+        }
+    }
+}
+
+impl<
+    ModelT: ContainerModel<ElementModelT>,
+    ElementModelT: ?Sized + 'static,
+    QueryableT: 'static,
+    BufferT: 'static,
+    ToolT: 'static,
+    AddCommandElementT: Clone + 'static
+> ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>
+    for PackageView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT>
+where
+    AddCommandElementT: From<(
+        uuid::Uuid,
+        Arc<
+            RwLock<
+                dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+            >,
+        >,
+    )> + TryInto<(
+        uuid::Uuid,
+        Arc<
+            RwLock<
+                dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT>,
+            >,
+        >,
+    )>,
+{
+    fn controller_for(
+        &self,
+        uuid: &uuid::Uuid,
+    ) -> Option<
+        Arc<
+            RwLock<
+                dyn ElementControllerGen2<
+                    ElementModelT,
+                    QueryableT,
+                    ToolT,
+                    AddCommandElementT,
+                >,
+            >,
+        >,
+    > {
+        self.owned_controllers.get(uuid).cloned()
+    }
+}
+
+
 pub struct MulticonnectionView<
     ModelT,
     ElementModelT: ?Sized + 'static,
