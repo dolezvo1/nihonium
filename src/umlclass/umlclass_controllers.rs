@@ -6,7 +6,7 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     ClickHandlingStatus, ContainerGen2, DiagramController, DiagramControllerGen2, ContainerModel,
     DragHandlingStatus, ElementController, ElementControllerGen2, InsensitiveCommand, ModifierKeys,
-    PackageView, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool,
+    PackageView, VertexInformation, FlipMulticonnection, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool,
 };
 use crate::common::observer::Observable;
 use crate::CustomTab;
@@ -14,10 +14,45 @@ use crate::NHApp;
 use eframe::egui;
 use std::{
     collections::{HashMap, HashSet},
+    fmt::{Debug, Formatter},
     sync::{Arc, RwLock},
 };
 
 pub struct UmlClassQueryable {}
+
+#[derive(Clone)]
+pub enum UmlClassPropChange {
+    NameChange(Arc<String>),
+    
+    StereotypeChange(UmlClassStereotype),
+    PropertiesChange(Arc<String>),
+    FunctionsChange(Arc<String>),
+    
+    LinkTypeChange(UmlClassLinkType),
+    SourceArrowheadLabelChange(Arc<String>),
+    DestiantionArrowheadLabelChange(Arc<String>),
+    
+    CommentChange(Arc<String>),
+    PackageResize(egui::Vec2),
+    FlipMulticonnection,
+}
+
+impl Debug for UmlClassPropChange {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "UmlClassPropChange::???")
+    }
+}
+
+impl TryInto<FlipMulticonnection> for &UmlClassPropChange {
+    type Error = ();
+
+    fn try_into(self) -> Result<FlipMulticonnection, ()> {
+        match self {
+            UmlClassPropChange::FlipMulticonnection => Ok(FlipMulticonnection {}),
+            _ => Err(()),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub enum UmlClassElementOrVertex {
@@ -31,24 +66,31 @@ pub enum UmlClassElementOrVertex {
                         UmlClassQueryable,
                         NaiveUmlClassTool,
                         Self,
+                        UmlClassPropChange,
                     >,
                 >,
             >,
         ),
     ),
-    Vertex((uuid::Uuid, uuid::Uuid, egui::Pos2)),
+    Vertex(VertexInformation),
 }
 
-impl From<(uuid::Uuid, uuid::Uuid, egui::Pos2)> for UmlClassElementOrVertex {
-    fn from(v: (uuid::Uuid, uuid::Uuid, egui::Pos2)) -> Self {
+impl Debug for UmlClassElementOrVertex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "UmlClassElementOrVertex::???")
+    }
+}
+
+impl From<VertexInformation> for UmlClassElementOrVertex {
+    fn from(v: VertexInformation) -> Self {
         UmlClassElementOrVertex::Vertex(v)
     }
 }
 
-impl TryInto<(uuid::Uuid, uuid::Uuid, egui::Pos2)> for UmlClassElementOrVertex {
+impl TryInto<VertexInformation> for UmlClassElementOrVertex {
     type Error = ();
 
-    fn try_into(self) -> Result<(uuid::Uuid, uuid::Uuid, egui::Pos2), ()> {
+    fn try_into(self) -> Result<VertexInformation, ()> {
         match self {
             UmlClassElementOrVertex::Vertex(v) => Ok(v),
             _ => Err(()),
@@ -66,6 +108,7 @@ impl
                     UmlClassQueryable,
                     NaiveUmlClassTool,
                     UmlClassElementOrVertex,
+                    UmlClassPropChange,
                 >,
             >,
         >,
@@ -81,6 +124,7 @@ impl
                         UmlClassQueryable,
                         NaiveUmlClassTool,
                         UmlClassElementOrVertex,
+                        UmlClassPropChange,
                     >,
                 >,
             >,
@@ -100,6 +144,7 @@ impl
                     UmlClassQueryable,
                     NaiveUmlClassTool,
                     UmlClassElementOrVertex,
+                    UmlClassPropChange,
                 >,
             >,
         >,
@@ -119,6 +164,7 @@ impl
                         UmlClassQueryable,
                         NaiveUmlClassTool,
                         UmlClassElementOrVertex,
+                        UmlClassPropChange,
                     >,
                 >,
             >,
@@ -133,37 +179,60 @@ impl
 }
 
 pub struct UmlClassDiagramBuffer {
+    uuid: uuid::Uuid,
     name: String,
     comment: String,
 }
 
 fn show_props_fun(
-    model: &mut UmlClassDiagram,
-    buffer_object: &mut UmlClassDiagramBuffer,
+    buffer: &mut UmlClassDiagramBuffer,
     ui: &mut egui::Ui,
+    commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
 ) {
     ui.label("Name:");
-    let r1 = ui.add_sized(
+    if ui.add_sized(
         (ui.available_width(), 20.0),
-        egui::TextEdit::singleline(&mut buffer_object.name),
-    );
-
-    if r1.changed() {
-        model.name = Arc::new(buffer_object.name.clone());
+        egui::TextEdit::singleline(&mut buffer.name),
+    ).changed() {
+        commands.push(SensitiveCommand::PropertyChange(std::iter::once(buffer.uuid).collect(), vec![UmlClassPropChange::NameChange(Arc::new(buffer.name.clone()))]));
     }
 
     ui.label("Comment:");
-    let r2 = ui.add_sized(
+    if ui.add_sized(
         (ui.available_width(), 20.0),
-        egui::TextEdit::multiline(&mut buffer_object.comment),
-    );
-
-    if r2.changed() {
-        model.comment = Arc::new(buffer_object.comment.clone());
+        egui::TextEdit::multiline(&mut buffer.comment),
+    ).changed() {
+        commands.push(SensitiveCommand::PropertyChange(std::iter::once(buffer.uuid).collect(), vec![UmlClassPropChange::CommentChange(Arc::new(buffer.comment.clone()))]));
     }
-
-    if r1.union(r2).changed() {
-        model.notify_observers();
+}
+fn apply_property_change_fun(
+    buffer: &mut UmlClassDiagramBuffer,
+    model: &mut UmlClassDiagram,
+    command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
+    undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+) {
+    if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        for property in properties {
+            match property {
+                UmlClassPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(buffer.uuid).collect(),
+                        vec![UmlClassPropChange::NameChange(model.name.clone())],
+                    ));
+                    buffer.name = (**name).clone();
+                    model.name = name.clone();
+                }
+                UmlClassPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(buffer.uuid).collect(),
+                        vec![UmlClassPropChange::CommentChange(model.comment.clone())],
+                    ));
+                    buffer.comment = (**comment).clone();
+                    model.comment = comment.clone();
+                },
+                _ => {},
+            }
+        }
     }
 }
 fn tool_change_fun(tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
@@ -239,6 +308,7 @@ fn menubar_options_fun(
         UmlClassDiagramBuffer,
         NaiveUmlClassTool,
         UmlClassElementOrVertex,
+        UmlClassPropChange,
     >,
     context: &mut NHApp,
     ui: &mut egui::Ui,
@@ -293,10 +363,12 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             HashMap::new(),
             UmlClassQueryable {},
             UmlClassDiagramBuffer {
+                uuid,
                 name,
                 comment: "".to_owned(),
             },
             show_props_fun,
+            apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
         ))),
@@ -473,6 +545,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                     UmlClassQueryable,
                     NaiveUmlClassTool,
                     UmlClassElementOrVertex,
+                    UmlClassPropChange,
                 >,
             >,
         >,
@@ -515,10 +588,12 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             owned_controllers,
             UmlClassQueryable {},
             UmlClassDiagramBuffer {
+                uuid: diagram_uuid,
                 name,
                 comment: "".to_owned(),
             },
             show_props_fun,
+            apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
         ))),
@@ -536,6 +611,7 @@ pub enum KindedUmlClassElement<'a> {
             UmlClassPackageBuffer,
             NaiveUmlClassTool,
             UmlClassElementOrVertex,
+            UmlClassPropChange,
         >,
     },
     Class {
@@ -549,6 +625,7 @@ pub enum KindedUmlClassElement<'a> {
             UmlClassLinkBuffer,
             NaiveUmlClassTool,
             UmlClassElementOrVertex,
+            UmlClassPropChange,
         >,
     },
 }
@@ -562,6 +639,7 @@ impl<'a>
             UmlClassDiagramBuffer,
             NaiveUmlClassTool,
             UmlClassElementOrVertex,
+            UmlClassPropChange,
         >,
     > for KindedUmlClassElement<'a>
 {
@@ -573,6 +651,7 @@ impl<'a>
             UmlClassDiagramBuffer,
             NaiveUmlClassTool,
             UmlClassElementOrVertex,
+            UmlClassPropChange,
         >,
     ) -> Self {
         Self::Diagram {}
@@ -586,6 +665,7 @@ impl<'a> From<&'a PackageView<
             UmlClassPackageBuffer,
             NaiveUmlClassTool,
             UmlClassElementOrVertex,
+            UmlClassPropChange,
         >> for KindedUmlClassElement<'a> {
     fn from(from: &'a PackageView<
             UmlClassPackage,
@@ -594,6 +674,7 @@ impl<'a> From<&'a PackageView<
             UmlClassPackageBuffer,
             NaiveUmlClassTool,
             UmlClassElementOrVertex,
+            UmlClassPropChange,
         >) -> Self {
         Self::Package { inner: from }
     }
@@ -620,6 +701,7 @@ enum PartialUmlClassElement {
                     UmlClassQueryable,
                     NaiveUmlClassTool,
                     UmlClassElementOrVertex,
+                    UmlClassPropChange,
                 >,
             >,
         >,
@@ -660,7 +742,7 @@ impl NaiveUmlClassTool {
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
 const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
 
-impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex> for NaiveUmlClassTool {
+impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassPropChange> for NaiveUmlClassTool {
     type KindedElement<'a> = KindedUmlClassElement<'a>;
     type Stage = UmlClassToolStage;
 
@@ -818,6 +900,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex> for N
             UmlClassQueryable,
             Self,
             UmlClassElementOrVertex,
+            UmlClassPropChange,
         >,
     ) -> Option<
         (
@@ -829,6 +912,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex> for N
                         UmlClassQueryable,
                         Self,
                         UmlClassElementOrVertex,
+                        UmlClassPropChange,
                     >,
                 >,
             >,
@@ -859,6 +943,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex> for N
                                 UmlClassQueryable,
                                 Self,
                                 UmlClassElementOrVertex,
+                                UmlClassPropChange,
                             >,
                         >,
                     >,
@@ -906,6 +991,7 @@ pub trait UmlClassElementController:
     UmlClassQueryable,
     NaiveUmlClassTool,
     UmlClassElementOrVertex,
+    UmlClassPropChange,
 >
 {
     fn is_connection_from(&self, _uuid: &uuid::Uuid) -> bool {
@@ -917,7 +1003,7 @@ pub trait UmlClassElementController:
 }
 
 
-struct UmlClassPackageBuffer {
+pub struct UmlClassPackageBuffer {
     name: String,
     comment: String,
 }
@@ -937,6 +1023,7 @@ fn umlclass_package(
                 UmlClassPackageBuffer,
                 NaiveUmlClassTool,
                 UmlClassElementOrVertex,
+                UmlClassPropChange,
             >,
         >,
     >,
@@ -945,29 +1032,55 @@ fn umlclass_package(
         a
     }
 
-    fn show_properties_fun(model: &mut UmlClassPackage, buffer: &mut UmlClassPackageBuffer, ui: &mut egui::Ui) {
+    fn show_properties_fun(
+        buffer: &mut UmlClassPackageBuffer,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+    ) {
         ui.label("Name:");
-        let r1 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut buffer.name),
-        );
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![UmlClassPropChange::NameChange(Arc::new(buffer.name.clone()))]));
+        }
 
         ui.label("Comment:");
-        let r2 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut buffer.comment),
-        );
-
-        if r1.changed() || r2.changed() {
-            if r1.changed() {
-                model.name = Arc::new(buffer.name.clone());
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![UmlClassPropChange::CommentChange(Arc::new(buffer.comment.clone()))]));
+        }
+    }
+    fn apply_property_change_fun(
+        buffer: &mut UmlClassPackageBuffer,
+        model: &mut UmlClassPackage,
+        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            for property in properties {
+                match property {
+                    UmlClassPropChange::NameChange(name) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid()).collect(),
+                            vec![UmlClassPropChange::NameChange(model.name.clone())],
+                        ));
+                        buffer.name = (**name).clone();
+                        model.name = name.clone();
+                    }
+                    UmlClassPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid()).collect(),
+                            vec![UmlClassPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        buffer.comment = (**comment).clone();
+                        model.comment = comment.clone();
+                    },
+                    _ => {},
+                }
             }
-
-            if r2.changed() {
-                model.comment = Arc::new(buffer.comment.clone());
-            }
-
-            model.notify_observers();
         }
     }
     
@@ -987,6 +1100,7 @@ fn umlclass_package(
         bounds_rect,
         model_to_element_shim,
         show_properties_fun,
+        apply_property_change_fun,
     )));
     
     (uuid, package, package_controller)
@@ -1035,15 +1149,20 @@ impl
         UmlClassQueryable,
         NaiveUmlClassTool,
         UmlClassElementOrVertex,
+        UmlClassPropChange,
     > for UmlClassController
 {
-    fn show_properties(&mut self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) -> bool {
+    fn show_properties(
+        &mut self,
+        _parent: &UmlClassQueryable,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+    ) -> bool {
         if !self.highlight.selected {
             return false;
         }
 
         ui.label("Stereotype:");
-        let mut r1 = false;
         egui::ComboBox::from_id_source("Stereotype:")
             .selected_text(self.stereotype_buffer.char())
             .show_ui(ui, |ui| {
@@ -1059,59 +1178,41 @@ impl
                         .selectable_value(&mut self.stereotype_buffer, value, value.char())
                         .clicked()
                     {
-                        r1 = true;
+                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![UmlClassPropChange::StereotypeChange(self.stereotype_buffer)]));
                     }
                 }
             });
 
         ui.label("Name:");
-        let r2 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut self.name_buffer),
-        );
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone()))]));
+        }
 
         ui.label("Properties:");
-        let r3 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut self.properties_buffer),
-        );
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![UmlClassPropChange::PropertiesChange(Arc::new(self.properties_buffer.clone()))]));
+        }
 
         ui.label("Functions:");
-        let r4 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut self.functions_buffer),
-        );
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![UmlClassPropChange::FunctionsChange(Arc::new(self.functions_buffer.clone()))]));
+        }
 
         ui.label("Comment:");
-        let r5 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut self.comment_buffer),
-        );
-
-        if r1 || r2.changed() || r3.changed() || r4.changed() || r5.changed() {
-            let mut model = self.model.write().unwrap();
-
-            if r1 {
-                model.stereotype = self.stereotype_buffer.clone();
-            }
-
-            if r2.changed() {
-                model.name = Arc::new(self.name_buffer.clone());
-            }
-
-            if r3.changed() {
-                model.properties = Arc::new(self.properties_buffer.clone());
-            }
-
-            if r4.changed() {
-                model.functions = Arc::new(self.functions_buffer.clone());
-            }
-
-            if r5.changed() {
-                model.comment = Arc::new(self.comment_buffer.clone());
-            }
-
-            model.notify_observers();
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone()))]));
         }
 
         true
@@ -1170,7 +1271,7 @@ impl
     fn click(
         &mut self,
         tool: &mut Option<NaiveUmlClassTool>,
-        _commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex>>,
+        _commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
         pos: egui::Pos2,
         modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1194,7 +1295,7 @@ impl
     fn drag(
         &mut self,
         _tool: &mut Option<NaiveUmlClassTool>,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex>>,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1216,8 +1317,8 @@ impl
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlClassElementOrVertex>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex>>,
+        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) {
         match command {
             InsensitiveCommand::SelectAll(select) => {
@@ -1238,6 +1339,60 @@ impl
                 }
             }
             InsensitiveCommand::DeleteElements(..) | InsensitiveCommand::AddElement(..) => {}
+            InsensitiveCommand::PropertyChange(uuids, properties) => {
+                if uuids.contains(&*self.uuid()) {
+                    for property in properties {
+                        match property {
+                            UmlClassPropChange::StereotypeChange(stereotype) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid).collect(),
+                                    vec![UmlClassPropChange::StereotypeChange(model.stereotype.clone())],
+                                ));
+                                self.stereotype_buffer = stereotype.clone();
+                                model.stereotype = stereotype.clone();
+                            }
+                            UmlClassPropChange::NameChange(name) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid).collect(),
+                                    vec![UmlClassPropChange::NameChange(model.name.clone())],
+                                ));
+                                self.name_buffer = (**name).clone();
+                                model.name = name.clone();
+                            }
+                            UmlClassPropChange::PropertiesChange(properties) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid).collect(),
+                                    vec![UmlClassPropChange::PropertiesChange(model.properties.clone())],
+                                ));
+                                self.properties_buffer = (**properties).clone();
+                                model.properties = properties.clone();
+                            }
+                            UmlClassPropChange::FunctionsChange(functions) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid).collect(),
+                                    vec![UmlClassPropChange::FunctionsChange(model.functions.clone())],
+                                ));
+                                self.functions_buffer = (**functions).clone();
+                                model.functions = functions.clone();
+                            }
+                            UmlClassPropChange::CommentChange(comment) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid()).collect(),
+                                    vec![UmlClassPropChange::CommentChange(model.comment.clone())],
+                                ));
+                                self.comment_buffer = (**comment).clone();
+                                model.comment = comment.clone();
+                            },
+                            _ => {},
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1246,6 +1401,14 @@ impl
             into.insert(*self.uuid());
         }
     }
+}
+
+
+pub struct UmlClassLinkBuffer {
+    link_type: UmlClassLinkType,
+    source_arrowhead_label: String,
+    destination_arrowhead_label: String,
+    comment: String,
 }
 
 fn umlclass_link(
@@ -1260,6 +1423,7 @@ fn umlclass_link(
                     UmlClassQueryable,
                     NaiveUmlClassTool,
                     UmlClassElementOrVertex,
+                    UmlClassPropChange,
                 >,
             >,
         >,
@@ -1273,6 +1437,7 @@ fn umlclass_link(
                     UmlClassQueryable,
                     NaiveUmlClassTool,
                     UmlClassElementOrVertex,
+                    UmlClassPropChange,
                 >,
             >,
         >,
@@ -1289,6 +1454,7 @@ fn umlclass_link(
                 UmlClassLinkBuffer,
                 NaiveUmlClassTool,
                 UmlClassElementOrVertex,
+                UmlClassPropChange,
             >,
         >,
     >,
@@ -1298,13 +1464,13 @@ fn umlclass_link(
     }
 
     fn show_properties_fun(
-        model: &mut UmlClassLink,
         buffer: &mut UmlClassLinkBuffer,
         ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) {
         ui.label("Link type:");
-        let r1 = egui::ComboBox::from_id_source("link type")
-            .selected_text(&*model.link_type.name())
+        egui::ComboBox::from_id_source("link type")
+            .selected_text(&*buffer.link_type.name())
             .show_ui(ui, |ui| {
                 for sv in [
                     UmlClassLinkType::Association,
@@ -1314,60 +1480,93 @@ fn umlclass_link(
                     UmlClassLinkType::InterfaceRealization,
                     UmlClassLinkType::Usage,
                 ] {
-                    ui.selectable_value(&mut model.link_type, sv, &*sv.name());
+                    if ui.selectable_value(&mut buffer.link_type, sv, &*sv.name()).changed() {
+                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![UmlClassPropChange::LinkTypeChange(buffer.link_type)]));
+                    }
                 }
-            })
-            .response;
+            });
 
         ui.label("Source:");
-        let r2 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::singleline(&mut buffer.source_arrowhead_label),
-        );
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![UmlClassPropChange::SourceArrowheadLabelChange(Arc::new(buffer.source_arrowhead_label.clone()))]));
+        }
         ui.separator();
 
         ui.label("Destination:");
-        let r3 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::singleline(&mut buffer.destination_arrowhead_label),
-        );
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![UmlClassPropChange::DestiantionArrowheadLabelChange(Arc::new(buffer.destination_arrowhead_label.clone()))]));
+        }
         ui.separator();
 
         ui.label("Swap source and destination:");
-        let r4 = if ui.button("Swap").clicked() {
-            (model.source, model.destination) = (model.destination.clone(), model.source.clone());
+        if ui.button("Swap").clicked() {
+            // (model.source, model.destination) = (model.destination.clone(), model.source.clone());
             /* TODO:
             (self.source, self.destination) = (self.destination.clone(), self.source.clone());
             (self.source_points, self.dest_points) =
                 (self.dest_points.clone(), self.source_points.clone());
                 */
-            true
-        } else {
-            false
-        };
+        }
         ui.separator();
 
         ui.label("Comment:");
-        let r5 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut buffer.comment),
-        );
-
-        if r1.changed() || r2.changed() || r3.changed() || r4 || r5.changed() {
-            if r2.changed() {
-                model.source_arrowhead_label = Arc::new(buffer.source_arrowhead_label.clone());
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![UmlClassPropChange::CommentChange(Arc::new(buffer.comment.clone()))]));
+        }
+    }
+    fn apply_property_change_fun(
+        buffer: &mut UmlClassLinkBuffer,
+        model: &mut UmlClassLink,
+        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            for property in properties {
+                match property {
+                    UmlClassPropChange::LinkTypeChange(link_type)  => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid()).collect(),
+                            vec![UmlClassPropChange::LinkTypeChange(model.link_type.clone())],
+                        ));
+                        buffer.link_type = link_type.clone();
+                        model.link_type = link_type.clone();
+                    }
+                    UmlClassPropChange::SourceArrowheadLabelChange(source_arrowhead_label) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid()).collect(),
+                            vec![UmlClassPropChange::CommentChange(model.source_arrowhead_label.clone())],
+                        ));
+                        buffer.source_arrowhead_label = (**source_arrowhead_label).clone();
+                        model.source_arrowhead_label = source_arrowhead_label.clone();
+                    },
+                    UmlClassPropChange::DestiantionArrowheadLabelChange(destination_arrowhead_label) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid()).collect(),
+                            vec![UmlClassPropChange::CommentChange(model.destination_arrowhead_label.clone())],
+                        ));
+                        buffer.destination_arrowhead_label = (**destination_arrowhead_label).clone();
+                        model.destination_arrowhead_label = destination_arrowhead_label.clone();
+                    },
+                    UmlClassPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid()).collect(),
+                            vec![UmlClassPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        buffer.comment = (**comment).clone();
+                        model.comment = comment.clone();
+                    },
+                    _ => {},
+                }
             }
-
-            if r3.changed() {
-                model.destination_arrowhead_label =
-                    Arc::new(buffer.destination_arrowhead_label.clone());
-            }
-
-            if r5.changed() {
-                model.comment = Arc::new(buffer.comment.clone());
-            }
-
-            model.notify_observers();
         }
     }
 
@@ -1408,24 +1607,23 @@ fn umlclass_link(
         source.0,
         destination.0,
     )));
-    let link_controller = Arc::new(RwLock::new(MulticonnectionView {
-        model: link.clone(),
-        source: source.1,
-        destination: destination.1,
-        buffer: UmlClassLinkBuffer {
+    let link_controller = Arc::new(RwLock::new(MulticonnectionView::new(
+        link.clone(),
+        UmlClassLinkBuffer {
+            link_type,
             source_arrowhead_label: "".to_owned(),
             destination_arrowhead_label: "".to_owned(),
             comment: "".to_owned(),
         },
+        source.1, destination.1,
 
-        highlight: canvas::Highlight::NONE,
-        selected_vertices: HashSet::new(),
         center_point,
-        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
 
         model_to_element_shim,
         show_properties_fun,
+        apply_property_change_fun,
 
         model_to_uuid,
         model_to_name,
@@ -1434,14 +1632,8 @@ fn umlclass_link(
         model_to_destination_arrowhead_type,
         model_to_source_arrowhead_label,
         model_to_destination_arrowhead_label,
-    }));
+    )));
     (link_uuid, link, link_controller)
-}
-
-struct UmlClassLinkBuffer {
-    source_arrowhead_label: String,
-    destination_arrowhead_label: String,
-    comment: String,
 }
 
 impl UmlClassElementController
@@ -1452,6 +1644,7 @@ impl UmlClassElementController
         UmlClassLinkBuffer,
         NaiveUmlClassTool,
         UmlClassElementOrVertex,
+        UmlClassPropChange,
     >
 {
     fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {

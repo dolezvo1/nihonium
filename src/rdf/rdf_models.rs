@@ -169,19 +169,19 @@ pub struct RdfLiteral {
     pub uuid: Arc<uuid::Uuid>,
     pub content: Arc<String>,
     pub datatype: Arc<String>,
-    pub language: Arc<String>,
+    pub langtag: Arc<String>,
 
     pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl RdfLiteral {
-    pub fn new(uuid: uuid::Uuid, content: String, datatype: String, language: String) -> Self {
+    pub fn new(uuid: uuid::Uuid, content: String, datatype: String, langtag: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
             content: Arc::new(content),
             datatype: Arc::new(datatype),
-            language: Arc::new(language),
+            langtag: Arc::new(langtag),
             comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
@@ -196,10 +196,10 @@ impl RdfElement for RdfLiteral {
     }
 
     fn term_repr(&self) -> SimpleTerm<'static> {
-        if !self.language.is_empty() {
+        if !self.langtag.is_empty() {
             SimpleTerm::LiteralLanguage(
                 MownStr::from((*self.content).clone()),
-                LanguageTag::new(MownStr::from((*self.language).clone())).unwrap(),
+                LanguageTag::new(MownStr::from((*self.langtag).clone())).unwrap(),
             )
         } else {
             let datatype = if !self.datatype.is_empty() {

@@ -5,7 +5,8 @@ use crate::common::controller::{
     InsensitiveCommand, ModifierKeys, SensitiveCommand, TargettingStatus,
 };
 use crate::common::controller::{
-    ContainerGen2, DiagramControllerGen2, ElementControllerGen2, PackageView, MulticonnectionView, Tool,
+    ContainerGen2, DiagramControllerGen2, ElementControllerGen2, PackageView,
+    VertexInformation, FlipMulticonnection, MulticonnectionView, Tool,
 };
 use crate::common::observer::Observable;
 use crate::{CustomTab, NHApp};
@@ -13,6 +14,7 @@ use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 use std::{
     collections::{HashMap, HashSet},
+    fmt::{Debug, Formatter},
     sync::{Arc, RwLock},
 };
 
@@ -22,30 +24,78 @@ use sophia_sparql::{ResultTerm, SparqlQuery, SparqlWrapper};
 pub struct RdfQueryable {}
 
 #[derive(Clone)]
+pub enum RdfPropChange {
+    NameChange(Arc<String>),
+    IriChange(Arc<String>),
+    
+    ContentChange(Arc<String>),
+    DataTypeChange(Arc<String>),
+    LangTagChange(Arc<String>),
+    
+    CommentChange(Arc<String>),
+    GraphResize(egui::Vec2),
+    FlipMulticonnection,
+}
+
+impl Debug for RdfPropChange {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "RdfPropChange::{}", match self {
+            Self::NameChange(name) => format!("NameChange({})", name),
+            Self::IriChange(iri) => format!("IriChange({})", iri),
+    
+            Self::ContentChange(content) => format!("ContentChange({})", content),
+            Self::DataTypeChange(datatype) => format!("DataTypeChange({})", datatype),
+            Self::LangTagChange(langtag) => format!("LangTagChange({})", langtag),
+    
+            Self::CommentChange(comment) => format!("CommentChange({})", comment),
+            Self::GraphResize(size) => format!("GraphResize({})", size),
+            Self::FlipMulticonnection => format!("FlipMulticonnection"),
+        })
+    }
+}
+
+impl TryInto<FlipMulticonnection> for &RdfPropChange {
+    type Error = ();
+
+    fn try_into(self) -> Result<FlipMulticonnection, ()> {
+        match self {
+            RdfPropChange::FlipMulticonnection => Ok(FlipMulticonnection {}),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Clone)]
 pub enum RdfElementOrVertex {
     Element(
         (
             uuid::Uuid,
             Arc<
-                RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, Self>>,
+                RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, Self, RdfPropChange>>,
             >,
         ),
     ),
-    Vertex((uuid::Uuid, uuid::Uuid, egui::Pos2)),
+    Vertex(VertexInformation),
 }
 
-impl From<(uuid::Uuid, uuid::Uuid, egui::Pos2)> for RdfElementOrVertex {
-    fn from(v: (uuid::Uuid, uuid::Uuid, egui::Pos2)) -> Self {
-        RdfElementOrVertex::Vertex(v)
+impl Debug for RdfElementOrVertex {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "RdfElementOrVertex::???")
     }
 }
 
-impl TryInto<(uuid::Uuid, uuid::Uuid, egui::Pos2)> for RdfElementOrVertex {
+impl From<VertexInformation> for RdfElementOrVertex {
+    fn from(v: VertexInformation) -> Self {
+        Self::Vertex(v)
+    }
+}
+
+impl TryInto<VertexInformation> for RdfElementOrVertex {
     type Error = ();
 
-    fn try_into(self) -> Result<(uuid::Uuid, uuid::Uuid, egui::Pos2), ()> {
+    fn try_into(self) -> Result<VertexInformation, ()> {
         match self {
-            RdfElementOrVertex::Vertex(v) => Ok(v),
+            Self::Vertex(v) => Ok(v),
             _ => Err(()),
         }
     }
@@ -54,25 +104,25 @@ impl TryInto<(uuid::Uuid, uuid::Uuid, egui::Pos2)> for RdfElementOrVertex {
 impl
     From<(
         uuid::Uuid,
-        Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, Self>>>,
+        Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, Self, RdfPropChange>>>,
     )> for RdfElementOrVertex
 {
     fn from(
         v: (
             uuid::Uuid,
             Arc<
-                RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, Self>>,
+                RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, Self, RdfPropChange>>,
             >,
         ),
     ) -> Self {
-        RdfElementOrVertex::Element(v)
+        Self::Element(v)
     }
 }
 
 impl
     TryInto<(
         uuid::Uuid,
-        Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, Self>>>,
+        Arc<RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, Self, RdfPropChange>>>,
     )> for RdfElementOrVertex
 {
     type Error = ();
@@ -83,46 +133,73 @@ impl
         (
             uuid::Uuid,
             Arc<
-                RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, Self>>,
+                RwLock<dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, Self, RdfPropChange>>,
             >,
         ),
         (),
     > {
         match self {
-            RdfElementOrVertex::Element(v) => Ok(v),
+            Self::Element(v) => Ok(v),
             _ => Err(()),
         }
     }
 }
 
 pub struct RdfDiagramBuffer {
+    uuid: uuid::Uuid,
     name: String,
     comment: String,
 }
 
-fn show_props_fun(model: &mut RdfDiagram, buffer_object: &mut RdfDiagramBuffer, ui: &mut egui::Ui) {
+fn show_props_fun(
+    buffer: &mut RdfDiagramBuffer,
+    ui: &mut egui::Ui,
+    commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+) {
     ui.label("Name:");
-    let r1 = ui.add_sized(
+    if ui.add_sized(
         (ui.available_width(), 20.0),
-        egui::TextEdit::singleline(&mut buffer_object.name),
-    );
-
-    if r1.changed() {
-        model.name = Arc::new(buffer_object.name.clone());
-    }
+        egui::TextEdit::singleline(&mut buffer.name),
+    ).changed() {
+        commands.push(SensitiveCommand::PropertyChange(std::iter::once(buffer.uuid).collect(), vec![RdfPropChange::NameChange(Arc::new(buffer.name.clone()))]));
+    };
 
     ui.label("Comment:");
-    let r2 = ui.add_sized(
+    if ui.add_sized(
         (ui.available_width(), 20.0),
-        egui::TextEdit::multiline(&mut buffer_object.comment),
-    );
-
-    if r2.changed() {
-        model.comment = Arc::new(buffer_object.comment.clone());
+        egui::TextEdit::multiline(&mut buffer.comment),
+    ).changed() {
+        commands.push(SensitiveCommand::PropertyChange(std::iter::once(buffer.uuid).collect(), vec![RdfPropChange::CommentChange(Arc::new(buffer.comment.clone()))]));
     }
-
-    if r1.union(r2).changed() {
-        model.notify_observers();
+}
+fn apply_property_change_fun(
+    buffer: &mut RdfDiagramBuffer,
+    model: &mut RdfDiagram,
+    command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
+    undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+) {
+    if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        for property in properties {
+            match property {
+                RdfPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(buffer.uuid).collect(),
+                        vec![RdfPropChange::NameChange(model.name.clone())],
+                    ));
+                    buffer.name = (**name).clone();
+                    model.name = name.clone();
+                }
+                RdfPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(buffer.uuid).collect(),
+                        vec![RdfPropChange::CommentChange(model.comment.clone())],
+                    ));
+                    buffer.comment = (**comment).clone();
+                    model.comment = comment.clone();
+                },
+                _ => {},
+            }
+        }
     }
 }
 fn tool_change_fun(tool: &mut Option<NaiveRdfTool>, ui: &mut egui::Ui) {
@@ -359,6 +436,7 @@ fn menubar_options_fun(
         RdfDiagramBuffer,
         NaiveRdfTool,
         RdfElementOrVertex,
+        RdfPropChange,
     >,
     context: &mut NHApp,
     ui: &mut egui::Ui,
@@ -398,10 +476,12 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             HashMap::new(),
             RdfQueryable {},
             RdfDiagramBuffer {
+                uuid,
                 name,
                 comment: "".to_owned(),
             },
             show_props_fun,
+            apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
         ))),
@@ -435,7 +515,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         model: literal.clone(),
         content_buffer: "Eric Miller".to_owned(),
         datatype_buffer: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
-        language_buffer: "en".to_owned(),
+        langtag_buffer: "en".to_owned(),
         comment_buffer: "".to_owned(),
 
         highlight: canvas::Highlight::NONE,
@@ -468,6 +548,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                     RdfQueryable,
                     NaiveRdfTool,
                     RdfElementOrVertex,
+                    RdfPropChange,
                 >,
             >,
         >,
@@ -533,6 +614,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                     RdfQueryable,
                     NaiveRdfTool,
                     RdfElementOrVertex,
+                    RdfPropChange,
                 >,
             >,
         >,
@@ -557,10 +639,12 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             owned_controllers,
             RdfQueryable {},
             RdfDiagramBuffer {
+                uuid: diagram_uuid,
                 name,
                 comment: "".to_owned(),
             },
             show_props_fun,
+            apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
         ))),
@@ -578,6 +662,7 @@ pub enum KindedRdfElement<'a> {
             RdfGraphBuffer,
             NaiveRdfTool,
             RdfElementOrVertex,
+            RdfPropChange,
         >
     },
     Literal {
@@ -594,6 +679,7 @@ pub enum KindedRdfElement<'a> {
             RdfPredicateBuffer,
             NaiveRdfTool,
             RdfElementOrVertex,
+            RdfPropChange,
         >,
     },
 }
@@ -607,6 +693,7 @@ impl<'a>
             RdfDiagramBuffer,
             NaiveRdfTool,
             RdfElementOrVertex,
+            RdfPropChange,
         >,
     > for KindedRdfElement<'a>
 {
@@ -618,6 +705,7 @@ impl<'a>
             RdfDiagramBuffer,
             NaiveRdfTool,
             RdfElementOrVertex,
+            RdfPropChange,
         >,
     ) -> Self {
         Self::Diagram {}
@@ -631,6 +719,7 @@ impl<'a> From<&'a PackageView<
             RdfGraphBuffer,
             NaiveRdfTool,
             RdfElementOrVertex,
+            RdfPropChange,
         >> for KindedRdfElement<'a> {
     fn from(from: &'a PackageView<
             RdfGraph,
@@ -639,6 +728,7 @@ impl<'a> From<&'a PackageView<
             RdfGraphBuffer,
             NaiveRdfTool,
             RdfElementOrVertex,
+            RdfPropChange,
         >) -> Self {
         Self::Graph { inner: from }
     }
@@ -667,6 +757,7 @@ enum PartialRdfElement {
                         RdfQueryable,
                         NaiveRdfTool,
                         RdfElementOrVertex,
+                        RdfPropChange,
                     >,
                 >,
             >,
@@ -706,7 +797,7 @@ impl NaiveRdfTool {
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
 const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
 
-impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
+impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for NaiveRdfTool {
     type KindedElement<'a> = KindedRdfElement<'a>;
     type Stage = RdfToolStage;
 
@@ -799,7 +890,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
                             model: literal.clone(),
                             content_buffer: "Eric Miller".to_owned(),
                             datatype_buffer: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
-                            language_buffer: "en".to_owned(),
+                            langtag_buffer: "en".to_owned(),
                             comment_buffer: "".to_owned(),
 
                             highlight: canvas::Highlight::NONE,
@@ -877,13 +968,13 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
 
     fn try_construct(
         &mut self,
-        into: &dyn ContainerGen2<dyn RdfElement, RdfQueryable, Self, RdfElementOrVertex>,
+        into: &dyn ContainerGen2<dyn RdfElement, RdfQueryable, Self, RdfElementOrVertex, RdfPropChange>,
     ) -> Option<
         (
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, Self, RdfElementOrVertex>,
+                    dyn ElementControllerGen2<dyn RdfElement, RdfQueryable, Self, RdfElementOrVertex, RdfPropChange>,
                 >,
             >,
         )
@@ -911,6 +1002,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
                                 RdfQueryable,
                                 Self,
                                 RdfElementOrVertex,
+                                RdfPropChange,
                             >,
                         >,
                     >,
@@ -953,7 +1045,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex> for NaiveRdfTool {
 }
 
 pub trait RdfElementController:
-    ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex>
+    ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
 {
     fn is_connection_from(&self, _uuid: &uuid::Uuid) -> bool {
         false
@@ -983,7 +1075,7 @@ impl RdfContainerController for RdfDiagramController {
 }
 */
 
-struct RdfGraphBuffer {
+pub struct RdfGraphBuffer {
     iri: String,
     comment: String,
 }
@@ -1003,6 +1095,7 @@ fn rdf_graph(
                 RdfGraphBuffer,
                 NaiveRdfTool,
                 RdfElementOrVertex,
+                RdfPropChange,
             >,
         >,
     >,
@@ -1011,29 +1104,55 @@ fn rdf_graph(
         a
     }
 
-    fn show_properties_fun(model: &mut RdfGraph, buffer: &mut RdfGraphBuffer, ui: &mut egui::Ui) {
+    fn show_properties_fun(
+        buffer: &mut RdfGraphBuffer,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+    ) {
         ui.label("IRI:");
-        let r1 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut buffer.iri),
-        );
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![RdfPropChange::IriChange(Arc::new(buffer.iri.clone()))]));
+        }
 
         ui.label("Comment:");
-        let r2 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut buffer.comment),
-        );
-
-        if r1.changed() || r2.changed() {
-            if r1.changed() {
-                model.iri = Arc::new(buffer.iri.clone());
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![RdfPropChange::CommentChange(Arc::new(buffer.comment.clone()))]));
+        }
+    }
+    fn apply_property_change_fun(
+        buffer: &mut RdfGraphBuffer,
+        model: &mut RdfGraph,
+        command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            for property in properties {
+                match property {
+                    RdfPropChange::IriChange(iri) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid()).collect(),
+                            vec![RdfPropChange::IriChange(model.iri.clone())],
+                        ));
+                        buffer.iri = (**iri).clone();
+                        model.iri = iri.clone();
+                    }
+                    RdfPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid()).collect(),
+                            vec![RdfPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        buffer.comment = (**comment).clone();
+                        model.comment = comment.clone();
+                    },
+                    _ => {},
+                }
             }
-
-            if r2.changed() {
-                model.comment = Arc::new(buffer.comment.clone());
-            }
-
-            model.notify_observers();
         }
     }
     
@@ -1053,6 +1172,7 @@ fn rdf_graph(
         bounds_rect,
         model_to_element_shim,
         show_properties_fun,
+        apply_property_change_fun,
     )));
     
     (uuid, graph, graph_controller)
@@ -1092,40 +1212,36 @@ impl ElementController<dyn RdfElement> for RdfNodeController {
     }
 }
 
-impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex>
+impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
     for RdfNodeController
 {
-    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) -> bool {
+    fn show_properties(
+        &mut self,
+        _: &RdfQueryable,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>
+    ) -> bool {
         if !self.highlight.selected {
             return false;
         }
 
         ui.label("IRI:");
-        let r1 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut self.iri_buffer),
-        );
-
-        ui.label("Comment:");
-        let r2 = ui.add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::multiline(&mut self.comment_buffer),
-        );
-
-        if r1.changed() || r2.changed() {
-            let mut model = self.model.write().unwrap();
-
-            if r1.changed() {
-                model.iri = Arc::new(self.iri_buffer.clone());
-            }
-
-            if r2.changed() {
-                model.comment = Arc::new(self.comment_buffer.clone());
-            }
-
-            model.notify_observers();
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone()))]));
+            
         }
 
+        ui.label("Comment:");
+        if ui.add_sized(
+            (ui.available_width(), 20.0),
+            egui::TextEdit::multiline(&mut self.comment_buffer),
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone()))]));
+        }
+        
         true
     }
     fn list_in_project_hierarchy(&self, _parent: &RdfQueryable, ui: &mut egui::Ui) {
@@ -1193,7 +1309,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElemen
     fn click(
         &mut self,
         tool: &mut Option<NaiveRdfTool>,
-        _commands: &mut Vec<SensitiveCommand<RdfElementOrVertex>>,
+        _commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1210,7 +1326,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElemen
     fn drag(
         &mut self,
         _tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex>>,
+        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1232,8 +1348,8 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElemen
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<RdfElementOrVertex>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex>>,
+        command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
         match command {
             InsensitiveCommand::SelectAll(select) => {
@@ -1254,6 +1370,33 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElemen
                 }
             }
             InsensitiveCommand::DeleteElements(..) | InsensitiveCommand::AddElement(..) => {}
+            InsensitiveCommand::PropertyChange(uuids, properties) => {
+                if uuids.contains(&*self.uuid()) {
+                    for property in properties {
+                        match property {
+                            RdfPropChange::IriChange(iri) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid).collect(),
+                                    vec![RdfPropChange::IriChange(model.iri.clone())],
+                                ));
+                                self.iri_buffer = (**iri).clone();
+                                model.iri = iri.clone();
+                            }
+                            RdfPropChange::CommentChange(comment) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid()).collect(),
+                                    vec![RdfPropChange::CommentChange(model.comment.clone())],
+                                ));
+                                self.comment_buffer = (**comment).clone();
+                                model.comment = comment.clone();
+                            },
+                            _ => {},
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1269,7 +1412,7 @@ pub struct RdfLiteralController {
 
     content_buffer: String,
     datatype_buffer: String,
-    language_buffer: String,
+    langtag_buffer: String,
     comment_buffer: String,
 
     highlight: canvas::Highlight,
@@ -1299,57 +1442,48 @@ impl ElementController<dyn RdfElement> for RdfLiteralController {
     }
 }
 
-impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex>
+impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
     for RdfLiteralController
 {
-    fn show_properties(&mut self, _parent: &RdfQueryable, ui: &mut egui::Ui) -> bool {
+    fn show_properties(
+        &mut self,
+        _: &RdfQueryable,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>
+    ) -> bool {
         if !self.highlight.selected {
             return false;
         }
 
         ui.label("Content:");
-        let r1 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut self.content_buffer),
-        );
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![RdfPropChange::ContentChange(Arc::new(self.content_buffer.clone()))]));
+        }
         ui.label("Datatype:");
-        let r2 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::singleline(&mut self.datatype_buffer),
-        );
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![RdfPropChange::DataTypeChange(Arc::new(self.datatype_buffer.clone()))]));
+        };
 
         ui.label("Language:");
-        let r3 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
-            egui::TextEdit::singleline(&mut self.language_buffer),
-        );
+            egui::TextEdit::singleline(&mut self.langtag_buffer),
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![RdfPropChange::LangTagChange(Arc::new(self.langtag_buffer.clone()))]));
+        }
 
         ui.label("Comment:");
-        let r4 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut self.comment_buffer),
-        );
-
-        if r1.changed() || r2.changed() || r3.changed() || r4.changed() {
-            let mut model = self.model.write().unwrap();
-
-            if r1.changed() {
-                model.content = Arc::new(self.content_buffer.clone());
-            }
-
-            if r2.changed() {
-                model.datatype = Arc::new(self.datatype_buffer.clone());
-            }
-
-            if r3.changed() {
-                model.language = Arc::new(self.language_buffer.clone());
-            }
-
-            if r4.changed() {
-                model.comment = Arc::new(self.comment_buffer.clone());
-            }
-
-            model.notify_observers();
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone()))]));
         }
 
         true
@@ -1398,7 +1532,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElemen
     fn click(
         &mut self,
         tool: &mut Option<NaiveRdfTool>,
-        _commands: &mut Vec<SensitiveCommand<RdfElementOrVertex>>,
+        _commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
         pos: egui::Pos2,
         _modifiers: ModifierKeys,
     ) -> ClickHandlingStatus {
@@ -1415,7 +1549,7 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElemen
     fn drag(
         &mut self,
         _tool: &mut Option<NaiveRdfTool>,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex>>,
+        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
         last_pos: egui::Pos2,
         delta: egui::Vec2,
     ) -> DragHandlingStatus {
@@ -1437,8 +1571,8 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElemen
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<RdfElementOrVertex>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex>>,
+        command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
         match command {
             InsensitiveCommand::SelectAll(select) => {
@@ -1459,6 +1593,51 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElemen
                 }
             }
             InsensitiveCommand::DeleteElements(..) | InsensitiveCommand::AddElement(..) => {}
+            InsensitiveCommand::PropertyChange(uuids, properties) => {
+                if uuids.contains(&*self.uuid()) {
+                    for property in properties {
+                        match property {
+                            RdfPropChange::ContentChange(content) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid()).collect(),
+                                    vec![RdfPropChange::ContentChange(model.content.clone())],
+                                ));
+                                self.content_buffer = (**content).clone();
+                                model.content = content.clone();
+                            }
+                            RdfPropChange::DataTypeChange(datatype) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid()).collect(),
+                                    vec![RdfPropChange::DataTypeChange(model.datatype.clone())],
+                                ));
+                                self.datatype_buffer = (**datatype).clone();
+                                model.datatype = datatype.clone();
+                            }
+                            RdfPropChange::LangTagChange(langtag) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid()).collect(),
+                                    vec![RdfPropChange::LangTagChange(model.langtag.clone())],
+                                ));
+                                self.langtag_buffer = (**langtag).clone();
+                                model.langtag = langtag.clone();
+                            }
+                            RdfPropChange::CommentChange(comment) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid()).collect(),
+                                    vec![RdfPropChange::CommentChange(model.comment.clone())],
+                                ));
+                                self.comment_buffer = (**comment).clone();
+                                model.comment = comment.clone();
+                            },
+                            _ => {},
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1467,6 +1646,12 @@ impl ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElemen
             into.insert(*self.uuid());
         }
     }
+}
+
+
+pub struct RdfPredicateBuffer {
+    iri: String,
+    comment: String,
 }
 
 fn rdf_predicate(
@@ -1480,6 +1665,7 @@ fn rdf_predicate(
                     RdfQueryable,
                     NaiveRdfTool,
                     RdfElementOrVertex,
+                    RdfPropChange,
                 >,
             >,
         >,
@@ -1493,6 +1679,7 @@ fn rdf_predicate(
                     RdfQueryable,
                     NaiveRdfTool,
                     RdfElementOrVertex,
+                    RdfPropChange,
                 >,
             >,
         >,
@@ -1509,6 +1696,7 @@ fn rdf_predicate(
                 RdfPredicateBuffer,
                 NaiveRdfTool,
                 RdfElementOrVertex,
+                RdfPropChange,
             >,
         >,
     >,
@@ -1518,42 +1706,63 @@ fn rdf_predicate(
     }
 
     fn show_properties_fun(
-        model: &mut RdfPredicate,
         buffer: &mut RdfPredicateBuffer,
         ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
         ui.label("IRI:");
-        let r1 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut buffer.iri),
-        );
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![RdfPropChange::IriChange(Arc::new(buffer.iri.clone()))]));
+        }
 
         ui.label("Comment:");
-        let r2 = ui.add_sized(
+        if ui.add_sized(
             (ui.available_width(), 20.0),
             egui::TextEdit::multiline(&mut buffer.comment),
-        );
+        ).changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![RdfPropChange::CommentChange(Arc::new(buffer.comment.clone()))]));
+        }
 
-        let r3 = if ui.button("Switch source and destination").clicked()
+        if ui.button("Switch source and destination").clicked()
             && /* TODO: must check if target isn't a literal */ true
         {
-            (model.source, model.destination) = (model.destination.clone(), model.source.clone());
+            // TODO: (model.source, model.destination) = (model.destination.clone(), model.source.clone());
             // TODO: (self.source, self.destination) = (self.destination.clone(), self.source.clone());
-            true
-        } else {
-            false
-        };
-
-        if r1.changed() || r2.changed() || r3 {
-            if r1.changed() {
-                model.iri = Arc::new(buffer.iri.clone());
+            
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![RdfPropChange::FlipMulticonnection]));
+        }
+    }
+    fn apply_property_change_fun(
+        buffer: &mut RdfPredicateBuffer,
+        model: &mut RdfPredicate,
+        command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            for property in properties {
+                match property {
+                    RdfPropChange::IriChange(iri) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid()).collect(),
+                            vec![RdfPropChange::IriChange(model.iri.clone())],
+                        ));
+                        buffer.iri = (**iri).clone();
+                        model.iri = iri.clone();
+                    }
+                    RdfPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid()).collect(),
+                            vec![RdfPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        buffer.comment = (**comment).clone();
+                        model.comment = comment.clone();
+                    },
+                    _ => {},
+                }
             }
-
-            if r2.changed() {
-                model.comment = Arc::new(buffer.comment.clone());
-            }
-
-            model.notify_observers();
         }
     }
 
@@ -1586,24 +1795,22 @@ fn rdf_predicate(
         source.0,
         destination.0,
     )));
-    let predicate_controller = Arc::new(RwLock::new(MulticonnectionView {
-        model: predicate.clone(),
-        buffer: RdfPredicateBuffer {
+    let predicate_controller = Arc::new(RwLock::new(MulticonnectionView::new(
+        predicate.clone(),
+        RdfPredicateBuffer {
             iri: iri.to_owned(),
             comment: "".to_owned(),
         },
 
-        source: source.1,
-        destination: destination.1,
+        source.1, destination.1,
 
-        highlight: canvas::Highlight::NONE,
-        selected_vertices: HashSet::new(),
-        center_point: None,
-        source_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        dest_points: vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        None,
+        vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
 
         model_to_element_shim,
         show_properties_fun,
+        apply_property_change_fun,
 
         model_to_uuid,
         model_to_name,
@@ -1612,13 +1819,8 @@ fn rdf_predicate(
         model_to_destination_arrowhead_type,
         model_to_source_arrowhead_label,
         model_to_destination_arrowhead_label,
-    }));
+    )));
     (predicate_uuid, predicate, predicate_controller)
-}
-
-struct RdfPredicateBuffer {
-    iri: String,
-    comment: String,
 }
 
 impl RdfElementController
@@ -1629,6 +1831,7 @@ impl RdfElementController
         RdfPredicateBuffer,
         NaiveRdfTool,
         RdfElementOrVertex,
+        RdfPropChange,
     >
 {
     fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
