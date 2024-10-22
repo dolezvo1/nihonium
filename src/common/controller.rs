@@ -140,8 +140,12 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
             SensitiveCommand::AddElement(uuid, element) => {
                 InsensitiveCommand::AddElement(uuid, element)
             }
-            SensitiveCommand::PropertyChange(uuids, changes) => InsensitiveCommand::PropertyChange(uuids, changes),
-            SensitiveCommand::PropertyChangeSelected(changes) => InsensitiveCommand::PropertyChange(selected_elements.clone(), changes),
+            SensitiveCommand::PropertyChange(uuids, changes) => {
+                InsensitiveCommand::PropertyChange(uuids, changes)
+            }
+            SensitiveCommand::PropertyChangeSelected(changes) => {
+                InsensitiveCommand::PropertyChange(selected_elements.clone(), changes)
+            }
         }
     }
 }
@@ -156,7 +160,9 @@ pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     PropertyChange(HashSet<uuid::Uuid>, Vec<PropChangeT>),
 }
 
-impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> InsensitiveCommand<ElementT, PropChangeT> {
+impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
+    InsensitiveCommand<ElementT, PropChangeT>
+{
     fn to_selection_sensitive(self) -> SensitiveCommand<ElementT, PropChangeT> {
         match self {
             InsensitiveCommand::SelectAll(select) => SensitiveCommand::SelectAll(select),
@@ -168,7 +174,9 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> InsensitiveCommand<Ele
             InsensitiveCommand::AddElement(uuid, element) => {
                 SensitiveCommand::AddElement(uuid, element)
             }
-            InsensitiveCommand::PropertyChange(uuids, changes) => SensitiveCommand::PropertyChange(uuids, changes),
+            InsensitiveCommand::PropertyChange(uuids, changes) => {
+                SensitiveCommand::PropertyChange(uuids, changes)
+            }
         }
     }
 
@@ -182,7 +190,9 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> InsensitiveCommand<Ele
                 format!("Move {} elements", uuids.len())
             }
             InsensitiveCommand::AddElement(..) => format!("Add 1 element"),
-            InsensitiveCommand::PropertyChange(uuids, ..) => format!("Modify {} elements", uuids.len()),
+            InsensitiveCommand::PropertyChange(uuids, ..) => {
+                format!("Modify {} elements", uuids.len())
+            }
         }
     }
 
@@ -201,12 +211,19 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> InsensitiveCommand<Ele
                 InsensitiveCommand::PropertyChange(uuids2, changes2),
             ) if uuids1 == uuids2 => Some(InsensitiveCommand::PropertyChange(
                 uuids1.clone(),
-                changes2.iter().rev().chain(changes1.iter().rev()).fold(Vec::new(), |mut uniques, e| {
-                    if uniques.iter().find(|u| std::mem::discriminant(*u) == std::mem::discriminant(e)).is_none() {
-                        uniques.push(e.clone());
-                    }
-                    uniques
-                }),
+                changes2.iter().rev().chain(changes1.iter().rev()).fold(
+                    Vec::new(),
+                    |mut uniques, e| {
+                        if uniques
+                            .iter()
+                            .find(|u| std::mem::discriminant(*u) == std::mem::discriminant(e))
+                            .is_none()
+                        {
+                            uniques.push(e.clone());
+                        }
+                        uniques
+                    },
+                ),
             )),
             _ => None,
         }
@@ -238,14 +255,20 @@ pub trait Tool<CommonElementT: ?Sized, QueryableT, AddCommandElementT, PropChang
     fn try_construct(
         &mut self,
         into: &dyn ContainerGen2<CommonElementT, QueryableT, Self, AddCommandElementT, PropChangeT>,
-    ) -> Option<
-        (
-            uuid::Uuid,
-            Arc<
-                RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, Self, AddCommandElementT, PropChangeT>>,
+    ) -> Option<(
+        uuid::Uuid,
+        Arc<
+            RwLock<
+                dyn ElementControllerGen2<
+                    CommonElementT,
+                    QueryableT,
+                    Self,
+                    AddCommandElementT,
+                    PropChangeT,
+                >,
             >,
-        )
-    >;
+        >,
+    )>;
     fn reset_event_lock(&mut self);
 }
 
@@ -296,14 +319,21 @@ pub trait ElementControllerGen2<
     fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>);
 }
 
-pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandElementT, PropChangeT> {
+pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+{
     fn controller_for(
         &self,
         uuid: &uuid::Uuid,
     ) -> Option<
         Arc<
             RwLock<
-                dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                dyn ElementControllerGen2<
+                    CommonElementT,
+                    QueryableT,
+                    ToolT,
+                    AddCommandElementT,
+                    PropChangeT,
+                >,
             >,
         >,
     >;
@@ -326,7 +356,15 @@ pub struct DiagramControllerGen2<
     owned_controllers: HashMap<
         uuid::Uuid,
         Arc<
-            RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>,
+            RwLock<
+                dyn ElementControllerGen2<
+                    ElementModelT,
+                    QueryableT,
+                    ToolT,
+                    AddCommandElementT,
+                    PropChangeT,
+                >,
+            >,
         >,
     >,
     event_order: Vec<uuid::Uuid>,
@@ -352,9 +390,18 @@ pub struct DiagramControllerGen2<
     // q: dyn Fn(&Vec<DomainElementT>) -> QueryableT,
     queryable: QueryableT,
     buffer: BufferT,
-    show_props_fun: fn(&mut BufferT, &mut egui::Ui, &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>),
-    apply_property_change_fun: fn(&mut BufferT, &mut DiagramModelT, &InsensitiveCommand<AddCommandElementT, PropChangeT>, &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>),
-    
+    show_props_fun: fn(
+        &mut BufferT,
+        &mut egui::Ui,
+        &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+    ),
+    apply_property_change_fun: fn(
+        &mut BufferT,
+        &mut DiagramModelT,
+        &InsensitiveCommand<AddCommandElementT, PropChangeT>,
+        &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+    ),
+
     tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
     menubar_options_fun: fn(&mut Self, &mut NHApp, &mut egui::Ui),
 }
@@ -389,14 +436,26 @@ where
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )> + TryInto<(
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )>,
@@ -407,14 +466,29 @@ where
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         >,
         queryable: QueryableT,
         buffer: BufferT,
-        show_props_fun: fn(&mut BufferT, &mut egui::Ui, &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>),
-        apply_property_change_fun: fn(&mut BufferT, &mut DiagramModelT, &InsensitiveCommand<AddCommandElementT, PropChangeT>, &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>),
+        show_props_fun: fn(
+            &mut BufferT,
+            &mut egui::Ui,
+            &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        ),
+        apply_property_change_fun: fn(
+            &mut BufferT,
+            &mut DiagramModelT,
+            &InsensitiveCommand<AddCommandElementT, PropChangeT>,
+            &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+        ),
         tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
         menubar_options_fun: fn(&mut Self, &mut NHApp, &mut egui::Ui),
     ) -> Self {
@@ -501,7 +575,7 @@ where
                             AddCommandElementT::from((*uuid, element.clone())),
                         ));
                     }
-                    
+
                     let mut self_m = self.model.write().unwrap();
                     self_m.delete_elements(uuids);
 
@@ -514,12 +588,12 @@ where
                             undo_accumulator.push(InsensitiveCommand::DeleteElements(
                                 std::iter::once(uuid).collect(),
                             ));
-                            
+
                             let new_c = element.read().unwrap();
                             let mut self_m = self.model.write().unwrap();
                             self_m.add_element(new_c.model());
                             drop(new_c);
-                            
+
                             self.owned_controllers.insert(uuid, element);
                             self.event_order.push(uuid);
                         }
@@ -528,7 +602,12 @@ where
                 InsensitiveCommand::PropertyChange(uuids, property) => {
                     if uuids.contains(&*self.uuid()) {
                         let mut m = self.model.write().unwrap();
-                        (self.apply_property_change_fun)(&mut self.buffer, &mut m, &command, &mut undo_accumulator);
+                        (self.apply_property_change_fun)(
+                            &mut self.buffer,
+                            &mut m,
+                            &command,
+                            &mut undo_accumulator,
+                        );
                     }
                 }
             }
@@ -546,11 +625,22 @@ where
                     if let Some(merged) = self.undo_stack.last().and_then(|e| e.0.merge(&command)) {
                         let last = self.undo_stack.last_mut().unwrap();
                         last.0 = merged;
-                        let unique_prop_changes: Vec<_> = last.1.iter().chain(undo_accumulator.iter())
+                        let unique_prop_changes: Vec<_> = last
+                            .1
+                            .iter()
+                            .chain(undo_accumulator.iter())
                             .fold(Vec::new(), |mut uniques, e| {
                                 if let InsensitiveCommand::PropertyChange(uuids, properties) = e {
                                     for property in properties {
-                                        if uniques.iter().find(|(u, p)| *u == uuids && std::mem::discriminant(*p) == std::mem::discriminant(property)).is_none() {
+                                        if uniques
+                                            .iter()
+                                            .find(|(u, p)| {
+                                                *u == uuids
+                                                    && std::mem::discriminant(*p)
+                                                        == std::mem::discriminant(property)
+                                            })
+                                            .is_none()
+                                        {
                                             uniques.push((uuids, property));
                                         }
                                     }
@@ -558,10 +648,13 @@ where
                                 uniques
                             })
                             .into_iter()
-                            .map(|(u,c)| InsensitiveCommand::PropertyChange(u.clone(), vec![c.clone()]))
+                            .map(|(u, c)| {
+                                InsensitiveCommand::PropertyChange(u.clone(), vec![c.clone()])
+                            })
                             .collect();
                         last.1.extend(undo_accumulator);
-                        last.1.retain(|e| !matches!(e, InsensitiveCommand::PropertyChange(uuids, x)));
+                        last.1
+                            .retain(|e| !matches!(e, InsensitiveCommand::PropertyChange(uuids, x)));
                         last.1.extend(unique_prop_changes);
                     } else {
                         self.undo_stack.push((command.clone(), undo_accumulator));
@@ -580,8 +673,7 @@ where
                         c.collect_all_selected_elements(&mut self.all_selected_elements);
                     }
                 }
-                InsensitiveCommand::MoveElements(..)
-                | InsensitiveCommand::PropertyChange(..) => {}
+                InsensitiveCommand::MoveElements(..) | InsensitiveCommand::PropertyChange(..) => {}
             }
         }
     }
@@ -647,14 +739,26 @@ where
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )> + TryInto<(
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )>,
@@ -771,7 +875,8 @@ where
 
         let mut commands = Vec::new();
 
-        let mut handled = self.event_order
+        let mut handled = self
+            .event_order
             .iter()
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
             .map(|uc| {
@@ -812,35 +917,42 @@ where
         }
         let mut tool = self.current_tool.take();
         if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
-            commands.push(SensitiveCommand::AddElement(*self.uuid(), AddCommandElementT::from(new_a)));
+            commands.push(SensitiveCommand::AddElement(
+                *self.uuid(),
+                AddCommandElementT::from(new_a),
+            ));
             handled = true;
         }
         self.current_tool = tool;
-        
+
         self.apply_commands(commands, true, true);
-        
+
         handled
     }
     fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
         let mut commands = Vec::new();
 
-        let ret = if let Some(e) = self.sticky_element
+        let ret = if let Some(e) = self
+            .sticky_element
             .and_then(|k| self.owned_controllers.get(&k).map(|e| (k, e)))
             .iter()
             .map(|e| e.clone())
-            .chain(self.event_order
-                .iter()
-                .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e))))
+            .chain(
+                self.event_order
+                    .iter()
+                    .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e))),
+            )
             .find(|uc| {
                 uc.1.write()
                     .unwrap()
                     .drag(&mut self.current_tool, &mut commands, last_pos, delta)
                     == DragHandlingStatus::Handled
-            })
-        {
+            }) {
             self.sticky_element = Some(e.0);
             true
-        } else { false };
+        } else {
+            false
+        };
 
         self.apply_commands(commands, true, true);
 
@@ -855,16 +967,20 @@ where
     }
     fn show_properties(&mut self, ui: &mut egui::Ui) {
         let mut commands = Vec::new();
-        
+
         if self
             .owned_controllers
             .iter()
-            .find(|e| e.1.write().unwrap().show_properties(&self.queryable, ui, &mut commands))
+            .find(|e| {
+                e.1.write()
+                    .unwrap()
+                    .show_properties(&self.queryable, ui, &mut commands)
+            })
             .is_none()
         {
             (self.show_props_fun)(&mut self.buffer, ui, &mut commands);
         }
-        
+
         self.apply_commands(commands, true, true);
     }
     fn show_layers(&self, _ui: &mut egui::Ui) {
@@ -1007,14 +1123,26 @@ where
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )> + TryInto<(
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )>,
@@ -1024,13 +1152,20 @@ where
         uuid: &uuid::Uuid,
     ) -> Option<
         Arc<
-            RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>,
+            RwLock<
+                dyn ElementControllerGen2<
+                    ElementModelT,
+                    QueryableT,
+                    ToolT,
+                    AddCommandElementT,
+                    PropChangeT,
+                >,
+            >,
         >,
     > {
         self.owned_controllers.get(uuid).cloned()
     }
 }
-
 
 pub struct PackageView<
     ModelT: ContainerModel<ElementModelT>,
@@ -1040,22 +1175,35 @@ pub struct PackageView<
     ToolT: 'static,
     AddCommandElementT: Clone + Debug,
     PropChangeT: Clone + Debug,
->
-where AddCommandElementT: From<(
+> where
+    AddCommandElementT: From<(
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )> + TryInto<(
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
-        )> + Clone + 'static,
+        )> + Clone
+        + 'static,
 {
     model: Arc<RwLock<ModelT>>,
     owned_controllers: HashMap<
@@ -1080,37 +1228,61 @@ where AddCommandElementT: From<(
 
     highlight: canvas::Highlight,
     bounds_rect: egui::Rect,
-    
+
     model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
-    
-    show_properties_fun: fn(&mut BufferT, &mut egui::Ui, &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>),
-    apply_property_change_fun: fn(&mut BufferT, &mut ModelT, &InsensitiveCommand<AddCommandElementT, PropChangeT>, &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>),
+
+    show_properties_fun: fn(
+        &mut BufferT,
+        &mut egui::Ui,
+        &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+    ),
+    apply_property_change_fun: fn(
+        &mut BufferT,
+        &mut ModelT,
+        &InsensitiveCommand<AddCommandElementT, PropChangeT>,
+        &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+    ),
 }
 
 impl<
-    ModelT: ContainerModel<ElementModelT>,
-    ElementModelT: ?Sized + 'static,
-    QueryableT: 'static,
-    BufferT: 'static,
-    ToolT: 'static,
-    AddCommandElementT: Clone + Debug,
-    PropChangeT: Clone + Debug,
-> PackageView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT, PropChangeT>
-where AddCommandElementT: From<(
+        ModelT: ContainerModel<ElementModelT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        BufferT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug,
+        PropChangeT: Clone + Debug,
+    >
+    PackageView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT, PropChangeT>
+where
+    AddCommandElementT: From<(
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )> + TryInto<(
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
-        )> + Clone + 'static,
+        )> + Clone
+        + 'static,
 {
     pub fn new(
         model: Arc<RwLock<ModelT>>,
@@ -1131,8 +1303,17 @@ where AddCommandElementT: From<(
         buffer: BufferT,
         bounds_rect: egui::Rect,
         model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
-        show_properties_fun: fn(&mut BufferT, &mut egui::Ui, &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>),
-        apply_property_change_fun: fn(&mut BufferT, &mut ModelT, &InsensitiveCommand<AddCommandElementT, PropChangeT>, &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>),
+        show_properties_fun: fn(
+            &mut BufferT,
+            &mut egui::Ui,
+            &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        ),
+        apply_property_change_fun: fn(
+            &mut BufferT,
+            &mut ModelT,
+            &InsensitiveCommand<AddCommandElementT, PropChangeT>,
+            &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+        ),
     ) -> Self {
         let event_order = owned_controllers.keys().map(|e| *e).collect();
         Self {
@@ -1141,11 +1322,11 @@ where AddCommandElementT: From<(
             event_order,
             selected_elements: HashSet::new(),
             sticky_element: None,
-            
+
             buffer,
             highlight: canvas::Highlight::NONE,
             bounds_rect,
-            
+
             model_to_element_shim,
             show_properties_fun,
             apply_property_change_fun,
@@ -1154,14 +1335,23 @@ where AddCommandElementT: From<(
 }
 
 impl<
-    ModelT: ContainerModel<ElementModelT>,
-    ElementModelT: ?Sized + 'static,
-    QueryableT: 'static,
-    BufferT: 'static,
-    ToolT: 'static,
-    AddCommandElementT: Clone + Debug + 'static,
-    PropChangeT: Clone + Debug + 'static,
-> ElementController<ElementModelT> for PackageView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT, PropChangeT>
+        ModelT: ContainerModel<ElementModelT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        BufferT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
+    > ElementController<ElementModelT>
+    for PackageView<
+        ModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
 where
     ToolT: for<'a> Tool<
         ElementModelT,
@@ -1174,14 +1364,26 @@ where
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )> + TryInto<(
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )>,
@@ -1208,15 +1410,23 @@ where
 }
 
 impl<
-    ModelT: ContainerModel<ElementModelT>,
-    ElementModelT: ?Sized + 'static,
-    QueryableT: 'static,
-    BufferT: 'static,
-    ToolT: 'static,
-    AddCommandElementT: Clone + Debug + 'static,
-    PropChangeT: Clone + Debug + 'static,
-> ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-    for PackageView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT, PropChangeT>
+        ModelT: ContainerModel<ElementModelT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        BufferT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
+    > ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+    for PackageView<
+        ModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
 where
     ToolT: for<'a> Tool<
         ElementModelT,
@@ -1224,19 +1434,31 @@ where
         AddCommandElementT,
         PropChangeT,
         KindedElement<'a>: From<&'a Self>,
-    >, 
+    >,
     AddCommandElementT: From<(
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )> + TryInto<(
             uuid::Uuid,
             Arc<
                 RwLock<
-                    dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
                 >,
             >,
         )>,
@@ -1264,12 +1486,15 @@ where
     fn list_in_project_hierarchy(&self, parent: &QueryableT, ui: &mut egui::Ui) {
         let model = self.model.read().unwrap();
 
-        egui::CollapsingHeader::new(format!("{} ({})", *model.name(), *model.name())).show(ui, |ui| {
-            for (_uuid, c) in &self.owned_controllers {
-                let c = c.read().unwrap();
-                c.list_in_project_hierarchy(parent, ui);
-            }
-        });
+        egui::CollapsingHeader::new(format!("{} ({})", *model.name(), *model.name())).show(
+            ui,
+            |ui| {
+                for (_uuid, c) in &self.owned_controllers {
+                    let c = c.read().unwrap();
+                    c.list_in_project_hierarchy(parent, ui);
+                }
+            },
+        );
     }
     fn draw_in(
         &mut self,
@@ -1349,7 +1574,8 @@ where
             .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
         let offset_pos = pos - self.bounds_rect.left_top().to_vec2();
 
-        let uc_status = self.event_order
+        let uc_status = self
+            .event_order
             .iter()
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
             .map(|uc| {
@@ -1411,13 +1637,16 @@ where
             .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
         let offset_pos = last_pos - self.bounds_rect.left_top().to_vec2();
 
-        let handled = if let Some(e) = self.sticky_element
+        let handled = if let Some(e) = self
+            .sticky_element
             .and_then(|k| self.owned_controllers.get(&k).map(|e| (k, e)))
             .iter()
             .map(|e| e.clone())
-            .chain(self.event_order
-                .iter()
-                .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e))))
+            .chain(
+                self.event_order
+                    .iter()
+                    .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e))),
+            )
             .find(|uc| {
                 uc.1.write()
                     .unwrap()
@@ -1426,7 +1655,9 @@ where
             }) {
             self.sticky_element = Some(e.0);
             true
-        } else { false };
+        } else {
+            false
+        };
         let handled = match handled {
             true => DragHandlingStatus::Handled,
             false => DragHandlingStatus::NotHandled,
@@ -1461,7 +1692,7 @@ where
                     let mut e = e.1.write().unwrap();
                     e.apply_command(command, undo_accumulator);
                 }
-            }
+            };
         }
 
         match command {
@@ -1512,38 +1743,45 @@ where
                         AddCommandElementT::from((*uuid, element.clone())),
                     ));
                 }
-                
+
                 let mut self_m = self.model.write().unwrap();
                 self_m.delete_elements(&uuids);
-                
+
                 self.owned_controllers.retain(|k, v| !uuids.contains(&k));
                 self.event_order.retain(|e| !uuids.contains(&e));
-                
+
                 recurse!(self);
             }
             InsensitiveCommand::AddElement(target, element) => {
                 if *target == *self.uuid() {
                     if let Ok((uuid, element)) = element.clone().try_into() {
-                        undo_accumulator.push(InsensitiveCommand::DeleteElements(std::iter::once(uuid).collect()));
-                        
+                        undo_accumulator.push(InsensitiveCommand::DeleteElements(
+                            std::iter::once(uuid).collect(),
+                        ));
+
                         let new_c = element.read().unwrap();
                         let mut self_m = self.model.write().unwrap();
                         self_m.add_element(new_c.model());
                         drop(new_c);
-                        
+
                         self.owned_controllers.insert(uuid, element);
                         self.event_order.push(uuid);
                     }
                 }
-                
+
                 recurse!(self);
             }
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid()) {
                     let mut m = self.model.write().unwrap();
-                    (self.apply_property_change_fun)(&mut self.buffer, &mut m, command, undo_accumulator);
+                    (self.apply_property_change_fun)(
+                        &mut self.buffer,
+                        &mut m,
+                        command,
+                        undo_accumulator,
+                    );
                 }
-                
+
                 recurse!(self);
             }
         }
@@ -1562,31 +1800,51 @@ where
 }
 
 impl<
-    ModelT: ContainerModel<ElementModelT>,
-    ElementModelT: ?Sized + 'static,
-    QueryableT: 'static,
-    BufferT: 'static,
-    ToolT: 'static,
-    AddCommandElementT: Clone + Debug + 'static,
-    PropChangeT: Clone + Debug + 'static,
-> ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-    for PackageView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT, PropChangeT>
+        ModelT: ContainerModel<ElementModelT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        BufferT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
+    > ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+    for PackageView<
+        ModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
 where
     AddCommandElementT: From<(
-        uuid::Uuid,
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
             >,
-        >,
-    )> + TryInto<(
-        uuid::Uuid,
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
             >,
-        >,
-    )>,
+        )>,
 {
     fn controller_for(
         &self,
@@ -1633,10 +1891,26 @@ pub struct MulticonnectionView<
     buffer: BufferT,
 
     pub source: Arc<
-        RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>,
+        RwLock<
+            dyn ElementControllerGen2<
+                ElementModelT,
+                QueryableT,
+                ToolT,
+                AddCommandElementT,
+                PropChangeT,
+            >,
+        >,
     >,
     pub destination: Arc<
-        RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>,
+        RwLock<
+            dyn ElementControllerGen2<
+                ElementModelT,
+                QueryableT,
+                ToolT,
+                AddCommandElementT,
+                PropChangeT,
+            >,
+        >,
     >,
 
     highlight: canvas::Highlight,
@@ -1647,8 +1921,17 @@ pub struct MulticonnectionView<
 
     model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
 
-    show_properties_fun: fn(&mut BufferT, &mut egui::Ui, &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>),
-    apply_property_change_fun: fn(&mut BufferT, &mut ModelT, &InsensitiveCommand<AddCommandElementT, PropChangeT>, &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>),
+    show_properties_fun: fn(
+        &mut BufferT,
+        &mut egui::Ui,
+        &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+    ),
+    apply_property_change_fun: fn(
+        &mut BufferT,
+        &mut ModelT,
+        &InsensitiveCommand<AddCommandElementT, PropChangeT>,
+        &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+    ),
 
     model_to_uuid: fn(&ModelT) -> Arc<uuid::Uuid>,
     model_to_name: fn(&ModelT) -> Arc<String>,
@@ -1667,7 +1950,16 @@ impl<
         ToolT,
         AddCommandElementT: Clone + Debug,
         PropChangeT: Clone + Debug,
-    > MulticonnectionView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT, PropChangeT>
+    >
+    MulticonnectionView<
+        ModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
 where
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
@@ -1676,20 +1968,45 @@ where
         model: Arc<RwLock<ModelT>>,
         buffer: BufferT,
         source: Arc<
-            RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>,
+            RwLock<
+                dyn ElementControllerGen2<
+                    ElementModelT,
+                    QueryableT,
+                    ToolT,
+                    AddCommandElementT,
+                    PropChangeT,
+                >,
+            >,
         >,
         destination: Arc<
-            RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>,
+            RwLock<
+                dyn ElementControllerGen2<
+                    ElementModelT,
+                    QueryableT,
+                    ToolT,
+                    AddCommandElementT,
+                    PropChangeT,
+                >,
+            >,
         >,
-        
+
         center_point: Option<(uuid::Uuid, egui::Pos2)>,
         source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
         dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
-        
+
         model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
 
-        show_properties_fun: fn(&mut BufferT, &mut egui::Ui, &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>),
-        apply_property_change_fun: fn(&mut BufferT, &mut ModelT, &InsensitiveCommand<AddCommandElementT, PropChangeT>, &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>),
+        show_properties_fun: fn(
+            &mut BufferT,
+            &mut egui::Ui,
+            &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        ),
+        apply_property_change_fun: fn(
+            &mut BufferT,
+            &mut ModelT,
+            &InsensitiveCommand<AddCommandElementT, PropChangeT>,
+            &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+        ),
 
         model_to_uuid: fn(&ModelT) -> Arc<uuid::Uuid>,
         model_to_name: fn(&ModelT) -> Arc<String>,
@@ -1700,20 +2017,29 @@ where
         model_to_destination_arrowhead_label: fn(&ModelT) -> Option<&str>,
     ) -> Self {
         Self {
-            model, buffer,
-            source, destination,
+            model,
+            buffer,
+            source,
+            destination,
             highlight: canvas::Highlight::NONE,
             selected_vertices: HashSet::new(),
-            
-            center_point, source_points, dest_points,
-            
+
+            center_point,
+            source_points,
+            dest_points,
+
             model_to_element_shim,
 
-            show_properties_fun, apply_property_change_fun,
+            show_properties_fun,
+            apply_property_change_fun,
 
-            model_to_uuid, model_to_name, model_to_line_type,
-            model_to_source_arrowhead_type, model_to_destination_arrowhead_type,
-            model_to_source_arrowhead_label, model_to_destination_arrowhead_label,
+            model_to_uuid,
+            model_to_name,
+            model_to_line_type,
+            model_to_source_arrowhead_type,
+            model_to_destination_arrowhead_type,
+            model_to_source_arrowhead_label,
+            model_to_destination_arrowhead_label,
         }
     }
 }
@@ -1727,7 +2053,15 @@ impl<
         AddCommandElementT: Clone + Debug,
         PropChangeT: Clone + Debug,
     > ElementController<ElementModelT>
-    for MulticonnectionView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT, PropChangeT>
+    for MulticonnectionView<
+        ModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
 where
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
@@ -1768,7 +2102,15 @@ impl<
         AddCommandElementT: Clone + Debug,
         PropChangeT: Clone + Debug,
     > ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-    for MulticonnectionView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT, PropChangeT>
+    for MulticonnectionView<
+        ModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
 where
     ToolT: Tool<ElementModelT, QueryableT, AddCommandElementT, PropChangeT>,
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
@@ -2020,7 +2362,8 @@ where
                             after: uuid::Uuid::nil(),
                             id: uuid::Uuid::now_v7(),
                             position: midpoint + delta,
-                        }.into(),
+                        }
+                        .into(),
                     ));
                     return DragHandlingStatus::Handled;
                 }
@@ -2078,7 +2421,8 @@ where
                                     after: u.0,
                                     id: uuid::Uuid::now_v7(),
                                     position: midpoint + delta,
-                                }.into(),
+                                }
+                                .into(),
                             ));
                             return DragHandlingStatus::Handled;
                         }
@@ -2190,7 +2534,12 @@ where
             }
             InsensitiveCommand::AddElement(target, element) => {
                 if *target == *self.uuid() {
-                    if let Ok(VertexInformation { after, id, position }) = element.clone().try_into() {
+                    if let Ok(VertexInformation {
+                        after,
+                        id,
+                        position,
+                    }) = element.clone().try_into()
+                    {
                         if after.is_nil() {
                             self.center_point = Some((id, position));
 
@@ -2224,12 +2573,15 @@ where
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {
-                        if let Ok(FlipMulticonnection {}) = property.try_into() {
-                            
-                        }
+                        if let Ok(FlipMulticonnection {}) = property.try_into() {}
                     }
                     let mut m = self.model.write().unwrap();
-                    (self.apply_property_change_fun)(&mut self.buffer, &mut m, command, undo_accumulator);
+                    (self.apply_property_change_fun)(
+                        &mut self.buffer,
+                        &mut m,
+                        command,
+                        undo_accumulator,
+                    );
                 }
             }
         }

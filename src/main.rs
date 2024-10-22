@@ -12,6 +12,7 @@ use eframe::NativeOptions;
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
 
 mod common;
+mod democsd;
 mod rdf;
 mod umlclass;
 
@@ -747,14 +748,15 @@ impl eframe::App for NHApp {
                             fn(u32) -> (uuid::Uuid, Arc<RwLock<(dyn DiagramController + 'static)>>);
                         for (label, fun) in [
                             (
-                                "Add New UML Class diagram",
+                                "UML Class diagram",
                                 crate::umlclass::umlclass_controllers::new as NDC,
                             ),
                             //("Add New OntoUML diagram"),
                             (
-                                "Add New RDF diagram",
-                                crate::rdf::rdf_controllers::new as NDC,
+                                "DEMO CSD diagram",
+                                crate::democsd::democsd_controllers::new as NDC,
                             ),
+                            ("RDF diagram", crate::rdf::rdf_controllers::new as NDC),
                         ] {
                             if ui.button(label).clicked() {
                                 let (uuid, diagram_controller) = fun(self.context.new_diagram_no);
@@ -766,7 +768,7 @@ impl eframe::App for NHApp {
                                 let tab = NHTab::Diagram { uuid };
 
                                 self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
-                                // TODO: set as last_focused_diagram
+                                self.context.last_focused_diagram = Some(uuid);
 
                                 ui.close_menu();
                             }

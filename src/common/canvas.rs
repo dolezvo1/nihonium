@@ -75,6 +75,7 @@ fn segment_ellipse_point(
     ));
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum NHShape {
     Rect {
         inner: egui::Rect,
