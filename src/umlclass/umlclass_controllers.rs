@@ -553,20 +553,8 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             (class_productb.clone(), class_productb_controller.clone()),
         );
 
-    let mut owned_controllers = HashMap::<
-        _,
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    dyn UmlClassElement,
-                    UmlClassQueryable,
-                    NaiveUmlClassTool,
-                    UmlClassElementOrVertex,
-                    UmlClassPropChange,
-                >,
-            >,
-        >,
-    >::new();
+    let mut owned_controllers =
+        HashMap::<_, Arc<RwLock<dyn ElementControllerGen2<_, _, _, _, _>>>>::new();
     owned_controllers.insert(class_af_uuid, class_af_controller);
     owned_controllers.insert(class_cfx_uuid, class_cfx_controller);
     owned_controllers.insert(class_cfy_uuid, class_cfy_controller);

@@ -87,6 +87,11 @@ pub enum NHShape {
 }
 
 impl NHShape {
+    pub const ELLIPSE_ZERO: Self = Self::Ellipse {
+        position: egui::Pos2::ZERO,
+        bounds_radius: egui::Vec2::ZERO,
+    };
+
     pub fn center_intersect(&self, point: egui::Pos2) -> Option<egui::Pos2> {
         match &self {
             NHShape::Rect { inner } => segment_rect_point(point, inner),

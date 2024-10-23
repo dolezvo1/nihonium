@@ -9,6 +9,8 @@ pub trait DemoCsdElement: Observable {
     fn uuid(&self) -> Arc<uuid::Uuid>;
 }
 
+// ---
+
 pub struct DemoCsdDiagram {
     pub uuid: Arc<uuid::Uuid>,
     pub name: Arc<String>,
@@ -54,6 +56,8 @@ impl ContainerModel<dyn DemoCsdElement> for DemoCsdDiagram {
 }
 
 impl_observable!(DemoCsdDiagram);
+
+// ---
 
 pub struct DemoCsdPackage {
     pub uuid: Arc<uuid::Uuid>,
@@ -107,37 +111,7 @@ impl DemoCsdElement for DemoCsdPackage {
     }
 }
 
-pub struct DemoCsdClient {
-    pub uuid: Arc<uuid::Uuid>,
-
-    pub identifier: Arc<String>,
-    pub name: Arc<String>,
-    pub internal: bool,
-
-    pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
-}
-
-impl DemoCsdClient {
-    pub fn new(uuid: uuid::Uuid, identifier: String, name: String) -> Self {
-        Self {
-            uuid: Arc::new(uuid),
-            identifier: Arc::new(identifier),
-            name: Arc::new(name),
-            internal: false,
-            comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
-        }
-    }
-}
-
-impl_observable!(DemoCsdClient);
-
-impl DemoCsdElement for DemoCsdClient {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
-        self.uuid.clone()
-    }
-}
+// ---
 
 pub struct DemoCsdTransactor {
     pub uuid: Arc<uuid::Uuid>,
@@ -145,8 +119,7 @@ pub struct DemoCsdTransactor {
     pub identifier: Arc<String>,
     pub name: Arc<String>,
     pub internal: bool,
-    pub transaction_identifier: Arc<String>,
-    pub transaction_name: Arc<String>,
+    pub transaction: Option<Arc<RwLock<DemoCsdTransaction>>>,
     pub transaction_selfactivating: bool,
 
     pub comment: Arc<String>,
@@ -154,15 +127,23 @@ pub struct DemoCsdTransactor {
 }
 
 impl DemoCsdTransactor {
-    pub fn new(uuid: uuid::Uuid, identifier: String, name: String, transaction_identifier: String, transaction_name: String) -> Self {
+    pub fn new(
+        uuid: uuid::Uuid,
+        identifier: String,
+        name: String,
+        internal: bool,
+        transaction: Option<Arc<RwLock<DemoCsdTransaction>>>,
+        transaction_selfactivating: bool,
+    ) -> Self {
         Self {
             uuid: Arc::new(uuid),
+
             identifier: Arc::new(identifier),
             name: Arc::new(name),
-            internal: true,
-            transaction_identifier: Arc::new(transaction_identifier),
-            transaction_name: Arc::new(transaction_name),
-            transaction_selfactivating: false,
+            internal,
+            transaction,
+            transaction_selfactivating,
+
             comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
@@ -177,9 +158,11 @@ impl DemoCsdElement for DemoCsdTransactor {
     }
 }
 
-pub struct DemoCsdBank {
+// ---
+
+pub struct DemoCsdTransaction {
     pub uuid: Arc<uuid::Uuid>,
-    
+
     pub identifier: Arc<String>,
     pub name: Arc<String>,
 
@@ -187,25 +170,29 @@ pub struct DemoCsdBank {
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
-impl DemoCsdBank {
+impl DemoCsdTransaction {
     pub fn new(uuid: uuid::Uuid, identifier: String, name: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
+
             identifier: Arc::new(identifier),
             name: Arc::new(name),
+
             comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }
     }
 }
 
-impl_observable!(DemoCsdBank);
+impl_observable!(DemoCsdTransaction);
 
-impl DemoCsdElement for DemoCsdBank {
+impl DemoCsdElement for DemoCsdTransaction {
     fn uuid(&self) -> Arc<uuid::Uuid> {
         self.uuid.clone()
     }
 }
+
+// ---
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DemoCsdLinkType {
@@ -228,10 +215,8 @@ pub struct DemoCsdLink {
     pub uuid: Arc<uuid::Uuid>,
 
     pub link_type: DemoCsdLinkType,
-    // Client or transactor
-    pub source: Arc<RwLock<dyn DemoCsdElement>>,
-    // Transaction or bank
-    pub target: Arc<RwLock<dyn DemoCsdElement>>,
+    pub source: Arc<RwLock<DemoCsdTransactor>>,
+    pub target: Arc<RwLock<DemoCsdTransaction>>,
 
     pub comment: Arc<String>,
     observers: VecDeque<Arc<RwLock<dyn Observer>>>,
@@ -241,8 +226,8 @@ impl DemoCsdLink {
     pub fn new(
         uuid: uuid::Uuid,
         link_type: DemoCsdLinkType,
-        source: Arc<RwLock<dyn DemoCsdElement>>,
-        target: Arc<RwLock<dyn DemoCsdElement>>,
+        source: Arc<RwLock<DemoCsdTransactor>>,
+        target: Arc<RwLock<DemoCsdTransaction>>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),

@@ -653,12 +653,14 @@ impl NHContext {
 
 impl Default for NHApp {
     fn default() -> Self {
-        let (rdf_uuid, rdf_demo) = crate::rdf::rdf_controllers::demo(1);
-        let (umlclass_uuid, umlclass_demo) = crate::umlclass::umlclass_controllers::demo(2);
-
         let mut diagram_controllers = HashMap::new();
+
+        let (rdf_uuid, rdf_demo) = crate::rdf::rdf_controllers::demo(1);
         diagram_controllers.insert(rdf_uuid.clone(), rdf_demo);
+        let (umlclass_uuid, umlclass_demo) = crate::umlclass::umlclass_controllers::demo(2);
         diagram_controllers.insert(umlclass_uuid.clone(), umlclass_demo);
+        let (democsd_uuid, democsd_demo) = crate::democsd::democsd_controllers::demo(3);
+        diagram_controllers.insert(democsd_uuid.clone(), democsd_demo);
 
         let mut dock_state = DockState::new(vec![
             NHTab::StyleEditor,
@@ -666,6 +668,7 @@ impl Default for NHApp {
             NHTab::Diagram {
                 uuid: umlclass_uuid,
             },
+            NHTab::Diagram { uuid: democsd_uuid },
         ]);
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
 
@@ -689,7 +692,7 @@ impl Default for NHApp {
 
         let context = NHContext {
             diagram_controllers,
-            new_diagram_no: 3,
+            new_diagram_no: 4,
             custom_tabs: HashMap::new(),
             style: None,
 

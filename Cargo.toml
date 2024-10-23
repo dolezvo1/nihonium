@@ -6,9 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-eframe = "0.28"
-egui_extras = "0.28"
-egui_dock = "0.13"
+eframe = "0.29"
+egui_extras = "0.29"
+egui_dock = "0.14"
 rfd = "0.14.1"
 uuid = { version = "1.10.0", features = [ "std", "v7" ] }
 
