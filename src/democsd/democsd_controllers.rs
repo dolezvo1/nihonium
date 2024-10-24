@@ -1126,23 +1126,27 @@ impl
                 canvas::CLASS_MIDDLE_FONT_SIZE,
             )
         });
+        let [identifier_offset, name_offset] = [0.0, identifier_bounds.height()].map(|e|
+            egui::Vec2::new(0.0, e + if read.transaction.is_some() { tx_name_bounds.height() - 1.0 * canvas::CLASS_MIDDLE_FONT_SIZE } else { 0.0 })
+        );
 
-        self.bounds_rect = egui::Rect::from_center_size(
-            self.position + egui::Vec2::new(0.0, if read.transaction_selfactivating { 0.25 } else { 1.75 } * canvas::CLASS_MIDDLE_FONT_SIZE),
-            egui::Vec2::new(
-                tx_name_bounds
+        let max_row = tx_name_bounds
                     .width()
                     .max(identifier_bounds.width())
                     .max(name_bounds.width())
-                    .max(2.0 * radius),
-                if read.transaction_selfactivating { 5.0 } else { 2.5 } * canvas::CLASS_MIDDLE_FONT_SIZE
+                    .max(2.0 * radius);
+        let box_y_offset = if read.transaction.is_some() { if read.transaction_selfactivating { 6.0 } else { 3.5 } } else { 0.0 } * canvas::CLASS_MIDDLE_FONT_SIZE;
+        self.bounds_rect = egui::Rect::from_min_size(
+            self.position - egui::Vec2::new(max_row/2.0, box_y_offset),
+            egui::Vec2::new(
+                max_row,
+                if read.transaction.is_some() { if read.transaction_selfactivating { 5.0 } else { 2.5 } } else { 0.0 }* canvas::CLASS_MIDDLE_FONT_SIZE
                     + tx_name_bounds.height()
                     + identifier_bounds.height()
                     + name_bounds.height(),
             ),
         )
         .expand(5.0);
-        
 
         canvas.draw_rectangle(
             self.bounds_rect,
@@ -1162,33 +1166,39 @@ impl
             ),
             self.highlight,
         );
-
+        
+        // Draw identifier below the position (plus tx name)
         canvas.draw_text(
-            self.position + egui::Vec2::new(0.0, 2.5 * canvas::CLASS_MIDDLE_FONT_SIZE),
+            self.position + identifier_offset,
             egui::Align2::CENTER_TOP,
             &read.identifier,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
 
+        // Draw identifier one row below the position (plus tx name)
         canvas.draw_text(
-            self.position + egui::Vec2::new(0.0, 3.5 * canvas::CLASS_MIDDLE_FONT_SIZE),
+            self.position + name_offset,
             egui::Align2::CENTER_TOP,
             &read.name,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
-
+        
+        // If tx is present, draw it 4 rows above the position
         if let Some(t) = &self.transaction_view {
-            let offset_tool = tool.map(|(p, t)| (p - self.position.to_vec2(), t));
+            let offset = self.position.to_vec2() + egui::Vec2::new(0.0, -4.0 * canvas::CLASS_MIDDLE_FONT_SIZE);
+            let offset_tool = tool.map(|(p, t)| (p - offset, t));
             let mut t = t.write().unwrap();
-            canvas.offset_by(self.position.to_vec2());
+            canvas.offset_by(offset);
             let res = t.draw_in(queryable, canvas, &offset_tool);
-            canvas.offset_by(-self.position.to_vec2());
+            canvas.offset_by(-offset);
             if res == TargettingStatus::Drawn {
                 return TargettingStatus::Drawn;
             }
         }
+        
+        canvas.draw_ellipse(self.position, egui::Vec2::splat(1.0), egui::Color32::RED, canvas::Stroke::new_solid(1.0, egui::Color32::RED), canvas::Highlight::NONE);
 
         // Draw targetting rectangle
         if let Some(t) = tool
@@ -1218,7 +1228,7 @@ impl
     ) -> ClickHandlingStatus {
         if let Some(t) = &self.transaction_view {
             let mut t = t.write().unwrap();
-            match t.click(tool, commands, pos - self.position.to_vec2(), modifiers) {
+            match t.click(tool, commands, pos - self.position.to_vec2() + egui::Vec2::new(0.0, 4.0 * canvas::CLASS_MIDDLE_FONT_SIZE), modifiers) {
                 ClickHandlingStatus::NotHandled => {},
                 ClickHandlingStatus::HandledByElement => {
                     if !modifiers.command {
