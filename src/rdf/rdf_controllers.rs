@@ -305,7 +305,7 @@ impl CustomTab for SparqlQueriesTab {
         "SPARQL Queries".to_owned()
     }
 
-    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui) {
+    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui, _has_focus: bool) {
         let mut model = self.diagram.write().unwrap();
 
         egui::ComboBox::from_label("Select diagram")

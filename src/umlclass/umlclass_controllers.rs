@@ -352,7 +352,7 @@ impl CustomTab for PlantUmlTab {
         "PlantUML description".to_owned()
     }
 
-    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui) {
+    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui, _has_focus: bool) {
         if ui.button("Refresh").clicked() {
             let diagram = self.diagram.read().unwrap();
             self.plantuml_description = diagram.plantuml();

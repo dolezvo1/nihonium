@@ -14,7 +14,7 @@ pub trait DiagramController: Any {
         &self,
         ui: &mut egui::Ui,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
-    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response);
+    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, has_focus: bool);
     fn click(&mut self, pos: egui::Pos2, modifiers: ModifierKeys) -> bool;
     fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool;
     fn context_menu(&mut self, ui: &mut egui::Ui);
@@ -809,15 +809,15 @@ where
 
         (Box::new(ui_canvas), painter_response, inner_mouse)
     }
-    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response) {
+    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, has_focus: bool) {
         // Handle camera and element clicks/drags
 
         // TODO: This shortcut handling is generally wrong. Depends on redo_shortcut not being a subset of undo_shortcut.
-        if ui.input_mut(|i| i.consume_shortcut(&self.redo_shortcut)) {
+        if has_focus && ui.input_mut(|i| i.consume_shortcut(&self.redo_shortcut)) {
             self.redo(1);
-        } else if ui.input_mut(|i| i.consume_shortcut(&self.undo_shortcut)) {
+        } else if has_focus && ui.input_mut(|i| i.consume_shortcut(&self.undo_shortcut)) {
             self.undo(1);
-        } else if ui.input_mut(|i| i.consume_shortcut(&self.delete_shortcut)) {
+        } else if has_focus && ui.input_mut(|i| i.consume_shortcut(&self.delete_shortcut)) {
             self.apply_commands(vec![SensitiveCommand::DeleteSelectedElements], true, true);
         } else if response.clicked() {
             if let Some(pos) = ui.ctx().pointer_interact_pos() {

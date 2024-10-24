@@ -97,7 +97,7 @@ impl NHTab {
 
 pub trait CustomTab {
     fn title(&self) -> String;
-    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui);
+    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui, has_focus: bool);
     //fn on_close(&mut self, context: &mut NHApp);
 }
 
@@ -109,6 +109,7 @@ struct NHContext {
     pub style: Option<Style>,
 
     open_unique_tabs: HashSet<NHTab>,
+    current_focused_tab: Option<NHTab>,
     last_focused_diagram: Option<uuid::Uuid>,
 
     show_close_buttons: bool,
@@ -118,11 +119,6 @@ struct NHContext {
     allowed_splits: AllowedSplits,
     show_window_close: bool,
     show_window_collapse: bool,
-}
-
-struct NHApp {
-    context: NHContext,
-    tree: DockState<NHTab>,
 }
 
 impl TabViewer for NHContext {
@@ -622,26 +618,26 @@ impl NHContext {
     }
 
     // In general it should draw first and handle input second, right?
-    fn diagram_tab(&mut self, uuid: &uuid::Uuid, ui: &mut Ui) {
-        let mut diagram_controller = self.diagram_controllers.get(uuid).unwrap().write().unwrap();
+    fn diagram_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
+        let mut diagram_controller = self.diagram_controllers.get(tab_uuid).unwrap().write().unwrap();
 
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(ui);
 
         if response.clicked() || response.drag_started() {
-            self.last_focused_diagram = Some(uuid.clone());
+            self.last_focused_diagram = Some(tab_uuid.clone());
         }
 
         diagram_controller.draw_in(ui_canvas.as_mut(), pos);
 
-        diagram_controller.handle_input(ui, &response);
+        diagram_controller.handle_input(ui, &response, self.current_focused_tab.as_ref().is_some_and(|e| matches!(e, NHTab::Diagram { uuid } if *uuid == *tab_uuid)));
 
         response.context_menu(|ui| diagram_controller.context_menu(ui));
     }
 
-    fn custom_tab(&mut self, uuid: &uuid::Uuid, ui: &mut Ui) {
-        let x = self.custom_tabs.get(uuid).map(|e| e.clone()).unwrap();
+    fn custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
+        let x = self.custom_tabs.get(tab_uuid).map(|e| e.clone()).unwrap();
         let mut custom_tab = x.write().unwrap();
-        custom_tab.show(/*self,*/ ui);
+        custom_tab.show(/*self,*/ ui, self.current_focused_tab.as_ref().is_some_and(|e| matches!(e, NHTab::CustomTab { uuid } if *uuid == *tab_uuid)));
     }
 
     fn last_focused_diagram(&mut self) -> Option<Arc<RwLock<dyn DiagramController>>> {
@@ -649,6 +645,11 @@ impl NHContext {
             .as_ref()
             .and_then(|e| self.diagram_controllers.get(e).cloned())
     }
+}
+
+struct NHApp {
+    context: NHContext,
+    tree: DockState<NHTab>,
 }
 
 impl Default for NHApp {
@@ -697,6 +698,7 @@ impl Default for NHApp {
             style: None,
 
             open_unique_tabs,
+            current_focused_tab: None,
             last_focused_diagram: None,
 
             show_window_close: true,
@@ -727,6 +729,9 @@ impl NHApp {
 
 impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Save focused tab to context for event handling purposes
+        self.context.current_focused_tab = self.tree.find_active_focused().map(|e| e.1).cloned();
+        
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
