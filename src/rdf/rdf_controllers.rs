@@ -465,7 +465,7 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     )));
     (
         uuid,
-        Arc::new(RwLock::new(DiagramControllerGen2::new(
+        DiagramControllerGen2::new(
             diagram.clone(),
             HashMap::new(),
             RdfQueryable {},
@@ -478,7 +478,7 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
-        ))),
+        ),
     )
 }
 
@@ -596,7 +596,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     )));
     (
         diagram_uuid,
-        Arc::new(RwLock::new(DiagramControllerGen2::new(
+        DiagramControllerGen2::new(
             diagram.clone(),
             owned_controllers,
             RdfQueryable {},
@@ -609,7 +609,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
-        ))),
+        ),
     )
 }
 

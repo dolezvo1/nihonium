@@ -31,7 +31,7 @@ pub enum UmlClassPropChange {
 
     LinkTypeChange(UmlClassLinkType),
     SourceArrowheadLabelChange(Arc<String>),
-    DestiantionArrowheadLabelChange(Arc<String>),
+    DestinationArrowheadLabelChange(Arc<String>),
 
     CommentChange(Arc<String>),
     PackageResize(egui::Vec2),
@@ -375,7 +375,7 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     )));
     (
         uuid,
-        Arc::new(RwLock::new(DiagramControllerGen2::new(
+        DiagramControllerGen2::new(
             diagram.clone(),
             HashMap::new(),
             UmlClassQueryable {},
@@ -388,7 +388,7 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
-        ))),
+        ),
     )
 }
 
@@ -588,7 +588,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     )));
     (
         diagram_uuid,
-        Arc::new(RwLock::new(DiagramControllerGen2::new(
+        DiagramControllerGen2::new(
             diagram2.clone(),
             owned_controllers,
             UmlClassQueryable {},
@@ -601,7 +601,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
-        ))),
+        ),
     )
 }
 
@@ -1561,7 +1561,7 @@ fn umlclass_link(
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::DestiantionArrowheadLabelChange(Arc::new(
+                UmlClassPropChange::DestinationArrowheadLabelChange(Arc::new(
                     buffer.destination_arrowhead_label.clone(),
                 )),
             ]));
@@ -1619,7 +1619,7 @@ fn umlclass_link(
                         buffer.source_arrowhead_label = (**source_arrowhead_label).clone();
                         model.source_arrowhead_label = source_arrowhead_label.clone();
                     }
-                    UmlClassPropChange::DestiantionArrowheadLabelChange(
+                    UmlClassPropChange::DestinationArrowheadLabelChange(
                         destination_arrowhead_label,
                     ) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(

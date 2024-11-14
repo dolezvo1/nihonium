@@ -4,7 +4,7 @@ use eframe::egui;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, Weak};
 
 pub trait DiagramController: Any {
     fn uuid(&self) -> Arc<uuid::Uuid>;
@@ -353,6 +353,7 @@ pub struct DiagramControllerGen2<
     ToolT: Tool<ElementModelT, QueryableT, AddCommandElementT, PropChangeT>,
 {
     model: Arc<RwLock<DiagramModelT>>,
+    self_reference: Weak<RwLock<Self>>,
     owned_controllers: HashMap<
         uuid::Uuid,
         Arc<
@@ -491,10 +492,11 @@ where
         ),
         tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
         menubar_options_fun: fn(&mut Self, &mut NHApp, &mut egui::Ui),
-    ) -> Self {
+    ) -> Arc<RwLock<Self>> {
         let event_order = owned_controllers.keys().map(|e| *e).collect();
-        Self {
+        let ret = Arc::new(RwLock::new(Self {
             model,
+            self_reference: Weak::new(),
             owned_controllers,
             event_order,
             selected_elements: HashSet::new(),
@@ -528,7 +530,9 @@ where
             apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
-        }
+        }));
+        ret.write().unwrap().self_reference = Arc::downgrade(&ret);
+        ret
     }
 
     pub fn model(&self) -> Arc<RwLock<DiagramModelT>> {

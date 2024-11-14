@@ -62,6 +62,8 @@ pub struct DemoCsdQueryable {}
 pub enum DemoCsdPropChange {
     NameChange(Arc<String>),
     IdentifierChange(Arc<String>),
+    TransactorSelfactivatingChange(bool),
+    TransactorInternalChange(bool),
 
     LinkTypeChange(DemoCsdLinkType),
 
@@ -266,7 +268,7 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     )));
     (
         uuid,
-        Arc::new(RwLock::new(DiagramControllerGen2::new(
+        DiagramControllerGen2::new(
             diagram.clone(),
             HashMap::new(),
             DemoCsdQueryable {},
@@ -279,7 +281,7 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
-        ))),
+        ),
     )
 }
 
@@ -466,7 +468,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         )));
         (
             uuid,
-            Arc::new(RwLock::new(DiagramControllerGen2::new(
+            DiagramControllerGen2::new(
                 diagram.clone(),
                 controllers,
                 DemoCsdQueryable {},
@@ -479,7 +481,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                 apply_property_change_fun,
                 tool_change_fun,
                 menubar_options_fun,
-            ))),
+            ),
         )
     }
 }
@@ -1069,6 +1071,18 @@ impl
             ]));
         }
 
+        if ui.checkbox(&mut self.transaction_selfactivating_buffer, "Transaction Self-activating").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoCsdPropChange::TransactorSelfactivatingChange(self.transaction_selfactivating_buffer)
+            ]));
+        }
+
+        if ui.checkbox(&mut self.internal_buffer, "Internal").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoCsdPropChange::TransactorInternalChange(self.internal_buffer)
+            ]));
+        }
+
         ui.label("Comment:");
         if ui
             .add_sized(
@@ -1198,7 +1212,7 @@ impl
             }
         }
         
-        canvas.draw_ellipse(self.position, egui::Vec2::splat(1.0), egui::Color32::RED, canvas::Stroke::new_solid(1.0, egui::Color32::RED), canvas::Highlight::NONE);
+        // canvas.draw_ellipse(self.position, egui::Vec2::splat(1.0), egui::Color32::RED, canvas::Stroke::new_solid(1.0, egui::Color32::RED), canvas::Highlight::NONE);
 
         // Draw targetting rectangle
         if let Some(t) = tool
@@ -1348,6 +1362,24 @@ impl
                                 ));
                                 self.name_buffer = (**name).clone();
                                 model.name = name.clone();
+                            }
+                            DemoCsdPropChange::TransactorSelfactivatingChange(value) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid).collect(),
+                                    vec![DemoCsdPropChange::TransactorSelfactivatingChange(model.transaction_selfactivating)],
+                                ));
+                                self.transaction_selfactivating_buffer = value.clone();
+                                model.transaction_selfactivating = value.clone();
+                            }
+                            DemoCsdPropChange::TransactorInternalChange(value) => {
+                                let mut model = self.model.write().unwrap();
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*model.uuid).collect(),
+                                    vec![DemoCsdPropChange::TransactorInternalChange(model.internal)],
+                                ));
+                                self.internal_buffer = value.clone();
+                                model.internal = value.clone();
                             }
                             DemoCsdPropChange::CommentChange(comment) => {
                                 let mut model = self.model.write().unwrap();

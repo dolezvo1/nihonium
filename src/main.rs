@@ -103,6 +103,7 @@ pub trait CustomTab {
 
 struct NHContext {
     pub diagram_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn DiagramController>>>,
+    hierarchy_order: Vec<uuid::Uuid>,
     new_diagram_no: u32,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
 
@@ -180,7 +181,9 @@ impl TabViewer for NHContext {
 
 impl NHContext {
     fn hierarchy(&self, ui: &mut Ui) {
-        for (_uiid, controller) in &self.diagram_controllers {
+        for controller in self.hierarchy_order.iter()
+            .flat_map(|e| self.diagram_controllers.get(e))
+        {
             let controller_lock = controller.write().unwrap();
             controller_lock.list_in_project_hierarchy(ui);
         }
@@ -655,22 +658,20 @@ struct NHApp {
 impl Default for NHApp {
     fn default() -> Self {
         let mut diagram_controllers = HashMap::new();
+        let mut hierarchy_order = vec![];
+        let mut tabs = vec![NHTab::StyleEditor];
 
-        let (rdf_uuid, rdf_demo) = crate::rdf::rdf_controllers::demo(1);
-        diagram_controllers.insert(rdf_uuid.clone(), rdf_demo);
-        let (umlclass_uuid, umlclass_demo) = crate::umlclass::umlclass_controllers::demo(2);
-        diagram_controllers.insert(umlclass_uuid.clone(), umlclass_demo);
-        let (democsd_uuid, democsd_demo) = crate::democsd::democsd_controllers::demo(3);
-        diagram_controllers.insert(democsd_uuid.clone(), democsd_demo);
+        for (uuid, controller) in [
+            crate::rdf::rdf_controllers::demo(1),
+            crate::umlclass::umlclass_controllers::demo(2),
+            crate::democsd::democsd_controllers::demo(3),
+        ] {
+            diagram_controllers.insert(uuid, controller);
+            hierarchy_order.push(uuid);
+            tabs.push(NHTab::Diagram { uuid });
+        }
 
-        let mut dock_state = DockState::new(vec![
-            NHTab::StyleEditor,
-            NHTab::Diagram { uuid: rdf_uuid },
-            NHTab::Diagram {
-                uuid: umlclass_uuid,
-            },
-            NHTab::Diagram { uuid: democsd_uuid },
-        ]);
+        let mut dock_state = DockState::new(tabs);
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
 
         let mut open_unique_tabs = HashSet::new();
@@ -693,6 +694,7 @@ impl Default for NHApp {
 
         let context = NHContext {
             diagram_controllers,
+            hierarchy_order,
             new_diagram_no: 4,
             custom_tabs: HashMap::new(),
             style: None,
@@ -727,6 +729,20 @@ impl NHApp {
     }
 }
 
+fn new_project() -> Result<(), &'static str> {
+    // FIXME: closing original project closes the new one as well
+
+    let Ok(executable) = std::env::current_exe() else {
+        return Err("Failed to get current executable");
+    };
+
+    let Ok(_child) = std::process::Command::new(executable).spawn() else {
+        return Err("Failed to start process");
+    };
+
+    Ok(())
+}
+
 impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Save focused tab to context for event handling purposes
@@ -735,9 +751,8 @@ impl eframe::App for NHApp {
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
-                    // TODO: implement
                     if ui.button("New Project").clicked() {
-                        println!("TODO");
+                        let _ = new_project();
                     }
                     // TODO: implement
                     if ui.button("Open Project").clicked() {
@@ -771,7 +786,10 @@ impl eframe::App for NHApp {
                                 self.context.new_diagram_no += 1;
                                 self.context
                                     .diagram_controllers
-                                    .insert(uuid.clone(), diagram_controller);
+                                    .insert(uuid, diagram_controller);
+                                self.context
+                                    .hierarchy_order
+                                    .push(uuid);
 
                                 let tab = NHTab::Diagram { uuid };
 
