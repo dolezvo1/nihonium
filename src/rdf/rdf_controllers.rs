@@ -1,12 +1,11 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ClickHandlingStatus, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2,
+    ClickHandlingStatus, ContainerGen2, DiagramController, DiagramControllerGen2,
     DragHandlingStatus, ElementController, ElementControllerGen2, FlipMulticonnection,
     InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand,
     TargettingStatus, Tool, VertexInformation,
 };
-use crate::common::observer::Observable;
 use crate::{CustomTab, NHApp};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
@@ -305,7 +304,7 @@ impl CustomTab for SparqlQueriesTab {
         "SPARQL Queries".to_owned()
     }
 
-    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui, _has_focus: bool) {
+    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui) {
         let mut model = self.diagram.write().unwrap();
 
         egui::ComboBox::from_label("Select diagram")

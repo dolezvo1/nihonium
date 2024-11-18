@@ -17,7 +17,7 @@ mod rdf;
 mod umlclass;
 
 use crate::common::canvas::{MeasuringCanvas, SVGCanvas};
-use crate::common::controller::DiagramController;
+use crate::common::controller::{DiagramCommand, DiagramController};
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
 macro_rules! labeled_widget {
@@ -97,7 +97,7 @@ impl NHTab {
 
 pub trait CustomTab {
     fn title(&self) -> String;
-    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui, has_focus: bool);
+    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui);
     //fn on_close(&mut self, context: &mut NHApp);
 }
 
@@ -109,8 +109,14 @@ struct NHContext {
 
     pub style: Option<Style>,
 
+    undo_stack: Vec<(Arc<String>, Arc<RwLock<dyn DiagramController>>)>,
+    redo_stack: Vec<(Arc<String>, Arc<RwLock<dyn DiagramController>>)>,
+    
+    undo_shortcut: egui::KeyboardShortcut,
+    redo_shortcut: egui::KeyboardShortcut,
+    delete_shortcut: egui::KeyboardShortcut,
+
     open_unique_tabs: HashSet<NHTab>,
-    current_focused_tab: Option<NHTab>,
     last_focused_diagram: Option<uuid::Uuid>,
 
     show_close_buttons: bool,
@@ -180,6 +186,24 @@ impl TabViewer for NHContext {
 }
 
 impl NHContext {
+    fn undo_immediate(&mut self) {
+        let Some(e) = self.undo_stack.pop() else { return; };
+        {
+            let mut c = e.1.write().unwrap();
+            c.apply_command(DiagramCommand::UndoImmediate);
+        }
+        self.redo_stack.push(e);
+    }
+    fn redo_immediate(&mut self) {
+        let Some(e) = self.redo_stack.pop() else { return; };
+        {
+            let mut c = e.1.write().unwrap();
+            c.apply_command(DiagramCommand::RedoImmediate);
+        }
+        self.undo_stack.push(e);
+    }
+    
+
     fn hierarchy(&self, ui: &mut Ui) {
         for controller in self.hierarchy_order.iter()
             .flat_map(|e| self.diagram_controllers.get(e))
@@ -198,11 +222,27 @@ impl NHContext {
         }
     }
 
-    fn properties(&self, ui: &mut Ui) {
+    fn properties(&mut self, ui: &mut Ui) {
         if let Some(last_focused_diagram) = &self.last_focused_diagram {
             self.diagram_controllers.get(last_focused_diagram).map(|c| {
                 let mut controller_lock = c.write().unwrap();
-                controller_lock.show_properties(ui)
+                
+                let mut undo_accumulator = Vec::<Arc<String>>::new();
+                controller_lock.show_properties(ui, &mut undo_accumulator);
+                if !undo_accumulator.is_empty() {
+                    for (_uuid, c) in self.diagram_controllers.iter().filter(|(uuid, _c)| *uuid != last_focused_diagram) {
+                        let mut c = c.write().unwrap();
+                        c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag);
+                    }
+                    
+                    self.redo_stack.clear();
+                    controller_lock.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag);
+                    controller_lock.apply_command(DiagramCommand::SetLastChangeFlag);
+                    
+                    for command_label in undo_accumulator {
+                        self.undo_stack.push((command_label, c.clone()));
+                    }
+                }
             });
         }
     }
@@ -619,10 +659,11 @@ impl NHContext {
             })
         });
     }
-
+    
     // In general it should draw first and handle input second, right?
     fn diagram_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
-        let mut diagram_controller = self.diagram_controllers.get(tab_uuid).unwrap().write().unwrap();
+        let diagram_controller_arc = self.diagram_controllers.get(tab_uuid).unwrap();
+        let mut diagram_controller = diagram_controller_arc.write().unwrap();
 
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(ui);
 
@@ -632,15 +673,29 @@ impl NHContext {
 
         diagram_controller.draw_in(ui_canvas.as_mut(), pos);
 
-        diagram_controller.handle_input(ui, &response, self.current_focused_tab.as_ref().is_some_and(|e| matches!(e, NHTab::Diagram { uuid } if *uuid == *tab_uuid)));
-
+        let mut undo_accumulator = Vec::<Arc<String>>::new();
+        diagram_controller.handle_input(ui, &response, &mut undo_accumulator);
         response.context_menu(|ui| diagram_controller.context_menu(ui));
+        if !undo_accumulator.is_empty() {
+            for (_uuid, c) in self.diagram_controllers.iter().filter(|(uuid, _c)| *uuid != tab_uuid) {
+                let mut c = c.write().unwrap();
+                c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag);
+            }
+            
+            self.redo_stack.clear();
+            diagram_controller.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag);
+            diagram_controller.apply_command(DiagramCommand::SetLastChangeFlag);
+            
+            for command_label in undo_accumulator {
+                self.undo_stack.push((command_label, diagram_controller_arc.clone()));
+            }
+        }
     }
 
     fn custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
         let x = self.custom_tabs.get(tab_uuid).map(|e| e.clone()).unwrap();
         let mut custom_tab = x.write().unwrap();
-        custom_tab.show(/*self,*/ ui, self.current_focused_tab.as_ref().is_some_and(|e| matches!(e, NHTab::CustomTab { uuid } if *uuid == *tab_uuid)));
+        custom_tab.show(/*self,*/ ui);
     }
 
     fn last_focused_diagram(&mut self) -> Option<Arc<RwLock<dyn DiagramController>>> {
@@ -697,10 +752,26 @@ impl Default for NHApp {
             hierarchy_order,
             new_diagram_no: 4,
             custom_tabs: HashMap::new(),
+            
             style: None,
+            
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            
+            undo_shortcut: egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z),
+            redo_shortcut: egui::KeyboardShortcut::new(
+                egui::Modifiers {
+                    alt: false,
+                    ctrl: false,
+                    shift: true,
+                    mac_cmd: false,
+                    command: true,
+                },
+                egui::Key::Z,
+            ),
+            delete_shortcut: egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete),
 
             open_unique_tabs,
-            current_focused_tab: None,
             last_focused_diagram: None,
 
             show_window_close: true,
@@ -746,9 +817,17 @@ fn new_project() -> Result<(), &'static str> {
 impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Save focused tab to context for event handling purposes
-        self.context.current_focused_tab = self.tree.find_active_focused().map(|e| e.1).cloned();
         
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
+            // TODO: This shortcut handling is generally wrong. Depends on redo_shortcut not being a subset of undo_shortcut.
+            if ui.input_mut(|i| i.consume_shortcut(&self.context.redo_shortcut)) {
+                self.context.redo_immediate();
+            } else if ui.input_mut(|i| i.consume_shortcut(&self.context.undo_shortcut)) {
+                self.context.undo_immediate();
+            } else if ui.input_mut(|i| i.consume_shortcut(&self.context.delete_shortcut)) {
+                // TODO: self.apply_commands(vec![SensitiveCommand::DeleteSelectedElements], true, true);
+            }
+            
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("New Project").clicked() {
@@ -818,6 +897,62 @@ impl eframe::App for NHApp {
                 });
 
                 ui.menu_button("Edit", |ui| {
+                    ui.menu_button("Undo", |ui| {
+                        if self.context.undo_stack.is_empty() {
+                            let _ = ui.add_enabled(false, egui::Button::new("(nothing to undo)").shortcut_text(ui.ctx().format_shortcut(&self.context.undo_shortcut)));
+                        } else {
+                            for (ii, c) in self.context.undo_stack.iter().rev().enumerate() {
+                                let mut button = egui::Button::new(format!("{} in '{}'", &*c.0, c.1.read().unwrap().model_name()));
+                                if ii == 0 {
+                                    button = button.shortcut_text(ui.ctx().format_shortcut(&self.context.undo_shortcut));
+                                }
+
+                                if ui.add(button).clicked() {
+                                    for _ in 0..=ii {
+                                        self.context.undo_immediate();
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                        
+                    });
+                    
+                    ui.menu_button("Redo", |ui| {
+                        if self.context.redo_stack.is_empty() {
+                            let _ = ui.add_enabled(false, egui::Button::new("(nothing to redo)").shortcut_text(ui.ctx().format_shortcut(&self.context.redo_shortcut)));
+                        } else {
+                            for (ii, c) in self.context.redo_stack.iter().rev().enumerate() {
+                                let mut button = egui::Button::new(format!("{} in '{}'", &*c.0, c.1.read().unwrap().model_name()));
+                                if ii == 0 {
+                                    button = button.shortcut_text(ui.ctx().format_shortcut(&self.context.redo_shortcut));
+                                }
+
+                                if ui.add(button).clicked() {
+                                    for _ in 0..=ii {
+                                        self.context.redo_immediate();
+                                    }
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                    ui.separator();
+
+                    // TODO: implement
+                    if ui.button("Cut").clicked() {
+                        println!("no");
+                    }
+                    // TODO: implement
+                    if ui.button("Copy").clicked() {
+                        println!("no");
+                    }
+                    // TODO: implement
+                    if ui.button("Paste").clicked() {
+                        println!("no");
+                    }
+                    ui.separator();
+
                     if let Some(d) = self.context.last_focused_diagram() {
                         let mut d = d.write().unwrap();
                         d.show_menubar_edit_options(self, ui);

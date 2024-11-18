@@ -4,12 +4,11 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ClickHandlingStatus, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2,
+    ClickHandlingStatus, ContainerGen2, DiagramController, DiagramControllerGen2,
     DragHandlingStatus, ElementController, ElementControllerGen2, FlipMulticonnection,
     InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand,
     TargettingStatus, Tool, VertexInformation,
 };
-use crate::common::observer::Observable;
 use crate::CustomTab;
 use crate::NHApp;
 use eframe::egui;
@@ -352,7 +351,7 @@ impl CustomTab for PlantUmlTab {
         "PlantUML description".to_owned()
     }
 
-    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui, _has_focus: bool) {
+    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui) {
         if ui.button("Refresh").clicked() {
             let diagram = self.diagram.read().unwrap();
             self.plantuml_description = diagram.plantuml();
@@ -1181,7 +1180,7 @@ impl
         }
 
         ui.label("Stereotype:");
-        egui::ComboBox::from_id_source("Stereotype:")
+        egui::ComboBox::from_id_salt("Stereotype:")
             .selected_text(self.stereotype_buffer.char())
             .show_ui(ui, |ui| {
                 for value in [
@@ -1514,7 +1513,7 @@ fn umlclass_link(
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) {
         ui.label("Link type:");
-        egui::ComboBox::from_id_source("link type")
+        egui::ComboBox::from_id_salt("link type")
             .selected_text(&*buffer.link_type.name())
             .show_ui(ui, |ui| {
                 for sv in [

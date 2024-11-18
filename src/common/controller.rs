@@ -6,6 +6,14 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::{Arc, RwLock, Weak};
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum DiagramCommand {
+    DropRedoStackAndLastChangeFlag,
+    SetLastChangeFlag,
+    UndoImmediate,
+    RedoImmediate,
+}
+
 pub trait DiagramController: Any {
     fn uuid(&self) -> Arc<uuid::Uuid>;
     fn model_name(&self) -> Arc<String>;
@@ -14,13 +22,11 @@ pub trait DiagramController: Any {
         &self,
         ui: &mut egui::Ui,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
-    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, has_focus: bool);
-    fn click(&mut self, pos: egui::Pos2, modifiers: ModifierKeys) -> bool;
-    fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool;
+    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
     fn context_menu(&mut self, ui: &mut egui::Ui);
 
     fn show_toolbar(&mut self, ui: &mut egui::Ui);
-    fn show_properties(&mut self, ui: &mut egui::Ui);
+    fn show_properties(&mut self, ui: &mut egui::Ui, undo_accumulator: &mut Vec<Arc<String>>);
     fn show_layers(&self, ui: &mut egui::Ui);
     fn show_menubar_edit_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui);
     fn show_menubar_diagram_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui);
@@ -30,6 +36,8 @@ pub trait DiagramController: Any {
     //fn outgoing_for<'a>(&'a self, _uuid: &'a uuid::Uuid) -> Box<dyn Iterator<Item=Arc<RwLock<dyn ElementController>>> + 'a> {
     //    Box::new(std::iter::empty::<Arc<RwLock<dyn ElementController>>>())
     //}
+
+    fn apply_command(&mut self, command: DiagramCommand);
 
     fn draw_in(&mut self, canvas: &mut dyn NHCanvas, mouse_pos: Option<egui::Pos2>);
 }
@@ -180,18 +188,18 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
         }
     }
 
-    fn info_text(&self) -> String {
+    fn info_text(&self) -> Arc<String> {
         match self {
             InsensitiveCommand::SelectAll(..) | InsensitiveCommand::Select(..) => {
-                format!("Sorry, your undo stack is broken now :/")
+                Arc::new("Sorry, your undo stack is broken now :/".to_owned())
             }
-            InsensitiveCommand::DeleteElements(uuids) => format!("Delete {} elements", uuids.len()),
-            InsensitiveCommand::MoveElements(uuids, delta) => {
-                format!("Move {} elements", uuids.len())
+            InsensitiveCommand::DeleteElements(uuids) => Arc::new(format!("Delete {} elements", uuids.len())),
+            InsensitiveCommand::MoveElements(uuids, _delta) => {
+                Arc::new(format!("Move {} elements", uuids.len()))
             }
-            InsensitiveCommand::AddElement(..) => format!("Add 1 element"),
+            InsensitiveCommand::AddElement(..) => Arc::new(format!("Add 1 element")),
             InsensitiveCommand::PropertyChange(uuids, ..) => {
-                format!("Modify {} elements", uuids.len())
+                Arc::new(format!("Modify {} elements", uuids.len()))
             }
         }
     }
@@ -246,12 +254,12 @@ pub trait Tool<CommonElementT: ?Sized, QueryableT, AddCommandElementT, PropChang
 
     fn initial_stage(&self) -> Self::Stage;
 
-    fn targetting_for_element<'a>(&self, controller: Self::KindedElement<'a>) -> egui::Color32;
+    fn targetting_for_element(&self, controller: Self::KindedElement<'_>) -> egui::Color32;
     fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2);
 
     fn offset_by(&mut self, delta: egui::Vec2);
     fn add_position(&mut self, pos: egui::Pos2);
-    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>, pos: egui::Pos2);
+    fn add_element(&mut self, controller: Self::KindedElement<'_>, pos: egui::Pos2);
     fn try_construct(
         &mut self,
         into: &dyn ContainerGen2<CommonElementT, QueryableT, Self, AddCommandElementT, PropChangeT>,
@@ -284,8 +292,8 @@ pub trait ElementControllerGen2<
     fn show_properties(
         &mut self,
         _: &QueryableT,
-        ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        _ui: &mut egui::Ui,
+        _commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> bool {
         false
     }
@@ -379,14 +387,13 @@ pub struct DiagramControllerGen2<
     pub camera_scale: f32,
     last_unhandled_mouse_pos: Option<egui::Pos2>,
     current_tool: Option<ToolT>,
+    
+    last_change_flag: bool,
     undo_stack: Vec<(
         InsensitiveCommand<AddCommandElementT, PropChangeT>,
         Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     )>,
     redo_stack: Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
-    undo_shortcut: egui::KeyboardShortcut,
-    redo_shortcut: egui::KeyboardShortcut,
-    delete_shortcut: egui::KeyboardShortcut,
 
     // q: dyn Fn(&Vec<DomainElementT>) -> QueryableT,
     queryable: QueryableT,
@@ -509,20 +516,10 @@ where
             camera_scale: 1.0,
             last_unhandled_mouse_pos: None,
             current_tool: None,
+            
+            last_change_flag: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-            undo_shortcut: egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z),
-            redo_shortcut: egui::KeyboardShortcut::new(
-                egui::Modifiers {
-                    alt: false,
-                    ctrl: false,
-                    shift: true,
-                    mac_cmd: false,
-                    command: true,
-                },
-                egui::Key::Z,
-            ),
-            delete_shortcut: egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete),
 
             queryable,
             buffer,
@@ -539,9 +536,103 @@ where
         self.model.clone()
     }
 
+    fn self_reference_dyn(&self) -> Arc<RwLock<dyn DiagramController>> {
+        self.self_reference.upgrade().unwrap()
+    }
+    
+    fn click(&mut self, pos: egui::Pos2, modifiers: ModifierKeys, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
+        self.current_tool.as_mut().map(|e| e.reset_event_lock());
+
+        let mut commands = Vec::new();
+
+        let mut handled = self
+            .event_order
+            .iter()
+            .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
+            .map(|uc| {
+                match uc.1.write().unwrap().click(
+                    &mut self.current_tool,
+                    &mut commands,
+                    pos,
+                    modifiers,
+                ) {
+                    ClickHandlingStatus::HandledByElement => {
+                        if !modifiers.command {
+                            commands.push(SensitiveCommand::SelectAll(false));
+                            commands.push(SensitiveCommand::Select(
+                                std::iter::once(uc.0).collect(),
+                                true,
+                            ));
+                        } else {
+                            commands.push(SensitiveCommand::Select(
+                                std::iter::once(uc.0).collect(),
+                                !self.selected_elements.contains(&uc.0),
+                            ));
+                        }
+                        ClickHandlingStatus::HandledByContainer
+                    }
+                    a => a,
+                }
+            })
+            .find(|e| *e == ClickHandlingStatus::HandledByContainer)
+            .ok_or_else(|| {
+                commands.push(SensitiveCommand::SelectAll(false));
+            })
+            .is_ok();
+
+        if !handled {
+            if let Some(t) = self.current_tool.as_mut() {
+                t.add_position(pos);
+            }
+        }
+        let mut tool = self.current_tool.take();
+        if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
+            commands.push(SensitiveCommand::AddElement(
+                *self.uuid(),
+                AddCommandElementT::from(new_a),
+            ));
+            handled = true;
+        }
+        self.current_tool = tool;
+
+        self.apply_commands(commands, undo_accumulator, true, true);
+
+        handled
+    }
+    fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
+        let mut commands = Vec::new();
+
+        let ret = if let Some(e) = self
+            .sticky_element
+            .and_then(|k| self.owned_controllers.get(&k).map(|e| (k, e)))
+            .iter()
+            .map(|e| e.clone())
+            .chain(
+                self.event_order
+                    .iter()
+                    .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e))),
+            )
+            .find(|uc| {
+                uc.1.write()
+                    .unwrap()
+                    .drag(&mut self.current_tool, &mut commands, last_pos, delta)
+                    == DragHandlingStatus::Handled
+            }) {
+            self.sticky_element = Some(e.0);
+            true
+        } else {
+            false
+        };
+
+        self.apply_commands(commands, undo_accumulator, true, true);
+
+        ret
+    }
+
     fn apply_commands(
         &mut self,
         commands: Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        global_undo_accumulator: &mut Vec<Arc<String>>,
         save_to_undo_stack: bool,
         clear_redo_stack: bool,
     ) {
@@ -583,7 +674,7 @@ where
                     let mut self_m = self.model.write().unwrap();
                     self_m.delete_elements(uuids);
 
-                    self.owned_controllers.retain(|k, v| !uuids.contains(&k));
+                    self.owned_controllers.retain(|k, _v| !uuids.contains(&k));
                     self.event_order.retain(|e| !uuids.contains(&e));
                 }
                 InsensitiveCommand::AddElement(target, element) => {
@@ -603,7 +694,7 @@ where
                         }
                     }
                 }
-                InsensitiveCommand::PropertyChange(uuids, property) => {
+                InsensitiveCommand::PropertyChange(uuids, _property) => {
                     if uuids.contains(&*self.uuid()) {
                         let mut m = self.model.write().unwrap();
                         (self.apply_property_change_fun)(
@@ -621,12 +712,23 @@ where
                 e.apply_command(&command, &mut undo_accumulator);
             }
 
+            let modifies_selection = match command {
+                InsensitiveCommand::SelectAll(..)
+                | InsensitiveCommand::Select(..)
+                | InsensitiveCommand::DeleteElements(..)
+                | InsensitiveCommand::AddElement(..) => true,
+                InsensitiveCommand::MoveElements(..) | InsensitiveCommand::PropertyChange(..) => false,
+            };
+
             if !undo_accumulator.is_empty() {
                 if clear_redo_stack {
                     self.redo_stack.clear();
                 }
                 if save_to_undo_stack {
-                    if let Some(merged) = self.undo_stack.last().and_then(|e| e.0.merge(&command)) {
+                    if let Some(merged) = self.undo_stack.last()
+                        .filter(|_| self.last_change_flag)
+                        .and_then(|e| e.0.merge(&command))
+                    {
                         let last = self.undo_stack.last_mut().unwrap();
                         last.0 = merged;
                         let unique_prop_changes: Vec<_> = last
@@ -658,58 +760,23 @@ where
                             .collect();
                         last.1.extend(undo_accumulator);
                         last.1
-                            .retain(|e| !matches!(e, InsensitiveCommand::PropertyChange(uuids, x)));
+                            .retain(|e| !matches!(e, InsensitiveCommand::PropertyChange(_uuids, _x)));
                         last.1.extend(unique_prop_changes);
                     } else {
-                        self.undo_stack.push((command.clone(), undo_accumulator));
+                        global_undo_accumulator.push(command.info_text());
+                        self.undo_stack.push((command, undo_accumulator));
                     }
                 }
             }
 
-            match command {
-                InsensitiveCommand::SelectAll(..)
-                | InsensitiveCommand::Select(..)
-                | InsensitiveCommand::DeleteElements(..)
-                | InsensitiveCommand::AddElement(..) => {
-                    self.all_selected_elements = HashSet::new();
-                    for (_, c) in &self.owned_controllers {
-                        let mut c = c.write().unwrap();
-                        c.collect_all_selected_elements(&mut self.all_selected_elements);
-                    }
+            if modifies_selection {
+                self.all_selected_elements = HashSet::new();
+                for (_uuid, c) in &self.owned_controllers {
+                    let mut c = c.write().unwrap();
+                    c.collect_all_selected_elements(&mut self.all_selected_elements);
                 }
-                InsensitiveCommand::MoveElements(..) | InsensitiveCommand::PropertyChange(..) => {}
             }
         }
-    }
-
-    fn undo(&mut self, n: usize) {
-        let n = n.min(self.undo_stack.len());
-        let (commands, undo_commands): (Vec<_>, Vec<Vec<_>>) = self
-            .undo_stack
-            .drain(self.undo_stack.len() - n..)
-            .rev()
-            .collect();
-        self.apply_commands(
-            undo_commands
-                .into_iter()
-                .flatten()
-                .map(|c| c.to_selection_sensitive())
-                .collect(),
-            false,
-            false,
-        );
-        self.redo_stack.extend(commands);
-    }
-
-    fn redo(&mut self, n: usize) {
-        let n = n.min(self.redo_stack.len());
-        let commands: Vec<_> = self
-            .redo_stack
-            .drain(self.redo_stack.len() - n..)
-            .rev()
-            .map(|c| c.to_selection_sensitive())
-            .collect();
-        self.apply_commands(commands, true, false);
     }
 }
 
@@ -813,22 +880,16 @@ where
 
         (Box::new(ui_canvas), painter_response, inner_mouse)
     }
-    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, has_focus: bool) {
+    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>) {
         // Handle camera and element clicks/drags
 
-        // TODO: This shortcut handling is generally wrong. Depends on redo_shortcut not being a subset of undo_shortcut.
-        if has_focus && ui.input_mut(|i| i.consume_shortcut(&self.redo_shortcut)) {
-            self.redo(1);
-        } else if has_focus && ui.input_mut(|i| i.consume_shortcut(&self.undo_shortcut)) {
-            self.undo(1);
-        } else if has_focus && ui.input_mut(|i| i.consume_shortcut(&self.delete_shortcut)) {
-            self.apply_commands(vec![SensitiveCommand::DeleteSelectedElements], true, true);
-        } else if response.clicked() {
+        if response.clicked() {
             if let Some(pos) = ui.ctx().pointer_interact_pos() {
                 self.click(
                     ((pos - self.camera_offset - response.rect.min.to_vec2()) / self.camera_scale)
                         .to_pos2(),
                     ui.input(|i| ModifierKeys::from_egui(&i.modifiers)),
+                    undo_accumulator,
                 );
             }
         } else if response.dragged_by(egui::PointerButton::Middle) {
@@ -843,6 +904,7 @@ where
                 self.drag(
                     last_down_pos.to_pos2(),
                     response.drag_delta() / self.camera_scale,
+                    undo_accumulator,
                 );
                 self.last_unhandled_mouse_pos = ui.ctx().pointer_interact_pos();
             }
@@ -874,94 +936,6 @@ where
             }
         }
     }
-    fn click(&mut self, pos: egui::Pos2, modifiers: ModifierKeys) -> bool {
-        self.current_tool.as_mut().map(|e| e.reset_event_lock());
-
-        let mut commands = Vec::new();
-
-        let mut handled = self
-            .event_order
-            .iter()
-            .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
-            .map(|uc| {
-                match uc.1.write().unwrap().click(
-                    &mut self.current_tool,
-                    &mut commands,
-                    pos,
-                    modifiers,
-                ) {
-                    ClickHandlingStatus::HandledByElement => {
-                        if !modifiers.command {
-                            commands.push(SensitiveCommand::SelectAll(false));
-                            commands.push(SensitiveCommand::Select(
-                                std::iter::once(uc.0).collect(),
-                                true,
-                            ));
-                        } else {
-                            commands.push(SensitiveCommand::Select(
-                                std::iter::once(uc.0).collect(),
-                                !self.selected_elements.contains(&uc.0),
-                            ));
-                        }
-                        ClickHandlingStatus::HandledByContainer
-                    }
-                    a => a,
-                }
-            })
-            .find(|e| *e == ClickHandlingStatus::HandledByContainer)
-            .ok_or_else(|| {
-                commands.push(SensitiveCommand::SelectAll(false));
-            })
-            .is_ok();
-
-        if !handled {
-            if let Some(t) = self.current_tool.as_mut() {
-                t.add_position(pos);
-            }
-        }
-        let mut tool = self.current_tool.take();
-        if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
-            commands.push(SensitiveCommand::AddElement(
-                *self.uuid(),
-                AddCommandElementT::from(new_a),
-            ));
-            handled = true;
-        }
-        self.current_tool = tool;
-
-        self.apply_commands(commands, true, true);
-
-        handled
-    }
-    fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2) -> bool {
-        let mut commands = Vec::new();
-
-        let ret = if let Some(e) = self
-            .sticky_element
-            .and_then(|k| self.owned_controllers.get(&k).map(|e| (k, e)))
-            .iter()
-            .map(|e| e.clone())
-            .chain(
-                self.event_order
-                    .iter()
-                    .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e))),
-            )
-            .find(|uc| {
-                uc.1.write()
-                    .unwrap()
-                    .drag(&mut self.current_tool, &mut commands, last_pos, delta)
-                    == DragHandlingStatus::Handled
-            }) {
-            self.sticky_element = Some(e.0);
-            true
-        } else {
-            false
-        };
-
-        self.apply_commands(commands, true, true);
-
-        ret
-    }
     fn context_menu(&mut self, ui: &mut egui::Ui) {
         ui.label("asdf");
     }
@@ -969,7 +943,7 @@ where
     fn show_toolbar(&mut self, ui: &mut egui::Ui) {
         (self.tool_change_fun)(&mut self.current_tool, ui);
     }
-    fn show_properties(&mut self, ui: &mut egui::Ui) {
+    fn show_properties(&mut self, ui: &mut egui::Ui, undo_accumulator: &mut Vec<Arc<String>>) {
         let mut commands = Vec::new();
 
         if self
@@ -985,55 +959,12 @@ where
             (self.show_props_fun)(&mut self.buffer, ui, &mut commands);
         }
 
-        self.apply_commands(commands, true, true);
+        self.apply_commands(commands, undo_accumulator, true, true);
     }
     fn show_layers(&self, _ui: &mut egui::Ui) {
         // TODO: Layers???
     }
-    fn show_menubar_edit_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui) {
-        ui.menu_button("Undo", |ui| {
-            ui.set_max_width(200.0);
-            for (ii, c) in self.undo_stack.iter().rev().enumerate() {
-                let mut button = egui::Button::new(c.0.info_text());
-                if ii == 0 {
-                    button = button.shortcut_text(ui.ctx().format_shortcut(&self.undo_shortcut));
-                }
-
-                if ui.add(button).clicked() {
-                    self.undo(ii + 1);
-                    break;
-                }
-            }
-        });
-        ui.menu_button("Redo", |ui| {
-            ui.set_max_width(200.0);
-            for (ii, c) in self.redo_stack.iter().rev().enumerate() {
-                let mut button = egui::Button::new(c.info_text());
-                if ii == 0 {
-                    button = button.shortcut_text(ui.ctx().format_shortcut(&self.redo_shortcut));
-                }
-
-                if ui.add(button).clicked() {
-                    self.redo(ii + 1);
-                    break;
-                }
-            }
-        });
-        ui.separator();
-
-        // TODO: implement
-        if ui.button("Cut").clicked() {
-            println!("no");
-        }
-        // TODO: implement
-        if ui.button("Copy").clicked() {
-            println!("no");
-        }
-        // TODO: implement
-        if ui.button("Paste").clicked() {
-            println!("no");
-        }
-    }
+    fn show_menubar_edit_options(&mut self, _context: &mut NHApp, _ui: &mut egui::Ui) {}
     fn show_menubar_diagram_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui) {
         (self.menubar_options_fun)(self, context, ui);
     }
@@ -1051,6 +982,39 @@ where
                 }
             },
         );
+    }
+
+    fn apply_command(&mut self, command: DiagramCommand) {
+        match command {
+            DiagramCommand::DropRedoStackAndLastChangeFlag => {
+                self.redo_stack.clear();
+                self.last_change_flag = false;
+            },
+            DiagramCommand::SetLastChangeFlag => {
+                self.last_change_flag = true;
+            },
+            DiagramCommand::UndoImmediate => {
+                let Some((og_command, undo_commands)) = self.undo_stack.pop() else {
+                    return;
+                };
+                self.apply_commands(
+                    undo_commands
+                        .into_iter()
+                        .map(|c| c.to_selection_sensitive())
+                        .collect(),
+                    &mut vec![],
+                    false,
+                    false,
+                );
+                self.redo_stack.push(og_command);
+            },
+            DiagramCommand::RedoImmediate => {
+                let Some(redo_command) = self.redo_stack.pop() else {
+                    return;
+                };
+                self.apply_commands(vec![redo_command.to_selection_sensitive()], &mut vec![], true, false);
+            }
+        }
     }
 
     fn draw_in(&mut self, canvas: &mut dyn NHCanvas, mouse_pos: Option<egui::Pos2>) {
@@ -1751,7 +1715,7 @@ where
                 let mut self_m = self.model.write().unwrap();
                 self_m.delete_elements(&uuids);
 
-                self.owned_controllers.retain(|k, v| !uuids.contains(&k));
+                self.owned_controllers.retain(|k, _v| !uuids.contains(&k));
                 self.event_order.retain(|e| !uuids.contains(&e));
 
                 recurse!(self);
@@ -1775,7 +1739,7 @@ where
 
                 recurse!(self);
             }
-            InsensitiveCommand::PropertyChange(uuids, property) => {
+            InsensitiveCommand::PropertyChange(uuids, _property) => {
                 if uuids.contains(&*self.uuid()) {
                     let mut m = self.model.write().unwrap();
                     (self.apply_property_change_fun)(
@@ -2408,10 +2372,9 @@ where
                         .iter()
                         .map(|e| *e)
                         .chain(self.center_point)
-                        .enumerate()
                         .peekable();
-                    while let Some((idx, u)) = iter.next() {
-                        let v = if let Some((_, v)) = iter.peek() {
+                    while let Some(u) = iter.next() {
+                        let v = if let Some(v) = iter.peek() {
                             *v
                         } else {
                             break;
@@ -2603,7 +2566,7 @@ where
 
 /*
 fn arrowhead_combo(ui: &mut egui::Ui, name: &str, val: &mut ArrowheadType) -> egui::Response {
-    egui::ComboBox::from_id_source(name)
+    egui::ComboBox::from_id_salt(name)
         .selected_text(val.name())
         .show_ui(ui, |ui| {
             for sv in [ArrowheadType::None, ArrowheadType::OpenTriangle,

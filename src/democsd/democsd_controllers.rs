@@ -1,6 +1,6 @@
 use crate::common::canvas;
 use crate::common::controller::{
-    ClickHandlingStatus, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2,
+    ClickHandlingStatus, ContainerGen2, DiagramController, DiagramControllerGen2,
     DragHandlingStatus, ElementController, ElementControllerGen2, FlipMulticonnection,
     InsensitiveCommand, ModifierKeys, MulticonnectionView, SensitiveCommand, TargettingStatus,
     Tool, VertexInformation,
@@ -255,7 +255,7 @@ fn tool_change_fun(tool: &mut Option<NaiveDemoCsdTool>, ui: &mut egui::Ui) {
     }
 }
 
-fn menubar_options_fun(controller: &mut DiagramView, context: &mut NHApp, ui: &mut egui::Ui) {}
+fn menubar_options_fun(controller: &mut DiagramView, _context: &mut NHApp, _ui: &mut egui::Ui) {}
 
 pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let uuid = uuid::Uuid::now_v7();
@@ -504,7 +504,7 @@ pub enum KindedDemoCsdElement<'a> {
 }
 
 impl<'a> From<&'a DiagramView> for KindedDemoCsdElement<'a> {
-    fn from(from: &'a DiagramView) -> Self {
+    fn from(_from: &'a DiagramView) -> Self {
         Self::Diagram {}
     }
 }
@@ -1753,7 +1753,7 @@ fn democsd_link(
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) {
         ui.label("Type:");
-        egui::ComboBox::from_id_source("Type:")
+        egui::ComboBox::from_id_salt("Type:")
             .selected_text(buffer.link_type.char())
             .show_ui(ui, |ui| {
                 for value in [
