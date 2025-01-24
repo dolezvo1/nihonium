@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use sophia_api::{
+use sophia::api::{
     term::{GraphName, IriRef, LanguageTag, SimpleTerm},
     MownStr,
 };

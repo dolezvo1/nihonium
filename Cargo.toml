@@ -6,12 +6,12 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-eframe = "0.29"
-egui_extras = "0.29"
-egui_dock = "0.14"
-rfd = "0.14.1"
-uuid = { version = "1.10.0", features = [ "std", "v7" ] }
+eframe = "0.30"
+egui_extras = "0.30"
+egui_dock = "0.15"
+rfd = "0.15"
+uuid = { version = "1.12", features = [ "std", "v7" ] }
 
 # RDF
-sophia_api = "0.8.0"
-sophia_sparql = "0.1.0-alpha.0"
+sophia = { version = "0.9", features = [ "jsonld", "xml" ] }
+sophia_sparql = "0.9"

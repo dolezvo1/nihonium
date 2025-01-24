@@ -15,7 +15,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use sophia_api::{prelude::SparqlDataset, sparql::Query};
+use sophia::api::{prelude::SparqlDataset, sparql::Query};
 use sophia_sparql::{ResultTerm, SparqlQuery, SparqlWrapper};
 
 type ArcRwLockController = Arc<
@@ -434,6 +434,9 @@ fn menubar_options_fun(
     context: &mut NHApp,
     ui: &mut egui::Ui,
 ) {
+    if ui.button("Import RDF data").clicked() {
+        // TODO: import stuff
+    }
     if ui.button("SPARQL Queries").clicked() {
         let uuid = uuid::Uuid::now_v7();
         context.add_custom_tab(
