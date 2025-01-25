@@ -12,6 +12,7 @@ pub enum DiagramCommand {
     SetLastChangeFlag,
     UndoImmediate,
     RedoImmediate,
+    DeleteSelectedElements,
 }
 
 pub trait DiagramController: Any {
@@ -37,7 +38,7 @@ pub trait DiagramController: Any {
     //    Box::new(std::iter::empty::<Arc<RwLock<dyn ElementController>>>())
     //}
 
-    fn apply_command(&mut self, command: DiagramCommand);
+    fn apply_command(&mut self, command: DiagramCommand, global_undo: &mut Vec<Arc<String>>);
 
     fn draw_in(&mut self, canvas: &mut dyn NHCanvas, mouse_pos: Option<egui::Pos2>);
 }
@@ -992,7 +993,11 @@ where
         );
     }
 
-    fn apply_command(&mut self, command: DiagramCommand) {
+    fn apply_command(
+        &mut self,
+        command: DiagramCommand,
+        global_undo: &mut Vec<Arc<String>>,
+    ) {
         match command {
             DiagramCommand::DropRedoStackAndLastChangeFlag => {
                 self.redo_stack.clear();
@@ -1021,6 +1026,12 @@ where
                     return;
                 };
                 self.apply_commands(vec![redo_command.to_selection_sensitive()], &mut vec![], true, false);
+            }
+            DiagramCommand::DeleteSelectedElements => {
+                let mut undo = vec![];
+                self.apply_commands(vec![SensitiveCommand::DeleteSelectedElements], &mut undo, true, true);
+                self.last_change_flag = true;
+                global_undo.extend(undo.into_iter());
             }
         }
     }

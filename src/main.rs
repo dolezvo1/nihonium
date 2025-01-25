@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
+use common::controller::SensitiveCommand;
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
@@ -190,7 +191,7 @@ impl NHContext {
         let Some(e) = self.undo_stack.pop() else { return; };
         {
             let mut c = e.1.write().unwrap();
-            c.apply_command(DiagramCommand::UndoImmediate);
+            c.apply_command(DiagramCommand::UndoImmediate, &mut vec![]);
         }
         self.redo_stack.push(e);
     }
@@ -198,7 +199,7 @@ impl NHContext {
         let Some(e) = self.redo_stack.pop() else { return; };
         {
             let mut c = e.1.write().unwrap();
-            c.apply_command(DiagramCommand::RedoImmediate);
+            c.apply_command(DiagramCommand::RedoImmediate, &mut vec![]);
         }
         self.undo_stack.push(e);
     }
@@ -232,12 +233,12 @@ impl NHContext {
                 if !undo_accumulator.is_empty() {
                     for (_uuid, c) in self.diagram_controllers.iter().filter(|(uuid, _c)| *uuid != last_focused_diagram) {
                         let mut c = c.write().unwrap();
-                        c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag);
+                        c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
                     }
                     
                     self.redo_stack.clear();
-                    controller_lock.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag);
-                    controller_lock.apply_command(DiagramCommand::SetLastChangeFlag);
+                    controller_lock.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
+                    controller_lock.apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
                     
                     for command_label in undo_accumulator {
                         self.undo_stack.push((command_label, c.clone()));
@@ -679,12 +680,12 @@ impl NHContext {
         if !undo_accumulator.is_empty() {
             for (_uuid, c) in self.diagram_controllers.iter().filter(|(uuid, _c)| *uuid != tab_uuid) {
                 let mut c = c.write().unwrap();
-                c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag);
+                c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
             }
             
             self.redo_stack.clear();
-            diagram_controller.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag);
-            diagram_controller.apply_command(DiagramCommand::SetLastChangeFlag);
+            diagram_controller.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
+            diagram_controller.apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
             
             for command_label in undo_accumulator {
                 self.undo_stack.push((command_label, diagram_controller_arc.clone()));
@@ -824,8 +825,21 @@ impl eframe::App for NHApp {
                 self.context.redo_immediate();
             } else if ui.input_mut(|i| i.consume_shortcut(&self.context.undo_shortcut)) {
                 self.context.undo_immediate();
-            } else if ui.input_mut(|i| i.consume_shortcut(&self.context.delete_shortcut)) {
-                // TODO: self.apply_commands(vec![SensitiveCommand::DeleteSelectedElements], true, true);
+            }
+            
+            if ui.input(|i| i.events.iter()
+                    .find(|e| matches!(e, egui::Event::Key{key, pressed, ..} if *pressed && *key == egui::Key::Delete)).is_some()) {
+                match self.tree.find_active_focused() {
+                    Some((_, NHTab::Diagram { uuid })) => {
+                        if let Some(ac) = self.context.diagram_controllers.get(&uuid) {
+                            let mut c = ac.write().unwrap();
+                            let mut undo = vec![];
+                            c.apply_command(DiagramCommand::DeleteSelectedElements, &mut undo);
+                            self.context.undo_stack.extend(undo.into_iter().map(|e| (e, ac.clone())));
+                        }
+                    },
+                    _ => {},
+                }
             }
             
             egui::menu::bar(ui, |ui| {
