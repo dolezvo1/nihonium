@@ -102,16 +102,38 @@ impl ModifierKeys {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum ClickHandlingStatus {
-    NotHandled,
-    HandledByElement,
-    HandledByContainer,
+pub enum InputEvent {
+    MouseDown(egui::Pos2),
+    MouseUp(egui::Pos2),
+    Click(egui::Pos2),
+    Drag {from: egui::Pos2, delta: egui::Vec2},
+}
+
+impl InputEvent {
+    pub fn mouse_position(&self) -> &egui::Pos2 {
+        match self {
+            InputEvent::MouseDown(pos2) => pos2,
+            InputEvent::MouseUp(pos2) => pos2,
+            InputEvent::Click(pos2) => pos2,
+            InputEvent::Drag { from, delta } => from,
+        }
+    }
+    
+    pub fn offset_by(&self, offset: egui::Vec2) -> InputEvent {
+        match self {
+            InputEvent::MouseDown(pos) => InputEvent::MouseDown(*pos + offset),
+            InputEvent::MouseUp(pos) => InputEvent::MouseUp(*pos + offset),
+            InputEvent::Click(pos) => InputEvent::Click(*pos + offset),
+            InputEvent::Drag { from, delta } => InputEvent::Drag { from: *from + offset, delta: *delta },
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum DragHandlingStatus {
-    NotHandled,
-    Handled,
+pub enum EventHandlingStatus {
+    NotHandled, // = other element must handle it
+    HandledByElement, // = handled by element only
+    HandledByContainer, // = fully handled
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -305,20 +327,13 @@ pub trait ElementControllerGen2<
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus;
-    fn click(
+    fn handle_event(
         &mut self,
-        tool: &mut Option<ToolT>,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-        pos: egui::Pos2,
+        event: InputEvent,
         modifiers: ModifierKeys,
-    ) -> ClickHandlingStatus;
-    fn drag(
-        &mut self,
         tool: &mut Option<ToolT>,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-        last_pos: egui::Pos2,
-        delta: egui::Vec2,
-    ) -> DragHandlingStatus;
+    ) -> EventHandlingStatus;
     fn apply_command(
         &mut self,
         command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
@@ -379,7 +394,6 @@ pub struct DiagramControllerGen2<
     event_order: Vec<uuid::Uuid>,
     selected_elements: HashSet<uuid::Uuid>,
     all_selected_elements: HashSet<uuid::Uuid>,
-    sticky_element: Option<uuid::Uuid>,
 
     pub _layers: Vec<bool>,
 
@@ -508,7 +522,6 @@ where
             event_order,
             selected_elements: HashSet::new(),
             all_selected_elements: HashSet::new(),
-            sticky_element: None,
 
             _layers: vec![true],
 
@@ -540,23 +553,24 @@ where
         self.self_reference.upgrade().unwrap()
     }
     
-    fn click(&mut self, pos: egui::Pos2, modifiers: ModifierKeys, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
-        self.current_tool.as_mut().map(|e| e.reset_event_lock());
-
+    fn handle_event(&mut self, event: InputEvent, modifiers: ModifierKeys, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
         let mut commands = Vec::new();
-
-        let mut handled = self
-            .event_order
+        
+        if matches!(event, InputEvent::Click(_)) {
+            self.current_tool.as_mut().map(|e| e.reset_event_lock());
+        }
+        
+        let child = self.event_order
             .iter()
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
             .map(|uc| {
-                match uc.1.write().unwrap().click(
+                match uc.1.write().unwrap().handle_event(
+                    event,
+                    modifiers,
                     &mut self.current_tool,
                     &mut commands,
-                    pos,
-                    modifiers,
                 ) {
-                    ClickHandlingStatus::HandledByElement => {
+                    EventHandlingStatus::HandledByElement if matches!(event, InputEvent::Click(_)) => {
                         if !modifiers.command {
                             commands.push(SensitiveCommand::SelectAll(false));
                             commands.push(SensitiveCommand::Select(
@@ -569,64 +583,45 @@ where
                                 !self.selected_elements.contains(&uc.0),
                             ));
                         }
-                        ClickHandlingStatus::HandledByContainer
+                        EventHandlingStatus::HandledByContainer
                     }
                     a => a,
                 }
             })
-            .find(|e| *e == ClickHandlingStatus::HandledByContainer)
-            .ok_or_else(|| {
-                commands.push(SensitiveCommand::SelectAll(false));
-            })
-            .is_ok();
+            .find(|e| *e == EventHandlingStatus::HandledByContainer);
+        
+        let handled = match event {
+            InputEvent::MouseDown(_) | InputEvent::MouseUp(_) | InputEvent::Drag { .. } => child.is_some(),
+            InputEvent::Click(pos) => {
+                let mut handled = child
+                    .ok_or_else(|| {
+                        commands.push(SensitiveCommand::SelectAll(false));
+                    })
+                    .is_ok();
 
-        if !handled {
-            if let Some(t) = self.current_tool.as_mut() {
-                t.add_position(pos);
-            }
-        }
-        let mut tool = self.current_tool.take();
-        if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
-            commands.push(SensitiveCommand::AddElement(
-                *self.uuid(),
-                AddCommandElementT::from(new_a),
-            ));
-            handled = true;
-        }
-        self.current_tool = tool;
+                if !handled {
+                    if let Some(t) = self.current_tool.as_mut() {
+                        t.add_position(pos);
+                    }
+                }
+                
+                let mut tool = self.current_tool.take();
+                if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
+                    commands.push(SensitiveCommand::AddElement(
+                        *self.uuid(),
+                        AddCommandElementT::from(new_a),
+                    ));
+                    handled = true;
+                }
+                self.current_tool = tool;
 
+                handled
+            },
+        };
+        
         self.apply_commands(commands, undo_accumulator, true, true);
 
         handled
-    }
-    fn drag(&mut self, last_pos: egui::Pos2, delta: egui::Vec2, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
-        let mut commands = Vec::new();
-
-        let ret = if let Some(e) = self
-            .sticky_element
-            .and_then(|k| self.owned_controllers.get(&k).map(|e| (k, e)))
-            .iter()
-            .map(|e| e.clone())
-            .chain(
-                self.event_order
-                    .iter()
-                    .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e))),
-            )
-            .find(|uc| {
-                uc.1.write()
-                    .unwrap()
-                    .drag(&mut self.current_tool, &mut commands, last_pos, delta)
-                    == DragHandlingStatus::Handled
-            }) {
-            self.sticky_element = Some(e.0);
-            true
-        } else {
-            false
-        };
-
-        self.apply_commands(commands, undo_accumulator, true, true);
-
-        ret
     }
 
     fn apply_commands(
@@ -881,40 +876,53 @@ where
         (Box::new(ui_canvas), painter_response, inner_mouse)
     }
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>) {
-        // Handle camera and element clicks/drags
-
-        if response.clicked() {
+        macro_rules! pos_to_abs {
+            ($pos:expr) => {
+                (($pos - self.camera_offset - response.rect.min.to_vec2()) / self.camera_scale).to_pos2()
+            };
+        }
+        
+        // Handle mouse_down/drag/click/mouse_up
+        let modifiers = ui.input(|i| ModifierKeys::from_egui(&i.modifiers));
+        ui.input(|is| is.events.iter()
+            .for_each(|e| match e {
+                egui::Event::PointerButton { pos, button, pressed, .. } if *pressed && *button == egui::PointerButton::Primary => {
+                    self.last_unhandled_mouse_pos = Some(pos_to_abs!(*pos));
+                    self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifiers, undo_accumulator);
+                },
+                _ => {}
+            })
+        );
+        if response.dragged_by(egui::PointerButton::Primary) {
+            if let Some(old_pos) = self.last_unhandled_mouse_pos {
+                let delta = response.drag_delta() / self.camera_scale;
+                self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifiers, undo_accumulator);
+                self.last_unhandled_mouse_pos = Some(old_pos + delta);
+            }
+        }
+        if response.clicked_by(egui::PointerButton::Primary) {
             if let Some(pos) = ui.ctx().pointer_interact_pos() {
-                self.click(
-                    ((pos - self.camera_offset - response.rect.min.to_vec2()) / self.camera_scale)
-                        .to_pos2(),
-                    ui.input(|i| ModifierKeys::from_egui(&i.modifiers)),
-                    undo_accumulator,
-                );
+                self.handle_event(InputEvent::Click(pos_to_abs!(pos)), modifiers, undo_accumulator);
             }
-        } else if response.dragged_by(egui::PointerButton::Middle) {
+        }
+        ui.input(|is| is.events.iter()
+            .for_each(|e| match e {
+                egui::Event::PointerButton { pos, button, pressed, .. } if !*pressed && *button == egui::PointerButton::Primary => {
+                    self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifiers, undo_accumulator);
+                    self.last_unhandled_mouse_pos = None;
+                },
+                _ => {}
+            })
+        );
+        
+        // Handle diagram drag
+        if response.dragged_by(egui::PointerButton::Middle) {
             self.camera_offset += response.drag_delta();
-        } else if response.drag_started_by(egui::PointerButton::Primary) {
-            self.last_unhandled_mouse_pos = ui.ctx().pointer_interact_pos();
-        } else if response.dragged_by(egui::PointerButton::Primary) {
-            if let Some(cursor_pos) = &self.last_unhandled_mouse_pos {
-                let last_down_pos =
-                    (*cursor_pos - self.camera_offset - response.rect.min.to_vec2())
-                        / self.camera_scale;
-                self.drag(
-                    last_down_pos.to_pos2(),
-                    response.drag_delta() / self.camera_scale,
-                    undo_accumulator,
-                );
-                self.last_unhandled_mouse_pos = ui.ctx().pointer_interact_pos();
-            }
-        } else if response.drag_stopped() {
-            self.last_unhandled_mouse_pos = None;
         }
 
-        // Handle zoom
+        // Handle diagram zoom
         if response.hovered() {
-            let scroll_delta = ui.ctx().input(|i| i.raw_scroll_delta);
+            let scroll_delta = ui.input(|i| i.raw_scroll_delta);
 
             let factor = if scroll_delta.y > 0.0 && self.camera_scale < 10.0 {
                 1.5
@@ -1190,10 +1198,10 @@ pub struct PackageView<
     >,
     event_order: Vec<uuid::Uuid>,
     selected_elements: HashSet<uuid::Uuid>,
-    sticky_element: Option<uuid::Uuid>,
 
     buffer: BufferT,
 
+    dragged: bool,
     highlight: canvas::Highlight,
     bounds_rect: egui::Rect,
 
@@ -1289,9 +1297,9 @@ where
             owned_controllers,
             event_order,
             selected_elements: HashSet::new(),
-            sticky_element: None,
 
             buffer,
+            dragged: false,
             highlight: canvas::Highlight::NONE,
             bounds_rect,
 
@@ -1531,16 +1539,16 @@ where
         }
     }
 
-    fn click(
+    fn handle_event(
         &mut self,
+        event: InputEvent,
+        modifiers: ModifierKeys,
         tool: &mut Option<ToolT>,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-        pos: egui::Pos2,
-        modifiers: ModifierKeys,
-    ) -> ClickHandlingStatus {
+    ) -> EventHandlingStatus {
         tool.as_mut()
             .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
-        let offset_pos = pos - self.bounds_rect.left_top().to_vec2();
+        let offset_event = event.offset_by(- self.bounds_rect.left_top().to_vec2());
 
         let uc_status = self
             .event_order
@@ -1551,102 +1559,75 @@ where
                     uc,
                     uc.1.write()
                         .unwrap()
-                        .click(tool, commands, offset_pos, modifiers),
+                        .handle_event(offset_event, modifiers, tool, commands),
                 )
             })
-            .find(|e| e.1 != ClickHandlingStatus::NotHandled);
+            .find(|e| e.1 != EventHandlingStatus::NotHandled);
 
         tool.as_mut()
             .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
-
-        if self.min_shape().contains(pos) {
-            if let Some(tool) = tool {
-                tool.offset_by(self.bounds_rect.left_top().to_vec2());
-                tool.add_position(offset_pos);
-                tool.offset_by(-self.bounds_rect.left_top().to_vec2());
-                tool.add_element(ToolT::KindedElement::from(self), pos);
-
-                if let Some(new_a) = tool.try_construct(self) {
-                    commands.push(SensitiveCommand::AddElement(*self.uuid(), new_a.into()));
+        
+        match event {
+            InputEvent::MouseDown(pos) | InputEvent::MouseUp(pos) => {
+                if uc_status.is_none() && self.min_shape().contains(pos) {
+                    self.dragged = matches!(event, InputEvent::MouseDown(_));
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
                 }
-
-                return ClickHandlingStatus::HandledByContainer;
-            } else if let Some((uc, status)) = uc_status {
-                if status == ClickHandlingStatus::HandledByElement {
-                    if !modifiers.command {
-                        commands.push(SensitiveCommand::SelectAll(false));
-                        commands.push(SensitiveCommand::Select(
-                            std::iter::once(uc.0).collect(),
-                            true,
-                        ));
+            },
+            InputEvent::Click(pos) => {
+                if self.min_shape().contains(pos) {
+                    if let Some(tool) = tool {
+                        tool.offset_by(self.bounds_rect.left_top().to_vec2());
+                        tool.add_position(*offset_event.mouse_position());
+                        tool.offset_by(-self.bounds_rect.left_top().to_vec2());
+                        tool.add_element(ToolT::KindedElement::from(self), pos);
+                        
+                        if let Some(new_a) = tool.try_construct(self) {
+                            commands.push(SensitiveCommand::AddElement(*self.uuid(), new_a.into()));
+                        }
+                        
+                        EventHandlingStatus::HandledByContainer
+                    } else if let Some((uc, status)) = uc_status {
+                        if status == EventHandlingStatus::HandledByElement {
+                            if !modifiers.command {
+                                commands.push(SensitiveCommand::SelectAll(false));
+                                commands.push(SensitiveCommand::Select(
+                                    std::iter::once(uc.0).collect(),
+                                    true,
+                                ));
+                            } else {
+                                commands.push(SensitiveCommand::Select(
+                                    std::iter::once(uc.0).collect(),
+                                    !self.selected_elements.contains(&uc.0),
+                                ));
+                            }
+                        }
+                        EventHandlingStatus::HandledByContainer
                     } else {
-                        commands.push(SensitiveCommand::Select(
-                            std::iter::once(uc.0).collect(),
-                            !self.selected_elements.contains(&uc.0),
+                        EventHandlingStatus::HandledByElement
+                    }
+                } else {
+                    uc_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled)
+                }
+            },
+            InputEvent::Drag { from, delta } => {
+                if self.dragged {
+                    if self.highlight.selected {
+                        commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                    } else {
+                        commands.push(SensitiveCommand::MoveElements(
+                            std::iter::once(*self.uuid()).collect(),
+                            delta,
                         ));
                     }
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
                 }
-                return ClickHandlingStatus::HandledByContainer;
-            } else {
-                return ClickHandlingStatus::HandledByElement;
-            }
+            },
         }
-
-        ClickHandlingStatus::NotHandled
-    }
-    fn drag(
-        &mut self,
-        tool: &mut Option<ToolT>,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-        last_pos: egui::Pos2,
-        delta: egui::Vec2,
-    ) -> DragHandlingStatus {
-        tool.as_mut()
-            .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
-        let offset_pos = last_pos - self.bounds_rect.left_top().to_vec2();
-
-        let handled = if let Some(e) = self
-            .sticky_element
-            .and_then(|k| self.owned_controllers.get(&k).map(|e| (k, e)))
-            .iter()
-            .map(|e| e.clone())
-            .chain(
-                self.event_order
-                    .iter()
-                    .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e))),
-            )
-            .find(|uc| {
-                uc.1.write()
-                    .unwrap()
-                    .drag(tool, commands, offset_pos, delta)
-                    == DragHandlingStatus::Handled
-            }) {
-            self.sticky_element = Some(e.0);
-            true
-        } else {
-            false
-        };
-        let handled = match handled {
-            true => DragHandlingStatus::Handled,
-            false => DragHandlingStatus::NotHandled,
-        };
-
-        tool.as_mut()
-            .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
-
-        if handled == DragHandlingStatus::NotHandled && self.min_shape().contains(last_pos) {
-            if self.highlight.selected {
-                commands.push(SensitiveCommand::MoveSelectedElements(delta));
-            } else {
-                commands.push(SensitiveCommand::MoveElements(
-                    std::iter::once(*self.uuid()).collect(),
-                    delta,
-                ));
-            }
-            return DragHandlingStatus::Handled;
-        }
-
-        handled
     }
 
     fn apply_command(
@@ -1881,6 +1862,7 @@ pub struct MulticonnectionView<
         >,
     >,
 
+    dragged_node: Option<uuid::Uuid>,
     highlight: canvas::Highlight,
     selected_vertices: HashSet<uuid::Uuid>,
     center_point: Option<(uuid::Uuid, egui::Pos2)>,
@@ -1989,6 +1971,7 @@ where
             buffer,
             source,
             destination,
+            dragged_node: None,
             highlight: canvas::Highlight::NONE,
             selected_vertices: HashSet::new(),
 
@@ -2186,56 +2169,19 @@ where
         TargettingStatus::NotDrawn
     }
 
-    fn click(
+    fn handle_event(
         &mut self,
+        event: InputEvent,
+        modifiers: ModifierKeys,
         _tool: &mut Option<ToolT>,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-        pos: egui::Pos2,
-        modifiers: ModifierKeys,
-    ) -> ClickHandlingStatus {
+    ) -> EventHandlingStatus {
         const DISTANCE_THRESHOLD: f32 = 3.0;
-
-        macro_rules! handle_vertex {
-            ($uuid:expr) => {
-                if !modifiers.command {
-                    commands.push(SensitiveCommand::SelectAll(false));
-                    commands.push(SensitiveCommand::Select(
-                        std::iter::once(*$uuid).collect(),
-                        true,
-                    ));
-                } else {
-                    commands.push(SensitiveCommand::Select(
-                        std::iter::once(*$uuid).collect(),
-                        !self.selected_vertices.contains($uuid),
-                    ));
-                }
-                return ClickHandlingStatus::HandledByContainer;
-            };
-        }
-
+        
         fn is_over(a: egui::Pos2, b: egui::Pos2) -> bool {
             a.distance(b) <= DISTANCE_THRESHOLD
         }
-
-        if let Some((uuid, _)) = self.center_point.as_ref().filter(|e| is_over(pos, e.1)) {
-            handle_vertex!(uuid);
-        }
-
-        macro_rules! check_joints {
-            ($v:ident) => {
-                for path in &self.$v {
-                    let stop_idx = path.len();
-                    for joint in &path[1..stop_idx] {
-                        if is_over(pos, joint.1) {
-                            handle_vertex!(&joint.0);
-                        }
-                    }
-                }
-            };
-        }
-        check_joints!(source_points);
-        check_joints!(dest_points);
-
+        
         fn dist_to_line_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
             fn dist2(a: egui::Pos2, b: egui::Pos2) -> f32 {
                 (a.x - b.x).powf(2.0) + (a.y - b.y).powf(2.0)
@@ -2245,7 +2191,7 @@ where
                 dist2(p, a)
             } else {
                 let t =
-                    (((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2).clamp(0.0, 1.0);
+                (((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2).clamp(0.0, 1.0);
                 dist2(
                     p,
                     egui::Pos2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)),
@@ -2253,154 +2199,193 @@ where
             };
             return distance_squared.sqrt();
         }
-
-        // Check segments on paths
-        macro_rules! check_path_segments {
-            ($v:ident) => {
-                //let center_point = self.center_point.clone();
-                for path in &self.$v {
-                    // Iterates over 2-windows
-                    let mut iter = path.iter().map(|e| *e).chain(self.center_point).peekable();
-                    while let Some(u) = iter.next() {
-                        let v = if let Some(v) = iter.peek() {
-                            *v
-                        } else {
-                            break;
-                        };
-
-                        if dist_to_line_segment(pos, u.1, v.1) <= DISTANCE_THRESHOLD {
-                            return ClickHandlingStatus::HandledByElement;
-                        }
+        
+        match event {
+            InputEvent::MouseDown(pos) => {
+                // Either add a new node and drag it or mark existing node as dragged
+                
+                // Check whether over center point
+                match self.center_point {
+                    Some((uuid, pos2)) if is_over(pos, pos2) => {
+                        self.dragged_node = Some(uuid);
+                        return EventHandlingStatus::HandledByContainer;
                     }
-                }
-            };
-        }
-        check_path_segments!(source_points);
-        check_path_segments!(dest_points);
-
-        // In case there is no center_point, also check all-to-all of last points
-        if self.center_point == None {
-            for u in self.source_points.iter().flat_map(|e| e.last()) {
-                for v in self.dest_points.iter().flat_map(|e| e.last()) {
-                    if dist_to_line_segment(pos, u.1, v.1) <= DISTANCE_THRESHOLD {
-                        return ClickHandlingStatus::HandledByElement;
-                    }
-                }
-            }
-        }
-        ClickHandlingStatus::NotHandled
-    }
-    fn drag(
-        &mut self,
-        _tool: &mut Option<ToolT>,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-        last_pos: egui::Pos2,
-        delta: egui::Vec2,
-    ) -> DragHandlingStatus {
-        const DISTANCE_THRESHOLD: f32 = 3.0;
-
-        fn is_over(a: egui::Pos2, b: egui::Pos2) -> bool {
-            a.distance(b) <= DISTANCE_THRESHOLD
-        }
-
-        match self.center_point {
-            // Check whether over center point, if so move it
-            Some((uuid, pos)) => {
-                if is_over(last_pos, pos) {
-                    if self.selected_vertices.contains(&uuid) {
-                        commands.push(SensitiveCommand::MoveSelectedElements(delta));
-                    } else {
-                        commands.push(SensitiveCommand::MoveElements(
-                            std::iter::once(uuid).collect(),
-                            delta,
-                        ));
-                    }
-
-                    return DragHandlingStatus::Handled;
-                }
-            }
-            // Check whether over a midpoint, if so set center point
-            None => {
-                // TODO: this is generally wrong (why??)
-                let midpoint = self.position();
-                if is_over(last_pos, midpoint) {
-                    commands.push(SensitiveCommand::AddElement(
-                        *self.uuid(),
-                        VertexInformation {
-                            after: uuid::Uuid::nil(),
-                            id: uuid::Uuid::now_v7(),
-                            position: midpoint + delta,
-                        }
-                        .into(),
-                    ));
-                    return DragHandlingStatus::Handled;
-                }
-            }
-        }
-
-        // Check whether over a joint, if so move it
-        macro_rules! check_joints {
-            ($v:ident) => {
-                for path in &mut self.$v {
-                    let stop_idx = path.len();
-                    for joint in &mut path[1..stop_idx] {
-                        if is_over(last_pos, joint.1) {
-                            if self.selected_vertices.contains(&joint.0) {
-                                commands.push(SensitiveCommand::MoveSelectedElements(delta));
-                            } else {
-                                commands.push(SensitiveCommand::MoveElements(
-                                    std::iter::once(joint.0).collect(),
-                                    delta,
-                                ));
+                    // TODO: this is generally wrong (why??)
+                    None if is_over(pos, self.position()) => {
+                        self.dragged_node = Some(uuid::Uuid::now_v7());
+                        commands.push(SensitiveCommand::AddElement(
+                            *self.uuid(),
+                            VertexInformation {
+                                after: uuid::Uuid::nil(),
+                                id: self.dragged_node.unwrap(),
+                                position: self.position(),
                             }
-
-                            return DragHandlingStatus::Handled;
-                        }
+                            .into(),
+                        ));
+                        
+                        return EventHandlingStatus::HandledByContainer;
                     }
+                    _ => {}
                 }
-            };
-        }
-        check_joints!(source_points);
-        check_joints!(dest_points);
-
-        // Check whether over midpoint, if so add a new joint
-        macro_rules! check_midpoints {
-            ($v:ident) => {
-                for path in &mut self.$v {
-                    // Iterates over 2-windows
-                    let mut iter = path
-                        .iter()
-                        .map(|e| *e)
-                        .chain(self.center_point)
-                        .peekable();
-                    while let Some(u) = iter.next() {
-                        let v = if let Some(v) = iter.peek() {
-                            *v
-                        } else {
-                            break;
-                        };
-
-                        let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
-                        if is_over(last_pos, midpoint) {
-                            commands.push(SensitiveCommand::AddElement(
-                                *self.uuid(),
-                                VertexInformation {
-                                    after: u.0,
-                                    id: uuid::Uuid::now_v7(),
-                                    position: midpoint + delta,
+                
+                // Check whether over midpoint, if so add a new joint
+                macro_rules! check_midpoints {
+                    ($v:ident) => {
+                        for path in &mut self.$v {
+                            // Iterates over 2-windows
+                            let mut iter = path
+                            .iter()
+                            .map(|e| *e)
+                            .chain(self.center_point)
+                            .peekable();
+                            while let Some(u) = iter.next() {
+                                let v = if let Some(v) = iter.peek() {
+                                    *v
+                                } else {
+                                    break;
+                                };
+                                
+                                let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
+                                if is_over(pos, midpoint) {
+                                    self.dragged_node = Some(uuid::Uuid::now_v7());
+                                    commands.push(SensitiveCommand::AddElement(
+                                        *self.uuid(),
+                                        VertexInformation {
+                                            after: u.0,
+                                            id: self.dragged_node.unwrap(),
+                                            position: pos,
+                                        }
+                                        .into(),
+                                    ));
+                                    
+                                    return EventHandlingStatus::HandledByContainer;
                                 }
-                                .into(),
+                            }
+                        }
+                    };
+                }
+                check_midpoints!(source_points);
+                check_midpoints!(dest_points);
+                
+                // Check whether over a joint, if so drag it
+                macro_rules! check_joints {
+                    ($v:ident) => {
+                        for path in &mut self.$v {
+                            let stop_idx = path.len();
+                            for joint in &mut path[1..stop_idx] {
+                                if is_over(pos, joint.1) {
+                                    self.dragged_node = Some(joint.0);
+                                    
+                                    return EventHandlingStatus::HandledByContainer;
+                                }
+                            }
+                        }
+                    };
+                }
+                check_joints!(source_points);
+                check_joints!(dest_points);
+                
+                EventHandlingStatus::NotHandled
+            },
+            InputEvent::MouseUp(_) => {
+                if self.dragged_node.take().is_some() {
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            },
+            InputEvent::Click(pos) => {
+                macro_rules! handle_vertex_click {
+                    ($uuid:expr) => {
+                        if !modifiers.command {
+                            commands.push(SensitiveCommand::SelectAll(false));
+                            commands.push(SensitiveCommand::Select(
+                                std::iter::once(*$uuid).collect(),
+                                true,
                             ));
-                            return DragHandlingStatus::Handled;
+                        } else {
+                            commands.push(SensitiveCommand::Select(
+                                std::iter::once(*$uuid).collect(),
+                                !self.selected_vertices.contains($uuid),
+                            ));
+                        }
+                        return EventHandlingStatus::HandledByContainer;
+                    };
+                }
+                
+                if let Some((uuid, _)) = self.center_point.as_ref().filter(|e| is_over(pos, e.1)) {
+                    handle_vertex_click!(uuid);
+                }
+                
+                macro_rules! check_joints_click {
+                    ($pos:expr, $v:ident) => {
+                        for path in &self.$v {
+                            let stop_idx = path.len();
+                            for joint in &path[1..stop_idx] {
+                                if is_over($pos, joint.1) {
+                                    handle_vertex_click!(&joint.0);
+                                }
+                            }
+                        }
+                    };
+                }
+                
+                check_joints_click!(pos, source_points);
+                check_joints_click!(pos, dest_points);
+                
+                // Check segments on paths
+                macro_rules! check_path_segments {
+                    ($v:ident) => {
+                        //let center_point = self.center_point.clone();
+                        for path in &self.$v {
+                            // Iterates over 2-windows
+                            let mut iter = path.iter().map(|e| *e).chain(self.center_point).peekable();
+                            while let Some(u) = iter.next() {
+                                let v = if let Some(v) = iter.peek() {
+                                    *v
+                                } else {
+                                    break;
+                                };
+                                
+                                if dist_to_line_segment(pos, u.1, v.1) <= DISTANCE_THRESHOLD {
+                                    return EventHandlingStatus::HandledByElement;
+                                }
+                            }
+                        }
+                    };
+                }
+                check_path_segments!(source_points);
+                check_path_segments!(dest_points);
+                
+                // In case there is no center_point, also check all-to-all of last points
+                if self.center_point == None {
+                    for u in self.source_points.iter().flat_map(|e| e.last()) {
+                        for v in self.dest_points.iter().flat_map(|e| e.last()) {
+                            if dist_to_line_segment(pos, u.1, v.1) <= DISTANCE_THRESHOLD {
+                                return EventHandlingStatus::HandledByElement;
+                            }
                         }
                     }
                 }
-            };
+                EventHandlingStatus::NotHandled
+            },
+            InputEvent::Drag { delta, .. } => {
+                let Some(dragged_node) = self.dragged_node else {
+                    return EventHandlingStatus::NotHandled;
+                };
+                
+                if self.selected_vertices.contains(&dragged_node) {
+                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                } else {
+                    commands.push(SensitiveCommand::MoveElements(
+                        std::iter::once(dragged_node).collect(),
+                        delta,
+                    ));
+                }
+                
+                EventHandlingStatus::HandledByContainer
+            },
         }
-        check_midpoints!(source_points);
-        check_midpoints!(dest_points);
-
-        DragHandlingStatus::NotHandled
     }
 
     fn apply_command(

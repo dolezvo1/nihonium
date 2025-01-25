@@ -1,9 +1,6 @@
 use crate::common::canvas;
 use crate::common::controller::{
-    ClickHandlingStatus, ContainerGen2, DiagramController, DiagramControllerGen2,
-    DragHandlingStatus, ElementController, ElementControllerGen2, FlipMulticonnection,
-    InsensitiveCommand, ModifierKeys, MulticonnectionView, SensitiveCommand, TargettingStatus,
-    Tool, VertexInformation,
+    ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::democsd::democsd_models::{
     DemoCsdTransaction, DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType,
@@ -310,6 +307,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             transaction_selfactivating_buffer: false,
             comment_buffer: "".to_owned(),
 
+            dragged: false,
             highlight: canvas::Highlight::NONE,
             position: egui::Pos2::new(200.0, 200.0),
             bounds_rect: egui::Rect::ZERO,
@@ -332,6 +330,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             name_buffer: "Sale completion".to_owned(),
             comment_buffer: "".to_owned(),
             
+            dragged: false,
             highlight: canvas::Highlight::NONE,
             position: egui::Pos2::new(0.0, 0.0),
             min_shape: canvas::NHShape::ELLIPSE_ZERO,
@@ -356,6 +355,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             transaction_selfactivating_buffer: false,
             comment_buffer: "".to_owned(),
 
+            dragged: false,
             highlight: canvas::Highlight::NONE,
             position: egui::Pos2::new(200.0, 400.0),
             bounds_rect: egui::Rect::ZERO,
@@ -378,6 +378,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             name_buffer: "Sale transportation".to_owned(),
             comment_buffer: "".to_owned(),
             
+            dragged: false,
             highlight: canvas::Highlight::NONE,
             position: egui::Pos2::new(0.0, 0.0),
             min_shape: canvas::NHShape::ELLIPSE_ZERO,
@@ -402,6 +403,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             transaction_selfactivating_buffer: false,
             comment_buffer: "".to_owned(),
 
+            dragged: false,
             highlight: canvas::Highlight::NONE,
             position: egui::Pos2::new(200.0, 600.0),
             bounds_rect: egui::Rect::ZERO,
@@ -424,6 +426,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             name_buffer: "Sale controlling".to_owned(),
             comment_buffer: "".to_owned(),
             
+            dragged: false,
             highlight: canvas::Highlight::NONE,
             position: egui::Pos2::new(0.0, 0.0),
             min_shape: canvas::NHShape::ELLIPSE_ZERO,
@@ -448,6 +451,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             transaction_selfactivating_buffer: true,
             comment_buffer: "".to_owned(),
 
+            dragged: false,
             highlight: canvas::Highlight::NONE,
             position: egui::Pos2::new(400.0, 200.0),
             bounds_rect: egui::Rect::ZERO,
@@ -671,6 +675,7 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
                         transaction_selfactivating_buffer: false,
                         comment_buffer: "".to_owned(),
 
+                        dragged: false,
                         highlight: canvas::Highlight::NONE,
                         position: pos,
                         bounds_rect: egui::Rect::ZERO,
@@ -692,6 +697,7 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
                     name_buffer: "Transaction".to_owned(),
                     comment_buffer: "".to_owned(),
                     
+                    dragged: false,
                     highlight: canvas::Highlight::NONE,
                     position: egui::Pos2::new(0.0, 0.0),
                     min_shape: canvas::NHShape::ELLIPSE_ZERO,
@@ -717,6 +723,7 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
                         transaction_selfactivating_buffer: false,
                         comment_buffer: "".to_owned(),
 
+                        dragged: false,
                         highlight: canvas::Highlight::NONE,
                         position: pos,
                         bounds_rect: egui::Rect::ZERO,
@@ -739,6 +746,7 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
                         name_buffer: "Bank".to_owned(),
                         comment_buffer: "".to_owned(),
 
+                        dragged: false,
                         highlight: canvas::Highlight::NONE,
                         position: pos,
                         min_shape: canvas::NHShape::Ellipse {
@@ -994,6 +1002,7 @@ pub struct DemoCsdTransactorView {
     transaction_selfactivating_buffer: bool,
     comment_buffer: String,
 
+    dragged: bool,
     highlight: canvas::Highlight,
     position: egui::Pos2,
     bounds_rect: egui::Rect,
@@ -1233,76 +1242,78 @@ impl
         }
     }
 
-    fn click(
+    fn handle_event(
         &mut self,
+        event: InputEvent,
+        modifiers: ModifierKeys,
         tool: &mut Option<NaiveDemoCsdTool>,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-        pos: egui::Pos2,
-        modifiers: ModifierKeys,
-    ) -> ClickHandlingStatus {
-        if let Some(t) = &self.transaction_view {
-            let mut t = t.write().unwrap();
-            match t.click(tool, commands, pos - self.position.to_vec2() + egui::Vec2::new(0.0, 4.0 * canvas::CLASS_MIDDLE_FONT_SIZE), modifiers) {
-                ClickHandlingStatus::NotHandled => {},
-                ClickHandlingStatus::HandledByElement => {
-                    if !modifiers.command {
-                        commands.push(SensitiveCommand::SelectAll(false));
-                        commands.push(SensitiveCommand::Select(
-                            std::iter::once(*t.uuid()).collect(),
-                            true,
-                        ));
-                    } else {
-                        commands.push(SensitiveCommand::Select(
-                            std::iter::once(*t.uuid()).collect(),
-                            !t.highlight.selected,
-                        ));
+    ) -> EventHandlingStatus {
+        match event {
+            InputEvent::MouseDown(pos) | InputEvent::MouseUp(pos) => {
+                if !self.min_shape().contains(pos) {
+                    return EventHandlingStatus::NotHandled;
+                }
+                self.dragged = matches!(event, InputEvent::MouseDown(_));
+                EventHandlingStatus::HandledByElement
+            },
+            InputEvent::Click(pos) => {
+                if let Some(t) = &self.transaction_view {
+                    let mut t = t.write().unwrap();
+                    let offset_event = event.offset_by(self.position.to_vec2() + egui::Vec2::new(0.0, 4.0 * canvas::CLASS_MIDDLE_FONT_SIZE));
+                    match t.handle_event(offset_event, modifiers, tool, commands) {
+                        EventHandlingStatus::NotHandled => {},
+                        EventHandlingStatus::HandledByElement => {
+                            if !modifiers.command {
+                                commands.push(SensitiveCommand::SelectAll(false));
+                                commands.push(SensitiveCommand::Select(
+                                    std::iter::once(*t.uuid()).collect(),
+                                    true,
+                                ));
+                            } else {
+                                commands.push(SensitiveCommand::Select(
+                                    std::iter::once(*t.uuid()).collect(),
+                                    !t.highlight.selected,
+                                ));
+                            }
+                            return EventHandlingStatus::HandledByContainer;
+                        }
+                        EventHandlingStatus::HandledByContainer => {
+                            return EventHandlingStatus::HandledByContainer;
+                        }
                     }
-                    return ClickHandlingStatus::HandledByContainer;
                 }
-                ClickHandlingStatus::HandledByContainer => {
-                    return ClickHandlingStatus::HandledByContainer;
+                
+                if !self.min_shape().contains(pos) {
+                    return EventHandlingStatus::NotHandled;
                 }
-            }
-        }
-        
-        if !self.min_shape().contains(pos) {
-            return ClickHandlingStatus::NotHandled;
-        }
 
-        if let Some(tool) = tool {
-            tool.add_element(KindedDemoCsdElement::Transactor { inner: self }, pos);
-        } else {
-            if !modifiers.command {
-                self.highlight.selected = true;
-            } else {
-                self.highlight.selected = !self.highlight.selected;
-            }
+                if let Some(tool) = tool {
+                    tool.add_element(KindedDemoCsdElement::Transactor { inner: self }, pos);
+                } else {
+                    if !modifiers.command {
+                        self.highlight.selected = true;
+                    } else {
+                        self.highlight.selected = !self.highlight.selected;
+                    }
+                }
+
+                EventHandlingStatus::HandledByElement
+            },
+            InputEvent::Drag { delta, .. } if self.dragged => {
+                if self.highlight.selected {
+                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                } else {
+                    commands.push(SensitiveCommand::MoveElements(
+                        std::iter::once(*self.uuid()).collect(),
+                        delta,
+                    ));
+                }
+
+                EventHandlingStatus::HandledByElement
+            },
+            _ => EventHandlingStatus::NotHandled
         }
-
-        ClickHandlingStatus::HandledByElement
-    }
-
-    fn drag(
-        &mut self,
-        _tool: &mut Option<NaiveDemoCsdTool>,
-        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-        last_pos: egui::Pos2,
-        delta: egui::Vec2,
-    ) -> DragHandlingStatus {
-        if !self.min_shape().contains(last_pos) {
-            return DragHandlingStatus::NotHandled;
-        }
-
-        if self.highlight.selected {
-            commands.push(SensitiveCommand::MoveSelectedElements(delta));
-        } else {
-            commands.push(SensitiveCommand::MoveElements(
-                std::iter::once(*self.uuid()).collect(),
-                delta,
-            ));
-        }
-
-        DragHandlingStatus::Handled
     }
 
     fn apply_command(
@@ -1418,6 +1429,7 @@ pub struct DemoCsdTransactionView {
     name_buffer: String,
     comment_buffer: String,
 
+    dragged: bool,
     highlight: canvas::Highlight,
     position: egui::Pos2,
     min_shape: canvas::NHShape,
@@ -1600,51 +1612,46 @@ impl
         }
     }
 
-    fn click(
+    fn handle_event(
         &mut self,
-        tool: &mut Option<NaiveDemoCsdTool>,
-        _commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-        pos: egui::Pos2,
+        event: InputEvent,
         modifiers: ModifierKeys,
-    ) -> ClickHandlingStatus {
-        if !self.min_shape().contains(pos) {
-            return ClickHandlingStatus::NotHandled;
-        }
-
-        if let Some(tool) = tool {
-            tool.add_element(KindedDemoCsdElement::Bank { inner: self }, pos);
-        } else {
-            if !modifiers.command {
-                self.highlight.selected = true;
-            } else {
-                self.highlight.selected = !self.highlight.selected;
-            }
-        }
-
-        ClickHandlingStatus::HandledByElement
-    }
-
-    fn drag(
-        &mut self,
-        _tool: &mut Option<NaiveDemoCsdTool>,
+        tool: &mut Option<NaiveDemoCsdTool>,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-        last_pos: egui::Pos2,
-        delta: egui::Vec2,
-    ) -> DragHandlingStatus {
-        if !self.min_shape().contains(last_pos) {
-            return DragHandlingStatus::NotHandled;
-        }
+    ) -> EventHandlingStatus {
+        match event {
+            e if !self.min_shape().contains(*e.mouse_position()) => return EventHandlingStatus::NotHandled,
+            InputEvent::MouseDown(_) | InputEvent::MouseUp(_) => {
+                self.dragged = matches!(event, InputEvent::MouseDown(_));
+                EventHandlingStatus::HandledByElement
+            },
+            InputEvent::Click(pos) => {
+                if let Some(tool) = tool {
+                    tool.add_element(KindedDemoCsdElement::Bank { inner: self }, pos);
+                } else {
+                    if !modifiers.command {
+                        self.highlight.selected = true;
+                    } else {
+                        self.highlight.selected = !self.highlight.selected;
+                    }
+                }
 
-        if self.highlight.selected {
-            commands.push(SensitiveCommand::MoveSelectedElements(delta));
-        } else {
-            commands.push(SensitiveCommand::MoveElements(
-                std::iter::once(*self.uuid()).collect(),
-                delta,
-            ));
-        }
+                EventHandlingStatus::HandledByElement
+            },
+            InputEvent::Drag { delta, .. } if self.dragged => {
+                if self.highlight.selected {
+                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                } else {
+                    commands.push(SensitiveCommand::MoveElements(
+                        std::iter::once(*self.uuid()).collect(),
+                        delta,
+                    ));
+                }
 
-        DragHandlingStatus::Handled
+                EventHandlingStatus::HandledByElement
+            },
+            _ => EventHandlingStatus::NotHandled
+        }
     }
 
     fn apply_command(

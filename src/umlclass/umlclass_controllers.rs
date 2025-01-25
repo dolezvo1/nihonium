@@ -4,10 +4,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ClickHandlingStatus, ContainerGen2, DiagramController, DiagramControllerGen2,
-    DragHandlingStatus, ElementController, ElementControllerGen2, FlipMulticonnection,
-    InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand,
-    TargettingStatus, Tool, VertexInformation,
+    ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::CustomTab;
 use crate::NHApp;
@@ -411,6 +408,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
 
+        dragged: false,
         highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(200.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
@@ -432,6 +430,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
 
+        dragged: false,
         highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(100.0, 250.0),
         bounds_rect: egui::Rect::ZERO,
@@ -453,6 +452,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
         comment_buffer: "".to_owned(),
 
+        dragged: false,
         highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(300.0, 250.0),
         bounds_rect: egui::Rect::ZERO,
@@ -486,6 +486,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
+        dragged: false,
         highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(300.0, 50.0),
         bounds_rect: egui::Rect::ZERO,
@@ -512,6 +513,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
+        dragged: false,
         highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(450.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
@@ -539,6 +541,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         functions_buffer: "".to_owned(),
         comment_buffer: "".to_owned(),
 
+        dragged: false,
         highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(650.0, 150.0),
         bounds_rect: egui::Rect::ZERO,
@@ -849,6 +852,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
                         functions_buffer: "".to_owned(),
                         comment_buffer: "".to_owned(),
 
+                        dragged: false,
                         highlight: canvas::Highlight::NONE,
                         position: pos,
                         bounds_rect: egui::Rect::ZERO,
@@ -1133,6 +1137,7 @@ pub struct UmlClassController {
     functions_buffer: String,
     comment_buffer: String,
 
+    dragged: bool,
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
@@ -1307,51 +1312,46 @@ impl
         }
     }
 
-    fn click(
+    fn handle_event(
         &mut self,
-        tool: &mut Option<NaiveUmlClassTool>,
-        _commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
-        pos: egui::Pos2,
+        event: InputEvent,
         modifiers: ModifierKeys,
-    ) -> ClickHandlingStatus {
-        if !self.min_shape().contains(pos) {
-            return ClickHandlingStatus::NotHandled;
-        }
-
-        if let Some(tool) = tool {
-            tool.add_element(KindedUmlClassElement::Class { inner: self }, pos);
-        } else {
-            if !modifiers.command {
-                self.highlight.selected = true;
-            } else {
-                self.highlight.selected = !self.highlight.selected;
-            }
-        }
-
-        ClickHandlingStatus::HandledByElement
-    }
-
-    fn drag(
-        &mut self,
-        _tool: &mut Option<NaiveUmlClassTool>,
+        tool: &mut Option<NaiveUmlClassTool>,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
-        last_pos: egui::Pos2,
-        delta: egui::Vec2,
-    ) -> DragHandlingStatus {
-        if !self.min_shape().contains(last_pos) {
-            return DragHandlingStatus::NotHandled;
+    ) -> EventHandlingStatus {
+        match event {
+            e if !self.min_shape().contains(*e.mouse_position()) => return EventHandlingStatus::NotHandled,
+            InputEvent::MouseDown(_) | InputEvent::MouseUp(_) => {
+                self.dragged = matches!(event, InputEvent::MouseDown(_));
+                EventHandlingStatus::HandledByElement
+            },
+            InputEvent::Click(pos) => {
+                if let Some(tool) = tool {
+                    tool.add_element(KindedUmlClassElement::Class { inner: self }, pos);
+                } else {
+                    if !modifiers.command {
+                        self.highlight.selected = true;
+                    } else {
+                        self.highlight.selected = !self.highlight.selected;
+                    }
+                }
+                
+                EventHandlingStatus::HandledByElement
+            },
+            InputEvent::Drag { delta, .. } if self.dragged => {
+                if self.highlight.selected {
+                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                } else {
+                    commands.push(SensitiveCommand::MoveElements(
+                        std::iter::once(*self.uuid()).collect(),
+                        delta,
+                    ));
+                }
+                
+                EventHandlingStatus::HandledByElement
+            },
+            _ => EventHandlingStatus::NotHandled
         }
-
-        if self.highlight.selected {
-            commands.push(SensitiveCommand::MoveSelectedElements(delta));
-        } else {
-            commands.push(SensitiveCommand::MoveElements(
-                std::iter::once(*self.uuid()).collect(),
-                delta,
-            ));
-        }
-
-        DragHandlingStatus::Handled
     }
 
     fn apply_command(
