@@ -113,9 +113,8 @@ struct NHContext {
     undo_stack: Vec<(Arc<String>, uuid::Uuid)>,
     redo_stack: Vec<(Arc<String>, uuid::Uuid)>,
     
-    undo_shortcut: egui::KeyboardShortcut,
-    redo_shortcut: egui::KeyboardShortcut,
-    delete_shortcut: egui::KeyboardShortcut,
+    shortcuts: HashMap<DiagramCommand, egui::KeyboardShortcut>,
+    shortcut_top_order: Vec<(DiagramCommand, egui::KeyboardShortcut)>,
 
     open_unique_tabs: HashSet<NHTab>,
     last_focused_diagram: Option<uuid::Uuid>,
@@ -187,6 +186,16 @@ impl TabViewer for NHContext {
 }
 
 impl NHContext {
+    fn sort_shortcuts(&mut self) {
+        self.shortcut_top_order = self.shortcuts.iter().map(|(&k,&v)|(k,v)).collect();
+        
+        fn weight(m: &egui::KeyboardShortcut) -> u32 {
+            m.modifiers.alt as u32 + m.modifiers.command as u32 + m.modifiers.shift as u32
+        }
+        
+        self.shortcut_top_order.sort_by(|a, b| weight(&b.1).cmp(&weight(&a.1)));
+    }
+
     fn hierarchy(&self, ui: &mut Ui) {
         for controller in self.hierarchy_order.iter()
             .flat_map(|e| self.diagram_controllers.get(e))
@@ -730,7 +739,7 @@ impl Default for NHApp {
             .split_below(b, 0.7, vec![NHTab::Toolbar]);
         open_unique_tabs.insert(NHTab::Toolbar);
 
-        let context = NHContext {
+        let mut context = NHContext {
             diagram_controllers,
             hierarchy_order,
             new_diagram_no: 4,
@@ -741,18 +750,8 @@ impl Default for NHApp {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             
-            undo_shortcut: egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z),
-            redo_shortcut: egui::KeyboardShortcut::new(
-                egui::Modifiers {
-                    alt: false,
-                    ctrl: false,
-                    shift: true,
-                    mac_cmd: false,
-                    command: true,
-                },
-                egui::Key::Z,
-            ),
-            delete_shortcut: egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete),
+            shortcuts: HashMap::new(),
+            shortcut_top_order: vec![],
 
             open_unique_tabs,
             last_focused_diagram: None,
@@ -765,6 +764,23 @@ impl Default for NHApp {
             show_tab_name_on_hover: false,
             allowed_splits: AllowedSplits::default(),
         };
+        
+        context.shortcuts.insert(DiagramCommand::UndoImmediate, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z));
+        context.shortcuts.insert(DiagramCommand::RedoImmediate, egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            egui::Key::Z,
+        ));
+        context.shortcuts.insert(DiagramCommand::SelectAllElements(true), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A));
+        context.shortcuts.insert(DiagramCommand::SelectAllElements(false), egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            egui::Key::A,
+        ));
+        context.shortcuts.insert(DiagramCommand::InvertSelection, egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND,
+            egui::Key::I,
+        ));
+        context.shortcuts.insert(DiagramCommand::DeleteSelectedElements, egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
+        context.sort_shortcuts();
 
         Self {
             context,
@@ -837,28 +853,44 @@ impl eframe::App for NHApp {
         // Save focused tab to context for event handling purposes
         
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
-            // TODO: This shortcut handling is generally wrong. Depends on redo_shortcut not being a subset of undo_shortcut.
-            if ui.input_mut(|i| i.consume_shortcut(&self.context.redo_shortcut)) {
-                self.redo_immediate();
-            } else if ui.input_mut(|i| i.consume_shortcut(&self.context.undo_shortcut)) {
-                self.undo_immediate();
-            }
-            
-            if ui.input(|i| i.events.iter()
-                    .find(|e| matches!(e, egui::Event::Key{key, pressed, ..} if *pressed && *key == egui::Key::Delete)).is_some()) {
-                match self.tree.find_active_focused() {
-                    Some((_, NHTab::Diagram { uuid })) => {
+            macro_rules! send_to_focused_diagram {
+                ($command:expr) => {
+                    if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
                         if let Some(ac) = self.context.diagram_controllers.get(&uuid) {
                             let mut c = ac.write().unwrap();
                             let mut undo = vec![];
-                            c.apply_command(DiagramCommand::DeleteSelectedElements, &mut undo);
+                            c.apply_command($command, &mut undo);
                             self.context.undo_stack.extend(undo.into_iter().map(|e| (e, *uuid)));
                         }
-                    },
-                    _ => {},
-                }
+                    }
+                };
             }
             
+            // Check diagram-handled shortcuts
+            ui.input(|is|
+                'outer: for e in is.events.iter() {
+                    let egui::Event::Key { key, pressed, modifiers, .. } = e else { continue; };
+                    if !pressed {continue;}
+                    'inner: for ksh in &self.context.shortcut_top_order {
+                        if !(modifiers.matches_logically(ksh.1.modifiers) && *key == ksh.1.logical_key) {
+                            continue 'inner;
+                        }
+                        
+                        match ksh.0 {
+                            DiagramCommand::UndoImmediate => self.undo_immediate(),
+                            DiagramCommand::RedoImmediate => self.redo_immediate(),
+                            DiagramCommand::SelectAllElements(select) => send_to_focused_diagram!(DiagramCommand::SelectAllElements(select)),
+                            DiagramCommand::InvertSelection => send_to_focused_diagram!(DiagramCommand::InvertSelection),
+                            DiagramCommand::DeleteSelectedElements => send_to_focused_diagram!(DiagramCommand::DeleteSelectedElements),
+                            _ => unreachable!(),
+                        }
+                        
+                        break 'outer;
+                    }
+                }
+            );
+            
+            // Menubar UI
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("New Project").clicked() {
@@ -929,16 +961,22 @@ impl eframe::App for NHApp {
 
                 ui.menu_button("Edit", |ui| {
                     ui.menu_button("Undo", |ui| {
+                        let shortcut_text = self.context.shortcuts.get(&DiagramCommand::UndoImmediate).map(|e| ui.ctx().format_shortcut(&e));
+                        
                         if self.context.undo_stack.is_empty() {
-                            let _ = ui.add_enabled(false, egui::Button::new("(nothing to undo)").shortcut_text(ui.ctx().format_shortcut(&self.context.undo_shortcut)));
+                            let mut button = egui::Button::new("(nothing to undo)");
+                            if let Some(shortcut_text) = shortcut_text {
+                                button = button.shortcut_text(shortcut_text);
+                            }
+                            let _ = ui.add_enabled(false, button);
                         } else {
                             for (ii, (c, uuid)) in self.context.undo_stack.iter().rev().enumerate() {
                                 let Some(ac) = self.context.diagram_controllers.get(uuid) else {
                                     break;
                                 };
                                 let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().unwrap().model_name()));
-                                if ii == 0 {
-                                    button = button.shortcut_text(ui.ctx().format_shortcut(&self.context.undo_shortcut));
+                                if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
+                                    button = button.shortcut_text(shortcut_text);
                                 }
 
                                 if ui.add(button).clicked() {
@@ -953,16 +991,22 @@ impl eframe::App for NHApp {
                     });
                     
                     ui.menu_button("Redo", |ui| {
+                        let shortcut_text = self.context.shortcuts.get(&DiagramCommand::RedoImmediate).map(|e| ui.ctx().format_shortcut(&e));
+                        
                         if self.context.redo_stack.is_empty() {
-                            let _ = ui.add_enabled(false, egui::Button::new("(nothing to redo)").shortcut_text(ui.ctx().format_shortcut(&self.context.redo_shortcut)));
+                            let mut button = egui::Button::new("(nothing to redo)");
+                            if let Some(shortcut_text) = shortcut_text {
+                                button = button.shortcut_text(shortcut_text);
+                            }
+                            let _ = ui.add_enabled(false, button);
                         } else {
                             for (ii, (c, uuid)) in self.context.redo_stack.iter().rev().enumerate() {
                                 let Some(ac) = self.context.diagram_controllers.get(uuid) else {
                                     break;
                                 };
                                 let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().unwrap().model_name()));
-                                if ii == 0 {
-                                    button = button.shortcut_text(ui.ctx().format_shortcut(&self.context.redo_shortcut));
+                                if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
+                                    button = button.shortcut_text(shortcut_text);
                                 }
 
                                 if ui.add(button).clicked() {

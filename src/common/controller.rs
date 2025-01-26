@@ -6,12 +6,14 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::{Arc, RwLock, Weak};
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum DiagramCommand {
     DropRedoStackAndLastChangeFlag,
     SetLastChangeFlag,
     UndoImmediate,
     RedoImmediate,
+    SelectAllElements(bool),
+    InvertSelection,
     DeleteSelectedElements,
 }
 
@@ -976,6 +978,11 @@ where
     fn show_menubar_edit_options(&mut self, _context: &mut NHApp, _ui: &mut egui::Ui) {}
     fn show_menubar_diagram_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui) {
         (self.menubar_options_fun)(self, context, ui);
+        
+        if ui.button("Layout selected elements").clicked() {
+            todo!();
+        }
+        ui.separator();
     }
 
     fn list_in_project_hierarchy(&self, ui: &mut egui::Ui) {
@@ -1026,6 +1033,12 @@ where
                     return;
                 };
                 self.apply_commands(vec![redo_command.to_selection_sensitive()], &mut vec![], true, false);
+            }
+            DiagramCommand::SelectAllElements(select) => {
+                self.apply_commands(vec![SensitiveCommand::SelectAll(select)], &mut vec![], true, false);
+            }
+            DiagramCommand::InvertSelection => {
+                self.apply_commands(vec![SensitiveCommand::SelectAll(true), SensitiveCommand::Select(self.selected_elements.clone(), false)], &mut vec![], true, false);
             }
             DiagramCommand::DeleteSelectedElements => {
                 let mut undo = vec![];

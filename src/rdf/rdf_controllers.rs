@@ -451,6 +451,7 @@ fn menubar_options_fun(
     if ui.button("Ontology alignment").clicked() {
         // TODO: similar to the above?
     }
+    ui.separator();
 }
 
 pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {

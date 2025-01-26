@@ -336,6 +336,7 @@ fn menubar_options_fun(
             })),
         );
     }
+    ui.separator();
 }
 
 struct PlantUmlTab {
