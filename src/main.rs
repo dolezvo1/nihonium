@@ -110,8 +110,8 @@ struct NHContext {
 
     pub style: Option<Style>,
 
-    undo_stack: Vec<(Arc<String>, Arc<RwLock<dyn DiagramController>>)>,
-    redo_stack: Vec<(Arc<String>, Arc<RwLock<dyn DiagramController>>)>,
+    undo_stack: Vec<(Arc<String>, uuid::Uuid)>,
+    redo_stack: Vec<(Arc<String>, uuid::Uuid)>,
     
     undo_shortcut: egui::KeyboardShortcut,
     redo_shortcut: egui::KeyboardShortcut,
@@ -187,24 +187,6 @@ impl TabViewer for NHContext {
 }
 
 impl NHContext {
-    fn undo_immediate(&mut self) {
-        let Some(e) = self.undo_stack.pop() else { return; };
-        {
-            let mut c = e.1.write().unwrap();
-            c.apply_command(DiagramCommand::UndoImmediate, &mut vec![]);
-        }
-        self.redo_stack.push(e);
-    }
-    fn redo_immediate(&mut self) {
-        let Some(e) = self.redo_stack.pop() else { return; };
-        {
-            let mut c = e.1.write().unwrap();
-            c.apply_command(DiagramCommand::RedoImmediate, &mut vec![]);
-        }
-        self.undo_stack.push(e);
-    }
-    
-
     fn hierarchy(&self, ui: &mut Ui) {
         for controller in self.hierarchy_order.iter()
             .flat_map(|e| self.diagram_controllers.get(e))
@@ -241,7 +223,7 @@ impl NHContext {
                     controller_lock.apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
                     
                     for command_label in undo_accumulator {
-                        self.undo_stack.push((command_label, c.clone()));
+                        self.undo_stack.push((command_label, *last_focused_diagram));
                     }
                 }
             });
@@ -688,7 +670,7 @@ impl NHContext {
             diagram_controller.apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
             
             for command_label in undo_accumulator {
-                self.undo_stack.push((command_label, diagram_controller_arc.clone()));
+                self.undo_stack.push((command_label, *tab_uuid));
             }
         }
     }
@@ -792,6 +774,41 @@ impl Default for NHApp {
 }
 
 impl NHApp {
+    fn switch_to_tab(&mut self, tab: &NHTab) {
+        let Some(t) = self.tree.find_tab(&tab) else { return; };
+        self.tree.set_active_tab(t);
+        if let NHTab::Diagram { uuid } = tab {
+            self.context.last_focused_diagram = Some(*uuid);
+        }
+    }
+
+    fn undo_immediate(&mut self) {
+        let Some(e) = self.context.undo_stack.pop() else { return; };
+        
+        self.switch_to_tab(&NHTab::Diagram { uuid: e.1 });
+        
+        {
+            let Some(ac) = self.context.diagram_controllers.get(&e.1) else { return; };
+            let mut c = ac.write().unwrap();
+            c.apply_command(DiagramCommand::UndoImmediate, &mut vec![]);
+        }
+        
+        self.context.redo_stack.push(e);
+    }
+    fn redo_immediate(&mut self) {
+        let Some(e) = self.context.redo_stack.pop() else { return; };
+        
+        self.switch_to_tab(&NHTab::Diagram { uuid: e.1 });
+        
+        {
+            let Some(ac) = self.context.diagram_controllers.get(&e.1) else { return; };
+            let mut c = ac.write().unwrap();
+            c.apply_command(DiagramCommand::RedoImmediate, &mut vec![]);
+        }
+        
+        self.context.undo_stack.push(e);
+    }
+
     pub fn add_custom_tab(&mut self, uuid: uuid::Uuid, tab: Arc<RwLock<dyn CustomTab>>) {
         self.context.custom_tabs.insert(uuid, tab);
 
@@ -822,9 +839,9 @@ impl eframe::App for NHApp {
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             // TODO: This shortcut handling is generally wrong. Depends on redo_shortcut not being a subset of undo_shortcut.
             if ui.input_mut(|i| i.consume_shortcut(&self.context.redo_shortcut)) {
-                self.context.redo_immediate();
+                self.redo_immediate();
             } else if ui.input_mut(|i| i.consume_shortcut(&self.context.undo_shortcut)) {
-                self.context.undo_immediate();
+                self.undo_immediate();
             }
             
             if ui.input(|i| i.events.iter()
@@ -835,7 +852,7 @@ impl eframe::App for NHApp {
                             let mut c = ac.write().unwrap();
                             let mut undo = vec![];
                             c.apply_command(DiagramCommand::DeleteSelectedElements, &mut undo);
-                            self.context.undo_stack.extend(undo.into_iter().map(|e| (e, ac.clone())));
+                            self.context.undo_stack.extend(undo.into_iter().map(|e| (e, *uuid)));
                         }
                     },
                     _ => {},
@@ -915,15 +932,18 @@ impl eframe::App for NHApp {
                         if self.context.undo_stack.is_empty() {
                             let _ = ui.add_enabled(false, egui::Button::new("(nothing to undo)").shortcut_text(ui.ctx().format_shortcut(&self.context.undo_shortcut)));
                         } else {
-                            for (ii, c) in self.context.undo_stack.iter().rev().enumerate() {
-                                let mut button = egui::Button::new(format!("{} in '{}'", &*c.0, c.1.read().unwrap().model_name()));
+                            for (ii, (c, uuid)) in self.context.undo_stack.iter().rev().enumerate() {
+                                let Some(ac) = self.context.diagram_controllers.get(uuid) else {
+                                    break;
+                                };
+                                let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().unwrap().model_name()));
                                 if ii == 0 {
                                     button = button.shortcut_text(ui.ctx().format_shortcut(&self.context.undo_shortcut));
                                 }
 
                                 if ui.add(button).clicked() {
                                     for _ in 0..=ii {
-                                        self.context.undo_immediate();
+                                        self.undo_immediate();
                                     }
                                     break;
                                 }
@@ -936,15 +956,18 @@ impl eframe::App for NHApp {
                         if self.context.redo_stack.is_empty() {
                             let _ = ui.add_enabled(false, egui::Button::new("(nothing to redo)").shortcut_text(ui.ctx().format_shortcut(&self.context.redo_shortcut)));
                         } else {
-                            for (ii, c) in self.context.redo_stack.iter().rev().enumerate() {
-                                let mut button = egui::Button::new(format!("{} in '{}'", &*c.0, c.1.read().unwrap().model_name()));
+                            for (ii, (c, uuid)) in self.context.redo_stack.iter().rev().enumerate() {
+                                let Some(ac) = self.context.diagram_controllers.get(uuid) else {
+                                    break;
+                                };
+                                let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().unwrap().model_name()));
                                 if ii == 0 {
                                     button = button.shortcut_text(ui.ctx().format_shortcut(&self.context.redo_shortcut));
                                 }
 
                                 if ui.add(button).clicked() {
                                     for _ in 0..=ii {
-                                        self.context.redo_immediate();
+                                        self.redo_immediate();
                                     }
                                     break;
                                 }
