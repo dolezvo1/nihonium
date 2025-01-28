@@ -302,13 +302,33 @@ pub trait Tool<CommonElementT: ?Sized, QueryableT, AddCommandElementT, PropChang
     fn reset_event_lock(&mut self);
 }
 
+pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+{
+    fn controller_for(
+        &self,
+        uuid: &uuid::Uuid,
+    ) -> Option<
+        Arc<
+            RwLock<
+                dyn ElementControllerGen2<
+                    CommonElementT,
+                    QueryableT,
+                    ToolT,
+                    AddCommandElementT,
+                    PropChangeT,
+                >,
+            >,
+        >,
+    >;
+}
+
 pub trait ElementControllerGen2<
     CommonElementT: ?Sized,
     QueryableT,
     ToolT,
     AddCommandElementT: Clone + Debug,
     PropChangeT: Clone + Debug,
->: ElementController<CommonElementT> where
+>: ElementController<CommonElementT> + ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> where
     ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
 {
     fn show_properties(
@@ -340,26 +360,7 @@ pub trait ElementControllerGen2<
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
     fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>);
-}
-
-pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-{
-    fn controller_for(
-        &self,
-        uuid: &uuid::Uuid,
-    ) -> Option<
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    CommonElementT,
-                    QueryableT,
-                    ToolT,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >,
-    >;
+    
 }
 
 /// This is a generic DiagramController implementation.
@@ -1162,7 +1163,7 @@ where
             >,
         >,
     > {
-        self.owned_controllers.get(uuid).cloned()
+        self.owned_controllers.get(uuid).cloned().or_else(|| self.owned_controllers.iter().flat_map(|e| e.1.read().unwrap().controller_for(uuid)).nth(0))
     }
 }
 
@@ -1416,6 +1417,73 @@ impl<
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
+    > ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+    for PackageView<
+        ModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    AddCommandElementT: From<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
+            >,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
+            >,
+        )>,
+{
+    fn controller_for(
+        &self,
+        uuid: &uuid::Uuid,
+    ) -> Option<
+        Arc<
+            RwLock<
+                dyn ElementControllerGen2<
+                    ElementModelT,
+                    QueryableT,
+                    ToolT,
+                    AddCommandElementT,
+                    PropChangeT,
+                >,
+            >,
+        >,
+    > {
+        self.owned_controllers.get(uuid).cloned().or_else(|| self.owned_controllers.iter().flat_map(|e| e.1.read().unwrap().controller_for(uuid)).nth(0))
+    }
+}
+
+impl<
+        ModelT: ContainerModel<ElementModelT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        BufferT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
     > ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for PackageView<
         ModelT,
@@ -1580,7 +1648,7 @@ where
         
         match event {
             InputEvent::MouseDown(pos) | InputEvent::MouseUp(pos) if uc_status.is_some() => {
-                uc_status.unwrap().1
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::MouseDown(pos) | InputEvent::MouseUp(pos) => {
                 if uc_status.is_none() && self.min_shape().contains(pos) {
@@ -1760,73 +1828,6 @@ where
             let mut e = e.1.write().unwrap();
             e.collect_all_selected_elements(into);
         }
-    }
-}
-
-impl<
-        ModelT: ContainerModel<ElementModelT>,
-        ElementModelT: ?Sized + 'static,
-        QueryableT: 'static,
-        BufferT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-    for PackageView<
-        ModelT,
-        ElementModelT,
-        QueryableT,
-        BufferT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    AddCommandElementT: From<(
-            uuid::Uuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        ElementModelT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            uuid::Uuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        ElementModelT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )>,
-{
-    fn controller_for(
-        &self,
-        uuid: &uuid::Uuid,
-    ) -> Option<
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    ElementModelT,
-                    QueryableT,
-                    ToolT,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >,
-    > {
-        self.owned_controllers.get(uuid).cloned()
     }
 }
 
@@ -2062,11 +2063,53 @@ where
 impl<
         ModelT,
         ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        BufferT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
+    > ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+    for MulticonnectionView<
+        ModelT,
+        ElementModelT,
         QueryableT,
         BufferT,
         ToolT,
-        AddCommandElementT: Clone + Debug,
-        PropChangeT: Clone + Debug,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
+    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
+{
+    fn controller_for(
+        &self,
+        uuid: &uuid::Uuid,
+    ) -> Option<
+        Arc<
+            RwLock<
+                dyn ElementControllerGen2<
+                    ElementModelT,
+                    QueryableT,
+                    ToolT,
+                    AddCommandElementT,
+                    PropChangeT,
+                >,
+            >,
+        >,
+    > {
+        None
+    }
+}
+
+impl<
+        ModelT,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        BufferT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
     > ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for MulticonnectionView<
         ModelT,

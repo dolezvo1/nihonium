@@ -626,6 +626,7 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
             PartialDemoCsdElement::Link {
                 source,
                 dest: Some(dest),
+                link_type,
                 ..
             } => {
                 self.current_stage = self.initial_stage;
@@ -636,7 +637,7 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
                         into.controller_for(&dest.read().unwrap().uuid()),
                     ) {
                         let (uuid, _, predicate_controller) = democsd_link(
-                            DemoCsdLinkType::Initiation,
+                            *link_type,
                             (source.clone(), source_controller),
                             (dest.clone(), dest_controller),
                         );
@@ -869,6 +870,22 @@ impl ElementController<dyn DemoCsdElement> for DemoCsdTransactorView {
     }
 }
 
+impl ContainerGen2<dyn DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange>
+    for DemoCsdTransactorView
+{
+    fn controller_for(
+        &self,
+        uuid: &uuid::Uuid,
+    ) -> Option<ArcRwLockController> {    
+        match &self.transaction_view {
+            Some(t) if *uuid == *t.read().unwrap().uuid() => {
+                Some(t.clone() as ArcRwLockController)
+            }
+            _ => None
+        }
+    }
+}
+
 impl
     ElementControllerGen2<
         dyn DemoCsdElement,
@@ -1052,9 +1069,8 @@ impl
         // If tx is present, draw it 4 rows above the position
         if let Some(t) = &self.transaction_view {
             let offset = self.position.to_vec2() + egui::Vec2::new(0.0, -4.0 * canvas::CLASS_MIDDLE_FONT_SIZE);
-            let offset_tool = tool.map(|(p, t)| (p - offset, t));
             let mut t = t.write().unwrap();
-            let res = t.draw_in(queryable, canvas, &offset_tool);
+            let res = t.draw_in(queryable, canvas, &tool);
             if res == TargettingStatus::Drawn {
                 return TargettingStatus::Drawn;
             }
@@ -1320,6 +1336,17 @@ impl ElementController<dyn DemoCsdElement> for DemoCsdTransactionView {
     }
     fn position(&self) -> egui::Pos2 {
         self.position
+    }
+}
+
+impl ContainerGen2<dyn DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange>
+    for DemoCsdTransactionView
+{
+    fn controller_for(
+        &self,
+        uuid: &uuid::Uuid,
+    ) -> Option<ArcRwLockController> {
+        None
     }
 }
 

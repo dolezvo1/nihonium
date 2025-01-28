@@ -1086,6 +1086,17 @@ impl ElementController<dyn UmlClassElement> for UmlClassController {
     }
 }
 
+impl ContainerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool, UmlClassElementOrVertex, UmlClassPropChange>
+    for UmlClassController
+{
+    fn controller_for(
+        &self,
+        uuid: &uuid::Uuid,
+    ) -> Option<ArcRwLockController> {
+        None
+    }
+}
+
 impl
     ElementControllerGen2<
         dyn UmlClassElement,

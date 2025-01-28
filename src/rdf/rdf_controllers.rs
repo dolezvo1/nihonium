@@ -1136,6 +1136,17 @@ impl ElementController<dyn RdfElement> for RdfNodeController {
     }
 }
 
+impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
+    for RdfNodeController
+{
+    fn controller_for(
+        &self,
+        uuid: &uuid::Uuid,
+    ) -> Option<ArcRwLockController> {
+        None
+    }
+}
+
 impl
     ElementControllerGen2<
         dyn RdfElement,
@@ -1373,6 +1384,17 @@ impl ElementController<dyn RdfElement> for RdfLiteralController {
 
     fn position(&self) -> egui::Pos2 {
         self.position
+    }
+}
+
+impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
+    for RdfLiteralController
+{
+    fn controller_for(
+        &self,
+        uuid: &uuid::Uuid,
+    ) -> Option<ArcRwLockController> {
+        None
     }
 }
 
