@@ -12,8 +12,20 @@ use eframe::egui;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Formatter},
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, Weak},
 };
+
+type ArcRwLockController = Arc<
+    RwLock<
+        dyn ElementControllerGen2<
+            dyn UmlClassElement,
+            UmlClassQueryable,
+            NaiveUmlClassTool,
+            UmlClassElementOrVertex,
+            UmlClassPropChange,
+        >,
+    >,
+>;
 
 pub struct UmlClassQueryable {}
 
@@ -392,72 +404,24 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
-
-    let class_af_uuid = uuid::Uuid::now_v7();
-    let class_af = Arc::new(RwLock::new(UmlClass::new(
-        class_af_uuid.clone(),
-        UmlClassStereotype::Interface,
-        "AbstractFactory".to_owned(),
-    )));
-    class_af.write().unwrap().functions =
-        Arc::new("+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned());
-    let class_af_controller = Arc::new(RwLock::new(UmlClassController {
-        model: class_af.clone(),
-        stereotype_buffer: UmlClassStereotype::Interface,
-        name_buffer: "AbstractFactory".to_owned(),
-        properties_buffer: "".to_owned(),
-        functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        dragged: false,
-        highlight: canvas::Highlight::NONE,
-        position: egui::Pos2::new(200.0, 150.0),
-        bounds_rect: egui::Rect::ZERO,
-    }));
-
-    let class_cfx_uuid = uuid::Uuid::now_v7();
-    let class_cfx = Arc::new(RwLock::new(UmlClass::new(
-        class_cfx_uuid.clone(),
-        UmlClassStereotype::Class,
-        "ConcreteFactoryX".to_owned(),
-    )));
-    class_cfx.write().unwrap().functions =
-        Arc::new("+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned());
-    let class_cfx_controller = Arc::new(RwLock::new(UmlClassController {
-        model: class_cfx.clone(),
-        stereotype_buffer: UmlClassStereotype::Class,
-        name_buffer: "ConcreteFactoryX".to_owned(),
-        properties_buffer: "".to_owned(),
-        functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        dragged: false,
-        highlight: canvas::Highlight::NONE,
-        position: egui::Pos2::new(100.0, 250.0),
-        bounds_rect: egui::Rect::ZERO,
-    }));
-
-    let class_cfy_uuid = uuid::Uuid::now_v7();
-    let class_cfy = Arc::new(RwLock::new(UmlClass::new(
-        class_cfy_uuid.clone(),
-        UmlClassStereotype::Class,
-        "ConcreteFactoryY".to_owned(),
-    )));
-    class_cfy.write().unwrap().functions =
-        Arc::new("+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned());
-    let class_cfy_controller = Arc::new(RwLock::new(UmlClassController {
-        model: class_cfy.clone(),
-        stereotype_buffer: UmlClassStereotype::Class,
-        name_buffer: "ConcreteFactoryY".to_owned(),
-        properties_buffer: "".to_owned(),
-        functions_buffer: "+createProductA(): ProductA\n+createProductB(): ProductB\n".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        dragged: false,
-        highlight: canvas::Highlight::NONE,
-        position: egui::Pos2::new(300.0, 250.0),
-        bounds_rect: egui::Rect::ZERO,
-    }));
+    
+    let (class_af_uuid, class_af, class_af_controller) = uml_class(
+        UmlClassStereotype::Interface, "AbstractFactory",
+        "", "+createProductA(): ProductA\n+createProductB(): ProductB\n",
+        egui::Pos2::new(200.0, 150.0),
+    );
+    
+    let (class_cfx_uuid, class_cfx, class_cfx_controller) = uml_class(
+        UmlClassStereotype::Class, "ConcreteFactoryX",
+        "", "+createProductA(): ProductA\n+createProductB(): ProductB\n",
+        egui::Pos2::new(100.0, 250.0),
+    );
+    
+    let (class_cfy_uuid, class_cfy, class_cfy_controller) = uml_class(
+        UmlClassStereotype::Class, "ConcreteFactoryY",
+        "", "+createProductA(): ProductA\n+createProductB(): ProductB\n",
+        egui::Pos2::new(300.0, 250.0),
+    );
 
     let (realization_cfx_uuid, realization_cfx, realization_cfx_controller) = umlclass_link(
         UmlClassLinkType::InterfaceRealization,
@@ -473,25 +437,11 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         (class_af.clone(), class_af_controller.clone()),
     );
 
-    let class_client_uuid = uuid::Uuid::now_v7();
-    let class_client = Arc::new(RwLock::new(UmlClass::new(
-        class_client_uuid.clone(),
-        UmlClassStereotype::Class,
-        "Client".to_owned(),
-    )));
-    let class_client_controller = Arc::new(RwLock::new(UmlClassController {
-        model: class_client.clone(),
-        stereotype_buffer: UmlClassStereotype::Class,
-        name_buffer: "Client".to_owned(),
-        properties_buffer: "".to_owned(),
-        functions_buffer: "".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        dragged: false,
-        highlight: canvas::Highlight::NONE,
-        position: egui::Pos2::new(300.0, 50.0),
-        bounds_rect: egui::Rect::ZERO,
-    }));
+    let (class_client_uuid, class_client, class_client_controller) = uml_class(
+        UmlClassStereotype::Class, "Client",
+        "", "",
+        egui::Pos2::new(300.0, 50.0),
+    );
 
     let (usage_client_af_uuid, usage_client_af, usage_client_af_controller) = umlclass_link(
         UmlClassLinkType::Usage,
@@ -499,26 +449,12 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         (class_client.clone(), class_client_controller.clone()),
         (class_af.clone(), class_af_controller.clone()),
     );
-
-    let class_producta_uuid = uuid::Uuid::now_v7();
-    let class_producta = Arc::new(RwLock::new(UmlClass::new(
-        class_producta_uuid.clone(),
-        UmlClassStereotype::Interface,
-        "ProductA".to_owned(),
-    )));
-    let class_producta_controller = Arc::new(RwLock::new(UmlClassController {
-        model: class_producta.clone(),
-        stereotype_buffer: UmlClassStereotype::Interface,
-        name_buffer: "ProductA".to_owned(),
-        properties_buffer: "".to_owned(),
-        functions_buffer: "".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        dragged: false,
-        highlight: canvas::Highlight::NONE,
-        position: egui::Pos2::new(450.0, 150.0),
-        bounds_rect: egui::Rect::ZERO,
-    }));
+    
+    let (class_producta_uuid, class_producta, class_producta_controller) = uml_class(
+        UmlClassStereotype::Interface, "ProductA",
+        "", "",
+        egui::Pos2::new(450.0, 150.0),
+    );
 
     let (usage_client_producta_uuid, usage_client_producta, usage_client_producta_controller) =
         umlclass_link(
@@ -527,26 +463,12 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             (class_client.clone(), class_client_controller.clone()),
             (class_producta.clone(), class_producta_controller.clone()),
         );
-
-    let class_productb_uuid = uuid::Uuid::now_v7();
-    let class_productb = Arc::new(RwLock::new(UmlClass::new(
-        class_productb_uuid.clone(),
-        UmlClassStereotype::Interface,
-        "ProductB".to_owned(),
-    )));
-    let class_productb_controller = Arc::new(RwLock::new(UmlClassController {
-        model: class_productb.clone(),
-        stereotype_buffer: UmlClassStereotype::Interface,
-        name_buffer: "ProductB".to_owned(),
-        properties_buffer: "".to_owned(),
-        functions_buffer: "".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        dragged: false,
-        highlight: canvas::Highlight::NONE,
-        position: egui::Pos2::new(650.0, 150.0),
-        bounds_rect: egui::Rect::ZERO,
-    }));
+    
+    let (class_productb_uuid, class_productb, class_productb_controller) = uml_class(
+        UmlClassStereotype::Interface, "ProductB",
+        "", "",
+        egui::Pos2::new(650.0, 150.0),
+    );
 
     let (usage_client_productb_uuid, usage_client_productb, usage_client_productb_controller) =
         umlclass_link(
@@ -706,26 +628,11 @@ pub enum UmlClassToolStage {
 
 enum PartialUmlClassElement {
     None,
-    Some(
-        (
-            uuid::Uuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        dyn UmlClassElement,
-                        UmlClassQueryable,
-                        NaiveUmlClassTool,
-                        UmlClassElementOrVertex,
-                        UmlClassPropChange,
-                    >,
-                >,
-            >,
-        ),
-    ),
+    Some((uuid::Uuid, ArcRwLockController)),
     Link {
         link_type: UmlClassLinkType,
         source: Arc<RwLock<dyn UmlClassElement>>,
-        source_pos: egui::Pos2,
+        source_view: ArcRwLockController,
         dest: Option<Arc<RwLock<dyn UmlClassElement>>>,
     },
     Package {
@@ -738,7 +645,6 @@ enum PartialUmlClassElement {
 pub struct NaiveUmlClassTool {
     initial_stage: UmlClassToolStage,
     current_stage: UmlClassToolStage,
-    offset: egui::Pos2,
     result: PartialUmlClassElement,
     event_lock: bool,
 }
@@ -748,7 +654,6 @@ impl NaiveUmlClassTool {
         Self {
             initial_stage,
             current_stage: initial_stage,
-            offset: egui::Pos2::ZERO,
             result: PartialUmlClassElement::None,
             event_lock: false,
         }
@@ -801,14 +706,14 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
         }
     }
     fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
-        match self.result {
+        match &self.result {
             PartialUmlClassElement::Link {
-                source_pos,
+                source_view,
                 link_type,
                 ..
             } => {
                 canvas.draw_line(
-                    [source_pos, pos],
+                    [source_view.read().unwrap().position(), pos],
                     // TODO: draw correct hint line type
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
@@ -816,7 +721,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
             }
             PartialUmlClassElement::Package { a_display, .. } => {
                 canvas.draw_rectangle(
-                    egui::Rect::from_two_pos(a_display, pos),
+                    egui::Rect::from_two_pos(*a_display, pos),
                     egui::Rounding::ZERO,
                     egui::Color32::TRANSPARENT,
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
@@ -827,9 +732,6 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
         }
     }
 
-    fn offset_by(&mut self, delta: egui::Vec2) {
-        self.offset += delta;
-    }
     fn add_position(&mut self, pos: egui::Pos2) {
         if self.event_lock {
             return;
@@ -838,33 +740,17 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
         let uuid = uuid::Uuid::now_v7();
         match (self.current_stage, &mut self.result) {
             (UmlClassToolStage::Class, _) => {
-                let node = Arc::new(RwLock::new(UmlClass::new(
-                    uuid,
-                    UmlClassStereotype::Class,
-                    "a class".to_owned(),
-                )));
-                self.result = PartialUmlClassElement::Some((
-                    uuid,
-                    Arc::new(RwLock::new(UmlClassController {
-                        model: node.clone(),
-                        stereotype_buffer: UmlClassStereotype::Class,
-                        name_buffer: "a class".to_owned(),
-                        properties_buffer: "".to_owned(),
-                        functions_buffer: "".to_owned(),
-                        comment_buffer: "".to_owned(),
-
-                        dragged: false,
-                        highlight: canvas::Highlight::NONE,
-                        position: pos,
-                        bounds_rect: egui::Rect::ZERO,
-                    })),
-                ));
+                let (class_uuid, class, class_controller) = uml_class(
+                    UmlClassStereotype::Class, "a class",
+                    "", "", pos,
+                );
+                self.result = PartialUmlClassElement::Some((class_uuid,class_controller));
                 self.event_lock = true;
             }
             (UmlClassToolStage::PackageStart, _) => {
                 self.result = PartialUmlClassElement::Package {
                     a: pos,
-                    a_display: self.offset + pos.to_vec2(),
+                    a_display: pos,
                     b: None,
                 };
                 self.current_stage = UmlClassToolStage::PackageEnd;
@@ -892,7 +778,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
                         self.result = PartialUmlClassElement::Link {
                             link_type,
                             source: inner.model.clone(),
-                            source_pos: self.offset + pos.to_vec2(),
+                            source_view: inner.self_reference.upgrade().unwrap(),
                             dest: None,
                         };
                         self.current_stage = UmlClassToolStage::LinkEnd;
@@ -1129,8 +1015,42 @@ fn umlclass_package(
     (uuid, package, package_controller)
 }
 
+fn uml_class(
+    stereotype: UmlClassStereotype,
+    name: &str,
+    properties: &str,
+    functions: &str,
+    position: egui::Pos2,
+) -> (uuid::Uuid, Arc<RwLock<UmlClass>>, Arc<RwLock<UmlClassController>>) {
+    let class_uuid = uuid::Uuid::now_v7();
+    let class = Arc::new(RwLock::new(UmlClass::new(
+        class_uuid.clone(),
+        stereotype,
+        name.to_owned(),
+        properties.to_owned(),
+        functions.to_owned(),
+    )));
+    let class_controller = Arc::new(RwLock::new(UmlClassController {
+        model: class.clone(),
+        self_reference: Weak::new(),
+        stereotype_buffer: stereotype,
+        name_buffer: name.to_owned(),
+        properties_buffer: properties.to_owned(),
+        functions_buffer: functions.to_owned(),
+        comment_buffer: "".to_owned(),
+
+        dragged: false,
+        highlight: canvas::Highlight::NONE,
+        position,
+        bounds_rect: egui::Rect::ZERO,
+    }));
+    class_controller.write().unwrap().self_reference = Arc::downgrade(&class_controller);
+    (class_uuid, class, class_controller)
+}
+
 pub struct UmlClassController {
     pub model: Arc<RwLock<UmlClass>>,
+    self_reference: Weak<RwLock<Self>>,
 
     stereotype_buffer: UmlClassStereotype,
     name_buffer: String,
@@ -1369,14 +1289,13 @@ impl
                     self.highlight.selected = *select;
                 }
             }
-            InsensitiveCommand::MoveElements(uuids, delta) => {
-                if uuids.contains(&*self.uuid()) {
-                    self.position += *delta;
-                    undo_accumulator.push(InsensitiveCommand::MoveElements(
-                        std::iter::once(*self.uuid()).collect(),
-                        -*delta,
-                    ));
-                }
+            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+                self.position += *delta;
+                undo_accumulator.push(InsensitiveCommand::MoveElements(
+                    std::iter::once(*self.uuid()).collect(),
+                    -*delta,
+                ));
             }
             InsensitiveCommand::DeleteElements(..) | InsensitiveCommand::AddElement(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {

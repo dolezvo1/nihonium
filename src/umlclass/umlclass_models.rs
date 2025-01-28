@@ -286,13 +286,13 @@ pub struct UmlClass {
 }
 
 impl UmlClass {
-    pub fn new(uuid: uuid::Uuid, stereotype: UmlClassStereotype, name: String) -> Self {
+    pub fn new(uuid: uuid::Uuid, stereotype: UmlClassStereotype, name: String, properties: String, functions: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
             stereotype: stereotype,
             name: Arc::new(name),
-            properties: Arc::new("".to_owned()),
-            functions: Arc::new("".to_owned()),
+            properties: Arc::new(properties),
+            functions: Arc::new(functions),
             comment: Arc::new("".to_owned()),
             observers: VecDeque::new(),
         }

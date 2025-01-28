@@ -121,15 +121,6 @@ impl InputEvent {
             InputEvent::Drag { from, delta } => from,
         }
     }
-    
-    pub fn offset_by(&self, offset: egui::Vec2) -> InputEvent {
-        match self {
-            InputEvent::MouseDown(pos) => InputEvent::MouseDown(*pos + offset),
-            InputEvent::MouseUp(pos) => InputEvent::MouseUp(*pos + offset),
-            InputEvent::Click(pos) => InputEvent::Click(*pos + offset),
-            InputEvent::Drag { from, delta } => InputEvent::Drag { from: *from + offset, delta: *delta },
-        }
-    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -145,6 +136,7 @@ pub enum SensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     Select(HashSet<uuid::Uuid>, bool),
     MoveElements(HashSet<uuid::Uuid>, egui::Vec2),
     MoveSelectedElements(egui::Vec2),
+    MoveAllElements(egui::Vec2),
     DeleteElements(HashSet<uuid::Uuid>),
     DeleteSelectedElements,
     AddElement(uuid::Uuid, ElementT),
@@ -166,6 +158,7 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
             SensitiveCommand::MoveSelectedElements(delta) => {
                 InsensitiveCommand::MoveElements(selected_elements.clone(), delta)
             }
+            SensitiveCommand::MoveAllElements(delta) => InsensitiveCommand::MoveAllElements(delta),
             SensitiveCommand::DeleteElements(uuids) => InsensitiveCommand::DeleteElements(uuids),
             SensitiveCommand::DeleteSelectedElements => {
                 InsensitiveCommand::DeleteElements(selected_elements.clone())
@@ -188,6 +181,7 @@ pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     SelectAll(bool),
     Select(HashSet<uuid::Uuid>, bool),
     MoveElements(HashSet<uuid::Uuid>, egui::Vec2),
+    MoveAllElements(egui::Vec2),
     DeleteElements(HashSet<uuid::Uuid>),
     AddElement(uuid::Uuid, ElementT),
     PropertyChange(HashSet<uuid::Uuid>, Vec<PropChangeT>),
@@ -203,6 +197,7 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
             InsensitiveCommand::MoveElements(uuids, delta) => {
                 SensitiveCommand::MoveElements(uuids, delta)
             }
+            InsensitiveCommand::MoveAllElements(delta) => SensitiveCommand::MoveAllElements(delta),
             InsensitiveCommand::DeleteElements(uuids) => SensitiveCommand::DeleteElements(uuids),
             InsensitiveCommand::AddElement(uuid, element) => {
                 SensitiveCommand::AddElement(uuid, element)
@@ -221,6 +216,9 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
             InsensitiveCommand::DeleteElements(uuids) => Arc::new(format!("Delete {} elements", uuids.len())),
             InsensitiveCommand::MoveElements(uuids, _delta) => {
                 Arc::new(format!("Move {} elements", uuids.len()))
+            }
+            InsensitiveCommand::MoveAllElements(_delta) => {
+                Arc::new(format!("Move all elements"))
             }
             InsensitiveCommand::AddElement(..) => Arc::new(format!("Add 1 element")),
             InsensitiveCommand::PropertyChange(uuids, ..) => {
@@ -282,7 +280,6 @@ pub trait Tool<CommonElementT: ?Sized, QueryableT, AddCommandElementT, PropChang
     fn targetting_for_element(&self, controller: Self::KindedElement<'_>) -> egui::Color32;
     fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2);
 
-    fn offset_by(&mut self, delta: egui::Vec2);
     fn add_position(&mut self, pos: egui::Pos2);
     fn add_element(&mut self, controller: Self::KindedElement<'_>, pos: egui::Pos2);
     fn try_construct(
@@ -656,7 +653,7 @@ where
                         };
                     }
                 }
-                InsensitiveCommand::MoveElements(..) => {}
+                InsensitiveCommand::MoveElements(..) | InsensitiveCommand::MoveAllElements(..) => {}
                 InsensitiveCommand::DeleteElements(uuids) => {
                     for (uuid, element) in self
                         .owned_controllers
@@ -715,7 +712,9 @@ where
                 | InsensitiveCommand::Select(..)
                 | InsensitiveCommand::DeleteElements(..)
                 | InsensitiveCommand::AddElement(..) => true,
-                InsensitiveCommand::MoveElements(..) | InsensitiveCommand::PropertyChange(..) => false,
+                InsensitiveCommand::MoveElements(..)
+                | InsensitiveCommand::MoveAllElements(..)
+                | InsensitiveCommand::PropertyChange(..) => false,
             };
 
             if !undo_accumulator.is_empty() {
@@ -1519,22 +1518,19 @@ where
             egui::Color32::BLACK,
         );
 
-        let offset_tool = tool.map(|(p, t)| (p - self.bounds_rect.left_top().to_vec2(), t));
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
-        canvas.offset_by(self.bounds_rect.left_top().to_vec2());
         self.event_order
             .iter()
             .rev()
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
             .filter(|_| true) // TODO: filter by layers
             .for_each(|uc| {
-                if uc.1.write().unwrap().draw_in(q, canvas, &offset_tool) == TargettingStatus::Drawn
+                if uc.1.write().unwrap().draw_in(q, canvas, &tool) == TargettingStatus::Drawn
                 {
                     drawn_child_targetting = TargettingStatus::Drawn;
                 }
             });
-        canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
 
         match (drawn_child_targetting, tool) {
             (TargettingStatus::NotDrawn, Some((pos, t))) if self.min_shape().contains(*pos) => {
@@ -1546,16 +1542,14 @@ where
                     canvas::Highlight::NONE,
                 );
 
-                canvas.offset_by(self.bounds_rect.left_top().to_vec2());
                 self.event_order
                     .iter()
                     .rev()
                     .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
                     .filter(|_| true) // TODO: filter by layers
                     .for_each(|uc| {
-                        uc.1.write().unwrap().draw_in(q, canvas, &offset_tool);
+                        uc.1.write().unwrap().draw_in(q, canvas, &tool);
                     });
-                canvas.offset_by(-self.bounds_rect.left_top().to_vec2());
 
                 TargettingStatus::Drawn
             }
@@ -1570,10 +1564,6 @@ where
         tool: &mut Option<ToolT>,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> EventHandlingStatus {
-        tool.as_mut()
-            .map(|e| e.offset_by(self.bounds_rect.left_top().to_vec2()));
-        let offset_event = event.offset_by(- self.bounds_rect.left_top().to_vec2());
-
         let uc_status = self
             .event_order
             .iter()
@@ -1583,15 +1573,15 @@ where
                     uc,
                     uc.1.write()
                         .unwrap()
-                        .handle_event(offset_event, modifiers, tool, commands),
+                        .handle_event(event, modifiers, tool, commands),
                 )
             })
             .find(|e| e.1 != EventHandlingStatus::NotHandled);
-
-        tool.as_mut()
-            .map(|e| e.offset_by(-self.bounds_rect.left_top().to_vec2()));
         
         match event {
+            InputEvent::MouseDown(pos) | InputEvent::MouseUp(pos) if uc_status.is_some() => {
+                uc_status.unwrap().1
+            }
             InputEvent::MouseDown(pos) | InputEvent::MouseUp(pos) => {
                 if uc_status.is_none() && self.min_shape().contains(pos) {
                     self.dragged = matches!(event, InputEvent::MouseDown(_));
@@ -1603,9 +1593,7 @@ where
             InputEvent::Click(pos) => {
                 if self.min_shape().contains(pos) {
                     if let Some(tool) = tool {
-                        tool.offset_by(self.bounds_rect.left_top().to_vec2());
-                        tool.add_position(*offset_event.mouse_position());
-                        tool.offset_by(-self.bounds_rect.left_top().to_vec2());
+                        tool.add_position(*event.mouse_position());
                         tool.add_element(ToolT::KindedElement::from(self), pos);
                         
                         if let Some(new_a) = tool.try_construct(self) {
@@ -1694,15 +1682,18 @@ where
 
                 recurse!(self);
             }
-            InsensitiveCommand::MoveElements(uuids, delta) => {
-                if uuids.contains(&*self.uuid()) {
-                    self.bounds_rect.set_center(self.position() + *delta);
-                    undo_accumulator.push(InsensitiveCommand::MoveElements(
-                        std::iter::once(*self.uuid()).collect(),
-                        -*delta,
-                    ));
-                } else {
-                    recurse!(self);
+            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {
+                recurse!(self);
+            }
+            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+                self.bounds_rect.set_center(self.position() + *delta);
+                undo_accumulator.push(InsensitiveCommand::MoveElements(
+                    std::iter::once(*self.uuid()).collect(),
+                    -*delta,
+                ));
+                for e in &self.owned_controllers {
+                    let mut e = e.1.write().unwrap();
+                    e.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![]);
                 }
             }
             InsensitiveCommand::DeleteElements(uuids) => {
@@ -2452,11 +2443,8 @@ where
                     }
                 }
             }
-            InsensitiveCommand::MoveElements(uuids, delta) => {
-                let multiconnection_present = uuids.contains(&*self.uuid());
-                for p in
-                    all_pts_mut!(self).filter(|e| multiconnection_present || uuids.contains(&e.0))
-                {
+            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {
+                for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {
                     p.1 += *delta;
                     undo_accumulator.push(InsensitiveCommand::MoveElements(
                         std::iter::once(p.0).collect(),
@@ -2464,6 +2452,16 @@ where
                     ));
                 }
             }
+            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+                for p in all_pts_mut!(self) {
+                    p.1 += *delta;
+                    undo_accumulator.push(InsensitiveCommand::MoveElements(
+                        std::iter::once(p.0).collect(),
+                        -*delta,
+                    ));
+                }
+            }
+            
             InsensitiveCommand::DeleteElements(uuids) => {
                 let self_uuid = *self.uuid();
                 if let Some(center_point) =

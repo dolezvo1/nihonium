@@ -9,7 +9,7 @@ use egui_extras::{Column, TableBuilder};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Formatter},
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, Weak},
 };
 
 use sophia::api::{prelude::SparqlDataset, sparql::Query};
@@ -483,21 +483,10 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 }
 
 pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
-    let node_uuid = uuid::Uuid::now_v7();
-    let node = Arc::new(RwLock::new(RdfNode::new(
-        node_uuid.clone(),
-        "http://www.w3.org/People/EM/contact#me".to_owned(),
-    )));
-    let node_controller = Arc::new(RwLock::new(RdfNodeController {
-        model: node.clone(),
-        iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        dragged: false,
-        highlight: canvas::Highlight::NONE,
-        position: egui::Pos2::new(300.0, 100.0),
-        bounds_radius: egui::Vec2::ZERO,
-    }));
+    let (node_uuid, node, node_controller) = rdf_node(
+        "http://www.w3.org/People/EM/contact#me",
+        egui::Pos2::new(300.0, 100.0),
+    );
 
     let literal_uuid = uuid::Uuid::now_v7();
     let literal = Arc::new(RwLock::new(RdfLiteral::new(
@@ -536,21 +525,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 
     for xx in 0..=10 {
         for yy in 300..=400 {
-            let node_st_uuid = uuid::Uuid::now_v7();
-            let node_st = Arc::new(RwLock::new(RdfNode::new(
-                node_st_uuid.clone(),
-                "http://www.w3.org/People/EM/contact#me".to_owned(),
-            )));
-            let node_st_controller = Arc::new(RwLock::new(RdfNodeController {
-                model: node_st.clone(),
-                iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
-                comment_buffer: "".to_owned(),
-
-                dragged: false,
-                highlight: canvas::Highlight::NONE,
-                position: egui::Pos2::new(xx as f32, yy as f32),
-                bounds_radius: egui::Vec2::ZERO,
-            }));
+            let (node_st_uuid, node_st, node_st_controller) = rdf_node(
+                "http://www.w3.org/People/EM/contact#me",
+                egui::Pos2::new(xx as f32, yy as f32),
+            );
             models_st.push(node_st);
             controllers_st.insert(node_st_uuid, node_st_controller);
         }
@@ -558,21 +536,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 
     for xx in 3000..=3100 {
         for yy in 3000..=3100 {
-            let node_st_uuid = uuid::Uuid::now_v7();
-            let node_st = Arc::new(RwLock::new(RdfNode::new(
-                node_st_uuid.clone(),
-                "http://www.w3.org/People/EM/contact#me".to_owned(),
-            )));
-            let node_st_controller = Arc::new(RwLock::new(RdfNodeController {
-                model: node_st.clone(),
-                iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
-                comment_buffer: "".to_owned(),
-
-                dragged: false,
-                highlight: canvas::Highlight::NONE,
-                position: egui::Pos2::new(xx as f32, yy as f32),
-                bounds_radius: egui::Vec2::ZERO,
-            }));
+            let (node_st_uuid, node_st, node_st_controller) = rdf_node(
+                "http://www.w3.org/People/EM/contact#me",
+                egui::Pos2::new(xx as f32, yy as f32),
+            );
             models_st.push(node_st);
             controllers_st.insert(node_st_uuid, node_st_controller);
         }
@@ -722,7 +689,7 @@ enum PartialRdfElement {
     Some((uuid::Uuid, ArcRwLockController)),
     Predicate {
         source: Arc<RwLock<dyn RdfElement>>,
-        source_pos: egui::Pos2,
+        source_view: ArcRwLockController,
         dest: Option<Arc<RwLock<dyn RdfElement>>>,
     },
     Graph {
@@ -734,7 +701,6 @@ enum PartialRdfElement {
 pub struct NaiveRdfTool {
     initial_stage: RdfToolStage,
     current_stage: RdfToolStage,
-    offset: egui::Pos2,
     result: PartialRdfElement,
     event_lock: bool,
 }
@@ -744,7 +710,6 @@ impl NaiveRdfTool {
         Self {
             initial_stage,
             current_stage: initial_stage,
-            offset: egui::Pos2::ZERO,
             result: PartialRdfElement::None,
             event_lock: false,
         }
@@ -802,17 +767,17 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
         }
     }
     fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
-        match self.result {
-            PartialRdfElement::Predicate { source_pos, .. } => {
+        match &self.result {
+            PartialRdfElement::Predicate { source_view, .. } => {
                 canvas.draw_line(
-                    [source_pos, pos],
+                    [source_view.read().unwrap().position(), pos],
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
             }
             PartialRdfElement::Graph { a, .. } => {
                 canvas.draw_rectangle(
-                    egui::Rect::from_two_pos(a, pos),
+                    egui::Rect::from_two_pos(*a, pos),
                     egui::Rounding::ZERO,
                     egui::Color32::TRANSPARENT,
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
@@ -823,9 +788,6 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
         }
     }
 
-    fn offset_by(&mut self, delta: egui::Vec2) {
-        self.offset += delta;
-    }
     fn add_position(&mut self, pos: egui::Pos2) {
         if self.event_lock {
             return;
@@ -858,28 +820,13 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
                 self.event_lock = true;
             }
             (RdfToolStage::Node, _) => {
-                let node = Arc::new(RwLock::new(RdfNode::new(
-                    uuid,
-                    "http://www.w3.org/People/EM/contact#me".to_owned(),
-                )));
-                self.result = PartialRdfElement::Some((
-                    uuid,
-                    Arc::new(RwLock::new(RdfNodeController {
-                        model: node.clone(),
-                        iri_buffer: "http://www.w3.org/People/EM/contact#me".to_owned(),
-                        comment_buffer: "".to_owned(),
-
-                        dragged: false,
-                        highlight: canvas::Highlight::NONE,
-                        position: pos,
-                        bounds_radius: egui::Vec2::ZERO,
-                    })),
-                ));
+                let (node_uuid, node, node_controller) = rdf_node("http://www.w3.org/People/EM/contact#me", pos);
+                self.result = PartialRdfElement::Some((node_uuid, node_controller));
                 self.event_lock = true;
             }
             (RdfToolStage::GraphStart, _) => {
                 self.result = PartialRdfElement::Graph {
-                    a: self.offset + pos.to_vec2(),
+                    a: pos,
                     b: None,
                 };
                 self.current_stage = RdfToolStage::GraphEnd;
@@ -909,7 +856,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
                 (RdfToolStage::PredicateStart, PartialRdfElement::None) => {
                     self.result = PartialRdfElement::Predicate {
                         source: inner.model.clone(),
-                        source_pos: self.offset + pos.to_vec2(),
+                        source_view: inner.self_reference.upgrade().unwrap(),
                         dest: None,
                     };
                     self.current_stage = RdfToolStage::PredicateEnd;
@@ -1129,8 +1076,33 @@ fn rdf_graph(
     (uuid, graph, graph_controller)
 }
 
+fn rdf_node(
+    iri: &str,
+    position: egui::Pos2,
+) -> (uuid::Uuid, Arc<RwLock<RdfNode>>, Arc<RwLock<RdfNodeController>>) {
+    let node_uuid = uuid::Uuid::now_v7();
+    let node = Arc::new(RwLock::new(RdfNode::new(
+        node_uuid.clone(),
+        iri.to_owned(),
+    )));
+    let node_controller = Arc::new(RwLock::new(RdfNodeController {
+        model: node.clone(),
+        self_reference: Weak::new(),
+        iri_buffer: iri.to_owned(),
+        comment_buffer: "".to_owned(),
+
+        dragged: false,
+        highlight: canvas::Highlight::NONE,
+        position: position,
+        bounds_radius: egui::Vec2::ZERO,
+    }));
+    node_controller.write().unwrap().self_reference = Arc::downgrade(&node_controller);
+    (node_uuid, node, node_controller)
+}
+
 pub struct RdfNodeController {
     pub model: Arc<RwLock<RdfNode>>,
+    self_reference: Weak<RwLock<Self>>,
 
     iri_buffer: String,
     comment_buffer: String,
@@ -1322,14 +1294,13 @@ impl
                     self.highlight.selected = *select;
                 }
             }
-            InsensitiveCommand::MoveElements(uuids, delta) => {
-                if uuids.contains(&*self.uuid()) {
-                    self.position += *delta;
-                    undo_accumulator.push(InsensitiveCommand::MoveElements(
-                        std::iter::once(*self.uuid()).collect(),
-                        -*delta,
-                    ));
-                }
+            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+                self.position += *delta;
+                undo_accumulator.push(InsensitiveCommand::MoveElements(
+                    std::iter::once(*self.uuid()).collect(),
+                    -*delta,
+                ));
             }
             InsensitiveCommand::DeleteElements(..) | InsensitiveCommand::AddElement(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
@@ -1569,14 +1540,13 @@ impl
                     self.highlight.selected = *select;
                 }
             }
-            InsensitiveCommand::MoveElements(uuids, delta) => {
-                if uuids.contains(&*self.uuid()) {
-                    self.position += *delta;
-                    undo_accumulator.push(InsensitiveCommand::MoveElements(
-                        std::iter::once(*self.uuid()).collect(),
-                        -*delta,
-                    ));
-                }
+            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+                self.position += *delta;
+                undo_accumulator.push(InsensitiveCommand::MoveElements(
+                    std::iter::once(*self.uuid()).collect(),
+                    -*delta,
+                ));
             }
             InsensitiveCommand::DeleteElements(..) | InsensitiveCommand::AddElement(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {

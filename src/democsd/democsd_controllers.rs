@@ -8,10 +8,11 @@ use crate::democsd::democsd_models::{
 };
 use crate::NHApp;
 use eframe::egui;
+use eframe::glow::BUFFER;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Formatter},
-    sync::{Arc, RwLock},
+    sync::{Arc, RwLock, Weak},
 };
 
 type ArcRwLockController = Arc<
@@ -288,174 +289,53 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         HashMap::<_, Arc<RwLock<dyn ElementControllerGen2<_, _, _, _, _>>>>::new();
 
     {
-        let client_uuid = uuid::Uuid::now_v7();
-        let client = Arc::new(RwLock::new(DemoCsdTransactor::new(
-            client_uuid,
-            "CTAR01".to_owned(),
-            "Client".to_owned(),
-            false,
-            None,
-            false,
-        )));
-        let client_controller = Arc::new(RwLock::new(DemoCsdTransactorView {
-            model: client.clone(),
-            transaction_view: None,
-
-            identifier_buffer: "CTAR01".to_owned(),
-            name_buffer: "Client".to_owned(),
-            internal_buffer: false,
-            transaction_selfactivating_buffer: false,
-            comment_buffer: "".to_owned(),
-
-            dragged: false,
-            highlight: canvas::Highlight::NONE,
-            position: egui::Pos2::new(200.0, 200.0),
-            bounds_rect: egui::Rect::ZERO,
-        }));
+        let (client_uuid, client, client_controller) = democsd_transactor(
+            "CTAR01", "Client",
+            false, None, false, egui::Pos2::new(200.0, 200.0),
+        );
+        
         models.push(client);
         controllers.insert(client_uuid, client_controller);
     }
 
     {
-        let transaction_uuid = uuid::Uuid::now_v7();
-        let transaction = Arc::new(RwLock::new(DemoCsdTransaction::new(
-            transaction_uuid,
-            "TK01".to_owned(),
-            "Sale completion".to_owned(),
-        )));
-        let transaction_controller = Arc::new(RwLock::new(DemoCsdTransactionView {
-            model: transaction.clone(),
-            
-            identifier_buffer: "TK01".to_owned(),
-            name_buffer: "Sale completion".to_owned(),
-            comment_buffer: "".to_owned(),
-            
-            dragged: false,
-            highlight: canvas::Highlight::NONE,
-            position: egui::Pos2::new(0.0, 0.0),
-            min_shape: canvas::NHShape::ELLIPSE_ZERO,
-        }));
+        let (transaction_uuid, transaction, transaction_controller) = democsd_transaction(
+            "TK01", "Sale completion",
+            egui::Pos2::new(200.0, 400.0), true,
+        );
         
-        let transactor_uuid = uuid::Uuid::now_v7();
-        let transactor = Arc::new(RwLock::new(DemoCsdTransactor::new(
-            transactor_uuid,
-            "AR01".to_owned(),
-            "Sale completer".to_owned(),
-            true,
-            Some(transaction),
-            false,
-        )));
-        let transactor_controller = Arc::new(RwLock::new(DemoCsdTransactorView {
-            model: transactor.clone(),
-            transaction_view: Some(transaction_controller),
-            
-            identifier_buffer: "AR01".to_owned(),
-            name_buffer: "Sale completer".to_owned(),
-            internal_buffer: true,
-            transaction_selfactivating_buffer: false,
-            comment_buffer: "".to_owned(),
-
-            dragged: false,
-            highlight: canvas::Highlight::NONE,
-            position: egui::Pos2::new(200.0, 400.0),
-            bounds_rect: egui::Rect::ZERO,
-        }));
+        let (transactor_uuid, transactor, transactor_controller) = democsd_transactor(
+            "AR01", "Sale completer",
+            true, Some((transaction, transaction_controller)), false, egui::Pos2::new(200.0, 400.0),
+        );
         models.push(transactor);
         controllers.insert(transactor_uuid, transactor_controller);
     }
     
     {
-        let transaction_uuid = uuid::Uuid::now_v7();
-        let transaction = Arc::new(RwLock::new(DemoCsdTransaction::new(
-            transaction_uuid,
-            "TK10".to_owned(),
-            "Sale transportation".to_owned(),
-        )));
-        let transaction_controller = Arc::new(RwLock::new(DemoCsdTransactionView {
-            model: transaction.clone(),
-            
-            identifier_buffer: "TK10".to_owned(),
-            name_buffer: "Sale transportation".to_owned(),
-            comment_buffer: "".to_owned(),
-            
-            dragged: false,
-            highlight: canvas::Highlight::NONE,
-            position: egui::Pos2::new(0.0, 0.0),
-            min_shape: canvas::NHShape::ELLIPSE_ZERO,
-        }));
+        let (transaction_uuid, transaction, transaction_controller) = democsd_transaction(
+            "TK10", "Sale transportation",
+            egui::Pos2::new(200.0, 600.0), true,
+        );
 
-        let transactor_uuid = uuid::Uuid::now_v7();
-        let transactor = Arc::new(RwLock::new(DemoCsdTransactor::new(
-            transactor_uuid,
-            "AR02".to_owned(),
-            "Sale transporter".to_owned(),
-            true,
-            Some(transaction),
-            false,
-        )));
-        let transactor_controller = Arc::new(RwLock::new(DemoCsdTransactorView {
-            model: transactor.clone(),
-            transaction_view: Some(transaction_controller),
-            
-            identifier_buffer: "AR02".to_owned(),
-            name_buffer: "Sale transporter".to_owned(),
-            internal_buffer: true,
-            transaction_selfactivating_buffer: false,
-            comment_buffer: "".to_owned(),
-
-            dragged: false,
-            highlight: canvas::Highlight::NONE,
-            position: egui::Pos2::new(200.0, 600.0),
-            bounds_rect: egui::Rect::ZERO,
-        }));
+        let (transactor_uuid, transactor, transactor_controller) = democsd_transactor(
+            "AR02", "Sale transporter",
+            true, Some((transaction, transaction_controller)), false, egui::Pos2::new(200.0, 600.0),
+        );
         models.push(transactor);
         controllers.insert(transactor_uuid, transactor_controller);
     }
     
     {
-        let transaction_uuid = uuid::Uuid::now_v7();
-        let transaction = Arc::new(RwLock::new(DemoCsdTransaction::new(
-            transaction_uuid,
-            "TK11".to_owned(),
-            "Sale controlling".to_owned(),
-        )));
-        let transaction_controller = Arc::new(RwLock::new(DemoCsdTransactionView {
-            model: transaction.clone(),
-            
-            identifier_buffer: "TK11".to_owned(),
-            name_buffer: "Sale controlling".to_owned(),
-            comment_buffer: "".to_owned(),
-            
-            dragged: false,
-            highlight: canvas::Highlight::NONE,
-            position: egui::Pos2::new(0.0, 0.0),
-            min_shape: canvas::NHShape::ELLIPSE_ZERO,
-        }));
+        let (transaction_uuid, transaction, transaction_controller) = democsd_transaction(
+            "TK11", "Sale controlling",
+            egui::Pos2::new(400.0, 200.0), true,
+        );
         
-        let transactor_uuid = uuid::Uuid::now_v7();
-        let transactor = Arc::new(RwLock::new(DemoCsdTransactor::new(
-            transactor_uuid,
-            "AR03".to_owned(),
-            "Sale controller".to_owned(),
-            true,
-            Some(transaction),
-            true,
-        )));
-        let transactor_controller = Arc::new(RwLock::new(DemoCsdTransactorView {
-            model: transactor.clone(),
-            transaction_view: Some(transaction_controller),
-            
-            identifier_buffer: "AR03".to_owned(),
-            name_buffer: "Sale controller".to_owned(),
-            internal_buffer: true,
-            transaction_selfactivating_buffer: true,
-            comment_buffer: "".to_owned(),
-
-            dragged: false,
-            highlight: canvas::Highlight::NONE,
-            position: egui::Pos2::new(400.0, 200.0),
-            bounds_rect: egui::Rect::ZERO,
-        }));
+        let (transactor_uuid, transactor, transactor_controller) = democsd_transactor(
+            "AR03", "Sale controller",
+            true, Some((transaction, transaction_controller)), true, egui::Pos2::new(400.0, 200.0),
+        );
         models.push(transactor);
         controllers.insert(transactor_uuid, transactor_controller);
     }
@@ -537,7 +417,7 @@ enum PartialDemoCsdElement {
     Link {
         link_type: DemoCsdLinkType,
         source: Arc<RwLock<DemoCsdTransactor>>,
-        source_pos: egui::Pos2,
+        source_view: ArcRwLockController,
         dest: Option<Arc<RwLock<DemoCsdTransaction>>>,
     },
     Package {
@@ -549,7 +429,6 @@ enum PartialDemoCsdElement {
 pub struct NaiveDemoCsdTool {
     initial_stage: DemoCsdToolStage,
     current_stage: DemoCsdToolStage,
-    offset: egui::Pos2,
     result: PartialDemoCsdElement,
     event_lock: bool,
 }
@@ -559,7 +438,6 @@ impl NaiveDemoCsdTool {
         Self {
             initial_stage,
             current_stage: initial_stage,
-            offset: egui::Pos2::ZERO,
             result: PartialDemoCsdElement::None,
             event_lock: false,
         }
@@ -623,17 +501,17 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
         }
     }
     fn draw_status_hint(&self, canvas: &mut dyn canvas::NHCanvas, pos: egui::Pos2) {
-        match self.result {
-            PartialDemoCsdElement::Link { source_pos, .. } => {
+        match &self.result {
+            PartialDemoCsdElement::Link { source_view, .. } => {
                 canvas.draw_line(
-                    [source_pos, pos],
+                    [source_view.read().unwrap().position(), pos],
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
             }
             PartialDemoCsdElement::Package { a, .. } => {
                 canvas.draw_rectangle(
-                    egui::Rect::from_two_pos(a, pos),
+                    egui::Rect::from_two_pos(*a, pos),
                     egui::Rounding::ZERO,
                     egui::Color32::TRANSPARENT,
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
@@ -644,9 +522,6 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
         }
     }
 
-    fn offset_by(&mut self, delta: egui::Vec2) {
-        self.offset += delta;
-    }
     fn add_position(&mut self, pos: egui::Pos2) {
         if self.event_lock {
             return;
@@ -655,111 +530,38 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
         let uuid = uuid::Uuid::now_v7();
         match (self.current_stage, &mut self.result) {
             (DemoCsdToolStage::Client, _) => {
-                let client = Arc::new(RwLock::new(DemoCsdTransactor::new(
-                    uuid,
-                    "CTAR01".to_owned(),
-                    "Client".to_owned(),
-                    false,
-                    None,
-                    false,
-                )));
-                self.result = PartialDemoCsdElement::Some((
-                    uuid,
-                    Arc::new(RwLock::new(DemoCsdTransactorView {
-                        model: client.clone(),
-                        transaction_view: None,
-
-                        identifier_buffer: "CTAR01".to_owned(),
-                        name_buffer: "Client".to_owned(),
-                        internal_buffer: false,
-                        transaction_selfactivating_buffer: false,
-                        comment_buffer: "".to_owned(),
-
-                        dragged: false,
-                        highlight: canvas::Highlight::NONE,
-                        position: pos,
-                        bounds_rect: egui::Rect::ZERO,
-                    })),
-                ));
+                let (client_uuid, client, client_controller) = democsd_transactor(
+                    "CTAR01", "Client",
+                    false, None,
+                    false, pos,
+                );
+                self.result = PartialDemoCsdElement::Some((client_uuid, client_controller));
                 self.event_lock = true;
             }
             (DemoCsdToolStage::Transactor, _) => {
-                let transaction_uuid = uuid::Uuid::now_v7();
-                let transaction = Arc::new(RwLock::new(DemoCsdTransaction::new(
-                    transaction_uuid,
-                    "TK01".to_owned(),
-                    "Transaction".to_owned(),
-                )));
-                let transaction_controller = Arc::new(RwLock::new(DemoCsdTransactionView {
-                    model: transaction.clone(),
-                    
-                    identifier_buffer: "TK01".to_owned(),
-                    name_buffer: "Transaction".to_owned(),
-                    comment_buffer: "".to_owned(),
-                    
-                    dragged: false,
-                    highlight: canvas::Highlight::NONE,
-                    position: egui::Pos2::new(0.0, 0.0),
-                    min_shape: canvas::NHShape::ELLIPSE_ZERO,
-                }));
-                
-                let transactor = Arc::new(RwLock::new(DemoCsdTransactor::new(
-                    uuid,
-                    "AR01".to_owned(),
-                    "Transactor".to_owned(),
-                    true,
-                    Some(transaction),
-                    false,
-                )));
-                self.result = PartialDemoCsdElement::Some((
-                    uuid,
-                    Arc::new(RwLock::new(DemoCsdTransactorView {
-                        model: transactor.clone(),
-                        transaction_view: Some(transaction_controller),
-
-                        identifier_buffer: "AR01".to_owned(),
-                        name_buffer: "Transactor".to_owned(),
-                        internal_buffer: true,
-                        transaction_selfactivating_buffer: false,
-                        comment_buffer: "".to_owned(),
-
-                        dragged: false,
-                        highlight: canvas::Highlight::NONE,
-                        position: pos,
-                        bounds_rect: egui::Rect::ZERO,
-                    })),
-                ));
+                let (transaction_uuid, transaction, transaction_controller) = democsd_transaction(
+                    "TK01", "Transaction",
+                    pos, true,
+                );
+                let (transactor_uuid, transactor, transactor_controller) = democsd_transactor(
+                    "AR01", "Transactor",
+                    true, Some((transaction, transaction_controller)),
+                    false, pos,
+                );
+                self.result = PartialDemoCsdElement::Some((transactor_uuid, transactor_controller));
                 self.event_lock = true;
             }
             (DemoCsdToolStage::Bank, _) => {
-                let bank = Arc::new(RwLock::new(DemoCsdTransaction::new(
-                    uuid,
-                    "TK01".to_owned(),
-                    "Bank".to_owned(),
-                )));
-                self.result = PartialDemoCsdElement::Some((
-                    uuid,
-                    Arc::new(RwLock::new(DemoCsdTransactionView {
-                        model: bank.clone(),
-
-                        identifier_buffer: "TK01".to_owned(),
-                        name_buffer: "Bank".to_owned(),
-                        comment_buffer: "".to_owned(),
-
-                        dragged: false,
-                        highlight: canvas::Highlight::NONE,
-                        position: pos,
-                        min_shape: canvas::NHShape::Ellipse {
-                            position: egui::Pos2::ZERO,
-                            bounds_radius: egui::Vec2::ZERO,
-                        },
-                    })),
-                ));
+                let (bank_uuid, bank, bank_controller) = democsd_transaction(
+                    "TK01", "Bank",
+                    pos, false,
+                );
+                self.result = PartialDemoCsdElement::Some((bank_uuid, bank_controller));
                 self.event_lock = true;
             }
             (DemoCsdToolStage::PackageStart, _) => {
                 self.result = PartialDemoCsdElement::Package {
-                    a: self.offset + pos.to_vec2(),
+                    a: pos,
                     b: None,
                 };
                 self.current_stage = DemoCsdToolStage::PackageEnd;
@@ -785,7 +587,7 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
                     self.result = PartialDemoCsdElement::Link {
                         link_type,
                         source: inner.model.clone(),
-                        source_pos: self.offset + pos.to_vec2(),
+                        source_view: inner.self_reference.upgrade().unwrap(),
                         dest: None,
                     };
                     self.current_stage = DemoCsdToolStage::LinkEnd;
@@ -992,8 +794,47 @@ fn democsd_package(
 
 // ---
 
+fn democsd_transactor(
+    identifier: &str,
+    name: &str,
+    internal: bool,
+    transaction: Option<(Arc<std::sync::RwLock<DemoCsdTransaction>>, Arc<std::sync::RwLock<DemoCsdTransactionView>>)>,
+    transaction_selfactivating: bool,
+    position: egui::Pos2,
+) -> (uuid::Uuid, Arc<RwLock<DemoCsdTransactor>>, Arc<RwLock<DemoCsdTransactorView>>) {
+    let ta_uuid = uuid::Uuid::now_v7();
+    let ta = Arc::new(RwLock::new(DemoCsdTransactor::new(
+        ta_uuid,
+        identifier.to_owned(),
+        name.to_owned(),
+        internal,
+        transaction.as_ref().map(|t| t.0.clone()),
+        transaction_selfactivating,
+    )));
+    let ta_controller = Arc::new(RwLock::new(DemoCsdTransactorView {
+        model: ta.clone(),
+        self_reference: Weak::new(),
+        transaction_view: transaction.map(|t| t.1),
+
+        identifier_buffer: identifier.to_owned(),
+        name_buffer: name.to_owned(),
+        internal_buffer: internal,
+        transaction_selfactivating_buffer: transaction_selfactivating,
+        comment_buffer: "".to_owned(),
+
+        dragged: false,
+        highlight: canvas::Highlight::NONE,
+        position,
+        bounds_rect: egui::Rect::ZERO,
+    }));
+    
+    ta_controller.write().unwrap().self_reference = Arc::downgrade(&ta_controller);
+    (ta_uuid, ta, ta_controller)
+}
+
 pub struct DemoCsdTransactorView {
     model: Arc<RwLock<DemoCsdTransactor>>,
+    self_reference: Weak<RwLock<Self>>,
     transaction_view: Option<Arc<RwLock<DemoCsdTransactionView>>>,
     
     identifier_buffer: String,
@@ -1213,9 +1054,7 @@ impl
             let offset = self.position.to_vec2() + egui::Vec2::new(0.0, -4.0 * canvas::CLASS_MIDDLE_FONT_SIZE);
             let offset_tool = tool.map(|(p, t)| (p - offset, t));
             let mut t = t.write().unwrap();
-            canvas.offset_by(offset);
             let res = t.draw_in(queryable, canvas, &offset_tool);
-            canvas.offset_by(-offset);
             if res == TargettingStatus::Drawn {
                 return TargettingStatus::Drawn;
             }
@@ -1260,8 +1099,7 @@ impl
             InputEvent::Click(pos) => {
                 if let Some(t) = &self.transaction_view {
                     let mut t = t.write().unwrap();
-                    let offset_event = event.offset_by(self.position.to_vec2() + egui::Vec2::new(0.0, 4.0 * canvas::CLASS_MIDDLE_FONT_SIZE));
-                    match t.handle_event(offset_event, modifiers, tool, commands) {
+                    match t.handle_event(event, modifiers, tool, commands) {
                         EventHandlingStatus::NotHandled => {},
                         EventHandlingStatus::HandledByElement => {
                             if !modifiers.command {
@@ -1340,13 +1178,18 @@ impl
                 }
                 recurse!(self);
             }
-            InsensitiveCommand::MoveElements(uuids, delta) => {
-                if uuids.contains(&*self.uuid()) {
-                    self.position += *delta;
-                    undo_accumulator.push(InsensitiveCommand::MoveElements(
-                        std::iter::once(*self.uuid()).collect(),
-                        -*delta,
-                    ));
+            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {
+                recurse!(self);
+            }
+            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+                self.position += *delta;
+                undo_accumulator.push(InsensitiveCommand::MoveElements(
+                    std::iter::once(*self.uuid()).collect(),
+                    -*delta,
+                ));
+                if let Some(t) = &self.transaction_view {
+                    let mut t = t.write().unwrap();
+                    t.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![]);
                 }
             }
             InsensitiveCommand::DeleteElements(..) | InsensitiveCommand::AddElement(..) => {}
@@ -1420,6 +1263,33 @@ impl
             t.collect_all_selected_elements(into);
         }
     }
+}
+
+fn democsd_transaction(
+    identifier: &str,
+    name: &str,
+    position: egui::Pos2,
+    actor: bool,
+) -> (uuid::Uuid, Arc<RwLock<DemoCsdTransaction>>, Arc<RwLock<DemoCsdTransactionView>>) {
+    let transaction_uuid = uuid::Uuid::now_v7();
+    let transaction = Arc::new(RwLock::new(DemoCsdTransaction::new(
+        transaction_uuid,
+        identifier.to_owned(),
+        name.to_owned(),
+    )));
+    let transaction_controller = Arc::new(RwLock::new(DemoCsdTransactionView {
+        model: transaction.clone(),
+        
+        identifier_buffer: identifier.to_owned(),
+        name_buffer: name.to_owned(),
+        comment_buffer: "".to_owned(),
+        
+        dragged: false,
+        highlight: canvas::Highlight::NONE,
+        position: position - if actor {egui::Vec2::new(0.0, 3.84 * canvas::CLASS_MIDDLE_FONT_SIZE)} else {egui::Vec2::ZERO},
+        min_shape: canvas::NHShape::ELLIPSE_ZERO,
+    }));
+    (transaction_uuid, transaction, transaction_controller)
 }
 
 pub struct DemoCsdTransactionView {
@@ -1668,14 +1538,13 @@ impl
                     self.highlight.selected = *select;
                 }
             }
-            InsensitiveCommand::MoveElements(uuids, delta) => {
-                if uuids.contains(&*self.uuid()) {
-                    self.position += *delta;
-                    undo_accumulator.push(InsensitiveCommand::MoveElements(
-                        std::iter::once(*self.uuid()).collect(),
-                        -*delta,
-                    ));
-                }
+            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+                self.position += *delta;
+                undo_accumulator.push(InsensitiveCommand::MoveElements(
+                    std::iter::once(*self.uuid()).collect(),
+                    -*delta,
+                ));
             }
             InsensitiveCommand::DeleteElements(..) | InsensitiveCommand::AddElement(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {

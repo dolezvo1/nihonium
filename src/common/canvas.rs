@@ -337,8 +337,6 @@ pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 
 pub trait NHCanvas {
     // These functions are must haves
-    fn offset_by(&mut self, delta: egui::Vec2);
-
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight);
     fn draw_rectangle(
         &mut self,
@@ -787,10 +785,6 @@ impl UiCanvas {
 }
 
 impl NHCanvas for UiCanvas {
-    fn offset_by(&mut self, delta: egui::Vec2) {
-        self.camera_offset += delta * self.camera_scale;
-    }
-
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
         let offset = self.canvas.min.to_vec2() + self.camera_offset.to_vec2();
         let (p1, p2) = (
@@ -1004,7 +998,6 @@ impl NHCanvas for UiCanvas {
 }
 
 pub struct MeasuringCanvas<'a> {
-    camera_offset: egui::Pos2,
     painter: &'a egui::Painter,
     bounds: egui::Rect,
 }
@@ -1012,7 +1005,6 @@ pub struct MeasuringCanvas<'a> {
 impl<'a> MeasuringCanvas<'a> {
     pub fn new(painter: &'a egui::Painter) -> Self {
         Self {
-            camera_offset: egui::Pos2::ZERO,
             painter,
             bounds: egui::Rect::NOTHING,
         }
@@ -1024,15 +1016,9 @@ impl<'a> MeasuringCanvas<'a> {
 }
 
 impl<'a> NHCanvas for MeasuringCanvas<'a> {
-    fn offset_by(&mut self, delta: egui::Vec2) {
-        self.camera_offset += delta;
-    }
-
     fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke, highlight: Highlight) {
-        self.bounds
-            .extend_with(points[0] + self.camera_offset.to_vec2());
-        self.bounds
-            .extend_with(points[1] + self.camera_offset.to_vec2());
+        self.bounds.extend_with(points[0]);
+        self.bounds.extend_with(points[1]);
     }
 
     fn draw_rectangle(
@@ -1043,9 +1029,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         _stroke: Stroke,
         highlight: Highlight,
     ) {
-        self.bounds = self
-            .bounds
-            .union(rect.translate(self.camera_offset.to_vec2()));
+        self.bounds = self.bounds.union(rect);
     }
 
     fn draw_ellipse(
@@ -1057,9 +1041,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         highlight: Highlight,
     ) {
         let rect = egui::Rect::from_center_size(position, 2.0 * radius);
-        self.bounds = self
-            .bounds
-            .union(rect.translate(self.camera_offset.to_vec2()));
+        self.bounds = self.bounds.union(rect);
     }
 
     fn draw_polygon(
@@ -1070,7 +1052,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         highlight: Highlight,
     ) {
         for p in vertices {
-            self.bounds.extend_with(p + self.camera_offset.to_vec2());
+            self.bounds.extend_with(p);
         }
     }
 
@@ -1098,9 +1080,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         _text_color: egui::Color32,
     ) {
         let rect = self.measure_text(position, anchor, text, font_size);
-        self.bounds = self
-            .bounds
-            .union(rect.translate(self.camera_offset.to_vec2()));
+        self.bounds = self.bounds.union(rect);
     }
 }
 
@@ -1152,10 +1132,6 @@ impl<'a> SVGCanvas<'a> {
 }
 
 impl<'a> NHCanvas for SVGCanvas<'a> {
-    fn offset_by(&mut self, delta: egui::Vec2) {
-        self.camera_offset += delta;
-    }
-
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
         let stroke_dasharray = match stroke.line_type {
             LineType::Solid => "none",
