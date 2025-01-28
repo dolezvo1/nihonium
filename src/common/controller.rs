@@ -118,7 +118,7 @@ impl InputEvent {
             InputEvent::MouseDown(pos2) => pos2,
             InputEvent::MouseUp(pos2) => pos2,
             InputEvent::Click(pos2) => pos2,
-            InputEvent::Drag { from, delta } => from,
+            InputEvent::Drag { from, .. } => from,
         }
     }
 }
@@ -281,7 +281,7 @@ pub trait Tool<CommonElementT: ?Sized, QueryableT, AddCommandElementT, PropChang
     fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2);
 
     fn add_position(&mut self, pos: egui::Pos2);
-    fn add_element(&mut self, controller: Self::KindedElement<'_>, pos: egui::Pos2);
+    fn add_element(&mut self, controller: Self::KindedElement<'_>);
     fn try_construct(
         &mut self,
         into: &dyn ContainerGen2<CommonElementT, QueryableT, Self, AddCommandElementT, PropChangeT>,
@@ -1647,7 +1647,7 @@ where
             .find(|e| e.1 != EventHandlingStatus::NotHandled);
         
         match event {
-            InputEvent::MouseDown(pos) | InputEvent::MouseUp(pos) if uc_status.is_some() => {
+            InputEvent::MouseDown(_pos) | InputEvent::MouseUp(_pos) if uc_status.is_some() => {
                 EventHandlingStatus::HandledByContainer
             }
             InputEvent::MouseDown(pos) | InputEvent::MouseUp(pos) => {
@@ -1662,7 +1662,7 @@ where
                 if self.min_shape().contains(pos) {
                     if let Some(tool) = tool {
                         tool.add_position(*event.mouse_position());
-                        tool.add_element(ToolT::KindedElement::from(self), pos);
+                        tool.add_element(ToolT::KindedElement::from(self));
                         
                         if let Some(new_a) = tool.try_construct(self) {
                             commands.push(SensitiveCommand::AddElement(*self.uuid(), new_a.into()));
@@ -1692,7 +1692,7 @@ where
                     uc_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled)
                 }
             },
-            InputEvent::Drag { from, delta } => {
+            InputEvent::Drag { delta, .. } => {
                 if self.dragged {
                     if self.highlight.selected {
                         commands.push(SensitiveCommand::MoveSelectedElements(delta));
@@ -1750,7 +1750,7 @@ where
 
                 recurse!(self);
             }
-            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {
+            InsensitiveCommand::MoveElements(uuids, _) if !uuids.contains(&*self.uuid()) => {
                 recurse!(self);
             }
             InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
@@ -2084,7 +2084,7 @@ where
 {
     fn controller_for(
         &self,
-        uuid: &uuid::Uuid,
+        _uuid: &uuid::Uuid,
     ) -> Option<
         Arc<
             RwLock<
@@ -2155,20 +2155,22 @@ where
             let lock = self.destination.read().unwrap();
             (lock.position(), lock.min_shape())
         };
+        
+        // I don't believe this is correct, but it seems to sort of work
         let (source_next_point, dest_next_point) = match (
-            self.source_points[0]
-                .get(1)
+            self.source_points[0].iter().skip(1)
                 .map(|e| *e)
-                .or(self.center_point)
+                .chain(self.center_point)
+                .find(|p| !source_bounds.contains(p.1))
                 .map(|e| e.1),
-            self.dest_points[0]
-                .get(1)
+            self.dest_points[0].iter().skip(1)
                 .map(|e| *e)
-                .or(self.center_point)
+                .chain(self.center_point)
+                .find(|p| !dest_bounds.contains(p.1))
                 .map(|e| e.1),
         ) {
             (None, None) => {
-                let pos_avg = (source_pos + dest_pos.to_vec2()) / 2.0;
+                let pos_avg = (source_bounds.center_intersect(dest_pos) + dest_bounds.center_intersect(source_pos).to_vec2()) / 2.0;
                 (pos_avg, pos_avg)
             }
             (source_next_point, dest_next_point) => (
@@ -2176,53 +2178,46 @@ where
                 dest_next_point.unwrap_or(source_pos),
             ),
         };
-
-        match (
-            source_bounds
-                .orthogonal_intersect(source_next_point)
-                .or_else(|| source_bounds.center_intersect(source_next_point)),
-            dest_bounds
-                .orthogonal_intersect(dest_next_point)
-                .or_else(|| dest_bounds.center_intersect(dest_next_point)),
-        ) {
-            (Some(source_intersect), Some(dest_intersect)) => {
-                self.source_points[0][0].1 = source_intersect;
-                self.dest_points[0][0].1 = dest_intersect;
-                canvas.draw_multiconnection(
-                    &self.selected_vertices,
-                    &[(
-                        (self.model_to_source_arrowhead_type)(&*model),
-                        crate::common::canvas::Stroke {
-                            width: 1.0,
-                            color: egui::Color32::BLACK,
-                            line_type: (self.model_to_line_type)(&*model),
-                        },
-                        &self.source_points[0],
-                        (self.model_to_source_arrowhead_label)(&*model),
-                    )],
-                    &[(
-                        (self.model_to_destination_arrowhead_type)(&*model),
-                        crate::common::canvas::Stroke {
-                            width: 1.0,
-                            color: egui::Color32::BLACK,
-                            line_type: (self.model_to_line_type)(&*model),
-                        },
-                        &self.dest_points[0],
-                        (self.model_to_destination_arrowhead_label)(&*model),
-                    )],
-                    match &self.center_point {
-                        Some(point) => *point,
-                        None => (
-                            uuid::Uuid::nil(),
-                            (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
-                        ),
-                    },
-                    None,
-                    self.highlight,
-                );
-            }
-            _ => {}
-        }
+        
+        let source_intersect = source_bounds.orthogonal_intersect(source_next_point)
+                .unwrap_or_else(|| source_bounds.center_intersect(source_next_point));
+        let dest_intersect = dest_bounds.orthogonal_intersect(dest_next_point)
+                .unwrap_or_else(|| dest_bounds.center_intersect(dest_next_point));
+        
+        self.source_points[0][0].1 = source_intersect;
+        self.dest_points[0][0].1 = dest_intersect;
+        canvas.draw_multiconnection(
+            &self.selected_vertices,
+            &[(
+                (self.model_to_source_arrowhead_type)(&*model),
+                crate::common::canvas::Stroke {
+                    width: 1.0,
+                    color: egui::Color32::BLACK,
+                    line_type: (self.model_to_line_type)(&*model),
+                },
+                &self.source_points[0],
+                (self.model_to_source_arrowhead_label)(&*model),
+            )],
+            &[(
+                (self.model_to_destination_arrowhead_type)(&*model),
+                crate::common::canvas::Stroke {
+                    width: 1.0,
+                    color: egui::Color32::BLACK,
+                    line_type: (self.model_to_line_type)(&*model),
+                },
+                &self.dest_points[0],
+                (self.model_to_destination_arrowhead_label)(&*model),
+            )],
+            match &self.center_point {
+                Some(point) => *point,
+                None => (
+                    uuid::Uuid::nil(),
+                    (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
+                ),
+            },
+            None,
+            self.highlight,
+        );
 
         TargettingStatus::NotDrawn
     }

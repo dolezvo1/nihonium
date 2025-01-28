@@ -8,7 +8,6 @@ use crate::democsd::democsd_models::{
 };
 use crate::NHApp;
 use eframe::egui;
-use eframe::glow::BUFFER;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Debug, Formatter},
@@ -253,7 +252,7 @@ fn tool_change_fun(tool: &mut Option<NaiveDemoCsdTool>, ui: &mut egui::Ui) {
     }
 }
 
-fn menubar_options_fun(controller: &mut DiagramView, _context: &mut NHApp, _ui: &mut egui::Ui) {}
+fn menubar_options_fun(_controller: &mut DiagramView, _context: &mut NHApp, _ui: &mut egui::Ui) {}
 
 pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let uuid = uuid::Uuid::now_v7();
@@ -299,7 +298,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     }
 
     {
-        let (transaction_uuid, transaction, transaction_controller) = democsd_transaction(
+        let (_transaction_uuid, transaction, transaction_controller) = democsd_transaction(
             "TK01", "Sale completion",
             egui::Pos2::new(200.0, 400.0), true,
         );
@@ -313,7 +312,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     }
     
     {
-        let (transaction_uuid, transaction, transaction_controller) = democsd_transaction(
+        let (_transaction_uuid, transaction, transaction_controller) = democsd_transaction(
             "TK10", "Sale transportation",
             egui::Pos2::new(200.0, 600.0), true,
         );
@@ -327,7 +326,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     }
     
     {
-        let (transaction_uuid, transaction, transaction_controller) = democsd_transaction(
+        let (_transaction_uuid, transaction, transaction_controller) = democsd_transaction(
             "TK11", "Sale controlling",
             egui::Pos2::new(400.0, 200.0), true,
         );
@@ -502,10 +501,13 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
     }
     fn draw_status_hint(&self, canvas: &mut dyn canvas::NHCanvas, pos: egui::Pos2) {
         match &self.result {
-            PartialDemoCsdElement::Link { source_view, .. } => {
+            PartialDemoCsdElement::Link { source_view, link_type, .. } => {
                 canvas.draw_line(
                     [source_view.read().unwrap().position(), pos],
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                    match link_type.line_type() {
+                        canvas::LineType::Solid => canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::LineType::Dashed => canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                    },
                     canvas::Highlight::NONE,
                 );
             }
@@ -527,10 +529,9 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
             return;
         }
 
-        let uuid = uuid::Uuid::now_v7();
         match (self.current_stage, &mut self.result) {
             (DemoCsdToolStage::Client, _) => {
-                let (client_uuid, client, client_controller) = democsd_transactor(
+                let (client_uuid, _client, client_controller) = democsd_transactor(
                     "CTAR01", "Client",
                     false, None,
                     false, pos,
@@ -539,11 +540,11 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
                 self.event_lock = true;
             }
             (DemoCsdToolStage::Transactor, _) => {
-                let (transaction_uuid, transaction, transaction_controller) = democsd_transaction(
+                let (_transaction_uuid, transaction, transaction_controller) = democsd_transaction(
                     "TK01", "Transaction",
                     pos, true,
                 );
-                let (transactor_uuid, transactor, transactor_controller) = democsd_transactor(
+                let (transactor_uuid, _transactor, transactor_controller) = democsd_transactor(
                     "AR01", "Transactor",
                     true, Some((transaction, transaction_controller)),
                     false, pos,
@@ -552,7 +553,7 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
                 self.event_lock = true;
             }
             (DemoCsdToolStage::Bank, _) => {
-                let (bank_uuid, bank, bank_controller) = democsd_transaction(
+                let (bank_uuid, _bank, bank_controller) = democsd_transaction(
                     "TK01", "Bank",
                     pos, false,
                 );
@@ -574,7 +575,7 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
             _ => {}
         }
     }
-    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>, pos: egui::Pos2) {
+    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>) {
         if self.event_lock {
             return;
         }
@@ -1068,7 +1069,6 @@ impl
         
         // If tx is present, draw it 4 rows above the position
         if let Some(t) = &self.transaction_view {
-            let offset = self.position.to_vec2() + egui::Vec2::new(0.0, -4.0 * canvas::CLASS_MIDDLE_FONT_SIZE);
             let mut t = t.write().unwrap();
             let res = t.draw_in(queryable, canvas, &tool);
             if res == TargettingStatus::Drawn {
@@ -1143,7 +1143,7 @@ impl
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_element(KindedDemoCsdElement::Transactor { inner: self }, pos);
+                    tool.add_element(KindedDemoCsdElement::Transactor { inner: self });
                 } else {
                     if !modifiers.command {
                         self.highlight.selected = true;
@@ -1522,9 +1522,9 @@ impl
                 self.dragged = matches!(event, InputEvent::MouseDown(_));
                 EventHandlingStatus::HandledByElement
             },
-            InputEvent::Click(pos) => {
+            InputEvent::Click(_) => {
                 if let Some(tool) = tool {
-                    tool.add_element(KindedDemoCsdElement::Bank { inner: self }, pos);
+                    tool.add_element(KindedDemoCsdElement::Bank { inner: self });
                 } else {
                     if !modifiers.command {
                         self.highlight.selected = true;

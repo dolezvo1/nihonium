@@ -4,7 +4,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-use common::controller::SensitiveCommand;
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
@@ -1149,8 +1148,8 @@ impl eframe::App for NHApp {
                     .draggable_tabs(self.context.draggable_tabs)
                     .show_tab_name_on_hover(self.context.show_tab_name_on_hover)
                     .allowed_splits(self.context.allowed_splits)
-                    .show_window_close_buttons(self.context.show_window_close)
-                    .show_window_collapse_buttons(self.context.show_window_collapse)
+                    .show_leaf_close_all_buttons(self.context.show_window_close)
+                    .show_leaf_collapse_buttons(self.context.show_window_collapse)
                     .show_inside(ui, &mut self.context);
             });
     }

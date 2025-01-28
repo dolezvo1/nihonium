@@ -714,8 +714,10 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
             } => {
                 canvas.draw_line(
                     [source_view.read().unwrap().position(), pos],
-                    // TODO: draw correct hint line type
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                    match link_type.line_type() {
+                        canvas::LineType::Solid => canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::LineType::Dashed => canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                    },
                     canvas::Highlight::NONE,
                 );
             }
@@ -737,14 +739,13 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
             return;
         }
 
-        let uuid = uuid::Uuid::now_v7();
         match (self.current_stage, &mut self.result) {
             (UmlClassToolStage::Class, _) => {
-                let (class_uuid, class, class_controller) = uml_class(
+                let (class_uuid, _class, class_controller) = uml_class(
                     UmlClassStereotype::Class, "a class",
                     "", "", pos,
                 );
-                self.result = PartialUmlClassElement::Some((class_uuid,class_controller));
+                self.result = PartialUmlClassElement::Some((class_uuid, class_controller));
                 self.event_lock = true;
             }
             (UmlClassToolStage::PackageStart, _) => {
@@ -764,7 +765,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
             _ => {}
         }
     }
-    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>, pos: egui::Pos2) {
+    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>) {
         if self.event_lock {
             return;
         }
@@ -871,7 +872,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
             PartialUmlClassElement::Package { a, b: Some(b), .. } => {
                 self.current_stage = UmlClassToolStage::PackageStart;
 
-                let (uuid, package, package_controller) =
+                let (uuid, _package, package_controller) =
                     umlclass_package("a package", egui::Rect::from_two_pos(*a, *b));
 
                 self.result = PartialUmlClassElement::None;
@@ -1091,7 +1092,7 @@ impl ContainerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool, Um
 {
     fn controller_for(
         &self,
-        uuid: &uuid::Uuid,
+        _uuid: &uuid::Uuid,
     ) -> Option<ArcRwLockController> {
         None
     }
@@ -1257,9 +1258,9 @@ impl
                 self.dragged = matches!(event, InputEvent::MouseDown(_));
                 EventHandlingStatus::HandledByElement
             },
-            InputEvent::Click(pos) => {
+            InputEvent::Click(_pos) => {
                 if let Some(tool) = tool {
-                    tool.add_element(KindedUmlClassElement::Class { inner: self }, pos);
+                    tool.add_element(KindedUmlClassElement::Class { inner: self });
                 } else {
                     if !modifiers.command {
                         self.highlight.selected = true;
@@ -1300,7 +1301,7 @@ impl
                     self.highlight.selected = *select;
                 }
             }
-            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveElements(uuids, _) if !uuids.contains(&*self.uuid()) => {}
             InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveElements(

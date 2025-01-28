@@ -1,7 +1,8 @@
 use crate::common::controller::{ContainerModel, Model};
 use crate::common::observer::{impl_observable, Observable, Observer};
+use crate::common::canvas;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashSet, VecDeque},
     sync::{Arc, RwLock},
 };
 
@@ -207,6 +208,14 @@ impl DemoCsdLinkType {
             DemoCsdLinkType::Initiation => "Initiation",
             DemoCsdLinkType::Interstriction => "Interstriction",
             DemoCsdLinkType::Interimpediment => "Interimpediment",
+        }
+    }
+    
+    pub fn line_type(&self) -> canvas::LineType {
+        match self {
+            DemoCsdLinkType::Initiation => canvas::LineType::Solid,
+            DemoCsdLinkType::Interstriction => canvas::LineType::Dashed,
+            DemoCsdLinkType::Interimpediment => canvas::LineType::Dashed,
         }
     }
 }

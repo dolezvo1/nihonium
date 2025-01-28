@@ -75,6 +75,24 @@ fn segment_ellipse_point(
     ));
 }
 
+fn ellipse_orthogonal_intersection(
+    point: egui::Pos2,
+    (center, radius): (&egui::Pos2, &egui::Vec2),
+) -> Option<egui::Pos2> {
+    fn slv_px(px: f32, py: f32, cx: f32, cy: f32, rx: f32, ry: f32) -> f32 {
+        let sqrt = ((1.0 - (py-cy).powf(2.0) / ry.powf(2.0)) * rx.powf(2.0)).sqrt();
+        px.clamp(cx - sqrt, cx + sqrt)
+    }
+
+    if center.x - radius.x < point.x && point.x < center.x + radius.x {
+        Some(egui::Pos2::new(point.x, slv_px(point.y, point.x, center.y, center.x, radius.y, radius.x)))
+    } else if center.y - radius.y < point.y && point.y < center.y + radius.y{
+        Some(egui::Pos2::new(slv_px(point.x, point.y, center.x, center.y, radius.x, radius.y), point.y))
+    } else {
+        None
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum NHShape {
     Rect {
@@ -92,15 +110,16 @@ impl NHShape {
         bounds_radius: egui::Vec2::ZERO,
     };
 
-    pub fn center_intersect(&self, point: egui::Pos2) -> Option<egui::Pos2> {
+    pub fn center_intersect(&self, point: egui::Pos2) -> egui::Pos2 {
         match &self {
-            NHShape::Rect { inner } => segment_rect_point(point, inner),
+            NHShape::Rect { inner } => segment_rect_point(point, inner).unwrap_or(point),
             NHShape::Ellipse {
                 position,
                 bounds_radius,
-            } => segment_ellipse_point(point, (position, bounds_radius)),
+            } => segment_ellipse_point(point, (position, bounds_radius)).unwrap_or(point),
         }
     }
+    /// returns None iff point is not orthogonally aligned
     pub fn orthogonal_intersect(&self, point: egui::Pos2) -> Option<egui::Pos2> {
         match &self {
             NHShape::Rect { inner } => match point {
@@ -117,26 +136,7 @@ impl NHShape {
             NHShape::Ellipse {
                 position,
                 bounds_radius,
-            } => match point {
-                // TODO: yeah, this is wrong. whatever.
-                egui::Pos2 { x, y }
-                    if position.x - bounds_radius.x < x && x < position.x + bounds_radius.x =>
-                {
-                    Some(egui::Pos2 {
-                        x,
-                        y: y.clamp(position.y - bounds_radius.y, position.y + bounds_radius.y),
-                    })
-                }
-                egui::Pos2 { x, y }
-                    if position.y - bounds_radius.y < y && y < position.y + bounds_radius.y =>
-                {
-                    Some(egui::Pos2 {
-                        x: x.clamp(position.x - bounds_radius.x, position.x + bounds_radius.x),
-                        y,
-                    })
-                }
-                _ => None,
-            },
+            } => ellipse_orthogonal_intersection(point, (position, bounds_radius))
         }
     }
     pub fn contains(&self, point: egui::Pos2) -> bool {

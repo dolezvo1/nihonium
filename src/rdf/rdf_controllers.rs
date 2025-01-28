@@ -820,7 +820,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
                 self.event_lock = true;
             }
             (RdfToolStage::Node, _) => {
-                let (node_uuid, node, node_controller) = rdf_node("http://www.w3.org/People/EM/contact#me", pos);
+                let (node_uuid, _node, node_controller) = rdf_node("http://www.w3.org/People/EM/contact#me", pos);
                 self.result = PartialRdfElement::Some((node_uuid, node_controller));
                 self.event_lock = true;
             }
@@ -837,7 +837,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
             _ => {}
         }
     }
-    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>, pos: egui::Pos2) {
+    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>) {
         if self.event_lock {
             return;
         }
@@ -1141,7 +1141,7 @@ impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVerte
 {
     fn controller_for(
         &self,
-        uuid: &uuid::Uuid,
+        _uuid: &uuid::Uuid,
     ) -> Option<ArcRwLockController> {
         None
     }
@@ -1269,9 +1269,9 @@ impl
                 self.dragged = matches!(event, InputEvent::MouseDown(_));
                 EventHandlingStatus::HandledByElement
             },
-            InputEvent::Click(pos) => {
+            InputEvent::Click(_) => {
                 if let Some(tool) = tool {
-                    tool.add_element(KindedRdfElement::Node { inner: self }, pos);
+                    tool.add_element(KindedRdfElement::Node { inner: self });
                 }
                 
                 EventHandlingStatus::HandledByElement
@@ -1305,7 +1305,7 @@ impl
                     self.highlight.selected = *select;
                 }
             }
-            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveElements(uuids, _) if !uuids.contains(&*self.uuid()) => {}
             InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveElements(
@@ -1392,7 +1392,7 @@ impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVerte
 {
     fn controller_for(
         &self,
-        uuid: &uuid::Uuid,
+        _uuid: &uuid::Uuid,
     ) -> Option<ArcRwLockController> {
         None
     }
@@ -1524,9 +1524,9 @@ impl
                 self.dragged = matches!(event, InputEvent::MouseDown(_));
                 EventHandlingStatus::HandledByElement
             },
-            InputEvent::Click(pos) => {
+            InputEvent::Click(_) => {
                 if let Some(tool) = tool {
-                    tool.add_element(KindedRdfElement::Literal { inner: self }, pos);
+                    tool.add_element(KindedRdfElement::Literal { inner: self });
                 }
                 
                 EventHandlingStatus::HandledByElement
@@ -1562,7 +1562,7 @@ impl
                     self.highlight.selected = *select;
                 }
             }
-            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveElements(uuids, _) if !uuids.contains(&*self.uuid()) => {}
             InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveElements(
