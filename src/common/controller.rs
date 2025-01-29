@@ -1673,14 +1673,22 @@ where
             InputEvent::MouseDown(_pos) | InputEvent::MouseUp(_pos) if uc_status.is_some() => {
                 EventHandlingStatus::HandledByContainer
             }
-            InputEvent::MouseDown(pos) | InputEvent::MouseUp(pos) => {
-                if uc_status.is_none() && self.min_shape().contains(pos) {
-                    self.dragged = matches!(event, InputEvent::MouseDown(_));
+            InputEvent::MouseDown(pos) => {
+                if self.min_shape().border_distance(pos) <= 2.0 {
+                    self.dragged = true;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             },
+            InputEvent::MouseUp(pos) => {
+                if self.dragged {
+                    self.dragged = false;
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            }
             InputEvent::Click(pos) => {
                 if self.min_shape().contains(pos) {
                     if let Some(tool) = tool {
@@ -2175,16 +2183,9 @@ where
         _tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus {
         let model = self.model.read().unwrap();
-        let (source_pos, source_bounds) = {
-            let lock = self.source.read().unwrap();
-            (lock.position(), lock.min_shape())
-        };
-        let (dest_pos, dest_bounds) = {
-            let lock = self.destination.read().unwrap();
-            (lock.position(), lock.min_shape())
-        };
+        let source_bounds = self.source.read().unwrap().min_shape();
+        let dest_bounds = self.destination.read().unwrap().min_shape();
         
-        // I don't believe this is correct, but it seems to sort of work
         let (source_next_point, dest_next_point) = match (
             self.source_points[0].iter().skip(1)
                 .map(|e| *e)
@@ -2198,19 +2199,24 @@ where
                 .map(|e| e.1),
         ) {
             (None, None) => {
-                let pos_avg = (source_bounds.center_intersect(dest_pos) + dest_bounds.center_intersect(source_pos).to_vec2()) / 2.0;
-                (pos_avg, pos_avg)
+                let point = source_bounds.nice_midpoint(&dest_bounds);
+                (point, point)
             }
             (source_next_point, dest_next_point) => (
-                source_next_point.unwrap_or(dest_pos),
-                dest_next_point.unwrap_or(source_pos),
+                source_next_point.unwrap_or(dest_bounds.center()),
+                dest_next_point.unwrap_or(source_bounds.center()),
             ),
         };
         
-        let source_intersect = source_bounds.orthogonal_intersect(source_next_point)
-                .unwrap_or_else(|| source_bounds.center_intersect(source_next_point));
-        let dest_intersect = dest_bounds.orthogonal_intersect(dest_next_point)
-                .unwrap_or_else(|| dest_bounds.center_intersect(dest_next_point));
+        // The bounds may use different intersection method only if the target points are not the same...
+        let (source_intersect, dest_intersect) = 
+            match (source_bounds.orthogonal_intersect(source_next_point), dest_bounds.orthogonal_intersect(dest_next_point)) {
+                (Some(a), Some(b)) => (a, b),
+                (a, b) if source_next_point != dest_next_point =>
+                    (a.unwrap_or_else(|| source_bounds.center_intersect(source_next_point)),
+                     b.unwrap_or_else(|| dest_bounds.center_intersect(dest_next_point))),
+                _ => (source_bounds.center_intersect(source_next_point), dest_bounds.center_intersect(dest_next_point))
+            };
         
         self.source_points[0][0].1 = source_intersect;
         self.dest_points[0][0].1 = dest_intersect;

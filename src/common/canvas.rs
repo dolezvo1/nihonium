@@ -3,22 +3,20 @@ use eframe::egui;
 use std::collections::HashSet;
 use std::io::Write;
 
+
 // rect intersection between segment from p to the center of rect
 // based on https://stackoverflow.com/a/31254199 by TWiStErRob
 fn segment_rect_point(p: egui::Pos2, rect: &egui::Rect) -> Option<egui::Pos2> {
     if rect.contains(p) {
         return None;
     }
-    let m = {
-        let m = rect.center() - p;
-        m.y / m.x
-    };
+    let m = (rect.center().y - p.y) / (rect.center().x - p.x);
     if p.x <= rect.center().x {
         // check "left" side
-        let min_xy = m * (rect.min.x - p.x) + p.y;
-        if rect.min.y <= min_xy && min_xy <= rect.max.y {
+        let min_xy = m * (rect.left() - p.x) + p.y;
+        if rect.top() <= min_xy && min_xy <= rect.bottom() {
             return Some(egui::Pos2 {
-                x: rect.min.x,
+                x: rect.left(),
                 y: min_xy,
             });
         }
@@ -26,10 +24,10 @@ fn segment_rect_point(p: egui::Pos2, rect: &egui::Rect) -> Option<egui::Pos2> {
 
     if p.x >= rect.center().x {
         // check "right" side
-        let max_xy = m * (rect.max.x - p.x) + p.y;
-        if rect.min.y <= max_xy && max_xy <= rect.max.y {
+        let max_xy = m * (rect.right() - p.x) + p.y;
+        if rect.top() <= max_xy && max_xy <= rect.bottom() {
             return Some(egui::Pos2 {
-                x: rect.max.x,
+                x: rect.right(),
                 y: max_xy,
             });
         }
@@ -37,22 +35,22 @@ fn segment_rect_point(p: egui::Pos2, rect: &egui::Rect) -> Option<egui::Pos2> {
 
     if p.y <= rect.center().y {
         // check "top" side
-        let min_yx = (rect.min.y - p.y) / m + p.x;
-        if rect.min.x <= min_yx && min_yx <= rect.max.x {
+        let min_yx = (rect.top() - p.y) / m + p.x;
+        if rect.left() <= min_yx && min_yx <= rect.right() {
             return Some(egui::Pos2 {
                 x: min_yx,
-                y: rect.min.y,
+                y: rect.top(),
             });
         }
     }
 
     if p.y >= rect.center().y {
         // check "bottom" side
-        let max_yx = (rect.max.y - p.y) / m + p.x;
-        if rect.min.x <= max_yx && max_yx <= rect.max.x {
+        let max_yx = (rect.bottom() - p.y) / m + p.x;
+        if rect.left() <= max_yx && max_yx <= rect.right() {
             return Some(egui::Pos2 {
                 x: max_yx,
-                y: rect.max.y,
+                y: rect.bottom(),
             });
         }
     }
@@ -109,6 +107,13 @@ impl NHShape {
         position: egui::Pos2::ZERO,
         bounds_radius: egui::Vec2::ZERO,
     };
+    
+    pub fn center(&self) -> egui::Pos2 {
+        match &self {
+            NHShape::Rect { inner } => inner.center(),
+            NHShape::Ellipse { position, bounds_radius } => *position,
+        }
+    }
 
     pub fn center_intersect(&self, point: egui::Pos2) -> egui::Pos2 {
         match &self {
@@ -139,6 +144,44 @@ impl NHShape {
             } => ellipse_orthogonal_intersection(point, (position, bounds_radius))
         }
     }
+    pub fn nice_midpoint(&self, other: &NHShape) -> egui::Pos2 {
+        fn bounding_box(s: &NHShape) -> egui::Rect {
+            match &s {
+                NHShape::Rect { inner } => *inner,
+                NHShape::Ellipse { position, bounds_radius } => egui::Rect::from_center_size(*position, 2.0 * *bounds_radius),
+            }
+        }
+        let (a, b) = (bounding_box(self), bounding_box(other));
+        
+        if a.left() < b.right() && b.left() < a.right() {
+            egui::Pos2::new(
+                (a.left().clamp(b.left(), b.right()) + a.right().clamp(b.left(), b.right())) / 2.0,
+                (a.bottom().min(b.bottom()) + a.top().max(b.top())) / 2.0,
+            )
+        } else if a.top() < b.bottom() && b.top() < a.bottom() {
+            egui::Pos2::new(
+                (a.right().min(b.right()) + a.left().max(b.left())) / 2.0,
+                (a.top().clamp(b.top(), b.bottom()) + a.bottom().clamp(b.top(), b.bottom())) / 2.0,
+            )
+        } else {
+            (self.center_intersect(other.center()) + other.center_intersect(self.center()).to_vec2()) / 2.0
+        }
+    }
+    pub fn border_distance(&self, point: egui::Pos2) -> f32 {
+        match &self {
+            NHShape::Rect { inner } => (point.x-inner.left()).abs()
+                .min((point.x-inner.right()).abs())
+                .min((point.y-inner.top()).abs())
+                .min((point.y-inner.bottom()).abs()),
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
+            } => {
+                // TODO: This is actually hard to do.
+                todo!()
+            }
+        }
+    }
     pub fn contains(&self, point: egui::Pos2) -> bool {
         match &self {
             NHShape::Rect { inner } => inner.contains(point),
@@ -163,6 +206,7 @@ impl NHShape {
     }
 }
 
+// TODO: circle, embedded circle (ArchiMate)
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum ArrowheadType {
     None,
