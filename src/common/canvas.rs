@@ -152,6 +152,15 @@ impl NHShape {
             }
         }
     }
+    pub fn contained_within(&self, rect: egui::Rect) -> bool {
+        match &self {
+            NHShape::Rect { inner } => rect.contains_rect(*inner),
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
+            } => rect.contains_rect(egui::Rect::from_center_size(*position, 2.0 * *bounds_radius))
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]

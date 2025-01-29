@@ -130,14 +130,16 @@ pub enum EventHandlingStatus {
     HandledByContainer, // = fully handled
 }
 
+/// Selection sensitive command - not inherently repeatable
 #[derive(Clone, PartialEq, Debug)]
 pub enum SensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     SelectAll(bool),
-    Select(HashSet<uuid::Uuid>, bool),
-    MoveElements(HashSet<uuid::Uuid>, egui::Vec2),
-    MoveSelectedElements(egui::Vec2),
+    SelectSpecific(HashSet<uuid::Uuid>, bool),
+    SelectByDrag(egui::Rect),
     MoveAllElements(egui::Vec2),
-    DeleteElements(HashSet<uuid::Uuid>),
+    MoveSpecificElements(HashSet<uuid::Uuid>, egui::Vec2),
+    MoveSelectedElements(egui::Vec2),
+    DeleteSpecificElements(HashSet<uuid::Uuid>),
     DeleteSelectedElements,
     AddElement(uuid::Uuid, ElementT),
     PropertyChange(HashSet<uuid::Uuid>, Vec<PropChangeT>),
@@ -145,23 +147,25 @@ pub enum SensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
 }
 
 impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<ElementT, PropChangeT> {
+    // TODO: I'm not sure whether this isn't actually the responsibility of the diagram itself
     fn to_selection_insensitive(
         self,
         selected_elements: &HashSet<uuid::Uuid>,
     ) -> InsensitiveCommand<ElementT, PropChangeT> {
         match self {
             SensitiveCommand::SelectAll(select) => InsensitiveCommand::SelectAll(select),
-            SensitiveCommand::Select(uuids, select) => InsensitiveCommand::Select(uuids, select),
-            SensitiveCommand::MoveElements(uuids, delta) => {
-                InsensitiveCommand::MoveElements(uuids, delta)
+            SensitiveCommand::SelectSpecific(uuids, select) => InsensitiveCommand::SelectSpecific(uuids, select),
+            SensitiveCommand::SelectByDrag(rect) => InsensitiveCommand::SelectByDrag(rect),
+            SensitiveCommand::MoveAllElements(delta) => InsensitiveCommand::MoveAllElements(delta),
+            SensitiveCommand::MoveSpecificElements(uuids, delta) => {
+                InsensitiveCommand::MoveSpecificElements(uuids, delta)
             }
             SensitiveCommand::MoveSelectedElements(delta) => {
-                InsensitiveCommand::MoveElements(selected_elements.clone(), delta)
+                InsensitiveCommand::MoveSpecificElements(selected_elements.clone(), delta)
             }
-            SensitiveCommand::MoveAllElements(delta) => InsensitiveCommand::MoveAllElements(delta),
-            SensitiveCommand::DeleteElements(uuids) => InsensitiveCommand::DeleteElements(uuids),
+            SensitiveCommand::DeleteSpecificElements(uuids) => InsensitiveCommand::DeleteSpecificElements(uuids),
             SensitiveCommand::DeleteSelectedElements => {
-                InsensitiveCommand::DeleteElements(selected_elements.clone())
+                InsensitiveCommand::DeleteSpecificElements(selected_elements.clone())
             }
             SensitiveCommand::AddElement(uuid, element) => {
                 InsensitiveCommand::AddElement(uuid, element)
@@ -176,13 +180,15 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
     }
 }
 
+/// Selection insensitive command - inherently repeatable
 #[derive(Clone, PartialEq, Debug)]
 pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     SelectAll(bool),
-    Select(HashSet<uuid::Uuid>, bool),
-    MoveElements(HashSet<uuid::Uuid>, egui::Vec2),
+    SelectSpecific(HashSet<uuid::Uuid>, bool),
+    SelectByDrag(egui::Rect),
     MoveAllElements(egui::Vec2),
-    DeleteElements(HashSet<uuid::Uuid>),
+    MoveSpecificElements(HashSet<uuid::Uuid>, egui::Vec2),
+    DeleteSpecificElements(HashSet<uuid::Uuid>),
     AddElement(uuid::Uuid, ElementT),
     PropertyChange(HashSet<uuid::Uuid>, Vec<PropChangeT>),
 }
@@ -193,12 +199,13 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     fn to_selection_sensitive(self) -> SensitiveCommand<ElementT, PropChangeT> {
         match self {
             InsensitiveCommand::SelectAll(select) => SensitiveCommand::SelectAll(select),
-            InsensitiveCommand::Select(uuids, select) => SensitiveCommand::Select(uuids, select),
-            InsensitiveCommand::MoveElements(uuids, delta) => {
-                SensitiveCommand::MoveElements(uuids, delta)
-            }
+            InsensitiveCommand::SelectSpecific(uuids, select) => SensitiveCommand::SelectSpecific(uuids, select),
+            InsensitiveCommand::SelectByDrag(rect) => SensitiveCommand::SelectByDrag(rect),
             InsensitiveCommand::MoveAllElements(delta) => SensitiveCommand::MoveAllElements(delta),
-            InsensitiveCommand::DeleteElements(uuids) => SensitiveCommand::DeleteElements(uuids),
+            InsensitiveCommand::MoveSpecificElements(uuids, delta) => {
+                SensitiveCommand::MoveSpecificElements(uuids, delta)
+            }
+            InsensitiveCommand::DeleteSpecificElements(uuids) => SensitiveCommand::DeleteSpecificElements(uuids),
             InsensitiveCommand::AddElement(uuid, element) => {
                 SensitiveCommand::AddElement(uuid, element)
             }
@@ -210,11 +217,11 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
 
     fn info_text(&self) -> Arc<String> {
         match self {
-            InsensitiveCommand::SelectAll(..) | InsensitiveCommand::Select(..) => {
+            InsensitiveCommand::SelectAll(..) | InsensitiveCommand::SelectSpecific(..) | InsensitiveCommand::SelectByDrag(..) => {
                 Arc::new("Sorry, your undo stack is broken now :/".to_owned())
             }
-            InsensitiveCommand::DeleteElements(uuids) => Arc::new(format!("Delete {} elements", uuids.len())),
-            InsensitiveCommand::MoveElements(uuids, _delta) => {
+            InsensitiveCommand::DeleteSpecificElements(uuids) => Arc::new(format!("Delete {} elements", uuids.len())),
+            InsensitiveCommand::MoveSpecificElements(uuids, _delta) => {
                 Arc::new(format!("Move {} elements", uuids.len()))
             }
             InsensitiveCommand::MoveAllElements(_delta) => {
@@ -231,9 +238,9 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     fn merge(&self, other: &Self) -> Option<Self> {
         match (self, other) {
             (
-                InsensitiveCommand::MoveElements(uuids1, delta1),
-                InsensitiveCommand::MoveElements(uuids2, delta2),
-            ) if uuids1 == uuids2 => Some(InsensitiveCommand::MoveElements(
+                InsensitiveCommand::MoveSpecificElements(uuids1, delta1),
+                InsensitiveCommand::MoveSpecificElements(uuids2, delta2),
+            ) if uuids1 == uuids2 => Some(InsensitiveCommand::MoveSpecificElements(
                 uuids1.clone(),
                 *delta1 + *delta2,
             )),
@@ -402,6 +409,7 @@ pub struct DiagramControllerGen2<
     pub camera_scale: f32,
     last_unhandled_mouse_pos: Option<egui::Pos2>,
     current_tool: Option<ToolT>,
+    select_by_drag: Option<(egui::Pos2, egui::Pos2)>,
     
     last_change_flag: bool,
     undo_stack: Vec<(
@@ -530,6 +538,7 @@ where
             camera_scale: 1.0,
             last_unhandled_mouse_pos: None,
             current_tool: None,
+            select_by_drag: None,
             
             last_change_flag: false,
             undo_stack: Vec::new(),
@@ -574,12 +583,12 @@ where
                     EventHandlingStatus::HandledByElement if matches!(event, InputEvent::Click(_)) => {
                         if !modifiers.command {
                             commands.push(SensitiveCommand::SelectAll(false));
-                            commands.push(SensitiveCommand::Select(
+                            commands.push(SensitiveCommand::SelectSpecific(
                                 std::iter::once(uc.0).collect(),
                                 true,
                             ));
                         } else {
-                            commands.push(SensitiveCommand::Select(
+                            commands.push(SensitiveCommand::SelectSpecific(
                                 std::iter::once(uc.0).collect(),
                                 !self.selected_elements.contains(&uc.0),
                             ));
@@ -589,10 +598,26 @@ where
                     a => a,
                 }
             })
-            .find(|e| *e == EventHandlingStatus::HandledByContainer);
+            .find(|e| *e != EventHandlingStatus::NotHandled);
         
         let handled = match event {
-            InputEvent::MouseDown(_) | InputEvent::MouseUp(_) | InputEvent::Drag { .. } => child.is_some(),
+            InputEvent::MouseDown(_) | InputEvent::MouseUp(_) | InputEvent::Drag { .. }
+                if child.is_some() || self.current_tool.is_some() => child.is_some(),
+            InputEvent::MouseDown(pos) => {
+                self.select_by_drag = Some((pos, pos));
+                true
+            }
+            InputEvent::MouseUp(_) => {
+                self.select_by_drag = None;
+                true
+            }
+            InputEvent::Drag{ delta, ..} => {
+                if let Some((a,b)) = self.select_by_drag {
+                    self.select_by_drag = Some((a, b + delta));
+                    commands.push(SensitiveCommand::SelectByDrag(egui::Rect::from_two_pos(a, b + delta)));
+                }
+                true
+            }
             InputEvent::Click(pos) => {
                 let mut handled = child
                     .ok_or_else(|| {
@@ -639,23 +664,12 @@ where
             let mut undo_accumulator = vec![];
 
             match &command {
-                InsensitiveCommand::SelectAll(select) => match select {
-                    true => {
-                        self.selected_elements =
-                            self.owned_controllers.iter().map(|e| *e.0).collect()
-                    }
-                    false => self.selected_elements.clear(),
-                },
-                InsensitiveCommand::Select(uuids, select) => {
-                    for uuid in self.owned_controllers.keys().filter(|k| uuids.contains(k)) {
-                        match select {
-                            true => self.selected_elements.insert(uuid.clone()),
-                            false => self.selected_elements.remove(uuid),
-                        };
-                    }
-                }
-                InsensitiveCommand::MoveElements(..) | InsensitiveCommand::MoveAllElements(..) => {}
-                InsensitiveCommand::DeleteElements(uuids) => {
+                InsensitiveCommand::SelectAll(..)
+                | InsensitiveCommand::SelectSpecific(..)
+                | InsensitiveCommand::SelectByDrag(..)
+                | InsensitiveCommand::MoveSpecificElements(..)
+                | InsensitiveCommand::MoveAllElements(..) => {}
+                InsensitiveCommand::DeleteSpecificElements(uuids) => {
                     for (uuid, element) in self
                         .owned_controllers
                         .iter()
@@ -676,7 +690,7 @@ where
                 InsensitiveCommand::AddElement(target, element) => {
                     if *target == *self.uuid() {
                         if let Ok((uuid, element)) = element.clone().try_into() {
-                            undo_accumulator.push(InsensitiveCommand::DeleteElements(
+                            undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(uuid).collect(),
                             ));
 
@@ -710,10 +724,11 @@ where
 
             let modifies_selection = match command {
                 InsensitiveCommand::SelectAll(..)
-                | InsensitiveCommand::Select(..)
-                | InsensitiveCommand::DeleteElements(..)
+                | InsensitiveCommand::SelectSpecific(..)
+                | InsensitiveCommand::SelectByDrag(..)
+                | InsensitiveCommand::DeleteSpecificElements(..)
                 | InsensitiveCommand::AddElement(..) => true,
-                InsensitiveCommand::MoveElements(..)
+                InsensitiveCommand::MoveSpecificElements(..)
                 | InsensitiveCommand::MoveAllElements(..)
                 | InsensitiveCommand::PropertyChange(..) => false,
             };
@@ -1038,7 +1053,7 @@ where
                 self.apply_commands(vec![SensitiveCommand::SelectAll(select)], &mut vec![], true, false);
             }
             DiagramCommand::InvertSelection => {
-                self.apply_commands(vec![SensitiveCommand::SelectAll(true), SensitiveCommand::Select(self.selected_elements.clone(), false)], &mut vec![], true, false);
+                self.apply_commands(vec![SensitiveCommand::SelectAll(true), SensitiveCommand::SelectSpecific(self.selected_elements.clone(), false)], &mut vec![], true, false);
             }
             DiagramCommand::DeleteSelectedElements => {
                 let mut undo = vec![];
@@ -1095,6 +1110,14 @@ where
                     });
             }
             tool.draw_status_hint(canvas, pos);
+        } else if let Some((a, b)) = self.select_by_drag {
+            canvas.draw_rectangle(
+                egui::Rect::from_two_pos(a, b),
+                egui::Rounding::ZERO,
+                egui::Color32::from_rgba_premultiplied(0, 0, 255, 7),
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
+                canvas::Highlight::NONE,
+            );
         }
     }
 }
@@ -1673,12 +1696,12 @@ where
                         if status == EventHandlingStatus::HandledByElement {
                             if !modifiers.command {
                                 commands.push(SensitiveCommand::SelectAll(false));
-                                commands.push(SensitiveCommand::Select(
+                                commands.push(SensitiveCommand::SelectSpecific(
                                     std::iter::once(uc.0).collect(),
                                     true,
                                 ));
                             } else {
-                                commands.push(SensitiveCommand::Select(
+                                commands.push(SensitiveCommand::SelectSpecific(
                                     std::iter::once(uc.0).collect(),
                                     !self.selected_elements.contains(&uc.0),
                                 ));
@@ -1697,7 +1720,7 @@ where
                     if self.highlight.selected {
                         commands.push(SensitiveCommand::MoveSelectedElements(delta));
                     } else {
-                        commands.push(SensitiveCommand::MoveElements(
+                        commands.push(SensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid()).collect(),
                             delta,
                         ));
@@ -1736,7 +1759,7 @@ where
                 }
                 recurse!(self);
             }
-            InsensitiveCommand::Select(uuids, select) => {
+            InsensitiveCommand::SelectSpecific(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
@@ -1750,12 +1773,17 @@ where
 
                 recurse!(self);
             }
-            InsensitiveCommand::MoveElements(uuids, _) if !uuids.contains(&*self.uuid()) => {
+            InsensitiveCommand::SelectByDrag(rect) => {
+                self.highlight.selected = self.min_shape().contained_within(*rect);
+                
                 recurse!(self);
             }
-            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid()) => {
+                recurse!(self);
+            }
+            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.bounds_rect.set_center(self.position() + *delta);
-                undo_accumulator.push(InsensitiveCommand::MoveElements(
+                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                     std::iter::once(*self.uuid()).collect(),
                     -*delta,
                 ));
@@ -1764,7 +1792,7 @@ where
                     e.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![]);
                 }
             }
-            InsensitiveCommand::DeleteElements(uuids) => {
+            InsensitiveCommand::DeleteSpecificElements(uuids) => {
                 for (uuid, element) in self
                     .owned_controllers
                     .iter()
@@ -1787,7 +1815,7 @@ where
             InsensitiveCommand::AddElement(target, element) => {
                 if *target == *self.uuid() {
                     if let Ok((uuid, element)) = element.clone().try_into() {
-                        undo_accumulator.push(InsensitiveCommand::DeleteElements(
+                        undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                             std::iter::once(uuid).collect(),
                         ));
 
@@ -2352,12 +2380,12 @@ where
                     ($uuid:expr) => {
                         if !modifiers.command {
                             commands.push(SensitiveCommand::SelectAll(false));
-                            commands.push(SensitiveCommand::Select(
+                            commands.push(SensitiveCommand::SelectSpecific(
                                 std::iter::once(*$uuid).collect(),
                                 true,
                             ));
                         } else {
-                            commands.push(SensitiveCommand::Select(
+                            commands.push(SensitiveCommand::SelectSpecific(
                                 std::iter::once(*$uuid).collect(),
                                 !self.selected_vertices.contains($uuid),
                             ));
@@ -2430,7 +2458,7 @@ where
                 if self.selected_vertices.contains(&dragged_node) {
                     commands.push(SensitiveCommand::MoveSelectedElements(delta));
                 } else {
-                    commands.push(SensitiveCommand::MoveElements(
+                    commands.push(SensitiveCommand::MoveSpecificElements(
                         std::iter::once(dragged_node).collect(),
                         delta,
                     ));
@@ -2468,7 +2496,7 @@ where
                     }
                 }
             }
-            InsensitiveCommand::Select(uuids, select) => {
+            InsensitiveCommand::SelectSpecific(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
@@ -2481,26 +2509,29 @@ where
                     }
                 }
             }
-            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {
+            InsensitiveCommand::SelectByDrag(rect) => {
+                self.highlight.selected = all_pts_mut!(self).find(|p| !rect.contains(p.1)).is_none();
+            }
+            InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {
                 for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {
                     p.1 += *delta;
-                    undo_accumulator.push(InsensitiveCommand::MoveElements(
+                    undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                         std::iter::once(p.0).collect(),
                         -*delta,
                     ));
                 }
             }
-            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 for p in all_pts_mut!(self) {
                     p.1 += *delta;
-                    undo_accumulator.push(InsensitiveCommand::MoveElements(
+                    undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                         std::iter::once(p.0).collect(),
                         -*delta,
                     ));
                 }
             }
             
-            InsensitiveCommand::DeleteElements(uuids) => {
+            InsensitiveCommand::DeleteSpecificElements(uuids) => {
                 let self_uuid = *self.uuid();
                 if let Some(center_point) =
                     self.center_point.as_mut().filter(|e| uuids.contains(&e.0))
@@ -2555,7 +2586,7 @@ where
                         if after.is_nil() {
                             self.center_point = Some((id, position));
 
-                            undo_accumulator.push(InsensitiveCommand::DeleteElements(
+                            undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(id).collect(),
                             ));
                         } else {
@@ -2566,7 +2597,7 @@ where
                                             if p.0 == after {
                                                 path.insert(idx + 1, (id, position));
                                                 undo_accumulator.push(
-                                                    InsensitiveCommand::DeleteElements(
+                                                    InsensitiveCommand::DeleteSpecificElements(
                                                         std::iter::once(id).collect(),
                                                     ),
                                                 );

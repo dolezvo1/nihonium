@@ -1120,12 +1120,12 @@ impl
                         EventHandlingStatus::HandledByElement => {
                             if !modifiers.command {
                                 commands.push(SensitiveCommand::SelectAll(false));
-                                commands.push(SensitiveCommand::Select(
+                                commands.push(SensitiveCommand::SelectSpecific(
                                     std::iter::once(*t.uuid()).collect(),
                                     true,
                                 ));
                             } else {
-                                commands.push(SensitiveCommand::Select(
+                                commands.push(SensitiveCommand::SelectSpecific(
                                     std::iter::once(*t.uuid()).collect(),
                                     !t.highlight.selected,
                                 ));
@@ -1158,7 +1158,7 @@ impl
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(delta));
                 } else {
-                    commands.push(SensitiveCommand::MoveElements(
+                    commands.push(SensitiveCommand::MoveSpecificElements(
                         std::iter::once(*self.uuid()).collect(),
                         delta,
                     ));
@@ -1188,18 +1188,22 @@ impl
                 self.highlight.selected = *select;
                 recurse!(self);
             }
-            InsensitiveCommand::Select(uuids, select) => {
+            InsensitiveCommand::SelectSpecific(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
                 recurse!(self);
             }
-            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {
+            InsensitiveCommand::SelectByDrag(rect) => {
+                self.highlight.selected = self.min_shape().contained_within(*rect);
                 recurse!(self);
             }
-            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {
+                recurse!(self);
+            }
+            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
-                undo_accumulator.push(InsensitiveCommand::MoveElements(
+                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                     std::iter::once(*self.uuid()).collect(),
                     -*delta,
                 ));
@@ -1208,7 +1212,7 @@ impl
                     t.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![]);
                 }
             }
-            InsensitiveCommand::DeleteElements(..) | InsensitiveCommand::AddElement(..) => {}
+            InsensitiveCommand::DeleteSpecificElements(..) | InsensitiveCommand::AddElement(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {
@@ -1539,7 +1543,7 @@ impl
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(delta));
                 } else {
-                    commands.push(SensitiveCommand::MoveElements(
+                    commands.push(SensitiveCommand::MoveSpecificElements(
                         std::iter::once(*self.uuid()).collect(),
                         delta,
                     ));
@@ -1560,20 +1564,23 @@ impl
             InsensitiveCommand::SelectAll(select) => {
                 self.highlight.selected = *select;
             }
-            InsensitiveCommand::Select(uuids, select) => {
+            InsensitiveCommand::SelectSpecific(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
             }
-            InsensitiveCommand::MoveElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {}
-            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::SelectByDrag(rect) => {
+                self.highlight.selected = self.min_shape().contained_within(*rect);
+            }
+            InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
-                undo_accumulator.push(InsensitiveCommand::MoveElements(
+                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                     std::iter::once(*self.uuid()).collect(),
                     -*delta,
                 ));
             }
-            InsensitiveCommand::DeleteElements(..) | InsensitiveCommand::AddElement(..) => {}
+            InsensitiveCommand::DeleteSpecificElements(..) | InsensitiveCommand::AddElement(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {

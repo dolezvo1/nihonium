@@ -1275,7 +1275,7 @@ impl
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(delta));
                 } else {
-                    commands.push(SensitiveCommand::MoveElements(
+                    commands.push(SensitiveCommand::MoveSpecificElements(
                         std::iter::once(*self.uuid()).collect(),
                         delta,
                     ));
@@ -1296,20 +1296,23 @@ impl
             InsensitiveCommand::SelectAll(select) => {
                 self.highlight.selected = *select;
             }
-            InsensitiveCommand::Select(uuids, select) => {
+            InsensitiveCommand::SelectSpecific(uuids, select) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight.selected = *select;
                 }
             }
-            InsensitiveCommand::MoveElements(uuids, _) if !uuids.contains(&*self.uuid()) => {}
-            InsensitiveCommand::MoveElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::SelectByDrag(rect) => {
+                self.highlight.selected = self.min_shape().contained_within(*rect);
+            }
+            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
-                undo_accumulator.push(InsensitiveCommand::MoveElements(
+                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                     std::iter::once(*self.uuid()).collect(),
                     -*delta,
                 ));
             }
-            InsensitiveCommand::DeleteElements(..) | InsensitiveCommand::AddElement(..) => {}
+            InsensitiveCommand::DeleteSpecificElements(..) | InsensitiveCommand::AddElement(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {
