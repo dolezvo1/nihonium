@@ -1639,7 +1639,7 @@ where
             egui::Color32::BLACK,
         );
         
-        // Draw resize handles
+        // Draw resize/drag handles
         // TODO: should not be drawn when the canvas is non-interactive, also should scale?
         if self.highlight.selected {
             for h in [self.bounds_rect.left_top(), self.bounds_rect.center_top(), self.bounds_rect.right_top(),
@@ -1654,6 +1654,14 @@ where
                     canvas::Highlight::NONE,
                 );
             }
+            
+            canvas.draw_rectangle(
+                egui::Rect::from_center_size(self.bounds_rect.right_top() - egui::Vec2::new(10.0, 0.0), egui::Vec2::splat(5.0)),
+                egui::Rounding::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
         }
 
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
@@ -1736,7 +1744,8 @@ where
                     }
                 }
                 
-                if self.min_shape().border_distance(pos) <= 2.0 {
+                if self.min_shape().border_distance(pos) <= 2.0
+                    || egui::Rect::from_center_size(self.bounds_rect.right_top() - egui::Vec2::new(10.0, 0.0), egui::Vec2::splat(5.0)).contains(pos) {
                     self.dragged = Some(DragType::Move);
                     EventHandlingStatus::HandledByElement
                 } else {
@@ -1881,7 +1890,7 @@ where
                     };
                     
                     let r = self.bounds_rect + egui::Margin{left, right, top, bottom};
-                    if r.is_positive() {
+                    if r.width() >= 40.0 && r.height() >= 20.0 {
                         undo_accumulator.push(InsensitiveCommand::ResizeSpecificElements(
                             std::iter::once(*self.uuid()).collect(),
                             *align,
