@@ -139,6 +139,8 @@ pub enum SensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     MoveAllElements(egui::Vec2),
     MoveSpecificElements(HashSet<uuid::Uuid>, egui::Vec2),
     MoveSelectedElements(egui::Vec2),
+    ResizeSpecificElements(HashSet<uuid::Uuid>, egui::Align2, egui::Vec2),
+    ResizeSelectedElements(egui::Align2, egui::Vec2),
     DeleteSpecificElements(HashSet<uuid::Uuid>),
     DeleteSelectedElements,
     AddElement(uuid::Uuid, ElementT),
@@ -162,6 +164,12 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
             }
             SensitiveCommand::MoveSelectedElements(delta) => {
                 InsensitiveCommand::MoveSpecificElements(selected_elements.clone(), delta)
+            }
+            SensitiveCommand::ResizeSpecificElements(uuids, align, delta) => {
+                InsensitiveCommand::ResizeSpecificElements(uuids, align, delta)
+            }
+            SensitiveCommand::ResizeSelectedElements(align, delta) => {
+                InsensitiveCommand::ResizeSpecificElements(selected_elements.clone(), align, delta)
             }
             SensitiveCommand::DeleteSpecificElements(uuids) => InsensitiveCommand::DeleteSpecificElements(uuids),
             SensitiveCommand::DeleteSelectedElements => {
@@ -188,6 +196,7 @@ pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     SelectByDrag(egui::Rect),
     MoveAllElements(egui::Vec2),
     MoveSpecificElements(HashSet<uuid::Uuid>, egui::Vec2),
+    ResizeSpecificElements(HashSet<uuid::Uuid>, egui::Align2, egui::Vec2),
     DeleteSpecificElements(HashSet<uuid::Uuid>),
     AddElement(uuid::Uuid, ElementT),
     PropertyChange(HashSet<uuid::Uuid>, Vec<PropChangeT>),
@@ -204,6 +213,9 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
             InsensitiveCommand::MoveAllElements(delta) => SensitiveCommand::MoveAllElements(delta),
             InsensitiveCommand::MoveSpecificElements(uuids, delta) => {
                 SensitiveCommand::MoveSpecificElements(uuids, delta)
+            }
+            InsensitiveCommand::ResizeSpecificElements(uuids, align, delta) => {
+                SensitiveCommand::ResizeSpecificElements(uuids, align, delta)
             }
             InsensitiveCommand::DeleteSpecificElements(uuids) => SensitiveCommand::DeleteSpecificElements(uuids),
             InsensitiveCommand::AddElement(uuid, element) => {
@@ -227,6 +239,9 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
             InsensitiveCommand::MoveAllElements(_delta) => {
                 Arc::new(format!("Move all elements"))
             }
+            InsensitiveCommand::ResizeSpecificElements(uuids, _, _) => {
+                Arc::new(format!("Resize {} elements", uuids.len()))
+            }
             InsensitiveCommand::AddElement(..) => Arc::new(format!("Add 1 element")),
             InsensitiveCommand::PropertyChange(uuids, ..) => {
                 Arc::new(format!("Modify {} elements", uuids.len()))
@@ -242,6 +257,14 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
                 InsensitiveCommand::MoveSpecificElements(uuids2, delta2),
             ) if uuids1 == uuids2 => Some(InsensitiveCommand::MoveSpecificElements(
                 uuids1.clone(),
+                *delta1 + *delta2,
+            )),
+            (
+                InsensitiveCommand::ResizeSpecificElements(uuids1, align1, delta1),
+                InsensitiveCommand::ResizeSpecificElements(uuids2, align2, delta2),
+            ) if uuids1 == uuids2 && align1 == align2 => Some(InsensitiveCommand::ResizeSpecificElements(
+                uuids1.clone(),
+                *align1,
                 *delta1 + *delta2,
             )),
             (
@@ -667,7 +690,8 @@ where
                 | InsensitiveCommand::SelectSpecific(..)
                 | InsensitiveCommand::SelectByDrag(..)
                 | InsensitiveCommand::MoveSpecificElements(..)
-                | InsensitiveCommand::MoveAllElements(..) => {}
+                | InsensitiveCommand::MoveAllElements(..)
+                | InsensitiveCommand::ResizeSpecificElements(..) => {}
                 InsensitiveCommand::DeleteSpecificElements(uuids) => {
                     for (uuid, element) in self
                         .owned_controllers
@@ -729,6 +753,7 @@ where
                 | InsensitiveCommand::AddElement(..) => true,
                 InsensitiveCommand::MoveSpecificElements(..)
                 | InsensitiveCommand::MoveAllElements(..)
+                | InsensitiveCommand::ResizeSpecificElements(..)
                 | InsensitiveCommand::PropertyChange(..) => false,
             };
 
@@ -1189,6 +1214,12 @@ where
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum DragType {
+    Move,
+    Resize(egui::Align2),
+}
+
 pub struct PackageView<
     ModelT: ContainerModel<ElementModelT>,
     ElementModelT: ?Sized + 'static,
@@ -1247,7 +1278,7 @@ pub struct PackageView<
 
     buffer: BufferT,
 
-    dragged: bool,
+    dragged: Option<DragType>,
     highlight: canvas::Highlight,
     bounds_rect: egui::Rect,
 
@@ -1345,7 +1376,7 @@ where
             selected_elements: HashSet::new(),
 
             buffer,
-            dragged: false,
+            dragged: None,
             highlight: canvas::Highlight::NONE,
             bounds_rect,
 
@@ -1607,6 +1638,23 @@ where
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
+        
+        // Draw resize handles
+        // TODO: should not be drawn when the canvas is non-interactive, also should scale?
+        if self.highlight.selected {
+            for h in [self.bounds_rect.left_top(), self.bounds_rect.center_top(), self.bounds_rect.right_top(),
+                      self.bounds_rect.left_center(), self.bounds_rect.right_center(), 
+                      self.bounds_rect.left_bottom(), self.bounds_rect.center_bottom(), self.bounds_rect.right_bottom()]
+            {
+                canvas.draw_rectangle(
+                    egui::Rect::from_center_size(h, egui::Vec2::splat(5.0)),
+                    egui::Rounding::ZERO,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+        }
 
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
@@ -1673,16 +1721,31 @@ where
                 EventHandlingStatus::HandledByContainer
             }
             InputEvent::MouseDown(pos) => {
+                for (a,h) in [(egui::Align2::RIGHT_BOTTOM, self.bounds_rect.left_top()),
+                              (egui::Align2::CENTER_BOTTOM, self.bounds_rect.center_top()),
+                              (egui::Align2::LEFT_BOTTOM, self.bounds_rect.right_top()),
+                              (egui::Align2::RIGHT_CENTER, self.bounds_rect.left_center()),
+                              (egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),
+                              (egui::Align2::RIGHT_TOP, self.bounds_rect.left_bottom()),
+                              (egui::Align2::CENTER_TOP, self.bounds_rect.center_bottom()),
+                              (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom())]
+                {
+                    if egui::Rect::from_center_size(h, egui::Vec2::splat(5.0)).contains(pos) {
+                        self.dragged = Some(DragType::Resize(a));
+                        return EventHandlingStatus::HandledByElement;
+                    }
+                }
+                
                 if self.min_shape().border_distance(pos) <= 2.0 {
-                    self.dragged = true;
+                    self.dragged = Some(DragType::Move);
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             },
             InputEvent::MouseUp(pos) => {
-                if self.dragged {
-                    self.dragged = false;
+                if self.dragged.is_some() {
+                    self.dragged = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -1722,20 +1785,25 @@ where
                     uc_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled)
                 }
             },
-            InputEvent::Drag { delta, .. } => {
-                if self.dragged {
-                    if self.highlight.selected {
-                        commands.push(SensitiveCommand::MoveSelectedElements(delta));
-                    } else {
-                        commands.push(SensitiveCommand::MoveSpecificElements(
-                            std::iter::once(*self.uuid()).collect(),
-                            delta,
-                        ));
-                    }
-                    EventHandlingStatus::HandledByElement
-                } else {
-                    EventHandlingStatus::NotHandled
-                }
+            InputEvent::Drag { delta, .. } => match self.dragged {
+                Some(dt) => match dt {
+                    DragType::Move => {
+                        if self.highlight.selected {
+                            commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                        } else {
+                            commands.push(SensitiveCommand::MoveSpecificElements(
+                                std::iter::once(*self.uuid()).collect(),
+                                delta,
+                            ));
+                        }
+                        EventHandlingStatus::HandledByElement
+                    },
+                    DragType::Resize(align2) => {
+                        commands.push(SensitiveCommand::ResizeSelectedElements(align2, delta));
+                        EventHandlingStatus::HandledByElement
+                    },
+                },
+                None => EventHandlingStatus::NotHandled,
             },
         }
     }
@@ -1798,6 +1866,32 @@ where
                     let mut e = e.1.write().unwrap();
                     e.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![]);
                 }
+            }
+            InsensitiveCommand::ResizeSpecificElements(uuids, align, delta) => {
+                if uuids.contains(&self.uuid()) {
+                    let (left, right) = match align.x() {
+                        egui::Align::Min => (0.0, delta.x),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => (-delta.x, 0.0),
+                    };
+                    let (top, bottom) = match align.y() {
+                        egui::Align::Min => (0.0, delta.y),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => (-delta.y, 0.0),
+                    };
+                    
+                    let r = self.bounds_rect + egui::Margin{left, right, top, bottom};
+                    if r.is_positive() {
+                        undo_accumulator.push(InsensitiveCommand::ResizeSpecificElements(
+                            std::iter::once(*self.uuid()).collect(),
+                            *align,
+                            -*delta,
+                        ));
+                        self.bounds_rect = r;
+                    }
+                }
+                
+                recurse!(self);
             }
             InsensitiveCommand::DeleteSpecificElements(uuids) => {
                 for (uuid, element) in self
@@ -2535,7 +2629,7 @@ where
                     ));
                 }
             }
-            
+            InsensitiveCommand::ResizeSpecificElements(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids) => {
                 let self_uuid = *self.uuid();
                 if let Some(center_point) =

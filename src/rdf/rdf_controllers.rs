@@ -1322,7 +1322,9 @@ impl
                     -*delta,
                 ));
             }
-            InsensitiveCommand::DeleteSpecificElements(..) | InsensitiveCommand::AddElement(..) => {}
+            InsensitiveCommand::ResizeSpecificElements(..)
+            | InsensitiveCommand::DeleteSpecificElements(..)
+            | InsensitiveCommand::AddElement(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {
@@ -1588,7 +1590,9 @@ impl
                     -*delta,
                 ));
             }
-            InsensitiveCommand::DeleteSpecificElements(..) | InsensitiveCommand::AddElement(..) => {}
+            InsensitiveCommand::ResizeSpecificElements(..)
+            | InsensitiveCommand::DeleteSpecificElements(..)
+            | InsensitiveCommand::AddElement(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {
