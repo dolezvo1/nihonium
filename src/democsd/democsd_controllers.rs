@@ -1104,13 +1104,25 @@ impl
         tool: &mut Option<NaiveDemoCsdTool>,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
+        let child = self.transaction_view.as_ref()
+            .map(|t| t.write().unwrap().handle_event(event, modifiers, tool, commands))
+            .filter(|e| *e != EventHandlingStatus::NotHandled);
+    
         match event {
+            InputEvent::MouseDown(_) | InputEvent::MouseUp(_) | InputEvent::Drag { .. } if child.is_some() => EventHandlingStatus::HandledByContainer,
             InputEvent::MouseDown(pos) | InputEvent::MouseUp(pos) => {
                 if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled;
                 }
-                self.dragged = matches!(event, InputEvent::MouseDown(_));
-                EventHandlingStatus::HandledByElement
+                if matches!(event, InputEvent::MouseDown(_)) {
+                    self.dragged = true;
+                    EventHandlingStatus::HandledByElement
+                } else if self.dragged {
+                    self.dragged = false;
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
             },
             InputEvent::Click(pos) => {
                 if let Some(t) = &self.transaction_view {
@@ -1198,9 +1210,8 @@ impl
                 self.highlight.selected = self.min_shape().contained_within(*rect);
                 recurse!(self);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {
-                recurse!(self);
-            }
+            InsensitiveCommand::MoveSpecificElements(uuids, delta)
+                if !uuids.contains(&*self.uuid()) && !self.transaction_view.as_ref().is_some_and(|e| uuids.contains(&e.read().unwrap().uuid())) => {}
             InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
@@ -1522,9 +1533,15 @@ impl
     ) -> EventHandlingStatus {
         match event {
             e if !self.min_shape().contains(*e.mouse_position()) => return EventHandlingStatus::NotHandled,
-            InputEvent::MouseDown(_) | InputEvent::MouseUp(_) => {
-                self.dragged = matches!(event, InputEvent::MouseDown(_));
+            InputEvent::MouseDown(_) => {
+                self.dragged = true;
                 EventHandlingStatus::HandledByElement
+            }
+            InputEvent::MouseUp(_) => if self.dragged {
+                self.dragged = false;
+                EventHandlingStatus::HandledByElement
+            } else {
+                EventHandlingStatus::NotHandled
             },
             InputEvent::Click(_) => {
                 if let Some(tool) = tool {

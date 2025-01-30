@@ -400,7 +400,6 @@ pub struct DiagramControllerGen2<
         >,
     >,
     event_order: Vec<uuid::Uuid>,
-    selected_elements: HashSet<uuid::Uuid>,
     all_selected_elements: HashSet<uuid::Uuid>,
 
     pub _layers: Vec<bool>,
@@ -529,7 +528,6 @@ where
             self_reference: Weak::new(),
             owned_controllers,
             event_order,
-            selected_elements: HashSet::new(),
             all_selected_elements: HashSet::new(),
 
             _layers: vec![true],
@@ -573,32 +571,33 @@ where
         let child = self.event_order
             .iter()
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
-            .map(|uc| {
-                match uc.1.write().unwrap().handle_event(
+            .map(|uc| (uc.0, uc.1.write().unwrap().handle_event(
                     event,
                     modifiers,
                     &mut self.current_tool,
                     &mut commands,
-                ) {
+                )))
+            .find(|e| e.1 != EventHandlingStatus::NotHandled)
+            .map(|us| {
+                match us.1 {
                     EventHandlingStatus::HandledByElement if matches!(event, InputEvent::Click(_)) => {
                         if !modifiers.command {
                             commands.push(SensitiveCommand::SelectAll(false));
                             commands.push(SensitiveCommand::SelectSpecific(
-                                std::iter::once(uc.0).collect(),
+                                std::iter::once(us.0).collect(),
                                 true,
                             ));
                         } else {
                             commands.push(SensitiveCommand::SelectSpecific(
-                                std::iter::once(uc.0).collect(),
-                                !self.selected_elements.contains(&uc.0),
+                                std::iter::once(us.0).collect(),
+                                !self.all_selected_elements.contains(&us.0),
                             ));
                         }
                         EventHandlingStatus::HandledByContainer
                     }
                     a => a,
                 }
-            })
-            .find(|e| *e != EventHandlingStatus::NotHandled);
+            });
         
         let handled = match event {
             InputEvent::MouseDown(_) | InputEvent::MouseUp(_) | InputEvent::Drag { .. }
@@ -1053,7 +1052,7 @@ where
                 self.apply_commands(vec![SensitiveCommand::SelectAll(select)], &mut vec![], true, false);
             }
             DiagramCommand::InvertSelection => {
-                self.apply_commands(vec![SensitiveCommand::SelectAll(true), SensitiveCommand::SelectSpecific(self.selected_elements.clone(), false)], &mut vec![], true, false);
+                self.apply_commands(vec![SensitiveCommand::SelectAll(true), SensitiveCommand::SelectSpecific(self.all_selected_elements.clone(), false)], &mut vec![], true, false);
             }
             DiagramCommand::DeleteSelectedElements => {
                 let mut undo = vec![];
@@ -2208,11 +2207,11 @@ where
             ),
         };
         
-        // The bounds may use different intersection method only if the target points are not the same...
+        // The bounds may use different intersection method only if the target points are not the same or it's the real midpoint
         let (source_intersect, dest_intersect) = 
             match (source_bounds.orthogonal_intersect(source_next_point), dest_bounds.orthogonal_intersect(dest_next_point)) {
                 (Some(a), Some(b)) => (a, b),
-                (a, b) if source_next_point != dest_next_point =>
+                (a, b) if source_next_point != dest_next_point || self.center_point.is_some() =>
                     (a.unwrap_or_else(|| source_bounds.center_intersect(source_next_point)),
                      b.unwrap_or_else(|| dest_bounds.center_intersect(dest_next_point))),
                 _ => (source_bounds.center_intersect(source_next_point), dest_bounds.center_intersect(dest_next_point))

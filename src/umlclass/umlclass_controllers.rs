@@ -1254,9 +1254,15 @@ impl
     ) -> EventHandlingStatus {
         match event {
             e if !self.min_shape().contains(*e.mouse_position()) => return EventHandlingStatus::NotHandled,
-            InputEvent::MouseDown(_) | InputEvent::MouseUp(_) => {
-                self.dragged = matches!(event, InputEvent::MouseDown(_));
+            InputEvent::MouseDown(_) => {
+                self.dragged = true;
                 EventHandlingStatus::HandledByElement
+            }
+            InputEvent::MouseUp(_) => if self.dragged {
+                self.dragged = false;
+                EventHandlingStatus::HandledByElement
+            } else {
+                EventHandlingStatus::NotHandled
             },
             InputEvent::Click(_pos) => {
                 if let Some(tool) = tool {

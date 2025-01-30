@@ -699,15 +699,16 @@ pub trait NHCanvas {
 
                 const HANDLE_PROXIMITY: f32 = 20.0;
 
-                // TODO(important): draw based on midpoint existence
-                self.draw_ellipse_proximity(
-                    (if first { fp } else { u } + v.to_vec2()) / 2.0,
-                    egui::Vec2::new(1.0, 1.0),
-                    egui::Color32::BLACK,
-                    Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    HANDLE_PROXIMITY,
-                    Highlight::NONE,
-                );
+                if !central_point.0.is_nil() {
+                    self.draw_ellipse_proximity(
+                        (if first { fp } else { u } + v.to_vec2()) / 2.0,
+                        egui::Vec2::new(1.0, 1.0),
+                        egui::Color32::BLACK,
+                        Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        HANDLE_PROXIMITY,
+                        Highlight::NONE,
+                    );
+                }
 
                 if selected_vertices.contains(&v_uuid) {
                     self.draw_ellipse(
