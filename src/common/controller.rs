@@ -2013,6 +2013,7 @@ pub struct MulticonnectionView<
     center_point: Option<(uuid::Uuid, egui::Pos2)>,
     source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
     dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
+    point_to_origin: HashMap<uuid::Uuid, (bool, usize)>,
 
     model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
 
@@ -2111,6 +2112,18 @@ where
         model_to_source_arrowhead_label: fn(&ModelT) -> Option<&str>,
         model_to_destination_arrowhead_label: fn(&ModelT) -> Option<&str>,
     ) -> Self {
+        let mut point_to_origin = HashMap::new();
+        for (idx, path) in source_points.iter().enumerate() {
+            for p in path {
+                point_to_origin.insert(p.0, (false, idx));
+            }
+        }
+        for (idx, path) in dest_points.iter().enumerate() {
+            for p in path {
+                point_to_origin.insert(p.0, (true, idx));
+            }
+        }
+        
         Self {
             model,
             buffer,
@@ -2123,6 +2136,7 @@ where
             center_point,
             source_points,
             dest_points,
+            point_to_origin,
 
             model_to_element_shim,
 
@@ -2301,6 +2315,9 @@ where
             ),
         };
         
+        //canvas.draw_ellipse(source_next_point, egui::Vec2::splat(5.0), egui::Color32::RED, canvas::Stroke::new_solid(1.0, egui::Color32::RED), canvas::Highlight::NONE);
+        //canvas.draw_ellipse(dest_next_point, egui::Vec2::splat(5.0), egui::Color32::GREEN, canvas::Stroke::new_solid(1.0, egui::Color32::GREEN), canvas::Highlight::NONE);
+        
         // The bounds may use different intersection method only if the target points are not the same or it's the real midpoint
         let (source_intersect, dest_intersect) = 
             match (source_bounds.orthogonal_intersect(source_next_point), dest_bounds.orthogonal_intersect(dest_next_point)) {
@@ -2313,6 +2330,9 @@ where
         
         self.source_points[0][0].1 = source_intersect;
         self.dest_points[0][0].1 = dest_intersect;
+        
+        //canvas.draw_ellipse((self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0, egui::Vec2::splat(5.0), egui::Color32::BROWN, canvas::Stroke::new_solid(1.0, egui::Color32::BROWN), canvas::Highlight::NONE);
+        
         canvas.draw_multiconnection(
             &self.selected_vertices,
             &[(
@@ -2643,7 +2663,17 @@ where
                             position: center_point.1,
                         }),
                     ));
-                    self.center_point = None;
+                    
+                    // Move any last point to the center
+                    self.center_point = 'a: {
+                        if let Some(path) = self.source_points.iter_mut().filter(|p| p.len() > 1).nth(0) {
+                            break 'a path.pop();
+                        }
+                        if let Some(path) = self.dest_points.iter_mut().filter(|p| p.len() > 1).nth(0) {
+                            break 'a path.pop();
+                        }
+                        None
+                    };
                 }
 
                 macro_rules! delete_vertices {
@@ -2683,6 +2713,15 @@ where
                     }) = element.clone().try_into()
                     {
                         if after.is_nil() {
+                            // Push popped center point point back to its original path
+                            if let Some(o) = self.center_point.and_then(|e| self.point_to_origin.get(&e.0)) {
+                                if !o.0 {
+                                    self.source_points[o.1].push(self.center_point.unwrap());
+                                } else {
+                                    self.dest_points[o.1].push(self.center_point.unwrap());
+                                }
+                            }
+                            
                             self.center_point = Some((id, position));
 
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
@@ -2690,11 +2729,12 @@ where
                             ));
                         } else {
                             macro_rules! insert_vertex {
-                                ($self:ident, $v:ident) => {
-                                    for path in $self.$v.iter_mut() {
-                                        for (idx, p) in path.iter().enumerate() {
+                                ($self:ident, $v:ident, $b:expr) => {
+                                    for (idx1, path) in $self.$v.iter_mut().enumerate() {
+                                        for (idx2, p) in path.iter().enumerate() {
                                             if p.0 == after {
-                                                path.insert(idx + 1, (id, position));
+                                                $self.point_to_origin.insert(id, ($b, idx1));
+                                                path.insert(idx2 + 1, (id, position));
                                                 undo_accumulator.push(
                                                     InsensitiveCommand::DeleteSpecificElements(
                                                         std::iter::once(id).collect(),
@@ -2706,8 +2746,8 @@ where
                                     }
                                 };
                             }
-                            insert_vertex!(self, source_points);
-                            insert_vertex!(self, dest_points);
+                            insert_vertex!(self, source_points, false);
+                            insert_vertex!(self, dest_points, true);
                         }
                     }
                 }
