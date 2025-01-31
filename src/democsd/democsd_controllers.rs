@@ -147,10 +147,10 @@ fn show_props_fun(
         )
         .changed()
     {
-        commands.push(SensitiveCommand::PropertyChange(
+        commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::PropertyChange(
             std::iter::once(buffer.uuid).collect(),
             vec![DemoCsdPropChange::NameChange(Arc::new(buffer.name.clone()))],
-        ));
+        )));
     };
 
     ui.label("Comment:");
@@ -161,12 +161,12 @@ fn show_props_fun(
         )
         .changed()
     {
-        commands.push(SensitiveCommand::PropertyChange(
+        commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::PropertyChange(
             std::iter::once(buffer.uuid).collect(),
             vec![DemoCsdPropChange::CommentChange(Arc::new(
                 buffer.comment.clone(),
             ))],
-        ));
+        )));
     }
 }
 fn apply_property_change_fun(
@@ -1131,16 +1131,16 @@ impl
                         EventHandlingStatus::NotHandled => {},
                         EventHandlingStatus::HandledByElement => {
                             if !modifiers.command {
-                                commands.push(SensitiveCommand::SelectAll(false));
-                                commands.push(SensitiveCommand::SelectSpecific(
+                                commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::SelectAll(false)));
+                                commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::SelectSpecific(
                                     std::iter::once(*t.uuid()).collect(),
                                     true,
-                                ));
+                                )));
                             } else {
-                                commands.push(SensitiveCommand::SelectSpecific(
+                                commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::SelectSpecific(
                                     std::iter::once(*t.uuid()).collect(),
                                     !t.highlight.selected,
-                                ));
+                                )));
                             }
                             return EventHandlingStatus::HandledByContainer;
                         }
@@ -1170,10 +1170,10 @@ impl
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(delta));
                 } else {
-                    commands.push(SensitiveCommand::MoveSpecificElements(
+                    commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::MoveSpecificElements(
                         std::iter::once(*self.uuid()).collect(),
                         delta,
-                    ));
+                    )));
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -1562,10 +1562,10 @@ impl
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(delta));
                 } else {
-                    commands.push(SensitiveCommand::MoveSpecificElements(
+                    commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::MoveSpecificElements(
                         std::iter::once(*self.uuid()).collect(),
                         delta,
-                    ));
+                    )));
                 }
 
                 EventHandlingStatus::HandledByElement
