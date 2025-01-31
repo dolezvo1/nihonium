@@ -1322,7 +1322,8 @@ impl
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElements(..)
+            InsensitiveCommand::ResizeSpecificElementsBy(..)
+            | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddElement(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
@@ -1590,7 +1591,8 @@ impl
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElements(..)
+            InsensitiveCommand::ResizeSpecificElementsBy(..)
+            | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddElement(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {

@@ -134,7 +134,8 @@ pub enum EventHandlingStatus {
 #[derive(Clone, PartialEq, Debug)]
 pub enum SensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     MoveSelectedElements(egui::Vec2),
-    ResizeSelectedElements(egui::Align2, egui::Vec2),
+    ResizeSelectedElementsBy(egui::Align2, egui::Vec2),
+    ResizeSelectedElementsTo(egui::Align2, egui::Vec2),
     DeleteSelectedElements,
     PropertyChangeSelected(Vec<PropChangeT>),
     Insensitive(InsensitiveCommand<ElementT, PropChangeT>)
@@ -150,8 +151,11 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
             SensitiveCommand::MoveSelectedElements(delta) => {
                 InsensitiveCommand::MoveSpecificElements(selected_elements.clone(), delta)
             }
-            SensitiveCommand::ResizeSelectedElements(align, delta) => {
-                InsensitiveCommand::ResizeSpecificElements(selected_elements.clone(), align, delta)
+            SensitiveCommand::ResizeSelectedElementsBy(align, delta) => {
+                InsensitiveCommand::ResizeSpecificElementsBy(selected_elements.clone(), align, delta)
+            }
+            SensitiveCommand::ResizeSelectedElementsTo(align, delta) => {
+                InsensitiveCommand::ResizeSpecificElementsTo(selected_elements.clone(), align, delta)
             }
             SensitiveCommand::DeleteSelectedElements => {
                 InsensitiveCommand::DeleteSpecificElements(selected_elements.clone())
@@ -172,7 +176,8 @@ pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     SelectByDrag(egui::Rect),
     MoveAllElements(egui::Vec2),
     MoveSpecificElements(HashSet<uuid::Uuid>, egui::Vec2),
-    ResizeSpecificElements(HashSet<uuid::Uuid>, egui::Align2, egui::Vec2),
+    ResizeSpecificElementsBy(HashSet<uuid::Uuid>, egui::Align2, egui::Vec2),
+    ResizeSpecificElementsTo(HashSet<uuid::Uuid>, egui::Align2, egui::Vec2),
     DeleteSpecificElements(HashSet<uuid::Uuid>),
     AddElement(uuid::Uuid, ElementT),
     PropertyChange(HashSet<uuid::Uuid>, Vec<PropChangeT>),
@@ -197,7 +202,8 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
             InsensitiveCommand::MoveAllElements(_delta) => {
                 Arc::new(format!("Move all elements"))
             }
-            InsensitiveCommand::ResizeSpecificElements(uuids, _, _) => {
+            InsensitiveCommand::ResizeSpecificElementsBy(uuids, _, _)
+            | InsensitiveCommand::ResizeSpecificElementsTo(uuids, _, _) => {
                 Arc::new(format!("Resize {} elements", uuids.len()))
             }
             InsensitiveCommand::AddElement(..) => Arc::new(format!("Add 1 element")),
@@ -218,9 +224,9 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
                 *delta1 + *delta2,
             )),
             (
-                InsensitiveCommand::ResizeSpecificElements(uuids1, align1, delta1),
-                InsensitiveCommand::ResizeSpecificElements(uuids2, align2, delta2),
-            ) if uuids1 == uuids2 && align1 == align2 => Some(InsensitiveCommand::ResizeSpecificElements(
+                InsensitiveCommand::ResizeSpecificElementsBy(uuids1, align1, delta1),
+                InsensitiveCommand::ResizeSpecificElementsBy(uuids2, align2, delta2),
+            ) if uuids1 == uuids2 && align1 == align2 => Some(InsensitiveCommand::ResizeSpecificElementsBy(
                 uuids1.clone(),
                 *align1,
                 *delta1 + *delta2,
@@ -649,7 +655,8 @@ where
                 | InsensitiveCommand::SelectByDrag(..)
                 | InsensitiveCommand::MoveSpecificElements(..)
                 | InsensitiveCommand::MoveAllElements(..)
-                | InsensitiveCommand::ResizeSpecificElements(..) => {}
+                | InsensitiveCommand::ResizeSpecificElementsBy(..)
+                | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
                 InsensitiveCommand::DeleteSpecificElements(uuids) => {
                     for (uuid, element) in self
                         .owned_controllers
@@ -711,7 +718,8 @@ where
                 | InsensitiveCommand::AddElement(..) => true,
                 InsensitiveCommand::MoveSpecificElements(..)
                 | InsensitiveCommand::MoveAllElements(..)
-                | InsensitiveCommand::ResizeSpecificElements(..)
+                | InsensitiveCommand::ResizeSpecificElementsBy(..)
+                | InsensitiveCommand::ResizeSpecificElementsTo(..)
                 | InsensitiveCommand::PropertyChange(..) => false,
             };
 
@@ -1016,7 +1024,7 @@ where
                 };
                 self.apply_commands(
                     undo_commands
-                        .into_iter()
+                        .into_iter().rev()
                         .map(|c| c.to_selection_sensitive())
                         .collect(),
                     &mut vec![],
@@ -1769,7 +1777,7 @@ where
                         EventHandlingStatus::HandledByElement
                     },
                     DragType::Resize(align2) => {
-                        commands.push(SensitiveCommand::ResizeSelectedElements(align2, delta));
+                        commands.push(SensitiveCommand::ResizeSelectedElementsBy(align2, delta));
                         EventHandlingStatus::HandledByElement
                     },
                 },
@@ -1789,6 +1797,31 @@ where
                     let mut e = e.1.write().unwrap();
                     e.apply_command(command, undo_accumulator);
                 }
+            };
+        }
+        macro_rules! resize_by {
+            ($align:expr, $delta:expr) => {
+                let min_delta_x = 40.0 - self.bounds_rect.width();
+                let (left, right) = match $align.x() {
+                    egui::Align::Min => (0.0, $delta.x.max(min_delta_x)),
+                    egui::Align::Center => (0.0, 0.0),
+                    egui::Align::Max => ((-$delta.x).max(min_delta_x), 0.0),
+                };
+                let min_delta_y = 20.0 - self.bounds_rect.height();
+                let (top, bottom) = match $align.y() {
+                    egui::Align::Min => (0.0, $delta.y.max(min_delta_y)),
+                    egui::Align::Center => (0.0, 0.0),
+                    egui::Align::Max => ((-$delta.y).max(min_delta_y), 0.0),
+                };
+                
+                let r = self.bounds_rect + egui::Margin{left, right, top, bottom};
+                
+                undo_accumulator.push(InsensitiveCommand::ResizeSpecificElementsTo(
+                    std::iter::once(*self.uuid()).collect(),
+                    *$align,
+                    self.bounds_rect.size(),
+                ));
+                self.bounds_rect = r;
             };
         }
 
@@ -1837,28 +1870,28 @@ where
                     e.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![]);
                 }
             }
-            InsensitiveCommand::ResizeSpecificElements(uuids, align, delta) => {
+            InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
                 if uuids.contains(&self.uuid()) {
-                    let (left, right) = match align.x() {
-                        egui::Align::Min => (0.0, delta.x),
-                        egui::Align::Center => (0.0, 0.0),
-                        egui::Align::Max => (-delta.x, 0.0),
+                    resize_by!(align, delta);
+                }
+                
+                recurse!(self);
+            }
+            InsensitiveCommand::ResizeSpecificElementsTo(uuids, align, size) => {
+                if uuids.contains(&self.uuid()) {
+                    let mut delta_naive = *size - self.bounds_rect.size();
+                    let x = match align.x() {
+                        egui::Align::Min => delta_naive.x,
+                        egui::Align::Center => 0.0,
+                        egui::Align::Max => -delta_naive.x,
                     };
-                    let (top, bottom) = match align.y() {
-                        egui::Align::Min => (0.0, delta.y),
-                        egui::Align::Center => (0.0, 0.0),
-                        egui::Align::Max => (-delta.y, 0.0),
+                    let y = match align.y() {
+                        egui::Align::Min => delta_naive.y,
+                        egui::Align::Center => 0.0,
+                        egui::Align::Max => -delta_naive.y,
                     };
                     
-                    let r = self.bounds_rect + egui::Margin{left, right, top, bottom};
-                    if r.width() >= 40.0 && r.height() >= 20.0 {
-                        undo_accumulator.push(InsensitiveCommand::ResizeSpecificElements(
-                            std::iter::once(*self.uuid()).collect(),
-                            *align,
-                            -*delta,
-                        ));
-                        self.bounds_rect = r;
-                    }
+                    resize_by!(align, egui::Vec2::new(x, y));
                 }
                 
                 recurse!(self);
@@ -2619,7 +2652,8 @@ where
                     ));
                 }
             }
-            InsensitiveCommand::ResizeSpecificElements(..) => {}
+            InsensitiveCommand::ResizeSpecificElementsBy(..)
+            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids) => {
                 let self_uuid = *self.uuid();
                 if let Some(center_point) =
