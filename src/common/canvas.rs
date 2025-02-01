@@ -390,6 +390,8 @@ pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 
 pub trait NHCanvas {
     // These functions are must haves
+    fn is_interactive(&self) -> bool;
+    
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight);
     fn draw_rectangle(
         &mut self,
@@ -839,6 +841,8 @@ impl UiCanvas {
 }
 
 impl NHCanvas for UiCanvas {
+    fn is_interactive(&self) -> bool {true}
+
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
         let offset = self.canvas.min.to_vec2() + self.camera_offset.to_vec2();
         let (p1, p2) = (
@@ -1070,6 +1074,8 @@ impl<'a> MeasuringCanvas<'a> {
 }
 
 impl<'a> NHCanvas for MeasuringCanvas<'a> {
+    fn is_interactive(&self) -> bool {false}
+
     fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke, highlight: Highlight) {
         self.bounds.extend_with(points[0]);
         self.bounds.extend_with(points[1]);
@@ -1186,6 +1192,8 @@ impl<'a> SVGCanvas<'a> {
 }
 
 impl<'a> NHCanvas for SVGCanvas<'a> {
+    fn is_interactive(&self) -> bool {false}
+
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
         let stroke_dasharray = match stroke.line_type {
             LineType::Solid => "none",
@@ -1305,13 +1313,27 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
             egui::Color32::TRANSPARENT,
         );
 
-        let escaped_text = text
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("'", "&apos;")
-            .replace("\"", "&quot;");
+        let escaped = text.replace("&", "&amp;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                        .replace("'", "&apos;")
+                        .replace("\"", "&quot;");
+        let escaped_lines: Vec<_> = escaped.split("\n").collect();
+        let initial_dx = (1.0 - escaped_lines.len() as f32) / 2.0;
+        let mut tspans = String::new();
+        let mut next_offset_bonus = 0.0;
+        for (idx, line) in escaped_lines.into_iter().enumerate() {
+            if line.is_empty() {
+                next_offset_bonus += 1.0;
+            } else {
+                tspans += &format!(r#"<tspan x="{}" dy="{}em">{}</tspan>"#,
+                    rect.center().x + self.camera_offset.x,
+                    if idx == 0 {initial_dx} else {1.0 + next_offset_bonus},
+                    line);
+                next_offset_bonus = 0.0;
+            }
+        }
         self.element_buffer.push(format!(r#"<text x="{}" y="{}" font-size="{}" fill="{}" text-anchor="middle" dominant-baseline="middle">{}</text>
-"#, rect.center().x + self.camera_offset.x, rect.center().y + self.camera_offset.y, font_size, text_color.to_hex(), escaped_text));
+"#, rect.center().x + self.camera_offset.x, rect.center().y + self.camera_offset.y, font_size, text_color.to_hex(), tspans));
     }
 }

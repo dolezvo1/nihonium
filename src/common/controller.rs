@@ -1609,8 +1609,8 @@ where
         );
         
         // Draw resize/drag handles
-        // TODO: should not be drawn when the canvas is non-interactive, also should scale?
-        if self.highlight.selected {
+        // TODO: the handles should probably scale?
+        if self.highlight.selected && canvas.is_interactive() {
             for h in [self.bounds_rect.left_top(), self.bounds_rect.center_top(), self.bounds_rect.right_top(),
                       self.bounds_rect.left_center(), self.bounds_rect.right_center(), 
                       self.bounds_rect.left_bottom(), self.bounds_rect.center_bottom(), self.bounds_rect.right_bottom()]
