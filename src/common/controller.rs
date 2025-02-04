@@ -6,6 +6,90 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::{Arc, RwLock, Weak};
 
+pub const BACKGROUND_COLORS: usize = 8;
+pub const FOREGROUND_COLORS: usize = 8;
+pub const AUXILIARY_COLORS: usize = 8;
+
+#[derive(PartialEq)]
+pub struct ColorProfile {
+    pub backgrounds: [egui::Color32; BACKGROUND_COLORS],
+    pub foregrounds: [egui::Color32; FOREGROUND_COLORS],
+    pub auxiliary: [egui::Color32; AUXILIARY_COLORS],
+}
+
+/// Describes ColorProfile usage in a diagram
+pub struct ColorLabels {
+    pub backgrounds: [Option<String>; BACKGROUND_COLORS],
+    pub foregrounds: [Option<String>; FOREGROUND_COLORS],
+    pub auxiliary: [Option<String>; AUXILIARY_COLORS],
+}
+
+macro_rules! build_colors {
+    ([$($profile_names:expr),* $(,)?],
+     [$($pair_back:expr),* $(,)?],
+     [$($pair_front:expr),* $(,)?],
+     [$($pair_aux:expr),* $(,)?] $(,)?) => {{
+        let vec_profile_names = vec![$($profile_names),*];
+        let mut map_names_to_profiles = HashMap::<String, crate::common::controller::ColorProfile>::new();
+        
+        for a in &vec_profile_names {
+            map_names_to_profiles.insert(a.to_string(), ColorProfile {
+                backgrounds: [egui::Color32::PLACEHOLDER; crate::common::controller::BACKGROUND_COLORS],
+                foregrounds: [egui::Color32::PLACEHOLDER; crate::common::controller::FOREGROUND_COLORS],
+                auxiliary: [egui::Color32::PLACEHOLDER; crate::common::controller::AUXILIARY_COLORS],
+            });
+        }
+        
+        let mut vec_labels_back = Vec::new();
+        for (idx1, (label, values)) in vec![$($pair_back),*].into_iter().enumerate() {
+            vec_labels_back.push(label);
+            for (idx2, v) in values.into_iter().enumerate() {
+                map_names_to_profiles.get_mut(vec_profile_names[idx2]).unwrap().backgrounds[idx1] = v;
+            }
+        }
+        
+        let mut vec_labels_front = Vec::new();
+        for (idx1, (label, values)) in vec![$($pair_front),*].into_iter().enumerate() {
+            vec_labels_front.push(label);
+            for (idx2, v) in values.into_iter().enumerate() {
+                map_names_to_profiles.get_mut(vec_profile_names[idx2]).unwrap().foregrounds[idx1] = v;
+            }
+        }
+        
+        let mut vec_labels_aux = Vec::new();
+        for (idx1, (label, values)) in vec![$($pair_aux),*].into_iter().enumerate() {
+            vec_labels_aux.push(label);
+            for (idx2, v) in values.into_iter().enumerate() {
+                map_names_to_profiles.get_mut(vec_profile_names[idx2]).unwrap().auxiliary[idx1] = v;
+            }
+        }
+        
+        let mut labels_back_iterator = vec_labels_back.into_iter()
+            .take(crate::common::controller::BACKGROUND_COLORS).map(|e| Some(e.to_owned()));
+        let mut labels_front_iterator = vec_labels_front.into_iter()
+            .take(crate::common::controller::FOREGROUND_COLORS).map(|e| Some(e.to_owned()));
+        let mut labels_aux_iterator = vec_labels_aux.into_iter()
+            .take(crate::common::controller::AUXILIARY_COLORS).map(|e| Some(e.to_owned()));
+        let labels = ColorLabels {
+            backgrounds: std::array::from_fn(|_| {
+                labels_back_iterator.next()
+                    .unwrap_or_else(|| None)
+            }),
+            foregrounds: std::array::from_fn(|_| {
+                labels_front_iterator.next()
+                    .unwrap_or_else(|| None)
+            }),
+            auxiliary: std::array::from_fn(|_| {
+                labels_aux_iterator.next()
+                    .unwrap_or_else(|| None)
+            }),
+        };
+        
+        (labels, map_names_to_profiles)
+    }};
+}
+pub(crate) use build_colors;
+
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum DiagramCommand {
     DropRedoStackAndLastChangeFlag,
@@ -21,11 +105,21 @@ pub trait DiagramController: Any {
     fn uuid(&self) -> Arc<uuid::Uuid>;
     fn model_name(&self) -> Arc<String>;
 
+    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
+    
     fn new_ui_canvas(
         &self,
         ui: &mut egui::Ui,
+        profile: &ColorProfile,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
-    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
+    
+    fn draw_in(
+        &mut self,
+        canvas: &mut dyn NHCanvas,
+        profile: &ColorProfile,
+        mouse_pos: Option<egui::Pos2>,
+    );
+    
     fn context_menu(&mut self, ui: &mut egui::Ui);
 
     fn show_toolbar(&mut self, ui: &mut egui::Ui);
@@ -41,8 +135,6 @@ pub trait DiagramController: Any {
     //}
 
     fn apply_command(&mut self, command: DiagramCommand, global_undo: &mut Vec<Arc<String>>);
-
-    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, mouse_pos: Option<egui::Pos2>);
 }
 
 pub trait ElementController<CommonElementT: ?Sized> {
@@ -339,6 +431,7 @@ pub trait ElementControllerGen2<
         &mut self,
         _: &QueryableT,
         canvas: &mut dyn NHCanvas,
+        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus;
     fn handle_event(
@@ -847,6 +940,7 @@ where
     fn new_ui_canvas(
         &self,
         ui: &mut egui::Ui,
+        profile: &ColorProfile,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
         let canvas_pos = ui.next_widget_position();
         let canvas_size = ui.available_size();
@@ -867,10 +961,10 @@ where
                     .to_pos2()
             }),
         );
-        ui_canvas.clear(egui::Color32::WHITE);
+        ui_canvas.clear(profile.backgrounds[0]);
         ui_canvas.draw_gridlines(
-            Some((50.0, egui::Color32::from_rgb(220, 220, 220))),
-            Some((50.0, egui::Color32::from_rgb(220, 220, 220))),
+            Some((50.0, profile.foregrounds[0])),
+            Some((50.0, profile.foregrounds[0])),
         );
 
         let inner_mouse = ui
@@ -1057,7 +1151,12 @@ where
         }
     }
 
-    fn draw_in(&mut self, canvas: &mut dyn NHCanvas, mouse_pos: Option<egui::Pos2>) {
+    fn draw_in(
+        &mut self,
+        canvas: &mut dyn NHCanvas,
+        profile: &ColorProfile,
+        mouse_pos: Option<egui::Pos2>
+    ) {
         let tool = if let (Some(pos), Some(stage)) = (mouse_pos, self.current_tool.as_ref()) {
             Some((pos, stage))
         } else {
@@ -1075,7 +1174,7 @@ where
                     .1
                     .write()
                     .unwrap()
-                    .draw_in(&self.queryable, canvas, &tool)
+                    .draw_in(&self.queryable, canvas, profile, &tool)
                     == TargettingStatus::Drawn
                 {
                     drawn_targetting = TargettingStatus::Drawn;
@@ -1099,7 +1198,7 @@ where
                     .for_each(|uc| {
                         uc.1.write()
                             .unwrap()
-                            .draw_in(&self.queryable, canvas, &Some((pos, tool)));
+                            .draw_in(&self.queryable, canvas, profile, &Some((pos, tool)));
                     });
             }
             tool.draw_status_hint(canvas, pos);
@@ -1589,14 +1688,15 @@ where
         &mut self,
         q: &QueryableT,
         canvas: &mut dyn NHCanvas,
+        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus {
         // Draw shape and text
         canvas.draw_rectangle(
             self.bounds_rect,
             egui::Rounding::ZERO,
-            egui::Color32::WHITE,
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            profile.backgrounds[1],
+            canvas::Stroke::new_solid(1.0, profile.foregrounds[1]),
             self.highlight,
         );
 
@@ -1605,7 +1705,7 @@ where
             egui::Align2::CENTER_TOP,
             &self.model.read().unwrap().name(),
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            egui::Color32::BLACK,
+            profile.foregrounds[1],
         );
         
         // Draw resize/drag handles
@@ -1641,7 +1741,7 @@ where
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
             .filter(|_| true) // TODO: filter by layers
             .for_each(|uc| {
-                if uc.1.write().unwrap().draw_in(q, canvas, &tool) == TargettingStatus::Drawn
+                if uc.1.write().unwrap().draw_in(q, canvas, profile, &tool) == TargettingStatus::Drawn
                 {
                     drawn_child_targetting = TargettingStatus::Drawn;
                 }
@@ -1663,7 +1763,7 @@ where
                     .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
                     .filter(|_| true) // TODO: filter by layers
                     .for_each(|uc| {
-                        uc.1.write().unwrap().draw_in(q, canvas, &tool);
+                        uc.1.write().unwrap().draw_in(q, canvas, profile, &tool);
                     });
 
                 TargettingStatus::Drawn
@@ -2290,6 +2390,7 @@ where
         &mut self,
         _: &QueryableT,
         canvas: &mut dyn NHCanvas,
+        profile: &ColorProfile,
         _tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus {
         let model = self.model.read().unwrap();
@@ -2342,7 +2443,7 @@ where
                 (self.model_to_source_arrowhead_type)(&*model),
                 crate::common::canvas::Stroke {
                     width: 1.0,
-                    color: egui::Color32::BLACK,
+                    color: profile.foregrounds[2],
                     line_type: (self.model_to_line_type)(&*model),
                 },
                 &self.source_points[0],
@@ -2352,7 +2453,7 @@ where
                 (self.model_to_destination_arrowhead_type)(&*model),
                 crate::common::canvas::Stroke {
                     width: 1.0,
-                    color: egui::Color32::BLACK,
+                    color: profile.foregrounds[2],
                     line_type: (self.model_to_line_type)(&*model),
                 },
                 &self.dest_points[0],

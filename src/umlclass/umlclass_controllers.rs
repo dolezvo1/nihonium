@@ -4,7 +4,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::CustomTab;
 use crate::NHApp;
@@ -186,6 +186,24 @@ impl
         }
     }
 }
+
+
+pub fn colors() -> (String, ColorLabels, HashMap<String, ColorProfile>) {
+    let c = crate::common::controller::build_colors!(
+                                   ["Light",              "Darker"             ],
+        [("Diagram background",    [egui::Color32::WHITE, egui::Color32::GRAY, ]),
+         ("Package background",    [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),
+         ("Connection background", [egui::Color32::WHITE, egui::Color32::WHITE,]),
+         ("Class background",      [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),],
+        [("Diagram gridlines",     [egui::Color32::from_rgb(220, 220, 220),  egui::Color32::from_rgb(127, 127, 127), ]),
+         ("Package foreground",    [egui::Color32::BLACK, egui::Color32::BLACK,]),
+         ("Connection foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
+         ("Class foreground",      [egui::Color32::BLACK, egui::Color32::BLACK,]),],
+        [("Selection",             [egui::Color32::BLUE,  egui::Color32::LIGHT_BLUE, ]),],
+    );
+    ("UML Class diagram".to_owned(), c.0, c.1)
+}
+
 
 pub struct UmlClassDiagramBuffer {
     uuid: uuid::Uuid,
@@ -1212,6 +1230,7 @@ impl
         &mut self,
         _: &UmlClassQueryable,
         canvas: &mut dyn NHCanvas,
+        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>,
     ) -> TargettingStatus {
         let read = self.model.read().unwrap();
@@ -1222,7 +1241,8 @@ impl
             &read.name,
             None,
             &[&read.parse_properties(), &read.parse_functions()],
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            profile.backgrounds[3],
+            canvas::Stroke::new_solid(1.0, profile.foregrounds[3]),
             self.highlight,
         );
 

@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
+use common::controller::{ColorLabels, ColorProfile};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
@@ -102,12 +103,14 @@ pub trait CustomTab {
 }
 
 struct NHContext {
-    pub diagram_controllers: HashMap<uuid::Uuid, Arc<RwLock<dyn DiagramController>>>,
+    pub diagram_controllers: HashMap<uuid::Uuid, (usize, Arc<RwLock<dyn DiagramController>>)>,
     hierarchy_order: Vec<uuid::Uuid>,
     new_diagram_no: u32,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
 
     pub style: Option<Style>,
+    color_profiles: Vec<(String, ColorLabels, HashMap<String, ColorProfile>)>,
+    selected_color_profiles: Vec<String>,
 
     undo_stack: Vec<(Arc<String>, uuid::Uuid)>,
     redo_stack: Vec<(Arc<String>, uuid::Uuid)>,
@@ -133,7 +136,7 @@ impl TabViewer for NHContext {
     fn title(&mut self, tab: &mut Self::Tab) -> WidgetText {
         match tab {
             NHTab::Diagram { uuid } => {
-                let c = self.diagram_controllers.get(uuid).unwrap().read().unwrap();
+                let c = self.diagram_controllers.get(uuid).unwrap().1.read().unwrap();
                 (&*c.model_name()).into()
             }
             NHTab::CustomTab { uuid } => {
@@ -196,55 +199,49 @@ impl NHContext {
     }
 
     fn hierarchy(&self, ui: &mut Ui) {
-        for controller in self.hierarchy_order.iter()
+        for (_t, c) in self.hierarchy_order.iter()
             .flat_map(|e| self.diagram_controllers.get(e))
         {
-            let controller_lock = controller.write().unwrap();
+            let controller_lock = c.write().unwrap();
             controller_lock.list_in_project_hierarchy(ui);
         }
     }
 
     fn toolbar(&self, ui: &mut Ui) {
-        if let Some(last_focused_diagram) = &self.last_focused_diagram {
-            self.diagram_controllers.get(last_focused_diagram).map(|c| {
-                let mut controller_lock = c.write().unwrap();
-                controller_lock.show_toolbar(ui)
-            });
-        }
+        let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
+        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else {return;};
+        let mut controller_lock = c.write().unwrap();
+        controller_lock.show_toolbar(ui);
     }
 
     fn properties(&mut self, ui: &mut Ui) {
-        if let Some(last_focused_diagram) = &self.last_focused_diagram {
-            self.diagram_controllers.get(last_focused_diagram).map(|c| {
-                let mut controller_lock = c.write().unwrap();
-                
-                let mut undo_accumulator = Vec::<Arc<String>>::new();
-                controller_lock.show_properties(ui, &mut undo_accumulator);
-                if !undo_accumulator.is_empty() {
-                    for (_uuid, c) in self.diagram_controllers.iter().filter(|(uuid, _c)| *uuid != last_focused_diagram) {
-                        let mut c = c.write().unwrap();
-                        c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
-                    }
-                    
-                    self.redo_stack.clear();
-                    controller_lock.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
-                    controller_lock.apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
-                    
-                    for command_label in undo_accumulator {
-                        self.undo_stack.push((command_label, *last_focused_diagram));
-                    }
-                }
-            });
+        let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
+        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
+        let mut controller_lock = c.write().unwrap();
+        
+        let mut undo_accumulator = Vec::<Arc<String>>::new();
+        controller_lock.show_properties(ui, &mut undo_accumulator);
+        if !undo_accumulator.is_empty() {
+            for (_uuid, (_t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != last_focused_diagram) {
+                let mut c = c.write().unwrap();
+                c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
+            }
+            
+            self.redo_stack.clear();
+            controller_lock.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
+            controller_lock.apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
+            
+            for command_label in undo_accumulator {
+                self.undo_stack.push((command_label, *last_focused_diagram));
+            }
         }
     }
 
     fn layers(&self, ui: &mut Ui) {
-        if let Some(last_focused_diagram) = &self.last_focused_diagram {
-            self.diagram_controllers.get(last_focused_diagram).map(|c| {
-                let controller_lock = c.write().unwrap();
-                controller_lock.show_layers(ui)
-            });
-        }
+        let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
+        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else {return;};
+        let mut controller_lock = c.write().unwrap();
+        controller_lock.show_layers(ui);
     }
 
     fn style_editor_tab(&mut self, ui: &mut Ui) {
@@ -647,28 +644,43 @@ impl NHContext {
                 });
                 ui.label("Rounding:");
                 rounding_ui(ui, &mut style.overlay.hovered_leaf_highlight.rounding);
-            })
+            });
+        });
+        
+        ui.collapsing("Diagram themes", |ui|{
+            for (idx, (name, l, p)) in self.color_profiles.iter().enumerate() {
+                egui::ComboBox::from_label(name)
+                    .selected_text(&self.selected_color_profiles[idx])
+                    .show_ui(ui, |ui| {
+                        for profile_name in p.keys() {
+                            ui.selectable_value(&mut self.selected_color_profiles[idx], profile_name.to_owned(), profile_name);
+                        }
+                        // TODO: allow custom profiles
+                    }
+                );
+            }
         });
     }
     
     // In general it should draw first and handle input second, right?
     fn diagram_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
-        let diagram_controller_arc = self.diagram_controllers.get(tab_uuid).unwrap();
-        let mut diagram_controller = diagram_controller_arc.write().unwrap();
-
-        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(ui);
+        let Some((t, arc)) = self.diagram_controllers.get(tab_uuid) else { return; };
+        let mut diagram_controller = arc.write().unwrap();
+        let Some(color_profile) = self.color_profiles[*t].2.get(&self.selected_color_profiles[*t]) else { return; };
+        
+        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(ui, color_profile);
 
         if response.clicked() || response.drag_started() {
             self.last_focused_diagram = Some(tab_uuid.clone());
         }
 
-        diagram_controller.draw_in(ui_canvas.as_mut(), pos);
+        diagram_controller.draw_in(ui_canvas.as_mut(), color_profile, pos);
 
         let mut undo_accumulator = Vec::<Arc<String>>::new();
         diagram_controller.handle_input(ui, &response, &mut undo_accumulator);
         response.context_menu(|ui| diagram_controller.context_menu(ui));
         if !undo_accumulator.is_empty() {
-            for (_uuid, c) in self.diagram_controllers.iter().filter(|(uuid, _c)| *uuid != tab_uuid) {
+            for (_uuid, (t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != tab_uuid) {
                 let mut c = c.write().unwrap();
                 c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
             }
@@ -689,7 +701,7 @@ impl NHContext {
         custom_tab.show(/*self,*/ ui);
     }
 
-    fn last_focused_diagram(&mut self) -> Option<Arc<RwLock<dyn DiagramController>>> {
+    fn last_focused_diagram(&mut self) -> Option<(usize, Arc<RwLock<dyn DiagramController>>)> {
         self.last_focused_diagram
             .as_ref()
             .and_then(|e| self.diagram_controllers.get(e).cloned())
@@ -707,12 +719,12 @@ impl Default for NHApp {
         let mut hierarchy_order = vec![];
         let mut tabs = vec![NHTab::StyleEditor];
 
-        for (uuid, controller) in [
-            crate::rdf::rdf_controllers::demo(1),
-            crate::umlclass::umlclass_controllers::demo(2),
-            crate::democsd::democsd_controllers::demo(3),
+        for (diagram_type, (uuid, controller)) in [
+            (0, crate::rdf::rdf_controllers::demo(1)),
+            (1, crate::umlclass::umlclass_controllers::demo(2)),
+            (2, crate::democsd::democsd_controllers::demo(3)),
         ] {
-            diagram_controllers.insert(uuid, controller);
+            diagram_controllers.insert(uuid, (diagram_type, controller));
             hierarchy_order.push(uuid);
             tabs.push(NHTab::Diagram { uuid });
         }
@@ -738,6 +750,14 @@ impl Default for NHApp {
             .split_below(b, 0.7, vec![NHTab::Toolbar]);
         open_unique_tabs.insert(NHTab::Toolbar);
 
+        let color_profiles = vec![
+            crate::rdf::rdf_controllers::colors(),
+            crate::umlclass::umlclass_controllers::colors(),
+            crate::democsd::democsd_controllers::colors()
+        ];
+        
+        let selected_color_profiles = color_profiles.iter().map(|e| e.2.keys().nth(0).unwrap().to_owned()).collect();
+        
         let mut context = NHContext {
             diagram_controllers,
             hierarchy_order,
@@ -745,6 +765,8 @@ impl Default for NHApp {
             custom_tabs: HashMap::new(),
             
             style: None,
+            color_profiles,
+            selected_color_profiles,
             
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -803,7 +825,7 @@ impl NHApp {
         self.switch_to_tab(&NHTab::Diagram { uuid: e.1 });
         
         {
-            let Some(ac) = self.context.diagram_controllers.get(&e.1) else { return; };
+            let Some((_t, ac)) = self.context.diagram_controllers.get(&e.1) else { return; };
             let mut c = ac.write().unwrap();
             c.apply_command(DiagramCommand::UndoImmediate, &mut vec![]);
         }
@@ -816,7 +838,7 @@ impl NHApp {
         self.switch_to_tab(&NHTab::Diagram { uuid: e.1 });
         
         {
-            let Some(ac) = self.context.diagram_controllers.get(&e.1) else { return; };
+            let Some((_t, ac)) = self.context.diagram_controllers.get(&e.1) else { return; };
             let mut c = ac.write().unwrap();
             c.apply_command(DiagramCommand::RedoImmediate, &mut vec![]);
         }
@@ -855,7 +877,7 @@ impl eframe::App for NHApp {
             macro_rules! send_to_focused_diagram {
                 ($command:expr) => {
                     if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
-                        if let Some(ac) = self.context.diagram_controllers.get(&uuid) {
+                        if let Some((_t, ac)) = self.context.diagram_controllers.get(&uuid) {
                             let mut c = ac.write().unwrap();
                             let mut undo = vec![];
                             c.apply_command($command, &mut undo);
@@ -910,24 +932,26 @@ impl eframe::App for NHApp {
                     ui.menu_button("Add New Diagram", |ui| {
                         type NDC =
                             fn(u32) -> (uuid::Uuid, Arc<RwLock<(dyn DiagramController + 'static)>>);
-                        for (label, fun) in [
+                        for (label, diagram_type, fun) in [
                             (
                                 "UML Class diagram",
+                                0,
                                 crate::umlclass::umlclass_controllers::new as NDC,
                             ),
                             //("Add New OntoUML diagram"),
                             (
                                 "DEMO CSD diagram",
+                                1,
                                 crate::democsd::democsd_controllers::new as NDC,
                             ),
-                            ("RDF diagram", crate::rdf::rdf_controllers::new as NDC),
+                            ("RDF diagram", 2, crate::rdf::rdf_controllers::new as NDC),
                         ] {
                             if ui.button(label).clicked() {
                                 let (uuid, diagram_controller) = fun(self.context.new_diagram_no);
                                 self.context.new_diagram_no += 1;
                                 self.context
                                     .diagram_controllers
-                                    .insert(uuid, diagram_controller);
+                                    .insert(uuid, (diagram_type, diagram_controller));
                                 self.context
                                     .hierarchy_order
                                     .push(uuid);
@@ -970,7 +994,7 @@ impl eframe::App for NHApp {
                             let _ = ui.add_enabled(false, button);
                         } else {
                             for (ii, (c, uuid)) in self.context.undo_stack.iter().rev().enumerate() {
-                                let Some(ac) = self.context.diagram_controllers.get(uuid) else {
+                                let Some((_t, ac)) = self.context.diagram_controllers.get(uuid) else {
                                     break;
                                 };
                                 let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().unwrap().model_name()));
@@ -1000,7 +1024,7 @@ impl eframe::App for NHApp {
                             let _ = ui.add_enabled(false, button);
                         } else {
                             for (ii, (c, uuid)) in self.context.redo_stack.iter().rev().enumerate() {
-                                let Some(ac) = self.context.diagram_controllers.get(uuid) else {
+                                let Some((_t, ac)) = self.context.diagram_controllers.get(uuid) else {
                                     break;
                                 };
                                 let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().unwrap().model_name()));
@@ -1033,7 +1057,7 @@ impl eframe::App for NHApp {
                     }
                     ui.separator();
 
-                    if let Some(d) = self.context.last_focused_diagram() {
+                    if let Some((_t, d)) = self.context.last_focused_diagram() {
                         let mut d = d.write().unwrap();
                         d.show_menubar_edit_options(self, ui);
                     }
@@ -1048,56 +1072,55 @@ impl eframe::App for NHApp {
                 });
 
                 ui.menu_button("Diagram", |ui| {
-                    self.context.last_focused_diagram().map(|e| {
-                        let mut controller = e.write().unwrap();
+                    let Some((t, c)) = self.context.last_focused_diagram() else { return; };
+                    let mut controller = c.write().unwrap();
 
-                        controller.show_menubar_diagram_options(self, ui);
+                    controller.show_menubar_diagram_options(self, ui);
 
-                        ui.menu_button(
-                            format!("Export Diagram `{}` to", controller.model_name()),
-                            |ui| {
-                                if ui.button("SVG").clicked() {
-                                    // NOTE: This does not work on WASM, and in its current state it never will.
-                                    //       This will be possible to fix once this is fixed on rfd side (#128).
-                                    if let Some(path) = rfd::FileDialog::new()
-                                        .set_directory(std::env::current_dir().unwrap())
-                                        .add_filter("SVG files", &["svg"])
-                                        .add_filter("All files", &["*"])
-                                        .save_file()
-                                    {
-                                        let mut measuring_canvas =
-                                            MeasuringCanvas::new(ui.painter());
-                                        controller.draw_in(&mut measuring_canvas, None);
+                    ui.menu_button(
+                        format!("Export Diagram `{}` to", controller.model_name()),
+                        |ui| {
+                            if ui.button("SVG").clicked() {
+                                // NOTE: This does not work on WASM, and in its current state it never will.
+                                //       This will be possible to fix once this is fixed on rfd side (#128).
+                                if let Some(path) = rfd::FileDialog::new()
+                                    .set_directory(std::env::current_dir().unwrap())
+                                    .add_filter("SVG files", &["svg"])
+                                    .add_filter("All files", &["*"])
+                                    .save_file()
+                                {
+                                    let mut measuring_canvas =
+                                        MeasuringCanvas::new(ui.painter());
+                                    controller.draw_in(&mut measuring_canvas, todo!(), None);
 
-                                        const PADDING_WIDTH: f32 = 10.0;
-                                        let mut svg_canvas = SVGCanvas::new(
-                                            ui.painter(),
-                                            -1.0 * measuring_canvas.bounds().min
-                                                + egui::Vec2::new(PADDING_WIDTH, PADDING_WIDTH),
-                                            measuring_canvas.bounds().size()
-                                                + egui::Vec2::new(
-                                                    2.0 * PADDING_WIDTH,
-                                                    2.0 * PADDING_WIDTH,
-                                                ),
-                                        );
-                                        controller.draw_in(&mut svg_canvas, None);
-                                        let _ = svg_canvas.save_to(path);
-                                    }
-                                    ui.close_menu();
+                                    const PADDING_WIDTH: f32 = 10.0;
+                                    let mut svg_canvas = SVGCanvas::new(
+                                        ui.painter(),
+                                        -1.0 * measuring_canvas.bounds().min
+                                            + egui::Vec2::new(PADDING_WIDTH, PADDING_WIDTH),
+                                        measuring_canvas.bounds().size()
+                                            + egui::Vec2::new(
+                                                2.0 * PADDING_WIDTH,
+                                                2.0 * PADDING_WIDTH,
+                                            ),
+                                    );
+                                    controller.draw_in(&mut svg_canvas, todo!(), None);
+                                    let _ = svg_canvas.save_to(path);
                                 }
-                                /*
-                                if ui.button("PNG").clicked() {
-                                    println!("yes");
-                                    ui.close_menu();
-                                }
-                                if ui.button("PDF").clicked() {
-                                    println!("yes");
-                                    ui.close_menu();
-                                }
-                                */
-                            },
-                        )
-                    });
+                                ui.close_menu();
+                            }
+                            /*
+                            if ui.button("PNG").clicked() {
+                                println!("yes");
+                                ui.close_menu();
+                            }
+                            if ui.button("PDF").clicked() {
+                                println!("yes");
+                                ui.close_menu();
+                            }
+                            */
+                        },
+                    );
                 });
 
                 ui.menu_button("Windows", |ui| {

@@ -1,6 +1,6 @@
 use crate::common::canvas;
 use crate::common::controller::{
-    ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::democsd::democsd_models::{
     DemoCsdTransaction, DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType,
@@ -127,6 +127,29 @@ impl TryInto<(uuid::Uuid, ArcRwLockController)> for DemoCsdElementOrVertex {
         }
     }
 }
+
+
+pub fn colors() -> (String, ColorLabels, HashMap<String, ColorProfile>) {
+    let c = crate::common::controller::build_colors!(
+                                      ["Light",              "Darker"             ],
+        [("Diagram background",       [egui::Color32::WHITE, egui::Color32::GRAY, ]),
+         ("Package background",       [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),
+         ("Connection background",    [egui::Color32::WHITE, egui::Color32::WHITE,]),
+         ("External role background", [egui::Color32::LIGHT_GRAY, egui::Color32::from_rgb(127, 127, 127), ]),
+         ("Internal role background", [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),
+         ("Transaction background",   [egui::Color32::WHITE, egui::Color32::from_rgb(191, 191, 191), ]),],
+        [("Diagram gridlines",        [egui::Color32::from_rgb(220, 220, 220),  egui::Color32::from_rgb(127, 127, 127), ]),
+         ("Package foreground",       [egui::Color32::BLACK, egui::Color32::BLACK,]),
+         ("Connection foreground",    [egui::Color32::BLACK, egui::Color32::BLACK,]),
+         ("External role foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
+         ("Internal role foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
+         ("Transaction foreground",   [egui::Color32::BLACK, egui::Color32::BLACK,]),
+         ("Performa Transaction",     [egui::Color32::RED,   egui::Color32::RED,  ]),],
+        [("Selection",                [egui::Color32::BLUE,  egui::Color32::LIGHT_BLUE, ]),],
+    );
+    ("DEMO CSD diagram".to_owned(), c.0, c.1)
+}
+
 
 pub struct DemoCsdDiagramBuffer {
     uuid: uuid::Uuid,
@@ -984,6 +1007,7 @@ impl
         &mut self,
         queryable: &DemoCsdQueryable,
         canvas: &mut dyn canvas::NHCanvas,
+        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &NaiveDemoCsdTool)>,
     ) -> TargettingStatus {
         let read = self.model.read().unwrap();
@@ -1034,9 +1058,9 @@ impl
             self.bounds_rect,
             egui::Rounding::ZERO,
             if read.internal {
-                egui::Color32::WHITE
+                profile.backgrounds[4]
             } else {
-                egui::Color32::LIGHT_GRAY
+                profile.backgrounds[3]
             },
             canvas::Stroke::new_solid(
                 1.0,
@@ -1049,13 +1073,19 @@ impl
             self.highlight,
         );
         
+        let text_color = if read.internal {
+            profile.foregrounds[4]
+        } else {
+            profile.foregrounds[3]
+        };
+        
         // Draw identifier below the position (plus tx name)
         canvas.draw_text(
             self.position + identifier_offset,
             egui::Align2::CENTER_TOP,
             &read.identifier,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            egui::Color32::BLACK,
+            text_color,
         );
 
         // Draw identifier one row below the position (plus tx name)
@@ -1064,13 +1094,13 @@ impl
             egui::Align2::CENTER_TOP,
             &read.name,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            egui::Color32::BLACK,
+            text_color,
         );
         
         // If tx is present, draw it 4 rows above the position
         if let Some(t) = &self.transaction_view {
             let mut t = t.write().unwrap();
-            let res = t.draw_in(queryable, canvas, &tool);
+            let res = t.draw_in(queryable, canvas, profile, &tool);
             if res == TargettingStatus::Drawn {
                 return TargettingStatus::Drawn;
             }
@@ -1374,12 +1404,15 @@ fn draw_tx_mark(
     position: egui::Pos2,
     radius: f32,
     highlight: canvas::Highlight,
+    background: egui::Color32,
+    foreground: egui::Color32,
+    transaction: egui::Color32,
 ) -> canvas::NHShape {
     canvas.draw_ellipse(
         position,
         egui::Vec2::splat(radius),
-        egui::Color32::WHITE,
-        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+        background,
+        canvas::Stroke::new_solid(1.0, foreground),
         highlight,
     );
 
@@ -1397,7 +1430,7 @@ fn draw_tx_mark(
         };
         canvas.draw_line(
             [*u, **v],
-            canvas::Stroke::new_solid(1.0, egui::Color32::RED),
+            canvas::Stroke::new_solid(1.0, transaction),
             canvas::Highlight::NONE,
         );
     }
@@ -1407,7 +1440,7 @@ fn draw_tx_mark(
         egui::Align2::CENTER_CENTER,
         identifier,
         canvas::CLASS_MIDDLE_FONT_SIZE,
-        egui::Color32::BLACK,
+        foreground,
     );
 
     canvas::NHShape::Ellipse {
@@ -1487,6 +1520,7 @@ impl
         &mut self,
         _: &DemoCsdQueryable,
         canvas: &mut dyn canvas::NHCanvas,
+        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &NaiveDemoCsdTool)>,
     ) -> TargettingStatus {
         let radius = 2.0 * canvas::CLASS_MIDDLE_FONT_SIZE;
@@ -1498,6 +1532,9 @@ impl
             self.position,
             radius,
             self.highlight,
+            profile.backgrounds[5],
+            profile.foregrounds[5],
+            profile.foregrounds[6],
         );
 
         canvas.draw_text(

@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::{CustomTab, NHApp};
 use eframe::egui;
@@ -119,6 +119,24 @@ impl TryInto<(uuid::Uuid, ArcRwLockController)> for RdfElementOrVertex {
             _ => Err(()),
         }
     }
+}
+
+pub fn colors() -> (String, ColorLabels, HashMap<String, ColorProfile>) {
+    let c = crate::common::controller::build_colors!(
+                                   ["Light",              "Darker"             ],
+        [("Diagram background",    [egui::Color32::WHITE, egui::Color32::GRAY, ]),
+         ("Graph background",      [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),
+         ("Connection background", [egui::Color32::WHITE, egui::Color32::WHITE,]),
+         ("Node background",       [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),
+         ("Literal background",    [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),],
+        [("Diagram gridlines",     [egui::Color32::from_rgb(220, 220, 220),  egui::Color32::from_rgb(127, 127, 127), ]),
+         ("Graph foreground",      [egui::Color32::BLACK, egui::Color32::BLACK,]),
+         ("Connection foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
+         ("Node foreground",       [egui::Color32::BLACK, egui::Color32::BLACK,]),
+         ("Literal foreground",    [egui::Color32::BLACK, egui::Color32::BLACK,]),],
+        [("Selection",             [egui::Color32::BLUE,  egui::Color32::LIGHT_BLUE, ]),],
+    );
+    ("RDF diagram".to_owned(), c.0, c.1)
 }
 
 pub struct RdfDiagramBuffer {
@@ -1210,6 +1228,7 @@ impl
         &mut self,
         _: &RdfQueryable,
         canvas: &mut dyn NHCanvas,
+        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {
         // Draw shape and text
@@ -1224,7 +1243,7 @@ impl
         canvas.draw_ellipse(
             self.position,
             self.bounds_radius,
-            egui::Color32::WHITE,
+            profile.backgrounds[3],
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
@@ -1234,7 +1253,7 @@ impl
             egui::Align2::CENTER_CENTER,
             &self.model.read().unwrap().iri,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            egui::Color32::BLACK,
+            profile.foregrounds[3],
         );
 
         // Draw targetting ellipse
@@ -1491,6 +1510,7 @@ impl
         &mut self,
         _: &RdfQueryable,
         canvas: &mut dyn NHCanvas,
+        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {
         // Draw shape and text
@@ -1500,7 +1520,8 @@ impl
             &self.model.read().unwrap().content,
             None,
             &[],
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            profile.backgrounds[4],
+            canvas::Stroke::new_solid(1.0, profile.foregrounds[4]),
             self.highlight,
         );
 

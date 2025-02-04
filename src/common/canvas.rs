@@ -450,6 +450,7 @@ pub trait NHCanvas {
         main_label: &str,
         bottom_label: Option<&str>,
         items: &[&[(&str, &str)]],
+        fill: egui::Color32,
         stroke: Stroke,
         highlight: Highlight,
     ) -> egui::Rect {
@@ -533,7 +534,7 @@ pub trait NHCanvas {
             self.draw_rectangle(
                 rect,
                 egui::Rounding::ZERO,
-                egui::Color32::WHITE,
+                fill,
                 stroke.into(),
                 highlight,
             );
@@ -809,7 +810,7 @@ impl UiCanvas {
 
         if let Some((distance_x, color)) = vertical {
             for x in
-                (0..((canvas_size_scaled.x / distance_x) as u32 + 1)).map(|e| distance_x * e as f32)
+                (0..((canvas_size_scaled.x / distance_x) as u32 + 2)).map(|e| distance_x * e as f32)
             {
                 self.painter.vline(
                     self.canvas.min.x
@@ -822,7 +823,7 @@ impl UiCanvas {
         }
         if let Some((distance_y, color)) = horizontal {
             for y in
-                (0..((canvas_size_scaled.y / distance_y) as u32 + 1)).map(|e| distance_y * e as f32)
+                (0..((canvas_size_scaled.y / distance_y) as u32 + 2)).map(|e| distance_y * e as f32)
             {
                 self.painter.hline(
                     egui::Rangef::new(self.canvas.min.x, self.canvas.max.x),
