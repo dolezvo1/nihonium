@@ -224,12 +224,12 @@ fn show_props_fun(
         )
         .changed()
     {
-        commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::PropertyChange(
+        commands.push(InsensitiveCommand::PropertyChange(
             std::iter::once(buffer.uuid).collect(),
             vec![UmlClassPropChange::NameChange(Arc::new(
                 buffer.name.clone(),
             ))],
-        )));
+        ).into());
     }
 
     ui.label("Comment:");
@@ -240,12 +240,12 @@ fn show_props_fun(
         )
         .changed()
     {
-        commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::PropertyChange(
+        commands.push(InsensitiveCommand::PropertyChange(
             std::iter::once(buffer.uuid).collect(),
             vec![UmlClassPropChange::CommentChange(Arc::new(
                 buffer.comment.clone(),
             ))],
-        )));
+        ).into());
     }
 }
 fn apply_property_change_fun(
@@ -1301,10 +1301,10 @@ impl
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(delta));
                 } else {
-                    commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::MoveSpecificElements(
+                    commands.push(InsensitiveCommand::MoveSpecificElements(
                         std::iter::once(*self.uuid()).collect(),
                         delta,
-                    )));
+                    ).into());
                 }
                 
                 EventHandlingStatus::HandledByElement
