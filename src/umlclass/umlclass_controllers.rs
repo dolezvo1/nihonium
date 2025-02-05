@@ -188,7 +188,7 @@ impl
 }
 
 
-pub fn colors() -> (String, ColorLabels, HashMap<String, ColorProfile>) {
+pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
     let c = crate::common::controller::build_colors!(
                                    ["Light",              "Darker"             ],
         [("Diagram background",    [egui::Color32::WHITE, egui::Color32::GRAY, ]),

@@ -12,6 +12,7 @@ pub const AUXILIARY_COLORS: usize = 8;
 
 #[derive(PartialEq)]
 pub struct ColorProfile {
+    pub name: String,
     pub backgrounds: [egui::Color32; BACKGROUND_COLORS],
     pub foregrounds: [egui::Color32; FOREGROUND_COLORS],
     pub auxiliary: [egui::Color32; AUXILIARY_COLORS],
@@ -29,11 +30,11 @@ macro_rules! build_colors {
      [$($pair_back:expr),* $(,)?],
      [$($pair_front:expr),* $(,)?],
      [$($pair_aux:expr),* $(,)?] $(,)?) => {{
-        let vec_profile_names = vec![$($profile_names),*];
-        let mut map_names_to_profiles = HashMap::<String, crate::common::controller::ColorProfile>::new();
+        let mut vec_profiles = Vec::<crate::common::controller::ColorProfile>::new();
         
-        for a in &vec_profile_names {
-            map_names_to_profiles.insert(a.to_string(), ColorProfile {
+        for name in vec![$($profile_names),*] {
+            vec_profiles.push(ColorProfile {
+                name: name.to_string(),
                 backgrounds: [egui::Color32::PLACEHOLDER; crate::common::controller::BACKGROUND_COLORS],
                 foregrounds: [egui::Color32::PLACEHOLDER; crate::common::controller::FOREGROUND_COLORS],
                 auxiliary: [egui::Color32::PLACEHOLDER; crate::common::controller::AUXILIARY_COLORS],
@@ -44,7 +45,7 @@ macro_rules! build_colors {
         for (idx1, (label, values)) in vec![$($pair_back),*].into_iter().enumerate() {
             vec_labels_back.push(label);
             for (idx2, v) in values.into_iter().enumerate() {
-                map_names_to_profiles.get_mut(vec_profile_names[idx2]).unwrap().backgrounds[idx1] = v;
+                vec_profiles[idx2].backgrounds[idx1] = v;
             }
         }
         
@@ -52,7 +53,7 @@ macro_rules! build_colors {
         for (idx1, (label, values)) in vec![$($pair_front),*].into_iter().enumerate() {
             vec_labels_front.push(label);
             for (idx2, v) in values.into_iter().enumerate() {
-                map_names_to_profiles.get_mut(vec_profile_names[idx2]).unwrap().foregrounds[idx1] = v;
+                vec_profiles[idx2].foregrounds[idx1] = v;
             }
         }
         
@@ -60,7 +61,7 @@ macro_rules! build_colors {
         for (idx1, (label, values)) in vec![$($pair_aux),*].into_iter().enumerate() {
             vec_labels_aux.push(label);
             for (idx2, v) in values.into_iter().enumerate() {
-                map_names_to_profiles.get_mut(vec_profile_names[idx2]).unwrap().auxiliary[idx1] = v;
+                vec_profiles[idx2].auxiliary[idx1] = v;
             }
         }
         
@@ -85,7 +86,7 @@ macro_rules! build_colors {
             }),
         };
         
-        (labels, map_names_to_profiles)
+        (labels, vec_profiles)
     }};
 }
 pub(crate) use build_colors;

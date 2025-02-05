@@ -109,8 +109,8 @@ struct NHContext {
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
 
     pub style: Option<Style>,
-    color_profiles: Vec<(String, ColorLabels, HashMap<String, ColorProfile>)>,
-    selected_color_profiles: Vec<String>,
+    color_profiles: Vec<(String, ColorLabels, Vec<ColorProfile>)>,
+    selected_color_profiles: Vec<usize>,
 
     undo_stack: Vec<(Arc<String>, uuid::Uuid)>,
     redo_stack: Vec<(Arc<String>, uuid::Uuid)>,
@@ -648,12 +648,12 @@ impl NHContext {
         });
         
         ui.collapsing("Diagram themes", |ui|{
-            for (idx, (name, l, p)) in self.color_profiles.iter().enumerate() {
+            for (idx1, (name, l, p)) in self.color_profiles.iter().enumerate() {
                 egui::ComboBox::from_label(name)
-                    .selected_text(&self.selected_color_profiles[idx])
+                    .selected_text(&p[self.selected_color_profiles[idx1]].name)
                     .show_ui(ui, |ui| {
-                        for profile_name in p.keys() {
-                            ui.selectable_value(&mut self.selected_color_profiles[idx], profile_name.to_owned(), profile_name);
+                        for (idx2, profile) in p.iter().enumerate() {
+                            ui.selectable_value(&mut self.selected_color_profiles[idx1], idx2, &profile.name);
                         }
                         // TODO: allow custom profiles
                     }
@@ -666,7 +666,7 @@ impl NHContext {
     fn diagram_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
         let Some((t, arc)) = self.diagram_controllers.get(tab_uuid) else { return; };
         let mut diagram_controller = arc.write().unwrap();
-        let Some(color_profile) = self.color_profiles[*t].2.get(&self.selected_color_profiles[*t]) else { return; };
+        let color_profile = &self.color_profiles[*t].2[self.selected_color_profiles[*t]];
         
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(ui, color_profile);
 
@@ -756,7 +756,7 @@ impl Default for NHApp {
             crate::democsd::democsd_controllers::colors()
         ];
         
-        let selected_color_profiles = color_profiles.iter().map(|e| e.2.keys().nth(0).unwrap().to_owned()).collect();
+        let selected_color_profiles = color_profiles.iter().map(|_| 0).collect();
         
         let mut context = NHContext {
             diagram_controllers,
