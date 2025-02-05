@@ -120,6 +120,7 @@ struct NHContext {
 
     open_unique_tabs: HashSet<NHTab>,
     last_focused_diagram: Option<uuid::Uuid>,
+    svg_export_menu: Option<(std::path::PathBuf, usize)>,
 
     show_close_buttons: bool,
     show_add_buttons: bool,
@@ -776,6 +777,7 @@ impl Default for NHApp {
 
             open_unique_tabs,
             last_focused_diagram: None,
+            svg_export_menu: None,
 
             show_window_close: true,
             show_window_collapse: true,
@@ -871,8 +873,6 @@ fn new_project() -> Result<(), &'static str> {
 
 impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Save focused tab to context for event handling purposes
-        
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             macro_rules! send_to_focused_diagram {
                 ($command:expr) => {
@@ -1089,36 +1089,10 @@ impl eframe::App for NHApp {
                                     .add_filter("All files", &["*"])
                                     .save_file()
                                 {
-                                    let mut measuring_canvas =
-                                        MeasuringCanvas::new(ui.painter());
-                                    controller.draw_in(&mut measuring_canvas, todo!(), None);
-
-                                    const PADDING_WIDTH: f32 = 10.0;
-                                    let mut svg_canvas = SVGCanvas::new(
-                                        ui.painter(),
-                                        -1.0 * measuring_canvas.bounds().min
-                                            + egui::Vec2::new(PADDING_WIDTH, PADDING_WIDTH),
-                                        measuring_canvas.bounds().size()
-                                            + egui::Vec2::new(
-                                                2.0 * PADDING_WIDTH,
-                                                2.0 * PADDING_WIDTH,
-                                            ),
-                                    );
-                                    controller.draw_in(&mut svg_canvas, todo!(), None);
-                                    let _ = svg_canvas.save_to(path);
+                                    self.context.svg_export_menu = Some((path, self.context.selected_color_profiles[t]));
                                 }
                                 ui.close_menu();
                             }
-                            /*
-                            if ui.button("PNG").clicked() {
-                                println!("yes");
-                                ui.close_menu();
-                            }
-                            if ui.button("PDF").clicked() {
-                                println!("yes");
-                                ui.close_menu();
-                            }
-                            */
                         },
                     );
                 });
@@ -1153,6 +1127,62 @@ impl eframe::App for NHApp {
                 });
             })
         });
+        
+        // SVG export options modal
+        let mut hide_svg_export_modal = false;
+        if let Some((path, profile)) = self.context.svg_export_menu.as_mut() {
+            let (t, c) = self.context.last_focused_diagram.as_ref()
+                .and_then(|e| self.context.diagram_controllers.get(e)).unwrap();
+            let mut controller = c.write().unwrap();
+            
+            egui::containers::Modal::new("SVG export options".into()).show(ctx, |ui| {
+                ui.heading("SVG export options");
+                
+                // Change options
+                egui::ComboBox::from_label("Export color profile")
+                    .selected_text(&self.context.color_profiles[*t].2[*profile].name)
+                    .show_ui(ui, |ui| {
+                        for (idx2, p) in self.context.color_profiles[*t].2.iter().enumerate() {
+                            ui.selectable_value(profile, idx2, &p.name);
+                        }
+                    }
+                );
+                
+                // Cancel or confirm
+                ui.horizontal(|ui| {
+                    if ui.button("Cancel").clicked() {
+                        hide_svg_export_modal = true;
+                    }
+                    if ui.button("OK").clicked() {
+                        let color_profile = &self.context.color_profiles[*t].2[*profile];
+                        
+                        let mut measuring_canvas =
+                            MeasuringCanvas::new(ui.painter());
+                        controller.draw_in(&mut measuring_canvas, color_profile, None);
+
+                        const PADDING_WIDTH: f32 = 10.0;
+                        let mut svg_canvas = SVGCanvas::new(
+                            ui.painter(),
+                            -1.0 * measuring_canvas.bounds().min
+                                + egui::Vec2::new(PADDING_WIDTH, PADDING_WIDTH),
+                            measuring_canvas.bounds().size()
+                                + egui::Vec2::new(
+                                    2.0 * PADDING_WIDTH,
+                                    2.0 * PADDING_WIDTH,
+                                ),
+                        );
+                        controller.draw_in(&mut svg_canvas, color_profile, None);
+                        let _ = svg_canvas.save_to(&path);
+                        
+                        hide_svg_export_modal = true;
+                    }
+                });
+            });
+        }
+        if hide_svg_export_modal {
+            self.context.svg_export_menu = None;
+        }
+        
         CentralPanel::default()
             // When displaying a DockArea in another UI, it looks better
             // to set inner margins to 0.

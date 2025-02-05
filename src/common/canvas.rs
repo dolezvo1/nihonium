@@ -1162,7 +1162,7 @@ impl<'a> SVGCanvas<'a> {
         }
     }
 
-    pub fn save_to(&self, path: std::path::PathBuf) -> Result<(), std::io::Error> {
+    pub fn save_to(&self, path: &std::path::PathBuf) -> Result<(), std::io::Error> {
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .truncate(true)
