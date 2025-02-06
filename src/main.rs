@@ -68,6 +68,7 @@ fn main() -> eframe::Result<()> {
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
 enum NHTab {
+    RecentlyUsed,
     StyleEditor,
 
     ProjectHierarchy,
@@ -83,6 +84,7 @@ enum NHTab {
 impl NHTab {
     pub fn name(&self) -> &str {
         match self {
+            NHTab::RecentlyUsed => "Recently Used",
             NHTab::StyleEditor => "Style Editor",
 
             NHTab::ProjectHierarchy => "Project Hierarchy",
@@ -151,6 +153,11 @@ impl TabViewer for NHContext {
 
     fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
         match tab {
+            NHTab::RecentlyUsed => {
+                // TODO: show recently used projects
+                ui.heading("Recently used");
+                ui.label("[no recently used]");
+            },
             NHTab::StyleEditor => self.style_editor_tab(ui),
 
             NHTab::ProjectHierarchy => self.hierarchy(ui),
@@ -719,7 +726,7 @@ impl Default for NHApp {
     fn default() -> Self {
         let mut diagram_controllers = HashMap::new();
         let mut hierarchy_order = vec![];
-        let mut tabs = vec![NHTab::StyleEditor];
+        let mut tabs = vec![NHTab::RecentlyUsed, NHTab::StyleEditor];
 
         for (diagram_type, (uuid, controller)) in [
             (0, crate::rdf::rdf_controllers::demo(1)),
@@ -735,6 +742,7 @@ impl Default for NHApp {
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
 
         let mut open_unique_tabs = HashSet::new();
+        open_unique_tabs.insert(NHTab::RecentlyUsed);
         open_unique_tabs.insert(NHTab::StyleEditor);
 
         let [a, b] = dock_state.main_surface_mut().split_left(
