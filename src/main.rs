@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use common::canvas::{NHCanvas, UiCanvas};
-use common::controller::{ColorLabels, ColorProfile};
+use common::controller::{ColorLabels, ColorProfile, ProjectCommand};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
@@ -117,6 +117,7 @@ struct NHContext {
 
     undo_stack: Vec<(Arc<String>, uuid::Uuid)>,
     redo_stack: Vec<(Arc<String>, uuid::Uuid)>,
+    unprocessed_commands: Vec<ProjectCommand>,
     
     shortcuts: HashMap<DiagramCommand, egui::KeyboardShortcut>,
     shortcut_top_order: Vec<(DiagramCommand, egui::KeyboardShortcut)>,
@@ -207,13 +208,15 @@ impl NHContext {
         self.shortcut_top_order.sort_by(|a, b| weight(&b.1).cmp(&weight(&a.1)));
     }
 
-    fn hierarchy(&self, ui: &mut Ui) {
+    fn hierarchy(&mut self, ui: &mut Ui) {
+        let mut commands = Vec::new();
         for (_t, c) in self.hierarchy_order.iter()
             .flat_map(|e| self.diagram_controllers.get(e))
         {
             let controller_lock = c.write().unwrap();
-            controller_lock.list_in_project_hierarchy(ui);
+            controller_lock.list_in_project_hierarchy(ui, &mut commands);
         }
+        self.unprocessed_commands.extend(commands.into_iter());
     }
 
     fn toolbar(&self, ui: &mut Ui) {
@@ -780,6 +783,7 @@ impl Default for NHApp {
             
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            unprocessed_commands: Vec::new(),
             
             shortcuts: HashMap::new(),
             shortcut_top_order: vec![],
@@ -882,6 +886,28 @@ fn new_project() -> Result<(), &'static str> {
 
 impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        for c in self.context.unprocessed_commands.drain(..) {
+            match c {
+                ProjectCommand::OpenAndFocusDiagram(uuid) => {
+                    let target_tab = NHTab::Diagram { uuid };
+                    if let Some(t) = self.tree.find_tab(&target_tab) {
+                        self.tree.set_focused_node_and_surface((t.0, t.1));
+                        self.tree.set_active_tab(t);
+                    } else {
+                        if let Some(t) = self.context.last_focused_diagram
+                            .and_then(|e| self.tree.find_tab(&NHTab::Diagram { uuid: e })) {
+                            self.tree.set_focused_node_and_surface((t.0, t.1));
+                            self.tree.set_active_tab(t);
+                        }
+                        self.tree[SurfaceIndex::main()].push_to_focused_leaf(target_tab);
+                    }
+                    
+                    self.context.last_focused_diagram = Some(uuid);
+                },
+            }
+        }
+        
+        
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             macro_rules! send_to_focused_diagram {
                 ($command:expr) => {
@@ -1109,6 +1135,7 @@ impl eframe::App for NHApp {
                 ui.menu_button("Windows", |ui| {
                     // allow certain tabs to be toggled
                     for tab in &[
+                        NHTab::RecentlyUsed,
                         NHTab::StyleEditor,
                         NHTab::ProjectHierarchy,
                         NHTab::Toolbar,

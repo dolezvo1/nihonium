@@ -92,6 +92,11 @@ macro_rules! build_colors {
 pub(crate) use build_colors;
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub enum ProjectCommand {
+    OpenAndFocusDiagram(uuid::Uuid),
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum DiagramCommand {
     DropRedoStackAndLastChangeFlag,
     SetLastChangeFlag,
@@ -128,7 +133,7 @@ pub trait DiagramController: Any {
     fn show_layers(&self, ui: &mut egui::Ui);
     fn show_menubar_edit_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui);
     fn show_menubar_diagram_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui);
-    fn list_in_project_hierarchy(&self, ui: &mut egui::Ui);
+    fn list_in_project_hierarchy(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
 
     // This hurts me at least as much as it hurts you
     //fn outgoing_for<'a>(&'a self, _uuid: &'a uuid::Uuid) -> Box<dyn Iterator<Item=Arc<RwLock<dyn ElementController>>> + 'a> {
@@ -1085,10 +1090,10 @@ where
         ui.separator();
     }
 
-    fn list_in_project_hierarchy(&self, ui: &mut egui::Ui) {
+    fn list_in_project_hierarchy(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
         let model = self.model.read().unwrap();
 
-        egui::CollapsingHeader::new(format!("{} ({})", model.name(), model.uuid())).show(
+        let r = egui::CollapsingHeader::new(format!("{} ({})", model.name(), model.uuid())).show(
             ui,
             |ui| {
                 for uc in &self.owned_controllers {
@@ -1098,6 +1103,20 @@ where
                 }
             },
         );
+        
+        // React to user interaction
+        if r.header_response.double_clicked() {
+            commands.push(ProjectCommand::OpenAndFocusDiagram(*model.uuid()));
+        }
+        
+        r.header_response.context_menu(|ui| {
+            if ui.button("Open").clicked() {
+                commands.push(ProjectCommand::OpenAndFocusDiagram(*model.uuid()));
+                ui.close_menu();
+            } else if ui.button("Delete").clicked() {
+                todo!("implement view deletion");
+            }
+        });
     }
 
     fn apply_command(
