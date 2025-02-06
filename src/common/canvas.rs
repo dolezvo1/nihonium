@@ -765,6 +765,7 @@ pub trait NHCanvas {
 }
 
 pub struct UiCanvas {
+    is_interactive: bool,
     highlight_colors: [egui::Color32; 4],
     painter: egui::Painter,
     canvas: egui::Rect,
@@ -775,6 +776,7 @@ pub struct UiCanvas {
 
 impl UiCanvas {
     pub fn new(
+        is_interactive: bool,
         painter: egui::Painter,
         canvas: egui::Rect,
         camera_offset: egui::Pos2,
@@ -782,6 +784,7 @@ impl UiCanvas {
         cursor: Option<egui::Pos2>,
     ) -> Self {
         Self {
+            is_interactive,
             highlight_colors: [
                 egui::Color32::BLUE,
                 egui::Color32::GREEN,
@@ -842,7 +845,7 @@ impl UiCanvas {
 }
 
 impl NHCanvas for UiCanvas {
-    fn is_interactive(&self) -> bool {true}
+    fn is_interactive(&self) -> bool { self.is_interactive }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
         let offset = self.canvas.min.to_vec2() + self.camera_offset.to_vec2();

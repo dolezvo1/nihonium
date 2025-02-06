@@ -4,6 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
+use common::canvas::UiCanvas;
 use common::controller::{ColorLabels, ColorProfile};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
@@ -120,7 +121,7 @@ struct NHContext {
 
     open_unique_tabs: HashSet<NHTab>,
     last_focused_diagram: Option<uuid::Uuid>,
-    svg_export_menu: Option<(std::path::PathBuf, usize)>,
+    svg_export_menu: Option<(usize, Arc<RwLock<dyn DiagramController>>, std::path::PathBuf, usize, bool, bool, f32, f32)>,
 
     show_close_buttons: bool,
     show_add_buttons: bool,
@@ -1089,7 +1090,7 @@ impl eframe::App for NHApp {
                                     .add_filter("All files", &["*"])
                                     .save_file()
                                 {
-                                    self.context.svg_export_menu = Some((path, self.context.selected_color_profiles[t]));
+                                    self.context.svg_export_menu = Some((t, c.clone(), path, self.context.selected_color_profiles[t], false, false, 10.0, 10.0));
                                 }
                                 ui.close_menu();
                             }
@@ -1130,16 +1131,14 @@ impl eframe::App for NHApp {
         
         // SVG export options modal
         let mut hide_svg_export_modal = false;
-        if let Some((path, profile)) = self.context.svg_export_menu.as_mut() {
-            let (t, c) = self.context.last_focused_diagram.as_ref()
-                .and_then(|e| self.context.diagram_controllers.get(e)).unwrap();
+        if let Some((t, c, path, profile, background, gridlines, padding_x, padding_y)) = self.context.svg_export_menu.as_mut() {
             let mut controller = c.write().unwrap();
             
-            egui::containers::Modal::new("SVG export options".into()).show(ctx, |ui| {
-                ui.heading("SVG export options");
+            egui::containers::Window::new("SVG export options").show(ctx, |ui| {
+                ui.label(format!("Location: `{}`", path.display()));
                 
                 // Change options
-                egui::ComboBox::from_label("Export color profile")
+                egui::ComboBox::from_label("Color profile")
                     .selected_text(&self.context.color_profiles[*t].2[*profile].name)
                     .show_ui(ui, |ui| {
                         for (idx2, p) in self.context.color_profiles[*t].2.iter().enumerate() {
@@ -1147,8 +1146,79 @@ impl eframe::App for NHApp {
                         }
                     }
                 );
+                ui.checkbox(background, "Solid background");
+                ui.checkbox(gridlines, "Gridlines");
                 
-                // Cancel or confirm
+                ui.add(egui::Slider::new(padding_x, 0.0..=5000.0).text("Horizontal padding"));
+                ui.add(egui::Slider::new(padding_y, 0.0..=5000.0).text("Vertical padding"));
+                
+                ui.separator();
+                
+                // Show preview
+                {
+                    let color_profile = &self.context.color_profiles[*t].2[*profile];
+                    
+                    // Measure the diagram
+                    let mut measuring_canvas =
+                            MeasuringCanvas::new(ui.painter());
+                    controller.draw_in(&mut measuring_canvas, color_profile, None);
+                    let diagram_bounds = measuring_canvas.bounds();
+                    drop(measuring_canvas);
+                    
+                    let preview_width = ui.available_width();
+                    let camera_scale = preview_width / (diagram_bounds.width() + 2.0 * *padding_x);
+                    let preview_height = preview_width * (diagram_bounds.height() + 2.0 * *padding_y)
+                        / (diagram_bounds.width() + 2.0 * *padding_x);
+                    let preview_size = egui::Vec2::new(preview_width, preview_height);
+                    
+                    // Draw the diagram
+                    let canvas_pos = ui.next_widget_position();
+                    let canvas_rect = egui::Rect::from_min_size(canvas_pos, preview_size);
+                    
+                    let (painter_response, painter) =
+                        ui.allocate_painter(preview_size, egui::Sense::focusable_noninteractive());
+                    if *background {
+                        painter.rect(
+                            canvas_rect,
+                            egui::Rounding::ZERO,
+                            color_profile.backgrounds[0],
+                            egui::Stroke::NONE,
+                        );
+                    } else {
+                        let rect_side: f32 = preview_width / 20.0;
+                        for ii in 0..20 {
+                            for jj in 0..=((preview_height / rect_side) as u32) {
+                                painter.rect(
+                                    egui::Rect::from_min_size(
+                                        egui::Pos2::new(ii as f32 * rect_side, jj as f32 * rect_side)
+                                        + canvas_rect.min.to_vec2(),
+                                        egui::Vec2::splat(rect_side)
+                                    ),
+                                    egui::Rounding::ZERO,
+                                    if (ii + jj) % 2 == 0 {egui::Color32::GRAY} else {egui::Color32::from_rgb(50, 50, 50)},
+                                    egui::Stroke::NONE
+                                );
+                            }
+                        }
+                    }
+                    let mut ui_canvas = UiCanvas::new(
+                        false,
+                        painter,
+                        canvas_rect,
+                        diagram_bounds.min * -camera_scale + egui::Vec2::new(*padding_x, *padding_y) * camera_scale,
+                        camera_scale,
+                        None,
+                    );
+                    if *gridlines {
+                        ui_canvas.draw_gridlines(
+                            Some((50.0, color_profile.foregrounds[0])),
+                            Some((50.0, color_profile.foregrounds[0])),
+                        );
+                    }
+                    controller.draw_in(&mut ui_canvas, color_profile, None);
+                }
+                
+                // Cancel or confirm export
                 ui.horizontal(|ui| {
                     if ui.button("Cancel").clicked() {
                         hide_svg_export_modal = true;
@@ -1160,15 +1230,14 @@ impl eframe::App for NHApp {
                             MeasuringCanvas::new(ui.painter());
                         controller.draw_in(&mut measuring_canvas, color_profile, None);
 
-                        const PADDING_WIDTH: f32 = 10.0;
                         let mut svg_canvas = SVGCanvas::new(
                             ui.painter(),
                             -1.0 * measuring_canvas.bounds().min
-                                + egui::Vec2::new(PADDING_WIDTH, PADDING_WIDTH),
+                                + egui::Vec2::new(*padding_x, *padding_y),
                             measuring_canvas.bounds().size()
                                 + egui::Vec2::new(
-                                    2.0 * PADDING_WIDTH,
-                                    2.0 * PADDING_WIDTH,
+                                    2.0 * *padding_x,
+                                    2.0 * *padding_y,
                                 ),
                         );
                         controller.draw_in(&mut svg_canvas, color_profile, None);

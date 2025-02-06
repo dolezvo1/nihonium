@@ -947,14 +947,12 @@ where
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
         let canvas_pos = ui.next_widget_position();
         let canvas_size = ui.available_size();
-        let canvas_rect = egui::Rect {
-            min: canvas_pos,
-            max: canvas_pos + canvas_size,
-        };
+        let canvas_rect = egui::Rect::from_min_max(canvas_pos, canvas_pos + canvas_size);
 
         let (painter_response, painter) =
             ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
         let ui_canvas = UiCanvas::new(
+            true,
             painter,
             canvas_rect,
             self.camera_offset,
@@ -1184,35 +1182,37 @@ where
                 }
             });
 
-        if let Some((pos, tool)) = tool {
-            if drawn_targetting == TargettingStatus::NotDrawn {
+        if canvas.is_interactive() {
+            if let Some((pos, tool)) = tool {
+                if drawn_targetting == TargettingStatus::NotDrawn {
+                    canvas.draw_rectangle(
+                        egui::Rect::EVERYTHING,
+                        egui::Rounding::ZERO,
+                        tool.targetting_for_element(ToolT::KindedElement::from(self)),
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                    self.event_order
+                        .iter()
+                        .rev()
+                        .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
+                        .filter(|_| true) // TODO: filter by layers
+                        .for_each(|uc| {
+                            uc.1.write()
+                                .unwrap()
+                                .draw_in(&self.queryable, canvas, profile, &Some((pos, tool)));
+                        });
+                }
+                tool.draw_status_hint(canvas, pos);
+            } else if let Some((a, b)) = self.select_by_drag {
                 canvas.draw_rectangle(
-                    egui::Rect::EVERYTHING,
+                    egui::Rect::from_two_pos(a, b),
                     egui::Rounding::ZERO,
-                    tool.targetting_for_element(ToolT::KindedElement::from(self)),
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    egui::Color32::from_rgba_premultiplied(0, 0, 255, 7),
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
                     canvas::Highlight::NONE,
                 );
-                self.event_order
-                    .iter()
-                    .rev()
-                    .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
-                    .filter(|_| true) // TODO: filter by layers
-                    .for_each(|uc| {
-                        uc.1.write()
-                            .unwrap()
-                            .draw_in(&self.queryable, canvas, profile, &Some((pos, tool)));
-                    });
             }
-            tool.draw_status_hint(canvas, pos);
-        } else if let Some((a, b)) = self.select_by_drag {
-            canvas.draw_rectangle(
-                egui::Rect::from_two_pos(a, b),
-                egui::Rounding::ZERO,
-                egui::Color32::from_rgba_premultiplied(0, 0, 255, 7),
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
-                canvas::Highlight::NONE,
-            );
         }
     }
 }
