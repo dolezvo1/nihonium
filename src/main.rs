@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
-use common::canvas::UiCanvas;
+use common::canvas::{NHCanvas, UiCanvas};
 use common::controller::{ColorLabels, ColorProfile};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
@@ -1157,8 +1157,9 @@ impl eframe::App for NHApp {
                 ui.checkbox(background, "Solid background");
                 ui.checkbox(gridlines, "Gridlines");
                 
-                ui.add(egui::Slider::new(padding_x, 0.0..=5000.0).text("Horizontal padding"));
-                ui.add(egui::Slider::new(padding_y, 0.0..=5000.0).text("Vertical padding"));
+                ui.spacing_mut().slider_width = (ui.available_width() / 2.0).max(50.0);
+                ui.add(egui::Slider::new(padding_x, 0.0..=500.0).text("Horizontal padding"));
+                ui.add(egui::Slider::new(padding_y, 0.0..=500.0).text("Vertical padding"));
                 
                 ui.separator();
                 
@@ -1193,8 +1194,8 @@ impl eframe::App for NHApp {
                             egui::Stroke::NONE,
                         );
                     } else {
-                        let rect_side: f32 = preview_width / 20.0;
-                        for ii in 0..20 {
+                        const rect_side: f32 = 20.0;
+                        for ii in 0..((preview_width / rect_side) as u32) {
                             for jj in 0..=((preview_height / rect_side) as u32) {
                                 painter.rect(
                                     egui::Rect::from_min_size(
@@ -1238,16 +1239,30 @@ impl eframe::App for NHApp {
                             MeasuringCanvas::new(ui.painter());
                         controller.draw_in(&mut measuring_canvas, color_profile, None);
 
+                        let canvas_offset = -1.0 * measuring_canvas.bounds().min
+                            + egui::Vec2::new(*padding_x, *padding_y);
+                        let canvas_size = measuring_canvas.bounds().size()
+                            + egui::Vec2::new(
+                                2.0 * *padding_x,
+                                2.0 * *padding_y,
+                            );
                         let mut svg_canvas = SVGCanvas::new(
                             ui.painter(),
-                            -1.0 * measuring_canvas.bounds().min
-                                + egui::Vec2::new(*padding_x, *padding_y),
-                            measuring_canvas.bounds().size()
-                                + egui::Vec2::new(
-                                    2.0 * *padding_x,
-                                    2.0 * *padding_y,
-                                ),
+                            canvas_offset,
+                            canvas_size,
                         );
+                        if *background {
+                            svg_canvas.draw_rectangle(
+                                egui::Rect::from_min_size(
+                                    -1.0 * canvas_offset,
+                                    canvas_size,
+                                ),
+                                egui::Rounding::ZERO,
+                                color_profile.backgrounds[0],
+                                common::canvas::Stroke::NONE,
+                                common::canvas::Highlight::NONE,
+                            );
+                        }
                         controller.draw_in(&mut svg_canvas, color_profile, None);
                         let _ = svg_canvas.save_to(&path);
                         

@@ -334,6 +334,12 @@ pub struct Stroke {
 }
 
 impl Stroke {
+    pub const NONE: Self = Self {
+        width: 0.0,
+        color: egui::Color32::TRANSPARENT,
+        line_type: LineType::Solid,
+    };
+
     pub fn new_solid(width: f32, color: egui::Color32) -> Self {
         Self {
             width,
