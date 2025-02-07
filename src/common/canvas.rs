@@ -108,6 +108,13 @@ impl NHShape {
         bounds_radius: egui::Vec2::ZERO,
     };
     
+    pub fn translate(&self, delta: egui::Vec2) -> Self {
+        match self {
+            NHShape::Rect { inner } => NHShape::Rect { inner: inner.translate(delta) },
+            NHShape::Ellipse { position, bounds_radius } => NHShape::Ellipse { position: *position + delta, bounds_radius: *bounds_radius },
+        }
+    }
+    
     pub fn center(&self) -> egui::Pos2 {
         match &self {
             NHShape::Rect { inner } => inner.center(),
@@ -202,6 +209,14 @@ impl NHShape {
                 position,
                 bounds_radius,
             } => rect.contains_rect(egui::Rect::from_center_size(*position, 2.0 * *bounds_radius))
+        }
+    }
+    
+    pub fn guidelines(&self) -> impl IntoIterator<Item=(egui::Pos2, egui::Align)> {
+        match self {
+            NHShape::Rect { inner } => vec![(inner.min, egui::Align::Min), (inner.center(), egui::Align::Center), (inner.max, egui::Align::Max),],
+            NHShape::Ellipse { position, bounds_radius }
+                => vec![(*position - *bounds_radius, egui::Align::Min), (*position, egui::Align::Center), (*position + *bounds_radius, egui::Align::Max),],
         }
     }
 }

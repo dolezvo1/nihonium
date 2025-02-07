@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    AlignmentManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::{CustomTab, NHApp};
 use eframe::egui;
@@ -1280,6 +1280,7 @@ impl
         event: InputEvent,
         _modifiers: ModifierKeys,
         tool: &mut Option<NaiveRdfTool>,
+        am: &mut AlignmentManager,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -1549,6 +1550,7 @@ impl
         event: InputEvent,
         _modifiers: ModifierKeys,
         tool: &mut Option<NaiveRdfTool>,
+        am: &mut AlignmentManager,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {

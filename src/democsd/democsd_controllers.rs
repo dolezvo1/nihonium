@@ -1,6 +1,6 @@
 use crate::common::canvas;
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    AlignmentManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::democsd::democsd_models::{
     DemoCsdTransaction, DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType,
@@ -1127,15 +1127,22 @@ impl
         }
     }
 
+    fn collect_allignment(&mut self, am: &mut AlignmentManager) {
+        am.add_shape(*self.uuid(), self.min_shape());
+        
+        self.transaction_view.iter()
+            .for_each(|c| c.write().unwrap().collect_allignment(am));
+    }
     fn handle_event(
         &mut self,
         event: InputEvent,
         modifiers: ModifierKeys,
         tool: &mut Option<NaiveDemoCsdTool>,
+        am: &mut AlignmentManager,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         let child = self.transaction_view.as_ref()
-            .map(|t| t.write().unwrap().handle_event(event, modifiers, tool, commands))
+            .map(|t| t.write().unwrap().handle_event(event, modifiers, tool, am, commands))
             .filter(|e| *e != EventHandlingStatus::NotHandled);
     
         match event {
@@ -1157,9 +1164,8 @@ impl
             InputEvent::Click(pos) => {
                 if let Some(t) = &self.transaction_view {
                     let mut t = t.write().unwrap();
-                    match t.handle_event(event, modifiers, tool, commands) {
-                        EventHandlingStatus::NotHandled => {},
-                        EventHandlingStatus::HandledByElement => {
+                    match child {
+                        Some(EventHandlingStatus::HandledByElement) => {
                             if !modifiers.command {
                                 commands.push(InsensitiveCommand::SelectAll(false).into());
                                 commands.push(InsensitiveCommand::SelectSpecific(
@@ -1174,9 +1180,10 @@ impl
                             }
                             return EventHandlingStatus::HandledByContainer;
                         }
-                        EventHandlingStatus::HandledByContainer => {
+                        Some(EventHandlingStatus::HandledByContainer) => {
                             return EventHandlingStatus::HandledByContainer;
                         }
+                        _ => {},
                     }
                 }
                 
@@ -1569,6 +1576,7 @@ impl
         event: InputEvent,
         modifiers: ModifierKeys,
         tool: &mut Option<NaiveDemoCsdTool>,
+        am: &mut AlignmentManager,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {

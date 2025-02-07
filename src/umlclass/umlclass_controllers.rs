@@ -4,7 +4,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    AlignmentManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::CustomTab;
 use crate::NHApp;
@@ -1062,6 +1062,7 @@ fn uml_class(
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::ZERO,
+        real_shape: None,
     }));
     class_controller.write().unwrap().self_reference = Arc::downgrade(&class_controller);
     (class_uuid, class, class_controller)
@@ -1081,6 +1082,7 @@ pub struct UmlClassController {
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
+    real_shape: Option<NHShape>,
 }
 
 impl ElementController<dyn UmlClassElement> for UmlClassController {
@@ -1270,16 +1272,19 @@ impl
         event: InputEvent,
         modifiers: ModifierKeys,
         tool: &mut Option<NaiveUmlClassTool>,
+        am: &mut AlignmentManager,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             e if !self.min_shape().contains(*e.mouse_position()) => return EventHandlingStatus::NotHandled,
             InputEvent::MouseDown(_) => {
                 self.dragged = true;
+                self.real_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => if self.dragged {
                 self.dragged = false;
+                self.real_shape = None;
                 EventHandlingStatus::HandledByElement
             } else {
                 EventHandlingStatus::NotHandled
@@ -1298,12 +1303,17 @@ impl
                 EventHandlingStatus::HandledByElement
             },
             InputEvent::Drag { delta, .. } if self.dragged => {
+                let translated_real_shape = self.real_shape.unwrap().translate(delta);
+                self.real_shape = Some(translated_real_shape);
+                let coerced_pos = am.coerce(&self.uuid(), translated_real_shape);
+                let coerced_delta = coerced_pos - self.position;
+                
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                 } else {
                     commands.push(InsensitiveCommand::MoveSpecificElements(
                         std::iter::once(*self.uuid()).collect(),
-                        delta,
+                        coerced_delta,
                     ).into());
                 }
                 

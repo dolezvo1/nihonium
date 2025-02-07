@@ -91,6 +91,62 @@ macro_rules! build_colors {
 }
 pub(crate) use build_colors;
 
+
+pub struct AlignmentManager {
+    input_restriction: egui::Rect,
+    max_delta: egui::Vec2,
+    guidelines_x: Vec<(f32, egui::Align, uuid::Uuid)>,
+    guidelines_y: Vec<(f32, egui::Align, uuid::Uuid)>,
+    best_x: Option<f32>,
+    best_y: Option<f32>,
+}
+
+impl AlignmentManager {
+    pub fn new(input_restriction: egui::Rect, max_delta: egui::Vec2) -> Self {
+        Self {
+            input_restriction, max_delta,
+            guidelines_x: Vec::new(), guidelines_y: Vec::new(),
+            best_x: None, best_y: None,
+        }
+    }
+    pub fn add_shape(&mut self, uuid: uuid::Uuid, shape: canvas::NHShape) {
+        for e in shape.guidelines().into_iter().filter(|e| self.input_restriction.contains(e.0)) {
+            self.guidelines_x.push((e.0.x, e.1, uuid));
+            self.guidelines_y.push((e.0.y, e.1, uuid));
+        }
+    }
+    pub fn sort_guidelines(&mut self) {
+        self.guidelines_x.sort_by(|a, b| a.0.total_cmp(&b.0));
+        self.guidelines_y.sort_by(|a, b| a.0.total_cmp(&b.0));
+    }
+    
+    pub fn coerce(&mut self, uuid: &uuid::Uuid, s: canvas::NHShape) -> egui::Pos2 {
+        (self.best_x, self.best_y) = (None, None);
+        let center = s.center();
+        
+        // Naive guidelines coordinate matching
+        let start_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(center.x - self.max_delta.x))).unwrap_or_else(|e| e);
+        let end_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(center.x + self.max_delta.x))).unwrap_or_else(|e| e);
+        for g in self.guidelines_x[start_x..end_x].iter().filter(|e| e.2 != *uuid) {
+            if self.best_x.is_none_or(|b| (g.0 - center.x).abs() < (b - center.x).abs()) {
+                self.best_x = Some(g.0);
+            }
+        }
+        let start_y = self.guidelines_y.binary_search_by(|probe| probe.0.total_cmp(&(center.y - self.max_delta.y))).unwrap_or_else(|e| e);
+        let end_y = self.guidelines_y.binary_search_by(|probe| probe.0.total_cmp(&(center.y + self.max_delta.y))).unwrap_or_else(|e| e);
+        for g in self.guidelines_y[start_y..end_y].iter().filter(|e| e.2 != *uuid) {
+            if self.best_y.is_none_or(|b| (g.0 - center.y).abs() < (b - center.y).abs())  {
+                self.best_y = Some(g.0);
+            }
+        }
+        
+        // TODO: try pairwise projection of guidelines with matching Align
+        
+        egui::Pos2::new(self.best_x.unwrap_or(center.x), self.best_y.unwrap_or(center.y))
+    }
+}
+
+
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum ProjectCommand {
     OpenAndFocusDiagram(uuid::Uuid),
@@ -114,7 +170,7 @@ pub trait DiagramController: Any {
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
     
     fn new_ui_canvas(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         profile: &ColorProfile,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
@@ -442,11 +498,15 @@ pub trait ElementControllerGen2<
         profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus;
+    fn collect_allignment(&mut self, am: &mut AlignmentManager) {
+        am.add_shape(*self.uuid(), self.min_shape());
+    }
     fn handle_event(
         &mut self,
         event: InputEvent,
         modifiers: ModifierKeys,
         tool: &mut Option<ToolT>,
+        am: &mut AlignmentManager,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> EventHandlingStatus;
     fn apply_command(
@@ -495,6 +555,8 @@ pub struct DiagramControllerGen2<
     pub camera_offset: egui::Pos2,
     pub camera_scale: f32,
     last_unhandled_mouse_pos: Option<egui::Pos2>,
+    last_interactive_canvas_rect: egui::Rect,
+    alignment_manager: AlignmentManager,
     current_tool: Option<ToolT>,
     select_by_drag: Option<(egui::Pos2, egui::Pos2)>,
     
@@ -623,6 +685,8 @@ where
             camera_offset: egui::Pos2::ZERO,
             camera_scale: 1.0,
             last_unhandled_mouse_pos: None,
+            last_interactive_canvas_rect: egui::Rect::ZERO,
+            alignment_manager: AlignmentManager::new(egui::Rect::ZERO, egui::Vec2::ZERO),
             current_tool: None,
             select_by_drag: None,
             
@@ -650,6 +714,14 @@ where
     }
     
     fn handle_event(&mut self, event: InputEvent, modifiers: ModifierKeys, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
+        // Collect alignment guides
+        self.alignment_manager = AlignmentManager::new(self.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.camera_scale));
+        self.event_order.iter()
+            .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
+            .for_each(|uc| uc.1.write().unwrap().collect_allignment(&mut self.alignment_manager));
+        self.alignment_manager.sort_guidelines();
+        
+        // Handle events
         let mut commands = Vec::new();
         
         if matches!(event, InputEvent::Click(_)) {
@@ -663,6 +735,7 @@ where
                     event,
                     modifiers,
                     &mut self.current_tool,
+                    &mut self.alignment_manager,
                     &mut commands,
                 )))
             .find(|e| e.1 != EventHandlingStatus::NotHandled)
@@ -946,13 +1019,13 @@ where
     }
 
     fn new_ui_canvas(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         profile: &ColorProfile,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
         let canvas_pos = ui.next_widget_position();
         let canvas_size = ui.available_size();
-        let canvas_rect = egui::Rect::from_min_max(canvas_pos, canvas_pos + canvas_size);
+        let canvas_rect = egui::Rect::from_min_size(canvas_pos, canvas_size);
 
         let (painter_response, painter) =
             ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
@@ -980,6 +1053,8 @@ where
             .map(|e| {
                 ((e - self.camera_offset - canvas_pos.to_vec2()) / self.camera_scale).to_pos2()
             });
+        
+        self.last_interactive_canvas_rect = egui::Rect::from_min_size(self.camera_offset / -self.camera_scale, canvas_size / self.camera_scale);
 
         (Box::new(ui_canvas), painter_response, inner_mouse)
     }
@@ -1231,6 +1306,18 @@ where
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
                     canvas::Highlight::NONE,
                 );
+            }
+            
+            // Draw alignment hint
+            if let Some(bx) = self.alignment_manager.best_x {
+                canvas.draw_line([
+                    egui::Pos2::new(bx, self.camera_offset.y / -self.camera_scale), egui::Pos2::new(bx, self.camera_offset.y / -self.camera_scale + self.last_interactive_canvas_rect.height())
+                ], canvas::Stroke::new_solid(1.0, profile.auxiliary[0]), canvas::Highlight::NONE);
+            }
+            if let Some(by) = self.alignment_manager.best_y {
+                canvas.draw_line([
+                    egui::Pos2::new(self.camera_offset.x / -self.camera_scale, by), egui::Pos2::new(self.camera_offset.x / -self.camera_scale + self.last_interactive_canvas_rect.width(), by)
+                ], canvas::Stroke::new_solid(1.0, profile.auxiliary[0]), canvas::Highlight::NONE);
             }
         }
     }
@@ -1794,11 +1881,19 @@ where
         }
     }
 
+    fn collect_allignment(&mut self, am: &mut AlignmentManager) {
+        am.add_shape(*self.uuid(), self.min_shape());
+        
+        self.event_order.iter()
+            .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
+            .for_each(|uc| uc.1.write().unwrap().collect_allignment(am));
+    }
     fn handle_event(
         &mut self,
         event: InputEvent,
         modifiers: ModifierKeys,
         tool: &mut Option<ToolT>,
+        am: &mut AlignmentManager,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> EventHandlingStatus {
         let uc_status = self
@@ -1810,7 +1905,7 @@ where
                     uc,
                     uc.1.write()
                         .unwrap()
-                        .handle_event(event, modifiers, tool, commands),
+                        .handle_event(event, modifiers, tool, am, commands),
                 )
             })
             .find(|e| e.1 != EventHandlingStatus::NotHandled);
@@ -2495,11 +2590,15 @@ where
         TargettingStatus::NotDrawn
     }
 
+    fn collect_allignment(&mut self, am: &mut AlignmentManager) {
+        // TODO: add vertices as zero sized rectangles?
+    }
     fn handle_event(
         &mut self,
         event: InputEvent,
         modifiers: ModifierKeys,
         _tool: &mut Option<ToolT>,
+        _am: &mut AlignmentManager,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> EventHandlingStatus {
         const DISTANCE_THRESHOLD: f32 = 3.0;
