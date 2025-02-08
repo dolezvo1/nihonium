@@ -494,6 +494,12 @@ pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandEle
     >;
 }
 
+pub struct EventHandlingContext<'a> {
+    pub modifiers: ModifierKeys,
+    pub selected_elements: &'a HashSet<uuid::Uuid>,
+    pub alignment_manager: &'a AlignmentManager,
+}
+
 pub trait ElementControllerGen2<
     CommonElementT: ?Sized,
     QueryableT,
@@ -526,9 +532,8 @@ pub trait ElementControllerGen2<
     fn handle_event(
         &mut self,
         event: InputEvent,
-        modifiers: ModifierKeys,
+        ehc: &EventHandlingContext,
         tool: &mut Option<ToolT>,
-        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> EventHandlingStatus;
     fn apply_command(
@@ -750,14 +755,19 @@ where
             self.current_tool.as_mut().map(|e| e.reset_event_lock());
         }
         
+        let ehc = EventHandlingContext {
+            modifiers,
+            selected_elements: &self.all_selected_elements,
+            alignment_manager: &self.alignment_manager,
+        };
+        
         let child = self.event_order
             .iter()
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
             .map(|uc| (uc.0, uc.1.write().unwrap().handle_event(
                     event,
-                    modifiers,
+                    &ehc,
                     &mut self.current_tool,
-                    &mut self.alignment_manager,
                     &mut commands,
                 )))
             .find(|e| e.1 != EventHandlingStatus::NotHandled)
@@ -1903,9 +1913,8 @@ where
     fn handle_event(
         &mut self,
         event: InputEvent,
-        modifiers: ModifierKeys,
+        ehc: &EventHandlingContext,
         tool: &mut Option<ToolT>,
-        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> EventHandlingStatus {
         let uc_status = self
@@ -1917,7 +1926,7 @@ where
                     uc,
                     uc.1.write()
                         .unwrap()
-                        .handle_event(event, modifiers, tool, am, commands),
+                        .handle_event(event, ehc, tool, commands),
                 )
             })
             .find(|e| e.1 != EventHandlingStatus::NotHandled);
@@ -1971,7 +1980,7 @@ where
                         EventHandlingStatus::HandledByContainer
                     } else if let Some((uc, status)) = uc_status {
                         if status == EventHandlingStatus::HandledByElement {
-                            if !modifiers.command {
+                            if !ehc.modifiers.command {
                                 commands.push(InsensitiveCommand::SelectAll(false).into());
                                 commands.push(InsensitiveCommand::SelectSpecific(
                                     std::iter::once(uc.0).collect(),
@@ -2613,9 +2622,8 @@ where
     fn handle_event(
         &mut self,
         event: InputEvent,
-        modifiers: ModifierKeys,
+        ehc: &EventHandlingContext,
         _tool: &mut Option<ToolT>,
-        _am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> EventHandlingStatus {
         const DISTANCE_THRESHOLD: f32 = 3.0;
@@ -2739,7 +2747,7 @@ where
             InputEvent::Click(pos) => {
                 macro_rules! handle_vertex_click {
                     ($uuid:expr) => {
-                        if !modifiers.command {
+                        if !ehc.modifiers.command {
                             commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::SelectAll(false)));
                             commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::SelectSpecific(
                                 std::iter::once(*$uuid).collect(),

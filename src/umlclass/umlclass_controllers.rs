@@ -4,7 +4,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    AlignmentManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    AlignmentManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::CustomTab;
 use crate::NHApp;
@@ -1285,9 +1285,8 @@ impl
     fn handle_event(
         &mut self,
         event: InputEvent,
-        modifiers: ModifierKeys,
+        ehc: &EventHandlingContext,
         tool: &mut Option<NaiveUmlClassTool>,
-        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -1308,7 +1307,7 @@ impl
                 if let Some(tool) = tool {
                     tool.add_element(KindedUmlClassElement::Class { inner: self });
                 } else {
-                    if !modifiers.command {
+                    if !ehc.modifiers.command {
                         self.highlight.selected = true;
                     } else {
                         self.highlight.selected = !self.highlight.selected;
@@ -1320,7 +1319,11 @@ impl
             InputEvent::Drag { delta, .. } if self.dragged => {
                 let translated_real_shape = self.real_shape.unwrap().translate(delta);
                 self.real_shape = Some(translated_real_shape);
-                let coerced_pos = am.coerce(&std::iter::once(*self.uuid()).collect(), translated_real_shape);
+                let coerced_pos = if self.highlight.selected {
+                    ehc.alignment_manager.coerce(ehc.selected_elements, translated_real_shape)
+                } else {
+                    ehc.alignment_manager.coerce(&std::iter::once(*self.uuid()).collect(), translated_real_shape)
+                };
                 let coerced_delta = coerced_pos - self.position;
                 
                 if self.highlight.selected {

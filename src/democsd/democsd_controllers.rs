@@ -1,6 +1,6 @@
 use crate::common::canvas;
 use crate::common::controller::{
-    AlignmentManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    AlignmentManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::democsd::democsd_models::{
     DemoCsdTransaction, DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType,
@@ -1136,13 +1136,12 @@ impl
     fn handle_event(
         &mut self,
         event: InputEvent,
-        modifiers: ModifierKeys,
+        ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoCsdTool>,
-        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         let child = self.transaction_view.as_ref()
-            .map(|t| t.write().unwrap().handle_event(event, modifiers, tool, am, commands))
+            .map(|t| t.write().unwrap().handle_event(event, ehc, tool, commands))
             .filter(|e| *e != EventHandlingStatus::NotHandled);
     
         match event {
@@ -1166,7 +1165,7 @@ impl
                     let mut t = t.write().unwrap();
                     match child {
                         Some(EventHandlingStatus::HandledByElement) => {
-                            if !modifiers.command {
+                            if !ehc.modifiers.command {
                                 commands.push(InsensitiveCommand::SelectAll(false).into());
                                 commands.push(InsensitiveCommand::SelectSpecific(
                                     std::iter::once(*t.uuid()).collect(),
@@ -1194,7 +1193,7 @@ impl
                 if let Some(tool) = tool {
                     tool.add_element(KindedDemoCsdElement::Transactor { inner: self });
                 } else {
-                    if !modifiers.command {
+                    if !ehc.modifiers.command {
                         self.highlight.selected = true;
                     } else {
                         self.highlight.selected = !self.highlight.selected;
@@ -1574,9 +1573,8 @@ impl
     fn handle_event(
         &mut self,
         event: InputEvent,
-        modifiers: ModifierKeys,
+        ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoCsdTool>,
-        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -1595,7 +1593,7 @@ impl
                 if let Some(tool) = tool {
                     tool.add_element(KindedDemoCsdElement::Bank { inner: self });
                 } else {
-                    if !modifiers.command {
+                    if !ehc.modifiers.command {
                         self.highlight.selected = true;
                     } else {
                         self.highlight.selected = !self.highlight.selected;
