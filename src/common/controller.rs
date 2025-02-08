@@ -1477,7 +1477,7 @@ pub struct PackageView<
 
     buffer: BufferT,
 
-    dragged: Option<DragType>,
+    dragged_type_and_shape: Option<(DragType, egui::Rect)>,
     highlight: canvas::Highlight,
     bounds_rect: egui::Rect,
 
@@ -1575,7 +1575,7 @@ where
             selected_elements: HashSet::new(),
 
             buffer,
-            dragged: None,
+            dragged_type_and_shape: None,
             highlight: canvas::Highlight::NONE,
             bounds_rect,
 
@@ -1878,28 +1878,43 @@ where
                 }
             });
 
-        match (drawn_child_targetting, tool) {
-            (TargettingStatus::NotDrawn, Some((pos, t))) if self.min_shape().contains(*pos) => {
-                canvas.draw_rectangle(
-                    self.bounds_rect,
-                    egui::Rounding::ZERO,
-                    t.targetting_for_element(ToolT::KindedElement::from(&*self)),
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
-
-                self.event_order
-                    .iter()
-                    .rev()
-                    .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
-                    .filter(|_| true) // TODO: filter by layers
-                    .for_each(|uc| {
-                        uc.1.write().unwrap().draw_in(q, canvas, profile, &tool);
-                    });
-
-                TargettingStatus::Drawn
+        if canvas.is_interactive() {
+            if self.dragged_type_and_shape.is_some() {
+                canvas.draw_line([
+                    egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
+                    egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.center().y),
+                ], canvas::Stroke::new_solid(1.0, egui::Color32::BLUE), canvas::Highlight::NONE);
+                canvas.draw_line([
+                    egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.min.y),
+                    egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.max.y),
+                ], canvas::Stroke::new_solid(1.0, egui::Color32::BLUE), canvas::Highlight::NONE);
             }
-            _ => drawn_child_targetting,
+            
+            match (drawn_child_targetting, tool) {
+                (TargettingStatus::NotDrawn, Some((pos, t))) if self.min_shape().contains(*pos) => {
+                    canvas.draw_rectangle(
+                        self.bounds_rect,
+                        egui::Rounding::ZERO,
+                        t.targetting_for_element(ToolT::KindedElement::from(&*self)),
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+
+                    self.event_order
+                        .iter()
+                        .rev()
+                        .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
+                        .filter(|_| true) // TODO: filter by layers
+                        .for_each(|uc| {
+                            uc.1.write().unwrap().draw_in(q, canvas, profile, &tool);
+                        });
+
+                    TargettingStatus::Drawn
+                }
+                _ => drawn_child_targetting,
+            }
+        } else {
+            TargettingStatus::NotDrawn
         }
     }
 
@@ -1946,22 +1961,22 @@ where
                               (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom())]
                 {
                     if egui::Rect::from_center_size(h, egui::Vec2::splat(5.0)).contains(pos) {
-                        self.dragged = Some(DragType::Resize(a));
+                        self.dragged_type_and_shape = Some((DragType::Resize(a), self.bounds_rect));
                         return EventHandlingStatus::HandledByElement;
                     }
                 }
                 
                 if self.min_shape().border_distance(pos) <= 2.0
                     || egui::Rect::from_center_size(self.bounds_rect.right_top() - egui::Vec2::new(10.0, 0.0), egui::Vec2::splat(5.0)).contains(pos) {
-                    self.dragged = Some(DragType::Move);
+                    self.dragged_type_and_shape = Some((DragType::Move, self.bounds_rect));
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             },
             InputEvent::MouseUp(pos) => {
-                if self.dragged.is_some() {
-                    self.dragged = None;
+                if self.dragged_type_and_shape.is_some() {
+                    self.dragged_type_and_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -2001,23 +2016,32 @@ where
                     uc_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled)
                 }
             },
-            InputEvent::Drag { delta, .. } => match self.dragged {
-                Some(dt) => match dt {
-                    DragType::Move => {
-                        if self.highlight.selected {
-                            commands.push(SensitiveCommand::MoveSelectedElements(delta));
-                        } else {
-                            commands.push(InsensitiveCommand::MoveSpecificElements(
-                                std::iter::once(*self.uuid()).collect(),
-                                delta,
-                            ).into());
-                        }
-                        EventHandlingStatus::HandledByElement
-                    },
-                    DragType::Resize(align2) => {
-                        commands.push(SensitiveCommand::ResizeSelectedElementsBy(align2, delta));
-                        EventHandlingStatus::HandledByElement
-                    },
+            InputEvent::Drag { delta, .. } => match self.dragged_type_and_shape {
+                Some((DragType::Move, real_bounds)) => {
+                    // TODO: filter contained elements
+                    let translated_bounds = real_bounds.translate(delta);
+                    self.dragged_type_and_shape = Some((DragType::Move, translated_bounds));
+                    let translated_real_shape = NHShape::Rect { inner: translated_bounds };
+                    let coerced_pos = if self.highlight.selected {
+                        ehc.alignment_manager.coerce(ehc.selected_elements, translated_real_shape)
+                    } else {
+                        ehc.alignment_manager.coerce(&std::iter::once(*self.uuid()).collect(), translated_real_shape)
+                    };
+                    let coerced_delta = coerced_pos - self.position();
+                    
+                    if self.highlight.selected {
+                        commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    } else {
+                        commands.push(InsensitiveCommand::MoveSpecificElements(
+                            std::iter::once(*self.uuid()).collect(),
+                            coerced_delta,
+                        ).into());
+                    }
+                    EventHandlingStatus::HandledByElement
+                },
+                Some((DragType::Resize(align2), _real_bounds)) => {
+                    commands.push(SensitiveCommand::ResizeSelectedElementsBy(align2, delta));
+                    EventHandlingStatus::HandledByElement
                 },
                 None => EventHandlingStatus::NotHandled,
             },
