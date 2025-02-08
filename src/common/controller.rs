@@ -496,6 +496,7 @@ pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandEle
 
 pub struct EventHandlingContext<'a> {
     pub modifiers: ModifierKeys,
+    pub ui_scale: f32,
     pub selected_elements: &'a HashSet<uuid::Uuid>,
     pub alignment_manager: &'a AlignmentManager,
 }
@@ -757,6 +758,7 @@ where
         
         let ehc = EventHandlingContext {
             modifiers,
+            ui_scale: self.camera_scale,
             selected_elements: &self.all_selected_elements,
             alignment_manager: &self.alignment_manager,
         };
@@ -1308,7 +1310,7 @@ where
                 }
             });
 
-        if canvas.is_interactive() {
+        if canvas.ui_scale().is_some() {
             if let Some((pos, tool)) = tool {
                 if drawn_targetting == TargettingStatus::NotDrawn {
                     canvas.draw_rectangle(
@@ -1584,6 +1586,12 @@ where
             apply_property_change_fun,
         }
     }
+    
+    fn handle_size(&self, ui_scale: f32) -> f32 {
+        10.0_f32
+            .min(self.bounds_rect.width() * ui_scale / 6.0)
+            .min(self.bounds_rect.height() * ui_scale / 3.0)
+    }
 }
 
 impl<
@@ -1840,14 +1848,14 @@ where
         );
         
         // Draw resize/drag handles
-        // TODO: the handles should probably scale?
-        if self.highlight.selected && canvas.is_interactive() {
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            let handle_size = self.handle_size(ui_scale);
             for h in [self.bounds_rect.left_top(), self.bounds_rect.center_top(), self.bounds_rect.right_top(),
                       self.bounds_rect.left_center(), self.bounds_rect.right_center(), 
                       self.bounds_rect.left_bottom(), self.bounds_rect.center_bottom(), self.bounds_rect.right_bottom()]
             {
                 canvas.draw_rectangle(
-                    egui::Rect::from_center_size(h, egui::Vec2::splat(5.0)),
+                    egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size / ui_scale)),
                     egui::Rounding::ZERO,
                     egui::Color32::WHITE,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1856,7 +1864,14 @@ where
             }
             
             canvas.draw_rectangle(
-                egui::Rect::from_center_size(self.bounds_rect.right_top() - egui::Vec2::new(10.0, 0.0), egui::Vec2::splat(5.0)),
+                egui::Rect::from_center_size(
+                    egui::Pos2::new(
+                        (self.bounds_rect.right() - 2.0 * handle_size / ui_scale)
+                            .max((self.bounds_rect.center().x + self.bounds_rect.right()) / 2.0),
+                        self.bounds_rect.top()
+                    ),
+                    egui::Vec2::splat(handle_size / ui_scale),
+                ),
                 egui::Rounding::ZERO,
                 egui::Color32::WHITE,
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1878,7 +1893,7 @@ where
                 }
             });
 
-        if canvas.is_interactive() {
+        if canvas.ui_scale().is_some() {
             if self.dragged_type_and_shape.is_some() {
                 canvas.draw_line([
                     egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
@@ -1951,6 +1966,7 @@ where
                 EventHandlingStatus::HandledByContainer
             }
             InputEvent::MouseDown(pos) => {
+                let handle_size = self.handle_size(1.0);
                 for (a,h) in [(egui::Align2::RIGHT_BOTTOM, self.bounds_rect.left_top()),
                               (egui::Align2::CENTER_BOTTOM, self.bounds_rect.center_top()),
                               (egui::Align2::LEFT_BOTTOM, self.bounds_rect.right_top()),
@@ -1960,21 +1976,23 @@ where
                               (egui::Align2::CENTER_TOP, self.bounds_rect.center_bottom()),
                               (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom())]
                 {
-                    if egui::Rect::from_center_size(h, egui::Vec2::splat(5.0)).contains(pos) {
+                    if egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
                         self.dragged_type_and_shape = Some((DragType::Resize(a), self.bounds_rect));
                         return EventHandlingStatus::HandledByElement;
                     }
                 }
                 
-                if self.min_shape().border_distance(pos) <= 2.0
-                    || egui::Rect::from_center_size(self.bounds_rect.right_top() - egui::Vec2::new(10.0, 0.0), egui::Vec2::splat(5.0)).contains(pos) {
+                if self.min_shape().border_distance(pos) <= 2.0 / ehc.ui_scale
+                    || egui::Rect::from_center_size(
+                        self.bounds_rect.right_top() - egui::Vec2::new(10.0, 0.0),
+                        egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
                     self.dragged_type_and_shape = Some((DragType::Move, self.bounds_rect));
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             },
-            InputEvent::MouseUp(pos) => {
+            InputEvent::MouseUp(_pos) => {
                 if self.dragged_type_and_shape.is_some() {
                     self.dragged_type_and_shape = None;
                     EventHandlingStatus::HandledByElement
@@ -2141,7 +2159,7 @@ where
             }
             InsensitiveCommand::ResizeSpecificElementsTo(uuids, align, size) => {
                 if uuids.contains(&self.uuid()) {
-                    let mut delta_naive = *size - self.bounds_rect.size();
+                    let delta_naive = *size - self.bounds_rect.size();
                     let x = match align.x() {
                         egui::Align::Min => delta_naive.x,
                         egui::Align::Center => 0.0,

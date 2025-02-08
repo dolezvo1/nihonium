@@ -1,6 +1,6 @@
 use crate::common::canvas;
 use crate::common::controller::{
-    AlignmentManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, ModifierKeys, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    AlignmentManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::democsd::democsd_models::{
     DemoCsdTransaction, DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType,
@@ -1162,7 +1162,7 @@ impl
             },
             InputEvent::Click(pos) => {
                 if let Some(t) = &self.transaction_view {
-                    let mut t = t.write().unwrap();
+                    let t = t.read().unwrap();
                     match child {
                         Some(EventHandlingStatus::HandledByElement) => {
                             if !ehc.modifiers.command {
@@ -1398,7 +1398,7 @@ impl ContainerGen2<dyn DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoC
 {
     fn controller_for(
         &self,
-        uuid: &uuid::Uuid,
+        _uuid: &uuid::Uuid,
     ) -> Option<ArcRwLockController> {
         None
     }
@@ -1635,7 +1635,7 @@ impl
             InsensitiveCommand::SelectByDrag(rect) => {
                 self.highlight.selected = self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid()) => {}
             InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(

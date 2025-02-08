@@ -118,7 +118,7 @@ impl NHShape {
     pub fn center(&self) -> egui::Pos2 {
         match &self {
             NHShape::Rect { inner } => inner.center(),
-            NHShape::Ellipse { position, bounds_radius } => *position,
+            NHShape::Ellipse { position, .. } => *position,
         }
     }
 
@@ -176,14 +176,21 @@ impl NHShape {
     }
     pub fn border_distance(&self, point: egui::Pos2) -> f32 {
         match &self {
-            NHShape::Rect { inner } => (point.x-inner.left()).abs()
-                .min((point.x-inner.right()).abs())
-                .min((point.y-inner.top()).abs())
-                .min((point.y-inner.bottom()).abs()),
-            NHShape::Ellipse {
-                position,
-                bounds_radius,
-            } => {
+            NHShape::Rect { inner } => {
+                if inner.contains(point) {
+                    (point.x-inner.left()).abs()
+                    .min((point.x-inner.right()).abs())
+                    .min((point.y-inner.top()).abs())
+                    .min((point.y-inner.bottom()).abs())
+                } else {
+                    let clamped_point = egui::Pos2::new(
+                        point.x.min(inner.right()).max(inner.left()),
+                        point.y.min(inner.bottom()).max(inner.top()),
+                    );
+                    point.distance(clamped_point)
+                }
+            }
+            NHShape::Ellipse { .. } => {
                 // TODO: This is actually hard to do.
                 todo!()
             }
@@ -411,7 +418,8 @@ pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 
 pub trait NHCanvas {
     // These functions are must haves
-    fn is_interactive(&self) -> bool;
+    /// None if not interactive
+    fn ui_scale(&self) -> Option<f32>;
     
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight);
     fn draw_rectangle(
@@ -866,7 +874,7 @@ impl UiCanvas {
 }
 
 impl NHCanvas for UiCanvas {
-    fn is_interactive(&self) -> bool { self.is_interactive }
+    fn ui_scale(&self) -> Option<f32> { Some(self.camera_scale).filter(|_| self.is_interactive) }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
         let offset = self.canvas.min.to_vec2() + self.camera_offset.to_vec2();
@@ -1099,7 +1107,7 @@ impl<'a> MeasuringCanvas<'a> {
 }
 
 impl<'a> NHCanvas for MeasuringCanvas<'a> {
-    fn is_interactive(&self) -> bool {false}
+    fn ui_scale(&self) -> Option<f32> { None }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke, highlight: Highlight) {
         self.bounds.extend_with(points[0]);
@@ -1217,7 +1225,7 @@ impl<'a> SVGCanvas<'a> {
 }
 
 impl<'a> NHCanvas for SVGCanvas<'a> {
-    fn is_interactive(&self) -> bool {false}
+    fn ui_scale(&self) -> Option<f32> { None }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
         let stroke_dasharray = match stroke.line_type {
