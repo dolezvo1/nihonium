@@ -2435,6 +2435,8 @@ where
             model_to_destination_arrowhead_label,
         }
     }
+    
+    const VERTEX_RADIUS: f32 = 5.0;
 }
 
 impl<
@@ -2668,11 +2670,10 @@ where
         _tool: &mut Option<ToolT>,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> EventHandlingStatus {
-        const DISTANCE_THRESHOLD: f32 = 3.0;
-        
-        fn is_over(a: egui::Pos2, b: egui::Pos2) -> bool {
-            a.distance(b) <= DISTANCE_THRESHOLD
-        }
+        const SEGMENT_DISTANCE_THRESHOLD: f32 = 2.0;
+        let is_over = |a: egui::Pos2, b: egui::Pos2| -> bool {
+            a.distance(b) <= Self::VERTEX_RADIUS / ehc.ui_scale
+        };
         
         fn dist_to_line_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
             fn dist2(a: egui::Pos2, b: egui::Pos2) -> f32 {
@@ -2839,7 +2840,7 @@ where
                                     break;
                                 };
                                 
-                                if dist_to_line_segment(pos, u.1, v.1) <= DISTANCE_THRESHOLD {
+                                if dist_to_line_segment(pos, u.1, v.1) <= SEGMENT_DISTANCE_THRESHOLD {
                                     return EventHandlingStatus::HandledByElement;
                                 }
                             }
@@ -2853,7 +2854,7 @@ where
                 if self.center_point == None {
                     for u in self.source_points.iter().flat_map(|e| e.last()) {
                         for v in self.dest_points.iter().flat_map(|e| e.last()) {
-                            if dist_to_line_segment(pos, u.1, v.1) <= DISTANCE_THRESHOLD {
+                            if dist_to_line_segment(pos, u.1, v.1) <= SEGMENT_DISTANCE_THRESHOLD {
                                 return EventHandlingStatus::HandledByElement;
                             }
                         }
