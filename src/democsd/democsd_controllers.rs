@@ -1138,7 +1138,7 @@ impl
         event: InputEvent,
         modifiers: ModifierKeys,
         tool: &mut Option<NaiveDemoCsdTool>,
-        am: &mut AlignmentManager,
+        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         let child = self.transaction_view.as_ref()
@@ -1576,7 +1576,7 @@ impl
         event: InputEvent,
         modifiers: ModifierKeys,
         tool: &mut Option<NaiveDemoCsdTool>,
-        am: &mut AlignmentManager,
+        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {

@@ -212,7 +212,7 @@ impl NHShape {
         }
     }
     
-    pub fn guidelines(&self) -> impl IntoIterator<Item=(egui::Pos2, egui::Align)> {
+    pub fn guidelines(&self) -> Vec<(egui::Pos2, egui::Align)> {
         match self {
             NHShape::Rect { inner } => vec![(inner.min, egui::Align::Min), (inner.center(), egui::Align::Center), (inner.max, egui::Align::Max),],
             NHShape::Ellipse { position, bounds_radius }

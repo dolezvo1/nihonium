@@ -1272,7 +1272,7 @@ impl
         event: InputEvent,
         modifiers: ModifierKeys,
         tool: &mut Option<NaiveUmlClassTool>,
-        am: &mut AlignmentManager,
+        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -1305,7 +1305,7 @@ impl
             InputEvent::Drag { delta, .. } if self.dragged => {
                 let translated_real_shape = self.real_shape.unwrap().translate(delta);
                 self.real_shape = Some(translated_real_shape);
-                let coerced_pos = am.coerce(&self.uuid(), translated_real_shape);
+                let coerced_pos = am.coerce(std::iter::once(*self.uuid()).collect(), translated_real_shape);
                 let coerced_delta = coerced_pos - self.position;
                 
                 if self.highlight.selected {

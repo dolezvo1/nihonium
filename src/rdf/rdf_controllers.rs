@@ -1280,7 +1280,7 @@ impl
         event: InputEvent,
         _modifiers: ModifierKeys,
         tool: &mut Option<NaiveRdfTool>,
-        am: &mut AlignmentManager,
+        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -1550,7 +1550,7 @@ impl
         event: InputEvent,
         _modifiers: ModifierKeys,
         tool: &mut Option<NaiveRdfTool>,
-        am: &mut AlignmentManager,
+        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {

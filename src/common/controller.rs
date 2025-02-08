@@ -97,8 +97,7 @@ pub struct AlignmentManager {
     max_delta: egui::Vec2,
     guidelines_x: Vec<(f32, egui::Align, uuid::Uuid)>,
     guidelines_y: Vec<(f32, egui::Align, uuid::Uuid)>,
-    best_x: Option<f32>,
-    best_y: Option<f32>,
+    best_xy: Arc<RwLock<(Option<f32>, Option<f32>)>>,
 }
 
 impl AlignmentManager {
@@ -106,13 +105,16 @@ impl AlignmentManager {
         Self {
             input_restriction, max_delta,
             guidelines_x: Vec::new(), guidelines_y: Vec::new(),
-            best_x: None, best_y: None,
+            best_xy: Arc::new(RwLock::new((None, None))),
         }
     }
     pub fn add_shape(&mut self, uuid: uuid::Uuid, shape: canvas::NHShape) {
-        for e in shape.guidelines().into_iter().filter(|e| self.input_restriction.contains(e.0)) {
-            self.guidelines_x.push((e.0.x, e.1, uuid));
-            self.guidelines_y.push((e.0.y, e.1, uuid));
+        let guidelines = shape.guidelines();
+        if guidelines.iter().any(|e| self.input_restriction.contains(e.0)) {
+            for e in guidelines.into_iter() {
+                self.guidelines_x.push((e.0.x, e.1, uuid));
+                self.guidelines_y.push((e.0.y, e.1, uuid));
+            }
         }
     }
     pub fn sort_guidelines(&mut self) {
@@ -120,29 +122,47 @@ impl AlignmentManager {
         self.guidelines_y.sort_by(|a, b| a.0.total_cmp(&b.0));
     }
     
-    pub fn coerce(&mut self, uuid: &uuid::Uuid, s: canvas::NHShape) -> egui::Pos2 {
-        (self.best_x, self.best_y) = (None, None);
+    pub fn coerce(&self, ignored_uuids: HashSet<uuid::Uuid>, s: canvas::NHShape) -> egui::Pos2 {
+        *self.best_xy.write().unwrap() = (None, None);
+        let (mut least_x, mut least_y): (Option<(f32, f32)>, Option<(f32, f32)>) = (None, None);
         let center = s.center();
         
         // Naive guidelines coordinate matching
-        let start_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(center.x - self.max_delta.x))).unwrap_or_else(|e| e);
-        let end_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(center.x + self.max_delta.x))).unwrap_or_else(|e| e);
-        for g in self.guidelines_x[start_x..end_x].iter().filter(|e| e.2 != *uuid) {
-            if self.best_x.is_none_or(|b| (g.0 - center.x).abs() < (b - center.x).abs()) {
-                self.best_x = Some(g.0);
+        for p in s.guidelines().into_iter() {
+            let start_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(p.0.x - self.max_delta.x))).unwrap_or_else(|e| e);
+            let end_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(p.0.x + self.max_delta.x))).unwrap_or_else(|e| e);
+            for g in self.guidelines_x[start_x..end_x].iter().filter(|e| !ignored_uuids.contains(&e.2)) {
+                if least_x.is_none_or(|b| (g.0 - p.0.x).abs() < b.0) {
+                    least_x = Some(((g.0 - p.0.x).abs(), g.0));
+                }
             }
-        }
-        let start_y = self.guidelines_y.binary_search_by(|probe| probe.0.total_cmp(&(center.y - self.max_delta.y))).unwrap_or_else(|e| e);
-        let end_y = self.guidelines_y.binary_search_by(|probe| probe.0.total_cmp(&(center.y + self.max_delta.y))).unwrap_or_else(|e| e);
-        for g in self.guidelines_y[start_y..end_y].iter().filter(|e| e.2 != *uuid) {
-            if self.best_y.is_none_or(|b| (g.0 - center.y).abs() < (b - center.y).abs())  {
-                self.best_y = Some(g.0);
+            let start_y = self.guidelines_y.binary_search_by(|probe| probe.0.total_cmp(&(p.0.y - self.max_delta.y))).unwrap_or_else(|e| e);
+            let end_y = self.guidelines_y.binary_search_by(|probe| probe.0.total_cmp(&(p.0.y + self.max_delta.y))).unwrap_or_else(|e| e);
+            for g in self.guidelines_y[start_y..end_y].iter().filter(|e| !ignored_uuids.contains(&e.2)) {
+                if least_y.is_none_or(|b| (g.0 - p.0.y).abs() < b.0) {
+                    least_y = Some(((g.0 - p.0.y).abs(), g.0));
+                }
             }
         }
         
         // TODO: try pairwise projection of guidelines with matching Align
         
-        egui::Pos2::new(self.best_x.unwrap_or(center.x), self.best_y.unwrap_or(center.y))
+        *self.best_xy.write().unwrap() = (least_x.map(|e| e.1), least_y.map(|e| e.1));
+        egui::Pos2::new(center.x - least_x.map(|e| e.0).unwrap_or(0.0), center.y - least_y.map(|e| e.0).unwrap_or(0.0))
+    }
+    
+    pub fn draw_best(&self, canvas: &mut dyn NHCanvas, profile: &ColorProfile, rect: egui::Rect) {
+        let (best_x, best_y) = *self.best_xy.read().unwrap();
+        if let Some(bx) = best_x {
+            canvas.draw_line([
+                egui::Pos2::new(bx, rect.min.y), egui::Pos2::new(bx, rect.max.y)
+            ], canvas::Stroke::new_solid(1.0, profile.auxiliary[0]), canvas::Highlight::NONE);
+        }
+        if let Some(by) = best_y {
+            canvas.draw_line([
+                egui::Pos2::new(rect.min.x, by), egui::Pos2::new(rect.max.x, by)
+            ], canvas::Stroke::new_solid(1.0, profile.auxiliary[0]), canvas::Highlight::NONE);
+        }
     }
 }
 
@@ -506,7 +526,7 @@ pub trait ElementControllerGen2<
         event: InputEvent,
         modifiers: ModifierKeys,
         tool: &mut Option<ToolT>,
-        am: &mut AlignmentManager,
+        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> EventHandlingStatus;
     fn apply_command(
@@ -1308,17 +1328,7 @@ where
                 );
             }
             
-            // Draw alignment hint
-            if let Some(bx) = self.alignment_manager.best_x {
-                canvas.draw_line([
-                    egui::Pos2::new(bx, self.camera_offset.y / -self.camera_scale), egui::Pos2::new(bx, self.camera_offset.y / -self.camera_scale + self.last_interactive_canvas_rect.height())
-                ], canvas::Stroke::new_solid(1.0, profile.auxiliary[0]), canvas::Highlight::NONE);
-            }
-            if let Some(by) = self.alignment_manager.best_y {
-                canvas.draw_line([
-                    egui::Pos2::new(self.camera_offset.x / -self.camera_scale, by), egui::Pos2::new(self.camera_offset.x / -self.camera_scale + self.last_interactive_canvas_rect.width(), by)
-                ], canvas::Stroke::new_solid(1.0, profile.auxiliary[0]), canvas::Highlight::NONE);
-            }
+            self.alignment_manager.draw_best(canvas, profile, self.last_interactive_canvas_rect);
         }
     }
 }
@@ -1893,7 +1903,7 @@ where
         event: InputEvent,
         modifiers: ModifierKeys,
         tool: &mut Option<ToolT>,
-        am: &mut AlignmentManager,
+        am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> EventHandlingStatus {
         let uc_status = self
@@ -2598,7 +2608,7 @@ where
         event: InputEvent,
         modifiers: ModifierKeys,
         _tool: &mut Option<ToolT>,
-        _am: &mut AlignmentManager,
+        _am: &AlignmentManager,
         commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
     ) -> EventHandlingStatus {
         const DISTANCE_THRESHOLD: f32 = 3.0;
