@@ -1058,11 +1058,10 @@ fn uml_class(
         functions_buffer: functions.to_owned(),
         comment_buffer: "".to_owned(),
 
-        dragged: false,
+        dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::ZERO,
-        real_shape: None,
     }));
     class_controller.write().unwrap().self_reference = Arc::downgrade(&class_controller);
     (class_uuid, class, class_controller)
@@ -1078,11 +1077,10 @@ pub struct UmlClassController {
     functions_buffer: String,
     comment_buffer: String,
 
-    dragged: bool,
+    dragged_shape: Option<NHShape>,
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
-    real_shape: Option<NHShape>,
 }
 
 impl ElementController<dyn UmlClassElement> for UmlClassController {
@@ -1249,7 +1247,7 @@ impl
         );
 
         if canvas.is_interactive() {
-            if self.dragged {
+            if self.dragged_shape.is_some() {
                 canvas.draw_line([
                     egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
                     egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.center().y),
@@ -1292,13 +1290,11 @@ impl
         match event {
             e if !self.min_shape().contains(*e.mouse_position()) => return EventHandlingStatus::NotHandled,
             InputEvent::MouseDown(_) => {
-                self.dragged = true;
-                self.real_shape = Some(self.min_shape());
+                self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::MouseUp(_) => if self.dragged {
-                self.dragged = false;
-                self.real_shape = None;
+            InputEvent::MouseUp(_) => if self.dragged_shape.is_some() {
+                self.dragged_shape = None;
                 EventHandlingStatus::HandledByElement
             } else {
                 EventHandlingStatus::NotHandled
@@ -1316,9 +1312,9 @@ impl
                 
                 EventHandlingStatus::HandledByElement
             },
-            InputEvent::Drag { delta, .. } if self.dragged => {
-                let translated_real_shape = self.real_shape.unwrap().translate(delta);
-                self.real_shape = Some(translated_real_shape);
+            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
+                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
+                self.dragged_shape = Some(translated_real_shape);
                 let coerced_pos = if self.highlight.selected {
                     ehc.alignment_manager.coerce(ehc.selected_elements, translated_real_shape)
                 } else {
