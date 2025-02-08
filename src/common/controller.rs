@@ -2057,8 +2057,36 @@ where
                     }
                     EventHandlingStatus::HandledByElement
                 },
-                Some((DragType::Resize(align2), _real_bounds)) => {
-                    commands.push(SensitiveCommand::ResizeSelectedElementsBy(align2, delta));
+                Some((DragType::Resize(align), real_bounds)) => {
+                    let (left, right) = match align.x() {
+                        egui::Align::Min => (0.0, delta.x),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => (-delta.x, 0.0),
+                    };
+                    let (top, bottom) = match align.y() {
+                        egui::Align::Min => (0.0, delta.y),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => (-delta.y, 0.0),
+                    };
+                    let new_real_bounds = real_bounds + egui::Margin { left, right, top, bottom };
+                    self.dragged_type_and_shape = Some((DragType::Resize(align), new_real_bounds));
+                    let handle_x = match align.x() {
+                        egui::Align::Min => (new_real_bounds.right(), self.bounds_rect.right()),
+                        egui::Align::Center => (new_real_bounds.center().x, self.bounds_rect.center().x),
+                        egui::Align::Max => (new_real_bounds.left(), self.bounds_rect.left()),
+                    };
+                    let handle_y = match align.y() {
+                        egui::Align::Min => (new_real_bounds.bottom(), self.bounds_rect.bottom()),
+                        egui::Align::Center => (new_real_bounds.center().y, self.bounds_rect.center().y),
+                        egui::Align::Max => (new_real_bounds.top(), self.bounds_rect.top()),
+                    };
+                    let coerced_point = ehc.alignment_manager.coerce(
+                        ehc.selected_elements,
+                        NHShape::Rect { inner: egui::Rect::from_min_size(egui::Pos2::new(handle_x.0, handle_y.0), egui::Vec2::ZERO) }
+                    );
+                    let coerced_delta = coerced_point - egui::Pos2::new(handle_x.1, handle_y.1);
+                    
+                    commands.push(SensitiveCommand::ResizeSelectedElementsBy(align, coerced_delta));
                     EventHandlingStatus::HandledByElement
                 },
                 None => EventHandlingStatus::NotHandled,
