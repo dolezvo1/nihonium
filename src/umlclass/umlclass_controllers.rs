@@ -1248,20 +1248,35 @@ impl
             self.highlight,
         );
 
-        // Draw targetting rectangle
-        if let Some(t) = tool
-            .as_ref()
-            .filter(|e| self.min_shape().contains(e.0))
-            .map(|e| e.1)
-        {
-            canvas.draw_rectangle(
-                self.bounds_rect,
-                egui::Rounding::ZERO,
-                t.targetting_for_element(KindedUmlClassElement::Class { inner: self }),
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
-            TargettingStatus::Drawn
+        if canvas.is_interactive() {
+            if self.dragged {
+                canvas.draw_line([
+                    egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
+                    egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.center().y),
+                ], canvas::Stroke::new_solid(1.0, egui::Color32::BLUE), canvas::Highlight::NONE);
+                canvas.draw_line([
+                    egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.min.y),
+                    egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.max.y),
+                ], canvas::Stroke::new_solid(1.0, egui::Color32::BLUE), canvas::Highlight::NONE);
+            }
+            
+            // Draw targetting rectangle
+            if let Some(t) = tool
+                .as_ref()
+                .filter(|e| self.min_shape().contains(e.0))
+                .map(|e| e.1)
+            {
+                canvas.draw_rectangle(
+                    self.bounds_rect,
+                    egui::Rounding::ZERO,
+                    t.targetting_for_element(KindedUmlClassElement::Class { inner: self }),
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                TargettingStatus::Drawn
+            } else {
+                TargettingStatus::NotDrawn
+            }
         } else {
             TargettingStatus::NotDrawn
         }
@@ -1305,7 +1320,7 @@ impl
             InputEvent::Drag { delta, .. } if self.dragged => {
                 let translated_real_shape = self.real_shape.unwrap().translate(delta);
                 self.real_shape = Some(translated_real_shape);
-                let coerced_pos = am.coerce(std::iter::once(*self.uuid()).collect(), translated_real_shape);
+                let coerced_pos = am.coerce(&std::iter::once(*self.uuid()).collect(), translated_real_shape);
                 let coerced_delta = coerced_pos - self.position;
                 
                 if self.highlight.selected {

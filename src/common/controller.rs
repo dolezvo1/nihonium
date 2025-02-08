@@ -122,7 +122,7 @@ impl AlignmentManager {
         self.guidelines_y.sort_by(|a, b| a.0.total_cmp(&b.0));
     }
     
-    pub fn coerce(&self, ignored_uuids: HashSet<uuid::Uuid>, s: canvas::NHShape) -> egui::Pos2 {
+    pub fn coerce(&self, ignored_uuids: &HashSet<uuid::Uuid>, s: canvas::NHShape) -> egui::Pos2 {
         *self.best_xy.write().unwrap() = (None, None);
         let (mut least_x, mut least_y): (Option<(f32, f32)>, Option<(f32, f32)>) = (None, None);
         let center = s.center();
@@ -132,21 +132,23 @@ impl AlignmentManager {
             let start_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(p.0.x - self.max_delta.x))).unwrap_or_else(|e| e);
             let end_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(p.0.x + self.max_delta.x))).unwrap_or_else(|e| e);
             for g in self.guidelines_x[start_x..end_x].iter().filter(|e| !ignored_uuids.contains(&e.2)) {
-                if least_x.is_none_or(|b| (g.0 - p.0.x).abs() < b.0) {
-                    least_x = Some(((g.0 - p.0.x).abs(), g.0));
+                if least_x.is_none_or(|b| (p.0.x - g.0).abs() < b.0.abs()) {
+                    least_x = Some((p.0.x - g.0, g.0));
                 }
             }
             let start_y = self.guidelines_y.binary_search_by(|probe| probe.0.total_cmp(&(p.0.y - self.max_delta.y))).unwrap_or_else(|e| e);
             let end_y = self.guidelines_y.binary_search_by(|probe| probe.0.total_cmp(&(p.0.y + self.max_delta.y))).unwrap_or_else(|e| e);
             for g in self.guidelines_y[start_y..end_y].iter().filter(|e| !ignored_uuids.contains(&e.2)) {
-                if least_y.is_none_or(|b| (g.0 - p.0.y).abs() < b.0) {
-                    least_y = Some(((g.0 - p.0.y).abs(), g.0));
+                if least_y.is_none_or(|b| (p.0.y - g.0).abs() < b.0.abs()) {
+                    least_y = Some((p.0.y - g.0, g.0));
                 }
             }
         }
         
         // TODO: try pairwise projection of guidelines with matching Align
         
+        least_x = least_x.filter(|e| e.0.abs() < self.max_delta.x);
+        least_y = least_y.filter(|e| e.0.abs() < self.max_delta.y);
         *self.best_xy.write().unwrap() = (least_x.map(|e| e.1), least_y.map(|e| e.1));
         egui::Pos2::new(center.x - least_x.map(|e| e.0).unwrap_or(0.0), center.y - least_y.map(|e| e.0).unwrap_or(0.0))
     }
@@ -2601,7 +2603,12 @@ where
     }
 
     fn collect_allignment(&mut self, am: &mut AlignmentManager) {
-        // TODO: add vertices as zero sized rectangles?
+        for p in self.center_point.iter()
+            .chain(self.source_points.iter().flat_map(|e| e.iter().skip(1)))
+            .chain(self.dest_points.iter().flat_map(|e| e.iter().skip(1)))
+        {
+            am.add_shape(*self.uuid(), NHShape::Rect { inner: egui::Rect::from_min_size(p.1, egui::Vec2::ZERO) });
+        }
     }
     fn handle_event(
         &mut self,
