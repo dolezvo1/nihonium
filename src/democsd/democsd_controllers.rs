@@ -1,6 +1,6 @@
 use crate::common::canvas;
 use crate::common::controller::{
-    AlignmentManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    SnapManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::democsd::democsd_models::{
     DemoCsdTransaction, DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType,
@@ -1127,7 +1127,7 @@ impl
         }
     }
 
-    fn collect_allignment(&mut self, am: &mut AlignmentManager) {
+    fn collect_allignment(&mut self, am: &mut SnapManager) {
         am.add_shape(*self.uuid(), self.min_shape());
         
         self.transaction_view.iter()

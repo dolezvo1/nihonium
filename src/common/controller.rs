@@ -92,7 +92,7 @@ macro_rules! build_colors {
 pub(crate) use build_colors;
 
 
-pub struct AlignmentManager {
+pub struct SnapManager {
     input_restriction: egui::Rect,
     max_delta: egui::Vec2,
     guidelines_x: Vec<(f32, egui::Align, uuid::Uuid)>,
@@ -100,7 +100,7 @@ pub struct AlignmentManager {
     best_xy: Arc<RwLock<(Option<f32>, Option<f32>)>>,
 }
 
-impl AlignmentManager {
+impl SnapManager {
     pub fn new(input_restriction: egui::Rect, max_delta: egui::Vec2) -> Self {
         Self {
             input_restriction, max_delta,
@@ -498,7 +498,7 @@ pub struct EventHandlingContext<'a> {
     pub modifiers: ModifierKeys,
     pub ui_scale: f32,
     pub all_elements: &'a HashMap<uuid::Uuid, bool>,
-    pub alignment_manager: &'a AlignmentManager,
+    pub snap_manager: &'a SnapManager,
 }
 
 pub trait ElementControllerGen2<
@@ -527,7 +527,7 @@ pub trait ElementControllerGen2<
         profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus;
-    fn collect_allignment(&mut self, am: &mut AlignmentManager) {
+    fn collect_allignment(&mut self, am: &mut SnapManager) {
         am.add_shape(*self.uuid(), self.min_shape());
     }
     fn handle_event(
@@ -583,7 +583,7 @@ pub struct DiagramControllerGen2<
     pub camera_scale: f32,
     last_unhandled_mouse_pos: Option<egui::Pos2>,
     last_interactive_canvas_rect: egui::Rect,
-    alignment_manager: AlignmentManager,
+    snap_manager: SnapManager,
     current_tool: Option<ToolT>,
     select_by_drag: Option<(egui::Pos2, egui::Pos2)>,
     
@@ -713,7 +713,7 @@ where
             camera_scale: 1.0,
             last_unhandled_mouse_pos: None,
             last_interactive_canvas_rect: egui::Rect::ZERO,
-            alignment_manager: AlignmentManager::new(egui::Rect::ZERO, egui::Vec2::ZERO),
+            snap_manager: SnapManager::new(egui::Rect::ZERO, egui::Vec2::ZERO),
             current_tool: None,
             select_by_drag: None,
             
@@ -742,11 +742,11 @@ where
     
     fn handle_event(&mut self, event: InputEvent, modifiers: ModifierKeys, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
         // Collect alignment guides
-        self.alignment_manager = AlignmentManager::new(self.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.camera_scale));
+        self.snap_manager = SnapManager::new(self.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.camera_scale));
         self.event_order.iter()
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
-            .for_each(|uc| uc.1.write().unwrap().collect_allignment(&mut self.alignment_manager));
-        self.alignment_manager.sort_guidelines();
+            .for_each(|uc| uc.1.write().unwrap().collect_allignment(&mut self.snap_manager));
+        self.snap_manager.sort_guidelines();
         
         // Handle events
         let mut commands = Vec::new();
@@ -759,7 +759,7 @@ where
             modifiers,
             ui_scale: self.camera_scale,
             all_elements: &self.all_elements,
-            alignment_manager: &self.alignment_manager,
+            snap_manager: &self.snap_manager,
         };
         
         let child = self.event_order
@@ -1341,7 +1341,7 @@ where
                 );
             }
             
-            self.alignment_manager.draw_best(canvas, profile, self.last_interactive_canvas_rect);
+            self.snap_manager.draw_best(canvas, profile, self.last_interactive_canvas_rect);
         }
     }
 }
@@ -1934,7 +1934,7 @@ where
         }
     }
 
-    fn collect_allignment(&mut self, am: &mut AlignmentManager) {
+    fn collect_allignment(&mut self, am: &mut SnapManager) {
         am.add_shape(*self.uuid(), self.min_shape());
         
         self.event_order.iter()
@@ -2040,7 +2040,7 @@ where
                     let translated_bounds = real_bounds.translate(delta);
                     self.dragged_type_and_shape = Some((DragType::Move, translated_bounds));
                     let translated_real_shape = NHShape::Rect { inner: translated_bounds };
-                    let coerced_pos = ehc.alignment_manager.coerce(translated_real_shape,
+                    let coerced_pos = ehc.snap_manager.coerce(translated_real_shape,
                         |e| !self.all_elements.get(e).is_some() && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e) } else {*e == *self.uuid()}
                     );
                     let coerced_delta = coerced_pos - self.position();
@@ -2078,7 +2078,7 @@ where
                         egui::Align::Center => (new_real_bounds.center().y, self.bounds_rect.center().y),
                         egui::Align::Max => (new_real_bounds.top(), self.bounds_rect.top()),
                     };
-                    let coerced_point = ehc.alignment_manager.coerce(
+                    let coerced_point = ehc.snap_manager.coerce(
                         NHShape::Rect { inner: egui::Rect::from_min_size(egui::Pos2::new(handle_x.0, handle_y.0), egui::Vec2::ZERO) },
                         |e| !self.all_elements.get(e).is_some() && !ehc.all_elements.get(e).is_some_and(|e| *e)
                     );
@@ -2688,7 +2688,7 @@ where
         TargettingStatus::NotDrawn
     }
 
-    fn collect_allignment(&mut self, am: &mut AlignmentManager) {
+    fn collect_allignment(&mut self, am: &mut SnapManager) {
         for p in self.center_point.iter()
             .chain(self.source_points.iter().flat_map(|e| e.iter().skip(1)))
             .chain(self.dest_points.iter().flat_map(|e| e.iter().skip(1)))
@@ -2904,9 +2904,9 @@ where
                 self.dragged_node = Some((dragged_node.0, translated_real_pos));
                 let translated_real_shape = NHShape::Rect { inner: egui::Rect::from_min_size(translated_real_pos, egui::Vec2::ZERO) };
                 let coerced_pos = if self.highlight.selected {
-                    ehc.alignment_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e))
+                    ehc.snap_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e))
                 } else {
-                    ehc.alignment_manager.coerce(translated_real_shape, |e| *e != *self.uuid())
+                    ehc.snap_manager.coerce(translated_real_shape, |e| *e != *self.uuid())
                 };
                 let coerced_delta = coerced_pos - self.all_vertices()
                     .find(|e| e.0 == dragged_node.0).unwrap().1;

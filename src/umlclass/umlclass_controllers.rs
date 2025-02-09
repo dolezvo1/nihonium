@@ -1316,9 +1316,9 @@ impl
                 let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
                 self.dragged_shape = Some(translated_real_shape);
                 let coerced_pos = if self.highlight.selected {
-                    ehc.alignment_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e))
+                    ehc.snap_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e))
                 } else {
-                    ehc.alignment_manager.coerce(translated_real_shape, |e| *e != *self.uuid())
+                    ehc.snap_manager.coerce(translated_real_shape, |e| *e != *self.uuid())
                 };
                 let coerced_delta = coerced_pos - self.position;
                 
