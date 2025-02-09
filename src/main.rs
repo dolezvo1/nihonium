@@ -183,14 +183,6 @@ impl TabViewer for NHContext {
         ui.label("This is a tab context menu");
     }
 
-    fn on_tab_button(&mut self, tab: &mut Self::Tab, response: &egui::Response) {
-        if let NHTab::Diagram { uuid } = tab {
-            if response.clicked() || response.drag_started() {
-                self.last_focused_diagram = Some(uuid.clone());
-            }
-        }
-    }
-
     fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
         self.open_unique_tabs.remove(tab);
         true
@@ -682,10 +674,6 @@ impl NHContext {
         
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(ui, color_profile);
 
-        if response.clicked() || response.drag_started() {
-            self.last_focused_diagram = Some(tab_uuid.clone());
-        }
-
         diagram_controller.draw_in(ui_canvas.as_mut(), color_profile, pos);
 
         let mut undo_accumulator = Vec::<Arc<String>>::new();
@@ -829,9 +817,6 @@ impl NHApp {
     fn switch_to_tab(&mut self, tab: &NHTab) {
         let Some(t) = self.tree.find_tab(&tab) else { return; };
         self.tree.set_active_tab(t);
-        if let NHTab::Diagram { uuid } = tab {
-            self.context.last_focused_diagram = Some(*uuid);
-        }
     }
 
     fn undo_immediate(&mut self) {
@@ -886,6 +871,7 @@ fn new_project() -> Result<(), &'static str> {
 
 impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Process ProjectCommands
         for c in self.context.unprocessed_commands.drain(..) {
             match c {
                 ProjectCommand::OpenAndFocusDiagram(uuid) => {
@@ -901,13 +887,16 @@ impl eframe::App for NHApp {
                         }
                         self.tree[SurfaceIndex::main()].push_to_focused_leaf(target_tab);
                     }
-                    
-                    self.context.last_focused_diagram = Some(uuid);
                 },
             }
         }
         
+        // Set self.context.last_focused_diagram
+        if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
+            self.context.last_focused_diagram = Some(*uuid);
+        }
         
+        // Show ui
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             macro_rules! send_to_focused_diagram {
                 ($command:expr) => {
@@ -994,7 +983,6 @@ impl eframe::App for NHApp {
                                 let tab = NHTab::Diagram { uuid };
 
                                 self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
-                                self.context.last_focused_diagram = Some(uuid);
 
                                 ui.close_menu();
                             }
