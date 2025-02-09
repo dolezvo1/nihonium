@@ -122,7 +122,9 @@ impl AlignmentManager {
         self.guidelines_y.sort_by(|a, b| a.0.total_cmp(&b.0));
     }
     
-    pub fn coerce(&self, ignored_uuids: &HashSet<uuid::Uuid>, s: canvas::NHShape) -> egui::Pos2 {
+    pub fn coerce<F>(&self, s: canvas::NHShape, uuids_filter: F) -> egui::Pos2
+    where F: Fn(&uuid::Uuid) -> bool
+    {
         *self.best_xy.write().unwrap() = (None, None);
         let (mut least_x, mut least_y): (Option<(f32, f32)>, Option<(f32, f32)>) = (None, None);
         let center = s.center();
@@ -131,14 +133,14 @@ impl AlignmentManager {
         for p in s.guidelines().into_iter() {
             let start_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(p.0.x - self.max_delta.x))).unwrap_or_else(|e| e);
             let end_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(p.0.x + self.max_delta.x))).unwrap_or_else(|e| e);
-            for g in self.guidelines_x[start_x..end_x].iter().filter(|e| !ignored_uuids.contains(&e.2)) {
+            for g in self.guidelines_x[start_x..end_x].iter().filter(|e| uuids_filter(&e.2)) {
                 if least_x.is_none_or(|b| (p.0.x - g.0).abs() < b.0.abs()) {
                     least_x = Some((p.0.x - g.0, g.0));
                 }
             }
             let start_y = self.guidelines_y.binary_search_by(|probe| probe.0.total_cmp(&(p.0.y - self.max_delta.y))).unwrap_or_else(|e| e);
             let end_y = self.guidelines_y.binary_search_by(|probe| probe.0.total_cmp(&(p.0.y + self.max_delta.y))).unwrap_or_else(|e| e);
-            for g in self.guidelines_y[start_y..end_y].iter().filter(|e| !ignored_uuids.contains(&e.2)) {
+            for g in self.guidelines_y[start_y..end_y].iter().filter(|e| uuids_filter(&e.2)) {
                 if least_y.is_none_or(|b| (p.0.y - g.0).abs() < b.0.abs()) {
                     least_y = Some((p.0.y - g.0, g.0));
                 }
@@ -319,27 +321,25 @@ pub enum SensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
 
 impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<ElementT, PropChangeT> {
     // TODO: I'm not sure whether this isn't actually the responsibility of the diagram itself
-    fn to_selection_insensitive(
+    fn to_selection_insensitive<F>(
         self,
-        selected_elements: &HashSet<uuid::Uuid>,
-    ) -> InsensitiveCommand<ElementT, PropChangeT> {
+        selected_elements: F,
+    ) -> InsensitiveCommand<ElementT, PropChangeT>
+    where F: Fn() -> HashSet<uuid::Uuid>
+    {
+        if let SensitiveCommand::Insensitive(inner) = self {
+            return inner;
+        }
+        let se = selected_elements();
+        use SensitiveCommand as SC;
+        use InsensitiveCommand as IC;
         match self {
-            SensitiveCommand::MoveSelectedElements(delta) => {
-                InsensitiveCommand::MoveSpecificElements(selected_elements.clone(), delta)
-            }
-            SensitiveCommand::ResizeSelectedElementsBy(align, delta) => {
-                InsensitiveCommand::ResizeSpecificElementsBy(selected_elements.clone(), align, delta)
-            }
-            SensitiveCommand::ResizeSelectedElementsTo(align, delta) => {
-                InsensitiveCommand::ResizeSpecificElementsTo(selected_elements.clone(), align, delta)
-            }
-            SensitiveCommand::DeleteSelectedElements => {
-                InsensitiveCommand::DeleteSpecificElements(selected_elements.clone())
-            }
-            SensitiveCommand::PropertyChangeSelected(changes) => {
-                InsensitiveCommand::PropertyChange(selected_elements.clone(), changes)
-            }
-            SensitiveCommand::Insensitive(inner) => inner,
+            SC::MoveSelectedElements(delta) => IC::MoveSpecificElements(se, delta),
+            SC::ResizeSelectedElementsBy(align, delta) => IC::ResizeSpecificElementsBy(se, align, delta),
+            SC::ResizeSelectedElementsTo(align, delta) => IC::ResizeSpecificElementsTo(se, align, delta),
+            SC::DeleteSelectedElements => IC::DeleteSpecificElements(se),
+            SC::PropertyChangeSelected(changes) => IC::PropertyChange(se, changes),
+            SC::Insensitive(..) => unreachable!(),
         }
     }
 }
@@ -497,7 +497,7 @@ pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandEle
 pub struct EventHandlingContext<'a> {
     pub modifiers: ModifierKeys,
     pub ui_scale: f32,
-    pub selected_elements: &'a HashSet<uuid::Uuid>,
+    pub all_elements: &'a HashMap<uuid::Uuid, bool>,
     pub alignment_manager: &'a AlignmentManager,
 }
 
@@ -542,8 +542,7 @@ pub trait ElementControllerGen2<
         command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
-    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>);
-    
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>);
 }
 
 /// This is a generic DiagramController implementation.
@@ -576,7 +575,7 @@ pub struct DiagramControllerGen2<
         >,
     >,
     event_order: Vec<uuid::Uuid>,
-    all_selected_elements: HashSet<uuid::Uuid>,
+    all_elements: HashMap<uuid::Uuid, bool>,
 
     pub _layers: Vec<bool>,
 
@@ -706,7 +705,7 @@ where
             self_reference: Weak::new(),
             owned_controllers,
             event_order,
-            all_selected_elements: HashSet::new(),
+            all_elements: HashMap::new(),
 
             _layers: vec![true],
 
@@ -759,7 +758,7 @@ where
         let ehc = EventHandlingContext {
             modifiers,
             ui_scale: self.camera_scale,
-            selected_elements: &self.all_selected_elements,
+            all_elements: &self.all_elements,
             alignment_manager: &self.alignment_manager,
         };
         
@@ -785,7 +784,7 @@ where
                         } else {
                             commands.push(InsensitiveCommand::SelectSpecific(
                                 std::iter::once(us.0).collect(),
-                                !self.all_selected_elements.contains(&us.0),
+                                !self.all_elements.get(&us.0).is_some_and(|e| *e),
                             ).into());
                         }
                         EventHandlingStatus::HandledByContainer
@@ -853,7 +852,7 @@ where
     ) {
         for command in commands {
             // TODO: transitive closure of dependency when deleting elements
-            let command = command.to_selection_insensitive(&self.all_selected_elements);
+            let command = command.to_selection_insensitive(|| self.all_elements.iter().filter(|e| *e.1).map(|e| *e.0).collect());
 
             let mut undo_accumulator = vec![];
 
@@ -981,10 +980,10 @@ where
             }
 
             if modifies_selection {
-                self.all_selected_elements = HashSet::new();
+                self.all_elements = HashMap::new();
                 for (_uuid, c) in &self.owned_controllers {
                     let mut c = c.write().unwrap();
-                    c.collect_all_selected_elements(&mut self.all_selected_elements);
+                    c.head_count(&mut self.all_elements);
                 }
             }
         }
@@ -1268,7 +1267,7 @@ where
             DiagramCommand::InvertSelection => {
                 self.apply_commands(vec![
                     InsensitiveCommand::SelectAll(true).into(),
-                    InsensitiveCommand::SelectSpecific(self.all_selected_elements.clone(), false).into()
+                    InsensitiveCommand::SelectSpecific(self.all_elements.iter().filter(|e| *e.1).map(|e| *e.0).collect(), false).into()
                 ], &mut vec![], true, false);
             }
             DiagramCommand::DeleteSelectedElements => {
@@ -1475,7 +1474,8 @@ pub struct PackageView<
         >,
     >,
     event_order: Vec<uuid::Uuid>,
-    selected_elements: HashSet<uuid::Uuid>,
+    all_elements: HashMap<uuid::Uuid, bool>,
+    selected_direct_elements: HashSet<uuid::Uuid>,
 
     buffer: BufferT,
 
@@ -1574,7 +1574,8 @@ where
             model,
             owned_controllers,
             event_order,
-            selected_elements: HashSet::new(),
+            all_elements: HashMap::new(),
+            selected_direct_elements: HashSet::new(),
 
             buffer,
             dragged_type_and_shape: None,
@@ -2022,7 +2023,7 @@ where
                             } else {
                                 commands.push(InsensitiveCommand::SelectSpecific(
                                     std::iter::once(uc.0).collect(),
-                                    !self.selected_elements.contains(&uc.0),
+                                    !self.selected_direct_elements.contains(&uc.0),
                                 ).into());
                             }
                         }
@@ -2036,15 +2037,12 @@ where
             },
             InputEvent::Drag { delta, .. } => match self.dragged_type_and_shape {
                 Some((DragType::Move, real_bounds)) => {
-                    // TODO: filter contained elements
                     let translated_bounds = real_bounds.translate(delta);
                     self.dragged_type_and_shape = Some((DragType::Move, translated_bounds));
                     let translated_real_shape = NHShape::Rect { inner: translated_bounds };
-                    let coerced_pos = if self.highlight.selected {
-                        ehc.alignment_manager.coerce(ehc.selected_elements, translated_real_shape)
-                    } else {
-                        ehc.alignment_manager.coerce(&std::iter::once(*self.uuid()).collect(), translated_real_shape)
-                    };
+                    let coerced_pos = ehc.alignment_manager.coerce(translated_real_shape,
+                        |e| !self.all_elements.get(e).is_some() && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e) } else {*e == *self.uuid()}
+                    );
                     let coerced_delta = coerced_pos - self.position();
                     
                     if self.highlight.selected {
@@ -2081,8 +2079,8 @@ where
                         egui::Align::Max => (new_real_bounds.top(), self.bounds_rect.top()),
                     };
                     let coerced_point = ehc.alignment_manager.coerce(
-                        ehc.selected_elements,
-                        NHShape::Rect { inner: egui::Rect::from_min_size(egui::Pos2::new(handle_x.0, handle_y.0), egui::Vec2::ZERO) }
+                        NHShape::Rect { inner: egui::Rect::from_min_size(egui::Pos2::new(handle_x.0, handle_y.0), egui::Vec2::ZERO) },
+                        |e| !self.all_elements.get(e).is_some() && !ehc.all_elements.get(e).is_some_and(|e| *e)
                     );
                     let coerced_delta = coerced_point - egui::Pos2::new(handle_x.1, handle_y.1);
                     
@@ -2138,10 +2136,10 @@ where
                 self.highlight.selected = *select;
                 match select {
                     true => {
-                        self.selected_elements =
+                        self.selected_direct_elements =
                             self.owned_controllers.iter().map(|e| *e.0).collect()
                     }
-                    false => self.selected_elements.clear(),
+                    false => self.selected_direct_elements.clear(),
                 }
                 recurse!(self);
             }
@@ -2152,8 +2150,8 @@ where
 
                 for uuid in self.owned_controllers.keys().filter(|k| uuids.contains(k)) {
                     match select {
-                        true => self.selected_elements.insert(*uuid),
-                        false => self.selected_elements.remove(uuid),
+                        true => self.selected_direct_elements.insert(*uuid),
+                        false => self.selected_direct_elements.remove(uuid),
                     };
                 }
 
@@ -2259,14 +2257,16 @@ where
         }
     }
 
-    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
-        if self.highlight.selected {
-            into.insert(*self.uuid());
-        }
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
+        into.insert(*self.uuid(), self.highlight.selected);
 
+        self.all_elements.clear();
         for e in &self.owned_controllers {
             let mut e = e.1.write().unwrap();
-            e.collect_all_selected_elements(into);
+            e.head_count(&mut self.all_elements);
+        }
+        for e in &self.all_elements {
+            into.insert(*e.0, *e.1);
         }
     }
 }
@@ -2465,6 +2465,11 @@ where
     }
     
     const VERTEX_RADIUS: f32 = 5.0;
+    fn all_vertices(&self) -> impl Iterator<Item = &(uuid::Uuid, egui::Pos2)> {
+        self.center_point.iter()
+            .chain(self.source_points.iter().flat_map(|e| e.iter()))
+            .chain(self.dest_points.iter().flat_map(|e| e.iter()))
+    }
 }
 
 impl<
@@ -2899,13 +2904,11 @@ where
                 self.dragged_node = Some((dragged_node.0, translated_real_pos));
                 let translated_real_shape = NHShape::Rect { inner: egui::Rect::from_min_size(translated_real_pos, egui::Vec2::ZERO) };
                 let coerced_pos = if self.highlight.selected {
-                    ehc.alignment_manager.coerce(ehc.selected_elements, translated_real_shape)
+                    ehc.alignment_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e))
                 } else {
-                    ehc.alignment_manager.coerce(&std::iter::once(*self.uuid()).collect(), translated_real_shape)
+                    ehc.alignment_manager.coerce(translated_real_shape, |e| *e != *self.uuid())
                 };
-                let coerced_delta = coerced_pos - self.center_point.iter()
-                    .chain(self.source_points.iter().flat_map(|e| e.iter()))
-                    .chain(self.dest_points.iter().flat_map(|e| e.iter()))
+                let coerced_delta = coerced_pos - self.all_vertices()
                     .find(|e| e.0 == dragged_node.0).unwrap().1;
                 
                 if self.selected_vertices.contains(&dragged_node.0) {
@@ -3104,12 +3107,11 @@ where
         }
     }
 
-    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
-        if self.highlight.selected {
-            into.insert(*self.uuid());
-        }
-        for e in &self.selected_vertices {
-            into.insert(*e);
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
+        into.insert(*self.uuid(), self.highlight.selected);
+        
+        for e in self.all_vertices() {
+            into.insert(e.0, self.selected_vertices.contains(&e.0));
         }
     }
 }

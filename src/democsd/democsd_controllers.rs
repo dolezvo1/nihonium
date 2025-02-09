@@ -9,7 +9,7 @@ use crate::democsd::democsd_models::{
 use crate::NHApp;
 use eframe::egui;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::{Debug, Formatter},
     sync::{Arc, RwLock, Weak},
 };
@@ -1324,13 +1324,12 @@ impl
         }
     }
 
-    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
-        if self.highlight.selected {
-            into.insert(*self.uuid());
-        }
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
+        into.insert(*self.uuid(), self.highlight.selected);
+        
         if let Some(t) = &self.transaction_view {
             let mut t = t.write().unwrap();
-            t.collect_all_selected_elements(into);
+            t.head_count(into);
         }
     }
 }
@@ -1688,10 +1687,8 @@ impl
         }
     }
 
-    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
-        if self.highlight.selected {
-            into.insert(*self.uuid());
-        }
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
+        into.insert(*self.uuid(), self.highlight.selected);
     }
 }
 

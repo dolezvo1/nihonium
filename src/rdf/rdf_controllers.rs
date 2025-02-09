@@ -7,7 +7,7 @@ use crate::{CustomTab, NHApp};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::{Debug, Formatter},
     sync::{Arc, RwLock, Weak},
 };
@@ -1375,10 +1375,8 @@ impl
         }
     }
 
-    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
-        if self.highlight.selected {
-            into.insert(*self.uuid());
-        }
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
+        into.insert(*self.uuid(), self.highlight.selected);
     }
 }
 
@@ -1664,10 +1662,8 @@ impl
         }
     }
 
-    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
-        if self.highlight.selected {
-            into.insert(*self.uuid());
-        }
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
+        into.insert(*self.uuid(), self.highlight.selected);
     }
 }
 

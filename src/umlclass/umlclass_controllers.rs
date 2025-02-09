@@ -10,7 +10,7 @@ use crate::CustomTab;
 use crate::NHApp;
 use eframe::egui;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fmt::{Debug, Formatter},
     sync::{Arc, RwLock, Weak},
 };
@@ -1316,9 +1316,9 @@ impl
                 let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
                 self.dragged_shape = Some(translated_real_shape);
                 let coerced_pos = if self.highlight.selected {
-                    ehc.alignment_manager.coerce(ehc.selected_elements, translated_real_shape)
+                    ehc.alignment_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e))
                 } else {
-                    ehc.alignment_manager.coerce(&std::iter::once(*self.uuid()).collect(), translated_real_shape)
+                    ehc.alignment_manager.coerce(translated_real_shape, |e| *e != *self.uuid())
                 };
                 let coerced_delta = coerced_pos - self.position;
                 
@@ -1429,10 +1429,8 @@ impl
         }
     }
 
-    fn collect_all_selected_elements(&mut self, into: &mut HashSet<uuid::Uuid>) {
-        if self.highlight.selected {
-            into.insert(*self.uuid());
-        }
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
+        into.insert(*self.uuid(), self.highlight.selected);
     }
 }
 
