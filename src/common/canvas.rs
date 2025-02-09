@@ -226,6 +226,23 @@ impl NHShape {
                 => vec![(*position - *bounds_radius, egui::Align::Min), (*position, egui::Align::Center), (*position + *bounds_radius, egui::Align::Max),],
         }
     }
+    
+    pub fn place_labels(&self, around: egui::Pos2, sizes: [egui::Vec2; 2]) -> [egui::Pos2; 2] {
+        const PADDING: f32 = 5.0;
+        let center = self.center();
+        // TODO: doesn't actually work for both labels, but close enough
+        let [x0, x1] = if around.x < center.x {
+            [around.x - sizes[0].x / 2.0 - PADDING, around.x - sizes[1].x / 2.0 - PADDING]
+        } else {
+            [around.x + sizes[0].x / 2.0 + PADDING, around.x + sizes[1].x / 2.0 + PADDING]
+        };
+        let [y0, y1] = if around.y < center.y {
+            [around.y - sizes[0].y / 2.0 - PADDING, around.y - sizes[1].y / 2.0 - PADDING]
+        } else {
+            [around.y + sizes[0].y / 2.0 + PADDING, around.y + sizes[1].y / 2.0 + PADDING]
+        };
+        [egui::Pos2::new(x0, y0), egui::Pos2::new(x1, y1)]
+    }
 }
 
 // TODO: circle, embedded circle (ArchiMate)
@@ -670,13 +687,13 @@ pub trait NHCanvas {
             ArrowheadType,
             Stroke,
             &Vec<(uuid::Uuid, egui::Pos2)>,
-            Option<&'a str>,
+            Option<(egui::Pos2, &'a str)>,
         )],
         destinations: &[(
             ArrowheadType,
             Stroke,
             &Vec<(uuid::Uuid, egui::Pos2)>,
-            Option<&'a str>,
+            Option<(egui::Pos2, &'a str)>,
         )],
         central_point: (uuid::Uuid, egui::Pos2),
         mid_label: Option<&str>,
@@ -688,14 +705,14 @@ pub trait NHCanvas {
                 ArrowheadType,
                 Stroke,
                 &'a Vec<(uuid::Uuid, egui::Pos2)>,
-                Option<&'a str>,
+                Option<(egui::Pos2, &'a str)>,
             ),
         ) -> (
             ArrowheadType,
             Stroke,
             egui::Pos2,
             impl Iterator<Item = (uuid::Uuid, egui::Pos2)> + 'a,
-            Option<&'a str>,
+            Option<(egui::Pos2, &'a str)>,
         ) {
             let focal_point = e.2.first().unwrap();
             let path = std::iter::once((
@@ -764,15 +781,11 @@ pub trait NHCanvas {
                 first = false;
             }
 
-            // TODO: This is decisively not good enough:
-            //          labels overlap with lines, classes, other lines, etc.
-            //       As a solution, I propose storing label offset from FP in VC
-            //          and setting it to a good value when layouting/change happens
             if let Some(label) = label {
                 self.draw_text(
-                    fp,
+                    label.0,
                     egui::Align2::CENTER_CENTER,
-                    label,
+                    label.1,
                     CLASS_MIDDLE_FONT_SIZE,
                     egui::Color32::BLACK,
                 );

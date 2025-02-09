@@ -2684,6 +2684,15 @@ where
         
         //canvas.draw_ellipse((self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0, egui::Vec2::splat(5.0), egui::Color32::BROWN, canvas::Stroke::new_solid(1.0, egui::Color32::BROWN), canvas::Highlight::NONE);
         
+        fn s_to_p(canvas: &mut dyn NHCanvas, bounds: NHShape, pos: egui::Pos2, s: &str) -> egui::Pos2 {
+            let size = canvas.measure_text(pos, egui::Align2::CENTER_CENTER, s, canvas::CLASS_MIDDLE_FONT_SIZE).size();
+            bounds.place_labels(pos, [size, egui::Vec2::ZERO])[0]
+        }
+        let l1 = (self.model_to_source_arrowhead_label)(&*model)
+                    .map(|e| (s_to_p(canvas, source_bounds, source_intersect, e), e));
+        let l2 = (self.model_to_destination_arrowhead_label)(&*model)
+                    .map(|e| (s_to_p(canvas, dest_bounds, dest_intersect, e), e));
+        
         canvas.draw_multiconnection(
             &self.selected_vertices,
             &[(
@@ -2694,7 +2703,7 @@ where
                     line_type: (self.model_to_line_type)(&*model),
                 },
                 &self.source_points[0],
-                (self.model_to_source_arrowhead_label)(&*model),
+                l1,
             )],
             &[(
                 (self.model_to_destination_arrowhead_type)(&*model),
@@ -2704,7 +2713,7 @@ where
                     line_type: (self.model_to_line_type)(&*model),
                 },
                 &self.dest_points[0],
-                (self.model_to_destination_arrowhead_label)(&*model),
+                l2,
             )],
             match &self.center_point {
                 Some(point) => *point,
