@@ -1619,6 +1619,13 @@ where
             .min(self.bounds_rect.width() * ui_scale / 6.0)
             .min(self.bounds_rect.height() * ui_scale / 3.0)
     }
+    fn drag_handle_position(&self, ui_scale: f32) -> egui::Pos2 {
+        egui::Pos2::new(
+            (self.bounds_rect.right() - 2.0 * self.handle_size(ui_scale) / ui_scale)
+                .max((self.bounds_rect.center().x + self.bounds_rect.right()) / 2.0),
+            self.bounds_rect.top()
+        )
+    }
 }
 
 impl<
@@ -1892,11 +1899,7 @@ where
             
             canvas.draw_rectangle(
                 egui::Rect::from_center_size(
-                    egui::Pos2::new(
-                        (self.bounds_rect.right() - 2.0 * handle_size / ui_scale)
-                            .max((self.bounds_rect.center().x + self.bounds_rect.right()) / 2.0),
-                        self.bounds_rect.top()
-                    ),
+                    self.drag_handle_position(ui_scale),
                     egui::Vec2::splat(handle_size / ui_scale),
                 ),
                 egui::Rounding::ZERO,
@@ -2011,7 +2014,7 @@ where
                 
                 if self.min_shape().border_distance(pos) <= 2.0 / ehc.ui_scale
                     || egui::Rect::from_center_size(
-                        self.bounds_rect.right_top() - egui::Vec2::new(10.0, 0.0),
+                        self.drag_handle_position(ehc.ui_scale),
                         egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
                     self.dragged_type_and_shape = Some((DragType::Move, self.bounds_rect));
                     EventHandlingStatus::HandledByElement
