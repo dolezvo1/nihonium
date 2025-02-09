@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::{CustomTab, NHApp};
 use eframe::egui;
@@ -1375,8 +1375,8 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
-        into.insert(*self.uuid(), self.highlight.selected);
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
+        into.insert(*self.uuid(), self.highlight.selected.into());
     }
 }
 
@@ -1662,8 +1662,8 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
-        into.insert(*self.uuid(), self.highlight.selected);
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
+        into.insert(*self.uuid(), self.highlight.selected.into());
     }
 }
 

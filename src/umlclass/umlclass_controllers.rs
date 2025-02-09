@@ -4,7 +4,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::CustomTab;
 use crate::NHApp;
@@ -1316,7 +1316,7 @@ impl
                 let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
                 self.dragged_shape = Some(translated_real_shape);
                 let coerced_pos = if self.highlight.selected {
-                    ehc.snap_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e))
+                    ehc.snap_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected))
                 } else {
                     ehc.snap_manager.coerce(translated_real_shape, |e| *e != *self.uuid())
                 };
@@ -1429,8 +1429,8 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
-        into.insert(*self.uuid(), self.highlight.selected);
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
+        into.insert(*self.uuid(), self.highlight.selected.into());
     }
 }
 

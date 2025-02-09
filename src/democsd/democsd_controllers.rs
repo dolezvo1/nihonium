@@ -1,6 +1,6 @@
 use crate::common::canvas;
 use crate::common::controller::{
-    SnapManager, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
 };
 use crate::democsd::democsd_models::{
     DemoCsdTransaction, DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType,
@@ -1324,8 +1324,8 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
-        into.insert(*self.uuid(), self.highlight.selected);
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
+        into.insert(*self.uuid(), self.highlight.selected.into());
         
         if let Some(t) = &self.transaction_view {
             let mut t = t.write().unwrap();
@@ -1687,8 +1687,8 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
-        into.insert(*self.uuid(), self.highlight.selected);
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
+        into.insert(*self.uuid(), self.highlight.selected.into());
     }
 }
 

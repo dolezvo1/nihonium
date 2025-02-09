@@ -494,10 +494,36 @@ pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandEle
     >;
 }
 
+#[derive(Clone, Copy, PartialEq)]
+pub enum SelectionStatus {
+    NotSelected,
+    TransitivelySelected,
+    Selected,
+}
+
+impl SelectionStatus {
+    pub fn selected(&self) -> bool {
+        match self {
+            Self::Selected => true,
+            _ => false,
+        }
+    }
+}
+
+impl From<bool> for SelectionStatus {
+    fn from(value: bool) -> Self {
+        if value {
+            SelectionStatus::Selected
+        } else {
+            SelectionStatus::NotSelected
+        }
+    }
+}
+
 pub struct EventHandlingContext<'a> {
     pub modifiers: ModifierKeys,
     pub ui_scale: f32,
-    pub all_elements: &'a HashMap<uuid::Uuid, bool>,
+    pub all_elements: &'a HashMap<uuid::Uuid, SelectionStatus>,
     pub snap_manager: &'a SnapManager,
 }
 
@@ -542,7 +568,7 @@ pub trait ElementControllerGen2<
         command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>);
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>);
 }
 
 /// This is a generic DiagramController implementation.
@@ -575,7 +601,7 @@ pub struct DiagramControllerGen2<
         >,
     >,
     event_order: Vec<uuid::Uuid>,
-    all_elements: HashMap<uuid::Uuid, bool>,
+    all_elements: HashMap<uuid::Uuid, SelectionStatus>,
 
     pub _layers: Vec<bool>,
 
@@ -784,7 +810,7 @@ where
                         } else {
                             commands.push(InsensitiveCommand::SelectSpecific(
                                 std::iter::once(us.0).collect(),
-                                !self.all_elements.get(&us.0).is_some_and(|e| *e),
+                                !self.all_elements.get(&us.0).is_some_and(|e| e.selected()),
                             ).into());
                         }
                         EventHandlingStatus::HandledByContainer
@@ -852,7 +878,7 @@ where
     ) {
         for command in commands {
             // TODO: transitive closure of dependency when deleting elements
-            let command = command.to_selection_insensitive(|| self.all_elements.iter().filter(|e| *e.1).map(|e| *e.0).collect());
+            let command = command.to_selection_insensitive(|| self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect());
 
             let mut undo_accumulator = vec![];
 
@@ -1267,7 +1293,7 @@ where
             DiagramCommand::InvertSelection => {
                 self.apply_commands(vec![
                     InsensitiveCommand::SelectAll(true).into(),
-                    InsensitiveCommand::SelectSpecific(self.all_elements.iter().filter(|e| *e.1).map(|e| *e.0).collect(), false).into()
+                    InsensitiveCommand::SelectSpecific(self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(), false).into()
                 ], &mut vec![], true, false);
             }
             DiagramCommand::DeleteSelectedElements => {
@@ -1474,7 +1500,7 @@ pub struct PackageView<
         >,
     >,
     event_order: Vec<uuid::Uuid>,
-    all_elements: HashMap<uuid::Uuid, bool>,
+    all_elements: HashMap<uuid::Uuid, SelectionStatus>,
     selected_direct_elements: HashSet<uuid::Uuid>,
 
     buffer: BufferT,
@@ -2041,7 +2067,7 @@ where
                     self.dragged_type_and_shape = Some((DragType::Move, translated_bounds));
                     let translated_real_shape = NHShape::Rect { inner: translated_bounds };
                     let coerced_pos = ehc.snap_manager.coerce(translated_real_shape,
-                        |e| !self.all_elements.get(e).is_some() && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e) } else {*e == *self.uuid()}
+                        |e| !self.all_elements.get(e).is_some() && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected) } else {*e == *self.uuid()}
                     );
                     let coerced_delta = coerced_pos - self.position();
                     
@@ -2080,7 +2106,7 @@ where
                     };
                     let coerced_point = ehc.snap_manager.coerce(
                         NHShape::Rect { inner: egui::Rect::from_min_size(egui::Pos2::new(handle_x.0, handle_y.0), egui::Vec2::ZERO) },
-                        |e| !self.all_elements.get(e).is_some() && !ehc.all_elements.get(e).is_some_and(|e| *e)
+                        |e| !self.all_elements.get(e).is_some() && !ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected)
                     );
                     let coerced_delta = coerced_point - egui::Pos2::new(handle_x.1, handle_y.1);
                     
@@ -2257,8 +2283,8 @@ where
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
-        into.insert(*self.uuid(), self.highlight.selected);
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
+        into.insert(*self.uuid(), self.highlight.selected.into());
 
         self.all_elements.clear();
         for e in &self.owned_controllers {
@@ -2266,7 +2292,10 @@ where
             e.head_count(&mut self.all_elements);
         }
         for e in &self.all_elements {
-            into.insert(*e.0, *e.1);
+            into.insert(*e.0, match *e.1 {
+                SelectionStatus::NotSelected if self.highlight.selected => SelectionStatus::TransitivelySelected,
+                e => e,
+            });
         }
     }
 }
@@ -2904,7 +2933,7 @@ where
                 self.dragged_node = Some((dragged_node.0, translated_real_pos));
                 let translated_real_shape = NHShape::Rect { inner: egui::Rect::from_min_size(translated_real_pos, egui::Vec2::ZERO) };
                 let coerced_pos = if self.highlight.selected {
-                    ehc.snap_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e))
+                    ehc.snap_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected))
                 } else {
                     ehc.snap_manager.coerce(translated_real_shape, |e| *e != *self.uuid())
                 };
@@ -3107,11 +3136,15 @@ where
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, bool>) {
-        into.insert(*self.uuid(), self.highlight.selected);
+    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
+        into.insert(*self.uuid(), self.highlight.selected.into());
         
         for e in self.all_vertices() {
-            into.insert(e.0, self.selected_vertices.contains(&e.0));
+            into.insert(e.0, match self.selected_vertices.contains(&e.0) {
+                true => SelectionStatus::Selected,
+                false if self.highlight.selected => SelectionStatus::TransitivelySelected,
+                false => SelectionStatus::NotSelected,
+            });
         }
     }
 }
