@@ -4,7 +4,10 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2,
+    ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus,
+    FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView,
+    SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation,
 };
 use crate::CustomTab;
 use crate::NHApp;
@@ -15,16 +18,40 @@ use std::{
     sync::{Arc, RwLock, Weak},
 };
 
-type ArcRwLockController = Arc<
-    RwLock<
-        dyn ElementControllerGen2<
-            dyn UmlClassElement,
-            UmlClassQueryable,
-            NaiveUmlClassTool,
-            UmlClassElementOrVertex,
-            UmlClassPropChange,
-        >,
-    >,
+type ControllerT = dyn ElementControllerGen2<
+    dyn UmlClassElement,
+    UmlClassQueryable,
+    NaiveUmlClassTool,
+    UmlClassElementOrVertex,
+    UmlClassPropChange,
+>;
+type ArcRwLockControllerT = Arc<RwLock<ControllerT>>;
+type DiagramViewT = DiagramControllerGen2<
+    UmlClassDiagram,
+    dyn UmlClassElement,
+    UmlClassQueryable,
+    UmlClassDiagramBuffer,
+    NaiveUmlClassTool,
+    UmlClassElementOrVertex,
+    UmlClassPropChange,
+>;
+type PackageViewT = crate::common::controller::PackageView<
+    UmlClassPackage,
+    dyn UmlClassElement,
+    UmlClassQueryable,
+    UmlClassPackageBuffer,
+    NaiveUmlClassTool,
+    UmlClassElementOrVertex,
+    UmlClassPropChange,
+>;
+type LinkViewT = MulticonnectionView<
+    UmlClassLink,
+    dyn UmlClassElement,
+    UmlClassQueryable,
+    UmlClassLinkBuffer,
+    NaiveUmlClassTool,
+    UmlClassElementOrVertex,
+    UmlClassPropChange,
 >;
 
 pub struct UmlClassQueryable {}
@@ -65,22 +92,7 @@ impl TryInto<FlipMulticonnection> for &UmlClassPropChange {
 
 #[derive(Clone)]
 pub enum UmlClassElementOrVertex {
-    Element(
-        (
-            uuid::Uuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        dyn UmlClassElement,
-                        UmlClassQueryable,
-                        NaiveUmlClassTool,
-                        Self,
-                        UmlClassPropChange,
-                    >,
-                >,
-            >,
-        ),
-    ),
+    Element((uuid::Uuid, Arc<RwLock<ControllerT>>)),
     Vertex(VertexInformation),
 }
 
@@ -107,79 +119,16 @@ impl TryInto<VertexInformation> for UmlClassElementOrVertex {
     }
 }
 
-impl
-    From<(
-        uuid::Uuid,
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    dyn UmlClassElement,
-                    UmlClassQueryable,
-                    NaiveUmlClassTool,
-                    UmlClassElementOrVertex,
-                    UmlClassPropChange,
-                >,
-            >,
-        >,
-    )> for UmlClassElementOrVertex
-{
-    fn from(
-        v: (
-            uuid::Uuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        dyn UmlClassElement,
-                        UmlClassQueryable,
-                        NaiveUmlClassTool,
-                        UmlClassElementOrVertex,
-                        UmlClassPropChange,
-                    >,
-                >,
-            >,
-        ),
-    ) -> Self {
+impl From<(uuid::Uuid, Arc<RwLock<ControllerT>>)> for UmlClassElementOrVertex {
+    fn from(v: (uuid::Uuid, Arc<RwLock<ControllerT>>)) -> Self {
         UmlClassElementOrVertex::Element(v)
     }
 }
 
-impl
-    TryInto<(
-        uuid::Uuid,
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    dyn UmlClassElement,
-                    UmlClassQueryable,
-                    NaiveUmlClassTool,
-                    UmlClassElementOrVertex,
-                    UmlClassPropChange,
-                >,
-            >,
-        >,
-    )> for UmlClassElementOrVertex
-{
+impl TryInto<(uuid::Uuid, Arc<RwLock<ControllerT>>)> for UmlClassElementOrVertex {
     type Error = ();
 
-    fn try_into(
-        self,
-    ) -> Result<
-        (
-            uuid::Uuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        dyn UmlClassElement,
-                        UmlClassQueryable,
-                        NaiveUmlClassTool,
-                        UmlClassElementOrVertex,
-                        UmlClassPropChange,
-                    >,
-                >,
-            >,
-        ),
-        (),
-    > {
+    fn try_into(self) -> Result<(uuid::Uuid, Arc<RwLock<ControllerT>>), ()> {
         match self {
             UmlClassElementOrVertex::Element(v) => Ok(v),
             _ => Err(()),
@@ -187,23 +136,22 @@ impl
     }
 }
 
-
 pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
+    #[rustfmt::skip]
     let c = crate::common::controller::build_colors!(
-                                   ["Light",              "Darker"             ],
-        [("Diagram background",    [egui::Color32::WHITE, egui::Color32::GRAY, ]),
-         ("Package background",    [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),
+                                   ["Light",              "Darker"],
+        [("Diagram background",    [egui::Color32::WHITE, egui::Color32::GRAY,]),
+         ("Package background",    [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),
          ("Connection background", [egui::Color32::WHITE, egui::Color32::WHITE,]),
-         ("Class background",      [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),],
-        [("Diagram gridlines",     [egui::Color32::from_rgb(220, 220, 220),  egui::Color32::from_rgb(127, 127, 127), ]),
+         ("Class background",      [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),],
+        [("Diagram gridlines",     [egui::Color32::from_rgb(220, 220, 220), egui::Color32::from_rgb(127, 127, 127),]),
          ("Package foreground",    [egui::Color32::BLACK, egui::Color32::BLACK,]),
          ("Connection foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
          ("Class foreground",      [egui::Color32::BLACK, egui::Color32::BLACK,]),],
-        [("Selection",             [egui::Color32::BLUE,  egui::Color32::LIGHT_BLUE, ]),],
+        [("Selection",             [egui::Color32::BLUE,  egui::Color32::LIGHT_BLUE,]),],
     );
     ("UML Class diagram".to_owned(), c.0, c.1)
 }
-
 
 pub struct UmlClassDiagramBuffer {
     uuid: uuid::Uuid,
@@ -224,12 +172,15 @@ fn show_props_fun(
         )
         .changed()
     {
-        commands.push(InsensitiveCommand::PropertyChange(
-            std::iter::once(buffer.uuid).collect(),
-            vec![UmlClassPropChange::NameChange(Arc::new(
-                buffer.name.clone(),
-            ))],
-        ).into());
+        commands.push(
+            InsensitiveCommand::PropertyChange(
+                std::iter::once(buffer.uuid).collect(),
+                vec![UmlClassPropChange::NameChange(Arc::new(
+                    buffer.name.clone(),
+                ))],
+            )
+            .into(),
+        );
     }
 
     ui.label("Comment:");
@@ -240,12 +191,15 @@ fn show_props_fun(
         )
         .changed()
     {
-        commands.push(InsensitiveCommand::PropertyChange(
-            std::iter::once(buffer.uuid).collect(),
-            vec![UmlClassPropChange::CommentChange(Arc::new(
-                buffer.comment.clone(),
-            ))],
-        ).into());
+        commands.push(
+            InsensitiveCommand::PropertyChange(
+                std::iter::once(buffer.uuid).collect(),
+                vec![UmlClassPropChange::CommentChange(Arc::new(
+                    buffer.comment.clone(),
+                ))],
+            )
+            .into(),
+        );
     }
 }
 fn apply_property_change_fun(
@@ -343,19 +297,7 @@ fn tool_change_fun(tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
         ui.separator();
     }
 }
-fn menubar_options_fun(
-    controller: &mut DiagramControllerGen2<
-        UmlClassDiagram,
-        dyn UmlClassElement,
-        UmlClassQueryable,
-        UmlClassDiagramBuffer,
-        NaiveUmlClassTool,
-        UmlClassElementOrVertex,
-        UmlClassPropChange,
-    >,
-    context: &mut NHApp,
-    ui: &mut egui::Ui,
-) {
+fn menubar_options_fun(controller: &mut DiagramViewT, context: &mut NHApp, ui: &mut egui::Ui) {
     if ui.button("PlantUML description").clicked() {
         let uuid = uuid::Uuid::now_v7();
         context.add_custom_tab(
@@ -422,22 +364,28 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
-    
+
     let (class_af_uuid, class_af, class_af_controller) = uml_class(
-        UmlClassStereotype::Interface, "AbstractFactory",
-        "", "+createProductA(): ProductA\n+createProductB(): ProductB\n",
+        UmlClassStereotype::Interface,
+        "AbstractFactory",
+        "",
+        "+createProductA(): ProductA\n+createProductB(): ProductB\n",
         egui::Pos2::new(200.0, 150.0),
     );
-    
+
     let (class_cfx_uuid, class_cfx, class_cfx_controller) = uml_class(
-        UmlClassStereotype::Class, "ConcreteFactoryX",
-        "", "+createProductA(): ProductA\n+createProductB(): ProductB\n",
+        UmlClassStereotype::Class,
+        "ConcreteFactoryX",
+        "",
+        "+createProductA(): ProductA\n+createProductB(): ProductB\n",
         egui::Pos2::new(100.0, 250.0),
     );
-    
+
     let (class_cfy_uuid, class_cfy, class_cfy_controller) = uml_class(
-        UmlClassStereotype::Class, "ConcreteFactoryY",
-        "", "+createProductA(): ProductA\n+createProductB(): ProductB\n",
+        UmlClassStereotype::Class,
+        "ConcreteFactoryY",
+        "",
+        "+createProductA(): ProductA\n+createProductB(): ProductB\n",
         egui::Pos2::new(300.0, 250.0),
     );
 
@@ -456,8 +404,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     );
 
     let (class_client_uuid, class_client, class_client_controller) = uml_class(
-        UmlClassStereotype::Class, "Client",
-        "", "",
+        UmlClassStereotype::Class,
+        "Client",
+        "",
+        "",
         egui::Pos2::new(300.0, 50.0),
     );
 
@@ -467,10 +417,12 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         (class_client.clone(), class_client_controller.clone()),
         (class_af.clone(), class_af_controller.clone()),
     );
-    
+
     let (class_producta_uuid, class_producta, class_producta_controller) = uml_class(
-        UmlClassStereotype::Interface, "ProductA",
-        "", "",
+        UmlClassStereotype::Interface,
+        "ProductA",
+        "",
+        "",
         egui::Pos2::new(450.0, 150.0),
     );
 
@@ -481,10 +433,12 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             (class_client.clone(), class_client_controller.clone()),
             (class_producta.clone(), class_producta_controller.clone()),
         );
-    
+
     let (class_productb_uuid, class_productb, class_productb_controller) = uml_class(
-        UmlClassStereotype::Interface, "ProductB",
-        "", "",
+        UmlClassStereotype::Interface,
+        "ProductB",
+        "",
+        "",
         egui::Pos2::new(650.0, 150.0),
     );
 
@@ -551,85 +505,19 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 #[derive(Clone, Copy)]
 pub enum KindedUmlClassElement<'a> {
     Diagram {},
-    Package {
-        inner: &'a PackageView<
-            UmlClassPackage,
-            dyn UmlClassElement,
-            UmlClassQueryable,
-            UmlClassPackageBuffer,
-            NaiveUmlClassTool,
-            UmlClassElementOrVertex,
-            UmlClassPropChange,
-        >,
-    },
-    Class {
-        inner: &'a UmlClassController,
-    },
-    Link {
-        inner: &'a MulticonnectionView<
-            UmlClassLink,
-            dyn UmlClassElement,
-            UmlClassQueryable,
-            UmlClassLinkBuffer,
-            NaiveUmlClassTool,
-            UmlClassElementOrVertex,
-            UmlClassPropChange,
-        >,
-    },
+    Package { inner: &'a PackageViewT },
+    Class { inner: &'a UmlClassController },
+    Link { inner: &'a LinkViewT },
 }
 
-impl<'a>
-    From<
-        &'a DiagramControllerGen2<
-            UmlClassDiagram,
-            dyn UmlClassElement,
-            UmlClassQueryable,
-            UmlClassDiagramBuffer,
-            NaiveUmlClassTool,
-            UmlClassElementOrVertex,
-            UmlClassPropChange,
-        >,
-    > for KindedUmlClassElement<'a>
-{
-    fn from(
-        from: &'a DiagramControllerGen2<
-            UmlClassDiagram,
-            dyn UmlClassElement,
-            UmlClassQueryable,
-            UmlClassDiagramBuffer,
-            NaiveUmlClassTool,
-            UmlClassElementOrVertex,
-            UmlClassPropChange,
-        >,
-    ) -> Self {
+impl<'a> From<&'a DiagramViewT> for KindedUmlClassElement<'a> {
+    fn from(from: &'a DiagramViewT) -> Self {
         Self::Diagram {}
     }
 }
 
-impl<'a>
-    From<
-        &'a PackageView<
-            UmlClassPackage,
-            dyn UmlClassElement,
-            UmlClassQueryable,
-            UmlClassPackageBuffer,
-            NaiveUmlClassTool,
-            UmlClassElementOrVertex,
-            UmlClassPropChange,
-        >,
-    > for KindedUmlClassElement<'a>
-{
-    fn from(
-        from: &'a PackageView<
-            UmlClassPackage,
-            dyn UmlClassElement,
-            UmlClassQueryable,
-            UmlClassPackageBuffer,
-            NaiveUmlClassTool,
-            UmlClassElementOrVertex,
-            UmlClassPropChange,
-        >,
-    ) -> Self {
+impl<'a> From<&'a PackageViewT> for KindedUmlClassElement<'a> {
+    fn from(from: &'a PackageViewT) -> Self {
         Self::Package { inner: from }
     }
 }
@@ -646,11 +534,11 @@ pub enum UmlClassToolStage {
 
 enum PartialUmlClassElement {
     None,
-    Some((uuid::Uuid, ArcRwLockController)),
+    Some((uuid::Uuid, ArcRwLockControllerT)),
     Link {
         link_type: UmlClassLinkType,
         source: Arc<RwLock<dyn UmlClassElement>>,
-        source_view: ArcRwLockController,
+        source_view: ArcRwLockControllerT,
         dest: Option<Arc<RwLock<dyn UmlClassElement>>>,
     },
     Package {
@@ -733,8 +621,12 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
                 canvas.draw_line(
                     [source_view.read().unwrap().position(), pos],
                     match link_type.line_type() {
-                        canvas::LineType::Solid => canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        canvas::LineType::Dashed => canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                        canvas::LineType::Solid => {
+                            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
+                        }
+                        canvas::LineType::Dashed => {
+                            canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK)
+                        }
                     },
                     canvas::Highlight::NONE,
                 );
@@ -759,10 +651,8 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
 
         match (self.current_stage, &mut self.result) {
             (UmlClassToolStage::Class, _) => {
-                let (class_uuid, _class, class_controller) = uml_class(
-                    UmlClassStereotype::Class, "a class",
-                    "", "", pos,
-                );
+                let (class_uuid, _class, class_controller) =
+                    uml_class(UmlClassStereotype::Class, "a class", "", "", pos);
                 self.result = PartialUmlClassElement::Some((class_uuid, class_controller));
                 self.event_lock = true;
             }
@@ -1040,7 +930,11 @@ fn uml_class(
     properties: &str,
     functions: &str,
     position: egui::Pos2,
-) -> (uuid::Uuid, Arc<RwLock<UmlClass>>, Arc<RwLock<UmlClassController>>) {
+) -> (
+    uuid::Uuid,
+    Arc<RwLock<UmlClass>>,
+    Arc<RwLock<UmlClassController>>,
+) {
     let class_uuid = uuid::Uuid::now_v7();
     let class = Arc::new(RwLock::new(UmlClass::new(
         class_uuid.clone(),
@@ -1105,13 +999,16 @@ impl ElementController<dyn UmlClassElement> for UmlClassController {
     }
 }
 
-impl ContainerGen2<dyn UmlClassElement, UmlClassQueryable, NaiveUmlClassTool, UmlClassElementOrVertex, UmlClassPropChange>
-    for UmlClassController
+impl
+    ContainerGen2<
+        dyn UmlClassElement,
+        UmlClassQueryable,
+        NaiveUmlClassTool,
+        UmlClassElementOrVertex,
+        UmlClassPropChange,
+    > for UmlClassController
 {
-    fn controller_for(
-        &self,
-        _uuid: &uuid::Uuid,
-    ) -> Option<ArcRwLockController> {
+    fn controller_for(&self, _uuid: &uuid::Uuid) -> Option<ArcRwLockControllerT> {
         None
     }
 }
@@ -1248,16 +1145,24 @@ impl
 
         if canvas.ui_scale().is_some() {
             if self.dragged_shape.is_some() {
-                canvas.draw_line([
-                    egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
-                    egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.center().y),
-                ], canvas::Stroke::new_solid(1.0, egui::Color32::BLUE), canvas::Highlight::NONE);
-                canvas.draw_line([
-                    egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.min.y),
-                    egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.max.y),
-                ], canvas::Stroke::new_solid(1.0, egui::Color32::BLUE), canvas::Highlight::NONE);
+                canvas.draw_line(
+                    [
+                        egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
+                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.center().y),
+                    ],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_line(
+                    [
+                        egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.min.y),
+                        egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.max.y),
+                    ],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
+                    canvas::Highlight::NONE,
+                );
             }
-            
+
             // Draw targetting rectangle
             if let Some(t) = tool
                 .as_ref()
@@ -1288,17 +1193,21 @@ impl
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
-            e if !self.min_shape().contains(*e.mouse_position()) => return EventHandlingStatus::NotHandled,
+            e if !self.min_shape().contains(*e.mouse_position()) => {
+                return EventHandlingStatus::NotHandled
+            }
             InputEvent::MouseDown(_) => {
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::MouseUp(_) => if self.dragged_shape.is_some() {
-                self.dragged_shape = None;
-                EventHandlingStatus::HandledByElement
-            } else {
-                EventHandlingStatus::NotHandled
-            },
+            InputEvent::MouseUp(_) => {
+                if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            }
             InputEvent::Click(_pos) => {
                 if let Some(tool) = tool {
                     tool.add_element(KindedUmlClassElement::Class { inner: self });
@@ -1309,31 +1218,39 @@ impl
                         self.highlight.selected = !self.highlight.selected;
                     }
                 }
-                
+
                 EventHandlingStatus::HandledByElement
-            },
+            }
             InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
                 let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
                 self.dragged_shape = Some(translated_real_shape);
                 let coerced_pos = if self.highlight.selected {
-                    ehc.snap_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected))
+                    ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        !ehc.all_elements
+                            .get(e)
+                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    })
                 } else {
-                    ehc.snap_manager.coerce(translated_real_shape, |e| *e != *self.uuid())
+                    ehc.snap_manager
+                        .coerce(translated_real_shape, |e| *e != *self.uuid())
                 };
                 let coerced_delta = coerced_pos - self.position;
-                
+
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                 } else {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(
-                        std::iter::once(*self.uuid()).collect(),
-                        coerced_delta,
-                    ).into());
+                    commands.push(
+                        InsensitiveCommand::MoveSpecificElements(
+                            std::iter::once(*self.uuid()).collect(),
+                            coerced_delta,
+                        )
+                        .into(),
+                    );
                 }
-                
+
                 EventHandlingStatus::HandledByElement
-            },
-            _ => EventHandlingStatus::NotHandled
+            }
+            _ => EventHandlingStatus::NotHandled,
         }
     }
 
@@ -1354,8 +1271,10 @@ impl
             InsensitiveCommand::SelectByDrag(rect) => {
                 self.highlight.selected = self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid()) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MoveSpecificElements(uuids, _)
+                if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveSpecificElements(_, delta)
+            | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                     std::iter::once(*self.uuid()).collect(),
@@ -1475,19 +1394,7 @@ fn umlclass_link(
 ) -> (
     uuid::Uuid,
     Arc<RwLock<UmlClassLink>>,
-    Arc<
-        RwLock<
-            MulticonnectionView<
-                UmlClassLink,
-                dyn UmlClassElement,
-                UmlClassQueryable,
-                UmlClassLinkBuffer,
-                NaiveUmlClassTool,
-                UmlClassElementOrVertex,
-                UmlClassPropChange,
-            >,
-        >,
-    >,
+    Arc<RwLock<LinkViewT>>,
 ) {
     fn model_to_element_shim(a: Arc<RwLock<UmlClassLink>>) -> Arc<RwLock<dyn UmlClassElement>> {
         a
@@ -1695,17 +1602,7 @@ fn umlclass_link(
     (link_uuid, link, link_controller)
 }
 
-impl UmlClassElementController
-    for MulticonnectionView<
-        UmlClassLink,
-        dyn UmlClassElement,
-        UmlClassQueryable,
-        UmlClassLinkBuffer,
-        NaiveUmlClassTool,
-        UmlClassElementOrVertex,
-        UmlClassPropChange,
-    >
-{
+impl UmlClassElementController for LinkViewT {
     fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
         *self.source.read().unwrap().uuid() == *uuid
     }

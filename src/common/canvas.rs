@@ -3,7 +3,6 @@ use eframe::egui;
 use std::collections::HashSet;
 use std::io::Write;
 
-
 // rect intersection between segment from p to the center of rect
 // based on https://stackoverflow.com/a/31254199 by TWiStErRob
 fn segment_rect_point(p: egui::Pos2, rect: &egui::Rect) -> Option<egui::Pos2> {
@@ -78,14 +77,20 @@ fn ellipse_orthogonal_intersection(
     (center, radius): (&egui::Pos2, &egui::Vec2),
 ) -> Option<egui::Pos2> {
     fn slv_px(px: f32, py: f32, cx: f32, cy: f32, rx: f32, ry: f32) -> f32 {
-        let sqrt = ((1.0 - (py-cy).powf(2.0) / ry.powf(2.0)) * rx.powf(2.0)).sqrt();
+        let sqrt = ((1.0 - (py - cy).powf(2.0) / ry.powf(2.0)) * rx.powf(2.0)).sqrt();
         px.clamp(cx - sqrt, cx + sqrt)
     }
 
     if center.x - radius.x < point.x && point.x < center.x + radius.x {
-        Some(egui::Pos2::new(point.x, slv_px(point.y, point.x, center.y, center.x, radius.y, radius.x)))
-    } else if center.y - radius.y < point.y && point.y < center.y + radius.y{
-        Some(egui::Pos2::new(slv_px(point.x, point.y, center.x, center.y, radius.x, radius.y), point.y))
+        Some(egui::Pos2::new(
+            point.x,
+            slv_px(point.y, point.x, center.y, center.x, radius.y, radius.x),
+        ))
+    } else if center.y - radius.y < point.y && point.y < center.y + radius.y {
+        Some(egui::Pos2::new(
+            slv_px(point.x, point.y, center.x, center.y, radius.x, radius.y),
+            point.y,
+        ))
     } else {
         None
     }
@@ -107,14 +112,22 @@ impl NHShape {
         position: egui::Pos2::ZERO,
         bounds_radius: egui::Vec2::ZERO,
     };
-    
+
     pub fn translate(&self, delta: egui::Vec2) -> Self {
         match self {
-            NHShape::Rect { inner } => NHShape::Rect { inner: inner.translate(delta) },
-            NHShape::Ellipse { position, bounds_radius } => NHShape::Ellipse { position: *position + delta, bounds_radius: *bounds_radius },
+            NHShape::Rect { inner } => NHShape::Rect {
+                inner: inner.translate(delta),
+            },
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
+            } => NHShape::Ellipse {
+                position: *position + delta,
+                bounds_radius: *bounds_radius,
+            },
         }
     }
-    
+
     pub fn center(&self) -> egui::Pos2 {
         match &self {
             NHShape::Rect { inner } => inner.center(),
@@ -148,18 +161,21 @@ impl NHShape {
             NHShape::Ellipse {
                 position,
                 bounds_radius,
-            } => ellipse_orthogonal_intersection(point, (position, bounds_radius))
+            } => ellipse_orthogonal_intersection(point, (position, bounds_radius)),
         }
     }
     pub fn nice_midpoint(&self, other: &NHShape) -> egui::Pos2 {
         fn bounding_box(s: &NHShape) -> egui::Rect {
             match &s {
                 NHShape::Rect { inner } => *inner,
-                NHShape::Ellipse { position, bounds_radius } => egui::Rect::from_center_size(*position, 2.0 * *bounds_radius),
+                NHShape::Ellipse {
+                    position,
+                    bounds_radius,
+                } => egui::Rect::from_center_size(*position, 2.0 * *bounds_radius),
             }
         }
         let (a, b) = (bounding_box(self), bounding_box(other));
-        
+
         if a.left() < b.right() && b.left() < a.right() {
             egui::Pos2::new(
                 (a.left().clamp(b.left(), b.right()) + a.right().clamp(b.left(), b.right())) / 2.0,
@@ -171,17 +187,20 @@ impl NHShape {
                 (a.top().clamp(b.top(), b.bottom()) + a.bottom().clamp(b.top(), b.bottom())) / 2.0,
             )
         } else {
-            (self.center_intersect(other.center()) + other.center_intersect(self.center()).to_vec2()) / 2.0
+            (self.center_intersect(other.center())
+                + other.center_intersect(self.center()).to_vec2())
+                / 2.0
         }
     }
     pub fn border_distance(&self, point: egui::Pos2) -> f32 {
         match &self {
             NHShape::Rect { inner } => {
                 if inner.contains(point) {
-                    (point.x-inner.left()).abs()
-                    .min((point.x-inner.right()).abs())
-                    .min((point.y-inner.top()).abs())
-                    .min((point.y-inner.bottom()).abs())
+                    (point.x - inner.left())
+                        .abs()
+                        .min((point.x - inner.right()).abs())
+                        .min((point.y - inner.top()).abs())
+                        .min((point.y - inner.bottom()).abs())
                 } else {
                     let clamped_point = egui::Pos2::new(
                         point.x.min(inner.right()).max(inner.left()),
@@ -215,31 +234,56 @@ impl NHShape {
             NHShape::Ellipse {
                 position,
                 bounds_radius,
-            } => rect.contains_rect(egui::Rect::from_center_size(*position, 2.0 * *bounds_radius))
+            } => rect.contains_rect(egui::Rect::from_center_size(
+                *position,
+                2.0 * *bounds_radius,
+            )),
         }
     }
-    
+
     pub fn guidelines(&self) -> Vec<(egui::Pos2, egui::Align)> {
         match self {
-            NHShape::Rect { inner } => vec![(inner.min, egui::Align::Min), (inner.center(), egui::Align::Center), (inner.max, egui::Align::Max),],
-            NHShape::Ellipse { position, bounds_radius }
-                => vec![(*position - *bounds_radius, egui::Align::Min), (*position, egui::Align::Center), (*position + *bounds_radius, egui::Align::Max),],
+            NHShape::Rect { inner } => vec![
+                (inner.min, egui::Align::Min),
+                (inner.center(), egui::Align::Center),
+                (inner.max, egui::Align::Max),
+            ],
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
+            } => vec![
+                (*position - *bounds_radius, egui::Align::Min),
+                (*position, egui::Align::Center),
+                (*position + *bounds_radius, egui::Align::Max),
+            ],
         }
     }
-    
+
     pub fn place_labels(&self, around: egui::Pos2, sizes: [egui::Vec2; 2]) -> [egui::Pos2; 2] {
         const PADDING: f32 = 5.0;
         let center = self.center();
         // TODO: doesn't actually work for both labels, but close enough
         let [x0, x1] = if around.x < center.x {
-            [around.x - sizes[0].x / 2.0 - PADDING, around.x - sizes[1].x / 2.0 - PADDING]
+            [
+                around.x - sizes[0].x / 2.0 - PADDING,
+                around.x - sizes[1].x / 2.0 - PADDING,
+            ]
         } else {
-            [around.x + sizes[0].x / 2.0 + PADDING, around.x + sizes[1].x / 2.0 + PADDING]
+            [
+                around.x + sizes[0].x / 2.0 + PADDING,
+                around.x + sizes[1].x / 2.0 + PADDING,
+            ]
         };
         let [y0, y1] = if around.y < center.y {
-            [around.y - sizes[0].y / 2.0 - PADDING, around.y - sizes[1].y / 2.0 - PADDING]
+            [
+                around.y - sizes[0].y / 2.0 - PADDING,
+                around.y - sizes[1].y / 2.0 - PADDING,
+            ]
         } else {
-            [around.y + sizes[0].y / 2.0 + PADDING, around.y + sizes[1].y / 2.0 + PADDING]
+            [
+                around.y + sizes[0].y / 2.0 + PADDING,
+                around.y + sizes[1].y / 2.0 + PADDING,
+            ]
         };
         [egui::Pos2::new(x0, y0), egui::Pos2::new(x1, y1)]
     }
@@ -437,7 +481,7 @@ pub trait NHCanvas {
     // These functions are must haves
     /// None if not interactive
     fn ui_scale(&self) -> Option<f32>;
-    
+
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight);
     fn draw_rectangle(
         &mut self,
@@ -577,13 +621,7 @@ pub trait NHCanvas {
                 position,
                 egui::Vec2::new(max_width + 4.0, 2.0 * global_offset),
             );
-            self.draw_rectangle(
-                rect,
-                egui::Rounding::ZERO,
-                fill,
-                stroke.into(),
-                highlight,
-            );
+            self.draw_rectangle(rect, egui::Rounding::ZERO, fill, stroke.into(), highlight);
 
             (
                 offsets,
@@ -887,7 +925,9 @@ impl UiCanvas {
 }
 
 impl NHCanvas for UiCanvas {
-    fn ui_scale(&self) -> Option<f32> { Some(self.camera_scale).filter(|_| self.is_interactive) }
+    fn ui_scale(&self) -> Option<f32> {
+        Some(self.camera_scale).filter(|_| self.is_interactive)
+    }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
         let offset = self.canvas.min.to_vec2() + self.camera_offset.to_vec2();
@@ -1120,7 +1160,9 @@ impl<'a> MeasuringCanvas<'a> {
 }
 
 impl<'a> NHCanvas for MeasuringCanvas<'a> {
-    fn ui_scale(&self) -> Option<f32> { None }
+    fn ui_scale(&self) -> Option<f32> {
+        None
+    }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke, highlight: Highlight) {
         self.bounds.extend_with(points[0]);
@@ -1238,7 +1280,9 @@ impl<'a> SVGCanvas<'a> {
 }
 
 impl<'a> NHCanvas for SVGCanvas<'a> {
-    fn ui_scale(&self) -> Option<f32> { None }
+    fn ui_scale(&self) -> Option<f32> {
+        None
+    }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
         let stroke_dasharray = match stroke.line_type {
@@ -1359,11 +1403,12 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
             egui::Color32::TRANSPARENT,
         );
 
-        let escaped = text.replace("&", "&amp;")
-                        .replace("<", "&lt;")
-                        .replace(">", "&gt;")
-                        .replace("'", "&apos;")
-                        .replace("\"", "&quot;");
+        let escaped = text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("'", "&apos;")
+            .replace("\"", "&quot;");
         let escaped_lines: Vec<_> = escaped.split("\n").collect();
         let initial_dx = (1.0 - escaped_lines.len() as f32) / 2.0;
         let mut tspans = String::new();
@@ -1372,10 +1417,16 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
             if line.is_empty() {
                 next_offset_bonus += 1.0;
             } else {
-                tspans += &format!(r#"<tspan x="{}" dy="{}em">{}</tspan>"#,
+                tspans += &format!(
+                    r#"<tspan x="{}" dy="{}em">{}</tspan>"#,
                     rect.center().x + self.camera_offset.x,
-                    if idx == 0 {initial_dx} else {1.0 + next_offset_bonus},
-                    line);
+                    if idx == 0 {
+                        initial_dx
+                    } else {
+                        1.0 + next_offset_bonus
+                    },
+                    line
+                );
                 next_offset_bonus = 0.0;
             }
         }

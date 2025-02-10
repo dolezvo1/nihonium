@@ -1,7 +1,10 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2,
+    ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus,
+    FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView,
+    SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation,
 };
 use crate::{CustomTab, NHApp};
 use eframe::egui;
@@ -15,16 +18,40 @@ use std::{
 use sophia::api::{prelude::SparqlDataset, sparql::Query};
 use sophia_sparql::{ResultTerm, SparqlQuery, SparqlWrapper};
 
-type ArcRwLockController = Arc<
-    RwLock<
-        dyn ElementControllerGen2<
-            dyn RdfElement,
-            RdfQueryable,
-            NaiveRdfTool,
-            RdfElementOrVertex,
-            RdfPropChange,
-        >,
-    >,
+type ControllerT = dyn ElementControllerGen2<
+    dyn RdfElement,
+    RdfQueryable,
+    NaiveRdfTool,
+    RdfElementOrVertex,
+    RdfPropChange,
+>;
+type ArcRwLockControllerT = Arc<RwLock<ControllerT>>;
+type DiagramViewT = DiagramControllerGen2<
+    RdfDiagram,
+    dyn RdfElement,
+    RdfQueryable,
+    RdfDiagramBuffer,
+    NaiveRdfTool,
+    RdfElementOrVertex,
+    RdfPropChange,
+>;
+type PackageViewT = crate::common::controller::PackageView<
+    RdfGraph,
+    dyn RdfElement,
+    RdfQueryable,
+    RdfGraphBuffer,
+    NaiveRdfTool,
+    RdfElementOrVertex,
+    RdfPropChange,
+>;
+type LinkViewT = MulticonnectionView<
+    RdfPredicate,
+    dyn RdfElement,
+    RdfQueryable,
+    RdfPredicateBuffer,
+    NaiveRdfTool,
+    RdfElementOrVertex,
+    RdfPropChange,
 >;
 
 pub struct RdfQueryable {}
@@ -77,7 +104,7 @@ impl TryInto<FlipMulticonnection> for &RdfPropChange {
 
 #[derive(Clone)]
 pub enum RdfElementOrVertex {
-    Element((uuid::Uuid, ArcRwLockController)),
+    Element((uuid::Uuid, ArcRwLockControllerT)),
     Vertex(VertexInformation),
 }
 
@@ -104,16 +131,16 @@ impl TryInto<VertexInformation> for RdfElementOrVertex {
     }
 }
 
-impl From<(uuid::Uuid, ArcRwLockController)> for RdfElementOrVertex {
-    fn from(v: (uuid::Uuid, ArcRwLockController)) -> Self {
+impl From<(uuid::Uuid, ArcRwLockControllerT)> for RdfElementOrVertex {
+    fn from(v: (uuid::Uuid, ArcRwLockControllerT)) -> Self {
         Self::Element(v)
     }
 }
 
-impl TryInto<(uuid::Uuid, ArcRwLockController)> for RdfElementOrVertex {
+impl TryInto<(uuid::Uuid, ArcRwLockControllerT)> for RdfElementOrVertex {
     type Error = ();
 
-    fn try_into(self) -> Result<(uuid::Uuid, ArcRwLockController), ()> {
+    fn try_into(self) -> Result<(uuid::Uuid, ArcRwLockControllerT), ()> {
         match self {
             Self::Element(v) => Ok(v),
             _ => Err(()),
@@ -122,19 +149,20 @@ impl TryInto<(uuid::Uuid, ArcRwLockController)> for RdfElementOrVertex {
 }
 
 pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
+    #[rustfmt::skip]
     let c = crate::common::controller::build_colors!(
-                                   ["Light",              "Darker"             ],
-        [("Diagram background",    [egui::Color32::WHITE, egui::Color32::GRAY, ]),
-         ("Graph background",      [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),
+                                   ["Light",              "Darker"],
+        [("Diagram background",    [egui::Color32::WHITE, egui::Color32::GRAY,]),
+         ("Graph background",      [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),
          ("Connection background", [egui::Color32::WHITE, egui::Color32::WHITE,]),
-         ("Node background",       [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),
-         ("Literal background",    [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159), ]),],
-        [("Diagram gridlines",     [egui::Color32::from_rgb(220, 220, 220),  egui::Color32::from_rgb(127, 127, 127), ]),
+         ("Node background",       [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),
+         ("Literal background",    [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),],
+        [("Diagram gridlines",     [egui::Color32::from_rgb(220, 220, 220), egui::Color32::from_rgb(127, 127, 127),]),
          ("Graph foreground",      [egui::Color32::BLACK, egui::Color32::BLACK,]),
          ("Connection foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
          ("Node foreground",       [egui::Color32::BLACK, egui::Color32::BLACK,]),
          ("Literal foreground",    [egui::Color32::BLACK, egui::Color32::BLACK,]),],
-        [("Selection",             [egui::Color32::BLUE,  egui::Color32::LIGHT_BLUE, ]),],
+        [("Selection",             [egui::Color32::BLUE,  egui::Color32::LIGHT_BLUE,]),],
     );
     ("RDF diagram".to_owned(), c.0, c.1)
 }
@@ -158,10 +186,13 @@ fn show_props_fun(
         )
         .changed()
     {
-        commands.push(InsensitiveCommand::PropertyChange(
-            std::iter::once(buffer.uuid).collect(),
-            vec![RdfPropChange::NameChange(Arc::new(buffer.name.clone()))],
-        ).into());
+        commands.push(
+            InsensitiveCommand::PropertyChange(
+                std::iter::once(buffer.uuid).collect(),
+                vec![RdfPropChange::NameChange(Arc::new(buffer.name.clone()))],
+            )
+            .into(),
+        );
     };
 
     ui.label("Comment:");
@@ -172,12 +203,15 @@ fn show_props_fun(
         )
         .changed()
     {
-        commands.push(InsensitiveCommand::PropertyChange(
-            std::iter::once(buffer.uuid).collect(),
-            vec![RdfPropChange::CommentChange(Arc::new(
-                buffer.comment.clone(),
-            ))],
-        ).into());
+        commands.push(
+            InsensitiveCommand::PropertyChange(
+                std::iter::once(buffer.uuid).collect(),
+                vec![RdfPropChange::CommentChange(Arc::new(
+                    buffer.comment.clone(),
+                ))],
+            )
+            .into(),
+        );
     }
 }
 fn apply_property_change_fun(
@@ -436,19 +470,7 @@ impl CustomTab for SparqlQueriesTab {
     }
 }
 
-fn menubar_options_fun(
-    controller: &mut DiagramControllerGen2<
-        RdfDiagram,
-        dyn RdfElement,
-        RdfQueryable,
-        RdfDiagramBuffer,
-        NaiveRdfTool,
-        RdfElementOrVertex,
-        RdfPropChange,
-    >,
-    context: &mut NHApp,
-    ui: &mut egui::Ui,
-) {
+fn menubar_options_fun(controller: &mut DiagramViewT, context: &mut NHApp, ui: &mut egui::Ui) {
     if ui.button("Import RDF data").clicked() {
         // TODO: import stuff
     }
@@ -539,7 +561,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 
     //<stress test>
     let mut models_st = Vec::<Arc<RwLock<dyn RdfElement>>>::new();
-    let mut controllers_st = HashMap::<_, ArcRwLockController>::new();
+    let mut controllers_st = HashMap::<_, ArcRwLockControllerT>::new();
 
     for xx in 0..=10 {
         for yy in 300..=400 {
@@ -569,7 +591,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     );
     //</stress test>
 
-    let mut owned_controllers = HashMap::<_, ArcRwLockController>::new();
+    let mut owned_controllers = HashMap::<_, ArcRwLockControllerT>::new();
     owned_controllers.insert(node_uuid, node_controller);
     owned_controllers.insert(literal_uuid, literal_controller);
     owned_controllers.insert(predicate_uuid, predicate_controller);
@@ -605,88 +627,20 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 #[derive(Clone, Copy)]
 pub enum KindedRdfElement<'a> {
     Diagram {},
-    Graph {
-        inner: &'a PackageView<
-            RdfGraph,
-            dyn RdfElement,
-            RdfQueryable,
-            RdfGraphBuffer,
-            NaiveRdfTool,
-            RdfElementOrVertex,
-            RdfPropChange,
-        >,
-    },
-    Literal {
-        inner: &'a RdfLiteralController,
-    },
-    Node {
-        inner: &'a RdfNodeController,
-    },
-    Predicate {
-        inner: &'a MulticonnectionView<
-            RdfPredicate,
-            dyn RdfElement,
-            RdfQueryable,
-            RdfPredicateBuffer,
-            NaiveRdfTool,
-            RdfElementOrVertex,
-            RdfPropChange,
-        >,
-    },
+    Graph { inner: &'a PackageViewT },
+    Literal { inner: &'a RdfLiteralController },
+    Node { inner: &'a RdfNodeController },
+    Predicate { inner: &'a LinkViewT },
 }
 
-impl<'a>
-    From<
-        &'a DiagramControllerGen2<
-            RdfDiagram,
-            dyn RdfElement,
-            RdfQueryable,
-            RdfDiagramBuffer,
-            NaiveRdfTool,
-            RdfElementOrVertex,
-            RdfPropChange,
-        >,
-    > for KindedRdfElement<'a>
-{
-    fn from(
-        from: &'a DiagramControllerGen2<
-            RdfDiagram,
-            dyn RdfElement,
-            RdfQueryable,
-            RdfDiagramBuffer,
-            NaiveRdfTool,
-            RdfElementOrVertex,
-            RdfPropChange,
-        >,
-    ) -> Self {
+impl<'a> From<&'a DiagramViewT> for KindedRdfElement<'a> {
+    fn from(from: &'a DiagramViewT) -> Self {
         Self::Diagram {}
     }
 }
 
-impl<'a>
-    From<
-        &'a PackageView<
-            RdfGraph,
-            dyn RdfElement,
-            RdfQueryable,
-            RdfGraphBuffer,
-            NaiveRdfTool,
-            RdfElementOrVertex,
-            RdfPropChange,
-        >,
-    > for KindedRdfElement<'a>
-{
-    fn from(
-        from: &'a PackageView<
-            RdfGraph,
-            dyn RdfElement,
-            RdfQueryable,
-            RdfGraphBuffer,
-            NaiveRdfTool,
-            RdfElementOrVertex,
-            RdfPropChange,
-        >,
-    ) -> Self {
+impl<'a> From<&'a PackageViewT> for KindedRdfElement<'a> {
+    fn from(from: &'a PackageViewT) -> Self {
         Self::Graph { inner: from }
     }
 }
@@ -704,10 +658,10 @@ pub enum RdfToolStage {
 
 enum PartialRdfElement {
     None,
-    Some((uuid::Uuid, ArcRwLockController)),
+    Some((uuid::Uuid, ArcRwLockControllerT)),
     Predicate {
         source: Arc<RwLock<dyn RdfElement>>,
-        source_view: ArcRwLockController,
+        source_view: ArcRwLockControllerT,
         dest: Option<Arc<RwLock<dyn RdfElement>>>,
     },
     Graph {
@@ -838,15 +792,13 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
                 self.event_lock = true;
             }
             (RdfToolStage::Node, _) => {
-                let (node_uuid, _node, node_controller) = rdf_node("http://www.w3.org/People/EM/contact#me", pos);
+                let (node_uuid, _node, node_controller) =
+                    rdf_node("http://www.w3.org/People/EM/contact#me", pos);
                 self.result = PartialRdfElement::Some((node_uuid, node_controller));
                 self.event_lock = true;
             }
             (RdfToolStage::GraphStart, _) => {
-                self.result = PartialRdfElement::Graph {
-                    a: pos,
-                    b: None,
-                };
+                self.result = PartialRdfElement::Graph { a: pos, b: None };
                 self.current_stage = RdfToolStage::GraphEnd;
                 self.event_lock = true;
             }
@@ -898,7 +850,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
             RdfElementOrVertex,
             RdfPropChange,
         >,
-    ) -> Option<(uuid::Uuid, ArcRwLockController)> {
+    ) -> Option<(uuid::Uuid, ArcRwLockControllerT)> {
         match &self.result {
             PartialRdfElement::Some(x) => {
                 let x = x.clone();
@@ -913,7 +865,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
             } => {
                 self.current_stage = RdfToolStage::PredicateStart;
 
-                let predicate_controller: Option<(uuid::Uuid, ArcRwLockController)> =
+                let predicate_controller: Option<(uuid::Uuid, ArcRwLockControllerT)> =
                     if let (Some(source_controller), Some(dest_controller)) = (
                         into.controller_for(&source.read().unwrap().uuid()),
                         into.controller_for(&dest.read().unwrap().uuid()),
@@ -989,23 +941,7 @@ pub struct RdfGraphBuffer {
 fn rdf_graph(
     iri: &str,
     bounds_rect: egui::Rect,
-) -> (
-    uuid::Uuid,
-    Arc<RwLock<RdfGraph>>,
-    Arc<
-        RwLock<
-            PackageView<
-                RdfGraph,
-                dyn RdfElement,
-                RdfQueryable,
-                RdfGraphBuffer,
-                NaiveRdfTool,
-                RdfElementOrVertex,
-                RdfPropChange,
-            >,
-        >,
-    >,
-) {
+) -> (uuid::Uuid, Arc<RwLock<RdfGraph>>, Arc<RwLock<PackageViewT>>) {
     fn model_to_element_shim(a: Arc<RwLock<RdfGraph>>) -> Arc<RwLock<dyn RdfElement>> {
         a
     }
@@ -1097,12 +1033,13 @@ fn rdf_graph(
 fn rdf_node(
     iri: &str,
     position: egui::Pos2,
-) -> (uuid::Uuid, Arc<RwLock<RdfNode>>, Arc<RwLock<RdfNodeController>>) {
+) -> (
+    uuid::Uuid,
+    Arc<RwLock<RdfNode>>,
+    Arc<RwLock<RdfNodeController>>,
+) {
     let node_uuid = uuid::Uuid::now_v7();
-    let node = Arc::new(RwLock::new(RdfNode::new(
-        node_uuid.clone(),
-        iri.to_owned(),
-    )));
+    let node = Arc::new(RwLock::new(RdfNode::new(node_uuid.clone(), iri.to_owned())));
     let node_controller = Arc::new(RwLock::new(RdfNodeController {
         model: node.clone(),
         self_reference: Weak::new(),
@@ -1157,10 +1094,7 @@ impl ElementController<dyn RdfElement> for RdfNodeController {
 impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
     for RdfNodeController
 {
-    fn controller_for(
-        &self,
-        _uuid: &uuid::Uuid,
-    ) -> Option<ArcRwLockController> {
+    fn controller_for(&self, _uuid: &uuid::Uuid) -> Option<ArcRwLockControllerT> {
         None
     }
 }
@@ -1283,36 +1217,43 @@ impl
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
-            e if !self.min_shape().contains(*e.mouse_position()) => return EventHandlingStatus::NotHandled,
+            e if !self.min_shape().contains(*e.mouse_position()) => {
+                return EventHandlingStatus::NotHandled
+            }
             InputEvent::MouseDown(_) => {
                 self.dragged = true;
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::MouseUp(_) => if self.dragged {
-                self.dragged = false;
-                EventHandlingStatus::HandledByElement
-            } else {
-                EventHandlingStatus::NotHandled
-            },
+            InputEvent::MouseUp(_) => {
+                if self.dragged {
+                    self.dragged = false;
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            }
             InputEvent::Click(_) => {
                 if let Some(tool) = tool {
                     tool.add_element(KindedRdfElement::Node { inner: self });
                 }
-                
+
                 EventHandlingStatus::HandledByElement
-            },
+            }
             InputEvent::Drag { delta, .. } if self.dragged => {
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(delta));
                 } else {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(
-                        std::iter::once(*self.uuid()).collect(),
-                        delta,
-                    ).into());
+                    commands.push(
+                        InsensitiveCommand::MoveSpecificElements(
+                            std::iter::once(*self.uuid()).collect(),
+                            delta,
+                        )
+                        .into(),
+                    );
                 }
                 EventHandlingStatus::HandledByElement
-            },
-            _ => EventHandlingStatus::NotHandled
+            }
+            _ => EventHandlingStatus::NotHandled,
         }
     }
 
@@ -1333,8 +1274,10 @@ impl
             InsensitiveCommand::SelectByDrag(rect) => {
                 self.highlight.selected = self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid()) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MoveSpecificElements(uuids, _)
+                if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveSpecificElements(_, delta)
+            | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                     std::iter::once(*self.uuid()).collect(),
@@ -1419,10 +1362,7 @@ impl ElementController<dyn RdfElement> for RdfLiteralController {
 impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
     for RdfLiteralController
 {
-    fn controller_for(
-        &self,
-        _uuid: &uuid::Uuid,
-    ) -> Option<ArcRwLockController> {
+    fn controller_for(&self, _uuid: &uuid::Uuid) -> Option<ArcRwLockControllerT> {
         None
     }
 }
@@ -1550,39 +1490,45 @@ impl
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
-            e if !self.min_shape().contains(*e.mouse_position()) => return EventHandlingStatus::NotHandled,
+            e if !self.min_shape().contains(*e.mouse_position()) => {
+                return EventHandlingStatus::NotHandled
+            }
             InputEvent::MouseDown(_) => {
                 self.dragged = true;
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::MouseUp(_) => if self.dragged {
-                self.dragged = false;
-                EventHandlingStatus::HandledByElement
-            } else {
-                EventHandlingStatus::NotHandled
-            },
+            InputEvent::MouseUp(_) => {
+                if self.dragged {
+                    self.dragged = false;
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            }
             InputEvent::Click(_) => {
                 if let Some(tool) = tool {
                     tool.add_element(KindedRdfElement::Literal { inner: self });
                 }
-                
+
                 EventHandlingStatus::HandledByElement
-            },
+            }
             InputEvent::Drag { delta, .. } if self.dragged => {
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(delta));
                 } else {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(
-                        std::iter::once(*self.uuid()).collect(),
-                        delta,
-                    ).into());
+                    commands.push(
+                        InsensitiveCommand::MoveSpecificElements(
+                            std::iter::once(*self.uuid()).collect(),
+                            delta,
+                        )
+                        .into(),
+                    );
                 }
-                
+
                 EventHandlingStatus::HandledByElement
-            },
-            _ => EventHandlingStatus::NotHandled
+            }
+            _ => EventHandlingStatus::NotHandled,
         }
-        
     }
 
     fn apply_command(
@@ -1602,8 +1548,10 @@ impl
             InsensitiveCommand::SelectByDrag(rect) => {
                 self.highlight.selected = self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid()) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MoveSpecificElements(uuids, _)
+                if !uuids.contains(&*self.uuid()) => {}
+            InsensitiveCommand::MoveSpecificElements(_, delta)
+            | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                     std::iter::once(*self.uuid()).collect(),
@@ -1674,24 +1622,12 @@ pub struct RdfPredicateBuffer {
 
 fn rdf_predicate(
     iri: &str,
-    source: (Arc<RwLock<dyn RdfElement>>, ArcRwLockController),
-    destination: (Arc<RwLock<dyn RdfElement>>, ArcRwLockController),
+    source: (Arc<RwLock<dyn RdfElement>>, ArcRwLockControllerT),
+    destination: (Arc<RwLock<dyn RdfElement>>, ArcRwLockControllerT),
 ) -> (
     uuid::Uuid,
     Arc<RwLock<RdfPredicate>>,
-    Arc<
-        RwLock<
-            MulticonnectionView<
-                RdfPredicate,
-                dyn RdfElement,
-                RdfQueryable,
-                RdfPredicateBuffer,
-                NaiveRdfTool,
-                RdfElementOrVertex,
-                RdfPropChange,
-            >,
-        >,
-    >,
+    Arc<RwLock<LinkViewT>>,
 ) {
     fn model_to_element_shim(a: Arc<RwLock<RdfPredicate>>) -> Arc<RwLock<dyn RdfElement>> {
         a
@@ -1824,17 +1760,7 @@ fn rdf_predicate(
     (predicate_uuid, predicate, predicate_controller)
 }
 
-impl RdfElementController
-    for MulticonnectionView<
-        RdfPredicate,
-        dyn RdfElement,
-        RdfQueryable,
-        RdfPredicateBuffer,
-        NaiveRdfTool,
-        RdfElementOrVertex,
-        RdfPropChange,
-    >
-{
+impl RdfElementController for LinkViewT {
     fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
         *self.source.read().unwrap().uuid() == *uuid
     }
