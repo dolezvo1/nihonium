@@ -1752,9 +1752,22 @@ impl
                     tool.add_element(KindedDemoCsdElement::Bank { inner: self });
                 } else {
                     if !ehc.modifiers.command {
-                        self.highlight.selected = true;
+                        commands.push(InsensitiveCommand::SelectAll(false).into());
+                        commands.push(
+                            InsensitiveCommand::SelectSpecific(
+                                std::iter::once(*self.uuid()).collect(),
+                                true,
+                            )
+                            .into(),
+                        );
                     } else {
-                        self.highlight.selected = !self.highlight.selected;
+                        commands.push(
+                            InsensitiveCommand::SelectSpecific(
+                                std::iter::once(*self.uuid()).collect(),
+                                !self.highlight.selected,
+                            )
+                            .into(),
+                        );
                     }
                 }
 
