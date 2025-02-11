@@ -1,4 +1,4 @@
-use crate::common::canvas;
+use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
     arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
 };
@@ -894,7 +894,7 @@ fn democsd_transactor(
         transaction_selfactivating_buffer: transaction_selfactivating,
         comment_buffer: "".to_owned(),
 
-        dragged: false,
+        dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::ZERO,
@@ -915,7 +915,7 @@ pub struct DemoCsdTransactorView {
     transaction_selfactivating_buffer: bool,
     comment_buffer: String,
 
-    dragged: bool,
+    dragged_shape: Option<NHShape>,
     highlight: canvas::Highlight,
     position: egui::Pos2,
     bounds_rect: egui::Rect,
@@ -1241,10 +1241,10 @@ impl
                     return EventHandlingStatus::NotHandled;
                 }
                 if matches!(event, InputEvent::MouseDown(_)) {
-                    self.dragged = true;
+                    self.dragged_shape = Some(self.min_shape());
                     EventHandlingStatus::HandledByElement
-                } else if self.dragged {
-                    self.dragged = false;
+                } else if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -1298,14 +1298,22 @@ impl
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged => {
+            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
+                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
+                self.dragged_shape = Some(translated_real_shape);
+                let transaction_id = self.transaction_view.as_ref().map(|t| *t.read().unwrap().uuid());
+                let coerced_pos = ehc.snap_manager.coerce(translated_real_shape,
+                        |e| !transaction_id.is_some_and(|t| t == *e) && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected) } else {*e == *self.uuid()}
+                    );
+                let coerced_delta = coerced_pos - self.min_shape().center();
+                
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid()).collect(),
-                            delta,
+                            coerced_delta,
                         )
                         .into(),
                     );
@@ -1456,7 +1464,7 @@ impl
             internal_buffer: self.internal_buffer.clone(),
             transaction_selfactivating_buffer: self.transaction_selfactivating_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
-            dragged: false,
+            dragged_shape: None,
             highlight: self.highlight,
             position: self.position,
             bounds_rect: self.bounds_rect,

@@ -542,7 +542,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         langtag_buffer: "en".to_owned(),
         comment_buffer: "".to_owned(),
 
-        dragged: false,
+        dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position: egui::Pos2::new(300.0, 200.0),
         bounds_rect: egui::Rect::ZERO,
@@ -784,7 +784,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
                         langtag_buffer: "en".to_owned(),
                         comment_buffer: "".to_owned(),
 
-                        dragged: false,
+                        dragged_shape: None,
                         highlight: canvas::Highlight::NONE,
                         position: pos,
                         bounds_rect: egui::Rect::ZERO,
@@ -1050,7 +1050,7 @@ fn rdf_node(
         iri_buffer: iri.to_owned(),
         comment_buffer: "".to_owned(),
 
-        dragged: false,
+        dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position: position,
         bounds_radius: egui::Vec2::ZERO,
@@ -1066,7 +1066,7 @@ pub struct RdfNodeController {
     iri_buffer: String,
     comment_buffer: String,
 
-    dragged: bool,
+    dragged_shape: Option<NHShape>,
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_radius: egui::Vec2,
@@ -1225,12 +1225,12 @@ impl
                 return EventHandlingStatus::NotHandled
             }
             InputEvent::MouseDown(_) => {
-                self.dragged = true;
+                self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged {
-                    self.dragged = false;
+                if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -1243,14 +1243,28 @@ impl
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged => {
+            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
+                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
+                self.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.highlight.selected {
+                    ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        !ehc.all_elements
+                            .get(e)
+                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    })
+                } else {
+                    ehc.snap_manager
+                        .coerce(translated_real_shape, |e| *e != *self.uuid())
+                };
+                let coerced_delta = coerced_pos - self.position;
+                
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid()).collect(),
-                            delta,
+                            coerced_delta,
                         )
                         .into(),
                     );
@@ -1337,7 +1351,7 @@ impl
             self_reference: Weak::new(),
             iri_buffer: self.iri_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
-            dragged: false,
+            dragged_shape: None,
             highlight: self.highlight,
             position: self.position,
             bounds_radius: self.bounds_radius,
@@ -1356,7 +1370,7 @@ pub struct RdfLiteralController {
     langtag_buffer: String,
     comment_buffer: String,
 
-    dragged: bool,
+    dragged_shape: Option<NHShape>,
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
@@ -1519,12 +1533,12 @@ impl
                 return EventHandlingStatus::NotHandled
             }
             InputEvent::MouseDown(_) => {
-                self.dragged = true;
+                self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged {
-                    self.dragged = false;
+                if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -1537,14 +1551,28 @@ impl
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged => {
+            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
+                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
+                self.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.highlight.selected {
+                    ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        !ehc.all_elements
+                            .get(e)
+                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    })
+                } else {
+                    ehc.snap_manager
+                        .coerce(translated_real_shape, |e| *e != *self.uuid())
+                };
+                let coerced_delta = coerced_pos - self.position;
+                
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid()).collect(),
-                            delta,
+                            coerced_delta,
                         )
                         .into(),
                     );
@@ -1652,7 +1680,7 @@ impl
             datatype_buffer: self.datatype_buffer.clone(),
             langtag_buffer: self.langtag_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
-            dragged: false,
+            dragged_shape: None,
             highlight: self.highlight,
             position: self.position,
             bounds_rect: self.bounds_rect,
