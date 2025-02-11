@@ -1,9 +1,6 @@
 use crate::common::canvas;
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2,
-    ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus,
-    FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, SelectionStatus,
-    SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation,
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
 };
 use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage,
@@ -11,6 +8,7 @@ use crate::democsd::democsd_models::{
 };
 use crate::NHApp;
 use eframe::egui;
+use std::any::Any;
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter},
@@ -757,6 +755,7 @@ pub trait RdfContainerController {
     ) -> Option<Arc<RwLock<dyn DemoCsdElementController>>>;
 }
 
+#[derive(Clone)]
 pub struct DemoCsdPackageBuffer {
     name: String,
     comment: String,
@@ -842,7 +841,7 @@ fn democsd_package(
         name.to_owned(),
         vec![],
     )));
-    let graph_controller = Arc::new(RwLock::new(PackageViewT::new(
+    let graph_controller = PackageViewT::new(
         graph.clone(),
         HashMap::new(),
         DemoCsdPackageBuffer {
@@ -853,7 +852,7 @@ fn democsd_package(
         model_to_element_shim,
         show_properties_fun,
         apply_property_change_fun,
-    )));
+    );
 
     (uuid, graph, graph_controller)
 }
@@ -1367,7 +1366,9 @@ impl
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..) => {}
+            | InsensitiveCommand::AddElement(..)
+            | InsensitiveCommand::CutSpecificElements(..)
+            | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {
@@ -1441,6 +1442,28 @@ impl
             t.head_count(into);
         }
     }
+    
+    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
+        //let modelish = todo!();
+        //m.insert(arc_to_usize(&self.model), modelish);
+        
+        let cloneish = Arc::new(RwLock::new(Self {
+            model: self.model.clone(),
+            self_reference: Weak::new(),
+            transaction_view: self.transaction_view.clone(),
+            identifier_buffer: self.identifier_buffer.clone(),
+            name_buffer: self.name_buffer.clone(),
+            internal_buffer: self.internal_buffer.clone(),
+            transaction_selfactivating_buffer: self.transaction_selfactivating_buffer.clone(),
+            comment_buffer: self.comment_buffer.clone(),
+            dragged: false,
+            highlight: self.highlight,
+            position: self.position,
+            bounds_rect: self.bounds_rect,
+        }));
+        cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (*self.uuid(), cloneish as ArcRwLockControllerT));
+    }
 }
 
 fn democsd_transaction(
@@ -1461,6 +1484,7 @@ fn democsd_transaction(
     )));
     let transaction_controller = Arc::new(RwLock::new(DemoCsdTransactionView {
         model: transaction.clone(),
+        self_reference: Weak::new(),
 
         identifier_buffer: identifier.to_owned(),
         name_buffer: name.to_owned(),
@@ -1476,11 +1500,13 @@ fn democsd_transaction(
             },
         min_shape: canvas::NHShape::ELLIPSE_ZERO,
     }));
+    transaction_controller.write().unwrap().self_reference = Arc::downgrade(&transaction_controller);
     (transaction_uuid, transaction, transaction_controller)
 }
 
 pub struct DemoCsdTransactionView {
     model: Arc<RwLock<DemoCsdTransaction>>,
+    self_reference: Weak<RwLock<Self>>,
 
     identifier_buffer: String,
     name_buffer: String,
@@ -1775,7 +1801,9 @@ impl
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..) => {}
+            | InsensitiveCommand::AddElement(..)
+            | InsensitiveCommand::CutSpecificElements(..)
+            | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {
@@ -1820,8 +1848,28 @@ impl
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
         into.insert(*self.uuid(), self.highlight.selected.into());
     }
+    
+    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
+        //let modelish = todo!();
+        //m.insert(arc_to_usize(&self.model), modelish);
+        
+        let cloneish = Arc::new(RwLock::new(Self {
+            model: self.model.clone(),
+            self_reference: Weak::new(),
+            identifier_buffer: self.identifier_buffer.clone(),
+            name_buffer: self.name_buffer.clone(),
+            comment_buffer: self.comment_buffer.clone(),
+            dragged: false,
+            highlight: self.highlight,
+            position: self.position,
+            min_shape: self.min_shape,
+        }));
+        cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (*self.uuid(), cloneish as ArcRwLockControllerT));
+    }
 }
 
+#[derive(Clone)]
 pub struct DemoCsdLinkBuffer {
     link_type: DemoCsdLinkType,
     comment: String,
@@ -1950,7 +1998,7 @@ fn democsd_link(
         source.0,
         destination.0,
     )));
-    let predicate_controller = Arc::new(RwLock::new(MulticonnectionView::new(
+    let predicate_controller = MulticonnectionView::new(
         predicate.clone(),
         DemoCsdLinkBuffer {
             link_type,
@@ -1971,6 +2019,6 @@ fn democsd_link(
         model_to_destination_arrowhead_type,
         model_to_source_arrowhead_label,
         model_to_destination_arrowhead_label,
-    )));
+    );
     (predicate_uuid, predicate, predicate_controller)
 }

@@ -185,6 +185,9 @@ pub enum DiagramCommand {
     SelectAllElements(bool),
     InvertSelection,
     DeleteSelectedElements,
+    CutSelectedElements,
+    CopySelectedElements,
+    PasteClipboardElements,
 }
 
 pub trait DiagramController: Any {
@@ -315,31 +318,41 @@ pub enum SensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     ResizeSelectedElementsBy(egui::Align2, egui::Vec2),
     ResizeSelectedElementsTo(egui::Align2, egui::Vec2),
     DeleteSelectedElements,
+    CutSelectedElements,
+    PasteClipboardElements,
     PropertyChangeSelected(Vec<PropChangeT>),
     Insensitive(InsensitiveCommand<ElementT, PropChangeT>)
 }
 
 impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<ElementT, PropChangeT> {
     // TODO: I'm not sure whether this isn't actually the responsibility of the diagram itself
-    fn to_selection_insensitive<F>(
+    fn to_selection_insensitive<F, G>(
         self,
         selected_elements: F,
+        clipboard_elements: G,
     ) -> InsensitiveCommand<ElementT, PropChangeT>
-    where F: Fn() -> HashSet<uuid::Uuid>
+    where
+        F: Fn() -> HashSet<uuid::Uuid>,
+        G: Fn() -> Vec<ElementT>
     {
-        if let SensitiveCommand::Insensitive(inner) = self {
-            return inner;
-        }
-        let se = selected_elements();
         use SensitiveCommand as SC;
         use InsensitiveCommand as IC;
+        if let SC::Insensitive(inner) = self {
+            return inner;
+        }
+        if let SC::PasteClipboardElements = self {
+            return IC::PasteSpecificElements(uuid::Uuid::nil(), clipboard_elements());
+        }
+        
+        let se = selected_elements();
         match self {
             SC::MoveSelectedElements(delta) => IC::MoveSpecificElements(se, delta),
             SC::ResizeSelectedElementsBy(align, delta) => IC::ResizeSpecificElementsBy(se, align, delta),
             SC::ResizeSelectedElementsTo(align, delta) => IC::ResizeSpecificElementsTo(se, align, delta),
             SC::DeleteSelectedElements => IC::DeleteSpecificElements(se),
+            SC::CutSelectedElements => IC::CutSpecificElements(se),
             SC::PropertyChangeSelected(changes) => IC::PropertyChange(se, changes),
-            SC::Insensitive(..) => unreachable!(),
+            SC::Insensitive(..) | SC::PasteClipboardElements => unreachable!(),
         }
     }
 }
@@ -355,6 +368,8 @@ pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     ResizeSpecificElementsBy(HashSet<uuid::Uuid>, egui::Align2, egui::Vec2),
     ResizeSpecificElementsTo(HashSet<uuid::Uuid>, egui::Align2, egui::Vec2),
     DeleteSpecificElements(HashSet<uuid::Uuid>),
+    CutSpecificElements(HashSet<uuid::Uuid>),
+    PasteSpecificElements(uuid::Uuid, Vec<ElementT>),
     AddElement(uuid::Uuid, ElementT),
     PropertyChange(HashSet<uuid::Uuid>, Vec<PropChangeT>),
 }
@@ -384,6 +399,8 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
             | InsensitiveCommand::ResizeSpecificElementsTo(uuids, _, _) => {
                 Arc::new(format!("Resize {} elements", uuids.len()))
             }
+            InsensitiveCommand::CutSpecificElements(uuids) => Arc::new(format!("Cut {} elements", uuids.len())),
+            InsensitiveCommand::PasteSpecificElements(_, uuids) => Arc::new(format!("Paste {} elements", uuids.len())),
             InsensitiveCommand::AddElement(..) => Arc::new(format!("Add 1 element")),
             InsensitiveCommand::PropertyChange(uuids, ..) => {
                 Arc::new(format!("Modify {} elements", uuids.len()))
@@ -430,6 +447,40 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
             )),
             _ => None,
         }
+    }
+}
+
+pub fn arc_to_usize<T: ?Sized>(e: &Arc<T>) -> usize {
+    Arc::as_ptr(e) as *const () as usize
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::sync::Weak;
+    
+    #[test]
+    fn arc_to_usize_test() {
+        let data = "Hello, world!\nThis is a test.\n";
+        let cursor = std::io::Cursor::new(data);
+        // Create base struct
+        let reader = Arc::new(RwLock::new(std::io::BufReader::new(cursor)));
+        // Create simple clone
+        let clone1 = reader.clone();
+        // Create dyn Clone 1
+        let clone2: Arc<RwLock<dyn std::io::BufRead>> = clone1.clone();
+        // Create dyn Clone 2
+        let clone3: Arc<RwLock<dyn std::io::Read>> = clone2.clone();
+        // Upgraded weak
+        let clone4 = Weak::upgrade(&Arc::downgrade(&reader)).unwrap();
+        
+    
+        // Assert all obtained identifiers are equal
+        let base = arc_to_usize(&reader);
+        assert_eq!(base, arc_to_usize(&clone1));
+        assert_eq!(base, arc_to_usize(&clone2));
+        assert_eq!(base, arc_to_usize(&clone3));
+        assert_eq!(base, arc_to_usize(&clone4));
     }
 }
 
@@ -569,6 +620,10 @@ pub trait ElementControllerGen2<
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>);
+    
+    // Create a deep copy, including the models
+    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>);
+    fn deep_copy_finish(&mut self, c: &HashMap<usize, (uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>)>, m: &HashMap<usize, Arc<RwLock<dyn Any>>>) {}
 }
 
 /// This is a generic DiagramController implementation.
@@ -602,6 +657,17 @@ pub struct DiagramControllerGen2<
     >,
     event_order: Vec<uuid::Uuid>,
     all_elements: HashMap<uuid::Uuid, SelectionStatus>,
+    clipboard_elements: HashMap<uuid::Uuid, Arc<
+            RwLock<
+                dyn ElementControllerGen2<
+                    ElementModelT,
+                    QueryableT,
+                    ToolT,
+                    AddCommandElementT,
+                    PropChangeT,
+                >,
+            >,
+        >>,
 
     pub _layers: Vec<bool>,
 
@@ -732,6 +798,7 @@ where
             owned_controllers,
             event_order,
             all_elements: HashMap::new(),
+            clipboard_elements: HashMap::new(),
 
             _layers: vec![true],
 
@@ -869,6 +936,50 @@ where
         handled
     }
 
+    fn set_clipboard(&mut self) {
+        // TODO: retain nesting, somehow?
+        self.clipboard_elements = Self::element_deep_copy(
+            self.all_elements.iter().filter(|e| e.1.selected()).flat_map(|e| self.controller_for(e.0).map(|c| (*e.0, c))),
+            |_| false,
+        );
+    }
+    
+    fn element_deep_copy<I, F>(e: I, uuid_present: F) -> HashMap<uuid::Uuid, Arc<RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >>>
+        where
+            I: Iterator<Item=(uuid::Uuid, Arc<RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >>)>,
+            F: Fn(&uuid::Uuid) -> bool,
+    {
+        let mut views = HashMap::new();
+        let mut models = HashMap::new();
+        
+        for (_uuid, c) in e {
+            let c = c.read().unwrap();
+            c.deep_copy_init(&uuid_present, &mut views, &mut models);
+        }
+        for (_usize, (_uuid, v)) in views.iter() {
+            let mut v = v.write().unwrap();
+            v.deep_copy_finish(&views, &models);
+        }
+        
+        views.into_iter().map(|e| e.1).collect()
+    }
+    
     fn apply_commands(
         &mut self,
         commands: Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
@@ -878,7 +989,13 @@ where
     ) {
         for command in commands {
             // TODO: transitive closure of dependency when deleting elements
-            let command = command.to_selection_insensitive(|| self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect());
+            let command = command.to_selection_insensitive(
+                || self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
+                || Self::element_deep_copy(
+                    self.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
+                    |e| self.all_elements.get(e).is_some(),
+                    ).into_iter().map(|e| e.into()).collect(),
+            );
 
             let mut undo_accumulator = vec![];
 
@@ -890,7 +1007,8 @@ where
                 | InsensitiveCommand::MoveAllElements(..)
                 | InsensitiveCommand::ResizeSpecificElementsBy(..)
                 | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
-                InsensitiveCommand::DeleteSpecificElements(uuids) => {
+                InsensitiveCommand::DeleteSpecificElements(uuids)
+                | InsensitiveCommand::CutSpecificElements(uuids) => {
                     for (uuid, element) in self
                         .owned_controllers
                         .iter()
@@ -910,6 +1028,23 @@ where
                 }
                 InsensitiveCommand::AddElement(target, element) => {
                     if *target == *self.uuid() {
+                        if let Ok((uuid, element)) = element.clone().try_into() {
+                            undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
+                                std::iter::once(uuid).collect(),
+                            ));
+
+                            let new_c = element.read().unwrap();
+                            let mut self_m = self.model.write().unwrap();
+                            self_m.add_element(new_c.model());
+                            drop(new_c);
+
+                            self.owned_controllers.insert(uuid, element);
+                            self.event_order.push(uuid);
+                        }
+                    }
+                }
+                InsensitiveCommand::PasteSpecificElements(_, elements) => {
+                    for element in elements {
                         if let Ok((uuid, element)) = element.clone().try_into() {
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(uuid).collect(),
@@ -948,7 +1083,9 @@ where
                 | InsensitiveCommand::SelectSpecific(..)
                 | InsensitiveCommand::SelectByDrag(..)
                 | InsensitiveCommand::DeleteSpecificElements(..)
-                | InsensitiveCommand::AddElement(..) => true,
+                | InsensitiveCommand::AddElement(..)
+                | InsensitiveCommand::CutSpecificElements(..)
+                | InsensitiveCommand::PasteSpecificElements(..) => true,
                 InsensitiveCommand::MoveSpecificElements(..)
                 | InsensitiveCommand::MoveAllElements(..)
                 | InsensitiveCommand::ResizeSpecificElementsBy(..)
@@ -1296,12 +1433,28 @@ where
                     InsensitiveCommand::SelectSpecific(self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(), false).into()
                 ], &mut vec![], true, false);
             }
-            DiagramCommand::DeleteSelectedElements => {
+            DiagramCommand::DeleteSelectedElements
+            | DiagramCommand::CutSelectedElements
+            | DiagramCommand::PasteClipboardElements => {
+                if matches!(command, DiagramCommand::CutSelectedElements) {
+                    self.set_clipboard();
+                }
+                
                 let mut undo = vec![];
-                self.apply_commands(vec![SensitiveCommand::DeleteSelectedElements], &mut undo, true, true);
+                self.apply_commands(vec![
+                    match command {
+                        DiagramCommand::DeleteSelectedElements => SensitiveCommand::DeleteSelectedElements,
+                        DiagramCommand::CutSelectedElements => SensitiveCommand::CutSelectedElements,
+                        DiagramCommand::PasteClipboardElements => SensitiveCommand::PasteClipboardElements,
+                        _ => unreachable!(),
+                    }
+                ], &mut undo, true, true);
                 self.last_change_flag = true;
                 global_undo.extend(undo.into_iter());
             }
+            DiagramCommand::CopySelectedElements => {
+                self.set_clipboard();
+            },
         }
     }
 
@@ -1485,6 +1638,7 @@ pub struct PackageView<
         + 'static,
 {
     model: Arc<RwLock<ModelT>>,
+    self_reference: Weak<RwLock<Self>>,
     owned_controllers: HashMap<
         uuid::Uuid,
         Arc<
@@ -1594,10 +1748,12 @@ where
             &InsensitiveCommand<AddCommandElementT, PropChangeT>,
             &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
         ),
-    ) -> Self {
+    ) -> Arc<RwLock<Self>> {
         let event_order = owned_controllers.keys().map(|e| *e).collect();
+        let c = Arc::new(RwLock::new(
         Self {
             model,
+            self_reference: Weak::new(),
             owned_controllers,
             event_order,
             all_elements: HashMap::new(),
@@ -1611,7 +1767,9 @@ where
             model_to_element_shim,
             show_properties_fun,
             apply_property_change_fun,
-        }
+        }));
+        c.write().unwrap().self_reference = Arc::downgrade(&c);
+        c
     }
     
     fn handle_size(&self, ui_scale: f32) -> f32 {
@@ -1774,7 +1932,7 @@ impl<
         ModelT: ContainerModel<ElementModelT>,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
-        BufferT: 'static,
+        BufferT: Clone + 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
@@ -2231,7 +2389,8 @@ where
                 
                 recurse!(self);
             }
-            InsensitiveCommand::DeleteSpecificElements(uuids) => {
+            InsensitiveCommand::DeleteSpecificElements(uuids)
+            | InsensitiveCommand::CutSpecificElements(uuids) => {
                 for (uuid, element) in self
                     .owned_controllers
                     .iter()
@@ -2270,6 +2429,13 @@ where
 
                 recurse!(self);
             }
+            InsensitiveCommand::PasteSpecificElements(target, _elements) => {
+                if *target == *self.uuid() {
+                    todo!("undo = delete")
+                }
+                
+                recurse!(self);
+            },
             InsensitiveCommand::PropertyChange(uuids, _property) => {
                 if uuids.contains(&*self.uuid()) {
                     let mut m = self.model.write().unwrap();
@@ -2301,6 +2467,29 @@ where
             });
         }
     }
+    
+    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
+        //let modelish = todo!();
+        //m.insert(arc_to_usize(&self.model), modelish);
+        
+        let cloneish = Arc::new(RwLock::new(Self {
+            model: self.model.clone(),
+            self_reference: Weak::new(),
+            owned_controllers: self.owned_controllers.clone(),
+            event_order: self.event_order.clone(),
+            all_elements: HashMap::new(),
+            selected_direct_elements: self.selected_direct_elements.clone(),
+            buffer: self.buffer.clone(),
+            dragged_type_and_shape: None,
+            highlight: self.highlight,
+            bounds_rect: self.bounds_rect,
+            model_to_element_shim: self.model_to_element_shim,
+            show_properties_fun: self.show_properties_fun,
+            apply_property_change_fun: self.apply_property_change_fun,
+        }));
+        cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (*self.uuid(), cloneish as Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>));
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -2325,6 +2514,7 @@ pub struct MulticonnectionView<
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
     model: Arc<RwLock<ModelT>>,
+    self_reference: Weak<RwLock<Self>>,
     buffer: BufferT,
 
     pub source: Arc<
@@ -2454,7 +2644,7 @@ where
         model_to_destination_arrowhead_type: fn(&ModelT) -> canvas::ArrowheadType,
         model_to_source_arrowhead_label: fn(&ModelT) -> Option<&str>,
         model_to_destination_arrowhead_label: fn(&ModelT) -> Option<&str>,
-    ) -> Self {
+    ) -> Arc<RwLock<Self>> {
         let mut point_to_origin = HashMap::new();
         for (idx, path) in source_points.iter().enumerate() {
             for p in path {
@@ -2467,33 +2657,38 @@ where
             }
         }
         
-        Self {
-            model,
-            buffer,
-            source,
-            destination,
-            dragged_node: None,
-            highlight: canvas::Highlight::NONE,
-            selected_vertices: HashSet::new(),
+        let c = Arc::new(RwLock::new(
+            Self {
+                model,
+                self_reference: Weak::new(),
+                buffer,
+                source,
+                destination,
+                dragged_node: None,
+                highlight: canvas::Highlight::NONE,
+                selected_vertices: HashSet::new(),
 
-            center_point,
-            source_points,
-            dest_points,
-            point_to_origin,
+                center_point,
+                source_points,
+                dest_points,
+                point_to_origin,
 
-            model_to_element_shim,
+                model_to_element_shim,
 
-            show_properties_fun,
-            apply_property_change_fun,
+                show_properties_fun,
+                apply_property_change_fun,
 
-            model_to_uuid,
-            model_to_name,
-            model_to_line_type,
-            model_to_source_arrowhead_type,
-            model_to_destination_arrowhead_type,
-            model_to_source_arrowhead_label,
-            model_to_destination_arrowhead_label,
-        }
+                model_to_uuid,
+                model_to_name,
+                model_to_line_type,
+                model_to_source_arrowhead_type,
+                model_to_destination_arrowhead_type,
+                model_to_source_arrowhead_label,
+                model_to_destination_arrowhead_label,
+            }
+        ));
+        c.write().unwrap().self_reference = Arc::downgrade(&c);
+        c
     }
     
     const VERTEX_RADIUS: f32 = 5.0;
@@ -2596,10 +2791,10 @@ where
 }
 
 impl<
-        ModelT,
+        ModelT: 'static,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
-        BufferT: 'static,
+        BufferT: Clone + 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
@@ -3028,7 +3223,9 @@ where
                 }
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
+            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            | InsensitiveCommand::CutSpecificElements(..)
+            | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids) => {
                 let self_uuid = *self.uuid();
                 if let Some(center_point) =
@@ -3157,6 +3354,48 @@ where
                 false if self.highlight.selected => SelectionStatus::TransitivelySelected,
                 false => SelectionStatus::NotSelected,
             });
+        }
+    }
+    
+    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
+        let uuid = if uuid_present(&*self.uuid()) { uuid::Uuid::now_v7() } else { *self.uuid() };
+        //let modelish = todo!();
+        //m.insert(arc_to_usize(&self.model), modelish);
+        
+        let cloneish = Arc::new(RwLock::new(Self {
+            model: self.model.clone(),
+            self_reference: Weak::new(),
+            buffer: self.buffer.clone(),
+            source: self.source.clone(),
+            destination: self.destination.clone(),
+            dragged_node: None,
+            highlight: self.highlight,
+            selected_vertices: self.selected_vertices.clone(),
+            center_point: self.center_point.clone(),
+            source_points: self.source_points.clone(),
+            dest_points: self.dest_points.clone(),
+            point_to_origin: self.point_to_origin.clone(),
+            model_to_element_shim: self.model_to_element_shim,
+            show_properties_fun: self.show_properties_fun,
+            apply_property_change_fun: self.apply_property_change_fun,
+            model_to_uuid: self.model_to_uuid,
+            model_to_name: self.model_to_name,
+            model_to_line_type: self.model_to_line_type,
+            model_to_source_arrowhead_type: self.model_to_source_arrowhead_type,
+            model_to_destination_arrowhead_type: self.model_to_destination_arrowhead_type,
+            model_to_source_arrowhead_label: self.model_to_source_arrowhead_label,
+            model_to_destination_arrowhead_label: self.model_to_destination_arrowhead_label,
+        }));
+        cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish as Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>));
+    }
+    
+    fn deep_copy_finish(&mut self, c: &HashMap<usize, (uuid::Uuid, Arc<std::sync::RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>)>, m: &HashMap<usize, Arc<RwLock<dyn Any>>>) {
+        if let Some((_u, s)) = c.get(&arc_to_usize(&self.source)) {
+            self.source = s.clone();
+        }
+        if let Some((_u, d)) = c.get(&arc_to_usize(&self.destination)) {
+            self.destination = d.clone();
         }
     }
 }

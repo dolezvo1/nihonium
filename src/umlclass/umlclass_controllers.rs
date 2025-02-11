@@ -4,14 +4,12 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2,
-    ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus,
-    FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView,
-    SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation,
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::CustomTab;
 use crate::NHApp;
 use eframe::egui;
+use std::any::Any;
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter},
@@ -811,6 +809,7 @@ pub trait UmlClassElementController:
     }
 }
 
+#[derive(Clone)]
 pub struct UmlClassPackageBuffer {
     name: String,
     comment: String,
@@ -908,7 +907,7 @@ fn umlclass_package(
         name.to_owned(),
         vec![],
     )));
-    let package_controller = Arc::new(RwLock::new(PackageView::new(
+    let package_controller = PackageView::new(
         package.clone(),
         HashMap::new(),
         UmlClassPackageBuffer {
@@ -919,7 +918,7 @@ fn umlclass_package(
         model_to_element_shim,
         show_properties_fun,
         apply_property_change_fun,
-    )));
+    );
 
     (uuid, package, package_controller)
 }
@@ -1284,7 +1283,9 @@ impl
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..) => {}
+            | InsensitiveCommand::AddElement(..)
+            | InsensitiveCommand::CutSpecificElements(..)
+            | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {
@@ -1351,8 +1352,32 @@ impl
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
         into.insert(*self.uuid(), self.highlight.selected.into());
     }
+    
+    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
+        let model = self.model.read().unwrap();
+        let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
+        let modelish = Arc::new(RwLock::new(UmlClass::new(uuid, model.stereotype, (*model.name).clone(), (*model.properties).clone(), (*model.functions).clone())));
+        m.insert(arc_to_usize(&self.model), modelish.clone());
+        
+        let mut cloneish = Arc::new(RwLock::new(Self {
+            model: modelish,
+            self_reference: Weak::new(),
+            stereotype_buffer: self.stereotype_buffer.clone(),
+            name_buffer: self.name_buffer.clone(),
+            properties_buffer: self.properties_buffer.clone(),
+            functions_buffer: self.functions_buffer.clone(),
+            comment_buffer: self.comment_buffer.clone(),
+            dragged_shape: None,
+            highlight: self.highlight,
+            position: self.position,
+            bounds_rect: self.bounds_rect,
+        }));
+        cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish as ArcRwLockControllerT));
+    }
 }
 
+#[derive(Clone)]
 pub struct UmlClassLinkBuffer {
     link_type: UmlClassLinkType,
     source_arrowhead_label: String,
@@ -1575,7 +1600,7 @@ fn umlclass_link(
         source.0,
         destination.0,
     )));
-    let link_controller = Arc::new(RwLock::new(MulticonnectionView::new(
+    let link_controller = MulticonnectionView::new(
         link.clone(),
         UmlClassLinkBuffer {
             link_type,
@@ -1598,7 +1623,7 @@ fn umlclass_link(
         model_to_destination_arrowhead_type,
         model_to_source_arrowhead_label,
         model_to_destination_arrowhead_label,
-    )));
+    );
     (link_uuid, link, link_controller)
 }
 

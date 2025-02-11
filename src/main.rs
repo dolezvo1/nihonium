@@ -914,24 +914,31 @@ impl eframe::App for NHApp {
             // Check diagram-handled shortcuts
             ui.input(|is|
                 'outer: for e in is.events.iter() {
-                    let egui::Event::Key { key, pressed, modifiers, .. } = e else { continue; };
-                    if !pressed {continue;}
-                    'inner: for ksh in &self.context.shortcut_top_order {
-                        if !(modifiers.matches_logically(ksh.1.modifiers) && *key == ksh.1.logical_key) {
-                            continue 'inner;
+                    match e {
+                        egui::Event::Cut => send_to_focused_diagram!(DiagramCommand::CutSelectedElements),
+                        egui::Event::Copy => send_to_focused_diagram!(DiagramCommand::CopySelectedElements),
+                        egui::Event::Paste(a) => send_to_focused_diagram!(DiagramCommand::PasteClipboardElements),
+                        egui::Event::Key { key, pressed, modifiers, .. } => {
+                            if !pressed {continue;}
+                            'inner: for ksh in &self.context.shortcut_top_order {
+                                if !(modifiers.matches_logically(ksh.1.modifiers) && *key == ksh.1.logical_key) {
+                                    continue 'inner;
+                                }
+                                
+                                match ksh.0 {
+                                    DiagramCommand::DropRedoStackAndLastChangeFlag
+                                    | DiagramCommand::SetLastChangeFlag => unreachable!(),
+                                    DiagramCommand::UndoImmediate => self.undo_immediate(),
+                                    DiagramCommand::RedoImmediate => self.redo_immediate(),
+                                    c => send_to_focused_diagram!(c),
+                                }
+                                
+                                break 'outer;
+                            }
                         }
-                        
-                        match ksh.0 {
-                            DiagramCommand::UndoImmediate => self.undo_immediate(),
-                            DiagramCommand::RedoImmediate => self.redo_immediate(),
-                            DiagramCommand::SelectAllElements(select) => send_to_focused_diagram!(DiagramCommand::SelectAllElements(select)),
-                            DiagramCommand::InvertSelection => send_to_focused_diagram!(DiagramCommand::InvertSelection),
-                            DiagramCommand::DeleteSelectedElements => send_to_focused_diagram!(DiagramCommand::DeleteSelectedElements),
-                            _ => unreachable!(),
-                        }
-                        
-                        break 'outer;
+                        _ => {}
                     }
+                    
                 }
             );
             

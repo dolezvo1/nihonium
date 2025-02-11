@@ -1,14 +1,12 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2,
-    ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus,
-    FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView,
-    SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation,
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::{CustomTab, NHApp};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
+use std::any::Any;
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter},
@@ -537,6 +535,8 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     )));
     let literal_controller = Arc::new(RwLock::new(RdfLiteralController {
         model: literal.clone(),
+        self_reference: Weak::new(),
+        
         content_buffer: "Eric Miller".to_owned(),
         datatype_buffer: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
         langtag_buffer: "en".to_owned(),
@@ -547,6 +547,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         position: egui::Pos2::new(300.0, 200.0),
         bounds_rect: egui::Rect::ZERO,
     }));
+    literal_controller.write().unwrap().self_reference = Arc::downgrade(&literal_controller);
 
     let (predicate_uuid, predicate, predicate_controller) = rdf_predicate(
         "http://www.w3.org/2000/10/swap/pim/contact#fullName",
@@ -774,10 +775,10 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
                     "http://www.w3.org/2001/XMLSchema#string".to_owned(),
                     "en".to_owned(),
                 )));
-                self.result = PartialRdfElement::Some((
-                    uuid,
-                    Arc::new(RwLock::new(RdfLiteralController {
+                let c = Arc::new(RwLock::new(RdfLiteralController {
                         model: literal.clone(),
+                        self_reference: Weak::new(),
+                        
                         content_buffer: "Eric Miller".to_owned(),
                         datatype_buffer: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
                         langtag_buffer: "en".to_owned(),
@@ -787,8 +788,10 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
                         highlight: canvas::Highlight::NONE,
                         position: pos,
                         bounds_rect: egui::Rect::ZERO,
-                    })),
-                ));
+                    }));
+                c.write().unwrap().self_reference = Arc::downgrade(&c);
+                
+                self.result = PartialRdfElement::Some((uuid, c));
                 self.event_lock = true;
             }
             (RdfToolStage::Node, _) => {
@@ -933,6 +936,7 @@ impl RdfContainerController for RdfDiagramController {
 }
 */
 
+#[derive(Clone)]
 pub struct RdfGraphBuffer {
     iri: String,
     comment: String,
@@ -1014,7 +1018,7 @@ fn rdf_graph(
         iri.to_owned(),
         vec![],
     )));
-    let graph_controller = Arc::new(RwLock::new(PackageView::new(
+    let graph_controller = PackageView::new(
         graph.clone(),
         HashMap::new(),
         RdfGraphBuffer {
@@ -1025,7 +1029,7 @@ fn rdf_graph(
         model_to_element_shim,
         show_properties_fun,
         apply_property_change_fun,
-    )));
+    );
 
     (uuid, graph, graph_controller)
 }
@@ -1287,7 +1291,9 @@ impl
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..) => {}
+            | InsensitiveCommand::AddElement(..)
+            | InsensitiveCommand::CutSpecificElements(..)
+            | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {
@@ -1321,10 +1327,29 @@ impl
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
         into.insert(*self.uuid(), self.highlight.selected.into());
     }
+    
+    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
+        //let modelish = todo!();
+        //m.insert(arc_to_usize(&self.model), modelish);
+        
+        let cloneish = Arc::new(RwLock::new(Self {
+            model: self.model.clone(),
+            self_reference: Weak::new(),
+            iri_buffer: self.iri_buffer.clone(),
+            comment_buffer: self.comment_buffer.clone(),
+            dragged: false,
+            highlight: self.highlight,
+            position: self.position,
+            bounds_radius: self.bounds_radius,
+        }));
+        cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (*self.uuid(), cloneish as ArcRwLockControllerT));
+    }
 }
 
 pub struct RdfLiteralController {
     pub model: Arc<RwLock<RdfLiteral>>,
+    self_reference: Weak<RwLock<Self>>,
 
     content_buffer: String,
     datatype_buffer: String,
@@ -1561,7 +1586,9 @@ impl
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..) => {}
+            | InsensitiveCommand::AddElement(..)
+            | InsensitiveCommand::CutSpecificElements(..)
+            | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {
@@ -1613,8 +1640,29 @@ impl
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
         into.insert(*self.uuid(), self.highlight.selected.into());
     }
+    
+    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
+        //let modelish = todo!();
+        //m.insert(arc_to_usize(&self.model), modelish);
+        
+        let cloneish = Arc::new(RwLock::new(Self {
+            model: self.model.clone(),
+            self_reference: Weak::new(),
+            content_buffer: self.content_buffer.clone(),
+            datatype_buffer: self.datatype_buffer.clone(),
+            langtag_buffer: self.langtag_buffer.clone(),
+            comment_buffer: self.comment_buffer.clone(),
+            dragged: false,
+            highlight: self.highlight,
+            position: self.position,
+            bounds_rect: self.bounds_rect,
+        }));
+        cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (*self.uuid(), cloneish as ArcRwLockControllerT));
+    }
 }
 
+#[derive(Clone)]
 pub struct RdfPredicateBuffer {
     iri: String,
     comment: String,
@@ -1735,7 +1783,7 @@ fn rdf_predicate(
         source.0,
         destination.0,
     )));
-    let predicate_controller = Arc::new(RwLock::new(MulticonnectionView::new(
+    let predicate_controller = MulticonnectionView::new(
         predicate.clone(),
         RdfPredicateBuffer {
             iri: iri.to_owned(),
@@ -1756,7 +1804,7 @@ fn rdf_predicate(
         model_to_destination_arrowhead_type,
         model_to_source_arrowhead_label,
         model_to_destination_arrowhead_label,
-    )));
+    );
     (predicate_uuid, predicate, predicate_controller)
 }
 
