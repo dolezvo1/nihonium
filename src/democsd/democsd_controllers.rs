@@ -1451,12 +1451,20 @@ impl
         }
     }
     
-    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
-        //let modelish = todo!();
-        //m.insert(arc_to_usize(&self.model), modelish);
+    fn deep_copy_init(
+        &self,
+        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>,
+        m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>,
+    ) {
+        let model = self.model.read().unwrap();
+        let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
+        let modelish = Arc::new(RwLock::new(DemoCsdTransactor::new(uuid, (*model.identifier).clone(), (*model.name).clone(), model.internal,
+            model.transaction.clone(), model.transaction_selfactivating)));
+        m.insert(arc_to_usize(&self.model), modelish.clone());
         
         let cloneish = Arc::new(RwLock::new(Self {
-            model: self.model.clone(),
+            model: modelish,
             self_reference: Weak::new(),
             transaction_view: self.transaction_view.clone(),
             identifier_buffer: self.identifier_buffer.clone(),
@@ -1470,7 +1478,7 @@ impl
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (*self.uuid(), cloneish as ArcRwLockControllerT));
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish as ArcRwLockControllerT));
     }
 }
 
@@ -1871,11 +1879,13 @@ impl
     }
     
     fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
-        //let modelish = todo!();
-        //m.insert(arc_to_usize(&self.model), modelish);
+        let model = self.model.read().unwrap();
+        let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
+        let modelish = Arc::new(RwLock::new(DemoCsdTransaction::new(uuid, (*model.identifier).clone(), (*model.name).clone())));
+        m.insert(arc_to_usize(&self.model), modelish.clone());
         
         let cloneish = Arc::new(RwLock::new(Self {
-            model: self.model.clone(),
+            model: modelish,
             self_reference: Weak::new(),
             identifier_buffer: self.identifier_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -1886,7 +1896,7 @@ impl
             min_shape: self.min_shape,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (*self.uuid(), cloneish as ArcRwLockControllerT));
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish as ArcRwLockControllerT));
     }
 }
 
