@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, PackageView, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::{CustomTab, NHApp};
 use eframe::egui;
@@ -34,19 +34,17 @@ type DiagramViewT = DiagramControllerGen2<
     RdfPropChange,
 >;
 type PackageViewT = crate::common::controller::PackageView<
-    RdfGraph,
+    RdfGraphAdapter,
     dyn RdfElement,
     RdfQueryable,
-    RdfGraphBuffer,
     NaiveRdfTool,
     RdfElementOrVertex,
     RdfPropChange,
 >;
 type LinkViewT = MulticonnectionView<
-    RdfPredicate,
+    RdfPredicateAdapter,
     dyn RdfElement,
     RdfQueryable,
-    RdfPredicateBuffer,
     NaiveRdfTool,
     RdfElementOrVertex,
     RdfPropChange,
@@ -937,73 +935,87 @@ impl RdfContainerController for RdfDiagramController {
 */
 
 #[derive(Clone)]
-pub struct RdfGraphBuffer {
-    iri: String,
-    comment: String,
+pub struct RdfGraphAdapter {
+    model: Arc<RwLock<RdfGraph>>,
 }
 
-fn rdf_graph(
-    iri: &str,
-    bounds_rect: egui::Rect,
-) -> (uuid::Uuid, Arc<RwLock<RdfGraph>>, Arc<RwLock<PackageViewT>>) {
-    fn model_to_element_shim(a: Arc<RwLock<RdfGraph>>) -> Arc<RwLock<dyn RdfElement>> {
-        a
+impl PackageAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGraphAdapter {
+    fn model(&self) -> Arc<RwLock<dyn RdfElement>> {
+        self.model.clone()
     }
 
-    fn show_properties_fun(
-        buffer: &mut RdfGraphBuffer,
+    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+        self.model.read().unwrap().uuid.clone()
+    }
+
+    fn model_name(&self) -> Arc<String> {
+        self.model.read().unwrap().iri.clone()
+    }
+    
+    fn add_element(&mut self, e: Arc<RwLock<dyn RdfElement>>) {
+        self.model.write().unwrap().add_element(e);
+    }
+
+    fn delete_elements(&mut self, uuids: &std::collections::HashSet<uuid::Uuid>) {
+        self.model.write().unwrap().delete_elements(uuids);
+    }
+
+    fn show_properties(
+        &self,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) {
+        let model = self.model.read().unwrap();
+        let mut iri_buffer = (*model.iri).clone();
         ui.label("IRI:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut buffer.iri),
+                egui::TextEdit::multiline(&mut iri_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                RdfPropChange::IriChange(Arc::new(buffer.iri.clone())),
+                RdfPropChange::IriChange(Arc::new(iri_buffer)),
             ]));
         }
 
+        let mut comment_buffer = (*model.comment).clone();
         ui.label("Comment:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut buffer.comment),
+                egui::TextEdit::multiline(&mut comment_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                RdfPropChange::CommentChange(Arc::new(buffer.comment.clone())),
+                RdfPropChange::CommentChange(Arc::new(comment_buffer)),
             ]));
         }
     }
-    fn apply_property_change_fun(
-        buffer: &mut RdfGraphBuffer,
-        model: &mut RdfGraph,
+
+    fn apply_change(
+        &self,
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            let mut model = self.model.write().unwrap();
             for property in properties {
                 match property {
                     RdfPropChange::IriChange(iri) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid()).collect(),
+                            std::iter::once(*model.uuid).collect(),
                             vec![RdfPropChange::IriChange(model.iri.clone())],
                         ));
-                        buffer.iri = (**iri).clone();
                         model.iri = iri.clone();
                     }
                     RdfPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid()).collect(),
+                            std::iter::once(*model.uuid).collect(),
                             vec![RdfPropChange::CommentChange(model.comment.clone())],
                         ));
-                        buffer.comment = (**comment).clone();
                         model.comment = comment.clone();
                     }
                     _ => {}
@@ -1012,6 +1024,29 @@ fn rdf_graph(
         }
     }
 
+    fn deep_copy_init(
+        &self,
+        uuid: uuid::Uuid,
+        m: &mut HashMap<usize, (Arc<RwLock<dyn RdfElement>>, Arc<dyn Any + Send + Sync>)>,
+    ) -> Self where Self: Sized {
+        let model = self.model.read().unwrap();
+        let model = Arc::new(RwLock::new(RdfGraph::new(uuid, (*model.iri).clone(), model.contained_elements.clone())));
+        m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
+        Self { model }
+    }
+
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<usize, (Arc<RwLock<dyn RdfElement>>, Arc<dyn Any + Send + Sync>)>
+    ) {
+        todo!()
+    }
+}
+
+fn rdf_graph(
+    iri: &str,
+    bounds_rect: egui::Rect,
+) -> (uuid::Uuid, Arc<RwLock<RdfGraph>>, Arc<RwLock<PackageViewT>>) {
     let uuid = uuid::Uuid::now_v7();
     let graph = Arc::new(RwLock::new(RdfGraph::new(
         uuid.clone(),
@@ -1019,16 +1054,11 @@ fn rdf_graph(
         vec![],
     )));
     let graph_controller = PackageView::new(
-        graph.clone(),
-        HashMap::new(),
-        RdfGraphBuffer {
-            iri: iri.to_owned(),
-            comment: "".to_owned(),
+        RdfGraphAdapter {
+            model: graph.clone(),
         },
+        HashMap::new(),
         bounds_rect,
-        model_to_element_shim,
-        show_properties_fun,
-        apply_property_change_fun,
     );
 
     (uuid, graph, graph_controller)
@@ -1342,11 +1372,22 @@ impl
         into.insert(*self.uuid(), self.highlight.selected.into());
     }
     
-    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
+    fn deep_copy_init(
+        &self,
+        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        c: &mut HashMap<usize, (uuid::Uuid, 
+            ArcRwLockControllerT,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &mut HashMap<usize, (
+            Arc<RwLock<dyn RdfElement>>,
+            Arc<dyn Any + Send + Sync>,
+        )>
+    ) {
         let model = self.model.read().unwrap();
         let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
         let modelish = Arc::new(RwLock::new(RdfNode::new(uuid, (*model.iri).clone())));
-        m.insert(arc_to_usize(&self.model), modelish.clone());
+        m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
         
         let cloneish = Arc::new(RwLock::new(Self {
             model: modelish,
@@ -1359,7 +1400,7 @@ impl
             bounds_radius: self.bounds_radius,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish as ArcRwLockControllerT));
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
     }
 }
 
@@ -1671,11 +1712,22 @@ impl
         into.insert(*self.uuid(), self.highlight.selected.into());
     }
     
-    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
+    fn deep_copy_init(
+        &self,
+        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        c: &mut HashMap<usize, (uuid::Uuid, 
+            ArcRwLockControllerT,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &mut HashMap<usize, (
+            Arc<RwLock<dyn RdfElement>>,
+            Arc<dyn Any + Send + Sync>,
+        )>
+    ) {
         let model = self.model.read().unwrap();
         let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
         let modelish = Arc::new(RwLock::new(RdfLiteral::new(uuid, (*model.content).clone(), (*model.datatype).clone(), (*model.langtag).clone())));
-        m.insert(arc_to_usize(&self.model), modelish.clone());
+        m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
         
         let cloneish = Arc::new(RwLock::new(Self {
             model: modelish,
@@ -1690,57 +1742,67 @@ impl
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish as ArcRwLockControllerT));
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
     }
 }
 
 #[derive(Clone)]
-pub struct RdfPredicateBuffer {
-    iri: String,
-    comment: String,
+pub struct RdfPredicateAdapter {
+    model: Arc<RwLock<RdfPredicate>>,
 }
 
-fn rdf_predicate(
-    iri: &str,
-    source: (Arc<RwLock<dyn RdfElement>>, ArcRwLockControllerT),
-    destination: (Arc<RwLock<dyn RdfElement>>, ArcRwLockControllerT),
-) -> (
-    uuid::Uuid,
-    Arc<RwLock<RdfPredicate>>,
-    Arc<RwLock<LinkViewT>>,
-) {
-    fn model_to_element_shim(a: Arc<RwLock<RdfPredicate>>) -> Arc<RwLock<dyn RdfElement>> {
-        a
+impl MulticonnectionAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfPredicateAdapter {
+    fn model(&self) -> Arc<RwLock<dyn RdfElement>> {
+        self.model.clone()
     }
 
-    fn show_properties_fun(
-        buffer: &mut RdfPredicateBuffer,
+    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+        self.model.read().unwrap().uuid.clone()
+    }
+
+    fn model_name(&self) -> Arc<String> {
+        self.model.read().unwrap().iri.clone()
+    }
+
+    fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
+        (canvas::LineType::Solid, canvas::ArrowheadType::None, None)
+    }
+
+    fn destination_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
+        (canvas::LineType::Solid, canvas::ArrowheadType::OpenTriangle, None)
+    }
+
+    fn show_properties(
+        &self,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) {
+        let model = self.model.read().unwrap();
+        let mut iri_buffer = (*model.iri).clone();
         ui.label("IRI:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut buffer.iri),
+                egui::TextEdit::multiline(&mut iri_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                RdfPropChange::IriChange(Arc::new(buffer.iri.clone())),
+                RdfPropChange::IriChange(Arc::new(iri_buffer)),
             ]));
         }
 
+        let mut comment_buffer = (*model.comment).clone();
         ui.label("Comment:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut buffer.comment),
+                egui::TextEdit::multiline(&mut comment_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                RdfPropChange::CommentChange(Arc::new(buffer.comment.clone())),
+                RdfPropChange::CommentChange(Arc::new(comment_buffer)),
             ]));
         }
 
@@ -1755,29 +1817,28 @@ fn rdf_predicate(
             ]));
         }
     }
-    fn apply_property_change_fun(
-        buffer: &mut RdfPredicateBuffer,
-        model: &mut RdfPredicate,
+
+    fn apply_change(
+        &self,
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            let mut model = self.model.write().unwrap();
             for property in properties {
                 match property {
                     RdfPropChange::IriChange(iri) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid()).collect(),
+                            std::iter::once(*model.uuid).collect(),
                             vec![RdfPropChange::IriChange(model.iri.clone())],
                         ));
-                        buffer.iri = (**iri).clone();
                         model.iri = iri.clone();
                     }
                     RdfPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid()).collect(),
+                            std::iter::once(*model.uuid).collect(),
                             vec![RdfPropChange::CommentChange(model.comment.clone())],
                         ));
-                        buffer.comment = (**comment).clone();
                         model.comment = comment.clone();
                     }
                     _ => {}
@@ -1786,28 +1847,41 @@ fn rdf_predicate(
         }
     }
 
-    fn model_to_uuid(a: &RdfPredicate) -> Arc<uuid::Uuid> {
-        a.uuid()
-    }
-    fn model_to_name(a: &RdfPredicate) -> Arc<String> {
-        a.iri.clone()
-    }
-    fn model_to_line_type(_a: &RdfPredicate) -> canvas::LineType {
-        canvas::LineType::Solid
-    }
-    fn model_to_source_arrowhead_type(_a: &RdfPredicate) -> canvas::ArrowheadType {
-        canvas::ArrowheadType::None
-    }
-    fn model_to_destination_arrowhead_type(_a: &RdfPredicate) -> canvas::ArrowheadType {
-        canvas::ArrowheadType::OpenTriangle
-    }
-    fn model_to_source_arrowhead_label(_a: &RdfPredicate) -> Option<&str> {
-        None
-    }
-    fn model_to_destination_arrowhead_label(_a: &RdfPredicate) -> Option<&str> {
-        None
+    fn deep_copy_init(
+        &self,
+        uuid: uuid::Uuid,
+        m: &mut HashMap<usize, (Arc<RwLock<dyn RdfElement>>, Arc<dyn Any + Send + Sync>)>
+    ) -> Self where Self: Sized {
+        let model = self.model.read().unwrap();
+        let model = Arc::new(RwLock::new(RdfPredicate::new(uuid, (*model.iri).clone(), model.source.clone(), model.destination.clone())));
+        m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
+        Self { model }
     }
 
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<usize, (Arc<RwLock<dyn RdfElement>>, Arc<dyn Any + Send + Sync>)>
+    ) {
+        let mut model = self.model.write().unwrap();
+        
+        if let Some((new_source, _)) = m.get(&arc_to_usize(&model.source)) {
+            model.source = new_source.clone();
+        }
+        if let Some((new_dest, _)) = m.get(&arc_to_usize(&model.destination)) {
+            model.destination = new_dest.clone();
+        }
+    }
+}
+
+fn rdf_predicate(
+    iri: &str,
+    source: (Arc<RwLock<dyn RdfElement>>, ArcRwLockControllerT),
+    destination: (Arc<RwLock<dyn RdfElement>>, ArcRwLockControllerT),
+) -> (
+    uuid::Uuid,
+    Arc<RwLock<RdfPredicate>>,
+    Arc<RwLock<LinkViewT>>,
+) {
     let predicate_uuid = uuid::Uuid::now_v7();
     let predicate = Arc::new(RwLock::new(RdfPredicate::new(
         predicate_uuid.clone(),
@@ -1816,26 +1890,14 @@ fn rdf_predicate(
         destination.0,
     )));
     let predicate_controller = MulticonnectionView::new(
-        predicate.clone(),
-        RdfPredicateBuffer {
-            iri: iri.to_owned(),
-            comment: "".to_owned(),
+        RdfPredicateAdapter {
+            model: predicate.clone(),
         },
         source.1,
         destination.1,
         None,
         vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
         vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        model_to_element_shim,
-        show_properties_fun,
-        apply_property_change_fun,
-        model_to_uuid,
-        model_to_name,
-        model_to_line_type,
-        model_to_source_arrowhead_type,
-        model_to_destination_arrowhead_type,
-        model_to_source_arrowhead_label,
-        model_to_destination_arrowhead_label,
     );
     (predicate_uuid, predicate, predicate_controller)
 }

@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionView, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
 };
 use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage,
@@ -33,19 +33,17 @@ type DiagramViewT = DiagramControllerGen2<
     DemoCsdPropChange,
 >;
 type PackageViewT = crate::common::controller::PackageView<
-    DemoCsdPackage,
+    DemoCsdPackageAdapter,
     dyn DemoCsdElement,
     DemoCsdQueryable,
-    DemoCsdPackageBuffer,
     NaiveDemoCsdTool,
     DemoCsdElementOrVertex,
     DemoCsdPropChange,
 >;
 type LinkViewT = MulticonnectionView<
-    DemoCsdLink,
+    DemoCsdLinkAdapter,
     dyn DemoCsdElement,
     DemoCsdQueryable,
-    DemoCsdLinkBuffer,
     NaiveDemoCsdTool,
     DemoCsdElementOrVertex,
     DemoCsdPropChange,
@@ -756,9 +754,112 @@ pub trait RdfContainerController {
 }
 
 #[derive(Clone)]
-pub struct DemoCsdPackageBuffer {
-    name: String,
-    comment: String,
+pub struct DemoCsdPackageAdapter {
+    model: Arc<RwLock<DemoCsdPackage>>,
+}
+
+impl PackageAdapter<dyn DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdPackageAdapter {
+    fn model(&self) -> Arc<RwLock<dyn DemoCsdElement>> {
+        self.model.clone()
+    }
+
+    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+        self.model.read().unwrap().uuid.clone()
+    }
+
+    fn model_name(&self) -> Arc<String> {
+        self.model.read().unwrap().name.clone()
+    }
+
+    fn add_element(&mut self, e: Arc<RwLock<dyn DemoCsdElement>>) {
+        self.model.write().unwrap().add_element(e);
+    }
+
+    fn delete_elements(&mut self, uuids: &std::collections::HashSet<uuid::Uuid>) {
+        self.model.write().unwrap().delete_elements(uuids);
+    }
+    
+    fn show_properties(
+        &self,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>
+    ) {
+        let model = self.model.read().unwrap();
+        let mut name_buffer = (*model.name).clone();
+        ui.label("Name:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut name_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoCsdPropChange::NameChange(Arc::new(name_buffer)),
+            ]));
+        }
+
+        let mut comment_buffer = (*model.comment).clone();
+        ui.label("Comment:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut comment_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoCsdPropChange::CommentChange(Arc::new(comment_buffer)),
+            ]));
+        }
+    }
+
+    fn apply_change(
+        &self,
+        command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            let mut model = self.model.write().unwrap();
+            for property in properties {
+                match property {
+                    DemoCsdPropChange::NameChange(name) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid).collect(),
+                            vec![DemoCsdPropChange::NameChange(model.name.clone())],
+                        ));
+                        model.name = name.clone();
+                    }
+                    DemoCsdPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid).collect(),
+                            vec![DemoCsdPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        model.comment = comment.clone();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn deep_copy_init(
+        &self,
+        uuid: uuid::Uuid,
+        m: &mut HashMap<usize, (Arc<RwLock<dyn DemoCsdElement>>, Arc<dyn Any + Send + Sync>)>,
+    ) -> Self where Self: Sized {
+        let model = self.model.read().unwrap();
+        let model = Arc::new(RwLock::new(DemoCsdPackage::new(uuid, (*model.name).clone(), model.contained_elements.clone())));
+        m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
+        Self { model }
+    }
+
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<usize, (Arc<RwLock<dyn DemoCsdElement>>, Arc<dyn Any + Send + Sync>)>
+    ) {
+        todo!()
+    }
 }
 
 fn democsd_package(
@@ -769,72 +870,6 @@ fn democsd_package(
     Arc<RwLock<DemoCsdPackage>>,
     Arc<RwLock<PackageViewT>>,
 ) {
-    fn model_to_element_shim(a: Arc<RwLock<DemoCsdPackage>>) -> Arc<RwLock<dyn DemoCsdElement>> {
-        a
-    }
-
-    fn show_properties_fun(
-        buffer: &mut DemoCsdPackageBuffer,
-        ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-    ) {
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut buffer.name),
-            )
-            .changed()
-        {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                DemoCsdPropChange::NameChange(Arc::new(buffer.name.clone())),
-            ]));
-        }
-
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut buffer.comment),
-            )
-            .changed()
-        {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                DemoCsdPropChange::CommentChange(Arc::new(buffer.comment.clone())),
-            ]));
-        }
-    }
-    fn apply_property_change_fun(
-        buffer: &mut DemoCsdPackageBuffer,
-        model: &mut DemoCsdPackage,
-        command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-    ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
-            for property in properties {
-                match property {
-                    DemoCsdPropChange::NameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid()).collect(),
-                            vec![DemoCsdPropChange::NameChange(model.name.clone())],
-                        ));
-                        buffer.name = (**name).clone();
-                        model.name = name.clone();
-                    }
-                    DemoCsdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid()).collect(),
-                            vec![DemoCsdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        buffer.comment = (**comment).clone();
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
     let uuid = uuid::Uuid::now_v7();
     let graph = Arc::new(RwLock::new(DemoCsdPackage::new(
         uuid.clone(),
@@ -842,16 +877,11 @@ fn democsd_package(
         vec![],
     )));
     let graph_controller = PackageViewT::new(
-        graph.clone(),
-        HashMap::new(),
-        DemoCsdPackageBuffer {
-            name: name.to_owned(),
-            comment: "".to_owned(),
+        DemoCsdPackageAdapter {
+            model: graph.clone(),
         },
+        HashMap::new(),
         bounds_rect,
-        model_to_element_shim,
-        show_properties_fun,
-        apply_property_change_fun,
     );
 
     (uuid, graph, graph_controller)
@@ -1454,14 +1484,20 @@ impl
     fn deep_copy_init(
         &self,
         uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
-        c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>,
-        m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>,
+        c: &mut HashMap<usize, (uuid::Uuid, 
+            ArcRwLockControllerT,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &mut HashMap<usize, (
+            Arc<RwLock<dyn DemoCsdElement>>,
+            Arc<dyn Any + Send + Sync>,
+        )>
     ) {
         let model = self.model.read().unwrap();
         let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
         let modelish = Arc::new(RwLock::new(DemoCsdTransactor::new(uuid, (*model.identifier).clone(), (*model.name).clone(), model.internal,
             model.transaction.clone(), model.transaction_selfactivating)));
-        m.insert(arc_to_usize(&self.model), modelish.clone());
+        m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
         
         let cloneish = Arc::new(RwLock::new(Self {
             model: modelish,
@@ -1478,7 +1514,26 @@ impl
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish as ArcRwLockControllerT));
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
+    }
+    
+    fn deep_copy_finish(
+        &mut self,
+        c: &HashMap<usize, (uuid::Uuid, 
+            ArcRwLockControllerT,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &HashMap<usize, (
+            Arc<RwLock<dyn DemoCsdElement>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+    ) {
+        if let Some((_, _, new_ta)) = self.transaction_view.as_ref().and_then(|e| c.get(&arc_to_usize(e)))  {
+            let new_ta: Result<Arc<RwLock<DemoCsdTransactionView>>, _> = Arc::downcast(new_ta.clone());
+            if let Ok(new_ta) = new_ta {
+                self.transaction_view = Some(new_ta.clone());
+            }
+        }
     }
 }
 
@@ -1878,11 +1933,22 @@ impl
         into.insert(*self.uuid(), self.highlight.selected.into());
     }
     
-    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, ArcRwLockControllerT)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
+    fn deep_copy_init(
+        &self,
+        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        c: &mut HashMap<usize, (uuid::Uuid, 
+            ArcRwLockControllerT,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &mut HashMap<usize, (
+            Arc<RwLock<dyn DemoCsdElement>>,
+            Arc<dyn Any + Send + Sync>,
+        )>
+    ) {
         let model = self.model.read().unwrap();
         let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
         let modelish = Arc::new(RwLock::new(DemoCsdTransaction::new(uuid, (*model.identifier).clone(), (*model.name).clone())));
-        m.insert(arc_to_usize(&self.model), modelish.clone());
+        m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
         
         let cloneish = Arc::new(RwLock::new(Self {
             model: modelish,
@@ -1896,14 +1962,154 @@ impl
             min_shape: self.min_shape,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish as ArcRwLockControllerT));
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
     }
 }
 
 #[derive(Clone)]
-pub struct DemoCsdLinkBuffer {
-    link_type: DemoCsdLinkType,
-    comment: String,
+pub struct DemoCsdLinkAdapter {
+    model: Arc<RwLock<DemoCsdLink>>,
+}
+
+impl DemoCsdLinkAdapter {
+    fn line_type(&self) -> canvas::LineType {
+        match self.model.read().unwrap().link_type {
+            DemoCsdLinkType::Initiation => canvas::LineType::Solid,
+            DemoCsdLinkType::Interstriction | DemoCsdLinkType::Interimpediment => {
+                canvas::LineType::Dashed
+            }
+        }
+    }
+}
+
+impl MulticonnectionAdapter<dyn DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdLinkAdapter {
+    fn model(&self) -> Arc<RwLock<dyn DemoCsdElement>> {
+        self.model.clone()
+    }
+
+    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+        self.model.read().unwrap().uuid.clone()
+    }
+
+    fn model_name(&self) -> Arc<String> {
+        Arc::new("TODO".to_owned())
+    }
+
+    fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
+        (self.line_type(), match self.model.read().unwrap().link_type {
+            DemoCsdLinkType::Initiation | DemoCsdLinkType::Interstriction => {
+                canvas::ArrowheadType::None
+            }
+            DemoCsdLinkType::Interimpediment => canvas::ArrowheadType::FullTriangle,
+        }, None)
+    }
+
+    fn destination_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
+        (self.line_type(), canvas::ArrowheadType::None, None)
+    }
+
+    fn show_properties(
+        &self,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>
+    ) {
+        let model = self.model.read().unwrap();
+        
+        let mut link_type_buffer = model.link_type.clone();
+        ui.label("Type:");
+        egui::ComboBox::from_id_salt("Type:")
+            .selected_text(link_type_buffer.char())
+            .show_ui(ui, |ui| {
+                for value in [
+                    DemoCsdLinkType::Initiation,
+                    DemoCsdLinkType::Interstriction,
+                    DemoCsdLinkType::Interimpediment,
+                ] {
+                    if ui
+                        .selectable_value(&mut link_type_buffer, value, value.char())
+                        .clicked()
+                    {
+                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                            DemoCsdPropChange::LinkTypeChange(link_type_buffer),
+                        ]));
+                    }
+                }
+            });
+
+        let mut comment_buffer = (*model.comment).clone();
+        ui.label("Comment:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut comment_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoCsdPropChange::CommentChange(Arc::new(comment_buffer)),
+            ]));
+        }
+    }
+
+    fn apply_change(
+        &self,
+        command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            let mut model = self.model.write().unwrap();
+            for property in properties {
+                match property {
+                    DemoCsdPropChange::LinkTypeChange(link_type) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid).collect(),
+                            vec![DemoCsdPropChange::LinkTypeChange(model.link_type)],
+                        ));
+                        model.link_type = *link_type;
+                    }
+                    DemoCsdPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*model.uuid).collect(),
+                            vec![DemoCsdPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        model.comment = comment.clone();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn deep_copy_init(
+        &self,
+        uuid: uuid::Uuid,
+        m: &mut HashMap<usize, (Arc<RwLock<dyn DemoCsdElement>>, Arc<dyn Any + Send + Sync>)>
+    ) -> Self where Self: Sized {
+        let model = self.model.read().unwrap();
+        let model = Arc::new(RwLock::new(DemoCsdLink::new(uuid, model.link_type, model.source.clone(), model.target.clone())));
+        m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
+        Self { model }
+    }
+
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<usize, (Arc<RwLock<dyn DemoCsdElement>>, Arc<dyn Any + Send + Sync>)>
+    ) {
+        let mut model = self.model.write().unwrap();
+        
+        if let Some((_, new_source)) = m.get(&arc_to_usize(&model.source)) {
+            let new_source: Result<Arc<RwLock<DemoCsdTransactor>>, _> = Arc::downcast(new_source.clone());
+            if let Ok(new_source) = new_source {
+                model.source = new_source;
+            }
+        }
+        if let Some((_, new_dest)) = m.get(&arc_to_usize(&model.target)) {
+            let new_dest: Result<Arc<RwLock<DemoCsdTransaction>>, _> = Arc::downcast(new_dest.clone());
+            if let Ok(new_dest) = new_dest {
+                model.target = new_dest;
+            }
+        }
+    }
 }
 
 fn democsd_link(
@@ -1917,111 +2123,6 @@ fn democsd_link(
         ArcRwLockControllerT,
     ),
 ) -> (uuid::Uuid, Arc<RwLock<DemoCsdLink>>, Arc<RwLock<LinkViewT>>) {
-    fn model_to_element_shim(a: Arc<RwLock<DemoCsdLink>>) -> Arc<RwLock<dyn DemoCsdElement>> {
-        a
-    }
-
-    fn show_properties_fun(
-        buffer: &mut DemoCsdLinkBuffer,
-        ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-    ) {
-        ui.label("Type:");
-        egui::ComboBox::from_id_salt("Type:")
-            .selected_text(buffer.link_type.char())
-            .show_ui(ui, |ui| {
-                for value in [
-                    DemoCsdLinkType::Initiation,
-                    DemoCsdLinkType::Interstriction,
-                    DemoCsdLinkType::Interimpediment,
-                ] {
-                    if ui
-                        .selectable_value(&mut buffer.link_type, value, value.char())
-                        .clicked()
-                    {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                            DemoCsdPropChange::LinkTypeChange(buffer.link_type),
-                        ]));
-                    }
-                }
-            });
-
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut buffer.comment),
-            )
-            .changed()
-        {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                DemoCsdPropChange::CommentChange(Arc::new(buffer.comment.clone())),
-            ]));
-        }
-    }
-    fn apply_property_change_fun(
-        buffer: &mut DemoCsdLinkBuffer,
-        model: &mut DemoCsdLink,
-        command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-    ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
-            for property in properties {
-                match property {
-                    DemoCsdPropChange::LinkTypeChange(link_type) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid()).collect(),
-                            vec![DemoCsdPropChange::LinkTypeChange(model.link_type)],
-                        ));
-                        buffer.link_type = *link_type;
-                        model.link_type = *link_type;
-                    }
-                    DemoCsdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid()).collect(),
-                            vec![DemoCsdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        buffer.comment = (**comment).clone();
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    fn model_to_uuid(a: &DemoCsdLink) -> Arc<uuid::Uuid> {
-        a.uuid()
-    }
-    fn model_to_name(a: &DemoCsdLink) -> Arc<String> {
-        Arc::new("TODO".to_owned())
-    }
-    fn model_to_line_type(a: &DemoCsdLink) -> canvas::LineType {
-        match a.link_type {
-            DemoCsdLinkType::Initiation => canvas::LineType::Solid,
-            DemoCsdLinkType::Interstriction | DemoCsdLinkType::Interimpediment => {
-                canvas::LineType::Dashed
-            }
-        }
-    }
-    fn model_to_source_arrowhead_type(a: &DemoCsdLink) -> canvas::ArrowheadType {
-        match a.link_type {
-            DemoCsdLinkType::Initiation | DemoCsdLinkType::Interstriction => {
-                canvas::ArrowheadType::None
-            }
-            DemoCsdLinkType::Interimpediment => canvas::ArrowheadType::FullTriangle,
-        }
-    }
-    fn model_to_destination_arrowhead_type(_a: &DemoCsdLink) -> canvas::ArrowheadType {
-        canvas::ArrowheadType::None
-    }
-    fn model_to_source_arrowhead_label(_a: &DemoCsdLink) -> Option<&str> {
-        None
-    }
-    fn model_to_destination_arrowhead_label(_a: &DemoCsdLink) -> Option<&str> {
-        None
-    }
-
     let predicate_uuid = uuid::Uuid::now_v7();
     let predicate = Arc::new(RwLock::new(DemoCsdLink::new(
         predicate_uuid.clone(),
@@ -2030,26 +2131,14 @@ fn democsd_link(
         destination.0,
     )));
     let predicate_controller = MulticonnectionView::new(
-        predicate.clone(),
-        DemoCsdLinkBuffer {
-            link_type,
-            comment: "".to_owned(),
+        DemoCsdLinkAdapter {
+            model: predicate.clone(),
         },
         source.1,
         destination.1,
         None,
         vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
         vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        model_to_element_shim,
-        show_properties_fun,
-        apply_property_change_fun,
-        model_to_uuid,
-        model_to_name,
-        model_to_line_type,
-        model_to_source_arrowhead_type,
-        model_to_destination_arrowhead_type,
-        model_to_source_arrowhead_label,
-        model_to_destination_arrowhead_label,
     );
     (predicate_uuid, predicate, predicate_controller)
 }

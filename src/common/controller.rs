@@ -584,7 +584,7 @@ pub trait ElementControllerGen2<
     ToolT,
     AddCommandElementT: Clone + Debug,
     PropChangeT: Clone + Debug,
->: ElementController<CommonElementT> + ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> where
+>: ElementController<CommonElementT> + ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + Send + Sync where
     ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
 {
     fn show_properties(
@@ -622,8 +622,28 @@ pub trait ElementControllerGen2<
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>);
     
     // Create a deep copy, including the models
-    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>);
-    fn deep_copy_finish(&mut self, c: &HashMap<usize, (uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>)>, m: &HashMap<usize, Arc<RwLock<dyn Any>>>) {}
+    fn deep_copy_init(
+        &self,
+        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        c: &mut HashMap<usize, (uuid::Uuid, 
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &mut HashMap<usize, (
+            Arc<RwLock<CommonElementT>>,
+            Arc<dyn Any + Send + Sync>,
+        )>);
+    fn deep_copy_finish(
+        &mut self,
+        c: &HashMap<usize, (uuid::Uuid, 
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &HashMap<usize, (
+            Arc<RwLock<CommonElementT>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+    ) {}
 }
 
 /// This is a generic DiagramController implementation.
@@ -972,12 +992,12 @@ where
             let c = c.read().unwrap();
             c.deep_copy_init(&uuid_present, &mut views, &mut models);
         }
-        for (_usize, (_uuid, v)) in views.iter() {
-            let mut v = v.write().unwrap();
-            v.deep_copy_finish(&views, &models);
+        for (_usize, (_uuid, v1, v2)) in views.iter() {
+            let mut v1 = v1.write().unwrap();
+            v1.deep_copy_finish(&views, &models);
         }
         
-        views.into_iter().map(|e| e.1).collect()
+        views.into_iter().map(|(u, e)| (e.0, e.1)).collect()
     }
     
     fn apply_commands(
@@ -1593,17 +1613,51 @@ where
     }
 }
 
+
+pub trait PackageAdapter<
+    ElementModelT: ?Sized + 'static,
+    AddCommandElementT: Clone + Debug,
+    PropChangeT: Clone + Debug,
+>: Send + Sync + 'static {
+    fn model(&self) -> Arc<RwLock<ElementModelT>>;
+    fn model_uuid(&self) -> Arc<uuid::Uuid>;
+    fn model_name(&self) -> Arc<String>;
+    
+    fn add_element(&mut self, _: Arc<RwLock<ElementModelT>>);
+    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>);
+
+    fn show_properties(
+        &self,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>
+    );
+    fn apply_change(
+        &self,
+        command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+    );
+    
+    fn deep_copy_init(
+        &self,
+        uuid: uuid::Uuid,
+        m: &mut HashMap<usize, (Arc<RwLock<ElementModelT>>, Arc<dyn Any + Send + Sync>)>,
+    ) -> Self where Self: Sized;
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<usize, (Arc<RwLock<ElementModelT>>, Arc<dyn Any + Send + Sync>)>
+    );
+}
+
 #[derive(Clone, Copy, PartialEq)]
-pub enum DragType {
+pub enum PackageDragType {
     Move,
     Resize(egui::Align2),
 }
 
 pub struct PackageView<
-    ModelT: ContainerModel<ElementModelT>,
+    AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
     ElementModelT: ?Sized + 'static,
     QueryableT: 'static,
-    BufferT: 'static,
     ToolT: 'static,
     AddCommandElementT: Clone + Debug,
     PropChangeT: Clone + Debug,
@@ -1637,7 +1691,7 @@ pub struct PackageView<
         )> + Clone
         + 'static,
 {
-    model: Arc<RwLock<ModelT>>,
+    adapter: AdapterT,
     self_reference: Weak<RwLock<Self>>,
     owned_controllers: HashMap<
         uuid::Uuid,
@@ -1657,37 +1711,20 @@ pub struct PackageView<
     all_elements: HashMap<uuid::Uuid, SelectionStatus>,
     selected_direct_elements: HashSet<uuid::Uuid>,
 
-    buffer: BufferT,
-
-    dragged_type_and_shape: Option<(DragType, egui::Rect)>,
+    dragged_type_and_shape: Option<(PackageDragType, egui::Rect)>,
     highlight: canvas::Highlight,
     bounds_rect: egui::Rect,
-
-    model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
-
-    show_properties_fun: fn(
-        &mut BufferT,
-        &mut egui::Ui,
-        &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-    ),
-    apply_property_change_fun: fn(
-        &mut BufferT,
-        &mut ModelT,
-        &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-        &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
-    ),
 }
 
 impl<
-        ModelT: ContainerModel<ElementModelT>,
+        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
-        BufferT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug,
         PropChangeT: Clone + Debug,
     >
-    PackageView<ModelT, ElementModelT, QueryableT, BufferT, ToolT, AddCommandElementT, PropChangeT>
+    PackageView<AdapterT, ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
 where
     AddCommandElementT: From<(
             uuid::Uuid,
@@ -1719,7 +1756,7 @@ where
         + 'static,
 {
     pub fn new(
-        model: Arc<RwLock<ModelT>>,
+        adapter: AdapterT,
         owned_controllers: HashMap<
             uuid::Uuid,
             Arc<
@@ -1734,39 +1771,21 @@ where
                 >,
             >,
         >,
-        buffer: BufferT,
         bounds_rect: egui::Rect,
-        model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
-        show_properties_fun: fn(
-            &mut BufferT,
-            &mut egui::Ui,
-            &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-        ),
-        apply_property_change_fun: fn(
-            &mut BufferT,
-            &mut ModelT,
-            &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-            &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
-        ),
     ) -> Arc<RwLock<Self>> {
         let event_order = owned_controllers.keys().map(|e| *e).collect();
         let c = Arc::new(RwLock::new(
         Self {
-            model,
+            adapter,
             self_reference: Weak::new(),
             owned_controllers,
             event_order,
             all_elements: HashMap::new(),
             selected_direct_elements: HashSet::new(),
 
-            buffer,
             dragged_type_and_shape: None,
             highlight: canvas::Highlight::NONE,
             bounds_rect,
-
-            model_to_element_shim,
-            show_properties_fun,
-            apply_property_change_fun,
         }));
         c.write().unwrap().self_reference = Arc::downgrade(&c);
         c
@@ -1787,19 +1806,17 @@ where
 }
 
 impl<
-        ModelT: ContainerModel<ElementModelT>,
+        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
-        BufferT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
     > ElementController<ElementModelT>
     for PackageView<
-        ModelT,
+        AdapterT,
         ElementModelT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
@@ -1841,13 +1858,13 @@ where
         )>,
 {
     fn uuid(&self) -> Arc<uuid::Uuid> {
-        self.model.read().unwrap().uuid()
+        self.adapter.model_uuid()
     }
     fn model_name(&self) -> Arc<String> {
-        self.model.read().unwrap().name()
+        self.adapter.model_name()
     }
     fn model(&self) -> Arc<RwLock<ElementModelT>> {
-        (self.model_to_element_shim)(self.model.clone())
+        self.adapter.model()
     }
 
     fn min_shape(&self) -> NHShape {
@@ -1862,19 +1879,17 @@ where
 }
 
 impl<
-        ModelT: ContainerModel<ElementModelT>,
+        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
-        BufferT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
     > ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for PackageView<
-        ModelT,
+        AdapterT,
         ElementModelT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
@@ -1929,19 +1944,17 @@ where
 }
 
 impl<
-        ModelT: ContainerModel<ElementModelT>,
+        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
-        BufferT: Clone + 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
     > ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for PackageView<
-        ModelT,
+        AdapterT,
         ElementModelT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
@@ -1996,16 +2009,14 @@ where
         {
             true
         } else if self.highlight.selected {
-            (self.show_properties_fun)(&mut self.buffer, ui, commands);
+            self.adapter.show_properties(ui, commands);
             true
         } else {
             false
         }
     }
     fn list_in_project_hierarchy(&self, parent: &QueryableT, ui: &mut egui::Ui) {
-        let model = self.model.read().unwrap();
-
-        egui::CollapsingHeader::new(format!("{} ({})", *model.name(), *model.name())).show(
+        egui::CollapsingHeader::new(format!("{} ({})", *self.adapter.model_name(), *self.adapter.model_uuid())).show(
             ui,
             |ui| {
                 for (_uuid, c) in &self.owned_controllers {
@@ -2034,7 +2045,7 @@ where
         canvas.draw_text(
             self.bounds_rect.center_top(),
             egui::Align2::CENTER_TOP,
-            &self.model.read().unwrap().name(),
+            &self.adapter.model_name(),
             canvas::CLASS_MIDDLE_FONT_SIZE,
             profile.foregrounds[1],
         );
@@ -2165,7 +2176,7 @@ where
                               (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom())]
                 {
                     if egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
-                        self.dragged_type_and_shape = Some((DragType::Resize(a), self.bounds_rect));
+                        self.dragged_type_and_shape = Some((PackageDragType::Resize(a), self.bounds_rect));
                         return EventHandlingStatus::HandledByElement;
                     }
                 }
@@ -2174,7 +2185,7 @@ where
                     || egui::Rect::from_center_size(
                         self.drag_handle_position(ehc.ui_scale),
                         egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
-                    self.dragged_type_and_shape = Some((DragType::Move, self.bounds_rect));
+                    self.dragged_type_and_shape = Some((PackageDragType::Move, self.bounds_rect));
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -2223,9 +2234,9 @@ where
                 }
             },
             InputEvent::Drag { delta, .. } => match self.dragged_type_and_shape {
-                Some((DragType::Move, real_bounds)) => {
+                Some((PackageDragType::Move, real_bounds)) => {
                     let translated_bounds = real_bounds.translate(delta);
-                    self.dragged_type_and_shape = Some((DragType::Move, translated_bounds));
+                    self.dragged_type_and_shape = Some((PackageDragType::Move, translated_bounds));
                     let translated_real_shape = NHShape::Rect { inner: translated_bounds };
                     let coerced_pos = ehc.snap_manager.coerce(translated_real_shape,
                         |e| !self.all_elements.get(e).is_some() && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected) } else {*e == *self.uuid()}
@@ -2242,7 +2253,7 @@ where
                     }
                     EventHandlingStatus::HandledByElement
                 },
-                Some((DragType::Resize(align), real_bounds)) => {
+                Some((PackageDragType::Resize(align), real_bounds)) => {
                     let (left, right) = match align.x() {
                         egui::Align::Min => (0.0, delta.x),
                         egui::Align::Center => (0.0, 0.0),
@@ -2254,7 +2265,7 @@ where
                         egui::Align::Max => (-delta.y, 0.0),
                     };
                     let new_real_bounds = real_bounds + egui::Margin { left, right, top, bottom };
-                    self.dragged_type_and_shape = Some((DragType::Resize(align), new_real_bounds));
+                    self.dragged_type_and_shape = Some((PackageDragType::Resize(align), new_real_bounds));
                     let handle_x = match align.x() {
                         egui::Align::Min => (new_real_bounds.right(), self.bounds_rect.right()),
                         egui::Align::Center => (new_real_bounds.center().x, self.bounds_rect.center().x),
@@ -2402,9 +2413,7 @@ where
                     ));
                 }
 
-                let mut self_m = self.model.write().unwrap();
-                self_m.delete_elements(&uuids);
-
+                self.adapter.delete_elements(&uuids);
                 self.owned_controllers.retain(|k, _v| !uuids.contains(&k));
                 self.event_order.retain(|e| !uuids.contains(&e));
 
@@ -2418,8 +2427,7 @@ where
                         ));
 
                         let new_c = element.read().unwrap();
-                        let mut self_m = self.model.write().unwrap();
-                        self_m.add_element(new_c.model());
+                        self.adapter.add_element(new_c.model());
                         drop(new_c);
 
                         self.owned_controllers.insert(uuid, element);
@@ -2438,10 +2446,7 @@ where
             },
             InsensitiveCommand::PropertyChange(uuids, _property) => {
                 if uuids.contains(&*self.uuid()) {
-                    let mut m = self.model.write().unwrap();
-                    (self.apply_property_change_fun)(
-                        &mut self.buffer,
-                        &mut m,
+                    self.adapter.apply_change(
                         command,
                         undo_accumulator,
                     );
@@ -2468,28 +2473,69 @@ where
         }
     }
     
-    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
-        //let modelish = todo!();
-        //m.insert(arc_to_usize(&self.model), modelish);
+    fn deep_copy_init(
+        &self,
+        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        c: &mut HashMap<usize, (uuid::Uuid, 
+            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &mut HashMap<usize, (
+            Arc<RwLock<ElementModelT>>,
+            Arc<dyn Any + Send + Sync>,
+        )>
+    ) {
+        let uuid = if uuid_present(&*self.uuid()) { uuid::Uuid::now_v7() } else { *self.uuid() };
         
         let cloneish = Arc::new(RwLock::new(Self {
-            model: self.model.clone(),
+            adapter: self.adapter.deep_copy_init(uuid, m),
             self_reference: Weak::new(),
             owned_controllers: self.owned_controllers.clone(),
             event_order: self.event_order.clone(),
             all_elements: HashMap::new(),
             selected_direct_elements: self.selected_direct_elements.clone(),
-            buffer: self.buffer.clone(),
             dragged_type_and_shape: None,
             highlight: self.highlight,
             bounds_rect: self.bounds_rect,
-            model_to_element_shim: self.model_to_element_shim,
-            show_properties_fun: self.show_properties_fun,
-            apply_property_change_fun: self.apply_property_change_fun,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (*self.uuid(), cloneish as Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>));
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()),
+            (uuid, cloneish.clone(), cloneish));
     }
+}
+
+pub trait MulticonnectionAdapter<
+    ElementModelT: ?Sized + 'static,
+    AddCommandElementT: Clone + Debug,
+    PropChangeT: Clone + Debug,
+>: Send + Sync {
+    fn model(&self) -> Arc<RwLock<ElementModelT>>;
+    fn model_uuid(&self) -> Arc<uuid::Uuid>;
+    fn model_name(&self) -> Arc<String>;
+
+    fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
+    fn destination_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
+
+    fn show_properties(
+        &self,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>
+    );
+    fn apply_change(
+        &self,
+        command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+    );
+    
+    fn deep_copy_init(
+        &self,
+        uuid: uuid::Uuid,
+        m: &mut HashMap<usize, (Arc<RwLock<ElementModelT>>, Arc<dyn Any + Send + Sync>)>,
+    ) -> Self where Self: Sized;
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<usize, (Arc<RwLock<ElementModelT>>, Arc<dyn Any + Send + Sync>)>
+    );
 }
 
 #[derive(Clone, Debug)]
@@ -2502,10 +2548,9 @@ pub struct VertexInformation {
 pub struct FlipMulticonnection {}
 
 pub struct MulticonnectionView<
-    ModelT,
+    AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
     ElementModelT: ?Sized + 'static,
     QueryableT,
-    BufferT,
     ToolT,
     AddCommandElementT: Clone + Debug,
     PropChangeT: Clone + Debug,
@@ -2513,9 +2558,8 @@ pub struct MulticonnectionView<
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
-    model: Arc<RwLock<ModelT>>,
+    adapter: AdapterT,
     self_reference: Weak<RwLock<Self>>,
-    buffer: BufferT,
 
     pub source: Arc<
         RwLock<
@@ -2547,44 +2591,20 @@ pub struct MulticonnectionView<
     source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
     dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
     point_to_origin: HashMap<uuid::Uuid, (bool, usize)>,
-
-    model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
-
-    show_properties_fun: fn(
-        &mut BufferT,
-        &mut egui::Ui,
-        &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-    ),
-    apply_property_change_fun: fn(
-        &mut BufferT,
-        &mut ModelT,
-        &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-        &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
-    ),
-
-    model_to_uuid: fn(&ModelT) -> Arc<uuid::Uuid>,
-    model_to_name: fn(&ModelT) -> Arc<String>,
-    model_to_line_type: fn(&ModelT) -> canvas::LineType,
-    model_to_source_arrowhead_type: fn(&ModelT) -> canvas::ArrowheadType,
-    model_to_destination_arrowhead_type: fn(&ModelT) -> canvas::ArrowheadType,
-    model_to_source_arrowhead_label: fn(&ModelT) -> Option<&str>,
-    model_to_destination_arrowhead_label: fn(&ModelT) -> Option<&str>,
 }
 
 impl<
-        ModelT,
+        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
         ElementModelT: ?Sized + 'static,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT: Clone + Debug,
         PropChangeT: Clone + Debug,
     >
     MulticonnectionView<
-        ModelT,
+        AdapterT,
         ElementModelT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
@@ -2594,8 +2614,7 @@ where
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
     pub fn new(
-        model: Arc<RwLock<ModelT>>,
-        buffer: BufferT,
+        adapter: AdapterT,
         source: Arc<
             RwLock<
                 dyn ElementControllerGen2<
@@ -2622,28 +2641,6 @@ where
         center_point: Option<(uuid::Uuid, egui::Pos2)>,
         source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
         dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
-
-        model_to_element_shim: fn(Arc<RwLock<ModelT>>) -> Arc<RwLock<ElementModelT>>,
-
-        show_properties_fun: fn(
-            &mut BufferT,
-            &mut egui::Ui,
-            &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-        ),
-        apply_property_change_fun: fn(
-            &mut BufferT,
-            &mut ModelT,
-            &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-            &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
-        ),
-
-        model_to_uuid: fn(&ModelT) -> Arc<uuid::Uuid>,
-        model_to_name: fn(&ModelT) -> Arc<String>,
-        model_to_line_type: fn(&ModelT) -> canvas::LineType,
-        model_to_source_arrowhead_type: fn(&ModelT) -> canvas::ArrowheadType,
-        model_to_destination_arrowhead_type: fn(&ModelT) -> canvas::ArrowheadType,
-        model_to_source_arrowhead_label: fn(&ModelT) -> Option<&str>,
-        model_to_destination_arrowhead_label: fn(&ModelT) -> Option<&str>,
     ) -> Arc<RwLock<Self>> {
         let mut point_to_origin = HashMap::new();
         for (idx, path) in source_points.iter().enumerate() {
@@ -2659,9 +2656,8 @@ where
         
         let c = Arc::new(RwLock::new(
             Self {
-                model,
+                adapter,
                 self_reference: Weak::new(),
-                buffer,
                 source,
                 destination,
                 dragged_node: None,
@@ -2672,19 +2668,6 @@ where
                 source_points,
                 dest_points,
                 point_to_origin,
-
-                model_to_element_shim,
-
-                show_properties_fun,
-                apply_property_change_fun,
-
-                model_to_uuid,
-                model_to_name,
-                model_to_line_type,
-                model_to_source_arrowhead_type,
-                model_to_destination_arrowhead_type,
-                model_to_source_arrowhead_label,
-                model_to_destination_arrowhead_label,
             }
         ));
         c.write().unwrap().self_reference = Arc::downgrade(&c);
@@ -2700,19 +2683,17 @@ where
 }
 
 impl<
-        ModelT,
+        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
         ElementModelT: ?Sized + 'static,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT: Clone + Debug,
         PropChangeT: Clone + Debug,
     > ElementController<ElementModelT>
     for MulticonnectionView<
-        ModelT,
+        AdapterT,
         ElementModelT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
@@ -2722,13 +2703,13 @@ where
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
     fn uuid(&self) -> Arc<uuid::Uuid> {
-        (self.model_to_uuid)(&self.model.read().unwrap())
+        self.adapter.model_uuid()
     }
     fn model_name(&self) -> Arc<String> {
-        (self.model_to_name)(&self.model.read().unwrap())
+        self.adapter.model_name()
     }
     fn model(&self) -> Arc<RwLock<ElementModelT>> {
-        (self.model_to_element_shim)(self.model.clone())
+        self.adapter.model()
     }
 
     fn min_shape(&self) -> NHShape {
@@ -2749,19 +2730,17 @@ where
 }
 
 impl<
-        ModelT,
+        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
-        BufferT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
     > ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for MulticonnectionView<
-        ModelT,
+        AdapterT,
         ElementModelT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
@@ -2791,19 +2770,17 @@ where
 }
 
 impl<
-        ModelT: 'static,
+        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT> +'static,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
-        BufferT: Clone + 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
     > ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for MulticonnectionView<
-        ModelT,
+        AdapterT,
         ElementModelT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
@@ -2823,7 +2800,7 @@ where
             return false;
         }
 
-        (self.show_properties_fun)(&mut self.buffer, ui, commands);
+        self.adapter.show_properties(ui, commands);
 
         true
     }
@@ -2835,7 +2812,6 @@ where
         profile: &ColorProfile,
         _tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus {
-        let model = self.model.read().unwrap();
         let source_bounds = self.source.read().unwrap().min_shape();
         let dest_bounds = self.destination.read().unwrap().min_shape();
         
@@ -2883,29 +2859,29 @@ where
             let size = canvas.measure_text(pos, egui::Align2::CENTER_CENTER, s, canvas::CLASS_MIDDLE_FONT_SIZE).size();
             bounds.place_labels(pos, [size, egui::Vec2::ZERO])[0]
         }
-        let l1 = (self.model_to_source_arrowhead_label)(&*model)
-                    .map(|e| (s_to_p(canvas, source_bounds, source_intersect, e), e));
-        let l2 = (self.model_to_destination_arrowhead_label)(&*model)
-                    .map(|e| (s_to_p(canvas, dest_bounds, dest_intersect, e), e));
+        let (source_line_type, source_arrow_type, source_label) = self.adapter.source_arrow();
+        let (dest_line_type, dest_arrow_type, dest_label) = self.adapter.destination_arrow();
+        let l1 = source_label.as_ref().map(|e| (s_to_p(canvas, source_bounds, source_intersect, &*e), e.as_str()));
+        let l2 = dest_label.as_ref().map(|e| (s_to_p(canvas, dest_bounds, dest_intersect, &*e), e.as_str()));
         
         canvas.draw_multiconnection(
             &self.selected_vertices,
             &[(
-                (self.model_to_source_arrowhead_type)(&*model),
+                source_arrow_type,
                 crate::common::canvas::Stroke {
                     width: 1.0,
                     color: profile.foregrounds[2],
-                    line_type: (self.model_to_line_type)(&*model),
+                    line_type: source_line_type,
                 },
                 &self.source_points[0],
                 l1,
             )],
             &[(
-                (self.model_to_destination_arrowhead_type)(&*model),
+                dest_arrow_type,
                 crate::common::canvas::Stroke {
                     width: 1.0,
                     color: profile.foregrounds[2],
-                    line_type: (self.model_to_line_type)(&*model),
+                    line_type: dest_line_type,
                 },
                 &self.dest_points[0],
                 l2,
@@ -3333,13 +3309,7 @@ where
                     for property in properties {
                         if let Ok(FlipMulticonnection {}) = property.try_into() {}
                     }
-                    let mut m = self.model.write().unwrap();
-                    (self.apply_property_change_fun)(
-                        &mut self.buffer,
-                        &mut m,
-                        command,
-                        undo_accumulator,
-                    );
+                    self.adapter.apply_change(command, undo_accumulator);
                 }
             }
         }
@@ -3357,15 +3327,23 @@ where
         }
     }
     
-    fn deep_copy_init(&self, uuid_present: &dyn Fn(&uuid::Uuid) -> bool, c: &mut HashMap<usize, (uuid::Uuid, Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>)>, m: &mut HashMap<usize, Arc<RwLock<dyn Any>>>) {
+    fn deep_copy_init(
+        &self,
+        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        c: &mut HashMap<usize, (uuid::Uuid, 
+            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &mut HashMap<usize, (
+            Arc<RwLock<ElementModelT>>,
+            Arc<dyn Any + Send + Sync>,
+        )>
+    ) {
         let uuid = if uuid_present(&*self.uuid()) { uuid::Uuid::now_v7() } else { *self.uuid() };
-        //let modelish = todo!();
-        //m.insert(arc_to_usize(&self.model), modelish);
         
         let cloneish = Arc::new(RwLock::new(Self {
-            model: self.model.clone(),
+            adapter: self.adapter.deep_copy_init(uuid, m),
             self_reference: Weak::new(),
-            buffer: self.buffer.clone(),
             source: self.source.clone(),
             destination: self.destination.clone(),
             dragged_node: None,
@@ -3375,26 +3353,28 @@ where
             source_points: self.source_points.clone(),
             dest_points: self.dest_points.clone(),
             point_to_origin: self.point_to_origin.clone(),
-            model_to_element_shim: self.model_to_element_shim,
-            show_properties_fun: self.show_properties_fun,
-            apply_property_change_fun: self.apply_property_change_fun,
-            model_to_uuid: self.model_to_uuid,
-            model_to_name: self.model_to_name,
-            model_to_line_type: self.model_to_line_type,
-            model_to_source_arrowhead_type: self.model_to_source_arrowhead_type,
-            model_to_destination_arrowhead_type: self.model_to_destination_arrowhead_type,
-            model_to_source_arrowhead_label: self.model_to_source_arrowhead_label,
-            model_to_destination_arrowhead_label: self.model_to_destination_arrowhead_label,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish as Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>));
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
     }
     
-    fn deep_copy_finish(&mut self, c: &HashMap<usize, (uuid::Uuid, Arc<std::sync::RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>)>, m: &HashMap<usize, Arc<RwLock<dyn Any>>>) {
-        if let Some((_u, s)) = c.get(&arc_to_usize(&self.source)) {
+    fn deep_copy_finish(
+        &mut self,
+        c: &HashMap<usize, (uuid::Uuid, 
+            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &HashMap<usize, (
+            Arc<RwLock<ElementModelT>>,
+            Arc<dyn Any + Send + Sync>,
+        )>
+    ) {
+        self.adapter.deep_copy_finish(m);
+    
+        if let Some((_u, s, _)) = c.get(&arc_to_usize(&self.source)) {
             self.source = s.clone();
         }
-        if let Some((_u, d)) = c.get(&arc_to_usize(&self.destination)) {
+        if let Some((_u, d, _)) = c.get(&arc_to_usize(&self.destination)) {
             self.destination = d.clone();
         }
     }
