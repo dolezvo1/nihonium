@@ -1372,9 +1372,10 @@ impl
         into.insert(*self.uuid(), self.highlight.selected.into());
     }
     
-    fn deep_copy_init(
+    fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        tlc: &mut HashMap<uuid::Uuid, ArcRwLockControllerT>,
         c: &mut HashMap<usize, (uuid::Uuid, 
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
@@ -1400,6 +1401,7 @@ impl
             bounds_radius: self.bounds_radius,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        tlc.insert(uuid, cloneish.clone());
         c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
     }
 }
@@ -1712,9 +1714,10 @@ impl
         into.insert(*self.uuid(), self.highlight.selected.into());
     }
     
-    fn deep_copy_init(
+    fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        tlc: &mut HashMap<uuid::Uuid, ArcRwLockControllerT>,
         c: &mut HashMap<usize, (uuid::Uuid, 
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
@@ -1742,6 +1745,7 @@ impl
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        tlc.insert(uuid, cloneish.clone());
         c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
     }
 }

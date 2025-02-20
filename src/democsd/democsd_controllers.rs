@@ -1481,9 +1481,30 @@ impl
         }
     }
     
-    fn deep_copy_init(
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&std::collections::HashSet<uuid::Uuid>>,
+        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        tlc: &mut HashMap<uuid::Uuid,
+            Arc<RwLock<dyn ElementControllerGen2<dyn DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange>>>,
+        >,
+        c: &mut HashMap<usize, (uuid::Uuid,
+            Arc<RwLock<dyn ElementControllerGen2<dyn DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange>>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &mut HashMap<usize, (
+            Arc<RwLock<dyn DemoCsdElement>>,
+            Arc<dyn Any + Send + Sync>,
+        )>)
+    {
+        if requested.is_none_or(|e| e.contains(&self.uuid()) || self.transaction_view.as_ref().is_some_and(|t| e.contains(&t.read().unwrap().uuid()))) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        }
+    }
+    fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        tlc: &mut HashMap<uuid::Uuid, ArcRwLockControllerT>,
         c: &mut HashMap<usize, (uuid::Uuid, 
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
@@ -1493,6 +1514,15 @@ impl
             Arc<dyn Any + Send + Sync>,
         )>
     ) {
+        let tx_clone = if let Some(t) = self.transaction_view.as_ref() {
+            let mut inner = HashMap::new();
+            t.read().unwrap().deep_copy_clone(uuid_present, &mut inner, c, m);
+            if let Some(t) = c.get(&arc_to_usize(t)) {
+                let t: Result<Arc<RwLock<DemoCsdTransactionView>>, _> = Arc::downcast(t.2.clone());
+                t.ok()
+            } else { None }
+        } else { None };
+        
         let model = self.model.read().unwrap();
         let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
         let modelish = Arc::new(RwLock::new(DemoCsdTransactor::new(uuid, (*model.identifier).clone(), (*model.name).clone(), model.internal,
@@ -1502,7 +1532,7 @@ impl
         let cloneish = Arc::new(RwLock::new(Self {
             model: modelish,
             self_reference: Weak::new(),
-            transaction_view: self.transaction_view.clone(),
+            transaction_view: tx_clone,
             identifier_buffer: self.identifier_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
             internal_buffer: self.internal_buffer.clone(),
@@ -1514,10 +1544,10 @@ impl
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        tlc.insert(uuid, cloneish.clone());
         c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
     }
-    
-    fn deep_copy_finish(
+    fn deep_copy_relink(
         &mut self,
         c: &HashMap<usize, (uuid::Uuid, 
             ArcRwLockControllerT,
@@ -1933,9 +1963,10 @@ impl
         into.insert(*self.uuid(), self.highlight.selected.into());
     }
     
-    fn deep_copy_init(
+    fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        tlc: &mut HashMap<uuid::Uuid, ArcRwLockControllerT>,
         c: &mut HashMap<usize, (uuid::Uuid, 
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
@@ -1962,6 +1993,7 @@ impl
             min_shape: self.min_shape,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        tlc.insert(uuid, cloneish.clone());
         c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
     }
 }

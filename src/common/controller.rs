@@ -622,10 +622,33 @@ pub trait ElementControllerGen2<
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>);
     
     // Create a deep copy, including the models
-    fn deep_copy_init(
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<uuid::Uuid>>,
+        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        tlc: &mut HashMap<uuid::Uuid,
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+        >,
+        c: &mut HashMap<usize, (uuid::Uuid,
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &mut HashMap<usize, (
+            Arc<RwLock<CommonElementT>>,
+            Arc<dyn Any + Send + Sync>,
+        )>)
+    {
+        if requested.is_none_or(|e| e.contains(&self.uuid())) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        }
+    }
+    fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
-        c: &mut HashMap<usize, (uuid::Uuid, 
+        tlc: &mut HashMap<uuid::Uuid,
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+        >,
+        c: &mut HashMap<usize, (uuid::Uuid,
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -633,9 +656,9 @@ pub trait ElementControllerGen2<
             Arc<RwLock<CommonElementT>>,
             Arc<dyn Any + Send + Sync>,
         )>);
-    fn deep_copy_finish(
+    fn deep_copy_relink(
         &mut self,
-        c: &HashMap<usize, (uuid::Uuid, 
+        c: &HashMap<usize, (uuid::Uuid,
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -957,14 +980,15 @@ where
     }
 
     fn set_clipboard(&mut self) {
-        // TODO: retain nesting, somehow?
+        let selected = self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect();
         self.clipboard_elements = Self::element_deep_copy(
-            self.all_elements.iter().filter(|e| e.1.selected()).flat_map(|e| self.controller_for(e.0).map(|c| (*e.0, c))),
+            Some(&selected),
+            self.owned_controllers.iter().map(|e| (*e.0, e.1.clone())),
             |_| false,
         );
     }
     
-    fn element_deep_copy<I, F>(e: I, uuid_present: F) -> HashMap<uuid::Uuid, Arc<RwLock<
+    fn element_deep_copy<F, P>(requested: Option<&HashSet<uuid::Uuid>>, from: F, uuid_present: P) -> HashMap<uuid::Uuid, Arc<RwLock<
                     dyn ElementControllerGen2<
                         ElementModelT,
                         QueryableT,
@@ -974,7 +998,7 @@ where
                     >,
                 >>>
         where
-            I: Iterator<Item=(uuid::Uuid, Arc<RwLock<
+            F: Iterator<Item=(uuid::Uuid, Arc<RwLock<
                     dyn ElementControllerGen2<
                         ElementModelT,
                         QueryableT,
@@ -983,21 +1007,22 @@ where
                         PropChangeT,
                     >,
                 >>)>,
-            F: Fn(&uuid::Uuid) -> bool,
+            P: Fn(&uuid::Uuid) -> bool,
     {
+        let mut top_level_views = HashMap::new();
         let mut views = HashMap::new();
         let mut models = HashMap::new();
         
-        for (_uuid, c) in e {
+        for (_uuid, c) in from {
             let c = c.read().unwrap();
-            c.deep_copy_init(&uuid_present, &mut views, &mut models);
+            c.deep_copy_walk(requested, &uuid_present, &mut top_level_views, &mut views, &mut models);
         }
         for (_usize, (_uuid, v1, v2)) in views.iter() {
             let mut v1 = v1.write().unwrap();
-            v1.deep_copy_finish(&views, &models);
+            v1.deep_copy_relink(&views, &models);
         }
         
-        views.into_iter().map(|(u, e)| (e.0, e.1)).collect()
+        top_level_views
     }
     
     fn apply_commands(
@@ -1012,6 +1037,7 @@ where
             let command = command.to_selection_insensitive(
                 || self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
                 || Self::element_deep_copy(
+                    None,
                     self.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
                     |e| self.all_elements.get(e).is_some(),
                     ).into_iter().map(|e| e.into()).collect(),
@@ -2473,9 +2499,35 @@ where
         }
     }
     
-    fn deep_copy_init(
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<uuid::Uuid>>,
+        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        tlc: &mut HashMap<uuid::Uuid,
+            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+        >,
+        c: &mut HashMap<usize, (uuid::Uuid, 
+            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &mut HashMap<usize, (
+            Arc<RwLock<ElementModelT>>,
+            Arc<dyn Any + Send + Sync>,
+        )>)
+    {
+        if requested.is_none_or(|e| e.contains(&self.uuid())) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        } else {
+            self.owned_controllers.iter()
+                .for_each(|e| e.1.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m));
+        }
+    }
+    fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        tlc: &mut HashMap<uuid::Uuid,
+            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+        >,
         c: &mut HashMap<usize, (uuid::Uuid, 
             Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
@@ -2487,11 +2539,14 @@ where
     ) {
         let uuid = if uuid_present(&*self.uuid()) { uuid::Uuid::now_v7() } else { *self.uuid() };
         
+        let mut inner = HashMap::new();
+        self.owned_controllers.iter().for_each(|e| e.1.read().unwrap().deep_copy_clone(uuid_present, &mut inner, c, m));
+        
         let cloneish = Arc::new(RwLock::new(Self {
             adapter: self.adapter.deep_copy_init(uuid, m),
             self_reference: Weak::new(),
-            owned_controllers: self.owned_controllers.clone(),
-            event_order: self.event_order.clone(),
+            owned_controllers: inner.iter().map(|e| (*e.0, e.1.clone())).collect(),
+            event_order: inner.iter().map(|e| *e.0).collect(),
             all_elements: HashMap::new(),
             selected_direct_elements: self.selected_direct_elements.clone(),
             dragged_type_and_shape: None,
@@ -2499,8 +2554,22 @@ where
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        tlc.insert(uuid, cloneish.clone());
         c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()),
             (uuid, cloneish.clone(), cloneish));
+    }
+    fn deep_copy_relink(
+        &mut self,
+        c: &HashMap<usize, (uuid::Uuid, 
+            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+        m: &HashMap<usize, (
+            Arc<RwLock<ElementModelT>>,
+            Arc<dyn Any + Send + Sync>,
+        )>,
+    ) {
+        self.owned_controllers.iter().for_each(|e| e.1.write().unwrap().deep_copy_relink(c, m));
     }
 }
 
@@ -3327,9 +3396,12 @@ where
         }
     }
     
-    fn deep_copy_init(
+    fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
+        tlc: &mut HashMap<uuid::Uuid,
+            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+        >,
         c: &mut HashMap<usize, (uuid::Uuid, 
             Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
@@ -3355,10 +3427,11 @@ where
             point_to_origin: self.point_to_origin.clone(),
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        tlc.insert(uuid, cloneish.clone());
         c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
     }
     
-    fn deep_copy_finish(
+    fn deep_copy_relink(
         &mut self,
         c: &HashMap<usize, (uuid::Uuid, 
             Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
