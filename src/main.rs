@@ -299,7 +299,7 @@ impl NHContext {
                 ui.end_row();
 
                 ui.label("Rounding:");
-                rounding_ui(ui, &mut style.main_surface_border_rounding);
+                corner_radius_ui(ui, &mut style.main_surface_border_rounding);
                 ui.end_row();
             });
         });
@@ -384,22 +384,22 @@ impl NHContext {
                 ui.label("Rounding");
                 labeled_widget!(
                     ui,
-                    Slider::new(&mut tab_style.rounding.nw, 0.0..=15.0),
+                    Slider::new(&mut tab_style.corner_radius.nw, 0..=15),
                     "North-West"
                 );
                 labeled_widget!(
                     ui,
-                    Slider::new(&mut tab_style.rounding.ne, 0.0..=15.0),
+                    Slider::new(&mut tab_style.corner_radius.ne, 0..=15),
                     "North-East"
                 );
                 labeled_widget!(
                     ui,
-                    Slider::new(&mut tab_style.rounding.sw, 0.0..=15.0),
+                    Slider::new(&mut tab_style.corner_radius.sw, 0..=15),
                     "South-West"
                 );
                 labeled_widget!(
                     ui,
-                    Slider::new(&mut tab_style.rounding.se, 0.0..=15.0),
+                    Slider::new(&mut tab_style.corner_radius.se, 0..=15),
                     "South-East"
                 );
 
@@ -500,7 +500,7 @@ impl NHContext {
             ui.separator();
 
             ui.label("Rounding");
-            rounding_ui(ui, &mut style.tab.tab_body.rounding);
+            corner_radius_ui(ui, &mut style.tab.tab_body.corner_radius);
 
             ui.label("Stroke width:");
             ui.add(Slider::new(
@@ -647,7 +647,7 @@ impl NHContext {
                     ui.end_row();
                 });
                 ui.label("Rounding:");
-                rounding_ui(ui, &mut style.overlay.hovered_leaf_highlight.rounding);
+                corner_radius_ui(ui, &mut style.overlay.hovered_leaf_highlight.corner_radius);
             });
         });
         
@@ -1211,9 +1211,10 @@ impl eframe::App for NHApp {
                     if *background {
                         painter.rect(
                             canvas_rect,
-                            egui::Rounding::ZERO,
+                            egui::CornerRadius::ZERO,
                             color_profile.backgrounds[0],
                             egui::Stroke::NONE,
+                            egui::StrokeKind::Middle,
                         );
                     } else {
                         const rect_side: f32 = 20.0;
@@ -1225,9 +1226,10 @@ impl eframe::App for NHApp {
                                         + canvas_rect.min.to_vec2(),
                                         egui::Vec2::splat(rect_side)
                                     ),
-                                    egui::Rounding::ZERO,
+                                    egui::CornerRadius::ZERO,
                                     if (ii + jj) % 2 == 0 {egui::Color32::GRAY} else {egui::Color32::from_rgb(50, 50, 50)},
-                                    egui::Stroke::NONE
+                                    egui::Stroke::NONE,
+                                    egui::StrokeKind::Middle,
                                 );
                             }
                         }
@@ -1279,7 +1281,7 @@ impl eframe::App for NHApp {
                                     -1.0 * canvas_offset,
                                     canvas_size,
                                 ),
-                                egui::Rounding::ZERO,
+                                egui::CornerRadius::ZERO,
                                 color_profile.backgrounds[0],
                                 common::canvas::Stroke::NONE,
                                 common::canvas::Highlight::NONE,
@@ -1322,9 +1324,9 @@ impl eframe::App for NHApp {
     }
 }
 
-fn rounding_ui(ui: &mut Ui, rounding: &mut egui::Rounding) {
-    labeled_widget!(ui, Slider::new(&mut rounding.nw, 0.0..=15.0), "North-West");
-    labeled_widget!(ui, Slider::new(&mut rounding.ne, 0.0..=15.0), "North-East");
-    labeled_widget!(ui, Slider::new(&mut rounding.sw, 0.0..=15.0), "South-West");
-    labeled_widget!(ui, Slider::new(&mut rounding.se, 0.0..=15.0), "South-East");
+fn corner_radius_ui(ui: &mut Ui, corner_radius: &mut egui::CornerRadius) {
+    labeled_widget!(ui, Slider::new(&mut corner_radius.nw, 0..=15), "North-West");
+    labeled_widget!(ui, Slider::new(&mut corner_radius.ne, 0..=15), "North-East");
+    labeled_widget!(ui, Slider::new(&mut corner_radius.sw, 0..=15), "South-West");
+    labeled_widget!(ui, Slider::new(&mut corner_radius.se, 0..=15), "South-East");
 }

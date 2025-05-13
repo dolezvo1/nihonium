@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, NHCanvas, NHShape, UiCanvas};
 use crate::NHApp;
-use eframe::egui;
+use eframe::{egui, epaint};
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -1539,7 +1539,7 @@ where
                 if drawn_targetting == TargettingStatus::NotDrawn {
                     canvas.draw_rectangle(
                         egui::Rect::EVERYTHING,
-                        egui::Rounding::ZERO,
+                        egui::CornerRadius::ZERO,
                         tool.targetting_for_element(ToolT::KindedElement::from(self)),
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
@@ -1559,7 +1559,7 @@ where
             } else if let Some((a, b)) = self.select_by_drag {
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(a, b),
-                    egui::Rounding::ZERO,
+                    egui::CornerRadius::ZERO,
                     egui::Color32::from_rgba_premultiplied(0, 0, 255, 7),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
                     canvas::Highlight::NONE,
@@ -2062,7 +2062,7 @@ where
         // Draw shape and text
         canvas.draw_rectangle(
             self.bounds_rect,
-            egui::Rounding::ZERO,
+            egui::CornerRadius::ZERO,
             profile.backgrounds[1],
             canvas::Stroke::new_solid(1.0, profile.foregrounds[1]),
             self.highlight,
@@ -2085,7 +2085,7 @@ where
             {
                 canvas.draw_rectangle(
                     egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size / ui_scale)),
-                    egui::Rounding::ZERO,
+                    egui::CornerRadius::ZERO,
                     egui::Color32::WHITE,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
@@ -2097,7 +2097,7 @@ where
                     self.drag_handle_position(ui_scale),
                     egui::Vec2::splat(handle_size / ui_scale),
                 ),
-                egui::Rounding::ZERO,
+                egui::CornerRadius::ZERO,
                 egui::Color32::WHITE,
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
@@ -2134,7 +2134,7 @@ where
                 (TargettingStatus::NotDrawn, Some((pos, t))) if self.min_shape().contains(*pos) => {
                     canvas.draw_rectangle(
                         self.bounds_rect,
-                        egui::Rounding::ZERO,
+                        egui::CornerRadius::ZERO,
                         t.targetting_for_element(ToolT::KindedElement::from(&*self)),
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
@@ -2290,7 +2290,7 @@ where
                         egui::Align::Center => (0.0, 0.0),
                         egui::Align::Max => (-delta.y, 0.0),
                     };
-                    let new_real_bounds = real_bounds + egui::Margin { left, right, top, bottom };
+                    let new_real_bounds = real_bounds + epaint::Marginf { left, right, top, bottom };
                     self.dragged_type_and_shape = Some((PackageDragType::Resize(align), new_real_bounds));
                     let handle_x = match align.x() {
                         egui::Align::Min => (new_real_bounds.right(), self.bounds_rect.right()),
@@ -2344,7 +2344,7 @@ where
                     egui::Align::Max => ((-$delta.y).max(min_delta_y), 0.0),
                 };
                 
-                let r = self.bounds_rect + egui::Margin{left, right, top, bottom};
+                let r = self.bounds_rect + epaint::Marginf{left, right, top, bottom};
                 
                 undo_accumulator.push(InsensitiveCommand::ResizeSpecificElementsTo(
                     std::iter::once(*self.uuid()).collect(),

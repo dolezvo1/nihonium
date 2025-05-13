@@ -486,7 +486,7 @@ pub trait NHCanvas {
     fn draw_rectangle(
         &mut self,
         rect: egui::Rect,
-        rounding: egui::Rounding,
+        corner_radius: egui::CornerRadius,
         color: egui::Color32,
         stroke: Stroke,
         highlight: Highlight,
@@ -621,7 +621,7 @@ pub trait NHCanvas {
                 position,
                 egui::Vec2::new(max_width + 4.0, 2.0 * global_offset),
             );
-            self.draw_rectangle(rect, egui::Rounding::ZERO, fill, stroke.into(), highlight);
+            self.draw_rectangle(rect, egui::CornerRadius::ZERO, fill, stroke.into(), highlight);
 
             (
                 offsets,
@@ -881,7 +881,7 @@ impl UiCanvas {
 
     pub fn clear(&self, color: egui::Color32) {
         self.painter
-            .rect(self.canvas, egui::Rounding::ZERO, color, egui::Stroke::NONE);
+            .rect(self.canvas, egui::CornerRadius::ZERO, color, egui::Stroke::NONE, egui::StrokeKind::Middle);
     }
 
     pub fn draw_gridlines(
@@ -965,7 +965,7 @@ impl NHCanvas for UiCanvas {
     fn draw_rectangle(
         &mut self,
         rect: egui::Rect,
-        rounding: egui::Rounding,
+        corner_radius: egui::CornerRadius,
         color: egui::Color32,
         stroke: Stroke,
         highlight: Highlight,
@@ -1011,10 +1011,11 @@ impl NHCanvas for UiCanvas {
                 (rect * self.camera_scale)
                     .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2())
                     .intersect(self.canvas),
-                rounding,
+                corner_radius,
                 color,
                 // TODO: shouldn't stroke be recalculated?
                 egui::Stroke::from(stroke),
+                egui::StrokeKind::Middle,
             );
         }
     }
@@ -1132,7 +1133,7 @@ impl NHCanvas for UiCanvas {
             );
             self.draw_rectangle(
                 egui::Rect::from_center_size(pos, size),
-                egui::Rounding::ZERO,
+                egui::CornerRadius::ZERO,
                 text_color,
                 Stroke::new_solid(1.0, text_color.gamma_multiply(0.25)),
                 Highlight::NONE,
@@ -1172,7 +1173,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
     fn draw_rectangle(
         &mut self,
         rect: egui::Rect,
-        _rounding: egui::Rounding,
+        _corner_radius: egui::CornerRadius,
         _color: egui::Color32,
         _stroke: Stroke,
         highlight: Highlight,
@@ -1305,7 +1306,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
     fn draw_rectangle(
         &mut self,
         rect: egui::Rect,
-        _rounding: egui::Rounding,
+        _corner_radius: egui::CornerRadius,
         color: egui::Color32,
         stroke: Stroke,
         highlight: Highlight,

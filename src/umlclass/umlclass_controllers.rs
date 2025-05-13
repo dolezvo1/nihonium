@@ -630,7 +630,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
             PartialUmlClassElement::Package { a_display, .. } => {
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(*a_display, pos),
-                    egui::Rounding::ZERO,
+                    egui::CornerRadius::ZERO,
                     egui::Color32::TRANSPARENT,
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
@@ -1188,7 +1188,7 @@ impl
             {
                 canvas.draw_rectangle(
                     self.bounds_rect,
-                    egui::Rounding::ZERO,
+                    egui::CornerRadius::ZERO,
                     t.targetting_for_element(KindedUmlClassElement::Class { inner: self }),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
