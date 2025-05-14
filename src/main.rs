@@ -837,6 +837,9 @@ impl Default for NHApp {
             egui::Modifiers::COMMAND,
             egui::Key::I,
         ));
+        context.shortcuts.insert(DiagramCommand::CutSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X));
+        context.shortcuts.insert(DiagramCommand::CopySelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C));
+        context.shortcuts.insert(DiagramCommand::PasteClipboardElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
         context.shortcuts.insert(DiagramCommand::DeleteSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
         context.sort_shortcuts();
 
@@ -942,21 +945,21 @@ impl eframe::App for NHApp {
             };
         }
 
+        macro_rules! send_to_focused_diagram {
+            ($command:expr) => {
+                if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
+                    if let Some((_t, ac)) = self.context.diagram_controllers.get(&uuid) {
+                        let mut c = ac.write().unwrap();
+                        let mut undo = vec![];
+                        c.apply_command($command, &mut undo);
+                        self.context.undo_stack.extend(undo.into_iter().map(|e| (e, *uuid)));
+                    }
+                }
+            };
+        }
+
         // Show ui
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
-            macro_rules! send_to_focused_diagram {
-                ($command:expr) => {
-                    if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
-                        if let Some((_t, ac)) = self.context.diagram_controllers.get(&uuid) {
-                            let mut c = ac.write().unwrap();
-                            let mut undo = vec![];
-                            c.apply_command($command, &mut undo);
-                            self.context.undo_stack.extend(undo.into_iter().map(|e| (e, *uuid)));
-                        }
-                    }
-                };
-            }
-            
             // Check diagram-handled shortcuts
             ui.input(|is|
                 'outer: for e in is.events.iter() {
@@ -972,12 +975,12 @@ impl eframe::App for NHApp {
                                 }
                                 
                                 match ksh.0 {
-                                    SimpleProjectCommand::DiagramCommand(dc) => match dc {
+                                    e @ SimpleProjectCommand::DiagramCommand(dc) => match dc {
                                         DiagramCommand::DropRedoStackAndLastChangeFlag
                                         | DiagramCommand::SetLastChangeFlag => unreachable!(),
                                         DiagramCommand::UndoImmediate => self.undo_immediate(),
                                         DiagramCommand::RedoImmediate => self.redo_immediate(),
-                                        c => send_to_focused_diagram!(c),
+                                        _ => commands.push(e.into())
                                     },
                                     other => commands.push(other.into()),
                                 }
@@ -1122,16 +1125,18 @@ impl eframe::App for NHApp {
                     });
                     ui.separator();
 
-                    if ui.button(translate!("nh-edit-cut")).clicked() {
-                        commands.push(SimpleProjectCommand::DiagramCommand(DiagramCommand::CutSelectedElements).into());
-                    }
-
-                    if ui.button(translate!("nh-edit-copy")).clicked() {
-                        commands.push(SimpleProjectCommand::DiagramCommand(DiagramCommand::CopySelectedElements).into());
-                    }
-
-                    if ui.button(translate!("nh-edit-paste")).clicked() {
-                        commands.push(SimpleProjectCommand::DiagramCommand(DiagramCommand::PasteClipboardElements).into());
+                    for (s, c) in [(translate!("nh-edit-cut"), DiagramCommand::CutSelectedElements),
+                                   (translate!("nh-edit-copy"), DiagramCommand::CopySelectedElements),
+                                   (translate!("nh-edit-paste"), DiagramCommand::PasteClipboardElements),]
+                    {
+                        let shortcut_text = self.context.shortcuts.get(&c.into()).map(|e| ui.ctx().format_shortcut(&e));
+                        let mut button = egui::Button::new(s);
+                        if let Some(shortcut_text) = shortcut_text {
+                            button = button.shortcut_text(shortcut_text);
+                        }
+                        if ui.add(button).clicked() {
+                            commands.push(SimpleProjectCommand::DiagramCommand(c).into());
+                        }
                     }
                     ui.separator();
 
@@ -1217,7 +1222,7 @@ impl eframe::App for NHApp {
                     SimpleProjectCommand::DiagramCommand(dc) => match dc {
                         DiagramCommand::UndoImmediate => self.undo_immediate(),
                         DiagramCommand::RedoImmediate => self.redo_immediate(),
-                        _ => todo!(),
+                        dc => send_to_focused_diagram!(dc),
                     },
                     SimpleProjectCommand::SwapTopLanguages => {
                         if self.context.languages_order.len() > 1 {
