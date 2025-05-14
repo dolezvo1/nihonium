@@ -173,11 +173,22 @@ impl SnapManager {
 
 #[derive(Clone)]
 pub enum ProjectCommand {
+    SimpleProjectCommand(SimpleProjectCommand),
     OpenAndFocusDiagram(uuid::Uuid),
-    UndoImmediate,
-    RedoImmediate,
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetSvgExportMenu(Option<(usize, Arc<RwLock<dyn DiagramController>>, std::path::PathBuf, usize, bool, bool, f32, f32)>),
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub enum SimpleProjectCommand {
+    DiagramCommand(DiagramCommand),
+    SwapTopLanguages,
+}
+
+impl Into<ProjectCommand> for SimpleProjectCommand {
+    fn into(self) -> ProjectCommand {
+        ProjectCommand::SimpleProjectCommand(self)
+    }
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
@@ -193,6 +204,13 @@ pub enum DiagramCommand {
     CopySelectedElements,
     PasteClipboardElements,
 }
+
+impl Into<SimpleProjectCommand> for DiagramCommand {
+    fn into(self) -> SimpleProjectCommand {
+        SimpleProjectCommand::DiagramCommand(self)
+    }
+}
+
 
 pub struct DrawingContext<'a> {
     pub profile: &'a ColorProfile,

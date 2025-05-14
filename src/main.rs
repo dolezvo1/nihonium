@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use common::canvas::{NHCanvas, UiCanvas};
-use common::controller::{ColorLabels, ColorProfile, DrawingContext, ProjectCommand};
+use common::controller::{ColorLabels, ColorProfile, DrawingContext, ProjectCommand, SimpleProjectCommand};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
@@ -122,8 +122,8 @@ struct NHContext {
     redo_stack: Vec<(Arc<String>, uuid::Uuid)>,
     unprocessed_commands: Vec<ProjectCommand>,
     
-    shortcuts: HashMap<DiagramCommand, egui::KeyboardShortcut>,
-    shortcut_top_order: Vec<(DiagramCommand, egui::KeyboardShortcut)>,
+    shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
+    shortcut_top_order: Vec<(SimpleProjectCommand, egui::KeyboardShortcut)>,
 
     open_unique_tabs: HashSet<NHTab>,
     last_focused_diagram: Option<uuid::Uuid>,
@@ -822,21 +822,22 @@ impl Default for NHApp {
             allowed_splits: AllowedSplits::default(),
         };
         
-        context.shortcuts.insert(DiagramCommand::UndoImmediate, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z));
-        context.shortcuts.insert(DiagramCommand::RedoImmediate, egui::KeyboardShortcut::new(
+        context.shortcuts.insert(SimpleProjectCommand::SwapTopLanguages, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::L));
+        context.shortcuts.insert(DiagramCommand::UndoImmediate.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z));
+        context.shortcuts.insert(DiagramCommand::RedoImmediate.into(), egui::KeyboardShortcut::new(
             egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
             egui::Key::Z,
         ));
-        context.shortcuts.insert(DiagramCommand::SelectAllElements(true), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A));
-        context.shortcuts.insert(DiagramCommand::SelectAllElements(false), egui::KeyboardShortcut::new(
+        context.shortcuts.insert(DiagramCommand::SelectAllElements(true).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A));
+        context.shortcuts.insert(DiagramCommand::SelectAllElements(false).into(), egui::KeyboardShortcut::new(
             egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
             egui::Key::A,
         ));
-        context.shortcuts.insert(DiagramCommand::InvertSelection, egui::KeyboardShortcut::new(
+        context.shortcuts.insert(DiagramCommand::InvertSelection.into(), egui::KeyboardShortcut::new(
             egui::Modifiers::COMMAND,
             egui::Key::I,
         ));
-        context.shortcuts.insert(DiagramCommand::DeleteSelectedElements, egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
+        context.shortcuts.insert(DiagramCommand::DeleteSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
         context.sort_shortcuts();
 
         Self {
@@ -971,11 +972,14 @@ impl eframe::App for NHApp {
                                 }
                                 
                                 match ksh.0 {
-                                    DiagramCommand::DropRedoStackAndLastChangeFlag
-                                    | DiagramCommand::SetLastChangeFlag => unreachable!(),
-                                    DiagramCommand::UndoImmediate => self.undo_immediate(),
-                                    DiagramCommand::RedoImmediate => self.redo_immediate(),
-                                    c => send_to_focused_diagram!(c),
+                                    SimpleProjectCommand::DiagramCommand(dc) => match dc {
+                                        DiagramCommand::DropRedoStackAndLastChangeFlag
+                                        | DiagramCommand::SetLastChangeFlag => unreachable!(),
+                                        DiagramCommand::UndoImmediate => self.undo_immediate(),
+                                        DiagramCommand::RedoImmediate => self.redo_immediate(),
+                                        c => send_to_focused_diagram!(c),
+                                    },
+                                    other => commands.push(other.into()),
                                 }
                                 
                                 break 'outer;
@@ -1059,7 +1063,7 @@ impl eframe::App for NHApp {
 
                 ui.menu_button(translate!("nh-edit"), |ui| {
                     ui.menu_button(translate!("nh-edit-undo"), |ui| {
-                        let shortcut_text = self.context.shortcuts.get(&DiagramCommand::UndoImmediate).map(|e| ui.ctx().format_shortcut(&e));
+                        let shortcut_text = self.context.shortcuts.get(&DiagramCommand::UndoImmediate.into()).map(|e| ui.ctx().format_shortcut(&e));
                         
                         if self.context.undo_stack.is_empty() {
                             let mut button = egui::Button::new("(nothing to undo)");
@@ -1079,7 +1083,7 @@ impl eframe::App for NHApp {
 
                                 if ui.add(button).clicked() {
                                     for _ in 0..=ii {
-                                        commands.push(ProjectCommand::UndoImmediate);
+                                        commands.push(SimpleProjectCommand::DiagramCommand(DiagramCommand::UndoImmediate).into());
                                     }
                                     break;
                                 }
@@ -1089,7 +1093,7 @@ impl eframe::App for NHApp {
                     });
                     
                     ui.menu_button(translate!("nh-edit-redo"), |ui| {
-                        let shortcut_text = self.context.shortcuts.get(&DiagramCommand::RedoImmediate).map(|e| ui.ctx().format_shortcut(&e));
+                        let shortcut_text = self.context.shortcuts.get(&DiagramCommand::RedoImmediate.into()).map(|e| ui.ctx().format_shortcut(&e));
                         
                         if self.context.redo_stack.is_empty() {
                             let mut button = egui::Button::new("(nothing to redo)");
@@ -1109,7 +1113,7 @@ impl eframe::App for NHApp {
 
                                 if ui.add(button).clicked() {
                                     for _ in 0..=ii {
-                                        commands.push(ProjectCommand::RedoImmediate);
+                                        commands.push(SimpleProjectCommand::DiagramCommand(DiagramCommand::RedoImmediate).into());
                                     }
                                     break;
                                 }
@@ -1118,17 +1122,16 @@ impl eframe::App for NHApp {
                     });
                     ui.separator();
 
-                    // TODO: implement
                     if ui.button(translate!("nh-edit-cut")).clicked() {
-                        println!("no");
+                        commands.push(SimpleProjectCommand::DiagramCommand(DiagramCommand::CutSelectedElements).into());
                     }
-                    // TODO: implement
+
                     if ui.button(translate!("nh-edit-copy")).clicked() {
-                        println!("no");
+                        commands.push(SimpleProjectCommand::DiagramCommand(DiagramCommand::CopySelectedElements).into());
                     }
-                    // TODO: implement
+
                     if ui.button(translate!("nh-edit-paste")).clicked() {
-                        println!("no");
+                        commands.push(SimpleProjectCommand::DiagramCommand(DiagramCommand::PasteClipboardElements).into());
                     }
                     ui.separator();
 
@@ -1210,8 +1213,19 @@ impl eframe::App for NHApp {
         
         for c in commands {
             match c {
-                ProjectCommand::UndoImmediate => self.undo_immediate(),
-                ProjectCommand::RedoImmediate => self.redo_immediate(),
+                ProjectCommand::SimpleProjectCommand(spc) => match spc {
+                    SimpleProjectCommand::DiagramCommand(dc) => match dc {
+                        DiagramCommand::UndoImmediate => self.undo_immediate(),
+                        DiagramCommand::RedoImmediate => self.redo_immediate(),
+                        _ => todo!(),
+                    },
+                    SimpleProjectCommand::SwapTopLanguages => {
+                        if self.context.languages_order.len() > 1 {
+                            self.context.languages_order.swap(0, 1);
+                        }
+                        self.context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
+                    }
+                }
                 ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
                 ProjectCommand::SetSvgExportMenu(sem) => self.context.svg_export_menu = sem,
                 _ => todo!(),
