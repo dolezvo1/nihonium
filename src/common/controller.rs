@@ -1,5 +1,5 @@
 use crate::common::canvas::{self, NHCanvas, NHShape, UiCanvas};
-use crate::NHApp;
+use crate::CustomTab;
 use eframe::{egui, epaint};
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
@@ -171,9 +171,13 @@ impl SnapManager {
 }
 
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone)]
 pub enum ProjectCommand {
     OpenAndFocusDiagram(uuid::Uuid),
+    UndoImmediate,
+    RedoImmediate,
+    AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
+    SetSvgExportMenu(Option<(usize, Arc<RwLock<dyn DiagramController>>, std::path::PathBuf, usize, bool, bool, f32, f32)>),
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
@@ -190,6 +194,11 @@ pub enum DiagramCommand {
     PasteClipboardElements,
 }
 
+pub struct DrawingContext<'a> {
+    pub profile: &'a ColorProfile,
+    pub fluent_bundle: &'a fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
+}
+
 pub trait DiagramController: Any {
     fn uuid(&self) -> Arc<uuid::Uuid>;
     fn model_name(&self) -> Arc<String>;
@@ -198,14 +207,14 @@ pub trait DiagramController: Any {
     
     fn new_ui_canvas(
         &mut self,
+        context: &DrawingContext,
         ui: &mut egui::Ui,
-        profile: &ColorProfile,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
     
     fn draw_in(
         &mut self,
+        context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
-        profile: &ColorProfile,
         mouse_pos: Option<egui::Pos2>,
     );
     
@@ -214,8 +223,8 @@ pub trait DiagramController: Any {
     fn show_toolbar(&mut self, ui: &mut egui::Ui);
     fn show_properties(&mut self, ui: &mut egui::Ui, undo_accumulator: &mut Vec<Arc<String>>);
     fn show_layers(&self, ui: &mut egui::Ui);
-    fn show_menubar_edit_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui);
-    fn show_menubar_diagram_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui);
+    fn show_menubar_edit_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
+    fn show_menubar_diagram_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
     fn list_in_project_hierarchy(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
 
     // This hurts me at least as much as it hurts you
@@ -600,8 +609,8 @@ pub trait ElementControllerGen2<
     fn draw_in(
         &mut self,
         _: &QueryableT,
+        context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
-        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus;
     fn collect_allignment(&mut self, am: &mut SnapManager) {
@@ -745,7 +754,7 @@ pub struct DiagramControllerGen2<
     ),
 
     tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
-    menubar_options_fun: fn(&mut Self, &mut NHApp, &mut egui::Ui),
+    menubar_options_fun: fn(&mut Self, &mut egui::Ui, &mut Vec<ProjectCommand>),
 }
 
 impl<
@@ -832,7 +841,7 @@ where
             &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
         ),
         tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
-        menubar_options_fun: fn(&mut Self, &mut NHApp, &mut egui::Ui),
+        menubar_options_fun: fn(&mut Self, &mut egui::Ui, &mut Vec<ProjectCommand>),
     ) -> Arc<RwLock<Self>> {
         let event_order = owned_controllers.keys().map(|e| *e).collect();
         let ret = Arc::new(RwLock::new(Self {
@@ -1262,8 +1271,8 @@ where
 
     fn new_ui_canvas(
         &mut self,
+        context: &DrawingContext,
         ui: &mut egui::Ui,
-        profile: &ColorProfile,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
         let canvas_pos = ui.next_widget_position();
         let canvas_size = ui.available_size();
@@ -1282,10 +1291,10 @@ where
                     .to_pos2()
             }),
         );
-        ui_canvas.clear(profile.backgrounds[0]);
+        ui_canvas.clear(context.profile.backgrounds[0]);
         ui_canvas.draw_gridlines(
-            Some((50.0, profile.foregrounds[0])),
-            Some((50.0, profile.foregrounds[0])),
+            Some((50.0, context.profile.foregrounds[0])),
+            Some((50.0, context.profile.foregrounds[0])),
         );
 
         let inner_mouse = ui
@@ -1397,9 +1406,9 @@ where
     fn show_layers(&self, _ui: &mut egui::Ui) {
         // TODO: Layers???
     }
-    fn show_menubar_edit_options(&mut self, _context: &mut NHApp, _ui: &mut egui::Ui) {}
-    fn show_menubar_diagram_options(&mut self, context: &mut NHApp, ui: &mut egui::Ui) {
-        (self.menubar_options_fun)(self, context, ui);
+    fn show_menubar_edit_options(&mut self, _ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {}
+    fn show_menubar_diagram_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
+        (self.menubar_options_fun)(self, ui, commands);
         
         if ui.button("Layout selected elements").clicked() {
             todo!();
@@ -1506,8 +1515,8 @@ where
 
     fn draw_in(
         &mut self,
+        context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
-        profile: &ColorProfile,
         mouse_pos: Option<egui::Pos2>
     ) {
         let tool = if let (Some(pos), Some(stage)) = (mouse_pos, self.current_tool.as_ref()) {
@@ -1527,7 +1536,7 @@ where
                     .1
                     .write()
                     .unwrap()
-                    .draw_in(&self.queryable, canvas, profile, &tool)
+                    .draw_in(&self.queryable, context, canvas, &tool)
                     == TargettingStatus::Drawn
                 {
                     drawn_targetting = TargettingStatus::Drawn;
@@ -1552,7 +1561,7 @@ where
                         .for_each(|uc| {
                             uc.1.write()
                                 .unwrap()
-                                .draw_in(&self.queryable, canvas, profile, &Some((pos, tool)));
+                                .draw_in(&self.queryable, context, canvas, &Some((pos, tool)));
                         });
                 }
                 tool.draw_status_hint(canvas, pos);
@@ -1566,7 +1575,7 @@ where
                 );
             }
             
-            self.snap_manager.draw_best(canvas, profile, self.last_interactive_canvas_rect);
+            self.snap_manager.draw_best(canvas, context.profile, self.last_interactive_canvas_rect);
         }
     }
 }
@@ -2055,16 +2064,16 @@ where
     fn draw_in(
         &mut self,
         q: &QueryableT,
+        context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
-        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus {
         // Draw shape and text
         canvas.draw_rectangle(
             self.bounds_rect,
             egui::CornerRadius::ZERO,
-            profile.backgrounds[1],
-            canvas::Stroke::new_solid(1.0, profile.foregrounds[1]),
+            context.profile.backgrounds[1],
+            canvas::Stroke::new_solid(1.0, context.profile.foregrounds[1]),
             self.highlight,
         );
 
@@ -2073,7 +2082,7 @@ where
             egui::Align2::CENTER_TOP,
             &self.adapter.model_name(),
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            profile.foregrounds[1],
+            context.profile.foregrounds[1],
         );
         
         // Draw resize/drag handles
@@ -2112,7 +2121,7 @@ where
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
             .filter(|_| true) // TODO: filter by layers
             .for_each(|uc| {
-                if uc.1.write().unwrap().draw_in(q, canvas, profile, &tool) == TargettingStatus::Drawn
+                if uc.1.write().unwrap().draw_in(q, context, canvas, &tool) == TargettingStatus::Drawn
                 {
                     drawn_child_targetting = TargettingStatus::Drawn;
                 }
@@ -2146,7 +2155,7 @@ where
                         .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
                         .filter(|_| true) // TODO: filter by layers
                         .for_each(|uc| {
-                            uc.1.write().unwrap().draw_in(q, canvas, profile, &tool);
+                            uc.1.write().unwrap().draw_in(q, context, canvas, &tool);
                         });
 
                     TargettingStatus::Drawn
@@ -2877,8 +2886,8 @@ where
     fn draw_in(
         &mut self,
         _: &QueryableT,
+        context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
-        profile: &ColorProfile,
         _tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus {
         let source_bounds = self.source.read().unwrap().min_shape();
@@ -2939,7 +2948,7 @@ where
                 source_arrow_type,
                 crate::common::canvas::Stroke {
                     width: 1.0,
-                    color: profile.foregrounds[2],
+                    color: context.profile.foregrounds[2],
                     line_type: source_line_type,
                 },
                 &self.source_points[0],
@@ -2949,7 +2958,7 @@ where
                 dest_arrow_type,
                 crate::common::canvas::Stroke {
                     width: 1.0,
-                    color: profile.foregrounds[2],
+                    color: context.profile.foregrounds[2],
                     line_type: dest_line_type,
                 },
                 &self.dest_points[0],

@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use common::canvas::{NHCanvas, UiCanvas};
-use common::controller::{ColorLabels, ColorProfile, ProjectCommand};
+use common::controller::{ColorLabels, ColorProfile, DrawingContext, ProjectCommand};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
@@ -114,6 +114,9 @@ struct NHContext {
     pub style: Option<Style>,
     color_profiles: Vec<(String, ColorLabels, Vec<ColorProfile>)>,
     selected_color_profiles: Vec<usize>,
+    selected_language: usize,
+    languages_order: Vec<unic_langid::LanguageIdentifier>,
+    fluent_bundle: fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
 
     undo_stack: Vec<(Arc<String>, uuid::Uuid)>,
     redo_stack: Vec<(Arc<String>, uuid::Uuid)>,
@@ -664,17 +667,41 @@ impl NHContext {
                 );
             }
         });
+
+        ui.collapsing("Languages", |ui|{
+            for (idx, l) in self.languages_order.iter().enumerate() {
+                let text = if idx == self.selected_language { format!("[{}]", l) } else { l.to_string() };
+                if ui.add(egui::Label::new(text).sense(egui::Sense::click())).clicked() {
+                    self.selected_language = idx;
+                };
+            }
+
+            if ui.add_enabled(self.selected_language > 0, egui::Button::new("Up")).clicked() {
+                self.languages_order.swap(self.selected_language, self.selected_language - 1);
+                self.selected_language -= 1;
+                self.fluent_bundle = common::fluent::create_fluent_bundle(&self.languages_order).unwrap();
+            }
+
+            if ui.add_enabled(self.selected_language + 1 < self.languages_order.len(), egui::Button::new("Down")).clicked() {
+                self.languages_order.swap(self.selected_language, self.selected_language + 1);
+                self.selected_language += 1;
+                self.fluent_bundle = common::fluent::create_fluent_bundle(&self.languages_order).unwrap();
+            }
+        });
     }
     
     // In general it should draw first and handle input second, right?
     fn diagram_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
         let Some((t, arc)) = self.diagram_controllers.get(tab_uuid) else { return; };
         let mut diagram_controller = arc.write().unwrap();
-        let color_profile = &self.color_profiles[*t].2[self.selected_color_profiles[*t]];
-        
-        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(ui, color_profile);
 
-        diagram_controller.draw_in(ui_canvas.as_mut(), color_profile, pos);
+        let drawing_context = DrawingContext {
+            profile: &self.color_profiles[*t].2[self.selected_color_profiles[*t]],
+            fluent_bundle: &self.fluent_bundle,
+        };
+        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(&drawing_context, ui);
+
+        diagram_controller.draw_in(&drawing_context, ui_canvas.as_mut(), pos);
 
         let mut undo_accumulator = Vec::<Arc<String>>::new();
         diagram_controller.handle_input(ui, &response, &mut undo_accumulator);
@@ -701,7 +728,7 @@ impl NHContext {
         custom_tab.show(/*self,*/ ui);
     }
 
-    fn last_focused_diagram(&mut self) -> Option<(usize, Arc<RwLock<dyn DiagramController>>)> {
+    fn last_focused_diagram(&self) -> Option<(usize, Arc<RwLock<dyn DiagramController>>)> {
         self.last_focused_diagram
             .as_ref()
             .and_then(|e| self.diagram_controllers.get(e).cloned())
@@ -758,6 +785,9 @@ impl Default for NHApp {
         ];
         
         let selected_color_profiles = color_profiles.iter().map(|_| 0).collect();
+        let languages_order = common::fluent::AVAILABLE_LANGUAGES.iter().map(|e| e.0.clone()).collect();
+        let fluent_bundle = common::fluent::create_fluent_bundle(&languages_order)
+            .expect("Could not establish base FluentBundle");
         
         let mut context = NHContext {
             diagram_controllers,
@@ -768,6 +798,9 @@ impl Default for NHApp {
             style: None,
             color_profiles,
             selected_color_profiles,
+            selected_language: 0,
+            languages_order,
+            fluent_bundle,
             
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -872,6 +905,7 @@ fn new_project() -> Result<(), &'static str> {
 impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Process ProjectCommands
+        let mut commands = vec![];
         for c in self.context.unprocessed_commands.drain(..) {
             match c {
                 ProjectCommand::OpenAndFocusDiagram(uuid) => {
@@ -888,6 +922,7 @@ impl eframe::App for NHApp {
                         self.tree[SurfaceIndex::main()].push_to_focused_leaf(target_tab);
                     }
                 },
+                other => commands.push(other),
             }
         }
         
@@ -895,7 +930,17 @@ impl eframe::App for NHApp {
         if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
             self.context.last_focused_diagram = Some(*uuid);
         }
-        
+
+        macro_rules! translate {
+            ($msg_name:expr) => {
+                self.context.fluent_bundle.format_pattern(
+                    self.context.fluent_bundle.get_message($msg_name).unwrap().value().unwrap(),
+                    None,
+                    &mut vec![],
+                )
+            };
+        }
+
         // Show ui
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             macro_rules! send_to_focused_diagram {
@@ -944,23 +989,23 @@ impl eframe::App for NHApp {
             
             // Menubar UI
             egui::menu::bar(ui, |ui| {
-                ui.menu_button("File", |ui| {
-                    if ui.button("New Project").clicked() {
+                ui.menu_button(translate!("nh-file"), |ui| {
+                    if ui.button(translate!("nh-file-newproject")).clicked() {
                         let _ = new_project();
                     }
                     // TODO: implement
-                    if ui.button("Open Project").clicked() {
+                    if ui.button(translate!("nh-file-openproject")).clicked() {
                         println!("TODO");
                     }
                     // TODO: implement
-                    ui.menu_button("Recent Projects", |ui| {
+                    ui.menu_button(translate!("nh-file-recentprojects"), |ui| {
                         if ui.button("asdf").clicked() {
                             println!("TODO");
                         }
                     });
                     ui.separator();
 
-                    ui.menu_button("Add New Diagram", |ui| {
+                    ui.menu_button(translate!("nh-file-addnewdiagram"), |ui| {
                         type NDC =
                             fn(u32) -> (uuid::Uuid, Arc<RwLock<(dyn DiagramController + 'static)>>);
                         for (label, diagram_type, fun) in [
@@ -1012,8 +1057,8 @@ impl eframe::App for NHApp {
                     */
                 });
 
-                ui.menu_button("Edit", |ui| {
-                    ui.menu_button("Undo", |ui| {
+                ui.menu_button(translate!("nh-edit"), |ui| {
+                    ui.menu_button(translate!("nh-edit-undo"), |ui| {
                         let shortcut_text = self.context.shortcuts.get(&DiagramCommand::UndoImmediate).map(|e| ui.ctx().format_shortcut(&e));
                         
                         if self.context.undo_stack.is_empty() {
@@ -1034,7 +1079,7 @@ impl eframe::App for NHApp {
 
                                 if ui.add(button).clicked() {
                                     for _ in 0..=ii {
-                                        self.undo_immediate();
+                                        commands.push(ProjectCommand::UndoImmediate);
                                     }
                                     break;
                                 }
@@ -1043,7 +1088,7 @@ impl eframe::App for NHApp {
                         
                     });
                     
-                    ui.menu_button("Redo", |ui| {
+                    ui.menu_button(translate!("nh-edit-redo"), |ui| {
                         let shortcut_text = self.context.shortcuts.get(&DiagramCommand::RedoImmediate).map(|e| ui.ctx().format_shortcut(&e));
                         
                         if self.context.redo_stack.is_empty() {
@@ -1064,7 +1109,7 @@ impl eframe::App for NHApp {
 
                                 if ui.add(button).clicked() {
                                     for _ in 0..=ii {
-                                        self.redo_immediate();
+                                        commands.push(ProjectCommand::RedoImmediate);
                                     }
                                     break;
                                 }
@@ -1074,26 +1119,26 @@ impl eframe::App for NHApp {
                     ui.separator();
 
                     // TODO: implement
-                    if ui.button("Cut").clicked() {
+                    if ui.button(translate!("nh-edit-cut")).clicked() {
                         println!("no");
                     }
                     // TODO: implement
-                    if ui.button("Copy").clicked() {
+                    if ui.button(translate!("nh-edit-copy")).clicked() {
                         println!("no");
                     }
                     // TODO: implement
-                    if ui.button("Paste").clicked() {
+                    if ui.button(translate!("nh-edit-paste")).clicked() {
                         println!("no");
                     }
                     ui.separator();
 
                     if let Some((_t, d)) = self.context.last_focused_diagram() {
                         let mut d = d.write().unwrap();
-                        d.show_menubar_edit_options(self, ui);
+                        d.show_menubar_edit_options(ui, &mut commands);
                     }
                 });
 
-                ui.menu_button("View", |_ui| {
+                ui.menu_button(translate!("nh-view"), |_ui| {
                     /*
                     if ui.button("Reset").clicked() {
                         println!("no");
@@ -1101,11 +1146,11 @@ impl eframe::App for NHApp {
                     */
                 });
 
-                ui.menu_button("Diagram", |ui| {
+                ui.menu_button(translate!("nh-diagram"), |ui| {
                     let Some((t, c)) = self.context.last_focused_diagram() else { return; };
                     let mut controller = c.write().unwrap();
 
-                    controller.show_menubar_diagram_options(self, ui);
+                    controller.show_menubar_diagram_options(ui, &mut commands);
 
                     ui.menu_button(
                         format!("Export Diagram `{}` to", controller.model_name()),
@@ -1119,7 +1164,11 @@ impl eframe::App for NHApp {
                                     .add_filter("All files", &["*"])
                                     .save_file()
                                 {
-                                    self.context.svg_export_menu = Some((t, c.clone(), path, self.context.selected_color_profiles[t], false, false, 10.0, 10.0));
+                                    commands.push(
+                                        ProjectCommand::SetSvgExportMenu(
+                                            Some((t, c.clone(), path, self.context.selected_color_profiles[t], false, false, 10.0, 10.0))
+                                        )
+                                    );
                                 }
                                 ui.close_menu();
                             }
@@ -1127,7 +1176,7 @@ impl eframe::App for NHApp {
                     );
                 });
 
-                ui.menu_button("Windows", |ui| {
+                ui.menu_button(translate!("nh-windows"), |ui| {
                     // allow certain tabs to be toggled
                     for tab in &[
                         NHTab::RecentlyUsed,
@@ -1159,6 +1208,16 @@ impl eframe::App for NHApp {
             })
         });
         
+        for c in commands {
+            match c {
+                ProjectCommand::UndoImmediate => self.undo_immediate(),
+                ProjectCommand::RedoImmediate => self.redo_immediate(),
+                ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
+                ProjectCommand::SetSvgExportMenu(sem) => self.context.svg_export_menu = sem,
+                _ => todo!(),
+            }
+        }
+
         // SVG export options modal
         let mut hide_svg_export_modal = false;
         if let Some((t, c, path, profile, background, gridlines, padding_x, padding_y)) = self.context.svg_export_menu.as_mut() {
@@ -1188,11 +1247,15 @@ impl eframe::App for NHApp {
                 // Show preview
                 {
                     let color_profile = &self.context.color_profiles[*t].2[*profile];
+                    let drawing_context = DrawingContext {
+                        profile: color_profile,
+                        fluent_bundle: &self.context.fluent_bundle,
+                    };
                     
                     // Measure the diagram
                     let mut measuring_canvas =
                             MeasuringCanvas::new(ui.painter());
-                    controller.draw_in(&mut measuring_canvas, color_profile, None);
+                    controller.draw_in(&drawing_context, &mut measuring_canvas, None);
                     let diagram_bounds = measuring_canvas.bounds();
                     drop(measuring_canvas);
                     
@@ -1248,7 +1311,7 @@ impl eframe::App for NHApp {
                             Some((50.0, color_profile.foregrounds[0])),
                         );
                     }
-                    controller.draw_in(&mut ui_canvas, color_profile, None);
+                    controller.draw_in(&drawing_context, &mut ui_canvas, None);
                 }
                 
                 // Cancel or confirm export
@@ -1258,10 +1321,14 @@ impl eframe::App for NHApp {
                     }
                     if ui.button("OK").clicked() {
                         let color_profile = &self.context.color_profiles[*t].2[*profile];
+                        let drawing_context = DrawingContext {
+                            profile: color_profile,
+                            fluent_bundle: &self.context.fluent_bundle,
+                        };
                         
                         let mut measuring_canvas =
                             MeasuringCanvas::new(ui.painter());
-                        controller.draw_in(&mut measuring_canvas, color_profile, None);
+                        controller.draw_in(&drawing_context, &mut measuring_canvas, None);
 
                         let canvas_offset = -1.0 * measuring_canvas.bounds().min
                             + egui::Vec2::new(*padding_x, *padding_y);
@@ -1287,7 +1354,7 @@ impl eframe::App for NHApp {
                                 common::canvas::Highlight::NONE,
                             );
                         }
-                        controller.draw_in(&mut svg_canvas, color_profile, None);
+                        controller.draw_in(&drawing_context, &mut svg_canvas, None);
                         let _ = svg_canvas.save_to(&path);
                         
                         hide_svg_export_modal = true;

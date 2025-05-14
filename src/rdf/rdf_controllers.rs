@@ -1,9 +1,9 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
-use crate::{CustomTab, NHApp};
+use crate::{CustomTab};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 use std::any::Any;
@@ -466,13 +466,13 @@ impl CustomTab for SparqlQueriesTab {
     }
 }
 
-fn menubar_options_fun(controller: &mut DiagramViewT, context: &mut NHApp, ui: &mut egui::Ui) {
+fn menubar_options_fun(controller: &mut DiagramViewT, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
     if ui.button("Import RDF data").clicked() {
         // TODO: import stuff
     }
     if ui.button("SPARQL Queries").clicked() {
         let uuid = uuid::Uuid::now_v7();
-        context.add_custom_tab(
+        commands.push(ProjectCommand::AddCustomTab(
             uuid,
             Arc::new(RwLock::new(SparqlQueriesTab {
                 diagram: controller.model(),
@@ -482,7 +482,7 @@ fn menubar_options_fun(controller: &mut DiagramViewT, context: &mut NHApp, ui: &
                 debug_message: None,
                 query_results: None,
             })),
-        );
+        ));
     }
     if ui.button("Ontology alignment").clicked() {
         // TODO: similar to the above?
@@ -1195,8 +1195,8 @@ impl
     fn draw_in(
         &mut self,
         _: &RdfQueryable,
+        context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
-        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {
         // Draw shape and text
@@ -1211,7 +1211,7 @@ impl
         canvas.draw_ellipse(
             self.position,
             self.bounds_radius,
-            profile.backgrounds[3],
+            context.profile.backgrounds[3],
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
@@ -1221,7 +1221,7 @@ impl
             egui::Align2::CENTER_CENTER,
             &self.model.read().unwrap().iri,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            profile.foregrounds[3],
+            context.profile.foregrounds[3],
         );
 
         // Draw targetting ellipse
@@ -1531,8 +1531,8 @@ impl
     fn draw_in(
         &mut self,
         _: &RdfQueryable,
+        context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
-        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {
         // Draw shape and text
@@ -1542,8 +1542,8 @@ impl
             &self.model.read().unwrap().content,
             None,
             &[],
-            profile.backgrounds[4],
-            canvas::Stroke::new_solid(1.0, profile.foregrounds[4]),
+            context.profile.backgrounds[4],
+            canvas::Stroke::new_solid(1.0, context.profile.foregrounds[4]),
             self.highlight,
         );
 

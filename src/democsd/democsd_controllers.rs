@@ -1,12 +1,11 @@
 use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
 };
 use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage,
     DemoCsdTransaction, DemoCsdTransactor,
 };
-use crate::NHApp;
 use eframe::egui;
 use std::any::Any;
 use std::{
@@ -291,7 +290,7 @@ fn tool_change_fun(tool: &mut Option<NaiveDemoCsdTool>, ui: &mut egui::Ui) {
     }
 }
 
-fn menubar_options_fun(_controller: &mut DiagramViewT, _context: &mut NHApp, _ui: &mut egui::Ui) {}
+fn menubar_options_fun(_controller: &mut DiagramViewT, _ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {}
 
 pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let uuid = uuid::Uuid::now_v7();
@@ -1094,8 +1093,8 @@ impl
     fn draw_in(
         &mut self,
         queryable: &DemoCsdQueryable,
+        context: &DrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
-        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &NaiveDemoCsdTool)>,
     ) -> TargettingStatus {
         let read = self.model.read().unwrap();
@@ -1171,9 +1170,9 @@ impl
             self.bounds_rect,
             egui::CornerRadius::ZERO,
             if read.internal {
-                profile.backgrounds[4]
+                context.profile.backgrounds[4]
             } else {
-                profile.backgrounds[3]
+                context.profile.backgrounds[3]
             },
             canvas::Stroke::new_solid(
                 1.0,
@@ -1187,9 +1186,9 @@ impl
         );
 
         let text_color = if read.internal {
-            profile.foregrounds[4]
+            context.profile.foregrounds[4]
         } else {
-            profile.foregrounds[3]
+            context.profile.foregrounds[3]
         };
 
         // Draw identifier below the position (plus tx name)
@@ -1213,7 +1212,7 @@ impl
         // If tx is present, draw it 4 rows above the position
         if let Some(t) = &self.transaction_view {
             let mut t = t.write().unwrap();
-            let res = t.draw_in(queryable, canvas, profile, &tool);
+            let res = t.draw_in(queryable, context, canvas, &tool);
             if res == TargettingStatus::Drawn {
                 return TargettingStatus::Drawn;
             }
@@ -1772,8 +1771,8 @@ impl
     fn draw_in(
         &mut self,
         _: &DemoCsdQueryable,
+        context: &DrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
-        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &NaiveDemoCsdTool)>,
     ) -> TargettingStatus {
         let radius = 2.0 * canvas::CLASS_MIDDLE_FONT_SIZE;
@@ -1785,9 +1784,9 @@ impl
             self.position,
             radius,
             self.highlight,
-            profile.backgrounds[5],
-            profile.foregrounds[5],
-            profile.foregrounds[6],
+            context.profile.backgrounds[5],
+            context.profile.foregrounds[5],
+            context.profile.foregrounds[6],
         );
 
         canvas.draw_text(

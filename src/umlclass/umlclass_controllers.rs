@@ -4,10 +4,9 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::CustomTab;
-use crate::NHApp;
 use eframe::egui;
 use std::any::Any;
 use std::{
@@ -293,16 +292,16 @@ fn tool_change_fun(tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
         ui.separator();
     }
 }
-fn menubar_options_fun(controller: &mut DiagramViewT, context: &mut NHApp, ui: &mut egui::Ui) {
+fn menubar_options_fun(controller: &mut DiagramViewT, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
     if ui.button("PlantUML description").clicked() {
         let uuid = uuid::Uuid::now_v7();
-        context.add_custom_tab(
+        commands.push(ProjectCommand::AddCustomTab(
             uuid,
             Arc::new(RwLock::new(PlantUmlTab {
                 diagram: controller.model(),
                 plantuml_description: "".to_owned(),
             })),
-        );
+        ));
     }
     ui.separator();
 }
@@ -1143,8 +1142,8 @@ impl
     fn draw_in(
         &mut self,
         _: &UmlClassQueryable,
+        context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
-        profile: &ColorProfile,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>,
     ) -> TargettingStatus {
         let read = self.model.read().unwrap();
@@ -1155,8 +1154,8 @@ impl
             &read.name,
             None,
             &[&read.parse_properties(), &read.parse_functions()],
-            profile.backgrounds[3],
-            canvas::Stroke::new_solid(1.0, profile.foregrounds[3]),
+            context.profile.backgrounds[3],
+            canvas::Stroke::new_solid(1.0, context.profile.foregrounds[3]),
             self.highlight,
         );
 

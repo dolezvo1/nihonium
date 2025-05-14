@@ -12,6 +12,11 @@ egui_dock = "0.16"
 rfd = "0.15"
 uuid = { version = "1.16", features = [ "std", "v7" ] }
 
+# Fluent
+fluent-bundle = "0.15"
+unic-langid = { version = "0.9", features = [ "macros" ] }
+unic-langid-macros = "0.9"
+
 # RDF
 sophia = { version = "0.9", features = [ "jsonld", "xml" ] }
 sophia_sparql = "0.9"
