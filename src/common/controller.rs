@@ -212,15 +212,55 @@ impl Into<SimpleProjectCommand> for DiagramCommand {
 }
 
 
+pub trait HierarchyCollectible: HasModel {
+    fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode;
+}
+
+pub enum HierarchyNode {
+    Folder(uuid::Uuid, Arc<String>, Vec<HierarchyNode>),
+    Node(Arc<RwLock<dyn HierarchyCollectible>>, Vec<HierarchyNode>),
+    Leaf(Arc<RwLock<dyn HierarchyCollectible>>),
+}
+
+impl HierarchyNode {
+    pub fn model_uuid(&self) -> Option<uuid::Uuid> {
+        match self {
+            HierarchyNode::Folder(..) => None,
+            HierarchyNode::Node(rw_lock, _) | HierarchyNode::Leaf(rw_lock) => Some(*rw_lock.read().unwrap().model_uuid()),
+        }
+    }
+
+    pub fn collect_hierarchy(&self) -> HierarchyNode {
+        match self {
+            HierarchyNode::Folder(uuid, name, hierarchy_nodes) => {
+                HierarchyNode::Folder(
+                    *uuid,
+                    name.clone(),
+                    hierarchy_nodes.iter().map(|e| e.collect_hierarchy()).collect()
+                )
+            },
+            HierarchyNode::Node(rw_lock, hierarchy_nodes) => {
+                rw_lock.read().unwrap().collect_hierarchy(&hierarchy_nodes)
+            },
+            HierarchyNode::Leaf(rw_lock) => {
+                rw_lock.read().unwrap().collect_hierarchy(&vec![])
+            },
+        }
+    }
+}
+
+
 pub struct DrawingContext<'a> {
     pub profile: &'a ColorProfile,
     pub fluent_bundle: &'a fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
 }
 
-pub trait DiagramController: Any {
-    fn uuid(&self) -> Arc<uuid::Uuid>;
+pub trait HasModel {
+    fn model_uuid(&self) -> Arc<uuid::Uuid>;
     fn model_name(&self) -> Arc<String>;
+}
 
+pub trait DiagramController: Any + HasModel + HierarchyCollectible {
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
     
     fn new_ui_canvas(
@@ -243,7 +283,6 @@ pub trait DiagramController: Any {
     fn show_layers(&self, ui: &mut egui::Ui);
     fn show_menubar_edit_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
     fn show_menubar_diagram_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
-    fn list_in_project_hierarchy(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
 
     // This hurts me at least as much as it hurts you
     //fn outgoing_for<'a>(&'a self, _uuid: &'a uuid::Uuid) -> Box<dyn Iterator<Item=Arc<RwLock<dyn ElementController>>> + 'a> {
@@ -253,9 +292,7 @@ pub trait DiagramController: Any {
     fn apply_command(&mut self, command: DiagramCommand, global_undo: &mut Vec<Arc<String>>);
 }
 
-pub trait ElementController<CommonElementT: ?Sized> {
-    fn uuid(&self) -> Arc<uuid::Uuid>;
-    fn model_name(&self) -> Arc<String>;
+pub trait ElementController<CommonElementT: ?Sized>: HasModel {
     fn model(&self) -> Arc<RwLock<CommonElementT>>;
 
     fn min_shape(&self) -> NHShape;
@@ -611,7 +648,7 @@ pub trait ElementControllerGen2<
     ToolT,
     AddCommandElementT: Clone + Debug,
     PropChangeT: Clone + Debug,
->: ElementController<CommonElementT> + ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + Send + Sync where
+>: ElementController<CommonElementT> + HierarchyCollectible + ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + Send + Sync where
     ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
 {
     fn show_properties(
@@ -622,8 +659,6 @@ pub trait ElementControllerGen2<
     ) -> bool {
         false
     }
-    fn list_in_project_hierarchy(&self, _: &QueryableT, _ui: &mut egui::Ui) {}
-
     fn draw_in(
         &mut self,
         _: &QueryableT,
@@ -632,7 +667,7 @@ pub trait ElementControllerGen2<
         tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus;
     fn collect_allignment(&mut self, am: &mut SnapManager) {
-        am.add_shape(*self.uuid(), self.min_shape());
+        am.add_shape(*self.model_uuid(), self.min_shape());
     }
     fn handle_event(
         &mut self,
@@ -665,7 +700,7 @@ pub trait ElementControllerGen2<
             Arc<dyn Any + Send + Sync>,
         )>)
     {
-        if requested.is_none_or(|e| e.contains(&self.uuid())) {
+        if requested.is_none_or(|e| e.contains(&self.model_uuid())) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         }
     }
@@ -990,7 +1025,7 @@ where
                 let mut tool = self.current_tool.take();
                 if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
                     commands.push(InsensitiveCommand::AddElement(
-                        *self.uuid(),
+                        *self.model_uuid(),
                         AddCommandElementT::from(new_a),
                     ).into());
                     handled = true;
@@ -1088,7 +1123,7 @@ where
                         .filter(|e| uuids.contains(&e.0))
                     {
                         undo_accumulator.push(InsensitiveCommand::AddElement(
-                            *self.uuid(),
+                            *self.model_uuid(),
                             AddCommandElementT::from((*uuid, element.clone())),
                         ));
                     }
@@ -1100,7 +1135,7 @@ where
                     self.event_order.retain(|e| !uuids.contains(&e));
                 }
                 InsensitiveCommand::AddElement(target, element) => {
-                    if *target == *self.uuid() {
+                    if *target == *self.model_uuid() {
                         if let Ok((uuid, element)) = element.clone().try_into() {
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(uuid).collect(),
@@ -1134,7 +1169,7 @@ where
                     }
                 }
                 InsensitiveCommand::PropertyChange(uuids, _property) => {
-                    if uuids.contains(&*self.uuid()) {
+                    if uuids.contains(&*self.model_uuid()) {
                         let mut m = self.model.write().unwrap();
                         (self.apply_property_change_fun)(
                             &mut self.buffer,
@@ -1226,6 +1261,85 @@ where
     }
 }
 
+
+impl<
+        DiagramModelT: ContainerModel<ElementModelT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        BufferT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
+    > HasModel
+    for DiagramControllerGen2<
+        DiagramModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    ToolT: for<'a> Tool<
+        ElementModelT,
+        QueryableT,
+        AddCommandElementT,
+        PropChangeT,
+        KindedElement<'a>: From<&'a Self>,
+    >,
+{
+    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+        self.model.read().unwrap().uuid()
+    }
+    fn model_name(&self) -> Arc<String> {
+        self.model.read().unwrap().name()
+    }
+}
+
+impl<
+        DiagramModelT: ContainerModel<ElementModelT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        BufferT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
+    > HierarchyCollectible
+    for DiagramControllerGen2<
+        DiagramModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    ToolT: for<'a> Tool<
+        ElementModelT,
+        QueryableT,
+        AddCommandElementT,
+        PropChangeT,
+        KindedElement<'a>: From<&'a Self>,
+    >,
+{
+    fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode {
+        let mut new_children = Vec::new();
+        for c in children_order {
+            new_children.push(c.collect_hierarchy());
+        }
+        for c in self.event_order.iter()
+            .filter(|e1| children_order.iter().filter_map(|e2| e2.model_uuid()).find(|e2| *e1 == e2).is_none())
+            .filter_map(|e| self.owned_controllers.get(e))
+        {
+            new_children.push(c.read().unwrap().collect_hierarchy(&vec![]));
+        }
+
+        HierarchyNode::Node(self.self_reference.upgrade().unwrap(), new_children)
+    }
+}
+
 impl<
         DiagramModelT: ContainerModel<ElementModelT>,
         ElementModelT: ?Sized + 'static,
@@ -1280,13 +1394,6 @@ where
             >,
         )>,
 {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
-        self.model.read().unwrap().uuid()
-    }
-    fn model_name(&self) -> Arc<String> {
-        self.model.read().unwrap().name()
-    }
-
     fn new_ui_canvas(
         &mut self,
         context: &DrawingContext,
@@ -1432,35 +1539,6 @@ where
             todo!();
         }
         ui.separator();
-    }
-
-    fn list_in_project_hierarchy(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
-        let model = self.model.read().unwrap();
-
-        let r = egui::CollapsingHeader::new(format!("{} ({})", model.name(), model.uuid())).show(
-            ui,
-            |ui| {
-                for uc in &self.owned_controllers {
-                    uc.1.read()
-                        .unwrap()
-                        .list_in_project_hierarchy(&self.queryable, ui);
-                }
-            },
-        );
-        
-        // React to user interaction
-        if r.header_response.double_clicked() {
-            commands.push(ProjectCommand::OpenAndFocusDiagram(*model.uuid()));
-        }
-        
-        r.header_response.context_menu(|ui| {
-            if ui.button("Open").clicked() {
-                commands.push(ProjectCommand::OpenAndFocusDiagram(*model.uuid()));
-                ui.close_menu();
-            } else if ui.button("Delete").clicked() {
-                todo!("implement view deletion");
-            }
-        });
     }
 
     fn apply_command(
@@ -1865,6 +1943,134 @@ impl<
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
+    > HasModel
+    for PackageView<
+        AdapterT,
+        ElementModelT,
+        QueryableT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    ToolT: for<'a> Tool<
+        ElementModelT,
+        QueryableT,
+        AddCommandElementT,
+        PropChangeT,
+        KindedElement<'a>: From<&'a Self>,
+    >,
+    AddCommandElementT: From<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
+            >,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
+            >,
+        )>,
+{
+    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+        self.adapter.model_uuid()
+    }
+    fn model_name(&self) -> Arc<String> {
+        self.adapter.model_name()
+    }
+}
+
+impl<
+        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
+    > HierarchyCollectible
+    for PackageView<
+        AdapterT,
+        ElementModelT,
+        QueryableT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    ToolT: for<'a> Tool<
+        ElementModelT,
+        QueryableT,
+        AddCommandElementT,
+        PropChangeT,
+        KindedElement<'a>: From<&'a Self>,
+    >,
+    AddCommandElementT: From<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
+            >,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
+            >,
+        )>,
+{
+    fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode {
+        let mut new_children = Vec::new();
+        for c in children_order {
+            new_children.push(c.collect_hierarchy());
+        }
+        for c in self.event_order.iter()
+            .filter(|e1| children_order.iter().filter_map(|e2| e2.model_uuid()).find(|e2| *e1 == e2).is_none())
+            .filter_map(|e| self.owned_controllers.get(e))
+        {
+            new_children.push(c.read().unwrap().collect_hierarchy(&vec![]));
+        }
+
+        HierarchyNode::Node(self.self_reference.upgrade().unwrap(), new_children)
+    }
+}
+
+impl<
+        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
     > ElementController<ElementModelT>
     for PackageView<
         AdapterT,
@@ -1910,12 +2116,6 @@ where
             >,
         )>,
 {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
-        self.adapter.model_uuid()
-    }
-    fn model_name(&self) -> Arc<String> {
-        self.adapter.model_name()
-    }
     fn model(&self) -> Arc<RwLock<ElementModelT>> {
         self.adapter.model()
     }
@@ -2068,17 +2268,6 @@ where
             false
         }
     }
-    fn list_in_project_hierarchy(&self, parent: &QueryableT, ui: &mut egui::Ui) {
-        egui::CollapsingHeader::new(format!("{} ({})", *self.adapter.model_name(), *self.adapter.model_uuid())).show(
-            ui,
-            |ui| {
-                for (_uuid, c) in &self.owned_controllers {
-                    let c = c.read().unwrap();
-                    c.list_in_project_hierarchy(parent, ui);
-                }
-            },
-        );
-    }
     fn draw_in(
         &mut self,
         q: &QueryableT,
@@ -2186,7 +2375,7 @@ where
     }
 
     fn collect_allignment(&mut self, am: &mut SnapManager) {
-        am.add_shape(*self.uuid(), self.min_shape());
+        am.add_shape(*self.model_uuid(), self.min_shape());
         
         self.event_order.iter()
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
@@ -2259,7 +2448,7 @@ where
                         tool.add_element(ToolT::KindedElement::from(self));
                         
                         if let Some(new_a) = tool.try_construct(self) {
-                            commands.push(InsensitiveCommand::AddElement(*self.uuid(), new_a.into()).into());
+                            commands.push(InsensitiveCommand::AddElement(*self.model_uuid(), new_a.into()).into());
                         }
                         
                         EventHandlingStatus::HandledByContainer
@@ -2292,7 +2481,7 @@ where
                     self.dragged_type_and_shape = Some((PackageDragType::Move, translated_bounds));
                     let translated_real_shape = NHShape::Rect { inner: translated_bounds };
                     let coerced_pos = ehc.snap_manager.coerce(translated_real_shape,
-                        |e| !self.all_elements.get(e).is_some() && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected) } else {*e == *self.uuid()}
+                        |e| !self.all_elements.get(e).is_some() && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected) } else {*e == *self.model_uuid()}
                     );
                     let coerced_delta = coerced_pos - self.position();
                     
@@ -2300,7 +2489,7 @@ where
                         commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                     } else {
                         commands.push(InsensitiveCommand::MoveSpecificElements(
-                            std::iter::once(*self.uuid()).collect(),
+                            std::iter::once(*self.model_uuid()).collect(),
                             coerced_delta,
                         ).into());
                     }
@@ -2374,7 +2563,7 @@ where
                 let r = self.bounds_rect + epaint::Marginf{left, right, top, bottom};
                 
                 undo_accumulator.push(InsensitiveCommand::ResizeSpecificElementsTo(
-                    std::iter::once(*self.uuid()).collect(),
+                    std::iter::once(*self.model_uuid()).collect(),
                     *$align,
                     self.bounds_rect.size(),
                 ));
@@ -2395,7 +2584,7 @@ where
                 recurse!(self);
             }
             InsensitiveCommand::SelectSpecific(uuids, select) => {
-                if uuids.contains(&*self.uuid()) {
+                if uuids.contains(&*self.model_uuid()) {
                     self.highlight.selected = *select;
                 }
 
@@ -2413,13 +2602,13 @@ where
                 
                 recurse!(self);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid()) => {
+            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.model_uuid()) => {
                 recurse!(self);
             }
             InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.bounds_rect.set_center(self.position() + *delta);
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
-                    std::iter::once(*self.uuid()).collect(),
+                    std::iter::once(*self.model_uuid()).collect(),
                     -*delta,
                 ));
                 for e in &self.owned_controllers {
@@ -2428,14 +2617,14 @@ where
                 }
             }
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
-                if uuids.contains(&self.uuid()) {
+                if uuids.contains(&self.model_uuid()) {
                     resize_by!(align, delta);
                 }
                 
                 recurse!(self);
             }
             InsensitiveCommand::ResizeSpecificElementsTo(uuids, align, size) => {
-                if uuids.contains(&self.uuid()) {
+                if uuids.contains(&self.model_uuid()) {
                     let delta_naive = *size - self.bounds_rect.size();
                     let x = match align.x() {
                         egui::Align::Min => delta_naive.x,
@@ -2461,7 +2650,7 @@ where
                     .filter(|e| uuids.contains(&e.0))
                 {
                     undo_accumulator.push(InsensitiveCommand::AddElement(
-                        *self.uuid(),
+                        *self.model_uuid(),
                         AddCommandElementT::from((*uuid, element.clone())),
                     ));
                 }
@@ -2473,7 +2662,7 @@ where
                 recurse!(self);
             }
             InsensitiveCommand::AddElement(target, element) => {
-                if *target == *self.uuid() {
+                if *target == *self.model_uuid() {
                     if let Ok((uuid, element)) = element.clone().try_into() {
                         undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                             std::iter::once(uuid).collect(),
@@ -2491,14 +2680,14 @@ where
                 recurse!(self);
             }
             InsensitiveCommand::PasteSpecificElements(target, _elements) => {
-                if *target == *self.uuid() {
+                if *target == *self.model_uuid() {
                     todo!("undo = delete")
                 }
                 
                 recurse!(self);
             },
             InsensitiveCommand::PropertyChange(uuids, _property) => {
-                if uuids.contains(&*self.uuid()) {
+                if uuids.contains(&*self.model_uuid()) {
                     self.adapter.apply_change(
                         command,
                         undo_accumulator,
@@ -2511,7 +2700,7 @@ where
     }
 
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
-        into.insert(*self.uuid(), self.highlight.selected.into());
+        into.insert(*self.model_uuid(), self.highlight.selected.into());
 
         self.all_elements.clear();
         for e in &self.owned_controllers {
@@ -2542,7 +2731,7 @@ where
             Arc<dyn Any + Send + Sync>,
         )>)
     {
-        if requested.is_none_or(|e| e.contains(&self.uuid())) {
+        if requested.is_none_or(|e| e.contains(&self.model_uuid())) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         } else {
             self.owned_controllers.iter()
@@ -2564,7 +2753,7 @@ where
             Arc<dyn Any + Send + Sync>,
         )>
     ) {
-        let uuid = if uuid_present(&*self.uuid()) { uuid::Uuid::now_v7() } else { *self.uuid() };
+        let uuid = if uuid_present(&*self.model_uuid()) { uuid::Uuid::now_v7() } else { *self.model_uuid() };
         
         let mut inner = HashMap::new();
         self.owned_controllers.iter().for_each(|e| e.1.read().unwrap().deep_copy_clone(uuid_present, &mut inner, c, m));
@@ -2785,6 +2974,59 @@ impl<
         ToolT,
         AddCommandElementT: Clone + Debug,
         PropChangeT: Clone + Debug,
+    > HasModel
+    for MulticonnectionView<
+        AdapterT,
+        ElementModelT,
+        QueryableT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
+    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
+{
+    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+        self.adapter.model_uuid()
+    }
+    fn model_name(&self) -> Arc<String> {
+        self.adapter.model_name()
+    }
+}
+
+impl<
+        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT> + 'static,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
+    > HierarchyCollectible
+    for MulticonnectionView<
+        AdapterT,
+        ElementModelT,
+        QueryableT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
+    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
+{
+    fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode {
+        HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+    }
+}
+
+impl<
+        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT,
+        ToolT,
+        AddCommandElementT: Clone + Debug,
+        PropChangeT: Clone + Debug,
     > ElementController<ElementModelT>
     for MulticonnectionView<
         AdapterT,
@@ -2798,12 +3040,6 @@ where
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
-        self.adapter.model_uuid()
-    }
-    fn model_name(&self) -> Arc<String> {
-        self.adapter.model_name()
-    }
     fn model(&self) -> Arc<RwLock<ElementModelT>> {
         self.adapter.model()
     }
@@ -3001,7 +3237,7 @@ where
             .chain(self.source_points.iter().flat_map(|e| e.iter().skip(1)))
             .chain(self.dest_points.iter().flat_map(|e| e.iter().skip(1)))
         {
-            am.add_shape(*self.uuid(), NHShape::Rect { inner: egui::Rect::from_min_size(p.1, egui::Vec2::ZERO) });
+            am.add_shape(*self.model_uuid(), NHShape::Rect { inner: egui::Rect::from_min_size(p.1, egui::Vec2::ZERO) });
         }
     }
     fn handle_event(
@@ -3048,7 +3284,7 @@ where
                     None if is_over(pos, self.position()) => {
                         self.dragged_node = Some((uuid::Uuid::now_v7(), pos));
                         commands.push(InsensitiveCommand::AddElement(
-                            *self.uuid(),
+                            *self.model_uuid(),
                             VertexInformation {
                                 after: uuid::Uuid::nil(),
                                 id: self.dragged_node.unwrap().0,
@@ -3083,7 +3319,7 @@ where
                                 if is_over(pos, midpoint) {
                                     self.dragged_node = Some((uuid::Uuid::now_v7(), pos));
                                     commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::AddElement(
-                                        *self.uuid(),
+                                        *self.model_uuid(),
                                         VertexInformation {
                                             after: u.0,
                                             id: self.dragged_node.unwrap().0,
@@ -3214,7 +3450,7 @@ where
                 let coerced_pos = if self.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected))
                 } else {
-                    ehc.snap_manager.coerce(translated_real_shape, |e| *e != *self.uuid())
+                    ehc.snap_manager.coerce(translated_real_shape, |e| *e != *self.model_uuid())
                 };
                 let coerced_delta = coerced_pos - self.all_vertices()
                     .find(|e| e.0 == dragged_node.0).unwrap().1;
@@ -3261,7 +3497,7 @@ where
                 }
             }
             InsensitiveCommand::SelectSpecific(uuids, select) => {
-                if uuids.contains(&*self.uuid()) {
+                if uuids.contains(&*self.model_uuid()) {
                     self.highlight.selected = *select;
                 }
                 match select {
@@ -3276,7 +3512,7 @@ where
             InsensitiveCommand::SelectByDrag(rect) => {
                 self.highlight.selected = all_pts_mut!(self).find(|p| !rect.contains(p.1)).is_none();
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.uuid()) => {
+            InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.model_uuid()) => {
                 for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {
                     p.1 += *delta;
                     undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
@@ -3299,7 +3535,7 @@ where
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids) => {
-                let self_uuid = *self.uuid();
+                let self_uuid = *self.model_uuid();
                 if let Some(center_point) =
                     self.center_point.as_mut().filter(|e| uuids.contains(&e.0))
                 {
@@ -3353,7 +3589,7 @@ where
                 delete_vertices!(self, dest_points);
             }
             InsensitiveCommand::AddElement(target, element) => {
-                if *target == *self.uuid() {
+                if *target == *self.model_uuid() {
                     if let Ok(VertexInformation {
                         after,
                         id,
@@ -3401,7 +3637,7 @@ where
                 }
             }
             InsensitiveCommand::PropertyChange(uuids, properties) => {
-                if uuids.contains(&*self.uuid()) {
+                if uuids.contains(&*self.model_uuid()) {
                     for property in properties {
                         if let Ok(FlipMulticonnection {}) = property.try_into() {}
                     }
@@ -3412,7 +3648,7 @@ where
     }
 
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
-        into.insert(*self.uuid(), self.highlight.selected.into());
+        into.insert(*self.model_uuid(), self.highlight.selected.into());
         
         for e in self.all_vertices() {
             into.insert(e.0, match self.selected_vertices.contains(&e.0) {
@@ -3438,7 +3674,7 @@ where
             Arc<dyn Any + Send + Sync>,
         )>
     ) {
-        let uuid = if uuid_present(&*self.uuid()) { uuid::Uuid::now_v7() } else { *self.uuid() };
+        let uuid = if uuid_present(&*self.model_uuid()) { uuid::Uuid::now_v7() } else { *self.model_uuid() };
         
         let cloneish = Arc::new(RwLock::new(Self {
             adapter: self.adapter.deep_copy_init(uuid, m),

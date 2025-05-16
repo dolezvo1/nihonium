@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, HasModel, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
 };
 use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage,
@@ -950,13 +950,27 @@ pub struct DemoCsdTransactorView {
     bounds_rect: egui::Rect,
 }
 
-impl ElementController<dyn DemoCsdElement> for DemoCsdTransactorView {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+impl HasModel for DemoCsdTransactorView {
+    fn model_uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid()
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
     }
+}
+
+impl HierarchyCollectible for DemoCsdTransactorView {
+    fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode {
+        let s = self.self_reference.upgrade().unwrap();
+        if let Some(tx) = &self.transaction_view {
+            HierarchyNode::Node(s, vec![tx.read().unwrap().collect_hierarchy(&vec![])])
+        } else {
+            HierarchyNode::Leaf(s)
+        }
+    }
+}
+
+impl ElementController<dyn DemoCsdElement> for DemoCsdTransactorView {
     fn model(&self) -> Arc<RwLock<dyn DemoCsdElement>> {
         self.model.clone()
     }
@@ -981,7 +995,7 @@ impl
 {
     fn controller_for(&self, uuid: &uuid::Uuid) -> Option<ArcRwLockControllerT> {
         match &self.transaction_view {
-            Some(t) if *uuid == *t.read().unwrap().uuid() => {
+            Some(t) if *uuid == *t.read().unwrap().model_uuid() => {
                 Some(t.clone() as ArcRwLockControllerT)
             }
             _ => None,
@@ -1076,20 +1090,6 @@ impl
 
         true
     }
-
-    fn list_in_project_hierarchy(&self, _parent: &DemoCsdQueryable, ui: &mut egui::Ui) {
-        let model = self.model.read().unwrap();
-
-        egui::CollapsingHeader::new(format!("{} ({})", model.name, model.uuid)).show(ui, |_ui| {
-            /* TODO:
-            for connection in parent.outgoing_for(&model.uuid) {
-                let connection = connection.read().unwrap();
-                ui.label(format!("{} (-> {})", connection.model_name(), connection.connection_target_name().unwrap()));
-            }
-            */
-        });
-    }
-
     fn draw_in(
         &mut self,
         queryable: &DemoCsdQueryable,
@@ -1240,7 +1240,7 @@ impl
     }
 
     fn collect_allignment(&mut self, am: &mut SnapManager) {
-        am.add_shape(*self.uuid(), self.min_shape());
+        am.add_shape(*self.model_uuid(), self.min_shape());
 
         self.transaction_view
             .iter()
@@ -1288,7 +1288,7 @@ impl
                                 commands.push(InsensitiveCommand::SelectAll(false).into());
                                 commands.push(
                                     InsensitiveCommand::SelectSpecific(
-                                        std::iter::once(*t.uuid()).collect(),
+                                        std::iter::once(*t.model_uuid()).collect(),
                                         true,
                                     )
                                     .into(),
@@ -1296,7 +1296,7 @@ impl
                             } else {
                                 commands.push(
                                     InsensitiveCommand::SelectSpecific(
-                                        std::iter::once(*t.uuid()).collect(),
+                                        std::iter::once(*t.model_uuid()).collect(),
                                         !t.highlight.selected,
                                     )
                                     .into(),
@@ -1330,9 +1330,9 @@ impl
             InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
                 let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
                 self.dragged_shape = Some(translated_real_shape);
-                let transaction_id = self.transaction_view.as_ref().map(|t| *t.read().unwrap().uuid());
+                let transaction_id = self.transaction_view.as_ref().map(|t| *t.read().unwrap().model_uuid());
                 let coerced_pos = ehc.snap_manager.coerce(translated_real_shape,
-                        |e| !transaction_id.is_some_and(|t| t == *e) && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected) } else {*e == *self.uuid()}
+                        |e| !transaction_id.is_some_and(|t| t == *e) && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected) } else {*e == *self.model_uuid()}
                     );
                 let coerced_delta = coerced_pos - self.min_shape().center();
                 
@@ -1341,7 +1341,7 @@ impl
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
-                            std::iter::once(*self.uuid()).collect(),
+                            std::iter::once(*self.model_uuid()).collect(),
                             coerced_delta,
                         )
                         .into(),
@@ -1373,7 +1373,7 @@ impl
                 recurse!(self);
             }
             InsensitiveCommand::SelectSpecific(uuids, select) => {
-                if uuids.contains(&*self.uuid()) {
+                if uuids.contains(&*self.model_uuid()) {
                     self.highlight.selected = *select;
                 }
                 recurse!(self);
@@ -1383,16 +1383,16 @@ impl
                 recurse!(self);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, delta)
-                if !uuids.contains(&*self.uuid())
+                if !uuids.contains(&*self.model_uuid())
                     && !self
                         .transaction_view
                         .as_ref()
-                        .is_some_and(|e| uuids.contains(&e.read().unwrap().uuid())) => {}
+                        .is_some_and(|e| uuids.contains(&e.read().unwrap().model_uuid())) => {}
             InsensitiveCommand::MoveSpecificElements(_, delta)
             | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
-                    std::iter::once(*self.uuid()).collect(),
+                    std::iter::once(*self.model_uuid()).collect(),
                     -*delta,
                 ));
                 if let Some(t) = &self.transaction_view {
@@ -1407,7 +1407,7 @@ impl
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
-                if uuids.contains(&*self.uuid()) {
+                if uuids.contains(&*self.model_uuid()) {
                     for property in properties {
                         match property {
                             DemoCsdPropChange::IdentifierChange(identifier) => {
@@ -1472,7 +1472,7 @@ impl
     }
 
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
-        into.insert(*self.uuid(), self.highlight.selected.into());
+        into.insert(*self.model_uuid(), self.highlight.selected.into());
 
         if let Some(t) = &self.transaction_view {
             let mut t = t.write().unwrap();
@@ -1496,7 +1496,7 @@ impl
             Arc<dyn Any + Send + Sync>,
         )>)
     {
-        if requested.is_none_or(|e| e.contains(&self.uuid()) || self.transaction_view.as_ref().is_some_and(|t| e.contains(&t.read().unwrap().uuid()))) {
+        if requested.is_none_or(|e| e.contains(&self.model_uuid()) || self.transaction_view.as_ref().is_some_and(|t| e.contains(&t.read().unwrap().model_uuid()))) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         }
     }
@@ -1618,13 +1618,22 @@ pub struct DemoCsdTransactionView {
     min_shape: canvas::NHShape,
 }
 
-impl ElementController<dyn DemoCsdElement> for DemoCsdTransactionView {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+impl HasModel for DemoCsdTransactionView {
+    fn model_uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid()
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
     }
+}
+
+impl HierarchyCollectible for DemoCsdTransactionView {
+    fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
+        HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+    }
+}
+
+impl ElementController<dyn DemoCsdElement> for DemoCsdTransactionView {
     fn model(&self) -> Arc<RwLock<dyn DemoCsdElement>> {
         self.model.clone()
     }
@@ -1761,13 +1770,6 @@ impl
 
         true
     }
-
-    fn list_in_project_hierarchy(&self, _parent: &DemoCsdQueryable, ui: &mut egui::Ui) {
-        let model = self.model.read().unwrap();
-
-        ui.label(format!("{} ({})", model.name, model.uuid));
-    }
-
     fn draw_in(
         &mut self,
         _: &DemoCsdQueryable,
@@ -1847,7 +1849,7 @@ impl
                         commands.push(InsensitiveCommand::SelectAll(false).into());
                         commands.push(
                             InsensitiveCommand::SelectSpecific(
-                                std::iter::once(*self.uuid()).collect(),
+                                std::iter::once(*self.model_uuid()).collect(),
                                 true,
                             )
                             .into(),
@@ -1855,7 +1857,7 @@ impl
                     } else {
                         commands.push(
                             InsensitiveCommand::SelectSpecific(
-                                std::iter::once(*self.uuid()).collect(),
+                                std::iter::once(*self.model_uuid()).collect(),
                                 !self.highlight.selected,
                             )
                             .into(),
@@ -1871,7 +1873,7 @@ impl
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
-                            std::iter::once(*self.uuid()).collect(),
+                            std::iter::once(*self.model_uuid()).collect(),
                             delta,
                         )
                         .into(),
@@ -1894,7 +1896,7 @@ impl
                 self.highlight.selected = *select;
             }
             InsensitiveCommand::SelectSpecific(uuids, select) => {
-                if uuids.contains(&*self.uuid()) {
+                if uuids.contains(&*self.model_uuid()) {
                     self.highlight.selected = *select;
                 }
             }
@@ -1902,12 +1904,12 @@ impl
                 self.highlight.selected = self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
-                if !uuids.contains(&*self.uuid()) => {}
+                if !uuids.contains(&*self.model_uuid()) => {}
             InsensitiveCommand::MoveSpecificElements(_, delta)
             | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
-                    std::iter::once(*self.uuid()).collect(),
+                    std::iter::once(*self.model_uuid()).collect(),
                     -*delta,
                 ));
             }
@@ -1918,7 +1920,7 @@ impl
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
-                if uuids.contains(&*self.uuid()) {
+                if uuids.contains(&*self.model_uuid()) {
                     for property in properties {
                         match property {
                             DemoCsdPropChange::IdentifierChange(identifier) => {
@@ -1959,7 +1961,7 @@ impl
     }
 
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
-        into.insert(*self.uuid(), self.highlight.selected.into());
+        into.insert(*self.model_uuid(), self.highlight.selected.into());
     }
     
     fn deep_copy_clone(

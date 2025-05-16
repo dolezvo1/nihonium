@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
 use common::canvas::{NHCanvas, UiCanvas};
-use common::controller::{ColorLabels, ColorProfile, DrawingContext, ProjectCommand, SimpleProjectCommand};
+use common::controller::{ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ProjectCommand, SimpleProjectCommand};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
@@ -107,7 +107,7 @@ pub trait CustomTab {
 
 struct NHContext {
     pub diagram_controllers: HashMap<uuid::Uuid, (usize, Arc<RwLock<dyn DiagramController>>)>,
-    hierarchy_order: Vec<uuid::Uuid>,
+    hierarchy: Vec<HierarchyNode>,
     new_diagram_no: u32,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
 
@@ -204,13 +204,69 @@ impl NHContext {
     }
 
     fn hierarchy(&mut self, ui: &mut Ui) {
-        let mut commands = Vec::new();
-        for (_t, c) in self.hierarchy_order.iter()
-            .flat_map(|e| self.diagram_controllers.get(e))
-        {
-            let controller_lock = c.write().unwrap();
-            controller_lock.list_in_project_hierarchy(ui, &mut commands);
+        fn hierarchy(hn: &HierarchyNode, ui: &mut Ui, commands: &mut Vec<ProjectCommand>) {
+            fn collapsible(text: &str, children: &Vec<HierarchyNode>, ui: &mut Ui, commands: &mut Vec<ProjectCommand>) -> egui::CollapsingResponse<()> {
+                egui::CollapsingHeader::new(text).show(
+                    ui,
+                    |ui| {
+                        for c in children {
+                            hierarchy(c, ui, commands);
+                        }
+                    },
+                )
+            }
+
+            match hn {
+                HierarchyNode::Folder(uuid, name, hierarchy_nodes) => {
+                    let r = collapsible(&format!("{} ({})", name, uuid), hierarchy_nodes, ui, commands);
+
+                    r.header_response.context_menu(|ui| {
+                        if ui.button("Delete").clicked() {
+                            todo!("implement folder deletion");
+                        }
+                    });
+                },
+                HierarchyNode::Node(rw_lock, hierarchy_nodes) => {
+                    let hm = rw_lock.read().unwrap();
+                    let r = collapsible(&format!("{} ({})", hm.model_name(), hm.model_uuid()), hierarchy_nodes, ui, commands);
+
+                    if r.header_response.double_clicked() {
+                        commands.push(ProjectCommand::OpenAndFocusDiagram(*hm.model_uuid()));
+                    }
+
+                    r.header_response.context_menu(|ui| {
+                        if ui.button("Open").clicked() {
+                            commands.push(ProjectCommand::OpenAndFocusDiagram(*hm.model_uuid()));
+                            ui.close_menu();
+                        } else if ui.button("Delete").clicked() {
+                            todo!("implement view deletion");
+                        }
+                    });
+                },
+                HierarchyNode::Leaf(rw_lock) => {
+                    let hm = rw_lock.read().unwrap();
+                    ui.label(format!(
+                        "{} ({})",
+                        hm.model_name(),
+                        hm.model_uuid(),
+                    ));
+                },
+            }
         }
+
+        if ui.button("New folder").clicked() {
+            self.hierarchy.push(HierarchyNode::Folder(
+                uuid::Uuid::now_v7(),
+                Arc::new("New folder".to_owned()),
+                vec![],
+            ));
+        }
+
+        let mut commands = Vec::new();
+        for hn in self.hierarchy.iter() {
+            hierarchy(hn, ui, &mut commands);
+        }
+
         self.unprocessed_commands.extend(commands.into_iter());
     }
 
@@ -743,7 +799,7 @@ struct NHApp {
 impl Default for NHApp {
     fn default() -> Self {
         let mut diagram_controllers = HashMap::new();
-        let mut hierarchy_order = vec![];
+        let mut hierarchy = vec![];
         let mut tabs = vec![NHTab::RecentlyUsed, NHTab::StyleEditor];
 
         for (diagram_type, (uuid, controller)) in [
@@ -751,8 +807,8 @@ impl Default for NHApp {
             (1, crate::umlclass::umlclass_controllers::demo(2)),
             (2, crate::democsd::democsd_controllers::demo(3)),
         ] {
+            hierarchy.push(controller.read().unwrap().collect_hierarchy(&vec![]));
             diagram_controllers.insert(uuid, (diagram_type, controller));
-            hierarchy_order.push(uuid);
             tabs.push(NHTab::Diagram { uuid });
         }
 
@@ -791,7 +847,7 @@ impl Default for NHApp {
         
         let mut context = NHContext {
             diagram_controllers,
-            hierarchy_order,
+            hierarchy,
             new_diagram_no: 4,
             custom_tabs: HashMap::new(),
             
@@ -1033,11 +1089,11 @@ impl eframe::App for NHApp {
                                 let (uuid, diagram_controller) = fun(self.context.new_diagram_no);
                                 self.context.new_diagram_no += 1;
                                 self.context
+                                    .hierarchy
+                                    .push(diagram_controller.read().unwrap().collect_hierarchy(&vec![]));
+                                self.context
                                     .diagram_controllers
                                     .insert(uuid, (diagram_type, diagram_controller));
-                                self.context
-                                    .hierarchy_order
-                                    .push(uuid);
 
                                 let tab = NHTab::Diagram { uuid };
 

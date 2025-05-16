@@ -4,7 +4,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, HasModel, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::CustomTab;
 use eframe::egui;
@@ -993,13 +993,22 @@ pub struct UmlClassController {
     pub bounds_rect: egui::Rect,
 }
 
-impl ElementController<dyn UmlClassElement> for UmlClassController {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+impl HasModel for UmlClassController {
+    fn model_uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
     }
+}
+
+impl HierarchyCollectible for UmlClassController {
+    fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
+        HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+    }
+}
+
+impl ElementController<dyn UmlClassElement> for UmlClassController {
     fn model(&self) -> Arc<RwLock<dyn UmlClassElement>> {
         self.model.clone()
     }
@@ -1126,19 +1135,6 @@ impl
         true
     }
 
-    fn list_in_project_hierarchy(&self, _parent: &UmlClassQueryable, ui: &mut egui::Ui) {
-        let model = self.model.read().unwrap();
-
-        egui::CollapsingHeader::new(format!("{} ({})", model.name, model.uuid)).show(ui, |_ui| {
-            /* TODO:
-            for connection in parent.outgoing_for(&model.uuid) {
-                let connection = connection.read().unwrap();
-                ui.label(format!("{} (-> {})", connection.model_name(), connection.connection_target_name().unwrap()));
-            }
-            */
-        });
-    }
-
     fn draw_in(
         &mut self,
         _: &UmlClassQueryable,
@@ -1248,7 +1244,7 @@ impl
                     })
                 } else {
                     ehc.snap_manager
-                        .coerce(translated_real_shape, |e| *e != *self.uuid())
+                        .coerce(translated_real_shape, |e| *e != *self.model_uuid())
                 };
                 let coerced_delta = coerced_pos - self.position;
 
@@ -1257,7 +1253,7 @@ impl
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
-                            std::iter::once(*self.uuid()).collect(),
+                            std::iter::once(*self.model_uuid()).collect(),
                             coerced_delta,
                         )
                         .into(),
@@ -1280,7 +1276,7 @@ impl
                 self.highlight.selected = *select;
             }
             InsensitiveCommand::SelectSpecific(uuids, select) => {
-                if uuids.contains(&*self.uuid()) {
+                if uuids.contains(&*self.model_uuid()) {
                     self.highlight.selected = *select;
                 }
             }
@@ -1288,12 +1284,12 @@ impl
                 self.highlight.selected = self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
-                if !uuids.contains(&*self.uuid()) => {}
+                if !uuids.contains(&*self.model_uuid()) => {}
             InsensitiveCommand::MoveSpecificElements(_, delta)
             | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
-                    std::iter::once(*self.uuid()).collect(),
+                    std::iter::once(*self.model_uuid()).collect(),
                     -*delta,
                 ));
             }
@@ -1304,7 +1300,7 @@ impl
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
-                if uuids.contains(&*self.uuid()) {
+                if uuids.contains(&*self.model_uuid()) {
                     for property in properties {
                         match property {
                             UmlClassPropChange::StereotypeChange(stereotype) => {
@@ -1367,7 +1363,7 @@ impl
     }
 
     fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
-        into.insert(*self.uuid(), self.highlight.selected.into());
+        into.insert(*self.model_uuid(), self.highlight.selected.into());
     }
     
     fn deep_copy_clone(
@@ -1654,7 +1650,7 @@ fn umlclass_link(
 
 impl UmlClassElementController for LinkViewT {
     fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
-        *self.source.read().unwrap().uuid() == *uuid
+        *self.source.read().unwrap().model_uuid() == *uuid
     }
 
     fn connection_target_name(&self) -> Option<Arc<String>> {
