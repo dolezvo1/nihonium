@@ -3,12 +3,11 @@ name = "nh"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 eframe = "0.31"
 egui_extras = "0.31"
 egui_dock = "0.16"
+egui_ltreeview = "0.2"
 rfd = "0.15"
 uuid = { version = "1.16", features = [ "std", "v7" ] }
 

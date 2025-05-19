@@ -1,6 +1,7 @@
 use crate::common::canvas::{self, NHCanvas, NHShape, UiCanvas};
 use crate::CustomTab;
 use eframe::{egui, epaint};
+use egui_ltreeview::DirPosition;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -223,10 +224,16 @@ pub enum HierarchyNode {
 }
 
 impl HierarchyNode {
+    pub fn uuid(&self) -> uuid::Uuid {
+        match self {
+            HierarchyNode::Folder(uuid, ..) => *uuid,
+            HierarchyNode::Node(rw_lock, _) | HierarchyNode::Leaf(rw_lock) => *rw_lock.read().unwrap().model_uuid(),
+        }
+    }
     pub fn model_uuid(&self) -> Option<uuid::Uuid> {
         match self {
             HierarchyNode::Folder(..) => None,
-            HierarchyNode::Node(rw_lock, _) | HierarchyNode::Leaf(rw_lock) => Some(*rw_lock.read().unwrap().model_uuid()),
+            e => Some(e.uuid()),
         }
     }
 
@@ -245,6 +252,80 @@ impl HierarchyNode {
             HierarchyNode::Leaf(rw_lock) => {
                 rw_lock.read().unwrap().collect_hierarchy(&vec![])
             },
+        }
+    }
+
+    pub fn get(&self, id: &uuid::Uuid) -> Option<(&HierarchyNode, &HierarchyNode)> {
+        let self_id = self.uuid();
+        match self {
+            HierarchyNode::Folder(.., children)
+            | HierarchyNode::Node(.., children) => {
+                for c in children {
+                    if c.uuid() == *id {
+                        return Some((c, self));
+                    }
+                    if let Some(e) = c.get(id) {
+                        return Some(e);
+                    }
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+    pub fn remove(&mut self, id: &uuid::Uuid) -> Option<HierarchyNode> {
+        match self {
+            HierarchyNode::Folder(.., children)
+            | HierarchyNode::Node(.., children) => {
+                if let Some(index) = children.iter().position(|e| e.uuid() == *id) {
+                    Some(children.remove(index))
+                } else {
+                    for node in children.iter_mut() {
+                        let r = node.remove(id);
+                        if r.is_some() {
+                            return r;
+                        }
+                    }
+                    None
+                }
+            }
+            HierarchyNode::Leaf(_) => None,
+        }
+    }
+    pub fn insert(
+        &mut self,
+        id: &uuid::Uuid,
+        position: DirPosition<uuid::Uuid>,
+        value: HierarchyNode,
+    ) -> Result<(), HierarchyNode> {
+        let self_uuid = self.uuid();
+        match self {
+            HierarchyNode::Folder(.., children)
+            | HierarchyNode::Node(.., children) => {
+                if self_uuid == *id {
+                    match position {
+                        DirPosition::First => children.insert(0, value),
+                        DirPosition::Last => children.push(value),
+                        DirPosition::Before(id2) | DirPosition::After(id2) => {
+                            if let Some(index) =
+                                children.iter().position(|n| n.uuid() == id2)
+                            {
+                                children.insert(index + if matches!(position, DirPosition::After(_)) {1} else {0}, value);
+                            }
+                        }
+                    }
+                    Ok(())
+                } else {
+                    let mut value = Err(value);
+                    for node in children.iter_mut() {
+                        if let Err(v) = value {
+                            value = node.insert(id, position, v);
+                        }
+                    }
+                    value
+                }
+            }
+            _ => Err(value),
         }
     }
 }
