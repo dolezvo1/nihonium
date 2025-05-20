@@ -110,9 +110,8 @@ impl SnapManager {
         }
     }
     pub fn add_shape(&mut self, uuid: uuid::Uuid, shape: canvas::NHShape) {
-        let guidelines = shape.guidelines();
-        if guidelines.iter().any(|e| self.input_restriction.contains(e.0)) {
-            for e in guidelines.into_iter() {
+        if shape.bounding_box().intersects(self.input_restriction) {
+            for e in shape.guidelines_anchors().into_iter() {
                 self.guidelines_x.push((e.0.x, e.1, uuid));
                 self.guidelines_y.push((e.0.y, e.1, uuid));
             }
@@ -131,7 +130,7 @@ impl SnapManager {
         let center = s.center();
         
         // Naive guidelines coordinate matching
-        for p in s.guidelines().into_iter() {
+        for p in s.guidelines_anchors().into_iter() {
             let start_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(p.0.x - self.max_delta.x))).unwrap_or_else(|e| e);
             let end_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(p.0.x + self.max_delta.x))).unwrap_or_else(|e| e);
             for g in self.guidelines_x[start_x..end_x].iter().filter(|e| uuids_filter(&e.2)) {

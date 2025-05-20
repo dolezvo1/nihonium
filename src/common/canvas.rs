@@ -164,17 +164,17 @@ impl NHShape {
             } => ellipse_orthogonal_intersection(point, (position, bounds_radius)),
         }
     }
-    pub fn nice_midpoint(&self, other: &NHShape) -> egui::Pos2 {
-        fn bounding_box(s: &NHShape) -> egui::Rect {
-            match &s {
-                NHShape::Rect { inner } => *inner,
-                NHShape::Ellipse {
-                    position,
-                    bounds_radius,
-                } => egui::Rect::from_center_size(*position, 2.0 * *bounds_radius),
-            }
+    pub fn bounding_box(&self) -> egui::Rect {
+        match self {
+            NHShape::Rect { inner } => *inner,
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
+            } => egui::Rect::from_center_size(*position, 2.0 * *bounds_radius),
         }
-        let (a, b) = (bounding_box(self), bounding_box(other));
+    }
+    pub fn nice_midpoint(&self, other: &NHShape) -> egui::Pos2 {
+        let (a, b) = (self.bounding_box(), other.bounding_box());
 
         if a.left() < b.right() && b.left() < a.right() {
             egui::Pos2::new(
@@ -241,7 +241,7 @@ impl NHShape {
         }
     }
 
-    pub fn guidelines(&self) -> Vec<(egui::Pos2, egui::Align)> {
+    pub fn guidelines_anchors(&self) -> Vec<(egui::Pos2, egui::Align)> {
         match self {
             NHShape::Rect { inner } => vec![
                 (inner.min, egui::Align::Min),
