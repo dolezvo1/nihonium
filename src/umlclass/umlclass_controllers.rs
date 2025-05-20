@@ -1205,10 +1205,10 @@ impl
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
-            e if !self.min_shape().contains(*e.mouse_position()) => {
-                return EventHandlingStatus::NotHandled
-            }
-            InputEvent::MouseDown(_) => {
+            InputEvent::MouseDown(pos) => {
+                if !self.min_shape().contains(pos) {
+                    return EventHandlingStatus::NotHandled
+                }
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
@@ -1220,7 +1220,7 @@ impl
                     EventHandlingStatus::NotHandled
                 }
             }
-            InputEvent::Click(_pos) => {
+            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
                     tool.add_element(KindedUmlClassElement::Class { inner: self });
                 } else {

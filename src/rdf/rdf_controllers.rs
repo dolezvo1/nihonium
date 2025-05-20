@@ -1248,10 +1248,10 @@ impl
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
-            e if !self.min_shape().contains(*e.mouse_position()) => {
-                return EventHandlingStatus::NotHandled
-            }
-            InputEvent::MouseDown(_) => {
+            InputEvent::MouseDown(pos) => {
+                if !self.min_shape().contains(pos) {
+                    return EventHandlingStatus::NotHandled
+                }
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
@@ -1263,7 +1263,7 @@ impl
                     EventHandlingStatus::NotHandled
                 }
             }
-            InputEvent::Click(_) => {
+            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
                     tool.add_element(KindedRdfElement::Node { inner: self });
                 }
@@ -1284,7 +1284,7 @@ impl
                         .coerce(translated_real_shape, |e| *e != *self.model_uuid())
                 };
                 let coerced_delta = coerced_pos - self.position;
-                
+
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                 } else {
@@ -1576,10 +1576,10 @@ impl
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
-            e if !self.min_shape().contains(*e.mouse_position()) => {
-                return EventHandlingStatus::NotHandled
-            }
-            InputEvent::MouseDown(_) => {
+            InputEvent::MouseDown(pos) => {
+                if !self.min_shape().contains(pos) {
+                    return EventHandlingStatus::NotHandled;
+                }
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
@@ -1591,7 +1591,7 @@ impl
                     EventHandlingStatus::NotHandled
                 }
             }
-            InputEvent::Click(_) => {
+            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
                     tool.add_element(KindedRdfElement::Literal { inner: self });
                 }
@@ -1612,7 +1612,7 @@ impl
                         .coerce(translated_real_shape, |e| *e != *self.model_uuid())
                 };
                 let coerced_delta = coerced_pos - self.position;
-                
+
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                 } else {
