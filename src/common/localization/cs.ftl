@@ -6,8 +6,10 @@ nh-file-recentprojects = Nedávné Projekty
 nh-file-addnewdiagram = Přidat Nový Diagram
 nh-file-save = Uložit
 nh-file-saveas = Uložit jako
-nh-file-close = Zavřít
+nh-file-closeproject = Zavřít Projekt
+nh-file-closeproject-confirm = Tento projekt má neuložené změny. Opravdu chcete projekt zavřít?
 nh-file-exit = Ukončit
+nh-file-exit-confirm = Tento projekt má neuložené změny. Opravdu chcete ukončit program?
 
 nh-edit = Upravit
 nh-edit-undo = Zpět

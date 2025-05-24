@@ -188,6 +188,8 @@ pub enum SimpleProjectCommand {
     DiagramCommand(DiagramCommand),
     SaveProject,
     SaveProjectAs,
+    CloseProject(bool),
+    Exit(bool),
     SwapTopLanguages,
 }
 

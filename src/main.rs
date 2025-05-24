@@ -132,6 +132,7 @@ struct NHContext {
     open_unique_tabs: HashSet<NHTab>,
     last_focused_diagram: Option<uuid::Uuid>,
     svg_export_menu: Option<(usize, Arc<RwLock<dyn DiagramController>>, std::path::PathBuf, usize, bool, bool, f32, f32)>,
+    confirm_modal_reason: Option<SimpleProjectCommand>,
 
     show_close_buttons: bool,
     show_add_buttons: bool,
@@ -223,6 +224,21 @@ impl NHContext {
         );
 
         toml::to_string(&project).map_err(|_| ())
+    }
+    fn clear_project_data(&mut self) {
+        self.project_path = None;
+        self.diagram_controllers.clear();
+        self.hierarchy = HierarchyNode::Folder(uuid::Uuid::nil(), "root".to_owned().into(), vec![]);
+        self.new_diagram_no = 1;
+        self.custom_tabs.clear();
+
+        self.undo_stack.clear();
+        self.redo_stack.clear();
+        self.unprocessed_commands.clear();
+
+        self.last_focused_diagram = None;
+        self.svg_export_menu = None;
+        self.confirm_modal_reason = None;
     }
 
     fn sort_shortcuts(&mut self) {
@@ -936,6 +952,7 @@ impl Default for NHApp {
             open_unique_tabs,
             last_focused_diagram: None,
             svg_export_menu: None,
+            confirm_modal_reason: None,
 
             show_window_close: true,
             show_window_collapse: true,
@@ -1199,14 +1216,26 @@ impl eframe::App for NHApp {
                     }
                     ui.separator();
 
-                    if ui.button(translate!("nh-file-close")).clicked() {
-                        todo!("TODO: ask for confirmation when unsaved work");
-                        todo!("TODO: close project");
+                    {
+                        let mut close_project_button = egui::Button::new(translate!("nh-file-closeproject"));
+                        if let Some(shortcut_text) = shortcut_text!(ui, SimpleProjectCommand::CloseProject(false)) {
+                            close_project_button = close_project_button.shortcut_text(shortcut_text);
+                        }
+                        if ui.add(close_project_button).clicked() {
+                            commands.push(SimpleProjectCommand::CloseProject(false).into());
+                            ui.close_menu();
+                        }
                     }
                     #[cfg(not(target_arch = "wasm32"))]
-                    if ui.button(translate!("nh-file-exit")).clicked() {
-                        todo!("TODO: ask for confirmation when unsaved work");
-                        std::process::exit(0);
+                    {
+                        let mut exit_button = egui::Button::new(translate!("nh-file-exit"));
+                        if let Some(shortcut_text) = shortcut_text!(ui, SimpleProjectCommand::Exit(false)) {
+                            exit_button = exit_button.shortcut_text(shortcut_text);
+                        }
+                        if ui.add(exit_button).clicked() {
+                            commands.push(SimpleProjectCommand::Exit(false).into());
+                            ui.close_menu();
+                        }
                     }
                 });
 
@@ -1361,80 +1390,6 @@ impl eframe::App for NHApp {
                 });
             })
         });
-        
-        for c in commands {
-            match c {
-                ProjectCommand::SimpleProjectCommand(spc) => match spc {
-                    SimpleProjectCommand::DiagramCommand(dc) => match dc {
-                        DiagramCommand::UndoImmediate => self.undo_immediate(),
-                        DiagramCommand::RedoImmediate => self.redo_immediate(),
-                        dc => send_to_focused_diagram!(dc),
-                    },
-                    SimpleProjectCommand::SwapTopLanguages => {
-                        if self.context.languages_order.len() > 1 {
-                            self.context.languages_order.swap(0, 1);
-                        }
-                        self.context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
-                    }
-                    SimpleProjectCommand::SaveProject => {
-                        if let Some(project_path) = &self.context.project_path {
-                            match self.context.export_project() {
-                                Err(e) => println!("Error exporting: {:?}", e),
-                                Ok(project) => {
-                                    let mut file = std::fs::OpenOptions::new()
-                                        .create(true)
-                                        .truncate(true)
-                                        .write(true)
-                                        .open(project_path)
-                                        .unwrap();
-                                    file.write_all(project.as_bytes());
-                                }
-                            }
-                        }
-                    }
-                    SimpleProjectCommand::SaveProjectAs => {
-                        // NOTE: This does not work on WASM, and in its current state it never will.
-                        //       This will be possible to fix once this is fixed on rfd side (#128).
-                        if let Some(path) = rfd::FileDialog::new()
-                            .set_directory(std::env::current_dir().unwrap())
-                            .add_filter("Nihonium Project files", &["nhp"])
-                            .add_filter("All files", &["*"])
-                            .save_file()
-                        {
-                            match self.context.export_project() {
-                                Err(e) => println!("Error exporting: {:?}", e),
-                                Ok(project) => {
-                                    let mut file = std::fs::OpenOptions::new()
-                                        .create(true)
-                                        .truncate(true)
-                                        .write(true)
-                                        .open(&path)
-                                        .unwrap();
-                                    file.write_all(project.as_bytes());
-                                    self.context.project_path = Some(path);
-                                }
-                            }
-                        }
-                    }
-                }
-                ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
-                ProjectCommand::SetSvgExportMenu(sem) => self.context.svg_export_menu = sem,
-                ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
-                ProjectCommand::AddNewDiagram(uuid, diagram_type, diagram_controller) => {
-                    if let HierarchyNode::Folder(.., children) = &mut self.context.hierarchy {
-                        children.push(diagram_controller.read().unwrap().collect_hierarchy(&vec![]));
-                    }
-                    self.context
-                        .diagram_controllers
-                        .insert(uuid, (diagram_type, diagram_controller));
-
-                    let tab = NHTab::Diagram { uuid };
-
-                    self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
-                }
-                _ => todo!(),
-            }
-        }
 
         // SVG export options modal
         let mut hide_svg_export_modal = false;
@@ -1582,6 +1537,125 @@ impl eframe::App for NHApp {
         }
         if hide_svg_export_modal {
             self.context.svg_export_menu = None;
+        }
+
+        if let Some(confirm_reason) = self.context.confirm_modal_reason.clone() {
+            egui::Modal::new("Modal Window".into())
+                .show(ctx, |ui| {
+
+                    // TODO: Yes, exit / Save and exit / Cancel
+                    match confirm_reason {
+                        SimpleProjectCommand::CloseProject(_) => {
+                            ui.label(translate!("nh-file-closeproject-confirm"));
+                        },
+                        SimpleProjectCommand::Exit(_) => {
+                            ui.label(translate!("nh-file-exit-confirm"));
+                        },
+                        _ => unreachable!("Unexpected confirm modal reason"),
+                    }
+
+                    ui.horizontal(|ui| {
+                        if ui.button("Yes").clicked() {
+                            match confirm_reason {
+                                SimpleProjectCommand::CloseProject(_) => {
+                                    commands.push(SimpleProjectCommand::CloseProject(true).into());
+                                },
+                                SimpleProjectCommand::Exit(_) => {
+                                    commands.push(SimpleProjectCommand::Exit(true).into());
+                                },
+                                _ => unreachable!("Unexpected confirm modal reason"),
+                            }
+                        }
+                        if ui.button("No").clicked() {
+                            self.context.confirm_modal_reason = None;
+                        }
+                    });
+                });
+        }
+
+        for c in commands {
+            match c {
+                ProjectCommand::SimpleProjectCommand(spc) => match spc {
+                    SimpleProjectCommand::DiagramCommand(dc) => match dc {
+                        DiagramCommand::UndoImmediate => self.undo_immediate(),
+                        DiagramCommand::RedoImmediate => self.redo_immediate(),
+                        dc => send_to_focused_diagram!(dc),
+                    },
+                    SimpleProjectCommand::SwapTopLanguages => {
+                        if self.context.languages_order.len() > 1 {
+                            self.context.languages_order.swap(0, 1);
+                        }
+                        self.context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
+                    }
+                    SimpleProjectCommand::SaveProject => {
+                        if let Some(project_path) = &self.context.project_path {
+                            match self.context.export_project() {
+                                Err(e) => println!("Error exporting: {:?}", e),
+                                Ok(project) => {
+                                    let mut file = std::fs::OpenOptions::new()
+                                        .create(true)
+                                        .truncate(true)
+                                        .write(true)
+                                        .open(project_path)
+                                        .unwrap();
+                                    file.write_all(project.as_bytes());
+                                }
+                            }
+                        }
+                    }
+                    SimpleProjectCommand::SaveProjectAs => {
+                        // NOTE: This does not work on WASM, and in its current state it never will.
+                        //       This will be possible to fix once this is fixed on rfd side (#128).
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_directory(std::env::current_dir().unwrap())
+                            .add_filter("Nihonium Project files", &["nhp"])
+                            .add_filter("All files", &["*"])
+                            .save_file()
+                        {
+                            match self.context.export_project() {
+                                Err(e) => println!("Error exporting: {:?}", e),
+                                Ok(project) => {
+                                    let mut file = std::fs::OpenOptions::new()
+                                        .create(true)
+                                        .truncate(true)
+                                        .write(true)
+                                        .open(&path)
+                                        .unwrap();
+                                    file.write_all(project.as_bytes());
+                                    self.context.project_path = Some(path);
+                                }
+                            }
+                        }
+                    }
+                    SimpleProjectCommand::CloseProject(b) => if b {
+                        self.context.clear_project_data();
+                        self.tree = self.tree.filter_tabs(|e| !matches!(e, NHTab::Diagram { .. } | NHTab::CustomTab { .. }))
+                    } else {
+                        self.context.confirm_modal_reason = Some(SimpleProjectCommand::CloseProject(b));
+                    }
+                    SimpleProjectCommand::Exit(b) => if b {
+                        std::process::exit(0);
+                    } else {
+                        self.context.confirm_modal_reason = Some(SimpleProjectCommand::Exit(b));
+                    }
+                }
+                ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
+                ProjectCommand::SetSvgExportMenu(sem) => self.context.svg_export_menu = sem,
+                ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
+                ProjectCommand::AddNewDiagram(uuid, diagram_type, diagram_controller) => {
+                    if let HierarchyNode::Folder(.., children) = &mut self.context.hierarchy {
+                        children.push(diagram_controller.read().unwrap().collect_hierarchy(&vec![]));
+                    }
+                    self.context
+                        .diagram_controllers
+                        .insert(uuid, (diagram_type, diagram_controller));
+
+                    let tab = NHTab::Diagram { uuid };
+
+                    self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
+                }
+                _ => todo!(),
+            }
         }
         
         CentralPanel::default()

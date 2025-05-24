@@ -6,8 +6,10 @@ nh-file-recentprojects = Recent Projects
 nh-file-addnewdiagram = Add New Diagram
 nh-file-save = Save
 nh-file-saveas = Save as
-nh-file-close = Close
+nh-file-closeproject = Close Project
+nh-file-closeproject-confirm = This project has unsaved changes. Are you sure you want to close the project?
 nh-file-exit = Exit
+nh-file-exit-confirm = This project has unsaved changes. Are you sure you want to exit?
 
 nh-edit = Edit
 nh-edit-undo = Undo
