@@ -6,6 +6,7 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, HasModel, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
+use crate::common::project_serde::NHSerialize;
 use crate::CustomTab;
 use eframe::egui;
 use std::any::Any;
@@ -329,6 +330,8 @@ impl CustomTab for PlantUmlTab {
     }
 }
 
+const DIAGRAM_VIEW_TYPE: &str = "umlclass-diagram-view";
+
 pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let uuid = uuid::Uuid::now_v7();
     let name = format!("New UML class diagram {}", no);
@@ -348,6 +351,7 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                 name,
                 comment: "".to_owned(),
             },
+            DIAGRAM_VIEW_TYPE,
             show_props_fun,
             apply_property_change_fun,
             tool_change_fun,
@@ -489,6 +493,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                 name,
                 comment: "".to_owned(),
             },
+            DIAGRAM_VIEW_TYPE,
             show_props_fun,
             apply_property_change_fun,
             tool_change_fun,
@@ -823,6 +828,10 @@ impl PackageAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlClassPropCh
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
     }
+
+    fn view_type(&self) -> &'static str {
+        "umlclass-package-view"
+    }
     
     fn add_element(&mut self, e: Arc<RwLock<dyn UmlClassElement>>) {
         self.model.write().unwrap().add_element(e);
@@ -1005,6 +1014,21 @@ impl HasModel for UmlClassController {
 impl HierarchyCollectible for UmlClassController {
     fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
         HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+    }
+}
+
+impl NHSerialize for UmlClassController {
+    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
+        // Serialize itself
+        let self_id = *self.model_uuid();
+        let mut element = toml::Table::new();
+        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("type".to_owned(), toml::Value::String("umlclass-class-view".to_owned()));
+        element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
+        into.insert(self_id, element);
+
+        // TODO: serialize model
+        //element.insert("name".to_owned(), toml::Value::String((*self.model_name()).clone()));
     }
 }
 
@@ -1419,6 +1443,10 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
 
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().link_type.name()
+    }
+
+    fn view_type(&self) -> &'static str {
+        "umlclass-link-view"
     }
 
     fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {

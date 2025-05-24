@@ -2,6 +2,7 @@ use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
     arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, HasModel, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
 };
+use crate::common::project_serde::NHSerialize;
 use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage,
     DemoCsdTransaction, DemoCsdTransactor,
@@ -292,6 +293,8 @@ fn tool_change_fun(tool: &mut Option<NaiveDemoCsdTool>, ui: &mut egui::Ui) {
 
 fn menubar_options_fun(_controller: &mut DiagramViewT, _ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {}
 
+const DIAGRAM_VIEW_TYPE: &str = "democsd-diagram-view";
+
 pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let uuid = uuid::Uuid::now_v7();
     let name = format!("New DEMO CSD diagram {}", no);
@@ -312,6 +315,7 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                 name,
                 comment: "".to_owned(),
             },
+            DIAGRAM_VIEW_TYPE,
             show_props_fun,
             apply_property_change_fun,
             tool_change_fun,
@@ -420,6 +424,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                     name,
                     comment: "".to_owned(),
                 },
+                DIAGRAM_VIEW_TYPE,
                 show_props_fun,
                 apply_property_change_fun,
                 tool_change_fun,
@@ -770,6 +775,10 @@ impl PackageAdapter<dyn DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChang
         self.model.read().unwrap().name.clone()
     }
 
+    fn view_type(&self) -> &'static str {
+        "democsd-package-view"
+    }
+
     fn add_element(&mut self, e: Arc<RwLock<dyn DemoCsdElement>>) {
         self.model.write().unwrap().add_element(e);
     }
@@ -967,6 +976,25 @@ impl HierarchyCollectible for DemoCsdTransactorView {
         } else {
             HierarchyNode::Leaf(s)
         }
+    }
+}
+
+impl NHSerialize for DemoCsdTransactorView {
+    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
+        // Serialize itself
+        let self_id = *self.model_uuid();
+        let mut element = toml::Table::new();
+        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("type".to_owned(), toml::Value::String("democsd-transactor-view".to_owned()));
+        element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
+        element.insert("children".to_owned(), toml::Value::Array(self.transaction_view.iter().map(|e| toml::Value::String(e.read().unwrap().model_uuid().to_string())).collect()));
+        into.insert(self_id, element);
+
+        // TODO: serialize model
+        //element.insert("name".to_owned(), toml::Value::String((*self.model_name()).clone()));
+
+        // Serialize child
+        self.transaction_view.iter().for_each(|e| e.read().unwrap().serialize_into(into));
     }
 }
 
@@ -1633,6 +1661,21 @@ impl HierarchyCollectible for DemoCsdTransactionView {
     }
 }
 
+impl NHSerialize for DemoCsdTransactionView {
+    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
+        // Serialize itself
+        let self_id = *self.model_uuid();
+        let mut element = toml::Table::new();
+        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("type".to_owned(), toml::Value::String("democsd-transaction-view".to_owned()));
+        element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
+        into.insert(self_id, element);
+
+        // TODO: serialize model
+        //element.insert("name".to_owned(), toml::Value::String((*self.model_name()).clone()));
+    }
+}
+
 impl ElementController<dyn DemoCsdElement> for DemoCsdTransactionView {
     fn model(&self) -> Arc<RwLock<dyn DemoCsdElement>> {
         self.model.clone()
@@ -2026,6 +2069,10 @@ impl MulticonnectionAdapter<dyn DemoCsdElement, DemoCsdElementOrVertex, DemoCsdP
 
     fn model_name(&self) -> Arc<String> {
         Arc::new("TODO".to_owned())
+    }
+
+    fn view_type(&self) -> &'static str {
+        "democsd-link-view"
     }
 
     fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {

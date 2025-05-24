@@ -4,6 +4,10 @@ nh-file-newproject = New Project
 nh-file-openproject = Open Project
 nh-file-recentprojects = Recent Projects
 nh-file-addnewdiagram = Add New Diagram
+nh-file-save = Save
+nh-file-saveas = Save as
+nh-file-close = Close
+nh-file-exit = Exit
 
 nh-edit = Edit
 nh-edit-undo = Undo

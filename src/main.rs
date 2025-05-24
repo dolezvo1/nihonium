@@ -3,9 +3,11 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, RwLock};
+use std::io::Write;
 
 use common::canvas::{NHCanvas, UiCanvas};
 use common::controller::{ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ProjectCommand, SimpleProjectCommand};
+use common::project_serde::NHProjectHierarchyNodeDTO;
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
@@ -107,6 +109,7 @@ pub trait CustomTab {
 }
 
 struct NHContext {
+    project_path: Option<std::path::PathBuf>,
     pub diagram_controllers: HashMap<uuid::Uuid, (usize, Arc<RwLock<dyn DiagramController>>)>,
     hierarchy: HierarchyNode,
     new_diagram_no: u32,
@@ -194,6 +197,49 @@ impl TabViewer for NHContext {
 }
 
 impl NHContext {
+    fn export_project(&self) -> Result<String, ()> {
+        let HierarchyNode::Folder(.., children) = &self.hierarchy else {
+            return Err(())
+        };
+
+        fn h(e: &HierarchyNode) -> NHProjectHierarchyNodeDTO {
+            match e {
+                HierarchyNode::Folder(uuid, _, children)
+                    => NHProjectHierarchyNodeDTO::Folder(*uuid, children.iter().map(h).collect()),
+                HierarchyNode::Node(rw_lock, children)
+                    => NHProjectHierarchyNodeDTO::Node(*rw_lock.read().unwrap().model_uuid(), children.iter().map(h).collect()),
+                HierarchyNode::Leaf(rw_lock) => NHProjectHierarchyNodeDTO::Leaf(*rw_lock.read().unwrap().model_uuid()),
+            }
+        }
+
+        let mut elements = HashMap::new();
+        self.diagram_controllers.iter().for_each(|e| e.1.1.read().unwrap().serialize_into(&mut elements));
+
+        /*
+        let mut mock_element1 = toml::map::Map::new();
+        mock_element1.insert("uuid".to_string(), toml::Value::String(uuid::Uuid::now_v7().to_string()));
+        mock_element1.insert("name".to_string(), toml::Value::String("mock_element1".to_owned()));
+        mock_element1.insert("children".to_string(), toml::Value::String("mock_element2".to_owned()));
+
+        let mut mock_element2 = toml::map::Map::new();
+        mock_element2.insert("uuid".to_string(), toml::Value::String(uuid::Uuid::now_v7().to_string()));
+        mock_element2.insert("name".to_string(), toml::Value::String("mock_element2".to_owned()));
+
+        let elements = vec![
+            mock_element1,
+            mock_element2,
+        ];
+        */
+
+        let project = common::project_serde::NHProjectDTO::new(
+            "0.1.0",
+            children.iter().map(h).collect(),
+            elements.into_iter().collect(),
+        );
+
+        toml::to_string(&project).map_err(|_| ())
+    }
+
     fn sort_shortcuts(&mut self) {
         self.shortcut_top_order = self.shortcuts.iter().map(|(&k,&v)|(k,v)).collect();
         
@@ -880,6 +926,7 @@ impl Default for NHApp {
             .expect("Could not establish base FluentBundle");
         
         let mut context = NHContext {
+            project_path: None,
             diagram_controllers,
             hierarchy: HierarchyNode::Folder(uuid::Uuid::nil(), Arc::new("root".to_owned()), hierarchy),
             new_diagram_no: 4,
@@ -983,8 +1030,6 @@ impl NHApp {
 }
 
 fn new_project() -> Result<(), &'static str> {
-    // FIXME: closing original project closes the new one as well
-
     let Ok(executable) = std::env::current_exe() else {
         return Err("Failed to get current executable");
     };
@@ -1121,37 +1166,53 @@ impl eframe::App for NHApp {
                         ] {
                             if ui.button(label).clicked() {
                                 let (uuid, diagram_controller) = fun(self.context.new_diagram_no);
-                                self.context.new_diagram_no += 1;
-                                if let HierarchyNode::Folder(.., children) = &mut self.context.hierarchy {
-                                    children.push(diagram_controller.read().unwrap().collect_hierarchy(&vec![]));
-                                }
-                                self.context
-                                    .diagram_controllers
-                                    .insert(uuid, (diagram_type, diagram_controller));
-
-                                let tab = NHTab::Diagram { uuid };
-
-                                self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
-
+                                commands.push(ProjectCommand::SetNewDiagramNumber(self.context.new_diagram_no + 1));
+                                commands.push(ProjectCommand::AddNewDiagram(uuid, diagram_type, diagram_controller));
                                 ui.close_menu();
                             }
                         }
                     });
                     ui.separator();
 
-                    /*
-                    if ui.button("Save to").clicked() {
-                        println!("yes");
+                    if ui.add_enabled(self.context.project_path.is_some(), egui::Button::new(translate!("nh-file-save"))).clicked() {
+                        todo!("TODO: save project");
                     }
-                    if ui.button("Save as").clicked() {
-                        println!("yes");
+                    if ui.button(translate!("nh-file-saveas")).clicked() {
+                        // NOTE: This does not work on WASM, and in its current state it never will.
+                        //       This will be possible to fix once this is fixed on rfd side (#128).
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_directory(std::env::current_dir().unwrap())
+                            .add_filter("Nihonium Project files", &["nhp"])
+                            .add_filter("All files", &["*"])
+                            .save_file()
+                        {
+                            match self.context.export_project() {
+                                Err(e) => println!("Error exporting: {:?}", e),
+                                Ok(project) => {
+                                    let mut file = std::fs::OpenOptions::new()
+                                        .create(true)
+                                        .truncate(true)
+                                        .write(true)
+                                        .open(path)
+                                        .unwrap();
+                                    file.write_all(project.as_bytes());
+                                    // TODO: set self.context.project_path
+                                }
+                            }
+                        }
+                        ui.close_menu();
                     }
                     ui.separator();
 
-                    if ui.button("Exit").clicked() {
-                        println!("yes");
+                    if ui.button(translate!("nh-file-close")).clicked() {
+                        todo!("TODO: ask for confirmation when unsaved work");
+                        todo!("TODO: close project");
                     }
-                    */
+                    #[cfg(not(target_arch = "wasm32"))]
+                    if ui.button(translate!("nh-file-exit")).clicked() {
+                        todo!("TODO: ask for confirmation when unsaved work");
+                        std::process::exit(0);
+                    }
                 });
 
                 ui.menu_button(translate!("nh-edit"), |ui| {
@@ -1323,6 +1384,19 @@ impl eframe::App for NHApp {
                 }
                 ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
                 ProjectCommand::SetSvgExportMenu(sem) => self.context.svg_export_menu = sem,
+                ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
+                ProjectCommand::AddNewDiagram(uuid, diagram_type, diagram_controller) => {
+                    if let HierarchyNode::Folder(.., children) = &mut self.context.hierarchy {
+                        children.push(diagram_controller.read().unwrap().collect_hierarchy(&vec![]));
+                    }
+                    self.context
+                        .diagram_controllers
+                        .insert(uuid, (diagram_type, diagram_controller));
+
+                    let tab = NHTab::Diagram { uuid };
+
+                    self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
+                }
                 _ => todo!(),
             }
         }

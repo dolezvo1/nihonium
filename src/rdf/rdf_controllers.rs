@@ -3,6 +3,7 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, HasModel, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
+use crate::common::project_serde::NHSerialize;
 use crate::{CustomTab};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
@@ -490,6 +491,8 @@ fn menubar_options_fun(controller: &mut DiagramViewT, ui: &mut egui::Ui, command
     ui.separator();
 }
 
+const DIAGRAM_VIEW_TYPE: &str = "rdf-diagram-view";
+
 pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let uuid = uuid::Uuid::now_v7();
     let name = format!("New RDF diagram {}", no);
@@ -510,6 +513,7 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                 name,
                 comment: "".to_owned(),
             },
+            DIAGRAM_VIEW_TYPE,
             show_props_fun,
             apply_property_change_fun,
             tool_change_fun,
@@ -615,6 +619,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
                 name,
                 comment: "".to_owned(),
             },
+            DIAGRAM_VIEW_TYPE,
             show_props_fun,
             apply_property_change_fun,
             tool_change_fun,
@@ -952,6 +957,10 @@ impl PackageAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGr
         self.model.read().unwrap().iri.clone()
     }
     
+    fn view_type(&self) -> &'static str {
+        "rdf-graph-view"
+    }
+
     fn add_element(&mut self, e: Arc<RwLock<dyn RdfElement>>) {
         self.model.write().unwrap().add_element(e);
     }
@@ -1114,6 +1123,21 @@ impl HasModel for RdfNodeController {
 impl HierarchyCollectible for RdfNodeController {
     fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
         HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+    }
+}
+
+impl NHSerialize for RdfNodeController {
+    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
+        // Serialize itself
+        let self_id = *self.model_uuid();
+        let mut element = toml::Table::new();
+        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("type".to_owned(), toml::Value::String("rdf-node-view".to_owned()));
+        element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
+        into.insert(self_id, element);
+
+        // TODO: serialize model
+        //element.insert("name".to_owned(), toml::Value::String((*self.model_name()).clone()));
     }
 }
 
@@ -1430,6 +1454,21 @@ impl HasModel for RdfLiteralController {
 impl HierarchyCollectible for RdfLiteralController {
     fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
         HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+    }
+}
+
+impl NHSerialize for RdfLiteralController {
+    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
+        // Serialize itself
+        let self_id = *self.model_uuid();
+        let mut element = toml::Table::new();
+        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("type".to_owned(), toml::Value::String("rdf-literal-view".to_owned()));
+        element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
+        into.insert(self_id, element);
+
+        // TODO: serialize model
+        //element.insert("name".to_owned(), toml::Value::String((*self.model_name()).clone()));
     }
 }
 
@@ -1768,6 +1807,10 @@ impl MulticonnectionAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> f
 
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().iri.clone()
+    }
+
+    fn view_type(&self) -> &'static str {
+        "rdf-predicate-view"
     }
 
     fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {

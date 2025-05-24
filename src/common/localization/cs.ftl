@@ -4,6 +4,10 @@ nh-file-newproject = Nový Projekt
 nh-file-openproject = Otevřít Projekt
 nh-file-recentprojects = Nedávné Projekty
 nh-file-addnewdiagram = Přidat Nový Diagram
+nh-file-save = Uložit
+nh-file-saveas = Uložit jako
+nh-file-close = Zavřít
+nh-file-exit = Ukončit
 
 nh-edit = Upravit
 nh-edit-undo = Zpět

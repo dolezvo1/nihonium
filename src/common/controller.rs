@@ -92,6 +92,8 @@ macro_rules! build_colors {
 }
 pub(crate) use build_colors;
 
+use super::project_serde::NHSerialize;
+
 
 pub struct SnapManager {
     input_restriction: egui::Rect,
@@ -177,6 +179,8 @@ pub enum ProjectCommand {
     OpenAndFocusDiagram(uuid::Uuid),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetSvgExportMenu(Option<(usize, Arc<RwLock<dyn DiagramController>>, std::path::PathBuf, usize, bool, bool, f32, f32)>),
+    SetNewDiagramNumber(u32),
+    AddNewDiagram(uuid::Uuid, usize, Arc<RwLock<dyn DiagramController>>),
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
@@ -340,7 +344,7 @@ pub trait HasModel {
     fn model_name(&self) -> Arc<String>;
 }
 
-pub trait DiagramController: Any + HasModel + HierarchyCollectible {
+pub trait DiagramController: Any + HasModel + HierarchyCollectible + NHSerialize {
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
     
     fn new_ui_canvas(
@@ -728,7 +732,7 @@ pub trait ElementControllerGen2<
     ToolT,
     AddCommandElementT: Clone + Debug,
     PropChangeT: Clone + Debug,
->: ElementController<CommonElementT> + HierarchyCollectible + ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + Send + Sync where
+>: ElementController<CommonElementT> + HierarchyCollectible + NHSerialize + ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + Send + Sync where
     ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
 {
     fn show_properties(
@@ -874,6 +878,7 @@ pub struct DiagramControllerGen2<
     // q: dyn Fn(&Vec<DomainElementT>) -> QueryableT,
     queryable: QueryableT,
     buffer: BufferT,
+    view_type: &'static str,
     show_props_fun: fn(
         &mut BufferT,
         &mut egui::Ui,
@@ -962,6 +967,7 @@ where
         >,
         queryable: QueryableT,
         buffer: BufferT,
+        view_type: &'static str,
         show_props_fun: fn(
             &mut BufferT,
             &mut egui::Ui,
@@ -1001,6 +1007,7 @@ where
 
             queryable,
             buffer,
+            view_type,
             show_props_fun,
             apply_property_change_fun,
             tool_change_fun,
@@ -1428,6 +1435,52 @@ impl<
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
+    > NHSerialize
+    for DiagramControllerGen2<
+        DiagramModelT,
+        ElementModelT,
+        QueryableT,
+        BufferT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    ToolT: for<'a> Tool<
+        ElementModelT,
+        QueryableT,
+        AddCommandElementT,
+        PropChangeT,
+        KindedElement<'a>: From<&'a Self>,
+    >,
+{
+    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
+        // Serialize itself
+        let self_id = *self.model_uuid();
+        let mut element = toml::Table::new();
+        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("type".to_owned(), toml::Value::String(self.view_type.to_owned()));
+        element.insert("children".to_owned(), toml::Value::Array(self.event_order.iter().map(|e| toml::Value::String(e.to_string())).collect()));
+        into.insert(self_id, element);
+
+        // TODO: serialize model
+        //element.insert("name".to_owned(), toml::Value::String((*self.model_name()).clone()));
+
+        // Serialize children
+        self.event_order.iter()
+            .flat_map(|e| self.owned_controllers.get(e))
+            .for_each(|e| e.read().unwrap().serialize_into(into));
+    }
+}
+
+impl<
+        DiagramModelT: ContainerModel<ElementModelT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        BufferT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
     > DiagramController
     for DiagramControllerGen2<
         DiagramModelT,
@@ -1833,6 +1886,7 @@ pub trait PackageAdapter<
     fn model(&self) -> Arc<RwLock<ElementModelT>>;
     fn model_uuid(&self) -> Arc<uuid::Uuid>;
     fn model_name(&self) -> Arc<String>;
+    fn view_type(&self) -> &'static str;
     
     fn add_element(&mut self, _: Arc<RwLock<ElementModelT>>);
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>);
@@ -2141,6 +2195,72 @@ where
         }
 
         HierarchyNode::Node(self.self_reference.upgrade().unwrap(), new_children)
+    }
+}
+
+impl<
+        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
+    > NHSerialize
+    for PackageView<
+        AdapterT,
+        ElementModelT,
+        QueryableT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    AddCommandElementT: From<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
+            >,
+        )> + TryInto<(
+            uuid::Uuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        ElementModelT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
+            >,
+        )>,
+{
+    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
+        // Serialize itself
+        let self_id = *self.adapter.model_uuid();
+        let mut element = toml::Table::new();
+        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
+        element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.bounds_rect.center().x as f64), toml::Value::Float(self.bounds_rect.center().y as f64)]));
+        element.insert("size".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.bounds_rect.width() as f64), toml::Value::Float(self.bounds_rect.height() as f64)]));
+        element.insert("children".to_owned(), toml::Value::Array(self.event_order.iter().map(|e| toml::Value::String(e.to_string())).collect()));
+        into.insert(self_id, element);
+
+        // TODO: serialize model
+        //element.insert("name".to_owned(), toml::Value::String((*self.adapter.model_name()).clone()));
+
+        // Serialize children
+        self.event_order.iter()
+            .flat_map(|e| self.owned_controllers.get(e))
+            .for_each(|e| e.read().unwrap().serialize_into(into));
     }
 }
 
@@ -2877,6 +2997,7 @@ pub trait MulticonnectionAdapter<
     fn model(&self) -> Arc<RwLock<ElementModelT>>;
     fn model_uuid(&self) -> Arc<uuid::Uuid>;
     fn model_name(&self) -> Arc<String>;
+    fn view_type(&self) -> &'static str;
 
     fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
     fn destination_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
@@ -3097,6 +3218,42 @@ where
 {
     fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode {
         HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+    }
+}
+
+impl<
+        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT> + 'static,
+        ElementModelT: ?Sized + 'static,
+        QueryableT: 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
+    > NHSerialize
+    for MulticonnectionView<
+        AdapterT,
+        ElementModelT,
+        QueryableT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
+    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
+{
+    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
+        // Serialize itself
+        let self_id = *self.adapter.model_uuid();
+        let mut element = toml::Table::new();
+        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
+        element.insert("source".to_owned(), toml::Value::String(self.source.read().unwrap().model_uuid().to_string()));
+        element.insert("destination".to_owned(), toml::Value::String(self.destination.read().unwrap().model_uuid().to_string()));
+        // TODO: store points, etc.
+        into.insert(self_id, element);
+
+        // TODO: serialize model
+        //element.insert("name".to_owned(), toml::Value::String((*self.adapter.model_name()).clone()));
     }
 }
 
