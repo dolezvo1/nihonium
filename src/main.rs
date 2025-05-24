@@ -1100,6 +1100,21 @@ impl eframe::App for NHApp {
             };
         }
 
+        macro_rules! button {
+            ($ui:expr, $msg_name:expr, $simple_project_command:expr) => {
+                {
+                    let mut button = egui::Button::new(translate!($msg_name));
+                    if let Some(shortcut_text) = shortcut_text!($ui, $simple_project_command) {
+                        button = button.shortcut_text(shortcut_text);
+                    }
+                    if $ui.add(button).clicked() {
+                        commands.push($simple_project_command.into());
+                        $ui.close_menu();
+                    }
+                }
+            };
+        }
+
         macro_rules! send_to_focused_diagram {
             ($command:expr) => {
                 if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
@@ -1156,16 +1171,7 @@ impl eframe::App for NHApp {
                         let _ = new_project();
                     }
 
-                    {
-                        let mut open_project_button = egui::Button::new(translate!("nh-file-openproject"));
-                        if let Some(shortcut_text) = shortcut_text!(ui, SimpleProjectCommand::OpenProject(false)) {
-                            open_project_button = open_project_button.shortcut_text(shortcut_text);
-                        }
-                        if ui.add(open_project_button).clicked() {
-                            commands.push(SimpleProjectCommand::OpenProject(false).into());
-                            ui.close_menu();
-                        }
-                    }
+                    button!(ui, "nh-file-openproject", SimpleProjectCommand::OpenProject(false));
 
                     // TODO: implement
                     ui.menu_button(translate!("nh-file-recentprojects"), |ui| {
@@ -1202,50 +1208,12 @@ impl eframe::App for NHApp {
                     });
                     ui.separator();
 
-                    {
-                        let mut save_button = egui::Button::new(translate!("nh-file-save"));
-                        if let Some(shortcut_text) = shortcut_text!(ui, SimpleProjectCommand::SaveProject) {
-                            save_button = save_button.shortcut_text(shortcut_text);
-                        }
-                        if ui.add_enabled(self.context.project_path.is_some(), save_button).clicked() {
-                            commands.push(SimpleProjectCommand::SaveProject.into());
-                            ui.close_menu();
-                        }
-                    }
-
-                    {
-                        let mut save_as_button = egui::Button::new(translate!("nh-file-saveas"));
-                        if let Some(shortcut_text) = shortcut_text!(ui, SimpleProjectCommand::SaveProjectAs) {
-                            save_as_button = save_as_button.shortcut_text(shortcut_text);
-                        }
-                        if ui.add(save_as_button).clicked() {
-                            commands.push(SimpleProjectCommand::SaveProjectAs.into());
-                            ui.close_menu();
-                        }
-                    }
+                    button!(ui, "nh-file-save", SimpleProjectCommand::SaveProject);
+                    button!(ui, "nh-file-saveas", SimpleProjectCommand::SaveProjectAs);
                     ui.separator();
-
-                    {
-                        let mut close_project_button = egui::Button::new(translate!("nh-file-closeproject"));
-                        if let Some(shortcut_text) = shortcut_text!(ui, SimpleProjectCommand::CloseProject(false)) {
-                            close_project_button = close_project_button.shortcut_text(shortcut_text);
-                        }
-                        if ui.add(close_project_button).clicked() {
-                            commands.push(SimpleProjectCommand::CloseProject(false).into());
-                            ui.close_menu();
-                        }
-                    }
+                    button!(ui, "nh-file-closeproject", SimpleProjectCommand::CloseProject(false));
                     #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        let mut exit_button = egui::Button::new(translate!("nh-file-exit"));
-                        if let Some(shortcut_text) = shortcut_text!(ui, SimpleProjectCommand::Exit(false)) {
-                            exit_button = exit_button.shortcut_text(shortcut_text);
-                        }
-                        if ui.add(exit_button).clicked() {
-                            commands.push(SimpleProjectCommand::Exit(false).into());
-                            ui.close_menu();
-                        }
-                    }
+                    button!(ui, "nh-file-exit", SimpleProjectCommand::Exit(false));
                 });
 
                 ui.menu_button(translate!("nh-edit"), |ui| {
@@ -1309,19 +1277,9 @@ impl eframe::App for NHApp {
                     });
                     ui.separator();
 
-                    for (s, c) in [(translate!("nh-edit-cut"), DiagramCommand::CutSelectedElements),
-                                   (translate!("nh-edit-copy"), DiagramCommand::CopySelectedElements),
-                                   (translate!("nh-edit-paste"), DiagramCommand::PasteClipboardElements),]
-                    {
-                        let shortcut_text = shortcut_text!(ui, c.into());
-                        let mut button = egui::Button::new(s);
-                        if let Some(shortcut_text) = shortcut_text {
-                            button = button.shortcut_text(shortcut_text);
-                        }
-                        if ui.add(button).clicked() {
-                            commands.push(SimpleProjectCommand::DiagramCommand(c).into());
-                        }
-                    }
+                    button!(ui, "nh-edit-cut", SimpleProjectCommand::from(DiagramCommand::CutSelectedElements));
+                    button!(ui, "nh-edit-copy", SimpleProjectCommand::from(DiagramCommand::CopySelectedElements));
+                    button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements));
                     ui.separator();
 
                     if let Some((_t, d)) = self.context.last_focused_diagram() {

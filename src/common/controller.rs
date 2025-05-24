@@ -183,6 +183,12 @@ pub enum ProjectCommand {
     AddNewDiagram(uuid::Uuid, usize, Arc<RwLock<dyn DiagramController>>),
 }
 
+impl From<SimpleProjectCommand> for ProjectCommand {
+    fn from(value: SimpleProjectCommand) -> ProjectCommand {
+        ProjectCommand::SimpleProjectCommand(value)
+    }
+}
+
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum SimpleProjectCommand {
     DiagramCommand(DiagramCommand),
@@ -194,9 +200,9 @@ pub enum SimpleProjectCommand {
     SwapTopLanguages,
 }
 
-impl Into<ProjectCommand> for SimpleProjectCommand {
-    fn into(self) -> ProjectCommand {
-        ProjectCommand::SimpleProjectCommand(self)
+impl From<DiagramCommand> for SimpleProjectCommand {
+    fn from(value: DiagramCommand) -> Self {
+        SimpleProjectCommand::DiagramCommand(value)
     }
 }
 
@@ -213,13 +219,6 @@ pub enum DiagramCommand {
     CopySelectedElements,
     PasteClipboardElements,
 }
-
-impl Into<SimpleProjectCommand> for DiagramCommand {
-    fn into(self) -> SimpleProjectCommand {
-        SimpleProjectCommand::DiagramCommand(self)
-    }
-}
-
 
 pub trait HierarchyCollectible: HasModel {
     fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode;
