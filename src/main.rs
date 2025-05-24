@@ -964,6 +964,7 @@ impl Default for NHApp {
         };
         
         context.shortcuts.insert(SimpleProjectCommand::SwapTopLanguages, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::L));
+        context.shortcuts.insert(SimpleProjectCommand::OpenProject(false), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O));
         context.shortcuts.insert(SimpleProjectCommand::SaveProject, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S));
         context.shortcuts.insert(SimpleProjectCommand::SaveProjectAs, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S));
         context.shortcuts.insert(DiagramCommand::UndoImmediate.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z));
@@ -1154,10 +1155,18 @@ impl eframe::App for NHApp {
                     if ui.button(translate!("nh-file-newproject")).clicked() {
                         let _ = new_project();
                     }
-                    // TODO: implement
-                    if ui.button(translate!("nh-file-openproject")).clicked() {
-                        println!("TODO");
+
+                    {
+                        let mut open_project_button = egui::Button::new(translate!("nh-file-openproject"));
+                        if let Some(shortcut_text) = shortcut_text!(ui, SimpleProjectCommand::OpenProject(false)) {
+                            open_project_button = open_project_button.shortcut_text(shortcut_text);
+                        }
+                        if ui.add(open_project_button).clicked() {
+                            commands.push(SimpleProjectCommand::OpenProject(false).into());
+                            ui.close_menu();
+                        }
                     }
+
                     // TODO: implement
                     ui.menu_button(translate!("nh-file-recentprojects"), |ui| {
                         if ui.button("asdf").clicked() {
@@ -1543,8 +1552,12 @@ impl eframe::App for NHApp {
             egui::Modal::new("Modal Window".into())
                 .show(ctx, |ui| {
 
-                    // TODO: Yes, exit / Save and exit / Cancel
+                    ui.label(translate!("nh-generic-unsavedchanges-warning"));
+
                     match confirm_reason {
+                        SimpleProjectCommand::OpenProject(_) => {
+                            ui.label(translate!("nh-file-openproject-confirm"));
+                        },
                         SimpleProjectCommand::CloseProject(_) => {
                             ui.label(translate!("nh-file-closeproject-confirm"));
                         },
@@ -1555,8 +1568,11 @@ impl eframe::App for NHApp {
                     }
 
                     ui.horizontal(|ui| {
-                        if ui.button("Yes").clicked() {
+                        if ui.button(translate!("nh-generic-yes")).clicked() {
                             match confirm_reason {
+                                SimpleProjectCommand::OpenProject(_) => {
+                                    commands.push(SimpleProjectCommand::OpenProject(true).into());
+                                },
                                 SimpleProjectCommand::CloseProject(_) => {
                                     commands.push(SimpleProjectCommand::CloseProject(true).into());
                                 },
@@ -1565,8 +1581,25 @@ impl eframe::App for NHApp {
                                 },
                                 _ => unreachable!("Unexpected confirm modal reason"),
                             }
+                            self.context.confirm_modal_reason = None;
                         }
-                        if ui.button("No").clicked() {
+                        if ui.button(translate!("nh-generic-unsavedchanges-saveandproceed")).clicked() {
+                            commands.push(SimpleProjectCommand::SaveProject.into());
+                            match confirm_reason {
+                                SimpleProjectCommand::OpenProject(_) => {
+                                    commands.push(SimpleProjectCommand::OpenProject(false).into());
+                                },
+                                SimpleProjectCommand::CloseProject(_) => {
+                                    commands.push(SimpleProjectCommand::CloseProject(false).into());
+                                },
+                                SimpleProjectCommand::Exit(_) => {
+                                    commands.push(SimpleProjectCommand::Exit(false).into());
+                                },
+                                _ => unreachable!("Unexpected confirm modal reason"),
+                            }
+                            self.context.confirm_modal_reason = None;
+                        }
+                        if ui.button(translate!("nh-generic-cancel")).clicked() {
                             self.context.confirm_modal_reason = None;
                         }
                     });
@@ -1587,7 +1620,13 @@ impl eframe::App for NHApp {
                         }
                         self.context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
                     }
+                    SimpleProjectCommand::OpenProject(b) => if b {
+                        todo!("TODO: Open project");
+                    } else {
+                        self.context.confirm_modal_reason = Some(SimpleProjectCommand::OpenProject(b));
+                    }
                     SimpleProjectCommand::SaveProject => {
+                        // TODO: prompt location if none
                         if let Some(project_path) = &self.context.project_path {
                             match self.context.export_project() {
                                 Err(e) => println!("Error exporting: {:?}", e),

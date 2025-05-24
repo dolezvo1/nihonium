@@ -1,15 +1,22 @@
 
+nh-generic-yes = Yes
+nh-generic-no = No
+nh-generic-cancel = Cancel
+nh-generic-unsavedchanges-warning = The current project has unsaved changes.
+nh-generic-unsavedchanges-saveandproceed = Save and proceed
+
 nh-file = File
 nh-file-newproject = New Project
 nh-file-openproject = Open Project
+nh-file-openproject-confirm = Are you sure you want to open a different project?
 nh-file-recentprojects = Recent Projects
 nh-file-addnewdiagram = Add New Diagram
 nh-file-save = Save
 nh-file-saveas = Save as
 nh-file-closeproject = Close Project
-nh-file-closeproject-confirm = This project has unsaved changes. Are you sure you want to close the project?
+nh-file-closeproject-confirm = Are you sure you want to close the current project?
 nh-file-exit = Exit
-nh-file-exit-confirm = This project has unsaved changes. Are you sure you want to exit?
+nh-file-exit-confirm = Are you sure you want to exit?
 
 nh-edit = Edit
 nh-edit-undo = Undo
