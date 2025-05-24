@@ -125,6 +125,7 @@ struct NHContext {
     undo_stack: Vec<(Arc<String>, uuid::Uuid)>,
     redo_stack: Vec<(Arc<String>, uuid::Uuid)>,
     unprocessed_commands: Vec<ProjectCommand>,
+    has_unsaved_changes: bool,
     
     shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
     shortcut_top_order: Vec<(SimpleProjectCommand, egui::KeyboardShortcut)>,
@@ -235,6 +236,7 @@ impl NHContext {
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.unprocessed_commands.clear();
+        self.has_unsaved_changes = false;
 
         self.last_focused_diagram = None;
         self.svg_export_menu = None;
@@ -368,6 +370,7 @@ impl NHContext {
         let mut undo_accumulator = Vec::<Arc<String>>::new();
         controller_lock.show_properties(ui, &mut undo_accumulator);
         if !undo_accumulator.is_empty() {
+            self.has_unsaved_changes = true;
             for (_uuid, (_t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != last_focused_diagram) {
                 let mut c = c.write().unwrap();
                 c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
@@ -846,6 +849,7 @@ impl NHContext {
         diagram_controller.handle_input(ui, &response, &mut undo_accumulator);
         response.context_menu(|ui| diagram_controller.context_menu(ui));
         if !undo_accumulator.is_empty() {
+            self.has_unsaved_changes = true;
             for (_uuid, (t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != tab_uuid) {
                 let mut c = c.write().unwrap();
                 c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
@@ -945,6 +949,7 @@ impl Default for NHApp {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             unprocessed_commands: Vec::new(),
+            has_unsaved_changes: true,
             
             shortcuts: HashMap::new(),
             shortcut_top_order: vec![],
@@ -1012,6 +1017,7 @@ impl NHApp {
         }
         
         self.context.redo_stack.push(e);
+        self.context.has_unsaved_changes = true;
     }
     fn redo_immediate(&mut self) {
         let Some(e) = self.context.redo_stack.pop() else { return; };
@@ -1025,6 +1031,7 @@ impl NHApp {
         }
         
         self.context.undo_stack.push(e);
+        self.context.has_unsaved_changes = true;
     }
 
     pub fn add_custom_tab(&mut self, uuid: uuid::Uuid, tab: Arc<RwLock<dyn CustomTab>>) {
@@ -1078,11 +1085,14 @@ impl eframe::App for NHApp {
         }
 
         // Set window title depending on the project path
-        if let Some(project_path) = &self.context.project_path {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("113 - {}", project_path.to_string_lossy())));
-        } else {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title("113".to_owned()));
-        }
+        let modified = if self.context.has_unsaved_changes { "*" } else { "" };
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+            if let Some(project_path) = &self.context.project_path {
+                format!("113{} - {}", modified, project_path.to_string_lossy())
+            } else {
+                format!("113{}", modified)
+            }
+        ));
 
         macro_rules! translate {
             ($msg_name:expr) => {
@@ -1578,14 +1588,18 @@ impl eframe::App for NHApp {
                         }
                         self.context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
                     }
-                    SimpleProjectCommand::OpenProject(b) => if b {
+                    SimpleProjectCommand::OpenProject(b) => if !self.context.has_unsaved_changes || b {
                         todo!("TODO: Open project");
                     } else {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::OpenProject(b));
                     }
                     SimpleProjectCommand::SaveProject => {
-                        // TODO: prompt location if none
-                        if let Some(project_path) = &self.context.project_path {
+                        if let Some(project_path) = self.context.project_path.clone()
+                            .or_else(|| rfd::FileDialog::new()
+                                .set_directory(std::env::current_dir().unwrap())
+                                .add_filter("Nihonium Project files", &["nhp"])
+                                .add_filter("All files", &["*"])
+                                .save_file()) {
                             match self.context.export_project() {
                                 Err(e) => println!("Error exporting: {:?}", e),
                                 Ok(project) => {
@@ -1593,9 +1607,11 @@ impl eframe::App for NHApp {
                                         .create(true)
                                         .truncate(true)
                                         .write(true)
-                                        .open(project_path)
+                                        .open(&project_path)
                                         .unwrap();
                                     file.write_all(project.as_bytes());
+                                    self.context.project_path = Some(project_path);
+                                    self.context.has_unsaved_changes = false;
                                 }
                             }
                         }
@@ -1620,17 +1636,18 @@ impl eframe::App for NHApp {
                                         .unwrap();
                                     file.write_all(project.as_bytes());
                                     self.context.project_path = Some(path);
+                                    self.context.has_unsaved_changes = false;
                                 }
                             }
                         }
                     }
-                    SimpleProjectCommand::CloseProject(b) => if b {
+                    SimpleProjectCommand::CloseProject(b) => if !self.context.has_unsaved_changes || b {
                         self.context.clear_project_data();
                         self.tree = self.tree.filter_tabs(|e| !matches!(e, NHTab::Diagram { .. } | NHTab::CustomTab { .. }))
                     } else {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::CloseProject(b));
                     }
-                    SimpleProjectCommand::Exit(b) => if b {
+                    SimpleProjectCommand::Exit(b) => if !self.context.has_unsaved_changes || b {
                         std::process::exit(0);
                     } else {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::Exit(b));
