@@ -947,6 +947,8 @@ impl Default for NHApp {
         };
         
         context.shortcuts.insert(SimpleProjectCommand::SwapTopLanguages, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::L));
+        context.shortcuts.insert(SimpleProjectCommand::SaveProject, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S));
+        context.shortcuts.insert(SimpleProjectCommand::SaveProjectAs, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S));
         context.shortcuts.insert(DiagramCommand::UndoImmediate.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z));
         context.shortcuts.insert(DiagramCommand::RedoImmediate.into(), egui::KeyboardShortcut::new(
             egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
@@ -1057,6 +1059,13 @@ impl eframe::App for NHApp {
             self.context.last_focused_diagram = Some(*uuid);
         }
 
+        // Set window title depending on the project path
+        if let Some(project_path) = &self.context.project_path {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!("113 - {}", project_path.to_string_lossy())));
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title("113".to_owned()));
+        }
+
         macro_rules! translate {
             ($msg_name:expr) => {
                 self.context.fluent_bundle.format_pattern(
@@ -1064,6 +1073,12 @@ impl eframe::App for NHApp {
                     None,
                     &mut vec![],
                 )
+            };
+        }
+
+        macro_rules! shortcut_text {
+            ($ui:expr, $simple_project_command:expr) => {
+                self.context.shortcuts.get(&$simple_project_command).map(|e| $ui.ctx().format_shortcut(&e))
             };
         }
 
@@ -1161,33 +1176,26 @@ impl eframe::App for NHApp {
                     });
                     ui.separator();
 
-                    if ui.add_enabled(self.context.project_path.is_some(), egui::Button::new(translate!("nh-file-save"))).clicked() {
-                        todo!("TODO: save project");
-                    }
-                    if ui.button(translate!("nh-file-saveas")).clicked() {
-                        // NOTE: This does not work on WASM, and in its current state it never will.
-                        //       This will be possible to fix once this is fixed on rfd side (#128).
-                        if let Some(path) = rfd::FileDialog::new()
-                            .set_directory(std::env::current_dir().unwrap())
-                            .add_filter("Nihonium Project files", &["nhp"])
-                            .add_filter("All files", &["*"])
-                            .save_file()
-                        {
-                            match self.context.export_project() {
-                                Err(e) => println!("Error exporting: {:?}", e),
-                                Ok(project) => {
-                                    let mut file = std::fs::OpenOptions::new()
-                                        .create(true)
-                                        .truncate(true)
-                                        .write(true)
-                                        .open(path)
-                                        .unwrap();
-                                    file.write_all(project.as_bytes());
-                                    // TODO: set self.context.project_path
-                                }
-                            }
+                    {
+                        let mut save_button = egui::Button::new(translate!("nh-file-save"));
+                        if let Some(shortcut_text) = shortcut_text!(ui, SimpleProjectCommand::SaveProject) {
+                            save_button = save_button.shortcut_text(shortcut_text);
                         }
-                        ui.close_menu();
+                        if ui.add_enabled(self.context.project_path.is_some(), save_button).clicked() {
+                            commands.push(SimpleProjectCommand::SaveProject.into());
+                            ui.close_menu();
+                        }
+                    }
+
+                    {
+                        let mut save_as_button = egui::Button::new(translate!("nh-file-saveas"));
+                        if let Some(shortcut_text) = shortcut_text!(ui, SimpleProjectCommand::SaveProjectAs) {
+                            save_as_button = save_as_button.shortcut_text(shortcut_text);
+                        }
+                        if ui.add(save_as_button).clicked() {
+                            commands.push(SimpleProjectCommand::SaveProjectAs.into());
+                            ui.close_menu();
+                        }
                     }
                     ui.separator();
 
@@ -1204,7 +1212,7 @@ impl eframe::App for NHApp {
 
                 ui.menu_button(translate!("nh-edit"), |ui| {
                     ui.menu_button(translate!("nh-edit-undo"), |ui| {
-                        let shortcut_text = self.context.shortcuts.get(&DiagramCommand::UndoImmediate.into()).map(|e| ui.ctx().format_shortcut(&e));
+                        let shortcut_text = shortcut_text!(ui, DiagramCommand::UndoImmediate.into());
                         
                         if self.context.undo_stack.is_empty() {
                             let mut button = egui::Button::new("(nothing to undo)");
@@ -1234,7 +1242,7 @@ impl eframe::App for NHApp {
                     });
                     
                     ui.menu_button(translate!("nh-edit-redo"), |ui| {
-                        let shortcut_text = self.context.shortcuts.get(&DiagramCommand::RedoImmediate.into()).map(|e| ui.ctx().format_shortcut(&e));
+                        let shortcut_text = shortcut_text!(ui, DiagramCommand::RedoImmediate.into());
                         
                         if self.context.redo_stack.is_empty() {
                             let mut button = egui::Button::new("(nothing to redo)");
@@ -1267,7 +1275,7 @@ impl eframe::App for NHApp {
                                    (translate!("nh-edit-copy"), DiagramCommand::CopySelectedElements),
                                    (translate!("nh-edit-paste"), DiagramCommand::PasteClipboardElements),]
                     {
-                        let shortcut_text = self.context.shortcuts.get(&c.into()).map(|e| ui.ctx().format_shortcut(&e));
+                        let shortcut_text = shortcut_text!(ui, c.into());
                         let mut button = egui::Button::new(s);
                         if let Some(shortcut_text) = shortcut_text {
                             button = button.shortcut_text(shortcut_text);
@@ -1367,6 +1375,46 @@ impl eframe::App for NHApp {
                             self.context.languages_order.swap(0, 1);
                         }
                         self.context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
+                    }
+                    SimpleProjectCommand::SaveProject => {
+                        if let Some(project_path) = &self.context.project_path {
+                            match self.context.export_project() {
+                                Err(e) => println!("Error exporting: {:?}", e),
+                                Ok(project) => {
+                                    let mut file = std::fs::OpenOptions::new()
+                                        .create(true)
+                                        .truncate(true)
+                                        .write(true)
+                                        .open(project_path)
+                                        .unwrap();
+                                    file.write_all(project.as_bytes());
+                                }
+                            }
+                        }
+                    }
+                    SimpleProjectCommand::SaveProjectAs => {
+                        // NOTE: This does not work on WASM, and in its current state it never will.
+                        //       This will be possible to fix once this is fixed on rfd side (#128).
+                        if let Some(path) = rfd::FileDialog::new()
+                            .set_directory(std::env::current_dir().unwrap())
+                            .add_filter("Nihonium Project files", &["nhp"])
+                            .add_filter("All files", &["*"])
+                            .save_file()
+                        {
+                            match self.context.export_project() {
+                                Err(e) => println!("Error exporting: {:?}", e),
+                                Ok(project) => {
+                                    let mut file = std::fs::OpenOptions::new()
+                                        .create(true)
+                                        .truncate(true)
+                                        .write(true)
+                                        .open(&path)
+                                        .unwrap();
+                                    file.write_all(project.as_bytes());
+                                    self.context.project_path = Some(path);
+                                }
+                            }
+                        }
                     }
                 }
                 ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),

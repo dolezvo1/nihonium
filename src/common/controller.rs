@@ -186,6 +186,8 @@ pub enum ProjectCommand {
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum SimpleProjectCommand {
     DiagramCommand(DiagramCommand),
+    SaveProject,
+    SaveProjectAs,
     SwapTopLanguages,
 }
 
