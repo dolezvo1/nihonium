@@ -516,6 +516,12 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
     }
 }
 
+impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> From<InsensitiveCommand<ElementT, PropChangeT>> for SensitiveCommand<ElementT, PropChangeT> {
+    fn from(value: InsensitiveCommand<ElementT, PropChangeT>) -> Self {
+        Self::Insensitive(value)
+    }
+}
+
 /// Selection insensitive command - inherently repeatable
 #[derive(Clone, PartialEq, Debug)]
 pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
@@ -531,12 +537,6 @@ pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     PasteSpecificElements(uuid::Uuid, Vec<ElementT>),
     AddElement(uuid::Uuid, ElementT),
     PropertyChange(HashSet<uuid::Uuid>, Vec<PropChangeT>),
-}
-
-impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> Into<SensitiveCommand<ElementT, PropChangeT>> for InsensitiveCommand<ElementT, PropChangeT> {
-    fn into(self) -> SensitiveCommand<ElementT, PropChangeT> {
-        SensitiveCommand::Insensitive(self)
-    }
 }
 
 impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
