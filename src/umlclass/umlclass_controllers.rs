@@ -1013,7 +1013,7 @@ impl HasModel for UmlClassController {
 
 impl HierarchyCollectible for UmlClassController {
     fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+        HierarchyNode::Element(self.self_reference.upgrade().unwrap())
     }
 }
 

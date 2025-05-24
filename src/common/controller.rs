@@ -222,15 +222,18 @@ pub trait HierarchyCollectible: HasModel {
 
 pub enum HierarchyNode {
     Folder(uuid::Uuid, Arc<String>, Vec<HierarchyNode>),
-    Node(Arc<RwLock<dyn HierarchyCollectible>>, Vec<HierarchyNode>),
-    Leaf(Arc<RwLock<dyn HierarchyCollectible>>),
+    Diagram(Arc<RwLock<dyn HierarchyCollectible>>, Vec<HierarchyNode>),
+    CompositeElement(Arc<RwLock<dyn HierarchyCollectible>>, Vec<HierarchyNode>),
+    Element(Arc<RwLock<dyn HierarchyCollectible>>),
 }
 
 impl HierarchyNode {
     pub fn uuid(&self) -> uuid::Uuid {
         match self {
             HierarchyNode::Folder(uuid, ..) => *uuid,
-            HierarchyNode::Node(rw_lock, _) | HierarchyNode::Leaf(rw_lock) => *rw_lock.read().unwrap().model_uuid(),
+            HierarchyNode::Diagram(rw_lock, _)
+            | HierarchyNode::CompositeElement(rw_lock, _)
+            | HierarchyNode::Element(rw_lock) => *rw_lock.read().unwrap().model_uuid(),
         }
     }
     pub fn model_uuid(&self) -> Option<uuid::Uuid> {
@@ -242,17 +245,18 @@ impl HierarchyNode {
 
     pub fn collect_hierarchy(&self) -> HierarchyNode {
         match self {
-            HierarchyNode::Folder(uuid, name, hierarchy_nodes) => {
+            HierarchyNode::Folder(uuid, name, children) => {
                 HierarchyNode::Folder(
                     *uuid,
                     name.clone(),
-                    hierarchy_nodes.iter().map(|e| e.collect_hierarchy()).collect()
+                    children.iter().map(|e| e.collect_hierarchy()).collect()
                 )
             },
-            HierarchyNode::Node(rw_lock, hierarchy_nodes) => {
-                rw_lock.read().unwrap().collect_hierarchy(&hierarchy_nodes)
+            HierarchyNode::Diagram(rw_lock, children)
+            | HierarchyNode::CompositeElement(rw_lock, children) => {
+                rw_lock.read().unwrap().collect_hierarchy(&children)
             },
-            HierarchyNode::Leaf(rw_lock) => {
+            HierarchyNode::Element(rw_lock) => {
                 rw_lock.read().unwrap().collect_hierarchy(&vec![])
             },
         }
@@ -262,7 +266,8 @@ impl HierarchyNode {
         let self_id = self.uuid();
         match self {
             HierarchyNode::Folder(.., children)
-            | HierarchyNode::Node(.., children) => {
+            | HierarchyNode::Diagram(.., children)
+            | HierarchyNode::CompositeElement(.., children) => {
                 for c in children {
                     if c.uuid() == *id {
                         return Some((c, self));
@@ -272,14 +277,15 @@ impl HierarchyNode {
                     }
                 }
             }
-            _ => {}
+            HierarchyNode::Element(_) => {}
         }
         None
     }
     pub fn remove(&mut self, id: &uuid::Uuid) -> Option<HierarchyNode> {
         match self {
             HierarchyNode::Folder(.., children)
-            | HierarchyNode::Node(.., children) => {
+            | HierarchyNode::Diagram(.., children)
+            | HierarchyNode::CompositeElement(.., children) => {
                 if let Some(index) = children.iter().position(|e| e.uuid() == *id) {
                     Some(children.remove(index))
                 } else {
@@ -292,7 +298,7 @@ impl HierarchyNode {
                     None
                 }
             }
-            HierarchyNode::Leaf(_) => None,
+            HierarchyNode::Element(_) => None,
         }
     }
     pub fn insert(
@@ -304,7 +310,8 @@ impl HierarchyNode {
         let self_uuid = self.uuid();
         match self {
             HierarchyNode::Folder(.., children)
-            | HierarchyNode::Node(.., children) => {
+            | HierarchyNode::Diagram(.., children)
+            | HierarchyNode::CompositeElement(.., children) => {
                 if self_uuid == *id {
                     match position {
                         DirPosition::First => children.insert(0, value),
@@ -328,7 +335,7 @@ impl HierarchyNode {
                     value
                 }
             }
-            _ => Err(value),
+            HierarchyNode::Element(_) => Err(value),
         }
     }
 }
@@ -1423,7 +1430,7 @@ where
             new_children.push(c.read().unwrap().collect_hierarchy(&vec![]));
         }
 
-        HierarchyNode::Node(self.self_reference.upgrade().unwrap(), new_children)
+        HierarchyNode::Diagram(self.self_reference.upgrade().unwrap(), new_children)
     }
 }
 
@@ -2194,7 +2201,7 @@ where
             new_children.push(c.read().unwrap().collect_hierarchy(&vec![]));
         }
 
-        HierarchyNode::Node(self.self_reference.upgrade().unwrap(), new_children)
+        HierarchyNode::CompositeElement(self.self_reference.upgrade().unwrap(), new_children)
     }
 }
 
@@ -3217,7 +3224,7 @@ where
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
     fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+        HierarchyNode::Element(self.self_reference.upgrade().unwrap())
     }
 }
 

@@ -972,9 +972,9 @@ impl HierarchyCollectible for DemoCsdTransactorView {
     fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode {
         let s = self.self_reference.upgrade().unwrap();
         if let Some(tx) = &self.transaction_view {
-            HierarchyNode::Node(s, vec![tx.read().unwrap().collect_hierarchy(&vec![])])
+            HierarchyNode::CompositeElement(s, vec![tx.read().unwrap().collect_hierarchy(&vec![])])
         } else {
-            HierarchyNode::Leaf(s)
+            HierarchyNode::Element(s)
         }
     }
 }
@@ -1657,7 +1657,7 @@ impl HasModel for DemoCsdTransactionView {
 
 impl HierarchyCollectible for DemoCsdTransactionView {
     fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+        HierarchyNode::Element(self.self_reference.upgrade().unwrap())
     }
 }
 

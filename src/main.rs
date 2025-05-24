@@ -206,30 +206,15 @@ impl NHContext {
             match e {
                 HierarchyNode::Folder(uuid, _, children)
                     => NHProjectHierarchyNodeDTO::Folder(*uuid, children.iter().map(h).collect()),
-                HierarchyNode::Node(rw_lock, children)
+                HierarchyNode::Diagram(rw_lock, children)
+                | HierarchyNode::CompositeElement(rw_lock, children)
                     => NHProjectHierarchyNodeDTO::Node(*rw_lock.read().unwrap().model_uuid(), children.iter().map(h).collect()),
-                HierarchyNode::Leaf(rw_lock) => NHProjectHierarchyNodeDTO::Leaf(*rw_lock.read().unwrap().model_uuid()),
+                HierarchyNode::Element(rw_lock) => NHProjectHierarchyNodeDTO::Leaf(*rw_lock.read().unwrap().model_uuid()),
             }
         }
 
         let mut elements = HashMap::new();
         self.diagram_controllers.iter().for_each(|e| e.1.1.read().unwrap().serialize_into(&mut elements));
-
-        /*
-        let mut mock_element1 = toml::map::Map::new();
-        mock_element1.insert("uuid".to_string(), toml::Value::String(uuid::Uuid::now_v7().to_string()));
-        mock_element1.insert("name".to_string(), toml::Value::String("mock_element1".to_owned()));
-        mock_element1.insert("children".to_string(), toml::Value::String("mock_element2".to_owned()));
-
-        let mut mock_element2 = toml::map::Map::new();
-        mock_element2.insert("uuid".to_string(), toml::Value::String(uuid::Uuid::now_v7().to_string()));
-        mock_element2.insert("name".to_string(), toml::Value::String("mock_element2".to_owned()));
-
-        let elements = vec![
-            mock_element1,
-            mock_element2,
-        ];
-        */
 
         let project = common::project_serde::NHProjectDTO::new(
             "0.1.0",
@@ -284,7 +269,8 @@ impl NHContext {
 
                     builder.close_dir();
                 },
-                HierarchyNode::Node(rw_lock, children) => {
+                HierarchyNode::Diagram(rw_lock, children)
+                | HierarchyNode::CompositeElement(rw_lock, children) => {
                     let hm = rw_lock.read().unwrap();
 
                     builder.node(
@@ -299,7 +285,7 @@ impl NHContext {
 
                     builder.close_dir();
                 },
-                HierarchyNode::Leaf(rw_lock) => {
+                HierarchyNode::Element(rw_lock) => {
                     let hm = rw_lock.read().unwrap();
                     builder.leaf(*hm.model_uuid(), format!("{} ({})", hm.model_name(), hm.model_uuid()));
                 },
@@ -323,7 +309,7 @@ impl NHContext {
 
                             for source_id in &dnd.source {
                                 if let Some((source_node, source_node_parent)) = self.hierarchy.get(source_id) {
-                                    if (target_is_folder && matches!(source_node, HierarchyNode::Folder(..) | HierarchyNode::Node(..)))
+                                    if (target_is_folder && matches!(source_node, HierarchyNode::Folder(..) | HierarchyNode::Diagram(..)))
                                         || dnd.target == source_node_parent.uuid() {
                                         if let Some(source) = self.hierarchy.remove(source_id) {
                                             _ = self.hierarchy.insert(&dnd.target, dnd.position, source);
@@ -335,9 +321,10 @@ impl NHContext {
                         egui_ltreeview::Action::Activate(a) => {
                             for selected in &a.selected {
                                 match self.hierarchy.get(selected) {
-                                    Some((d @ HierarchyNode::Node(..), _)) => {
+                                    Some((HierarchyNode::Diagram(..), _)) => {
                                         commands.push(ProjectCommand::OpenAndFocusDiagram(*selected));
                                     }
+                                    // TODO: jump to activated Element/CompositeElement
                                     _ => {}
                                 }
                             }

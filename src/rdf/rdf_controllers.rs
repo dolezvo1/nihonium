@@ -1122,7 +1122,7 @@ impl HasModel for RdfNodeController {
 
 impl HierarchyCollectible for RdfNodeController {
     fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+        HierarchyNode::Element(self.self_reference.upgrade().unwrap())
     }
 }
 
@@ -1453,7 +1453,7 @@ impl HasModel for RdfLiteralController {
 
 impl HierarchyCollectible for RdfLiteralController {
     fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        HierarchyNode::Leaf(self.self_reference.upgrade().unwrap())
+        HierarchyNode::Element(self.self_reference.upgrade().unwrap())
     }
 }
 
