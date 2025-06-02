@@ -14,7 +14,7 @@ use eframe::egui::{
 use eframe::NativeOptions;
 
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
-use egui_ltreeview::{NodeBuilder, TreeView};
+use egui_ltreeview::{NodeBuilder, TreeView, TreeViewState};
 
 mod common;
 mod democsd;
@@ -112,6 +112,7 @@ struct NHContext {
     project_path: Option<std::path::PathBuf>,
     pub diagram_controllers: HashMap<uuid::Uuid, (usize, Arc<RwLock<dyn DiagramController>>)>,
     hierarchy: HierarchyNode,
+    tree_view_state: TreeViewState<uuid::Uuid>,
     new_diagram_no: u32,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
 
@@ -254,6 +255,8 @@ impl NHContext {
     }
 
     fn hierarchy(&mut self, ui: &mut Ui) {
+        let mut collapse_all = None;
+
         ui.horizontal(|ui| {
             if ui.button("New folder").clicked() {
                 if let HierarchyNode::Folder(.., children) = &mut self.hierarchy {
@@ -265,12 +268,16 @@ impl NHContext {
                 }
             }
             if ui.button("Collapse all").clicked() {
-                todo!("Collapse all");
+                collapse_all = Some(true);
             }
             if ui.button("Uncollapse all").clicked() {
-                todo!("Uncollapse all");
+                collapse_all = Some(false);
             }
         });
+
+        if let Some(b) = collapse_all {
+            self.hierarchy.for_each(|e| self.tree_view_state.set_openness(&e.uuid(), !b));
+        }
 
         fn hierarchy(builder: &mut egui_ltreeview::TreeViewBuilder<uuid::Uuid>, hn: &HierarchyNode) {
             match hn {
@@ -316,9 +323,13 @@ impl NHContext {
             .auto_shrink(false)
             .show(ui, |ui| {
                 let id = ui.make_persistent_id("Project Hierarchy Tree View");
-                let (response, actions) = TreeView::new(id).show(ui, |builder| {
-                    hierarchy(builder, &self.hierarchy);
-                });
+                let (response, actions) = TreeView::new(id).show_state(
+                    ui,
+                    &mut self.tree_view_state,
+                    |builder| {
+                        hierarchy(builder, &self.hierarchy);
+                    }
+                );
 
                 for action in actions.into_iter() {
                     match action {
@@ -936,6 +947,7 @@ impl Default for NHApp {
             project_path: None,
             diagram_controllers,
             hierarchy: HierarchyNode::Folder(uuid::Uuid::nil(), Arc::new("root".to_owned()), hierarchy),
+            tree_view_state: TreeViewState::default(),
             new_diagram_no: 4,
             custom_tabs: HashMap::new(),
             

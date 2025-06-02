@@ -342,6 +342,17 @@ impl HierarchyNode {
             HierarchyNode::Element(_) => Err(value),
         }
     }
+    pub fn for_each(&self, mut f: impl FnMut(&Self)) {
+        f(self);
+        match self {
+            HierarchyNode::Folder(.., children)
+            | HierarchyNode::Diagram(.., children)
+            | HierarchyNode::CompositeElement(.., children) => {
+                children.iter().for_each(f);
+            },
+            HierarchyNode::Element(..) => {},
+        }
+    }
 }
 
 
