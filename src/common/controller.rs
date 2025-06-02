@@ -220,7 +220,7 @@ pub enum DiagramCommand {
     PasteClipboardElements,
 }
 
-pub trait HierarchyCollectible: HasModel {
+pub trait HierarchyCollectible: View {
     fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode;
 }
 
@@ -361,12 +361,13 @@ pub struct DrawingContext<'a> {
     pub fluent_bundle: &'a fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
 }
 
-pub trait HasModel {
+pub trait View {
+    fn uuid(&self) -> Arc<uuid::Uuid>;
     fn model_uuid(&self) -> Arc<uuid::Uuid>;
     fn model_name(&self) -> Arc<String>;
 }
 
-pub trait DiagramController: Any + HasModel + HierarchyCollectible + NHSerialize {
+pub trait DiagramController: Any + View + HierarchyCollectible + NHSerialize {
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
     
     fn new_ui_canvas(
@@ -398,7 +399,7 @@ pub trait DiagramController: Any + HasModel + HierarchyCollectible + NHSerialize
     fn apply_command(&mut self, command: DiagramCommand, global_undo: &mut Vec<Arc<String>>);
 }
 
-pub trait ElementController<CommonElementT: ?Sized>: HasModel {
+pub trait ElementController<CommonElementT: ?Sized>: View {
     fn model(&self) -> Arc<RwLock<CommonElementT>>;
 
     fn min_shape(&self) -> NHShape;
@@ -850,6 +851,7 @@ pub struct DiagramControllerGen2<
 > where
     ToolT: Tool<ElementModelT, QueryableT, AddCommandElementT, PropChangeT>,
 {
+    uuid: Arc<uuid::Uuid>,
     model: Arc<RwLock<DiagramModelT>>,
     self_reference: Weak<RwLock<Self>>,
     owned_controllers: HashMap<
@@ -972,6 +974,7 @@ where
         )>,
 {
     pub fn new(
+        uuid: Arc<uuid::Uuid>,
         model: Arc<RwLock<DiagramModelT>>,
         owned_controllers: HashMap<
             uuid::Uuid,
@@ -1006,6 +1009,7 @@ where
     ) -> Arc<RwLock<Self>> {
         let event_order = owned_controllers.keys().map(|e| *e).collect();
         let ret = Arc::new(RwLock::new(Self {
+            uuid,
             model,
             self_reference: Weak::new(),
             owned_controllers,
@@ -1379,7 +1383,7 @@ impl<
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
-    > HasModel
+    > View
     for DiagramControllerGen2<
         DiagramModelT,
         ElementModelT,
@@ -1398,6 +1402,9 @@ where
         KindedElement<'a>: From<&'a Self>,
     >,
 {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
+    }
     fn model_uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid()
     }
@@ -1978,6 +1985,7 @@ pub struct PackageView<
         )> + Clone
         + 'static,
 {
+    uuid: Arc<uuid::Uuid>,
     adapter: AdapterT,
     self_reference: Weak<RwLock<Self>>,
     owned_controllers: HashMap<
@@ -2043,6 +2051,7 @@ where
         + 'static,
 {
     pub fn new(
+        uuid: Arc<uuid::Uuid>,
         adapter: AdapterT,
         owned_controllers: HashMap<
             uuid::Uuid,
@@ -2063,6 +2072,7 @@ where
         let event_order = owned_controllers.keys().map(|e| *e).collect();
         let c = Arc::new(RwLock::new(
         Self {
+            uuid,
             adapter,
             self_reference: Weak::new(),
             owned_controllers,
@@ -2099,7 +2109,7 @@ impl<
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
-    > HasModel
+    > View
     for PackageView<
         AdapterT,
         ElementModelT,
@@ -2144,6 +2154,9 @@ where
             >,
         )>,
 {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
+    }
     fn model_uuid(&self) -> Arc<uuid::Uuid> {
         self.adapter.model_uuid()
     }
@@ -2975,13 +2988,18 @@ where
             Arc<dyn Any + Send + Sync>,
         )>
     ) {
-        let uuid = if uuid_present(&*self.model_uuid()) { uuid::Uuid::now_v7() } else { *self.model_uuid() };
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (uuid::Uuid::now_v7(), uuid::Uuid::now_v7())
+        } else {
+            (*self.uuid, *self.model_uuid())
+        };
         
         let mut inner = HashMap::new();
         self.owned_controllers.iter().for_each(|e| e.1.read().unwrap().deep_copy_clone(uuid_present, &mut inner, c, m));
         
         let cloneish = Arc::new(RwLock::new(Self {
-            adapter: self.adapter.deep_copy_init(uuid, m),
+            uuid: view_uuid.into(),
+            adapter: self.adapter.deep_copy_init(model_uuid, m),
             self_reference: Weak::new(),
             owned_controllers: inner.iter().map(|e| (*e.0, e.1.clone())).collect(),
             event_order: inner.iter().map(|e| *e.0).collect(),
@@ -2992,9 +3010,9 @@ where
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(uuid, cloneish.clone());
+        tlc.insert(view_uuid, cloneish.clone());
         c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()),
-            (uuid, cloneish.clone(), cloneish));
+            (view_uuid, cloneish.clone(), cloneish));
     }
     fn deep_copy_relink(
         &mut self,
@@ -3066,6 +3084,7 @@ pub struct MulticonnectionView<
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
+    uuid: Arc<uuid::Uuid>,
     adapter: AdapterT,
     self_reference: Weak<RwLock<Self>>,
 
@@ -3122,6 +3141,7 @@ where
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
     pub fn new(
+        uuid: Arc<uuid::Uuid>,
         adapter: AdapterT,
         source: Arc<
             RwLock<
@@ -3164,6 +3184,7 @@ where
         
         let c = Arc::new(RwLock::new(
             Self {
+                uuid,
                 adapter,
                 self_reference: Weak::new(),
                 source,
@@ -3197,7 +3218,7 @@ impl<
         ToolT,
         AddCommandElementT: Clone + Debug,
         PropChangeT: Clone + Debug,
-    > HasModel
+    > View
     for MulticonnectionView<
         AdapterT,
         ElementModelT,
@@ -3210,6 +3231,9 @@ where
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
+    }
     fn model_uuid(&self) -> Arc<uuid::Uuid> {
         self.adapter.model_uuid()
     }
@@ -3933,10 +3957,15 @@ where
             Arc<dyn Any + Send + Sync>,
         )>
     ) {
-        let uuid = if uuid_present(&*self.model_uuid()) { uuid::Uuid::now_v7() } else { *self.model_uuid() };
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (uuid::Uuid::now_v7(), uuid::Uuid::now_v7())
+        } else {
+            (*self.uuid, *self.model_uuid())
+        };
         
         let cloneish = Arc::new(RwLock::new(Self {
-            adapter: self.adapter.deep_copy_init(uuid, m),
+            uuid: view_uuid.into(),
+            adapter: self.adapter.deep_copy_init(model_uuid, m),
             self_reference: Weak::new(),
             source: self.source.clone(),
             destination: self.destination.clone(),
@@ -3949,8 +3978,8 @@ where
             point_to_origin: self.point_to_origin.clone(),
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone());
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
     }
     
     fn deep_copy_relink(

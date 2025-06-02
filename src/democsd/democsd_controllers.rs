@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, HasModel, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
 };
 use crate::common::project_serde::NHSerialize;
 use crate::democsd::democsd_models::{
@@ -296,22 +296,24 @@ fn menubar_options_fun(_controller: &mut DiagramViewT, _ui: &mut egui::Ui, _comm
 const DIAGRAM_VIEW_TYPE: &str = "democsd-diagram-view";
 
 pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
-    let uuid = uuid::Uuid::now_v7();
+    let view_uuid = uuid::Uuid::now_v7();
+    let model_uuid = uuid::Uuid::now_v7();
     let name = format!("New DEMO CSD diagram {}", no);
 
     let diagram = Arc::new(RwLock::new(DemoCsdDiagram::new(
-        uuid.clone(),
+        model_uuid.clone(),
         name.clone(),
         vec![],
     )));
     (
-        uuid,
+        view_uuid.clone(),
         DiagramControllerGen2::new(
+            view_uuid.into(),
             diagram.clone(),
             HashMap::new(),
             DemoCsdQueryable {},
             DemoCsdDiagramBuffer {
-                uuid,
+                uuid: model_uuid,
                 name,
                 comment: "".to_owned(),
             },
@@ -330,7 +332,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         HashMap::<_, Arc<RwLock<dyn ElementControllerGen2<_, _, _, _, _>>>>::new();
 
     {
-        let (client_uuid, client, client_controller) = democsd_transactor(
+        let (_, client, client_uuid, client_view) = democsd_transactor(
             "CTAR01",
             "Client",
             false,
@@ -340,87 +342,89 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         );
 
         models.push(client);
-        controllers.insert(client_uuid, client_controller);
+        controllers.insert(client_uuid, client_view);
     }
 
     {
-        let (_transaction_uuid, transaction, transaction_controller) = democsd_transaction(
+        let (_, tx_model, _tx_uuid, tx_view) = democsd_transaction(
             "TK01",
             "Sale completion",
             egui::Pos2::new(200.0, 400.0),
             true,
         );
 
-        let (transactor_uuid, transactor, transactor_controller) = democsd_transactor(
+        let (_, ta, ta_uuid, ta_view) = democsd_transactor(
             "AR01",
             "Sale completer",
             true,
-            Some((transaction, transaction_controller)),
+            Some((tx_model, tx_view)),
             false,
             egui::Pos2::new(200.0, 400.0),
         );
-        models.push(transactor);
-        controllers.insert(transactor_uuid, transactor_controller);
+        models.push(ta);
+        controllers.insert(ta_uuid, ta_view);
     }
 
     {
-        let (_transaction_uuid, transaction, transaction_controller) = democsd_transaction(
+        let (_, tx, _tx_uuid, tx_view) = democsd_transaction(
             "TK10",
             "Sale transportation",
             egui::Pos2::new(200.0, 600.0),
             true,
         );
 
-        let (transactor_uuid, transactor, transactor_controller) = democsd_transactor(
+        let (_, ta_model, ta_uuid, ta_view) = democsd_transactor(
             "AR02",
             "Sale transporter",
             true,
-            Some((transaction, transaction_controller)),
+            Some((tx, tx_view)),
             false,
             egui::Pos2::new(200.0, 600.0),
         );
-        models.push(transactor);
-        controllers.insert(transactor_uuid, transactor_controller);
+        models.push(ta_model);
+        controllers.insert(ta_uuid, ta_view);
     }
 
     {
-        let (_transaction_uuid, transaction, transaction_controller) = democsd_transaction(
+        let (_, tx_model, _tx_uuid, tx_view) = democsd_transaction(
             "TK11",
             "Sale controlling",
             egui::Pos2::new(400.0, 200.0),
             true,
         );
 
-        let (transactor_uuid, transactor, transactor_controller) = democsd_transactor(
+        let (_, ta_model, ta_uuid, ta_view) = democsd_transactor(
             "AR03",
             "Sale controller",
             true,
-            Some((transaction, transaction_controller)),
+            Some((tx_model, tx_view)),
             true,
             egui::Pos2::new(400.0, 200.0),
         );
-        models.push(transactor);
-        controllers.insert(transactor_uuid, transactor_controller);
+        models.push(ta_model);
+        controllers.insert(ta_uuid, ta_view);
     }
 
     // TK02 - Purchase completer
 
     {
-        let uuid = uuid::Uuid::now_v7();
+        let view_uuid = uuid::Uuid::now_v7();
+        let model_uuid = uuid::Uuid::now_v7();
         let name = format!("New DEMO CSD diagram {}", no);
         let diagram = Arc::new(RwLock::new(DemoCsdDiagram::new(
-            uuid.clone(),
+            model_uuid.clone(),
             name.clone(),
             models,
         )));
         (
-            uuid,
+            view_uuid.clone(),
             DiagramControllerGen2::new(
+                view_uuid.into(),
                 diagram.clone(),
                 controllers,
                 DemoCsdQueryable {},
                 DemoCsdDiagramBuffer {
-                    uuid,
+                    uuid: model_uuid,
                     name,
                     comment: "".to_owned(),
                 },
@@ -600,29 +604,29 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
 
         match (self.current_stage, &mut self.result) {
             (DemoCsdToolStage::Client, _) => {
-                let (client_uuid, _client, client_controller) =
+                let (_model_uuid, _client_model, view_uuid, client_view) =
                     democsd_transactor("CTAR01", "Client", false, None, false, pos);
-                self.result = PartialDemoCsdElement::Some((client_uuid, client_controller));
+                self.result = PartialDemoCsdElement::Some((view_uuid, client_view));
                 self.event_lock = true;
             }
             (DemoCsdToolStage::Transactor, _) => {
-                let (_transaction_uuid, transaction, transaction_controller) =
+                let (_tx_model_uuid, tx_model, _tx_view_uuid, tx_view) =
                     democsd_transaction("TK01", "Transaction", pos, true);
-                let (transactor_uuid, _transactor, transactor_controller) = democsd_transactor(
+                let (_ta_model_uuid, _ta_model, ta_view_uuid, ta_view) = democsd_transactor(
                     "AR01",
                     "Transactor",
                     true,
-                    Some((transaction, transaction_controller)),
+                    Some((tx_model, tx_view)),
                     false,
                     pos,
                 );
-                self.result = PartialDemoCsdElement::Some((transactor_uuid, transactor_controller));
+                self.result = PartialDemoCsdElement::Some((ta_view_uuid, ta_view));
                 self.event_lock = true;
             }
             (DemoCsdToolStage::Bank, _) => {
-                let (bank_uuid, _bank, bank_controller) =
+                let (_model_uuid, _bank_model, view_uuid, bank_view) =
                     democsd_transaction("TK01", "Bank", pos, false);
-                self.result = PartialDemoCsdElement::Some((bank_uuid, bank_controller));
+                self.result = PartialDemoCsdElement::Some((view_uuid, bank_view));
                 self.event_lock = true;
             }
             (DemoCsdToolStage::PackageStart, _) => {
@@ -701,13 +705,13 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
                         into.controller_for(&source.read().unwrap().uuid()),
                         into.controller_for(&dest.read().unwrap().uuid()),
                     ) {
-                        let (uuid, _, predicate_controller) = democsd_link(
+                        let (_model_uuid, _predicate_model, view_uuid, predicate_view) = democsd_link(
                             *link_type,
                             (source.clone(), source_controller),
                             (dest.clone(), dest_controller),
                         );
 
-                        Some((uuid, predicate_controller))
+                        Some((view_uuid, predicate_view))
                     } else {
                         None
                     };
@@ -718,11 +722,11 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
             PartialDemoCsdElement::Package { a, b: Some(b) } => {
                 self.current_stage = DemoCsdToolStage::PackageStart;
 
-                let (uuid, _, package_controller) =
+                let (_model_uuid, _package_model, view_uuid, package_view) =
                     democsd_package("A package", egui::Rect::from_two_pos(*a, *b));
 
                 self.result = PartialDemoCsdElement::None;
-                Some((uuid, package_controller))
+                Some((view_uuid, package_view))
             }
             _ => None,
         }
@@ -876,23 +880,26 @@ fn democsd_package(
 ) -> (
     uuid::Uuid,
     Arc<RwLock<DemoCsdPackage>>,
+    uuid::Uuid,
     Arc<RwLock<PackageViewT>>,
 ) {
-    let uuid = uuid::Uuid::now_v7();
-    let graph = Arc::new(RwLock::new(DemoCsdPackage::new(
-        uuid.clone(),
+    let view_uuid = uuid::Uuid::now_v7();
+    let model_uuid = uuid::Uuid::now_v7();
+    let graph_model = Arc::new(RwLock::new(DemoCsdPackage::new(
+        model_uuid.clone(),
         name.to_owned(),
         vec![],
     )));
-    let graph_controller = PackageViewT::new(
+    let graph_view = PackageViewT::new(
+        view_uuid.clone().into(),
         DemoCsdPackageAdapter {
-            model: graph.clone(),
+            model: graph_model.clone(),
         },
         HashMap::new(),
         bounds_rect,
     );
 
-    (uuid, graph, graph_controller)
+    (model_uuid, graph_model, view_uuid, graph_view)
 }
 
 // ---
@@ -910,19 +917,22 @@ fn democsd_transactor(
 ) -> (
     uuid::Uuid,
     Arc<RwLock<DemoCsdTransactor>>,
+    uuid::Uuid,
     Arc<RwLock<DemoCsdTransactorView>>,
 ) {
-    let ta_uuid = uuid::Uuid::now_v7();
-    let ta = Arc::new(RwLock::new(DemoCsdTransactor::new(
-        ta_uuid,
+    let ta_view_uuid = uuid::Uuid::now_v7();
+    let ta_model_uuid = uuid::Uuid::now_v7();
+    let ta_model = Arc::new(RwLock::new(DemoCsdTransactor::new(
+        ta_model_uuid,
         identifier.to_owned(),
         name.to_owned(),
         internal,
         transaction.as_ref().map(|t| t.0.clone()),
         transaction_selfactivating,
     )));
-    let ta_controller = Arc::new(RwLock::new(DemoCsdTransactorView {
-        model: ta.clone(),
+    let ta_view = Arc::new(RwLock::new(DemoCsdTransactorView {
+        uuid: ta_view_uuid.clone().into(),
+        model: ta_model.clone(),
         self_reference: Weak::new(),
         transaction_view: transaction.map(|t| t.1),
 
@@ -938,11 +948,12 @@ fn democsd_transactor(
         bounds_rect: egui::Rect::ZERO,
     }));
 
-    ta_controller.write().unwrap().self_reference = Arc::downgrade(&ta_controller);
-    (ta_uuid, ta, ta_controller)
+    ta_view.write().unwrap().self_reference = Arc::downgrade(&ta_view);
+    (ta_model_uuid, ta_model, ta_view_uuid, ta_view)
 }
 
 pub struct DemoCsdTransactorView {
+    uuid: Arc<uuid::Uuid>,
     model: Arc<RwLock<DemoCsdTransactor>>,
     self_reference: Weak<RwLock<Self>>,
     transaction_view: Option<Arc<RwLock<DemoCsdTransactionView>>>,
@@ -959,7 +970,10 @@ pub struct DemoCsdTransactorView {
     bounds_rect: egui::Rect,
 }
 
-impl HasModel for DemoCsdTransactorView {
+impl View for DemoCsdTransactorView {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
+    }
     fn model_uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid()
     }
@@ -1551,12 +1565,17 @@ impl
         } else { None };
         
         let model = self.model.read().unwrap();
-        let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
-        let modelish = Arc::new(RwLock::new(DemoCsdTransactor::new(uuid, (*model.identifier).clone(), (*model.name).clone(), model.internal,
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (uuid::Uuid::now_v7(), uuid::Uuid::now_v7())
+        } else {
+            (*self.uuid, *model.uuid)
+        };
+        let modelish = Arc::new(RwLock::new(DemoCsdTransactor::new(model_uuid, (*model.identifier).clone(), (*model.name).clone(), model.internal,
             model.transaction.clone(), model.transaction_selfactivating)));
         m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
         
         let cloneish = Arc::new(RwLock::new(Self {
+            uuid: view_uuid.into(),
             model: modelish,
             self_reference: Weak::new(),
             transaction_view: tx_clone,
@@ -1571,8 +1590,8 @@ impl
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone());
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
     }
     fn deep_copy_relink(
         &mut self,
@@ -1602,16 +1621,19 @@ fn democsd_transaction(
 ) -> (
     uuid::Uuid,
     Arc<RwLock<DemoCsdTransaction>>,
+    uuid::Uuid,
     Arc<RwLock<DemoCsdTransactionView>>,
 ) {
-    let transaction_uuid = uuid::Uuid::now_v7();
-    let transaction = Arc::new(RwLock::new(DemoCsdTransaction::new(
-        transaction_uuid,
+    let tx_view_uuid = uuid::Uuid::now_v7();
+    let tx_model_uuid = uuid::Uuid::now_v7();
+    let tx_model = Arc::new(RwLock::new(DemoCsdTransaction::new(
+        tx_model_uuid,
         identifier.to_owned(),
         name.to_owned(),
     )));
-    let transaction_controller = Arc::new(RwLock::new(DemoCsdTransactionView {
-        model: transaction.clone(),
+    let tx_view = Arc::new(RwLock::new(DemoCsdTransactionView {
+        uuid: tx_view_uuid.clone().into(),
+        model: tx_model.clone(),
         self_reference: Weak::new(),
 
         identifier_buffer: identifier.to_owned(),
@@ -1628,11 +1650,12 @@ fn democsd_transaction(
             },
         min_shape: canvas::NHShape::ELLIPSE_ZERO,
     }));
-    transaction_controller.write().unwrap().self_reference = Arc::downgrade(&transaction_controller);
-    (transaction_uuid, transaction, transaction_controller)
+    tx_view.write().unwrap().self_reference = Arc::downgrade(&tx_view);
+    (tx_model_uuid, tx_model, tx_view_uuid, tx_view)
 }
 
 pub struct DemoCsdTransactionView {
+    uuid: Arc<uuid::Uuid>,
     model: Arc<RwLock<DemoCsdTransaction>>,
     self_reference: Weak<RwLock<Self>>,
 
@@ -1646,7 +1669,10 @@ pub struct DemoCsdTransactionView {
     min_shape: canvas::NHShape,
 }
 
-impl HasModel for DemoCsdTransactionView {
+impl View for DemoCsdTransactionView {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
+    }
     fn model_uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid()
     }
@@ -2021,11 +2047,16 @@ impl
         )>
     ) {
         let model = self.model.read().unwrap();
-        let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
-        let modelish = Arc::new(RwLock::new(DemoCsdTransaction::new(uuid, (*model.identifier).clone(), (*model.name).clone())));
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (uuid::Uuid::now_v7(), uuid::Uuid::now_v7())
+        } else {
+            (*self.uuid, *model.uuid)
+        };
+        let modelish = Arc::new(RwLock::new(DemoCsdTransaction::new(model_uuid, (*model.identifier).clone(), (*model.name).clone())));
         m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
         
         let cloneish = Arc::new(RwLock::new(Self {
+            uuid: view_uuid.into(),
             model: modelish,
             self_reference: Weak::new(),
             identifier_buffer: self.identifier_buffer.clone(),
@@ -2037,8 +2068,8 @@ impl
             min_shape: self.min_shape,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone());
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
     }
 }
 
@@ -2202,17 +2233,19 @@ fn democsd_link(
         Arc<std::sync::RwLock<DemoCsdTransaction>>,
         ArcRwLockControllerT,
     ),
-) -> (uuid::Uuid, Arc<RwLock<DemoCsdLink>>, Arc<RwLock<LinkViewT>>) {
-    let predicate_uuid = uuid::Uuid::now_v7();
-    let predicate = Arc::new(RwLock::new(DemoCsdLink::new(
-        predicate_uuid.clone(),
+) -> (uuid::Uuid, Arc<RwLock<DemoCsdLink>>, uuid::Uuid, Arc<RwLock<LinkViewT>>) {
+    let predicate_view_uuid = uuid::Uuid::now_v7();
+    let predicate_model_uuid = uuid::Uuid::now_v7();
+    let predicate_model = Arc::new(RwLock::new(DemoCsdLink::new(
+        predicate_model_uuid.clone(),
         link_type,
         source.0,
         destination.0,
     )));
-    let predicate_controller = MulticonnectionView::new(
+    let predicate_view = MulticonnectionView::new(
+        predicate_view_uuid.clone().into(),
         DemoCsdLinkAdapter {
-            model: predicate.clone(),
+            model: predicate_model.clone(),
         },
         source.1,
         destination.1,
@@ -2220,5 +2253,5 @@ fn democsd_link(
         vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
         vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
     );
-    (predicate_uuid, predicate, predicate_controller)
+    (predicate_model_uuid, predicate_model, predicate_view_uuid, predicate_view)
 }

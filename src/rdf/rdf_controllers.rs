@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, HasModel, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::common::project_serde::NHSerialize;
 use crate::{CustomTab};
@@ -494,22 +494,24 @@ fn menubar_options_fun(controller: &mut DiagramViewT, ui: &mut egui::Ui, command
 const DIAGRAM_VIEW_TYPE: &str = "rdf-diagram-view";
 
 pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
-    let uuid = uuid::Uuid::now_v7();
+    let view_uuid = uuid::Uuid::now_v7();
+    let model_uuid = uuid::Uuid::now_v7();
     let name = format!("New RDF diagram {}", no);
 
     let diagram = Arc::new(RwLock::new(RdfDiagram::new(
-        uuid.clone(),
+        model_uuid.clone(),
         name.clone(),
         vec![],
     )));
     (
-        uuid,
+        view_uuid.clone(),
         DiagramControllerGen2::new(
+            view_uuid.into(),
             diagram.clone(),
             HashMap::new(),
             RdfQueryable {},
             RdfDiagramBuffer {
-                uuid,
+                uuid: model_uuid,
                 name,
                 comment: "".to_owned(),
             },
@@ -523,20 +525,22 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 }
 
 pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
-    let (node_uuid, node, node_controller) = rdf_node(
+    let (_, node, node_uuid, node_view) = rdf_node(
         "http://www.w3.org/People/EM/contact#me",
         egui::Pos2::new(300.0, 100.0),
     );
 
-    let literal_uuid = uuid::Uuid::now_v7();
-    let literal = Arc::new(RwLock::new(RdfLiteral::new(
-        literal_uuid.clone(),
+    let literal_view_uuid = uuid::Uuid::now_v7();
+    let literal_model_uuid = uuid::Uuid::now_v7();
+    let literal_model = Arc::new(RwLock::new(RdfLiteral::new(
+        literal_model_uuid,
         "Eric Miller".to_owned(),
         "http://www.w3.org/2001/XMLSchema#string".to_owned(),
         "en".to_owned(),
     )));
-    let literal_controller = Arc::new(RwLock::new(RdfLiteralController {
-        model: literal.clone(),
+    let literal_view = Arc::new(RwLock::new(RdfLiteralController {
+        uuid: literal_view_uuid.into(),
+        model: literal_model.clone(),
         self_reference: Weak::new(),
         
         content_buffer: "Eric Miller".to_owned(),
@@ -549,15 +553,15 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         position: egui::Pos2::new(300.0, 200.0),
         bounds_rect: egui::Rect::ZERO,
     }));
-    literal_controller.write().unwrap().self_reference = Arc::downgrade(&literal_controller);
+    literal_view.write().unwrap().self_reference = Arc::downgrade(&literal_view);
 
-    let (predicate_uuid, predicate, predicate_controller) = rdf_predicate(
+    let (_, predicate, predicate_uuid, predicate_view) = rdf_predicate(
         "http://www.w3.org/2000/10/swap/pim/contact#fullName",
-        (node.clone(), node_controller.clone()),
-        (literal.clone(), literal_controller.clone()),
+        (node.clone(), node_view.clone()),
+        (literal_model.clone(), literal_view.clone()),
     );
 
-    let (graph_uuid, graph, graph_controller) = rdf_graph(
+    let (_, graph, graph_uuid, graph_view) = rdf_graph(
         "http://graph",
         egui::Rect::from_min_max(egui::Pos2::new(400.0, 50.0), egui::Pos2::new(500.0, 150.0)),
     );
@@ -568,54 +572,56 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 
     for xx in 0..=10 {
         for yy in 300..=400 {
-            let (node_st_uuid, node_st, node_st_controller) = rdf_node(
+            let (_, node_st, node_st_uuid, node_st_view) = rdf_node(
                 "http://www.w3.org/People/EM/contact#me",
                 egui::Pos2::new(xx as f32, yy as f32),
             );
             models_st.push(node_st);
-            controllers_st.insert(node_st_uuid, node_st_controller);
+            controllers_st.insert(node_st_uuid, node_st_view);
         }
     }
 
     for xx in 3000..=3100 {
         for yy in 3000..=3100 {
-            let (node_st_uuid, node_st, node_st_controller) = rdf_node(
+            let (_, node_st, node_st_uuid, node_st_view) = rdf_node(
                 "http://www.w3.org/People/EM/contact#me",
                 egui::Pos2::new(xx as f32, yy as f32),
             );
             models_st.push(node_st);
-            controllers_st.insert(node_st_uuid, node_st_controller);
+            controllers_st.insert(node_st_uuid, node_st_view);
         }
     }
 
-    let (graph_st_uuid, graph_st, graph_st_controller) = rdf_graph(
+    let (_, graph_st, graph_st_uuid, graph_st_view) = rdf_graph(
         "http://stresstestgraph",
         egui::Rect::from_min_max(egui::Pos2::new(0.0, 300.0), egui::Pos2::new(3000.0, 3300.0)),
     );
     //</stress test>
 
     let mut owned_controllers = HashMap::<_, ArcRwLockControllerT>::new();
-    owned_controllers.insert(node_uuid, node_controller);
-    owned_controllers.insert(literal_uuid, literal_controller);
-    owned_controllers.insert(predicate_uuid, predicate_controller);
-    owned_controllers.insert(graph_uuid, graph_controller);
-    owned_controllers.insert(graph_st_uuid, graph_st_controller);
+    owned_controllers.insert(node_uuid, node_view);
+    owned_controllers.insert(literal_view_uuid, literal_view);
+    owned_controllers.insert(predicate_uuid, predicate_view);
+    owned_controllers.insert(graph_uuid, graph_view);
+    owned_controllers.insert(graph_st_uuid, graph_st_view);
 
     let name = format!("Demo RDF diagram {}", no);
-    let diagram_uuid = uuid::Uuid::now_v7();
+    let view_uuid = uuid::Uuid::now_v7();
+    let model_uuid = uuid::Uuid::now_v7();
     let diagram = Arc::new(RwLock::new(RdfDiagram::new(
-        diagram_uuid.clone(),
+        model_uuid.clone(),
         name.clone(),
-        vec![node, literal, predicate, graph, graph_st],
+        vec![node, literal_model, predicate, graph, graph_st],
     )));
     (
-        diagram_uuid,
+        view_uuid,
         DiagramControllerGen2::new(
+            view_uuid.into(),
             diagram.clone(),
             owned_controllers,
             RdfQueryable {},
             RdfDiagramBuffer {
-                uuid: diagram_uuid,
+                uuid: model_uuid,
                 name,
                 comment: "".to_owned(),
             },
@@ -772,14 +778,15 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
         let uuid = uuid::Uuid::now_v7();
         match (self.current_stage, &mut self.result) {
             (RdfToolStage::Literal, _) => {
-                let literal = Arc::new(RwLock::new(RdfLiteral::new(
-                    uuid,
+                let literal_model = Arc::new(RwLock::new(RdfLiteral::new(
+                    uuid::Uuid::now_v7(),
                     "Eric Miller".to_owned(),
                     "http://www.w3.org/2001/XMLSchema#string".to_owned(),
                     "en".to_owned(),
                 )));
-                let c = Arc::new(RwLock::new(RdfLiteralController {
-                        model: literal.clone(),
+                let literal_view = Arc::new(RwLock::new(RdfLiteralController {
+                        uuid: uuid.into(),
+                        model: literal_model.clone(),
                         self_reference: Weak::new(),
                         
                         content_buffer: "Eric Miller".to_owned(),
@@ -792,15 +799,15 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
                         position: pos,
                         bounds_rect: egui::Rect::ZERO,
                     }));
-                c.write().unwrap().self_reference = Arc::downgrade(&c);
+                literal_view.write().unwrap().self_reference = Arc::downgrade(&literal_view);
                 
-                self.result = PartialRdfElement::Some((uuid, c));
+                self.result = PartialRdfElement::Some((uuid, literal_view));
                 self.event_lock = true;
             }
             (RdfToolStage::Node, _) => {
-                let (node_uuid, _node, node_controller) =
+                let (_, _node, node_uuid, node_view) =
                     rdf_node("http://www.w3.org/People/EM/contact#me", pos);
-                self.result = PartialRdfElement::Some((node_uuid, node_controller));
+                self.result = PartialRdfElement::Some((node_uuid, node_view));
                 self.event_lock = true;
             }
             (RdfToolStage::GraphStart, _) => {
@@ -876,13 +883,13 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
                         into.controller_for(&source.read().unwrap().uuid()),
                         into.controller_for(&dest.read().unwrap().uuid()),
                     ) {
-                        let (uuid, _, predicate_controller) = rdf_predicate(
+                        let (_model_uuid, _predicate_model, view_uuid, predicate_view) = rdf_predicate(
                             "http://www.w3.org/2000/10/swap/pim/contact#fullName",
                             (source.clone(), source_controller),
                             (dest.clone(), dest_controller),
                         );
 
-                        Some((uuid, predicate_controller))
+                        Some((view_uuid, predicate_view))
                     } else {
                         None
                     };
@@ -893,11 +900,11 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
             PartialRdfElement::Graph { a, b: Some(b) } => {
                 self.current_stage = RdfToolStage::GraphStart;
 
-                let (uuid, _, graph_controller) =
+                let (_model_uuid, _graph_model, view_uuid, graph_view) =
                     rdf_graph("http://a-graph", egui::Rect::from_two_pos(*a, *b));
 
                 self.result = PartialRdfElement::None;
-                Some((uuid, graph_controller))
+                Some((view_uuid, graph_view))
             }
             _ => None,
         }
@@ -1055,22 +1062,24 @@ impl PackageAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGr
 fn rdf_graph(
     iri: &str,
     bounds_rect: egui::Rect,
-) -> (uuid::Uuid, Arc<RwLock<RdfGraph>>, Arc<RwLock<PackageViewT>>) {
-    let uuid = uuid::Uuid::now_v7();
-    let graph = Arc::new(RwLock::new(RdfGraph::new(
-        uuid.clone(),
+) -> (uuid::Uuid, Arc<RwLock<RdfGraph>>, uuid::Uuid, Arc<RwLock<PackageViewT>>) {
+    let view_uuid = uuid::Uuid::now_v7();
+    let model_uuid = uuid::Uuid::now_v7();
+    let graph_model = Arc::new(RwLock::new(RdfGraph::new(
+        model_uuid.clone(),
         iri.to_owned(),
         vec![],
     )));
-    let graph_controller = PackageView::new(
+    let graph_view = PackageView::new(
+        view_uuid.clone().into(),
         RdfGraphAdapter {
-            model: graph.clone(),
+            model: graph_model.clone(),
         },
         HashMap::new(),
         bounds_rect,
     );
 
-    (uuid, graph, graph_controller)
+    (model_uuid, graph_model, view_uuid, graph_view)
 }
 
 fn rdf_node(
@@ -1079,12 +1088,15 @@ fn rdf_node(
 ) -> (
     uuid::Uuid,
     Arc<RwLock<RdfNode>>,
+    uuid::Uuid,
     Arc<RwLock<RdfNodeController>>,
 ) {
-    let node_uuid = uuid::Uuid::now_v7();
-    let node = Arc::new(RwLock::new(RdfNode::new(node_uuid.clone(), iri.to_owned())));
-    let node_controller = Arc::new(RwLock::new(RdfNodeController {
-        model: node.clone(),
+    let node_view_uuid = uuid::Uuid::now_v7();
+    let node_model_uuid = uuid::Uuid::now_v7();
+    let node_model = Arc::new(RwLock::new(RdfNode::new(node_model_uuid.clone(), iri.to_owned())));
+    let node_view = Arc::new(RwLock::new(RdfNodeController {
+        uuid: node_view_uuid.into(),
+        model: node_model.clone(),
         self_reference: Weak::new(),
         iri_buffer: iri.to_owned(),
         comment_buffer: "".to_owned(),
@@ -1094,11 +1106,12 @@ fn rdf_node(
         position: position,
         bounds_radius: egui::Vec2::ZERO,
     }));
-    node_controller.write().unwrap().self_reference = Arc::downgrade(&node_controller);
-    (node_uuid, node, node_controller)
+    node_view.write().unwrap().self_reference = Arc::downgrade(&node_view);
+    (node_model_uuid, node_model, node_view_uuid, node_view)
 }
 
 pub struct RdfNodeController {
+    uuid: Arc<uuid::Uuid>,
     pub model: Arc<RwLock<RdfNode>>,
     self_reference: Weak<RwLock<Self>>,
 
@@ -1111,7 +1124,10 @@ pub struct RdfNodeController {
     pub bounds_radius: egui::Vec2,
 }
 
-impl HasModel for RdfNodeController {
+impl View for RdfNodeController {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
+    }
     fn model_uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
@@ -1407,11 +1423,16 @@ impl
         )>
     ) {
         let model = self.model.read().unwrap();
-        let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
-        let modelish = Arc::new(RwLock::new(RdfNode::new(uuid, (*model.iri).clone())));
+        let (view_uuid, model_uuid) = if uuid_present(&*model.uuid) {
+            (uuid::Uuid::now_v7(), uuid::Uuid::now_v7())
+        } else {
+            (*self.uuid, *model.uuid)
+        };
+        let modelish = Arc::new(RwLock::new(RdfNode::new(model_uuid, (*model.iri).clone())));
         m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
         
         let cloneish = Arc::new(RwLock::new(Self {
+            uuid: view_uuid.into(),
             model: modelish,
             self_reference: Weak::new(),
             iri_buffer: self.iri_buffer.clone(),
@@ -1422,12 +1443,13 @@ impl
             bounds_radius: self.bounds_radius,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone());
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
     }
 }
 
 pub struct RdfLiteralController {
+    uuid: Arc<uuid::Uuid>,
     pub model: Arc<RwLock<RdfLiteral>>,
     self_reference: Weak<RwLock<Self>>,
 
@@ -1442,7 +1464,10 @@ pub struct RdfLiteralController {
     pub bounds_rect: egui::Rect,
 }
 
-impl HasModel for RdfLiteralController {
+impl View for RdfLiteralController {
+    fn uuid(&self) -> Arc<uuid::Uuid> {
+        self.uuid.clone()
+    }
     fn model_uuid(&self) -> Arc<uuid::Uuid> {
         self.model.read().unwrap().uuid.clone()
     }
@@ -1769,11 +1794,16 @@ impl
         )>
     ) {
         let model = self.model.read().unwrap();
-        let uuid = if uuid_present(&*model.uuid) { uuid::Uuid::now_v7() } else { *model.uuid };
-        let modelish = Arc::new(RwLock::new(RdfLiteral::new(uuid, (*model.content).clone(), (*model.datatype).clone(), (*model.langtag).clone())));
+        let (view_uuid, model_uuid) = if uuid_present(&*model.uuid) {
+            (uuid::Uuid::now_v7(), uuid::Uuid::now_v7())
+        } else {
+            (*self.uuid, *model.uuid)
+        };
+        let modelish = Arc::new(RwLock::new(RdfLiteral::new(model_uuid, (*model.content).clone(), (*model.datatype).clone(), (*model.langtag).clone())));
         m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
         
         let cloneish = Arc::new(RwLock::new(Self {
+            uuid: view_uuid.into(),
             model: modelish,
             self_reference: Weak::new(),
             content_buffer: self.content_buffer.clone(),
@@ -1786,8 +1816,8 @@ impl
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone());
+        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
     }
 }
 
@@ -1929,18 +1959,21 @@ fn rdf_predicate(
 ) -> (
     uuid::Uuid,
     Arc<RwLock<RdfPredicate>>,
+    uuid::Uuid,
     Arc<RwLock<LinkViewT>>,
 ) {
-    let predicate_uuid = uuid::Uuid::now_v7();
-    let predicate = Arc::new(RwLock::new(RdfPredicate::new(
-        predicate_uuid.clone(),
+    let predicate_view_uuid = uuid::Uuid::now_v7();
+    let predicate_model_uuid = uuid::Uuid::now_v7();
+    let predicate_model = Arc::new(RwLock::new(RdfPredicate::new(
+        predicate_model_uuid.clone(),
         iri.to_owned(),
         source.0,
         destination.0,
     )));
-    let predicate_controller = MulticonnectionView::new(
+    let predicate_view = MulticonnectionView::new(
+        predicate_view_uuid.clone().into(),
         RdfPredicateAdapter {
-            model: predicate.clone(),
+            model: predicate_model.clone(),
         },
         source.1,
         destination.1,
@@ -1948,7 +1981,7 @@ fn rdf_predicate(
         vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
         vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
     );
-    (predicate_uuid, predicate, predicate_controller)
+    (predicate_model_uuid, predicate_model, predicate_view_uuid, predicate_view)
 }
 
 impl RdfElementController for LinkViewT {
