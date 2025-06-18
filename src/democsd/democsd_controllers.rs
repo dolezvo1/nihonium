@@ -70,10 +70,10 @@ impl Debug for DemoCsdPropChange {
     }
 }
 
-impl TryInto<FlipMulticonnection> for &DemoCsdPropChange {
+impl TryFrom<&DemoCsdPropChange> for FlipMulticonnection {
     type Error = ();
 
-    fn try_into(self) -> Result<FlipMulticonnection, ()> {
+    fn try_from(value: &DemoCsdPropChange) -> Result<Self, Self::Error> {
         Err(())
     }
 }
@@ -92,15 +92,15 @@ impl Debug for DemoCsdElementOrVertex {
 
 impl From<VertexInformation> for DemoCsdElementOrVertex {
     fn from(v: VertexInformation) -> Self {
-        DemoCsdElementOrVertex::Vertex(v)
+        Self::Vertex(v)
     }
 }
 
-impl TryInto<VertexInformation> for DemoCsdElementOrVertex {
+impl TryFrom<DemoCsdElementOrVertex> for VertexInformation {
     type Error = ();
 
-    fn try_into(self) -> Result<VertexInformation, ()> {
-        match self {
+    fn try_from(value: DemoCsdElementOrVertex) -> Result<Self, Self::Error> {
+        match value {
             DemoCsdElementOrVertex::Vertex(v) => Ok(v),
             _ => Err(()),
         }
@@ -108,16 +108,16 @@ impl TryInto<VertexInformation> for DemoCsdElementOrVertex {
 }
 
 impl From<(uuid::Uuid, ArcRwLockControllerT)> for DemoCsdElementOrVertex {
-    fn from(v: (uuid::Uuid, ArcRwLockControllerT)) -> Self {
-        DemoCsdElementOrVertex::Element(v)
+    fn from(value: (uuid::Uuid, ArcRwLockControllerT)) -> Self {
+        Self::Element(value)
     }
 }
 
-impl TryInto<(uuid::Uuid, ArcRwLockControllerT)> for DemoCsdElementOrVertex {
+impl TryFrom<DemoCsdElementOrVertex> for (uuid::Uuid, ArcRwLockControllerT) {
     type Error = ();
 
-    fn try_into(self) -> Result<(uuid::Uuid, ArcRwLockControllerT), ()> {
-        match self {
+    fn try_from(value: DemoCsdElementOrVertex) -> Result<Self, Self::Error> {
+        match value {
             DemoCsdElementOrVertex::Element(v) => Ok(v),
             _ => Err(()),
         }

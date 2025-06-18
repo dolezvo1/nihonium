@@ -88,11 +88,11 @@ impl Debug for RdfPropChange {
     }
 }
 
-impl TryInto<FlipMulticonnection> for &RdfPropChange {
+impl TryFrom<&RdfPropChange> for FlipMulticonnection {
     type Error = ();
 
-    fn try_into(self) -> Result<FlipMulticonnection, ()> {
-        match self {
+    fn try_from(value: &RdfPropChange) -> Result<Self, Self::Error> {
+        match value {
             RdfPropChange::FlipMulticonnection => Ok(FlipMulticonnection {}),
             _ => Err(()),
         }
@@ -117,12 +117,12 @@ impl From<VertexInformation> for RdfElementOrVertex {
     }
 }
 
-impl TryInto<VertexInformation> for RdfElementOrVertex {
+impl TryFrom<RdfElementOrVertex> for VertexInformation {
     type Error = ();
 
-    fn try_into(self) -> Result<VertexInformation, ()> {
-        match self {
-            Self::Vertex(v) => Ok(v),
+    fn try_from(value: RdfElementOrVertex) -> Result<Self, Self::Error> {
+        match value {
+            RdfElementOrVertex::Vertex(v) => Ok(v),
             _ => Err(()),
         }
     }
@@ -134,12 +134,12 @@ impl From<(uuid::Uuid, ArcRwLockControllerT)> for RdfElementOrVertex {
     }
 }
 
-impl TryInto<(uuid::Uuid, ArcRwLockControllerT)> for RdfElementOrVertex {
+impl TryFrom<RdfElementOrVertex> for (uuid::Uuid, ArcRwLockControllerT) {
     type Error = ();
 
-    fn try_into(self) -> Result<(uuid::Uuid, ArcRwLockControllerT), ()> {
-        match self {
-            Self::Element(v) => Ok(v),
+    fn try_from(value: RdfElementOrVertex) -> Result<Self, Self::Error> {
+        match value {
+            RdfElementOrVertex::Element(v) => Ok(v),
             _ => Err(()),
         }
     }

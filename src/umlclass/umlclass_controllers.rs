@@ -75,11 +75,11 @@ impl Debug for UmlClassPropChange {
     }
 }
 
-impl TryInto<FlipMulticonnection> for &UmlClassPropChange {
+impl TryFrom<&UmlClassPropChange> for FlipMulticonnection {
     type Error = ();
 
-    fn try_into(self) -> Result<FlipMulticonnection, ()> {
-        match self {
+    fn try_from(value: &UmlClassPropChange) -> Result<Self, Self::Error> {
+        match value {
             UmlClassPropChange::FlipMulticonnection => Ok(FlipMulticonnection {}),
             _ => Err(()),
         }
@@ -88,7 +88,7 @@ impl TryInto<FlipMulticonnection> for &UmlClassPropChange {
 
 #[derive(Clone)]
 pub enum UmlClassElementOrVertex {
-    Element((uuid::Uuid, Arc<RwLock<ControllerT>>)),
+    Element((uuid::Uuid, ArcRwLockControllerT)),
     Vertex(VertexInformation),
 }
 
@@ -100,32 +100,32 @@ impl Debug for UmlClassElementOrVertex {
 
 impl From<VertexInformation> for UmlClassElementOrVertex {
     fn from(v: VertexInformation) -> Self {
-        UmlClassElementOrVertex::Vertex(v)
+        Self::Vertex(v)
     }
 }
 
-impl TryInto<VertexInformation> for UmlClassElementOrVertex {
+impl TryFrom<UmlClassElementOrVertex> for VertexInformation {
     type Error = ();
 
-    fn try_into(self) -> Result<VertexInformation, ()> {
-        match self {
+    fn try_from(value: UmlClassElementOrVertex) -> Result<Self, Self::Error> {
+        match value {
             UmlClassElementOrVertex::Vertex(v) => Ok(v),
             _ => Err(()),
         }
     }
 }
 
-impl From<(uuid::Uuid, Arc<RwLock<ControllerT>>)> for UmlClassElementOrVertex {
-    fn from(v: (uuid::Uuid, Arc<RwLock<ControllerT>>)) -> Self {
-        UmlClassElementOrVertex::Element(v)
+impl From<(uuid::Uuid, ArcRwLockControllerT)> for UmlClassElementOrVertex {
+    fn from(v: (uuid::Uuid, ArcRwLockControllerT)) -> Self {
+        Self::Element(v)
     }
 }
 
-impl TryInto<(uuid::Uuid, Arc<RwLock<ControllerT>>)> for UmlClassElementOrVertex {
+impl TryFrom<UmlClassElementOrVertex> for (uuid::Uuid, ArcRwLockControllerT) {
     type Error = ();
 
-    fn try_into(self) -> Result<(uuid::Uuid, Arc<RwLock<ControllerT>>), ()> {
-        match self {
+    fn try_from(value: UmlClassElementOrVertex) -> Result<Self, Self::Error> {
+        match value {
             UmlClassElementOrVertex::Element(v) => Ok(v),
             _ => Err(()),
         }
