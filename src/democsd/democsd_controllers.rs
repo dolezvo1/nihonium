@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
 };
 use crate::common::project_serde::NHSerialize;
 use crate::democsd::democsd_models::{
@@ -982,17 +982,6 @@ impl View for DemoCsdTransactorView {
     }
 }
 
-impl HierarchyCollectible for DemoCsdTransactorView {
-    fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        let s = self.self_reference.upgrade().unwrap();
-        if let Some(tx) = &self.transaction_view {
-            HierarchyNode::CompositeElement(s, vec![tx.read().unwrap().collect_hierarchy(&vec![])])
-        } else {
-            HierarchyNode::Element(s)
-        }
-    }
-}
-
 impl NHSerialize for DemoCsdTransactorView {
     fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
         // Serialize itself
@@ -1678,12 +1667,6 @@ impl View for DemoCsdTransactionView {
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
-    }
-}
-
-impl HierarchyCollectible for DemoCsdTransactionView {
-    fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        HierarchyNode::Element(self.self_reference.upgrade().unwrap())
     }
 }
 

@@ -220,24 +220,16 @@ pub enum DiagramCommand {
     PasteClipboardElements,
 }
 
-pub trait HierarchyCollectible: View {
-    fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode;
-}
-
 pub enum HierarchyNode {
     Folder(uuid::Uuid, Arc<String>, Vec<HierarchyNode>),
-    Diagram(Arc<RwLock<dyn HierarchyCollectible>>, Vec<HierarchyNode>),
-    CompositeElement(Arc<RwLock<dyn HierarchyCollectible>>, Vec<HierarchyNode>),
-    Element(Arc<RwLock<dyn HierarchyCollectible>>),
+    Diagram(Arc<RwLock<dyn View>>),
 }
 
 impl HierarchyNode {
     pub fn uuid(&self) -> uuid::Uuid {
         match self {
             HierarchyNode::Folder(uuid, ..) => *uuid,
-            HierarchyNode::Diagram(rw_lock, _)
-            | HierarchyNode::CompositeElement(rw_lock, _)
-            | HierarchyNode::Element(rw_lock) => *rw_lock.read().unwrap().model_uuid(),
+            HierarchyNode::Diagram(rw_lock) => *rw_lock.read().unwrap().uuid(),
         }
     }
     pub fn model_uuid(&self) -> Option<uuid::Uuid> {
@@ -256,22 +248,14 @@ impl HierarchyNode {
                     children.iter().map(|e| e.collect_hierarchy()).collect()
                 )
             },
-            HierarchyNode::Diagram(rw_lock, children)
-            | HierarchyNode::CompositeElement(rw_lock, children) => {
-                rw_lock.read().unwrap().collect_hierarchy(&children)
-            },
-            HierarchyNode::Element(rw_lock) => {
-                rw_lock.read().unwrap().collect_hierarchy(&vec![])
-            },
+            HierarchyNode::Diagram(rw_lock) => HierarchyNode::Diagram(rw_lock.clone()),
         }
     }
 
     pub fn get(&self, id: &uuid::Uuid) -> Option<(&HierarchyNode, &HierarchyNode)> {
         let self_id = self.uuid();
         match self {
-            HierarchyNode::Folder(.., children)
-            | HierarchyNode::Diagram(.., children)
-            | HierarchyNode::CompositeElement(.., children) => {
+            HierarchyNode::Folder(.., children) => {
                 for c in children {
                     if c.uuid() == *id {
                         return Some((c, self));
@@ -281,15 +265,13 @@ impl HierarchyNode {
                     }
                 }
             }
-            HierarchyNode::Element(_) => {}
+            HierarchyNode::Diagram(..) => {}
         }
         None
     }
     pub fn remove(&mut self, id: &uuid::Uuid) -> Option<HierarchyNode> {
         match self {
-            HierarchyNode::Folder(.., children)
-            | HierarchyNode::Diagram(.., children)
-            | HierarchyNode::CompositeElement(.., children) => {
+            HierarchyNode::Folder(.., children) => {
                 if let Some(index) = children.iter().position(|e| e.uuid() == *id) {
                     Some(children.remove(index))
                 } else {
@@ -302,7 +284,7 @@ impl HierarchyNode {
                     None
                 }
             }
-            HierarchyNode::Element(_) => None,
+            HierarchyNode::Diagram(..) => None,
         }
     }
     pub fn insert(
@@ -313,9 +295,7 @@ impl HierarchyNode {
     ) -> Result<(), HierarchyNode> {
         let self_uuid = self.uuid();
         match self {
-            HierarchyNode::Folder(.., children)
-            | HierarchyNode::Diagram(.., children)
-            | HierarchyNode::CompositeElement(.., children) => {
+            HierarchyNode::Folder(.., children) => {
                 if self_uuid == *id {
                     match position {
                         DirPosition::First => children.insert(0, value),
@@ -339,18 +319,16 @@ impl HierarchyNode {
                     value
                 }
             }
-            HierarchyNode::Element(_) => Err(value),
+            HierarchyNode::Diagram(..) => Err(value),
         }
     }
     pub fn for_each(&self, mut f: impl FnMut(&Self)) {
         f(self);
         match self {
-            HierarchyNode::Folder(.., children)
-            | HierarchyNode::Diagram(.., children)
-            | HierarchyNode::CompositeElement(.., children) => {
+            HierarchyNode::Folder(.., children) => {
                 children.iter().for_each(f);
             },
-            HierarchyNode::Element(..) => {},
+            HierarchyNode::Diagram(..) => {},
         }
     }
 }
@@ -367,7 +345,7 @@ pub trait View {
     fn model_name(&self) -> Arc<String>;
 }
 
-pub trait DiagramController: Any + View + HierarchyCollectible + NHSerialize {
+pub trait DiagramController: Any + View + NHSerialize {
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
     
     fn new_ui_canvas(
@@ -755,7 +733,7 @@ pub trait ElementControllerGen2<
     ToolT,
     AddCommandElementT: Clone + Debug,
     PropChangeT: Clone + Debug,
->: ElementController<CommonElementT> + HierarchyCollectible + NHSerialize + ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + Send + Sync where
+>: ElementController<CommonElementT> + NHSerialize + ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + Send + Sync where
     ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
 {
     fn show_properties(
@@ -1410,49 +1388,6 @@ where
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name()
-    }
-}
-
-impl<
-        DiagramModelT: ContainerModel<ElementModelT>,
-        ElementModelT: ?Sized + 'static,
-        QueryableT: 'static,
-        BufferT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > HierarchyCollectible
-    for DiagramControllerGen2<
-        DiagramModelT,
-        ElementModelT,
-        QueryableT,
-        BufferT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    ToolT: for<'a> Tool<
-        ElementModelT,
-        QueryableT,
-        AddCommandElementT,
-        PropChangeT,
-        KindedElement<'a>: From<&'a Self>,
-    >,
-{
-    fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        let mut new_children = Vec::new();
-        for c in children_order {
-            new_children.push(c.collect_hierarchy());
-        }
-        for c in self.event_order.iter()
-            .filter(|e1| children_order.iter().filter_map(|e2| e2.model_uuid()).find(|e2| *e1 == e2).is_none())
-            .filter_map(|e| self.owned_controllers.get(e))
-        {
-            new_children.push(c.read().unwrap().collect_hierarchy(&vec![]));
-        }
-
-        HierarchyNode::Diagram(self.self_reference.upgrade().unwrap(), new_children)
     }
 }
 
@@ -2162,74 +2097,6 @@ where
     }
     fn model_name(&self) -> Arc<String> {
         self.adapter.model_name()
-    }
-}
-
-impl<
-        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-        ElementModelT: ?Sized + 'static,
-        QueryableT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > HierarchyCollectible
-    for PackageView<
-        AdapterT,
-        ElementModelT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    ToolT: for<'a> Tool<
-        ElementModelT,
-        QueryableT,
-        AddCommandElementT,
-        PropChangeT,
-        KindedElement<'a>: From<&'a Self>,
-    >,
-    AddCommandElementT: From<(
-            uuid::Uuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        ElementModelT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            uuid::Uuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        ElementModelT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )>,
-{
-    fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        let mut new_children = Vec::new();
-        for c in children_order {
-            new_children.push(c.collect_hierarchy());
-        }
-        for c in self.event_order.iter()
-            .filter(|e1| children_order.iter().filter_map(|e2| e2.model_uuid()).find(|e2| *e1 == e2).is_none())
-            .filter_map(|e| self.owned_controllers.get(e))
-        {
-            new_children.push(c.read().unwrap().collect_hierarchy(&vec![]));
-        }
-
-        HierarchyNode::CompositeElement(self.self_reference.upgrade().unwrap(), new_children)
     }
 }
 
@@ -3239,31 +3106,6 @@ where
     }
     fn model_name(&self) -> Arc<String> {
         self.adapter.model_name()
-    }
-}
-
-impl<
-        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT> + 'static,
-        ElementModelT: ?Sized + 'static,
-        QueryableT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > HierarchyCollectible
-    for MulticonnectionView<
-        AdapterT,
-        ElementModelT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
-    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
-{
-    fn collect_hierarchy(&self, children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        HierarchyNode::Element(self.self_reference.upgrade().unwrap())
     }
 }
 

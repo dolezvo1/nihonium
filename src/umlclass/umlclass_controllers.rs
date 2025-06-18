@@ -4,7 +4,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::common::project_serde::NHSerialize;
 use crate::CustomTab;
@@ -1022,12 +1022,6 @@ impl View for UmlClassController {
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
-    }
-}
-
-impl HierarchyCollectible for UmlClassController {
-    fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        HierarchyNode::Element(self.self_reference.upgrade().unwrap())
     }
 }
 

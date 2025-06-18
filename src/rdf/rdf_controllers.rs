@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, HierarchyCollectible, HierarchyNode, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
 use crate::common::project_serde::NHSerialize;
 use crate::{CustomTab};
@@ -1136,12 +1136,6 @@ impl View for RdfNodeController {
     }
 }
 
-impl HierarchyCollectible for RdfNodeController {
-    fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        HierarchyNode::Element(self.self_reference.upgrade().unwrap())
-    }
-}
-
 impl NHSerialize for RdfNodeController {
     fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
         // Serialize itself
@@ -1473,12 +1467,6 @@ impl View for RdfLiteralController {
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().content.clone()
-    }
-}
-
-impl HierarchyCollectible for RdfLiteralController {
-    fn collect_hierarchy(&self, _children_order: &Vec<HierarchyNode>) -> HierarchyNode {
-        HierarchyNode::Element(self.self_reference.upgrade().unwrap())
     }
 }
 

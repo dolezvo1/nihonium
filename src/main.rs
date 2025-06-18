@@ -209,10 +209,8 @@ impl NHContext {
             match e {
                 HierarchyNode::Folder(uuid, _, children)
                     => NHProjectHierarchyNodeDTO::Folder(*uuid, children.iter().map(h).collect()),
-                HierarchyNode::Diagram(rw_lock, children)
-                | HierarchyNode::CompositeElement(rw_lock, children)
-                    => NHProjectHierarchyNodeDTO::Node(*rw_lock.read().unwrap().model_uuid(), children.iter().map(h).collect()),
-                HierarchyNode::Element(rw_lock) => NHProjectHierarchyNodeDTO::Leaf(*rw_lock.read().unwrap().model_uuid()),
+                HierarchyNode::Diagram(rw_lock)
+                    => NHProjectHierarchyNodeDTO::Leaf(*rw_lock.read().unwrap().uuid()),
             }
         }
 
@@ -285,7 +283,6 @@ impl NHContext {
                     builder.node(
                         NodeBuilder::dir(*uuid)
                             .label(format!("{} ({})", name, uuid))
-                            .activatable(true)
                     );
 
                     for c in children {
@@ -294,25 +291,9 @@ impl NHContext {
 
                     builder.close_dir();
                 },
-                HierarchyNode::Diagram(rw_lock, children)
-                | HierarchyNode::CompositeElement(rw_lock, children) => {
+                HierarchyNode::Diagram(rw_lock) => {
                     let hm = rw_lock.read().unwrap();
-
-                    builder.node(
-                        NodeBuilder::dir(*hm.model_uuid())
-                            .label(format!("{} ({})", hm.model_name(), hm.model_uuid()))
-                            .activatable(true)
-                    );
-
-                    for c in children {
-                        hierarchy(builder, c);
-                    }
-
-                    builder.close_dir();
-                },
-                HierarchyNode::Element(rw_lock) => {
-                    let hm = rw_lock.read().unwrap();
-                    builder.leaf(*hm.model_uuid(), format!("{} ({})", hm.model_name(), hm.model_uuid()));
+                    builder.leaf(*hm.model_uuid(), format!("{} ({})", hm.model_name(), hm.uuid()));
                 },
             }
         }
@@ -905,7 +886,7 @@ impl Default for NHApp {
             (1, crate::umlclass::umlclass_controllers::demo(2)),
             (2, crate::democsd::democsd_controllers::demo(3)),
         ] {
-            hierarchy.push(controller.read().unwrap().collect_hierarchy(&vec![]));
+            hierarchy.push(HierarchyNode::Diagram(controller.clone()));
             diagram_controllers.insert(uuid, (diagram_type, controller));
             tabs.push(NHTab::Diagram { uuid });
         }
@@ -1670,7 +1651,7 @@ impl eframe::App for NHApp {
                 ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
                 ProjectCommand::AddNewDiagram(uuid, diagram_type, diagram_controller) => {
                     if let HierarchyNode::Folder(.., children) = &mut self.context.hierarchy {
-                        children.push(diagram_controller.read().unwrap().collect_hierarchy(&vec![]));
+                        children.push(HierarchyNode::Diagram(diagram_controller.clone()));
                     }
                     self.context
                         .diagram_controllers
