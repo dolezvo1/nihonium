@@ -6,7 +6,7 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
-use crate::common::project_serde::{NHSerializer, NHSerialize};
+use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::CustomTab;
 use eframe::egui;
@@ -1022,13 +1022,14 @@ impl View for UmlClassController {
 }
 
 impl NHSerialize for UmlClassController {
-    fn serialize_into(&self, into: &mut NHSerializer) {
-        let self_id = *self.uuid;
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
         element.insert("type".to_owned(), toml::Value::String("umlclass-class-view".to_owned()));
         element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
-        into.insert_view(self_id, element);
+        into.insert_view(*self.uuid, element);
+
+        Ok(())
     }
 }
 

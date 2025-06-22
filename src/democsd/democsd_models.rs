@@ -1,12 +1,15 @@
+use serde::{Deserialize, Serialize};
+
 use crate::common::canvas;
 use crate::common::controller::{ContainerModel, Model};
+use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashSet},
     sync::{Arc, RwLock},
 };
 
-pub trait DemoCsdElement: Model + Send + Sync {}
+pub trait DemoCsdElement: Model + NHSerialize + Send + Sync {}
 
 // ---
 
@@ -53,6 +56,30 @@ impl ContainerModel<dyn DemoCsdElement> for DemoCsdDiagram {
     }
 }
 
+impl NHSerialize for DemoCsdDiagram {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("type".to_owned(), toml::Value::String("democsd-diagram-model".to_owned()));
+        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
+
+        for e in &self.contained_elements {
+            e.read().unwrap().serialize_into(into)?;
+        }
+        element.insert("contained_elements".to_owned(),
+            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.read().unwrap().uuid().to_string())).collect())
+        );
+
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
+    }
+}
+
 // ---
 
 pub struct DemoCsdPackage {
@@ -95,6 +122,30 @@ impl ContainerModel<dyn DemoCsdElement> for DemoCsdPackage {
     }
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
         // TODO
+    }
+}
+
+impl NHSerialize for DemoCsdPackage {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("democsd-package-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
+
+        for e in &self.contained_elements {
+            e.read().unwrap().serialize_into(into)?;
+        }
+        element.insert("contained_elements".to_owned(),
+            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.read().unwrap().uuid().to_string())).collect())
+        );
+
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
     }
 }
 
@@ -146,6 +197,34 @@ impl Model for DemoCsdTransactor {
 
 impl DemoCsdElement for DemoCsdTransactor {}
 
+impl NHSerialize for DemoCsdTransactor {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("democsd-transactor-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("identifier".to_owned(), toml::Value::String((*self.identifier).clone()));
+        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
+        element.insert("internal".to_owned(), toml::Value::Boolean(self.internal));
+
+        for e in &self.transaction {
+            e.read().unwrap().serialize_into(into)?;
+        }
+        element.insert("transaction".to_owned(),
+            toml::Value::Array(self.transaction.iter().map(|e| toml::Value::String(e.read().unwrap().uuid().to_string())).collect())
+        );
+
+        element.insert("transaction_selfactivating".to_owned(), toml::Value::Boolean(self.transaction_selfactivating));
+        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
+    }
+}
+
 // ---
 
 pub struct DemoCsdTransaction {
@@ -181,9 +260,27 @@ impl Model for DemoCsdTransaction {
 
 impl DemoCsdElement for DemoCsdTransaction {}
 
+impl NHSerialize for DemoCsdTransaction {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("democsd-transaction-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("identifier".to_owned(), toml::Value::String((*self.identifier).clone()));
+        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
+        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
+    }
+}
+
 // ---
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum DemoCsdLinkType {
     Initiation,
     Interstriction,
@@ -247,3 +344,23 @@ impl Model for DemoCsdLink {
 }
 
 impl DemoCsdElement for DemoCsdLink {}
+
+impl NHSerialize for DemoCsdLink {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("democsd-transaction-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
+        element.insert("link_type".to_owned(), toml::Value::try_from(self.link_type)?);
+        element.insert("source".to_owned(), toml::Value::String(self.source.read().unwrap().uuid().to_string()));
+        element.insert("target".to_owned(), toml::Value::String(self.target.read().unwrap().uuid().to_string()));
+        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
+    }
+}

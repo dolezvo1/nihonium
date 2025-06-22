@@ -92,7 +92,7 @@ macro_rules! build_colors {
 }
 pub(crate) use build_colors;
 
-use super::project_serde::{NHSerializer, NHSerialize};
+use super::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
 use super::uuid::{ModelUuid, ViewUuid};
 
 
@@ -816,7 +816,7 @@ pub trait ElementControllerGen2<
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
 pub struct DiagramControllerGen2<
-    DiagramModelT: ContainerModel<ElementModelT>,
+    DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
     ElementModelT: ?Sized + 'static,
     QueryableT,
     BufferT,
@@ -895,7 +895,7 @@ pub struct DiagramControllerGen2<
 }
 
 impl<
-        DiagramModelT: ContainerModel<ElementModelT>,
+        DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
         BufferT: 'static,
@@ -1351,7 +1351,7 @@ where
 
 
 impl<
-        DiagramModelT: ContainerModel<ElementModelT>,
+        DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
         BufferT: 'static,
@@ -1389,7 +1389,7 @@ where
 }
 
 impl<
-        DiagramModelT: ContainerModel<ElementModelT>,
+        DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
         BufferT: 'static,
@@ -1415,27 +1415,29 @@ where
         KindedElement<'a>: From<&'a Self>,
     >,
 {
-    fn serialize_into(&self, into: &mut NHSerializer) {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         // Serialize itself
-        let self_id = *self.uuid();
         let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
         element.insert("type".to_owned(), toml::Value::String(self.view_type.to_owned()));
+        element.insert("model".to_owned(), toml::Value::String((*self.model.read().unwrap().uuid()).to_string()));
         element.insert("children".to_owned(), toml::Value::Array(self.event_order.iter().map(|e| toml::Value::String(e.to_string())).collect()));
-        into.insert_view(self_id, element);
+        into.insert_view(*self.uuid, element);
 
-        // TODO: serialize model
-        //element.insert("name".to_owned(), toml::Value::String((*self.model_name()).clone()));
+        // Serialize model
+        self.model.read().unwrap().serialize_into(into)?;
 
         // Serialize children
-        self.event_order.iter()
-            .flat_map(|e| self.owned_controllers.get(e))
-            .for_each(|e| e.read().unwrap().serialize_into(into));
+        for e in self.event_order.iter().flat_map(|e| self.owned_controllers.get(e)) {
+            e.read().unwrap().serialize_into(into)?;
+        }
+
+        Ok(())
     }
 }
 
 impl<
-        DiagramModelT: ContainerModel<ElementModelT>,
+        DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
         BufferT: 'static,
@@ -1771,7 +1773,7 @@ where
 }
 
 impl<
-        DiagramModelT: ContainerModel<ElementModelT>,
+        DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
         ElementModelT: ?Sized + 'static,
         QueryableT: 'static,
         BufferT: 'static,
@@ -2145,21 +2147,22 @@ where
             >,
         )>,
 {
-    fn serialize_into(&self, into: &mut NHSerializer) {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>  {
         // Serialize itself
-        let self_id = *self.uuid;
         let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
         element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
         element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.bounds_rect.center().x as f64), toml::Value::Float(self.bounds_rect.center().y as f64)]));
         element.insert("size".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.bounds_rect.width() as f64), toml::Value::Float(self.bounds_rect.height() as f64)]));
         element.insert("children".to_owned(), toml::Value::Array(self.event_order.iter().map(|e| toml::Value::String(e.to_string())).collect()));
-        into.insert_view(self_id, element);
+        into.insert_view(*self.uuid, element);
 
         // Serialize children
-        self.event_order.iter()
-            .flat_map(|e| self.owned_controllers.get(e))
-            .for_each(|e| e.read().unwrap().serialize_into(into));
+        for e in self.event_order.iter().flat_map(|e| self.owned_controllers.get(e)) {
+            e.read().unwrap().serialize_into(into)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -3131,17 +3134,18 @@ where
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
-    fn serialize_into(&self, into: &mut NHSerializer) {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>  {
         // Serialize itself
-        let self_id = *self.uuid;
         let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
         element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
         // TODO: store view ids, not model ids
         element.insert("source".to_owned(), toml::Value::String(self.source.read().unwrap().model_uuid().to_string()));
         element.insert("destination".to_owned(), toml::Value::String(self.destination.read().unwrap().model_uuid().to_string()));
         // TODO: store points, etc.
-        into.insert_view(self_id, element);
+        into.insert_view(*self.uuid, element);
+
+        Ok(())
     }
 }
 

@@ -1,5 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::common::canvas::{ArrowheadType, LineType};
 use crate::common::controller::{ContainerModel, Model};
+use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashMap, HashSet},
@@ -91,7 +94,7 @@ impl UmlClassCollector {
     }
 }
 
-pub trait UmlClassElement: Model + Send + Sync {
+pub trait UmlClassElement: Model + NHSerialize + Send + Sync {
     fn accept(&self, visitor: &mut UmlClassCollector);
 }
 
@@ -159,6 +162,30 @@ impl ContainerModel<dyn UmlClassElement> for UmlClassDiagram {
     }
 }
 
+impl NHSerialize for UmlClassDiagram {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("umlclass-diagram-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
+
+        for e in &self.contained_elements {
+            e.read().unwrap().serialize_into(into)?;
+        }
+        element.insert("contained_elements".to_owned(),
+            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.read().unwrap().uuid().to_string())).collect())
+        );
+
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
+    }
+}
+
 pub struct UmlClassPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
@@ -206,7 +233,31 @@ impl ContainerModel<dyn UmlClassElement> for UmlClassPackage {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+impl NHSerialize for UmlClassPackage {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("umlclass-package-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
+
+        for e in &self.contained_elements {
+            e.read().unwrap().serialize_into(into)?;
+        }
+        element.insert("contained_elements".to_owned(),
+            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.read().unwrap().uuid().to_string())).collect())
+        );
+
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum UmlClassStereotype {
     Abstract,
     AbstractClass,
@@ -240,7 +291,7 @@ impl UmlClassStereotype {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum UMLClassAccessModifier {
     Public,
     Package,
@@ -333,7 +384,27 @@ impl UmlClassElement for UmlClass {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+impl NHSerialize for UmlClass {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("umlclass-class-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
+        element.insert("stereotype".to_owned(), toml::Value::try_from(self.stereotype)?);
+        element.insert("properties".to_owned(), toml::Value::String((*self.properties).clone()));
+        element.insert("functions".to_owned(), toml::Value::String((*self.functions).clone()));
+        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum UmlClassLinkType {
     Association,
     Aggregation,
@@ -437,5 +508,27 @@ impl Model for UmlClassLink {
 impl UmlClassElement for UmlClassLink {
     fn accept(&self, visitor: &mut UmlClassCollector) {
         visitor.visit_link(&self)
+    }
+}
+
+impl NHSerialize for UmlClassLink {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("umlclass-classlink-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("description".to_owned(), toml::Value::String((*self.description).clone()));
+        element.insert("link_type".to_owned(), toml::Value::try_from(self.link_type)?);
+        element.insert("source".to_owned(), toml::Value::String(self.source.read().unwrap().uuid().to_string()));
+        element.insert("source_arrowhead_label".to_owned(), toml::Value::String((*self.source_arrowhead_label).clone()));
+        element.insert("destination".to_owned(), toml::Value::String(self.destination.read().unwrap().uuid().to_string()));
+        element.insert("destination_arrowhead_label".to_owned(), toml::Value::String((*self.destination_arrowhead_label).clone()));
+        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
     }
 }

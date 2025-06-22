@@ -1,4 +1,5 @@
 use crate::common::controller::{ContainerModel, Model};
+use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashMap, HashSet},
@@ -21,7 +22,7 @@ impl<'a> RdfCollector<'a> {
     }
 }
 
-pub trait RdfElement: Model + Send + Sync {
+pub trait RdfElement: Model + NHSerialize + Send + Sync {
     fn term_repr(&self) -> SimpleTerm<'static>;
     fn accept_collector(&self, collector: &mut RdfCollector<'static>);
 }
@@ -90,6 +91,37 @@ impl ContainerModel<dyn RdfElement> for RdfDiagram {
     }
 }
 
+impl NHSerialize for RdfDiagram {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("type".to_owned(), toml::Value::String("rdf-diagram-model".to_owned()));
+        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
+
+        for e in &self.contained_elements {
+            e.read().unwrap().serialize_into(into)?;
+        }
+        element.insert("contained_elements".to_owned(),
+            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.read().unwrap().uuid().to_string())).collect())
+        );
+
+        element.insert("stored_queries".to_owned(), toml::Value::Array(self.stored_queries.iter().map(|e| {
+            let mut hm = toml::Table::new();
+            hm.insert("uuid".to_owned(), toml::Value::String(e.0.to_string()));
+            hm.insert("name".to_owned(), toml::Value::String(e.1.0.clone()));
+            hm.insert("value".to_owned(), toml::Value::String(e.1.1.clone()));
+            toml::Value::Table(hm)
+        }).collect()));
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
+    }
+}
+
 pub struct RdfGraph {
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
@@ -150,6 +182,30 @@ impl RdfElement for RdfGraph {
     }
 }
 
+impl NHSerialize for RdfGraph {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("rdf-graph-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("iri".to_owned(), toml::Value::String((*self.iri).clone()));
+
+        for e in &self.contained_elements {
+            e.read().unwrap().serialize_into(into)?;
+        }
+        element.insert("contained_elements".to_owned(),
+            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.read().unwrap().uuid().to_string())).collect())
+        );
+
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
+    }
+}
+
 pub struct RdfLiteral {
     pub uuid: Arc<ModelUuid>,
     pub content: Arc<String>,
@@ -204,6 +260,25 @@ impl RdfElement for RdfLiteral {
     fn accept_collector(&self, _collector: &mut RdfCollector) {}
 }
 
+impl NHSerialize for RdfLiteral {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("rdf-literal-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("content".to_owned(), toml::Value::String((*self.content).clone()));
+        element.insert("datatype".to_owned(), toml::Value::String((*self.datatype).clone()));
+        element.insert("langtag".to_owned(), toml::Value::String((*self.langtag).clone()));
+        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
+    }
+}
+
 pub struct RdfNode {
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
@@ -236,6 +311,23 @@ impl RdfElement for RdfNode {
     }
 
     fn accept_collector(&self, _collector: &mut RdfCollector) {}
+}
+
+impl NHSerialize for RdfNode {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("rdf-node-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("iri".to_owned(), toml::Value::String((*self.iri).clone()));
+        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
+    }
 }
 
 pub struct RdfPredicate {
@@ -293,5 +385,24 @@ impl RdfElement for RdfPredicate {
             SimpleTerm::Iri(IriRef::new(MownStr::from((*self.iri).clone())).unwrap()),
             object,
         ]);
+    }
+}
+
+impl NHSerialize for RdfPredicate {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        if into.contains_model(&self.uuid) {
+            return Ok(());
+        }
+
+        let mut element = toml::Table::new();
+        element.insert("_type".to_owned(), toml::Value::String("rdf-predicate-model".to_owned()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
+        element.insert("iri".to_owned(), toml::Value::String((*self.iri).clone()));
+        element.insert("source".to_owned(), toml::Value::String(self.source.read().unwrap().uuid().to_string()));
+        element.insert("destination".to_owned(), toml::Value::String(self.destination.read().unwrap().uuid().to_string()));
+        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
+        into.insert_model(*self.uuid, element);
+
+        Ok(())
     }
 }

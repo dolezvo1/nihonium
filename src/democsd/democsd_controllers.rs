@@ -2,7 +2,7 @@ use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
     arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
-use crate::common::project_serde::{NHSerializer, NHSerialize};
+use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage,
@@ -986,18 +986,21 @@ impl View for DemoCsdTransactorView {
 }
 
 impl NHSerialize for DemoCsdTransactorView {
-    fn serialize_into(&self, into: &mut NHSerializer) {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         // Serialize itself
-        let self_id = *self.uuid();
         let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
         element.insert("type".to_owned(), toml::Value::String("democsd-transactor-view".to_owned()));
         element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
         element.insert("children".to_owned(), toml::Value::Array(self.transaction_view.iter().map(|e| toml::Value::String(e.read().unwrap().model_uuid().to_string())).collect()));
-        into.insert_view(self_id, element);
+        into.insert_view(*self.uuid, element);
 
         // Serialize child
-        self.transaction_view.iter().for_each(|e| e.read().unwrap().serialize_into(into));
+        for e in self.transaction_view.iter() {
+            e.read().unwrap().serialize_into(into)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -1671,13 +1674,14 @@ impl View for DemoCsdTransactionView {
 }
 
 impl NHSerialize for DemoCsdTransactionView {
-    fn serialize_into(&self, into: &mut NHSerializer) {
-        let self_id = *self.uuid();
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
+        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
         element.insert("type".to_owned(), toml::Value::String("democsd-transaction-view".to_owned()));
         element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
-        into.insert_view(self_id, element);
+        into.insert_view(*self.uuid, element);
+
+        Ok(())
     }
 }
 

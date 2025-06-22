@@ -53,16 +53,35 @@ impl NHSerializer {
         }
     }
 
+    pub fn contains_model(&self, uuid: &ModelUuid) -> bool {
+        self.models.contains_key(uuid)
+    }
     pub fn insert_model(&mut self, uuid: ModelUuid, data: toml::Table) {
         self.models.insert(uuid, data);
+    }
+    pub fn contains_view(&self, uuid: &ViewUuid) -> bool {
+        self.views.contains_key(uuid)
     }
     pub fn insert_view(&mut self, uuid: ViewUuid, data: toml::Table) {
         self.views.insert(uuid, data);
     }
 }
 
+#[derive(Debug)]
+pub enum NHSerializeError {
+    StructureError(String),
+    TomlSer(toml::ser::Error),
+}
+
+impl From<toml::ser::Error> for NHSerializeError {
+    fn from(value: toml::ser::Error) -> Self {
+        Self::TomlSer(value)
+    }
+}
+
 pub trait NHSerialize {
-    fn serialize_into(&self, into: &mut NHSerializer);
+    #[clippy::must_use]
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>;
 }
 
 pub trait NHDeserialize: Sized {

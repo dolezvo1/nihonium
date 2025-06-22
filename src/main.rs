@@ -7,7 +7,7 @@ use std::io::Write;
 
 use common::canvas::{NHCanvas, UiCanvas};
 use common::controller::{ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ProjectCommand, SimpleProjectCommand};
-use common::project_serde::{NHProjectHierarchyNodeDTO, NHSerializer};
+use common::project_serde::{NHProjectHierarchyNodeDTO, NHSerializeError, NHSerializer};
 use common::uuid::ViewUuid;
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
@@ -201,9 +201,9 @@ impl TabViewer for NHContext {
 }
 
 impl NHContext {
-    fn export_project(&self) -> Result<String, ()> {
+    fn export_project(&self) -> Result<String, NHSerializeError> {
         let HierarchyNode::Folder(.., children) = &self.hierarchy else {
-            return Err(())
+            return Err(NHSerializeError::StructureError("invalid hierarchy root".into()))
         };
 
         fn h(e: &HierarchyNode) -> NHProjectHierarchyNodeDTO {
@@ -216,14 +216,16 @@ impl NHContext {
         }
 
         let mut serializer = NHSerializer::new();
-        self.diagram_controllers.iter().for_each(|e| e.1.1.read().unwrap().serialize_into(&mut serializer));
+        for e in self.diagram_controllers.iter() {
+            e.1.1.read().unwrap().serialize_into(&mut serializer)?;
+        }
 
         let project = common::project_serde::NHProjectDTO::new(
             children.iter().map(h).collect(),
             serializer,
         );
 
-        toml::to_string(&project).map_err(|_| ())
+        Ok(toml::to_string(&project)?)
     }
     fn clear_project_data(&mut self) {
         self.project_path = None;
