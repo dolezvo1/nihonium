@@ -1,9 +1,8 @@
 use crate::common::canvas::{ArrowheadType, LineType};
 use crate::common::controller::{ContainerModel, Model};
-use crate::common::observer::{impl_observable, Observable, Observer};
 use crate::common::uuid::ModelUuid;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     sync::{Arc, LazyLock, RwLock},
 };
 
@@ -92,8 +91,7 @@ impl UmlClassCollector {
     }
 }
 
-pub trait UmlClassElement: Observable {
-    fn uuid(&self) -> Arc<ModelUuid>;
+pub trait UmlClassElement: Model + Send + Sync {
     fn accept(&self, visitor: &mut UmlClassCollector);
 }
 
@@ -103,7 +101,6 @@ pub struct UmlClassDiagram {
     pub contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl UmlClassDiagram {
@@ -117,7 +114,6 @@ impl UmlClassDiagram {
             name: Arc::new(name),
             contained_elements,
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 
@@ -157,14 +153,11 @@ impl Model for UmlClassDiagram {
 impl ContainerModel<dyn UmlClassElement> for UmlClassDiagram {
     fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
         self.contained_elements.push(element);
-        self.notify_observers();
     }
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
         // TODO
     }
 }
-
-impl_observable!(UmlClassDiagram);
 
 pub struct UmlClassPackage {
     pub uuid: Arc<ModelUuid>,
@@ -172,7 +165,6 @@ pub struct UmlClassPackage {
     pub contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl UmlClassPackage {
@@ -186,7 +178,6 @@ impl UmlClassPackage {
             name: Arc::new(name),
             contained_elements,
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 }
@@ -200,25 +191,18 @@ impl Model for UmlClassPackage {
     }
 }
 
-impl ContainerModel<dyn UmlClassElement> for UmlClassPackage {
-    fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
-        self.contained_elements.push(element);
-        self.notify_observers();
-    }
-    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
-        // TODO
+impl UmlClassElement for UmlClassPackage {
+    fn accept(&self, visitor: &mut UmlClassCollector) {
+        visitor.visit_package(&self);
     }
 }
 
-impl_observable!(UmlClassPackage);
-
-impl UmlClassElement for UmlClassPackage {
-    fn uuid(&self) -> Arc<ModelUuid> {
-        self.uuid.clone()
+impl ContainerModel<dyn UmlClassElement> for UmlClassPackage {
+    fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
+        self.contained_elements.push(element);
     }
-
-    fn accept(&self, visitor: &mut UmlClassCollector) {
-        visitor.visit_package(&self);
+    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
+        // TODO
     }
 }
 
@@ -283,7 +267,6 @@ pub struct UmlClass {
     pub functions: Arc<String>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl UmlClass {
@@ -301,7 +284,6 @@ impl UmlClass {
             properties: Arc::new(properties),
             functions: Arc::new(functions),
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 
@@ -336,13 +318,16 @@ impl UmlClass {
     }
 }
 
-impl_observable!(UmlClass);
-
-impl UmlClassElement for UmlClass {
+impl Model for UmlClass {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
+    fn name(&self) -> Arc<String> {
+        self.name.clone()
+    }
+}
 
+impl UmlClassElement for UmlClass {
     fn accept(&self, visitor: &mut UmlClassCollector) {
         visitor.visit_class(&self);
     }
@@ -410,42 +395,46 @@ impl UmlClassLinkType {
 pub struct UmlClassLink {
     pub uuid: Arc<ModelUuid>,
     pub link_type: UmlClassLinkType,
+    pub description: Arc<String>,
     pub source: Arc<RwLock<dyn UmlClassElement>>,
     pub source_arrowhead_label: Arc<String>,
     pub destination: Arc<RwLock<dyn UmlClassElement>>,
     pub destination_arrowhead_label: Arc<String>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl UmlClassLink {
     pub fn new(
         uuid: ModelUuid,
         link_type: UmlClassLinkType,
+        description: impl Into<String>,
         source: Arc<RwLock<dyn UmlClassElement>>,
         destination: Arc<RwLock<dyn UmlClassElement>>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             link_type,
+            description: Arc::new(description.into()),
             source,
             source_arrowhead_label: Arc::new("".to_owned()),
             destination,
             destination_arrowhead_label: Arc::new("".to_owned()),
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 }
 
-impl_observable!(UmlClassLink);
-
-impl UmlClassElement for UmlClassLink {
+impl Model for UmlClassLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
+    fn name(&self) -> Arc<String> {
+        self.description.clone()
+    }
+}
 
+impl UmlClassElement for UmlClassLink {
     fn accept(&self, visitor: &mut UmlClassCollector) {
         visitor.visit_link(&self)
     }

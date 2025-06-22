@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
 use crate::common::project_serde::{NHSerializer, NHSerialize};
 use crate::common::uuid::{ModelUuid, ViewUuid};

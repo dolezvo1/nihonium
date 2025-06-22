@@ -393,6 +393,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
 
     let (_, realization_cfx, realization_cfx_uuid, realization_cfx_view) = umlclass_link(
         UmlClassLinkType::InterfaceRealization,
+        "",
         None,
         (class_cfx.clone(), class_cfx_view.clone()),
         (class_af.clone(), class_af_view.clone()),
@@ -400,6 +401,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
 
     let (_, realization_cfy, realization_cfy_uuid, realization_cfy_view) = umlclass_link(
         UmlClassLinkType::InterfaceRealization,
+        "",
         None,
         (class_cfy.clone(), class_cfy_view.clone()),
         (class_af.clone(), class_af_view.clone()),
@@ -415,6 +417,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
 
     let (_, usage_client_af, usage_client_af_uuid, usage_client_af_view) = umlclass_link(
         UmlClassLinkType::Usage,
+        "<<use>>",
         Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(200.0, 50.0))),
         (class_client.clone(), class_client_view.clone()),
         (class_af.clone(), class_af_view.clone()),
@@ -431,6 +434,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     let (_, usage_client_producta, usage_client_producta_uuid, usage_client_producta_view) =
         umlclass_link(
             UmlClassLinkType::Usage,
+            "<<use>>",
             Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(450.0, 52.0))),
             (class_client.clone(), class_client_view.clone()),
             (class_producta.clone(), class_producta_view.clone()),
@@ -447,6 +451,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     let (_, usage_client_productb, usage_client_productb_uuid, usage_client_productb_view) =
         umlclass_link(
             UmlClassLinkType::Usage,
+            "<<use>>",
             Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(650.0, 48.0))),
             (class_client.clone(), class_client_view.clone()),
             (class_productb.clone(), class_productb_view.clone()),
@@ -757,6 +762,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
                 ) {
                     let (_model_uuid, _link_model, view_uuid, link_view) = umlclass_link(
                         *link_type,
+                        "",
                         None,
                         (source.clone(), source_controller),
                         (dest.clone(), dest_controller),
@@ -1443,6 +1449,10 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
         "umlclass-link-view"
     }
 
+    fn midpoint_label(&self) -> Option<Arc<String>> {
+        Some(self.model.read().unwrap().description.clone())
+    }
+
     fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
         let model = self.model.read().unwrap();
         (
@@ -1615,7 +1625,7 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
         m: &mut HashMap<usize, (Arc<RwLock<dyn UmlClassElement>>, Arc<dyn Any + Send + Sync>)>
     ) -> Self where Self: Sized {
         let model = self.model.read().unwrap();
-        let model = Arc::new(RwLock::new(UmlClassLink::new(new_uuid, model.link_type, model.source.clone(), model.destination.clone())));
+        let model = Arc::new(RwLock::new(UmlClassLink::new(new_uuid, model.link_type, (*model.description).clone(), model.source.clone(), model.destination.clone())));
         m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
         Self { model }
     }
@@ -1637,6 +1647,7 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
 
 fn umlclass_link(
     link_type: UmlClassLinkType,
+    description: impl Into<String>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: (
         Arc<RwLock<dyn UmlClassElement>>,
@@ -1657,6 +1668,7 @@ fn umlclass_link(
     let link_model = Arc::new(RwLock::new(UmlClassLink::new(
         link_model_uuid,
         link_type,
+        description,
         source.0,
         destination.0,
     )));

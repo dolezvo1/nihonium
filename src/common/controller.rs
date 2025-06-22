@@ -2906,6 +2906,7 @@ pub trait MulticonnectionAdapter<
     fn model_name(&self) -> Arc<String>;
     fn view_type(&self) -> &'static str;
 
+    fn midpoint_label(&self) -> Option<Arc<String>> { None }
     fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
     fn destination_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
 
@@ -3299,7 +3300,8 @@ where
         let (dest_line_type, dest_arrow_type, dest_label) = self.adapter.destination_arrow();
         let l1 = source_label.as_ref().map(|e| (s_to_p(canvas, source_bounds, source_intersect, &*e), e.as_str()));
         let l2 = dest_label.as_ref().map(|e| (s_to_p(canvas, dest_bounds, dest_intersect, &*e), e.as_str()));
-        
+        let midpoint_label = self.adapter.midpoint_label();
+
         canvas.draw_multiconnection(
             &self.selected_vertices,
             &[(
@@ -3329,7 +3331,7 @@ where
                     (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
                 ),
             },
-            None,
+            midpoint_label.as_ref().map(|e| e.as_str()),
             self.highlight,
         );
 

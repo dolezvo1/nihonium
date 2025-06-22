@@ -1,8 +1,7 @@
 use crate::common::controller::{ContainerModel, Model};
-use crate::common::observer::{impl_observable, Observable, Observer};
 use crate::common::uuid::ModelUuid;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     sync::{Arc, RwLock},
 };
 
@@ -22,8 +21,7 @@ impl<'a> RdfCollector<'a> {
     }
 }
 
-pub trait RdfElement: Observable {
-    fn uuid(&self) -> Arc<ModelUuid>;
+pub trait RdfElement: Model + Send + Sync {
     fn term_repr(&self) -> SimpleTerm<'static>;
     fn accept_collector(&self, collector: &mut RdfCollector<'static>);
 }
@@ -35,7 +33,6 @@ pub struct RdfDiagram {
     pub stored_queries: HashMap<uuid::Uuid, (String, String)>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl RdfDiagram {
@@ -57,7 +54,6 @@ impl RdfDiagram {
                 hm
             },
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 
@@ -88,14 +84,11 @@ impl Model for RdfDiagram {
 impl ContainerModel<dyn RdfElement> for RdfDiagram {
     fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
         self.contained_elements.push(element);
-        self.notify_observers();
     }
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
         // TODO
     }
 }
-
-impl_observable!(RdfDiagram);
 
 pub struct RdfGraph {
     pub uuid: Arc<ModelUuid>,
@@ -103,7 +96,6 @@ pub struct RdfGraph {
     pub contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl RdfGraph {
@@ -117,7 +109,6 @@ impl RdfGraph {
             iri: Arc::new(iri),
             contained_elements,
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 }
@@ -134,20 +125,13 @@ impl Model for RdfGraph {
 impl ContainerModel<dyn RdfElement> for RdfGraph {
     fn add_element(&mut self, element: Arc<RwLock<dyn RdfElement>>) {
         self.contained_elements.push(element);
-        self.notify_observers();
     }
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
         // TODO
     }
 }
 
-impl_observable!(RdfGraph);
-
 impl RdfElement for RdfGraph {
-    fn uuid(&self) -> Arc<ModelUuid> {
-        self.uuid.clone()
-    }
-
     fn term_repr(&self) -> SimpleTerm<'static> {
         panic!()
     }
@@ -173,7 +157,6 @@ pub struct RdfLiteral {
     pub langtag: Arc<String>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl RdfLiteral {
@@ -184,18 +167,20 @@ impl RdfLiteral {
             datatype: Arc::new(datatype),
             langtag: Arc::new(langtag),
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 }
 
-impl_observable!(RdfLiteral);
-
-impl RdfElement for RdfLiteral {
+impl Model for RdfLiteral {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
+    fn name(&self) -> Arc<String> {
+        self.content.clone()
+    }
+}
 
+impl RdfElement for RdfLiteral {
     fn term_repr(&self) -> SimpleTerm<'static> {
         if !self.langtag.is_empty() {
             SimpleTerm::LiteralLanguage(
@@ -224,7 +209,6 @@ pub struct RdfNode {
     pub iri: Arc<String>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl RdfNode {
@@ -233,18 +217,20 @@ impl RdfNode {
             uuid: Arc::new(uuid),
             iri: Arc::new(iri),
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 }
 
-impl_observable!(RdfNode);
-
-impl RdfElement for RdfNode {
+impl Model for RdfNode {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
+    fn name(&self) -> Arc<String> {
+        self.iri.clone()
+    }
+}
 
+impl RdfElement for RdfNode {
     fn term_repr(&self) -> SimpleTerm<'static> {
         SimpleTerm::Iri(IriRef::new(MownStr::from((*self.iri).clone())).unwrap())
     }
@@ -259,7 +245,6 @@ pub struct RdfPredicate {
     pub destination: Arc<RwLock<dyn RdfElement>>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl RdfPredicate {
@@ -275,18 +260,20 @@ impl RdfPredicate {
             source,
             destination,
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 }
 
-impl_observable!(RdfPredicate);
-
-impl RdfElement for RdfPredicate {
+impl Model for RdfPredicate {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
+    fn name(&self) -> Arc<String> {
+        self.iri.clone()
+    }
+}
 
+impl RdfElement for RdfPredicate {
     fn term_repr(&self) -> SimpleTerm<'static> {
         panic!()
     }

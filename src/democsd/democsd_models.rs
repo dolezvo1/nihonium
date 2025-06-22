@@ -1,15 +1,12 @@
 use crate::common::canvas;
 use crate::common::controller::{ContainerModel, Model};
-use crate::common::observer::{impl_observable, Observable, Observer};
 use crate::common::uuid::ModelUuid;
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashSet},
     sync::{Arc, RwLock},
 };
 
-pub trait DemoCsdElement: Observable {
-    fn uuid(&self) -> Arc<ModelUuid>;
-}
+pub trait DemoCsdElement: Model + Send + Sync {}
 
 // ---
 
@@ -19,7 +16,6 @@ pub struct DemoCsdDiagram {
     pub contained_elements: Vec<Arc<RwLock<dyn DemoCsdElement>>>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl DemoCsdDiagram {
@@ -33,7 +29,6 @@ impl DemoCsdDiagram {
             name: Arc::new(name),
             contained_elements,
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 }
@@ -47,17 +42,16 @@ impl Model for DemoCsdDiagram {
     }
 }
 
+impl DemoCsdElement for DemoCsdDiagram {}
+
 impl ContainerModel<dyn DemoCsdElement> for DemoCsdDiagram {
     fn add_element(&mut self, element: Arc<RwLock<dyn DemoCsdElement>>) {
         self.contained_elements.push(element);
-        self.notify_observers();
     }
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
         // TODO
     }
 }
-
-impl_observable!(DemoCsdDiagram);
 
 // ---
 
@@ -67,7 +61,6 @@ pub struct DemoCsdPackage {
     pub contained_elements: Vec<Arc<RwLock<dyn DemoCsdElement>>>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl DemoCsdPackage {
@@ -81,7 +74,6 @@ impl DemoCsdPackage {
             name: Arc::new(name),
             contained_elements,
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 }
@@ -95,21 +87,14 @@ impl Model for DemoCsdPackage {
     }
 }
 
+impl DemoCsdElement for DemoCsdPackage {}
+
 impl ContainerModel<dyn DemoCsdElement> for DemoCsdPackage {
     fn add_element(&mut self, element: Arc<RwLock<dyn DemoCsdElement>>) {
         self.contained_elements.push(element);
-        self.notify_observers();
     }
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
         // TODO
-    }
-}
-
-impl_observable!(DemoCsdPackage);
-
-impl DemoCsdElement for DemoCsdPackage {
-    fn uuid(&self) -> Arc<ModelUuid> {
-        self.uuid.clone()
     }
 }
 
@@ -125,7 +110,6 @@ pub struct DemoCsdTransactor {
     pub transaction_selfactivating: bool,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl DemoCsdTransactor {
@@ -147,18 +131,20 @@ impl DemoCsdTransactor {
             transaction_selfactivating,
 
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 }
 
-impl_observable!(DemoCsdTransactor);
-
-impl DemoCsdElement for DemoCsdTransactor {
+impl Model for DemoCsdTransactor {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
+    fn name(&self) -> Arc<String> {
+        self.name.clone()
+    }
 }
+
+impl DemoCsdElement for DemoCsdTransactor {}
 
 // ---
 
@@ -169,7 +155,6 @@ pub struct DemoCsdTransaction {
     pub name: Arc<String>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl DemoCsdTransaction {
@@ -181,18 +166,20 @@ impl DemoCsdTransaction {
             name: Arc::new(name),
 
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 }
 
-impl_observable!(DemoCsdTransaction);
-
-impl DemoCsdElement for DemoCsdTransaction {
+impl Model for DemoCsdTransaction {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
+    fn name(&self) -> Arc<String> {
+        self.name.clone()
+    }
 }
+
+impl DemoCsdElement for DemoCsdTransaction {}
 
 // ---
 
@@ -223,13 +210,13 @@ impl DemoCsdLinkType {
 
 pub struct DemoCsdLink {
     pub uuid: Arc<ModelUuid>,
+    pub name: Arc<String>,
 
     pub link_type: DemoCsdLinkType,
     pub source: Arc<RwLock<DemoCsdTransactor>>,
     pub target: Arc<RwLock<DemoCsdTransaction>>,
 
     pub comment: Arc<String>,
-    observers: VecDeque<Arc<RwLock<dyn Observer>>>,
 }
 
 impl DemoCsdLink {
@@ -241,19 +228,22 @@ impl DemoCsdLink {
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
+            name: Arc::new(format!("Link ({})", link_type.char())),
             link_type,
             source,
             target,
             comment: Arc::new("".to_owned()),
-            observers: VecDeque::new(),
         }
     }
 }
 
-impl_observable!(DemoCsdLink);
-
-impl DemoCsdElement for DemoCsdLink {
+impl Model for DemoCsdLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
+    fn name(&self) -> Arc<String> {
+        self.name.clone()
+    }
 }
+
+impl DemoCsdElement for DemoCsdLink {}
