@@ -92,14 +92,15 @@ macro_rules! build_colors {
 }
 pub(crate) use build_colors;
 
-use super::project_serde::NHSerialize;
+use super::project_serde::{NHSerializer, NHSerialize};
+use super::uuid::{ModelUuid, ViewUuid};
 
 
 pub struct SnapManager {
     input_restriction: egui::Rect,
     max_delta: egui::Vec2,
-    guidelines_x: Vec<(f32, egui::Align, uuid::Uuid)>,
-    guidelines_y: Vec<(f32, egui::Align, uuid::Uuid)>,
+    guidelines_x: Vec<(f32, egui::Align, ViewUuid)>,
+    guidelines_y: Vec<(f32, egui::Align, ViewUuid)>,
     best_xy: Arc<RwLock<(Option<f32>, Option<f32>)>>,
 }
 
@@ -111,7 +112,7 @@ impl SnapManager {
             best_xy: Arc::new(RwLock::new((None, None))),
         }
     }
-    pub fn add_shape(&mut self, uuid: uuid::Uuid, shape: canvas::NHShape) {
+    pub fn add_shape(&mut self, uuid: ViewUuid, shape: canvas::NHShape) {
         if shape.bounding_box().intersects(self.input_restriction) {
             for e in shape.guidelines_anchors().into_iter() {
                 self.guidelines_x.push((e.0.x, e.1, uuid));
@@ -125,7 +126,7 @@ impl SnapManager {
     }
     
     pub fn coerce<F>(&self, s: canvas::NHShape, uuids_filter: F) -> egui::Pos2
-    where F: Fn(&uuid::Uuid) -> bool
+    where F: Fn(&ViewUuid) -> bool
     {
         *self.best_xy.write().unwrap() = (None, None);
         let (mut least_x, mut least_y): (Option<(f32, f32)>, Option<(f32, f32)>) = (None, None);
@@ -176,11 +177,11 @@ impl SnapManager {
 #[derive(Clone)]
 pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
-    OpenAndFocusDiagram(uuid::Uuid),
+    OpenAndFocusDiagram(ViewUuid),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetSvgExportMenu(Option<(usize, Arc<RwLock<dyn DiagramController>>, std::path::PathBuf, usize, bool, bool, f32, f32)>),
     SetNewDiagramNumber(u32),
-    AddNewDiagram(uuid::Uuid, usize, Arc<RwLock<dyn DiagramController>>),
+    AddNewDiagram(ViewUuid, usize, Arc<RwLock<dyn DiagramController>>),
 }
 
 impl From<SimpleProjectCommand> for ProjectCommand {
@@ -221,21 +222,15 @@ pub enum DiagramCommand {
 }
 
 pub enum HierarchyNode {
-    Folder(uuid::Uuid, Arc<String>, Vec<HierarchyNode>),
+    Folder(ViewUuid, Arc<String>, Vec<HierarchyNode>),
     Diagram(Arc<RwLock<dyn View>>),
 }
 
 impl HierarchyNode {
-    pub fn uuid(&self) -> uuid::Uuid {
+    pub fn uuid(&self) -> ViewUuid {
         match self {
             HierarchyNode::Folder(uuid, ..) => *uuid,
             HierarchyNode::Diagram(rw_lock) => *rw_lock.read().unwrap().uuid(),
-        }
-    }
-    pub fn model_uuid(&self) -> Option<uuid::Uuid> {
-        match self {
-            HierarchyNode::Folder(..) => None,
-            e => Some(e.uuid()),
         }
     }
 
@@ -252,7 +247,7 @@ impl HierarchyNode {
         }
     }
 
-    pub fn get(&self, id: &uuid::Uuid) -> Option<(&HierarchyNode, &HierarchyNode)> {
+    pub fn get(&self, id: &ViewUuid) -> Option<(&HierarchyNode, &HierarchyNode)> {
         let self_id = self.uuid();
         match self {
             HierarchyNode::Folder(.., children) => {
@@ -269,7 +264,7 @@ impl HierarchyNode {
         }
         None
     }
-    pub fn remove(&mut self, id: &uuid::Uuid) -> Option<HierarchyNode> {
+    pub fn remove(&mut self, id: &ViewUuid) -> Option<HierarchyNode> {
         match self {
             HierarchyNode::Folder(.., children) => {
                 if let Some(index) = children.iter().position(|e| e.uuid() == *id) {
@@ -289,8 +284,8 @@ impl HierarchyNode {
     }
     pub fn insert(
         &mut self,
-        id: &uuid::Uuid,
-        position: DirPosition<uuid::Uuid>,
+        id: &ViewUuid,
+        position: DirPosition<ViewUuid>,
         value: HierarchyNode,
     ) -> Result<(), HierarchyNode> {
         let self_uuid = self.uuid();
@@ -340,8 +335,8 @@ pub struct DrawingContext<'a> {
 }
 
 pub trait View {
-    fn uuid(&self) -> Arc<uuid::Uuid>;
-    fn model_uuid(&self) -> Arc<uuid::Uuid>;
+    fn uuid(&self) -> Arc<ViewUuid>;
+    fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
 }
 
@@ -481,7 +476,7 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
         clipboard_elements: G,
     ) -> InsensitiveCommand<ElementT, PropChangeT>
     where
-        F: Fn() -> HashSet<uuid::Uuid>,
+        F: Fn() -> HashSet<ViewUuid>,
         G: Fn() -> Vec<ElementT>
     {
         use SensitiveCommand as SC;
@@ -490,7 +485,7 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
             return inner;
         }
         if let SC::PasteClipboardElements = self {
-            return IC::PasteSpecificElements(uuid::Uuid::nil(), clipboard_elements());
+            return IC::PasteSpecificElements(uuid::Uuid::nil().into(), clipboard_elements());
         }
         
         let se = selected_elements();
@@ -516,17 +511,17 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> From<InsensitiveComman
 #[derive(Clone, PartialEq, Debug)]
 pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     SelectAll(bool),
-    SelectSpecific(HashSet<uuid::Uuid>, bool),
+    SelectSpecific(HashSet<ViewUuid>, bool),
     SelectByDrag(egui::Rect),
     MoveAllElements(egui::Vec2),
-    MoveSpecificElements(HashSet<uuid::Uuid>, egui::Vec2),
-    ResizeSpecificElementsBy(HashSet<uuid::Uuid>, egui::Align2, egui::Vec2),
-    ResizeSpecificElementsTo(HashSet<uuid::Uuid>, egui::Align2, egui::Vec2),
-    DeleteSpecificElements(HashSet<uuid::Uuid>),
-    CutSpecificElements(HashSet<uuid::Uuid>),
-    PasteSpecificElements(uuid::Uuid, Vec<ElementT>),
-    AddElement(uuid::Uuid, ElementT),
-    PropertyChange(HashSet<uuid::Uuid>, Vec<PropChangeT>),
+    MoveSpecificElements(HashSet<ViewUuid>, egui::Vec2),
+    ResizeSpecificElementsBy(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
+    ResizeSpecificElementsTo(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
+    DeleteSpecificElements(HashSet<ViewUuid>),
+    CutSpecificElements(HashSet<ViewUuid>),
+    PasteSpecificElements(ViewUuid, Vec<ElementT>),
+    AddElement(ViewUuid, ElementT),
+    PropertyChange(HashSet<ViewUuid>, Vec<PropChangeT>),
 }
 
 impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
@@ -634,7 +629,7 @@ mod test {
 }
 
 pub trait Model: 'static {
-    fn uuid(&self) -> Arc<uuid::Uuid>;
+    fn uuid(&self) -> Arc<ModelUuid>;
     fn name(&self) -> Arc<String>;
 }
 
@@ -658,7 +653,7 @@ pub trait Tool<CommonElementT: ?Sized, QueryableT, AddCommandElementT, PropChang
         &mut self,
         into: &dyn ContainerGen2<CommonElementT, QueryableT, Self, AddCommandElementT, PropChangeT>,
     ) -> Option<(
-        uuid::Uuid,
+        ViewUuid,
         Arc<
             RwLock<
                 dyn ElementControllerGen2<
@@ -678,7 +673,7 @@ pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandEle
 {
     fn controller_for(
         &self,
-        uuid: &uuid::Uuid,
+        uuid: &ModelUuid,
     ) -> Option<
         Arc<
             RwLock<
@@ -691,7 +686,9 @@ pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandEle
                 >,
             >,
         >,
-    >;
+    > {
+        None
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -723,7 +720,7 @@ impl From<bool> for SelectionStatus {
 pub struct EventHandlingContext<'a> {
     pub modifiers: ModifierKeys,
     pub ui_scale: f32,
-    pub all_elements: &'a HashMap<uuid::Uuid, SelectionStatus>,
+    pub all_elements: &'a HashMap<ViewUuid, SelectionStatus>,
     pub snap_manager: &'a SnapManager,
 }
 
@@ -752,7 +749,7 @@ pub trait ElementControllerGen2<
         tool: &Option<(egui::Pos2, &ToolT)>,
     ) -> TargettingStatus;
     fn collect_allignment(&mut self, am: &mut SnapManager) {
-        am.add_shape(*self.model_uuid(), self.min_shape());
+        am.add_shape(*self.uuid(), self.min_shape());
     }
     fn handle_event(
         &mut self,
@@ -766,17 +763,17 @@ pub trait ElementControllerGen2<
         command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>);
+    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>);
     
     // Create a deep copy, including the models
     fn deep_copy_walk(
         &self,
-        requested: Option<&HashSet<uuid::Uuid>>,
-        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
-        tlc: &mut HashMap<uuid::Uuid,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
         >,
-        c: &mut HashMap<usize, (uuid::Uuid,
+        c: &mut HashMap<usize, (ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -785,17 +782,17 @@ pub trait ElementControllerGen2<
             Arc<dyn Any + Send + Sync>,
         )>)
     {
-        if requested.is_none_or(|e| e.contains(&self.model_uuid())) {
+        if requested.is_none_or(|e| e.contains(&self.uuid())) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         }
     }
     fn deep_copy_clone(
         &self,
-        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
-        tlc: &mut HashMap<uuid::Uuid,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
         >,
-        c: &mut HashMap<usize, (uuid::Uuid,
+        c: &mut HashMap<usize, (ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -805,7 +802,7 @@ pub trait ElementControllerGen2<
         )>);
     fn deep_copy_relink(
         &mut self,
-        c: &HashMap<usize, (uuid::Uuid,
+        c: &HashMap<usize, (ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -829,11 +826,11 @@ pub struct DiagramControllerGen2<
 > where
     ToolT: Tool<ElementModelT, QueryableT, AddCommandElementT, PropChangeT>,
 {
-    uuid: Arc<uuid::Uuid>,
+    uuid: Arc<ViewUuid>,
     model: Arc<RwLock<DiagramModelT>>,
     self_reference: Weak<RwLock<Self>>,
     owned_controllers: HashMap<
-        uuid::Uuid,
+        ViewUuid,
         Arc<
             RwLock<
                 dyn ElementControllerGen2<
@@ -846,9 +843,9 @@ pub struct DiagramControllerGen2<
             >,
         >,
     >,
-    event_order: Vec<uuid::Uuid>,
-    all_elements: HashMap<uuid::Uuid, SelectionStatus>,
-    clipboard_elements: HashMap<uuid::Uuid, Arc<
+    event_order: Vec<ViewUuid>,
+    all_elements: HashMap<ViewUuid, SelectionStatus>,
+    clipboard_elements: HashMap<ViewUuid, Arc<
             RwLock<
                 dyn ElementControllerGen2<
                     ElementModelT,
@@ -924,7 +921,7 @@ where
         KindedElement<'a>: From<&'a Self>,
     >,
     AddCommandElementT: From<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -937,7 +934,7 @@ where
                 >,
             >,
         )> + TryInto<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -952,10 +949,10 @@ where
         )>,
 {
     pub fn new(
-        uuid: Arc<uuid::Uuid>,
+        uuid: Arc<ViewUuid>,
         model: Arc<RwLock<DiagramModelT>>,
         owned_controllers: HashMap<
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -1116,7 +1113,7 @@ where
                 let mut tool = self.current_tool.take();
                 if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
                     commands.push(InsensitiveCommand::AddElement(
-                        *self.model_uuid(),
+                        *self.uuid(),
                         AddCommandElementT::from(new_a),
                     ).into());
                     handled = true;
@@ -1132,7 +1129,7 @@ where
         handled
     }
 
-    fn set_clipboard(&mut self) {
+    fn set_clipboard_from_selected(&mut self) {
         let selected = self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect();
         self.clipboard_elements = Self::element_deep_copy(
             Some(&selected),
@@ -1141,7 +1138,7 @@ where
         );
     }
     
-    fn element_deep_copy<F, P>(requested: Option<&HashSet<uuid::Uuid>>, from: F, uuid_present: P) -> HashMap<uuid::Uuid, Arc<RwLock<
+    fn element_deep_copy<F, P>(requested: Option<&HashSet<ViewUuid>>, from: F, uuid_present: P) -> HashMap<ViewUuid, Arc<RwLock<
                     dyn ElementControllerGen2<
                         ElementModelT,
                         QueryableT,
@@ -1151,7 +1148,7 @@ where
                     >,
                 >>>
         where
-            F: Iterator<Item=(uuid::Uuid, Arc<RwLock<
+            F: Iterator<Item=(ViewUuid, Arc<RwLock<
                     dyn ElementControllerGen2<
                         ElementModelT,
                         QueryableT,
@@ -1160,7 +1157,7 @@ where
                         PropChangeT,
                     >,
                 >>)>,
-            P: Fn(&uuid::Uuid) -> bool,
+            P: Fn(&ViewUuid) -> bool,
     {
         let mut top_level_views = HashMap::new();
         let mut views = HashMap::new();
@@ -1214,19 +1211,19 @@ where
                         .filter(|e| uuids.contains(&e.0))
                     {
                         undo_accumulator.push(InsensitiveCommand::AddElement(
-                            *self.model_uuid(),
+                            *self.uuid(),
                             AddCommandElementT::from((*uuid, element.clone())),
                         ));
                     }
 
                     let mut self_m = self.model.write().unwrap();
-                    self_m.delete_elements(uuids);
+                    // TODO: self_m.delete_elements(uuids);
 
                     self.owned_controllers.retain(|k, _v| !uuids.contains(&k));
                     self.event_order.retain(|e| !uuids.contains(&e));
                 }
                 InsensitiveCommand::AddElement(target, element) => {
-                    if *target == *self.model_uuid() {
+                    if *target == *self.uuid {
                         if let Ok((uuid, element)) = element.clone().try_into() {
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(uuid).collect(),
@@ -1260,7 +1257,7 @@ where
                     }
                 }
                 InsensitiveCommand::PropertyChange(uuids, _property) => {
-                    if uuids.contains(&*self.model_uuid()) {
+                    if uuids.contains(&*self.uuid) {
                         let mut m = self.model.write().unwrap();
                         (self.apply_property_change_fun)(
                             &mut self.buffer,
@@ -1380,10 +1377,10 @@ where
         KindedElement<'a>: From<&'a Self>,
     >,
 {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
-    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+    fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().unwrap().uuid()
     }
     fn model_name(&self) -> Arc<String> {
@@ -1418,14 +1415,14 @@ where
         KindedElement<'a>: From<&'a Self>,
     >,
 {
-    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
+    fn serialize_into(&self, into: &mut NHSerializer) {
         // Serialize itself
-        let self_id = *self.model_uuid();
+        let self_id = *self.uuid();
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
         element.insert("type".to_owned(), toml::Value::String(self.view_type.to_owned()));
         element.insert("children".to_owned(), toml::Value::Array(self.event_order.iter().map(|e| toml::Value::String(e.to_string())).collect()));
-        into.insert(self_id, element);
+        into.insert_view(self_id, element);
 
         // TODO: serialize model
         //element.insert("name".to_owned(), toml::Value::String((*self.model_name()).clone()));
@@ -1464,7 +1461,7 @@ where
         KindedElement<'a>: From<&'a Self>,
     >,
     AddCommandElementT: From<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -1477,7 +1474,7 @@ where
                 >,
             >,
         )> + TryInto<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -1685,7 +1682,7 @@ where
             | DiagramCommand::CutSelectedElements
             | DiagramCommand::PasteClipboardElements => {
                 if matches!(command, DiagramCommand::CutSelectedElements) {
-                    self.set_clipboard();
+                    self.set_clipboard_from_selected();
                 }
                 
                 let mut undo = vec![];
@@ -1701,7 +1698,7 @@ where
                 global_undo.extend(undo.into_iter());
             }
             DiagramCommand::CopySelectedElements => {
-                self.set_clipboard();
+                self.set_clipboard_from_selected();
             },
         }
     }
@@ -1794,7 +1791,7 @@ impl<
 where
     ToolT: Tool<ElementModelT, QueryableT, AddCommandElementT, PropChangeT>,
     AddCommandElementT: From<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -1807,7 +1804,7 @@ where
                 >,
             >,
         )> + TryInto<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -1823,7 +1820,7 @@ where
 {
     fn controller_for(
         &self,
-        uuid: &uuid::Uuid,
+        uuid: &ModelUuid,
     ) -> Option<
         Arc<
             RwLock<
@@ -1837,7 +1834,9 @@ where
             >,
         >,
     > {
-        self.owned_controllers.get(uuid).cloned().or_else(|| self.owned_controllers.iter().flat_map(|e| e.1.read().unwrap().controller_for(uuid)).nth(0))
+        // TODO: store views by model uuids
+        self.owned_controllers.iter().find(|(_, c)| *c.read().unwrap().model_uuid() == *uuid).map(|(_, c)| c.clone())
+            .or_else(|| self.owned_controllers.iter().flat_map(|e| e.1.read().unwrap().controller_for(uuid)).next())
     }
 }
 
@@ -1848,7 +1847,7 @@ pub trait PackageAdapter<
     PropChangeT: Clone + Debug,
 >: Send + Sync + 'static {
     fn model(&self) -> Arc<RwLock<ElementModelT>>;
-    fn model_uuid(&self) -> Arc<uuid::Uuid>;
+    fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
     fn view_type(&self) -> &'static str;
     
@@ -1862,13 +1861,14 @@ pub trait PackageAdapter<
     );
     fn apply_change(
         &self,
+        view_uuid: &ViewUuid,
         command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
     
     fn deep_copy_init(
         &self,
-        uuid: uuid::Uuid,
+        new_uuid: ModelUuid,
         m: &mut HashMap<usize, (Arc<RwLock<ElementModelT>>, Arc<dyn Any + Send + Sync>)>,
     ) -> Self where Self: Sized;
     fn deep_copy_finish(
@@ -1892,7 +1892,7 @@ pub struct PackageView<
     PropChangeT: Clone + Debug,
 > where
     AddCommandElementT: From<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -1905,7 +1905,7 @@ pub struct PackageView<
                 >,
             >,
         )> + TryInto<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -1920,11 +1920,11 @@ pub struct PackageView<
         )> + Clone
         + 'static,
 {
-    uuid: Arc<uuid::Uuid>,
+    uuid: Arc<ViewUuid>,
     adapter: AdapterT,
     self_reference: Weak<RwLock<Self>>,
     owned_controllers: HashMap<
-        uuid::Uuid,
+        ViewUuid,
         Arc<
             RwLock<
                 dyn ElementControllerGen2<
@@ -1937,9 +1937,9 @@ pub struct PackageView<
             >,
         >,
     >,
-    event_order: Vec<uuid::Uuid>,
-    all_elements: HashMap<uuid::Uuid, SelectionStatus>,
-    selected_direct_elements: HashSet<uuid::Uuid>,
+    event_order: Vec<ViewUuid>,
+    all_elements: HashMap<ViewUuid, SelectionStatus>,
+    selected_direct_elements: HashSet<ViewUuid>,
 
     dragged_type_and_shape: Option<(PackageDragType, egui::Rect)>,
     highlight: canvas::Highlight,
@@ -1957,7 +1957,7 @@ impl<
     PackageView<AdapterT, ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
 where
     AddCommandElementT: From<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -1970,7 +1970,7 @@ where
                 >,
             >,
         )> + TryInto<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -1986,10 +1986,10 @@ where
         + 'static,
 {
     pub fn new(
-        uuid: Arc<uuid::Uuid>,
+        uuid: Arc<ViewUuid>,
         adapter: AdapterT,
         owned_controllers: HashMap<
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -2062,7 +2062,7 @@ where
         KindedElement<'a>: From<&'a Self>,
     >,
     AddCommandElementT: From<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -2075,7 +2075,7 @@ where
                 >,
             >,
         )> + TryInto<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -2089,10 +2089,10 @@ where
             >,
         )>,
 {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
-    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+    fn model_uuid(&self) -> Arc<ModelUuid> {
         self.adapter.model_uuid()
     }
     fn model_name(&self) -> Arc<String> {
@@ -2118,7 +2118,7 @@ impl<
     >
 where
     AddCommandElementT: From<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -2131,7 +2131,7 @@ where
                 >,
             >,
         )> + TryInto<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -2145,19 +2145,16 @@ where
             >,
         )>,
 {
-    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
+    fn serialize_into(&self, into: &mut NHSerializer) {
         // Serialize itself
-        let self_id = *self.adapter.model_uuid();
+        let self_id = *self.uuid;
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
         element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
         element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.bounds_rect.center().x as f64), toml::Value::Float(self.bounds_rect.center().y as f64)]));
         element.insert("size".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.bounds_rect.width() as f64), toml::Value::Float(self.bounds_rect.height() as f64)]));
         element.insert("children".to_owned(), toml::Value::Array(self.event_order.iter().map(|e| toml::Value::String(e.to_string())).collect()));
-        into.insert(self_id, element);
-
-        // TODO: serialize model
-        //element.insert("name".to_owned(), toml::Value::String((*self.adapter.model_name()).clone()));
+        into.insert_view(self_id, element);
 
         // Serialize children
         self.event_order.iter()
@@ -2191,7 +2188,7 @@ where
         KindedElement<'a>: From<&'a Self>,
     >,
     AddCommandElementT: From<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -2204,7 +2201,7 @@ where
                 >,
             >,
         )> + TryInto<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -2251,7 +2248,7 @@ impl<
     >
 where
     AddCommandElementT: From<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -2264,7 +2261,7 @@ where
                 >,
             >,
         )> + TryInto<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -2280,7 +2277,7 @@ where
 {
     fn controller_for(
         &self,
-        uuid: &uuid::Uuid,
+        uuid: &ModelUuid,
     ) -> Option<
         Arc<
             RwLock<
@@ -2294,7 +2291,9 @@ where
             >,
         >,
     > {
-        self.owned_controllers.get(uuid).cloned().or_else(|| self.owned_controllers.iter().flat_map(|e| e.1.read().unwrap().controller_for(uuid)).nth(0))
+        // TODO: store views by model uuids
+        self.owned_controllers.iter().find(|(_, c)| *c.read().unwrap().model_uuid() == *uuid).map(|(_, c)| c.clone())
+            .or_else(|| self.owned_controllers.iter().flat_map(|e| e.1.read().unwrap().controller_for(uuid)).next())
     }
 }
 
@@ -2323,7 +2322,7 @@ where
         KindedElement<'a>: From<&'a Self>,
     >,
     AddCommandElementT: From<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -2336,7 +2335,7 @@ where
                 >,
             >,
         )> + TryInto<(
-            uuid::Uuid,
+            ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -2477,7 +2476,7 @@ where
     }
 
     fn collect_allignment(&mut self, am: &mut SnapManager) {
-        am.add_shape(*self.model_uuid(), self.min_shape());
+        am.add_shape(*self.uuid, self.min_shape());
         
         self.event_order.iter()
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
@@ -2550,7 +2549,7 @@ where
                         tool.add_element(ToolT::KindedElement::from(self));
                         
                         if let Some(new_a) = tool.try_construct(self) {
-                            commands.push(InsensitiveCommand::AddElement(*self.model_uuid(), new_a.into()).into());
+                            commands.push(InsensitiveCommand::AddElement(*self.uuid, new_a.into()).into());
                         }
                         
                         EventHandlingStatus::HandledByContainer
@@ -2583,7 +2582,7 @@ where
                     self.dragged_type_and_shape = Some((PackageDragType::Move, translated_bounds));
                     let translated_real_shape = NHShape::Rect { inner: translated_bounds };
                     let coerced_pos = ehc.snap_manager.coerce(translated_real_shape,
-                        |e| !self.all_elements.get(e).is_some() && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected) } else {*e == *self.model_uuid()}
+                        |e| !self.all_elements.get(e).is_some() && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected) } else {*e == *self.uuid}
                     );
                     let coerced_delta = coerced_pos - self.position();
                     
@@ -2591,7 +2590,7 @@ where
                         commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                     } else {
                         commands.push(InsensitiveCommand::MoveSpecificElements(
-                            std::iter::once(*self.model_uuid()).collect(),
+                            std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         ).into());
                     }
@@ -2665,7 +2664,7 @@ where
                 let r = self.bounds_rect + epaint::Marginf{left, right, top, bottom};
                 
                 undo_accumulator.push(InsensitiveCommand::ResizeSpecificElementsTo(
-                    std::iter::once(*self.model_uuid()).collect(),
+                    std::iter::once(*self.uuid).collect(),
                     *$align,
                     self.bounds_rect.size(),
                 ));
@@ -2686,7 +2685,7 @@ where
                 recurse!(self);
             }
             InsensitiveCommand::SelectSpecific(uuids, select) => {
-                if uuids.contains(&*self.model_uuid()) {
+                if uuids.contains(&*self.uuid) {
                     self.highlight.selected = *select;
                 }
 
@@ -2704,13 +2703,13 @@ where
                 
                 recurse!(self);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.model_uuid()) => {
+            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid) => {
                 recurse!(self);
             }
             InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.bounds_rect.set_center(self.position() + *delta);
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
-                    std::iter::once(*self.model_uuid()).collect(),
+                    std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
                 for e in &self.owned_controllers {
@@ -2719,14 +2718,14 @@ where
                 }
             }
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
-                if uuids.contains(&self.model_uuid()) {
+                if uuids.contains(&self.uuid) {
                     resize_by!(align, delta);
                 }
                 
                 recurse!(self);
             }
             InsensitiveCommand::ResizeSpecificElementsTo(uuids, align, size) => {
-                if uuids.contains(&self.model_uuid()) {
+                if uuids.contains(&self.uuid) {
                     let delta_naive = *size - self.bounds_rect.size();
                     let x = match align.x() {
                         egui::Align::Min => delta_naive.x,
@@ -2752,19 +2751,19 @@ where
                     .filter(|e| uuids.contains(&e.0))
                 {
                     undo_accumulator.push(InsensitiveCommand::AddElement(
-                        *self.model_uuid(),
+                        *self.uuid,
                         AddCommandElementT::from((*uuid, element.clone())),
                     ));
                 }
 
-                self.adapter.delete_elements(&uuids);
+                // TODO: self.adapter.delete_elements(&uuids);
                 self.owned_controllers.retain(|k, _v| !uuids.contains(&k));
                 self.event_order.retain(|e| !uuids.contains(&e));
 
                 recurse!(self);
             }
             InsensitiveCommand::AddElement(target, element) => {
-                if *target == *self.model_uuid() {
+                if *target == *self.uuid {
                     if let Ok((uuid, element)) = element.clone().try_into() {
                         undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                             std::iter::once(uuid).collect(),
@@ -2782,15 +2781,16 @@ where
                 recurse!(self);
             }
             InsensitiveCommand::PasteSpecificElements(target, _elements) => {
-                if *target == *self.model_uuid() {
+                if *target == *self.uuid {
                     todo!("undo = delete")
                 }
                 
                 recurse!(self);
             },
             InsensitiveCommand::PropertyChange(uuids, _property) => {
-                if uuids.contains(&*self.model_uuid()) {
+                if uuids.contains(&*self.uuid) {
                     self.adapter.apply_change(
+                        &self.uuid,
                         command,
                         undo_accumulator,
                     );
@@ -2801,8 +2801,8 @@ where
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
-        into.insert(*self.model_uuid(), self.highlight.selected.into());
+    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
+        into.insert(*self.uuid, self.highlight.selected.into());
 
         self.all_elements.clear();
         for e in &self.owned_controllers {
@@ -2819,12 +2819,12 @@ where
     
     fn deep_copy_walk(
         &self,
-        requested: Option<&HashSet<uuid::Uuid>>,
-        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
-        tlc: &mut HashMap<uuid::Uuid,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
         >,
-        c: &mut HashMap<usize, (uuid::Uuid, 
+        c: &mut HashMap<usize, (ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -2833,7 +2833,7 @@ where
             Arc<dyn Any + Send + Sync>,
         )>)
     {
-        if requested.is_none_or(|e| e.contains(&self.model_uuid())) {
+        if requested.is_none_or(|e| e.contains(&self.uuid)) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         } else {
             self.owned_controllers.iter()
@@ -2842,11 +2842,11 @@ where
     }
     fn deep_copy_clone(
         &self,
-        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
-        tlc: &mut HashMap<uuid::Uuid,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
         >,
-        c: &mut HashMap<usize, (uuid::Uuid, 
+        c: &mut HashMap<usize, (ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -2856,7 +2856,7 @@ where
         )>
     ) {
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7(), uuid::Uuid::now_v7())
+            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
         } else {
             (*self.uuid, *self.model_uuid())
         };
@@ -2883,7 +2883,7 @@ where
     }
     fn deep_copy_relink(
         &mut self,
-        c: &HashMap<usize, (uuid::Uuid, 
+        c: &HashMap<usize, (ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -2902,7 +2902,7 @@ pub trait MulticonnectionAdapter<
     PropChangeT: Clone + Debug,
 >: Send + Sync {
     fn model(&self) -> Arc<RwLock<ElementModelT>>;
-    fn model_uuid(&self) -> Arc<uuid::Uuid>;
+    fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
     fn view_type(&self) -> &'static str;
 
@@ -2916,13 +2916,14 @@ pub trait MulticonnectionAdapter<
     );
     fn apply_change(
         &self,
+        view_uuid: &ViewUuid,
         command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
     
     fn deep_copy_init(
         &self,
-        uuid: uuid::Uuid,
+        new_uuid: ModelUuid,
         m: &mut HashMap<usize, (Arc<RwLock<ElementModelT>>, Arc<dyn Any + Send + Sync>)>,
     ) -> Self where Self: Sized;
     fn deep_copy_finish(
@@ -2933,8 +2934,8 @@ pub trait MulticonnectionAdapter<
 
 #[derive(Clone, Debug)]
 pub struct VertexInformation {
-    after: uuid::Uuid,
-    id: uuid::Uuid,
+    after: ViewUuid,
+    id: ViewUuid,
     position: egui::Pos2,
 }
 #[derive(Clone, Debug)]
@@ -2951,7 +2952,7 @@ pub struct MulticonnectionView<
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
-    uuid: Arc<uuid::Uuid>,
+    uuid: Arc<ViewUuid>,
     adapter: AdapterT,
     self_reference: Weak<RwLock<Self>>,
 
@@ -2978,13 +2979,13 @@ pub struct MulticonnectionView<
         >,
     >,
 
-    dragged_node: Option<(uuid::Uuid, egui::Pos2)>,
+    dragged_node: Option<(ViewUuid, egui::Pos2)>,
     highlight: canvas::Highlight,
-    selected_vertices: HashSet<uuid::Uuid>,
-    center_point: Option<(uuid::Uuid, egui::Pos2)>,
-    source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
-    dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
-    point_to_origin: HashMap<uuid::Uuid, (bool, usize)>,
+    selected_vertices: HashSet<ViewUuid>,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
+    dest_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
+    point_to_origin: HashMap<ViewUuid, (bool, usize)>,
 }
 
 impl<
@@ -3008,7 +3009,7 @@ where
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
     pub fn new(
-        uuid: Arc<uuid::Uuid>,
+        uuid: Arc<ViewUuid>,
         adapter: AdapterT,
         source: Arc<
             RwLock<
@@ -3033,9 +3034,9 @@ where
             >,
         >,
 
-        center_point: Option<(uuid::Uuid, egui::Pos2)>,
-        source_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
-        dest_points: Vec<Vec<(uuid::Uuid, egui::Pos2)>>,
+        center_point: Option<(ViewUuid, egui::Pos2)>,
+        source_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
+        dest_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
     ) -> Arc<RwLock<Self>> {
         let mut point_to_origin = HashMap::new();
         for (idx, path) in source_points.iter().enumerate() {
@@ -3071,7 +3072,7 @@ where
     }
     
     const VERTEX_RADIUS: f32 = 5.0;
-    fn all_vertices(&self) -> impl Iterator<Item = &(uuid::Uuid, egui::Pos2)> {
+    fn all_vertices(&self) -> impl Iterator<Item = &(ViewUuid, egui::Pos2)> {
         self.center_point.iter()
             .chain(self.source_points.iter().flat_map(|e| e.iter()))
             .chain(self.dest_points.iter().flat_map(|e| e.iter()))
@@ -3098,10 +3099,10 @@ where
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
-    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+    fn model_uuid(&self) -> Arc<ModelUuid> {
         self.adapter.model_uuid()
     }
     fn model_name(&self) -> Arc<String> {
@@ -3129,19 +3130,17 @@ where
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
-    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
+    fn serialize_into(&self, into: &mut NHSerializer) {
         // Serialize itself
-        let self_id = *self.adapter.model_uuid();
+        let self_id = *self.uuid;
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
         element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
+        // TODO: store view ids, not model ids
         element.insert("source".to_owned(), toml::Value::String(self.source.read().unwrap().model_uuid().to_string()));
         element.insert("destination".to_owned(), toml::Value::String(self.destination.read().unwrap().model_uuid().to_string()));
         // TODO: store points, etc.
-        into.insert(self_id, element);
-
-        // TODO: serialize model
-        //element.insert("name".to_owned(), toml::Value::String((*self.adapter.model_name()).clone()));
+        into.insert_view(self_id, element);
     }
 }
 
@@ -3204,27 +3203,7 @@ impl<
     >
 where
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
-    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
-{
-    fn controller_for(
-        &self,
-        _uuid: &uuid::Uuid,
-    ) -> Option<
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    ElementModelT,
-                    QueryableT,
-                    ToolT,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >,
-    > {
-        None
-    }
-}
+    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection> {}
 
 impl<
         AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT> +'static,
@@ -3346,7 +3325,7 @@ where
             match &self.center_point {
                 Some(point) => *point,
                 None => (
-                    uuid::Uuid::nil(),
+                    uuid::Uuid::nil().into(),
                     (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
                 ),
             },
@@ -3362,7 +3341,7 @@ where
             .chain(self.source_points.iter().flat_map(|e| e.iter().skip(1)))
             .chain(self.dest_points.iter().flat_map(|e| e.iter().skip(1)))
         {
-            am.add_shape(*self.model_uuid(), NHShape::Rect { inner: egui::Rect::from_min_size(p.1, egui::Vec2::ZERO) });
+            am.add_shape(*self.uuid, NHShape::Rect { inner: egui::Rect::from_min_size(p.1, egui::Vec2::ZERO) });
         }
     }
     fn handle_event(
@@ -3407,11 +3386,11 @@ where
                     }
                     // TODO: this is generally wrong (why??)
                     None if is_over(pos, self.position()) => {
-                        self.dragged_node = Some((uuid::Uuid::now_v7(), pos));
+                        self.dragged_node = Some((uuid::Uuid::now_v7().into(), pos));
                         commands.push(InsensitiveCommand::AddElement(
-                            *self.model_uuid(),
+                            *self.uuid,
                             VertexInformation {
-                                after: uuid::Uuid::nil(),
+                                after: uuid::Uuid::nil().into(),
                                 id: self.dragged_node.unwrap().0,
                                 position: self.position(),
                             }
@@ -3442,9 +3421,9 @@ where
                                 
                                 let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
                                 if is_over(pos, midpoint) {
-                                    self.dragged_node = Some((uuid::Uuid::now_v7(), pos));
+                                    self.dragged_node = Some((uuid::Uuid::now_v7().into(), pos));
                                     commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::AddElement(
-                                        *self.model_uuid(),
+                                        *self.uuid,
                                         VertexInformation {
                                             after: u.0,
                                             id: self.dragged_node.unwrap().0,
@@ -3575,7 +3554,7 @@ where
                 let coerced_pos = if self.highlight.selected {
                     ehc.snap_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected))
                 } else {
-                    ehc.snap_manager.coerce(translated_real_shape, |e| *e != *self.model_uuid())
+                    ehc.snap_manager.coerce(translated_real_shape, |e| *e != *self.uuid)
                 };
                 let coerced_delta = coerced_pos - self.all_vertices()
                     .find(|e| e.0 == dragged_node.0).unwrap().1;
@@ -3622,7 +3601,7 @@ where
                 }
             }
             InsensitiveCommand::SelectSpecific(uuids, select) => {
-                if uuids.contains(&*self.model_uuid()) {
+                if uuids.contains(&*self.uuid) {
                     self.highlight.selected = *select;
                 }
                 match select {
@@ -3637,7 +3616,7 @@ where
             InsensitiveCommand::SelectByDrag(rect) => {
                 self.highlight.selected = all_pts_mut!(self).find(|p| !rect.contains(p.1)).is_none();
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.model_uuid()) => {
+            InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.uuid) => {
                 for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {
                     p.1 += *delta;
                     undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
@@ -3660,14 +3639,14 @@ where
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids) => {
-                let self_uuid = *self.model_uuid();
+                let self_uuid = *self.uuid;
                 if let Some(center_point) =
                     self.center_point.as_mut().filter(|e| uuids.contains(&e.0))
                 {
                     undo_accumulator.push(InsensitiveCommand::AddElement(
                         self_uuid,
                         AddCommandElementT::from(VertexInformation {
-                            after: uuid::Uuid::nil(),
+                            after: uuid::Uuid::nil().into(),
                             id: center_point.0,
                             position: center_point.1,
                         }),
@@ -3714,7 +3693,7 @@ where
                 delete_vertices!(self, dest_points);
             }
             InsensitiveCommand::AddElement(target, element) => {
-                if *target == *self.model_uuid() {
+                if *target == *self.uuid {
                     if let Ok(VertexInformation {
                         after,
                         id,
@@ -3762,18 +3741,18 @@ where
                 }
             }
             InsensitiveCommand::PropertyChange(uuids, properties) => {
-                if uuids.contains(&*self.model_uuid()) {
+                if uuids.contains(&*self.uuid) {
                     for property in properties {
                         if let Ok(FlipMulticonnection {}) = property.try_into() {}
                     }
-                    self.adapter.apply_change(command, undo_accumulator);
+                    self.adapter.apply_change(&self.uuid, command, undo_accumulator);
                 }
             }
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
-        into.insert(*self.model_uuid(), self.highlight.selected.into());
+    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
+        into.insert(*self.uuid, self.highlight.selected.into());
         
         for e in self.all_vertices() {
             into.insert(e.0, match self.selected_vertices.contains(&e.0) {
@@ -3786,11 +3765,11 @@ where
     
     fn deep_copy_clone(
         &self,
-        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
-        tlc: &mut HashMap<uuid::Uuid,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
         >,
-        c: &mut HashMap<usize, (uuid::Uuid, 
+        c: &mut HashMap<usize, (ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -3800,7 +3779,7 @@ where
         )>
     ) {
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7(), uuid::Uuid::now_v7())
+            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
         } else {
             (*self.uuid, *self.model_uuid())
         };
@@ -3826,7 +3805,7 @@ where
     
     fn deep_copy_relink(
         &mut self,
-        c: &HashMap<usize, (uuid::Uuid, 
+        c: &HashMap<usize, (ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,

@@ -3,39 +3,66 @@ use std::{any::Any, collections::HashMap, sync::{Arc, RwLock}};
 
 use serde::{Deserialize, Serialize};
 
-use super::controller::DiagramController;
+use super::{controller::DiagramController, uuid::{ModelUuid, ViewUuid}};
 
 #[derive(Serialize, Deserialize)]
 pub enum NHProjectHierarchyNodeDTO {
-    Folder(uuid::Uuid, Vec<NHProjectHierarchyNodeDTO>),
-    Node(uuid::Uuid, Vec<NHProjectHierarchyNodeDTO>),
-    Leaf(uuid::Uuid),
+    Folder(ViewUuid, Vec<NHProjectHierarchyNodeDTO>),
+    Diagram(ViewUuid),
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct NHProjectDTO {
     format_version: String,
     hierarchy: Vec<NHProjectHierarchyNodeDTO>,
-    elements: Vec<toml::Value>,
+    flattened_models: Vec<toml::Value>,
+    flattened_views: Vec<toml::Value>,
 }
 
 impl NHProjectDTO {
     pub fn new(
-        format_version: impl Into<String>,
         hierarchy: Vec<NHProjectHierarchyNodeDTO>,
-        mut flattened_elements: Vec<(uuid::Uuid, toml::Table)>,
+        serializer: NHSerializer,
     ) -> Self {
-        flattened_elements.sort_by_key(|e| e.0);
+        let (flattened_models, flattened_views) = {
+            let NHSerializer { models, views } = serializer;
+            let (mut m, mut v): (Vec<_>, Vec<_>) = (models.into_iter().collect(), views.into_iter().collect());
+            m.sort_by_key(|e| e.0);
+            v.sort_by_key(|e| e.0);
+            (m, v)
+        };
         Self {
-            format_version: format_version.into(),
+            format_version: "0.1.0".into(),
             hierarchy,
-            elements: flattened_elements.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
+            flattened_models: flattened_models.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
+            flattened_views: flattened_views.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
         }
     }
 }
 
+pub struct NHSerializer {
+    models: HashMap<ModelUuid, toml::Table>,
+    views: HashMap<ViewUuid, toml::Table>,
+}
+
+impl NHSerializer {
+    pub fn new() -> Self {
+        Self {
+            models: HashMap::new(),
+            views: HashMap::new(),
+        }
+    }
+
+    pub fn insert_model(&mut self, uuid: ModelUuid, data: toml::Table) {
+        self.models.insert(uuid, data);
+    }
+    pub fn insert_view(&mut self, uuid: ViewUuid, data: toml::Table) {
+        self.views.insert(uuid, data);
+    }
+}
+
 pub trait NHSerialize {
-    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>);
+    fn serialize_into(&self, into: &mut NHSerializer);
 }
 
 pub trait NHDeserialize: Sized {

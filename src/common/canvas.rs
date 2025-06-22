@@ -3,6 +3,8 @@ use eframe::egui;
 use std::collections::HashSet;
 use std::io::Write;
 
+use super::uuid::ViewUuid;
+
 // rect intersection between segment from p to the center of rect
 // based on https://stackoverflow.com/a/31254199 by TWiStErRob
 fn segment_rect_point(p: egui::Pos2, rect: &egui::Rect) -> Option<egui::Pos2> {
@@ -720,41 +722,41 @@ pub trait NHCanvas {
     // TODO: refactor to allow for line types (solid/dotted/dashed/double/squiggly)
     fn draw_multiconnection<'a>(
         &mut self,
-        selected_vertices: &HashSet<uuid::Uuid>,
+        selected_vertices: &HashSet<ViewUuid>,
         sources: &[(
             ArrowheadType,
             Stroke,
-            &Vec<(uuid::Uuid, egui::Pos2)>,
+            &Vec<(ViewUuid, egui::Pos2)>,
             Option<(egui::Pos2, &'a str)>,
         )],
         destinations: &[(
             ArrowheadType,
             Stroke,
-            &Vec<(uuid::Uuid, egui::Pos2)>,
+            &Vec<(ViewUuid, egui::Pos2)>,
             Option<(egui::Pos2, &'a str)>,
         )],
-        central_point: (uuid::Uuid, egui::Pos2),
+        central_point: (ViewUuid, egui::Pos2),
         mid_label: Option<&str>,
         highlight: Highlight,
     ) {
         fn a<'a>(
-            central_point: (uuid::Uuid, egui::Pos2),
+            central_point: (ViewUuid, egui::Pos2),
             e: &'a (
                 ArrowheadType,
                 Stroke,
-                &'a Vec<(uuid::Uuid, egui::Pos2)>,
+                &'a Vec<(ViewUuid, egui::Pos2)>,
                 Option<(egui::Pos2, &'a str)>,
             ),
         ) -> (
             ArrowheadType,
             Stroke,
             egui::Pos2,
-            impl Iterator<Item = (uuid::Uuid, egui::Pos2)> + 'a,
+            impl Iterator<Item = (ViewUuid, egui::Pos2)> + 'a,
             Option<(egui::Pos2, &'a str)>,
         ) {
             let focal_point = e.2.first().unwrap();
             let path = std::iter::once((
-                uuid::Uuid::nil(),
+                uuid::Uuid::nil().into(),
                 e.0.get_intersect(focal_point.1, e.2.get(1).unwrap_or(&central_point).1),
             ))
             .chain(e.2.iter().skip(1).map(|e| *e))

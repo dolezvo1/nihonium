@@ -1,19 +1,20 @@
 use crate::common::canvas;
 use crate::common::controller::{ContainerModel, Model};
 use crate::common::observer::{impl_observable, Observable, Observer};
+use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashSet, VecDeque},
     sync::{Arc, RwLock},
 };
 
 pub trait DemoCsdElement: Observable {
-    fn uuid(&self) -> Arc<uuid::Uuid>;
+    fn uuid(&self) -> Arc<ModelUuid>;
 }
 
 // ---
 
 pub struct DemoCsdDiagram {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn DemoCsdElement>>>,
 
@@ -23,7 +24,7 @@ pub struct DemoCsdDiagram {
 
 impl DemoCsdDiagram {
     pub fn new(
-        uuid: uuid::Uuid,
+        uuid: ModelUuid,
         name: String,
         contained_elements: Vec<Arc<RwLock<dyn DemoCsdElement>>>,
     ) -> Self {
@@ -38,7 +39,7 @@ impl DemoCsdDiagram {
 }
 
 impl Model for DemoCsdDiagram {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
     fn name(&self) -> Arc<String> {
@@ -61,7 +62,7 @@ impl_observable!(DemoCsdDiagram);
 // ---
 
 pub struct DemoCsdPackage {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn DemoCsdElement>>>,
 
@@ -71,7 +72,7 @@ pub struct DemoCsdPackage {
 
 impl DemoCsdPackage {
     pub fn new(
-        uuid: uuid::Uuid,
+        uuid: ModelUuid,
         name: String,
         contained_elements: Vec<Arc<RwLock<dyn DemoCsdElement>>>,
     ) -> Self {
@@ -86,7 +87,7 @@ impl DemoCsdPackage {
 }
 
 impl Model for DemoCsdPackage {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
     fn name(&self) -> Arc<String> {
@@ -107,7 +108,7 @@ impl ContainerModel<dyn DemoCsdElement> for DemoCsdPackage {
 impl_observable!(DemoCsdPackage);
 
 impl DemoCsdElement for DemoCsdPackage {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
 }
@@ -115,7 +116,7 @@ impl DemoCsdElement for DemoCsdPackage {
 // ---
 
 pub struct DemoCsdTransactor {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
 
     pub identifier: Arc<String>,
     pub name: Arc<String>,
@@ -129,7 +130,7 @@ pub struct DemoCsdTransactor {
 
 impl DemoCsdTransactor {
     pub fn new(
-        uuid: uuid::Uuid,
+        uuid: ModelUuid,
         identifier: String,
         name: String,
         internal: bool,
@@ -154,7 +155,7 @@ impl DemoCsdTransactor {
 impl_observable!(DemoCsdTransactor);
 
 impl DemoCsdElement for DemoCsdTransactor {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
 }
@@ -162,7 +163,7 @@ impl DemoCsdElement for DemoCsdTransactor {
 // ---
 
 pub struct DemoCsdTransaction {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
 
     pub identifier: Arc<String>,
     pub name: Arc<String>,
@@ -172,7 +173,7 @@ pub struct DemoCsdTransaction {
 }
 
 impl DemoCsdTransaction {
-    pub fn new(uuid: uuid::Uuid, identifier: String, name: String) -> Self {
+    pub fn new(uuid: ModelUuid, identifier: String, name: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
 
@@ -188,7 +189,7 @@ impl DemoCsdTransaction {
 impl_observable!(DemoCsdTransaction);
 
 impl DemoCsdElement for DemoCsdTransaction {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
 }
@@ -221,7 +222,7 @@ impl DemoCsdLinkType {
 }
 
 pub struct DemoCsdLink {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
 
     pub link_type: DemoCsdLinkType,
     pub source: Arc<RwLock<DemoCsdTransactor>>,
@@ -233,7 +234,7 @@ pub struct DemoCsdLink {
 
 impl DemoCsdLink {
     pub fn new(
-        uuid: uuid::Uuid,
+        uuid: ModelUuid,
         link_type: DemoCsdLinkType,
         source: Arc<RwLock<DemoCsdTransactor>>,
         target: Arc<RwLock<DemoCsdTransaction>>,
@@ -252,7 +253,7 @@ impl DemoCsdLink {
 impl_observable!(DemoCsdLink);
 
 impl DemoCsdElement for DemoCsdLink {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
 }

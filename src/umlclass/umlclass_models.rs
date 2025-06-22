@@ -1,6 +1,7 @@
 use crate::common::canvas::{ArrowheadType, LineType};
 use crate::common::controller::{ContainerModel, Model};
 use crate::common::observer::{impl_observable, Observable, Observer};
+use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, LazyLock, RwLock},
@@ -9,7 +10,7 @@ use std::{
 pub struct UmlClassCollector {
     collecting_absolute_paths: bool,
     package_stack: Vec<String>,
-    absolute_paths: HashMap<uuid::Uuid, String>,
+    absolute_paths: HashMap<ModelUuid, String>,
     plantuml_data: String,
 }
 
@@ -92,12 +93,12 @@ impl UmlClassCollector {
 }
 
 pub trait UmlClassElement: Observable {
-    fn uuid(&self) -> Arc<uuid::Uuid>;
+    fn uuid(&self) -> Arc<ModelUuid>;
     fn accept(&self, visitor: &mut UmlClassCollector);
 }
 
 pub struct UmlClassDiagram {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
 
@@ -107,7 +108,7 @@ pub struct UmlClassDiagram {
 
 impl UmlClassDiagram {
     pub fn new(
-        uuid: uuid::Uuid,
+        uuid: ModelUuid,
         name: String,
         contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
     ) -> Self {
@@ -145,7 +146,7 @@ impl UmlClassDiagram {
 }
 
 impl Model for UmlClassDiagram {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
     fn name(&self) -> Arc<String> {
@@ -166,7 +167,7 @@ impl ContainerModel<dyn UmlClassElement> for UmlClassDiagram {
 impl_observable!(UmlClassDiagram);
 
 pub struct UmlClassPackage {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
 
@@ -176,7 +177,7 @@ pub struct UmlClassPackage {
 
 impl UmlClassPackage {
     pub fn new(
-        uuid: uuid::Uuid,
+        uuid: ModelUuid,
         name: String,
         contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
     ) -> Self {
@@ -191,7 +192,7 @@ impl UmlClassPackage {
 }
 
 impl Model for UmlClassPackage {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
     fn name(&self) -> Arc<String> {
@@ -212,7 +213,7 @@ impl ContainerModel<dyn UmlClassElement> for UmlClassPackage {
 impl_observable!(UmlClassPackage);
 
 impl UmlClassElement for UmlClassPackage {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
 
@@ -275,7 +276,7 @@ impl UMLClassAccessModifier {
 }
 
 pub struct UmlClass {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub stereotype: UmlClassStereotype,
     pub properties: Arc<String>,
@@ -287,7 +288,7 @@ pub struct UmlClass {
 
 impl UmlClass {
     pub fn new(
-        uuid: uuid::Uuid,
+        uuid: ModelUuid,
         stereotype: UmlClassStereotype,
         name: String,
         properties: String,
@@ -338,7 +339,7 @@ impl UmlClass {
 impl_observable!(UmlClass);
 
 impl UmlClassElement for UmlClass {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
 
@@ -407,7 +408,7 @@ impl UmlClassLinkType {
 }
 
 pub struct UmlClassLink {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
     pub link_type: UmlClassLinkType,
     pub source: Arc<RwLock<dyn UmlClassElement>>,
     pub source_arrowhead_label: Arc<String>,
@@ -420,7 +421,7 @@ pub struct UmlClassLink {
 
 impl UmlClassLink {
     pub fn new(
-        uuid: uuid::Uuid,
+        uuid: ModelUuid,
         link_type: UmlClassLinkType,
         source: Arc<RwLock<dyn UmlClassElement>>,
         destination: Arc<RwLock<dyn UmlClassElement>>,
@@ -441,7 +442,7 @@ impl UmlClassLink {
 impl_observable!(UmlClassLink);
 
 impl UmlClassElement for UmlClassLink {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
 

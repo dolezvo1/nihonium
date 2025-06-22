@@ -6,7 +6,8 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
-use crate::common::project_serde::NHSerialize;
+use crate::common::project_serde::{NHSerializer, NHSerialize};
+use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::CustomTab;
 use eframe::egui;
 use std::any::Any;
@@ -88,7 +89,7 @@ impl TryFrom<&UmlClassPropChange> for FlipMulticonnection {
 
 #[derive(Clone)]
 pub enum UmlClassElementOrVertex {
-    Element((uuid::Uuid, ArcRwLockControllerT)),
+    Element((ViewUuid, ArcRwLockControllerT)),
     Vertex(VertexInformation),
 }
 
@@ -115,13 +116,13 @@ impl TryFrom<UmlClassElementOrVertex> for VertexInformation {
     }
 }
 
-impl From<(uuid::Uuid, ArcRwLockControllerT)> for UmlClassElementOrVertex {
-    fn from(v: (uuid::Uuid, ArcRwLockControllerT)) -> Self {
+impl From<(ViewUuid, ArcRwLockControllerT)> for UmlClassElementOrVertex {
+    fn from(v: (ViewUuid, ArcRwLockControllerT)) -> Self {
         Self::Element(v)
     }
 }
 
-impl TryFrom<UmlClassElementOrVertex> for (uuid::Uuid, ArcRwLockControllerT) {
+impl TryFrom<UmlClassElementOrVertex> for (ViewUuid, ArcRwLockControllerT) {
     type Error = ();
 
     fn try_from(value: UmlClassElementOrVertex) -> Result<Self, Self::Error> {
@@ -150,7 +151,7 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
 }
 
 pub struct UmlClassDiagramBuffer {
-    uuid: uuid::Uuid,
+    uuid: ViewUuid,
     name: String,
     comment: String,
 }
@@ -332,24 +333,24 @@ impl CustomTab for PlantUmlTab {
 
 const DIAGRAM_VIEW_TYPE: &str = "umlclass-diagram-view";
 
-pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
-    let view_uuid = uuid::Uuid::now_v7();
-    let model_uuid = uuid::Uuid::now_v7();
+pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
+    let view_uuid = uuid::Uuid::now_v7().into();
+    let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New UML class diagram {}", no);
     let diagram = Arc::new(RwLock::new(UmlClassDiagram::new(
-        model_uuid.clone(),
+        model_uuid,
         name.clone(),
         vec![],
     )));
     (
-        view_uuid.clone(),
+        view_uuid,
         DiagramControllerGen2::new(
-            view_uuid.into(),
+            Arc::new(view_uuid),
             diagram,
             HashMap::new(),
             UmlClassQueryable {},
             UmlClassDiagramBuffer {
-                uuid: model_uuid,
+                uuid: view_uuid,
                 name,
                 comment: "".to_owned(),
             },
@@ -362,7 +363,7 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     )
 }
 
-pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
+pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
 
@@ -414,7 +415,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
 
     let (_, usage_client_af, usage_client_af_uuid, usage_client_af_view) = umlclass_link(
         UmlClassLinkType::Usage,
-        Some((uuid::Uuid::now_v7(), egui::Pos2::new(200.0, 50.0))),
+        Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(200.0, 50.0))),
         (class_client.clone(), class_client_view.clone()),
         (class_af.clone(), class_af_view.clone()),
     );
@@ -430,7 +431,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let (_, usage_client_producta, usage_client_producta_uuid, usage_client_producta_view) =
         umlclass_link(
             UmlClassLinkType::Usage,
-            Some((uuid::Uuid::now_v7(), egui::Pos2::new(450.0, 52.0))),
+            Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(450.0, 52.0))),
             (class_client.clone(), class_client_view.clone()),
             (class_producta.clone(), class_producta_view.clone()),
         );
@@ -446,7 +447,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     let (_, usage_client_productb, usage_client_productb_uuid, usage_client_productb_view) =
         umlclass_link(
             UmlClassLinkType::Usage,
-            Some((uuid::Uuid::now_v7(), egui::Pos2::new(650.0, 48.0))),
+            Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(650.0, 48.0))),
             (class_client.clone(), class_client_view.clone()),
             (class_productb.clone(), class_productb_view.clone()),
         );
@@ -465,11 +466,11 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     owned_controllers.insert(class_productb_uuid, class_productb_view);
     owned_controllers.insert(usage_client_productb_uuid, usage_client_productb_view);
 
-    let diagram_view_uuid = uuid::Uuid::now_v7();
-    let diagram_model_uuid = uuid::Uuid::now_v7();
+    let diagram_view_uuid = uuid::Uuid::now_v7().into();
+    let diagram_model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("Demo UML class diagram {}", no);
     let diagram2 = Arc::new(RwLock::new(UmlClassDiagram::new(
-        diagram_model_uuid.clone(),
+        diagram_model_uuid,
         name.clone(),
         vec![
             class_af,
@@ -486,14 +487,14 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         ],
     )));
     (
-        diagram_view_uuid.clone(),
+        diagram_view_uuid,
         DiagramControllerGen2::new(
             diagram_view_uuid.into(),
             diagram2.clone(),
             owned_controllers,
             UmlClassQueryable {},
             UmlClassDiagramBuffer {
-                uuid: diagram_model_uuid,
+                uuid: diagram_view_uuid,
                 name,
                 comment: "".to_owned(),
             },
@@ -538,7 +539,7 @@ pub enum UmlClassToolStage {
 
 enum PartialUmlClassElement {
     None,
-    Some((uuid::Uuid, ArcRwLockControllerT)),
+    Some((ViewUuid, ArcRwLockControllerT)),
     Link {
         link_type: UmlClassLinkType,
         source: Arc<RwLock<dyn UmlClassElement>>,
@@ -720,7 +721,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
             UmlClassPropChange,
         >,
     ) -> Option<(
-        uuid::Uuid,
+        ViewUuid,
         Arc<
             RwLock<
                 dyn ElementControllerGen2<
@@ -749,20 +750,8 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
                     link_type: *link_type,
                 };
 
-                let association_controller: Option<(
-                    uuid::Uuid,
-                    Arc<
-                        RwLock<
-                            dyn ElementControllerGen2<
-                                dyn UmlClassElement,
-                                UmlClassQueryable,
-                                Self,
-                                UmlClassElementOrVertex,
-                                UmlClassPropChange,
-                            >,
-                        >,
-                    >,
-                )> = if let (Some(source_controller), Some(dest_controller)) = (
+                let association_controller: Option<(_, ArcRwLockControllerT)>
+                    = if let (Some(source_controller), Some(dest_controller)) = (
                     into.controller_for(&source.read().unwrap().uuid()),
                     into.controller_for(&dest.read().unwrap().uuid()),
                 ) {
@@ -807,7 +796,7 @@ pub trait UmlClassElementController:
     UmlClassPropChange,
 >
 {
-    fn is_connection_from(&self, _uuid: &uuid::Uuid) -> bool {
+    fn is_connection_from(&self, _uuid: &ModelUuid) -> bool {
         false
     }
     fn connection_target_name(&self) -> Option<Arc<String>> {
@@ -825,7 +814,7 @@ impl PackageAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlClassPropCh
         self.model.clone()
     }
 
-    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+    fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().unwrap().uuid.clone()
     }
 
@@ -882,6 +871,7 @@ impl PackageAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlClassPropCh
 
     fn apply_change(
         &self,
+        view_uuid: &ViewUuid,
         command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) {
@@ -891,14 +881,14 @@ impl PackageAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlClassPropCh
                 match property {
                     UmlClassPropChange::NameChange(name) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid).collect(),
+                            std::iter::once(*view_uuid).collect(),
                             vec![UmlClassPropChange::NameChange(model.name.clone())],
                         ));
                         model.name = name.clone();
                     }
                     UmlClassPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid).collect(),
+                            std::iter::once(*view_uuid).collect(),
                             vec![UmlClassPropChange::CommentChange(model.comment.clone())],
                         ));
                         model.comment = comment.clone();
@@ -911,11 +901,11 @@ impl PackageAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlClassPropCh
 
     fn deep_copy_init(
         &self,
-        uuid: uuid::Uuid,
+        new_uuid: ModelUuid,
         m: &mut HashMap<usize, (Arc<RwLock<dyn UmlClassElement>>, Arc<dyn Any + Send + Sync>)>,
     ) -> Self where Self: Sized {
         let model = self.model.read().unwrap();
-        let model = Arc::new(RwLock::new(UmlClassPackage::new(uuid, (*model.name).clone(), model.contained_elements.clone())));
+        let model = Arc::new(RwLock::new(UmlClassPackage::new(new_uuid, (*model.name).clone(), model.contained_elements.clone())));
         m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
         Self { model }
     }
@@ -932,20 +922,20 @@ fn umlclass_package(
     name: &str,
     bounds_rect: egui::Rect,
 ) -> (
-    uuid::Uuid,
+    ModelUuid,
     Arc<RwLock<UmlClassPackage>>,
-    uuid::Uuid,
+    ViewUuid,
     Arc<RwLock<PackageViewT>>,
 ) {
-    let view_uuid = uuid::Uuid::now_v7();
-    let model_uuid = uuid::Uuid::now_v7();
+    let view_uuid = uuid::Uuid::now_v7().into();
+    let model_uuid = uuid::Uuid::now_v7().into();
     let package_model = Arc::new(RwLock::new(UmlClassPackage::new(
-        model_uuid.clone(),
+        model_uuid,
         name.to_owned(),
         vec![],
     )));
     let package_view = PackageView::new(
-        view_uuid.clone().into(),
+        Arc::new(view_uuid),
         UmlClassPackageAdapter {
             model: package_model.clone(),
         },
@@ -963,13 +953,13 @@ fn uml_class(
     functions: &str,
     position: egui::Pos2,
 ) -> (
-    uuid::Uuid,
+    ModelUuid,
     Arc<RwLock<UmlClass>>,
-    uuid::Uuid,
+    ViewUuid,
     Arc<RwLock<UmlClassController>>,
 ) {
-    let class_view_uuid = uuid::Uuid::now_v7();
-    let class_model_uuid = uuid::Uuid::now_v7();
+    let class_view_uuid = uuid::Uuid::now_v7().into();
+    let class_model_uuid = uuid::Uuid::now_v7().into();
     let class_model = Arc::new(RwLock::new(UmlClass::new(
         class_model_uuid,
         stereotype,
@@ -978,7 +968,7 @@ fn uml_class(
         functions.to_owned(),
     )));
     let class_view = Arc::new(RwLock::new(UmlClassController {
-        uuid: class_view_uuid.into(),
+        uuid: Arc::new(class_view_uuid),
         model: class_model.clone(),
         self_reference: Weak::new(),
         stereotype_buffer: stereotype,
@@ -997,7 +987,7 @@ fn uml_class(
 }
 
 pub struct UmlClassController {
-    uuid: Arc<uuid::Uuid>,
+    uuid: Arc<ViewUuid>,
     pub model: Arc<RwLock<UmlClass>>,
     self_reference: Weak<RwLock<Self>>,
 
@@ -1014,10 +1004,10 @@ pub struct UmlClassController {
 }
 
 impl View for UmlClassController {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
-    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+    fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().unwrap().uuid.clone()
     }
     fn model_name(&self) -> Arc<String> {
@@ -1026,17 +1016,13 @@ impl View for UmlClassController {
 }
 
 impl NHSerialize for UmlClassController {
-    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
-        // Serialize itself
-        let self_id = *self.model_uuid();
+    fn serialize_into(&self, into: &mut NHSerializer) {
+        let self_id = *self.uuid;
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
         element.insert("type".to_owned(), toml::Value::String("umlclass-class-view".to_owned()));
         element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
-        into.insert(self_id, element);
-
-        // TODO: serialize model
-        //element.insert("name".to_owned(), toml::Value::String((*self.model_name()).clone()));
+        into.insert_view(self_id, element);
     }
 }
 
@@ -1063,12 +1049,7 @@ impl
         NaiveUmlClassTool,
         UmlClassElementOrVertex,
         UmlClassPropChange,
-    > for UmlClassController
-{
-    fn controller_for(&self, _uuid: &uuid::Uuid) -> Option<ArcRwLockControllerT> {
-        None
-    }
-}
+    > for UmlClassController {}
 
 impl
     ElementControllerGen2<
@@ -1276,7 +1257,7 @@ impl
                     })
                 } else {
                     ehc.snap_manager
-                        .coerce(translated_real_shape, |e| *e != *self.model_uuid())
+                        .coerce(translated_real_shape, |e| *e != *self.uuid)
                 };
                 let coerced_delta = coerced_pos - self.position;
 
@@ -1285,7 +1266,7 @@ impl
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
-                            std::iter::once(*self.model_uuid()).collect(),
+                            std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         )
                         .into(),
@@ -1308,7 +1289,7 @@ impl
                 self.highlight.selected = *select;
             }
             InsensitiveCommand::SelectSpecific(uuids, select) => {
-                if uuids.contains(&*self.model_uuid()) {
+                if uuids.contains(&*self.uuid) {
                     self.highlight.selected = *select;
                 }
             }
@@ -1316,12 +1297,12 @@ impl
                 self.highlight.selected = self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
-                if !uuids.contains(&*self.model_uuid()) => {}
+                if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MoveSpecificElements(_, delta)
             | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
-                    std::iter::once(*self.model_uuid()).collect(),
+                    std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
             }
@@ -1332,13 +1313,13 @@ impl
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
-                if uuids.contains(&*self.model_uuid()) {
+                if uuids.contains(&*self.uuid) {
                     for property in properties {
                         match property {
                             UmlClassPropChange::StereotypeChange(stereotype) => {
                                 let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*model.uuid).collect(),
+                                    std::iter::once(*self.uuid).collect(),
                                     vec![UmlClassPropChange::StereotypeChange(
                                         model.stereotype.clone(),
                                     )],
@@ -1349,7 +1330,7 @@ impl
                             UmlClassPropChange::NameChange(name) => {
                                 let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*model.uuid).collect(),
+                                    std::iter::once(*self.uuid).collect(),
                                     vec![UmlClassPropChange::NameChange(model.name.clone())],
                                 ));
                                 self.name_buffer = (**name).clone();
@@ -1358,7 +1339,7 @@ impl
                             UmlClassPropChange::PropertiesChange(properties) => {
                                 let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*model.uuid).collect(),
+                                    std::iter::once(*self.uuid).collect(),
                                     vec![UmlClassPropChange::PropertiesChange(
                                         model.properties.clone(),
                                     )],
@@ -1369,7 +1350,7 @@ impl
                             UmlClassPropChange::FunctionsChange(functions) => {
                                 let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*model.uuid).collect(),
+                                    std::iter::once(*self.uuid).collect(),
                                     vec![UmlClassPropChange::FunctionsChange(
                                         model.functions.clone(),
                                     )],
@@ -1380,7 +1361,7 @@ impl
                             UmlClassPropChange::CommentChange(comment) => {
                                 let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*model.uuid()).collect(),
+                                    std::iter::once(*self.uuid).collect(),
                                     vec![UmlClassPropChange::CommentChange(model.comment.clone())],
                                 ));
                                 self.comment_buffer = (**comment).clone();
@@ -1394,15 +1375,15 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
-        into.insert(*self.model_uuid(), self.highlight.selected.into());
+    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
+        into.insert(*self.uuid(), self.highlight.selected.into());
     }
     
     fn deep_copy_clone(
         &self,
-        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
-        tlc: &mut HashMap<uuid::Uuid, ArcRwLockControllerT>,
-        c: &mut HashMap<usize, (uuid::Uuid, 
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, ArcRwLockControllerT>,
+        c: &mut HashMap<usize, (ViewUuid,
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -1412,8 +1393,8 @@ impl
         )>
     ) {
         let model = self.model.read().unwrap();
-        let (view_uuid, model_uuid) = if uuid_present(&*model.uuid) {
-            (uuid::Uuid::now_v7(), uuid::Uuid::now_v7())
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
         } else {
             (*self.uuid, *model.uuid)
         };
@@ -1450,7 +1431,7 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
         self.model.clone()
     }
 
-    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+    fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().unwrap().uuid.clone()
     }
 
@@ -1580,6 +1561,7 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
 
     fn apply_change(
         &self,
+        view_uuid: &ViewUuid,
         command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) {
@@ -1589,14 +1571,14 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
                 match property {
                     UmlClassPropChange::LinkTypeChange(link_type) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid).collect(),
+                            std::iter::once(*view_uuid).collect(),
                             vec![UmlClassPropChange::LinkTypeChange(model.link_type.clone())],
                         ));
                         model.link_type = link_type.clone();
                     }
                     UmlClassPropChange::SourceArrowheadLabelChange(source_arrowhead_label) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid).collect(),
+                            std::iter::once(*view_uuid).collect(),
                             vec![UmlClassPropChange::CommentChange(
                                 model.source_arrowhead_label.clone(),
                             )],
@@ -1607,7 +1589,7 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
                         destination_arrowhead_label,
                     ) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid).collect(),
+                            std::iter::once(*view_uuid).collect(),
                             vec![UmlClassPropChange::CommentChange(
                                 model.destination_arrowhead_label.clone(),
                             )],
@@ -1616,7 +1598,7 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
                     }
                     UmlClassPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid).collect(),
+                            std::iter::once(*view_uuid).collect(),
                             vec![UmlClassPropChange::CommentChange(model.comment.clone())],
                         ));
                         model.comment = comment.clone();
@@ -1629,11 +1611,11 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
 
     fn deep_copy_init(
         &self,
-        uuid: uuid::Uuid,
+        new_uuid: ModelUuid,
         m: &mut HashMap<usize, (Arc<RwLock<dyn UmlClassElement>>, Arc<dyn Any + Send + Sync>)>
     ) -> Self where Self: Sized {
         let model = self.model.read().unwrap();
-        let model = Arc::new(RwLock::new(UmlClassLink::new(uuid, model.link_type, model.source.clone(), model.destination.clone())));
+        let model = Arc::new(RwLock::new(UmlClassLink::new(new_uuid, model.link_type, model.source.clone(), model.destination.clone())));
         m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
         Self { model }
     }
@@ -1655,7 +1637,7 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
 
 fn umlclass_link(
     link_type: UmlClassLinkType,
-    center_point: Option<(uuid::Uuid, egui::Pos2)>,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
     source: (
         Arc<RwLock<dyn UmlClassElement>>,
         ArcRwLockControllerT,
@@ -1665,35 +1647,35 @@ fn umlclass_link(
         ArcRwLockControllerT,
     ),
 ) -> (
-    uuid::Uuid,
+    ModelUuid,
     Arc<RwLock<UmlClassLink>>,
-    uuid::Uuid,
+    ViewUuid,
     Arc<RwLock<LinkViewT>>,
 ) {
-    let link_view_uuid = uuid::Uuid::now_v7();
-    let link_model_uuid = uuid::Uuid::now_v7();
+    let link_view_uuid = uuid::Uuid::now_v7().into();
+    let link_model_uuid = uuid::Uuid::now_v7().into();
     let link_model = Arc::new(RwLock::new(UmlClassLink::new(
-        link_model_uuid.clone(),
+        link_model_uuid,
         link_type,
         source.0,
         destination.0,
     )));
     let link_view = MulticonnectionView::new(
-        link_view_uuid.into(),
+        Arc::new(link_view_uuid),
         UmlClassLinkAdapter {
             model: link_model.clone(),
         },
         source.1,
         destination.1,
         center_point,
-        vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
+        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
     );
     (link_model_uuid, link_model, link_view_uuid, link_view)
 }
 
 impl UmlClassElementController for LinkViewT {
-    fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
+    fn is_connection_from(&self, uuid: &ModelUuid) -> bool {
         *self.source.read().unwrap().model_uuid() == *uuid
     }
 

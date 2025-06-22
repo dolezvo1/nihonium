@@ -1,5 +1,6 @@
 use crate::common::controller::{ContainerModel, Model};
 use crate::common::observer::{impl_observable, Observable, Observer};
+use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, RwLock},
@@ -22,13 +23,13 @@ impl<'a> RdfCollector<'a> {
 }
 
 pub trait RdfElement: Observable {
-    fn uuid(&self) -> Arc<uuid::Uuid>;
+    fn uuid(&self) -> Arc<ModelUuid>;
     fn term_repr(&self) -> SimpleTerm<'static>;
     fn accept_collector(&self, collector: &mut RdfCollector<'static>);
 }
 
 pub struct RdfDiagram {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
     pub stored_queries: HashMap<uuid::Uuid, (String, String)>,
@@ -39,7 +40,7 @@ pub struct RdfDiagram {
 
 impl RdfDiagram {
     pub fn new(
-        uuid: uuid::Uuid,
+        uuid: ModelUuid,
         name: String,
         contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
     ) -> Self {
@@ -76,7 +77,7 @@ impl RdfDiagram {
 }
 
 impl Model for RdfDiagram {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
     fn name(&self) -> Arc<String> {
@@ -97,7 +98,7 @@ impl ContainerModel<dyn RdfElement> for RdfDiagram {
 impl_observable!(RdfDiagram);
 
 pub struct RdfGraph {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
     pub contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
 
@@ -107,7 +108,7 @@ pub struct RdfGraph {
 
 impl RdfGraph {
     pub fn new(
-        uuid: uuid::Uuid,
+        uuid: ModelUuid,
         iri: String,
         contained_elements: Vec<Arc<RwLock<dyn RdfElement>>>,
     ) -> Self {
@@ -122,7 +123,7 @@ impl RdfGraph {
 }
 
 impl Model for RdfGraph {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
     fn name(&self) -> Arc<String> {
@@ -143,7 +144,7 @@ impl ContainerModel<dyn RdfElement> for RdfGraph {
 impl_observable!(RdfGraph);
 
 impl RdfElement for RdfGraph {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
 
@@ -166,7 +167,7 @@ impl RdfElement for RdfGraph {
 }
 
 pub struct RdfLiteral {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
     pub content: Arc<String>,
     pub datatype: Arc<String>,
     pub langtag: Arc<String>,
@@ -176,7 +177,7 @@ pub struct RdfLiteral {
 }
 
 impl RdfLiteral {
-    pub fn new(uuid: uuid::Uuid, content: String, datatype: String, langtag: String) -> Self {
+    pub fn new(uuid: ModelUuid, content: String, datatype: String, langtag: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
             content: Arc::new(content),
@@ -191,7 +192,7 @@ impl RdfLiteral {
 impl_observable!(RdfLiteral);
 
 impl RdfElement for RdfLiteral {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
 
@@ -219,7 +220,7 @@ impl RdfElement for RdfLiteral {
 }
 
 pub struct RdfNode {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
 
     pub comment: Arc<String>,
@@ -227,7 +228,7 @@ pub struct RdfNode {
 }
 
 impl RdfNode {
-    pub fn new(uuid: uuid::Uuid, iri: String) -> Self {
+    pub fn new(uuid: ModelUuid, iri: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
             iri: Arc::new(iri),
@@ -240,7 +241,7 @@ impl RdfNode {
 impl_observable!(RdfNode);
 
 impl RdfElement for RdfNode {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
 
@@ -252,7 +253,7 @@ impl RdfElement for RdfNode {
 }
 
 pub struct RdfPredicate {
-    pub uuid: Arc<uuid::Uuid>,
+    pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
     pub source: Arc<RwLock<dyn RdfElement>>,
     pub destination: Arc<RwLock<dyn RdfElement>>,
@@ -263,7 +264,7 @@ pub struct RdfPredicate {
 
 impl RdfPredicate {
     pub fn new(
-        uuid: uuid::Uuid,
+        uuid: ModelUuid,
         iri: String,
         source: Arc<RwLock<dyn RdfElement>>,
         destination: Arc<RwLock<dyn RdfElement>>,
@@ -282,7 +283,7 @@ impl RdfPredicate {
 impl_observable!(RdfPredicate);
 
 impl RdfElement for RdfPredicate {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
 

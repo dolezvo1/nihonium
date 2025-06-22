@@ -3,7 +3,8 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
 };
-use crate::common::project_serde::NHSerialize;
+use crate::common::project_serde::{NHSerializer, NHSerialize};
+use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::{CustomTab};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
@@ -101,7 +102,7 @@ impl TryFrom<&RdfPropChange> for FlipMulticonnection {
 
 #[derive(Clone)]
 pub enum RdfElementOrVertex {
-    Element((uuid::Uuid, ArcRwLockControllerT)),
+    Element((ViewUuid, ArcRwLockControllerT)),
     Vertex(VertexInformation),
 }
 
@@ -112,8 +113,8 @@ impl Debug for RdfElementOrVertex {
 }
 
 impl From<VertexInformation> for RdfElementOrVertex {
-    fn from(v: VertexInformation) -> Self {
-        Self::Vertex(v)
+    fn from(value: VertexInformation) -> Self {
+        Self::Vertex(value)
     }
 }
 
@@ -128,13 +129,13 @@ impl TryFrom<RdfElementOrVertex> for VertexInformation {
     }
 }
 
-impl From<(uuid::Uuid, ArcRwLockControllerT)> for RdfElementOrVertex {
-    fn from(v: (uuid::Uuid, ArcRwLockControllerT)) -> Self {
-        Self::Element(v)
+impl From<(ViewUuid, ArcRwLockControllerT)> for RdfElementOrVertex {
+    fn from(value: (ViewUuid, ArcRwLockControllerT)) -> Self {
+        Self::Element(value)
     }
 }
 
-impl TryFrom<RdfElementOrVertex> for (uuid::Uuid, ArcRwLockControllerT) {
+impl TryFrom<RdfElementOrVertex> for (ViewUuid, ArcRwLockControllerT) {
     type Error = ();
 
     fn try_from(value: RdfElementOrVertex) -> Result<Self, Self::Error> {
@@ -165,7 +166,7 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
 }
 
 pub struct RdfDiagramBuffer {
-    uuid: uuid::Uuid,
+    uuid: ViewUuid,
     name: String,
     comment: String,
 }
@@ -493,25 +494,25 @@ fn menubar_options_fun(controller: &mut DiagramViewT, ui: &mut egui::Ui, command
 
 const DIAGRAM_VIEW_TYPE: &str = "rdf-diagram-view";
 
-pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
-    let view_uuid = uuid::Uuid::now_v7();
-    let model_uuid = uuid::Uuid::now_v7();
+pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
+    let view_uuid = uuid::Uuid::now_v7().into();
+    let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New RDF diagram {}", no);
 
     let diagram = Arc::new(RwLock::new(RdfDiagram::new(
-        model_uuid.clone(),
+        model_uuid,
         name.clone(),
         vec![],
     )));
     (
-        view_uuid.clone(),
+        view_uuid,
         DiagramControllerGen2::new(
             view_uuid.into(),
             diagram.clone(),
             HashMap::new(),
             RdfQueryable {},
             RdfDiagramBuffer {
-                uuid: model_uuid,
+                uuid: view_uuid,
                 name,
                 comment: "".to_owned(),
             },
@@ -524,14 +525,14 @@ pub fn new(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     )
 }
 
-pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
+pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     let (_, node, node_uuid, node_view) = rdf_node(
         "http://www.w3.org/People/EM/contact#me",
         egui::Pos2::new(300.0, 100.0),
     );
 
-    let literal_view_uuid = uuid::Uuid::now_v7();
-    let literal_model_uuid = uuid::Uuid::now_v7();
+    let literal_view_uuid = uuid::Uuid::now_v7().into();
+    let literal_model_uuid = uuid::Uuid::now_v7().into();
     let literal_model = Arc::new(RwLock::new(RdfLiteral::new(
         literal_model_uuid,
         "Eric Miller".to_owned(),
@@ -539,7 +540,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
         "en".to_owned(),
     )));
     let literal_view = Arc::new(RwLock::new(RdfLiteralController {
-        uuid: literal_view_uuid.into(),
+        uuid: Arc::new(literal_view_uuid),
         model: literal_model.clone(),
         self_reference: Weak::new(),
         
@@ -606,10 +607,10 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
     owned_controllers.insert(graph_st_uuid, graph_st_view);
 
     let name = format!("Demo RDF diagram {}", no);
-    let view_uuid = uuid::Uuid::now_v7();
-    let model_uuid = uuid::Uuid::now_v7();
+    let view_uuid = uuid::Uuid::now_v7().into();
+    let model_uuid = uuid::Uuid::now_v7().into();
     let diagram = Arc::new(RwLock::new(RdfDiagram::new(
-        model_uuid.clone(),
+        model_uuid,
         name.clone(),
         vec![node, literal_model, predicate, graph, graph_st],
     )));
@@ -621,7 +622,7 @@ pub fn demo(no: u32) -> (uuid::Uuid, Arc<RwLock<dyn DiagramController>>) {
             owned_controllers,
             RdfQueryable {},
             RdfDiagramBuffer {
-                uuid: model_uuid,
+                uuid: view_uuid,
                 name,
                 comment: "".to_owned(),
             },
@@ -668,7 +669,7 @@ pub enum RdfToolStage {
 
 enum PartialRdfElement {
     None,
-    Some((uuid::Uuid, ArcRwLockControllerT)),
+    Some((ViewUuid, ArcRwLockControllerT)),
     Predicate {
         source: Arc<RwLock<dyn RdfElement>>,
         source_view: ArcRwLockControllerT,
@@ -775,17 +776,17 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
             return;
         }
 
-        let uuid = uuid::Uuid::now_v7();
         match (self.current_stage, &mut self.result) {
             (RdfToolStage::Literal, _) => {
                 let literal_model = Arc::new(RwLock::new(RdfLiteral::new(
-                    uuid::Uuid::now_v7(),
+                    uuid::Uuid::now_v7().into(),
                     "Eric Miller".to_owned(),
                     "http://www.w3.org/2001/XMLSchema#string".to_owned(),
                     "en".to_owned(),
                 )));
+                let uuid = uuid::Uuid::now_v7().into();
                 let literal_view = Arc::new(RwLock::new(RdfLiteralController {
-                        uuid: uuid.into(),
+                        uuid: Arc::new(uuid),
                         model: literal_model.clone(),
                         self_reference: Weak::new(),
                         
@@ -863,7 +864,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
             RdfElementOrVertex,
             RdfPropChange,
         >,
-    ) -> Option<(uuid::Uuid, ArcRwLockControllerT)> {
+    ) -> Option<(ViewUuid, ArcRwLockControllerT)> {
         match &self.result {
             PartialRdfElement::Some(x) => {
                 let x = x.clone();
@@ -878,7 +879,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
             } => {
                 self.current_stage = RdfToolStage::PredicateStart;
 
-                let predicate_controller: Option<(uuid::Uuid, ArcRwLockControllerT)> =
+                let predicate_controller: Option<(_, ArcRwLockControllerT)> =
                     if let (Some(source_controller), Some(dest_controller)) = (
                         into.controller_for(&source.read().unwrap().uuid()),
                         into.controller_for(&dest.read().unwrap().uuid()),
@@ -918,7 +919,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
 pub trait RdfElementController:
     ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
 {
-    fn is_connection_from(&self, _uuid: &uuid::Uuid) -> bool {
+    fn is_connection_from(&self, _uuid: &ModelUuid) -> bool {
         false
     }
     fn connection_target_name(&self) -> Option<Arc<String>> {
@@ -956,7 +957,7 @@ impl PackageAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGr
         self.model.clone()
     }
 
-    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+    fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().unwrap().uuid.clone()
     }
 
@@ -1013,6 +1014,7 @@ impl PackageAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGr
 
     fn apply_change(
         &self,
+        view_uuid: &ViewUuid,
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
@@ -1022,14 +1024,14 @@ impl PackageAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGr
                 match property {
                     RdfPropChange::IriChange(iri) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid).collect(),
+                            std::iter::once(*view_uuid).collect(),
                             vec![RdfPropChange::IriChange(model.iri.clone())],
                         ));
                         model.iri = iri.clone();
                     }
                     RdfPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid).collect(),
+                            std::iter::once(*view_uuid).collect(),
                             vec![RdfPropChange::CommentChange(model.comment.clone())],
                         ));
                         model.comment = comment.clone();
@@ -1042,11 +1044,11 @@ impl PackageAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGr
 
     fn deep_copy_init(
         &self,
-        uuid: uuid::Uuid,
+        new_uuid: ModelUuid,
         m: &mut HashMap<usize, (Arc<RwLock<dyn RdfElement>>, Arc<dyn Any + Send + Sync>)>,
     ) -> Self where Self: Sized {
         let model = self.model.read().unwrap();
-        let model = Arc::new(RwLock::new(RdfGraph::new(uuid, (*model.iri).clone(), model.contained_elements.clone())));
+        let model = Arc::new(RwLock::new(RdfGraph::new(new_uuid, (*model.iri).clone(), model.contained_elements.clone())));
         m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
         Self { model }
     }
@@ -1062,16 +1064,16 @@ impl PackageAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGr
 fn rdf_graph(
     iri: &str,
     bounds_rect: egui::Rect,
-) -> (uuid::Uuid, Arc<RwLock<RdfGraph>>, uuid::Uuid, Arc<RwLock<PackageViewT>>) {
-    let view_uuid = uuid::Uuid::now_v7();
-    let model_uuid = uuid::Uuid::now_v7();
+) -> (ModelUuid, Arc<RwLock<RdfGraph>>, ViewUuid, Arc<RwLock<PackageViewT>>) {
+    let view_uuid = uuid::Uuid::now_v7().into();
+    let model_uuid = uuid::Uuid::now_v7().into();
     let graph_model = Arc::new(RwLock::new(RdfGraph::new(
-        model_uuid.clone(),
+        model_uuid,
         iri.to_owned(),
         vec![],
     )));
     let graph_view = PackageView::new(
-        view_uuid.clone().into(),
+        Arc::new(view_uuid),
         RdfGraphAdapter {
             model: graph_model.clone(),
         },
@@ -1086,16 +1088,16 @@ fn rdf_node(
     iri: &str,
     position: egui::Pos2,
 ) -> (
-    uuid::Uuid,
+    ModelUuid,
     Arc<RwLock<RdfNode>>,
-    uuid::Uuid,
+    ViewUuid,
     Arc<RwLock<RdfNodeController>>,
 ) {
-    let node_view_uuid = uuid::Uuid::now_v7();
-    let node_model_uuid = uuid::Uuid::now_v7();
-    let node_model = Arc::new(RwLock::new(RdfNode::new(node_model_uuid.clone(), iri.to_owned())));
+    let node_view_uuid = uuid::Uuid::now_v7().into();
+    let node_model_uuid = uuid::Uuid::now_v7().into();
+    let node_model = Arc::new(RwLock::new(RdfNode::new(node_model_uuid, iri.to_owned())));
     let node_view = Arc::new(RwLock::new(RdfNodeController {
-        uuid: node_view_uuid.into(),
+        uuid: Arc::new(node_view_uuid),
         model: node_model.clone(),
         self_reference: Weak::new(),
         iri_buffer: iri.to_owned(),
@@ -1111,7 +1113,7 @@ fn rdf_node(
 }
 
 pub struct RdfNodeController {
-    uuid: Arc<uuid::Uuid>,
+    uuid: Arc<ViewUuid>,
     pub model: Arc<RwLock<RdfNode>>,
     self_reference: Weak<RwLock<Self>>,
 
@@ -1125,10 +1127,10 @@ pub struct RdfNodeController {
 }
 
 impl View for RdfNodeController {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
-    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+    fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().unwrap().uuid.clone()
     }
     fn model_name(&self) -> Arc<String> {
@@ -1137,17 +1139,13 @@ impl View for RdfNodeController {
 }
 
 impl NHSerialize for RdfNodeController {
-    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
-        // Serialize itself
-        let self_id = *self.model_uuid();
+    fn serialize_into(&self, into: &mut NHSerializer) {
+        let self_id = *self.uuid();
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
         element.insert("type".to_owned(), toml::Value::String("rdf-node-view".to_owned()));
         element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
-        into.insert(self_id, element);
-
-        // TODO: serialize model
-        //element.insert("name".to_owned(), toml::Value::String((*self.model_name()).clone()));
+        into.insert_view(self_id, element);
     }
 }
 
@@ -1169,12 +1167,7 @@ impl ElementController<dyn RdfElement> for RdfNodeController {
 }
 
 impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
-    for RdfNodeController
-{
-    fn controller_for(&self, _uuid: &uuid::Uuid) -> Option<ArcRwLockControllerT> {
-        None
-    }
-}
+    for RdfNodeController {}
 
 impl
     ElementControllerGen2<
@@ -1315,7 +1308,7 @@ impl
                     })
                 } else {
                     ehc.snap_manager
-                        .coerce(translated_real_shape, |e| *e != *self.model_uuid())
+                        .coerce(translated_real_shape, |e| *e != *self.uuid)
                 };
                 let coerced_delta = coerced_pos - self.position;
 
@@ -1324,7 +1317,7 @@ impl
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
-                            std::iter::once(*self.model_uuid()).collect(),
+                            std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         )
                         .into(),
@@ -1346,7 +1339,7 @@ impl
                 self.highlight.selected = *select;
             }
             InsensitiveCommand::SelectSpecific(uuids, select) => {
-                if uuids.contains(&*self.model_uuid()) {
+                if uuids.contains(&*self.uuid) {
                     self.highlight.selected = *select;
                 }
             }
@@ -1354,12 +1347,12 @@ impl
                 self.highlight.selected = self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
-                if !uuids.contains(&*self.model_uuid()) => {}
+                if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MoveSpecificElements(_, delta)
             | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
-                    std::iter::once(*self.model_uuid()).collect(),
+                    std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
             }
@@ -1370,13 +1363,13 @@ impl
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
-                if uuids.contains(&*self.model_uuid()) {
+                if uuids.contains(&*self.uuid) {
                     for property in properties {
                         match property {
                             RdfPropChange::IriChange(iri) => {
                                 let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*model.uuid).collect(),
+                                    std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::IriChange(model.iri.clone())],
                                 ));
                                 self.iri_buffer = (**iri).clone();
@@ -1385,7 +1378,7 @@ impl
                             RdfPropChange::CommentChange(comment) => {
                                 let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*model.uuid()).collect(),
+                                    std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::CommentChange(model.comment.clone())],
                                 ));
                                 self.comment_buffer = (**comment).clone();
@@ -1399,15 +1392,15 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
-        into.insert(*self.model_uuid(), self.highlight.selected.into());
+    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
+        into.insert(*self.uuid(), self.highlight.selected.into());
     }
     
     fn deep_copy_clone(
         &self,
-        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
-        tlc: &mut HashMap<uuid::Uuid, ArcRwLockControllerT>,
-        c: &mut HashMap<usize, (uuid::Uuid, 
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, ArcRwLockControllerT>,
+        c: &mut HashMap<usize, (ViewUuid,
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -1417,8 +1410,8 @@ impl
         )>
     ) {
         let model = self.model.read().unwrap();
-        let (view_uuid, model_uuid) = if uuid_present(&*model.uuid) {
-            (uuid::Uuid::now_v7(), uuid::Uuid::now_v7())
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
         } else {
             (*self.uuid, *model.uuid)
         };
@@ -1443,7 +1436,7 @@ impl
 }
 
 pub struct RdfLiteralController {
-    uuid: Arc<uuid::Uuid>,
+    uuid: Arc<ViewUuid>,
     pub model: Arc<RwLock<RdfLiteral>>,
     self_reference: Weak<RwLock<Self>>,
 
@@ -1459,10 +1452,10 @@ pub struct RdfLiteralController {
 }
 
 impl View for RdfLiteralController {
-    fn uuid(&self) -> Arc<uuid::Uuid> {
+    fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
-    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+    fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().unwrap().uuid.clone()
     }
     fn model_name(&self) -> Arc<String> {
@@ -1471,17 +1464,13 @@ impl View for RdfLiteralController {
 }
 
 impl NHSerialize for RdfLiteralController {
-    fn serialize_into(&self, into: &mut HashMap<uuid::Uuid, toml::Table>) {
-        // Serialize itself
-        let self_id = *self.model_uuid();
+    fn serialize_into(&self, into: &mut NHSerializer) {
+        let self_id = *self.uuid;
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self_id.to_string()));
         element.insert("type".to_owned(), toml::Value::String("rdf-literal-view".to_owned()));
         element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
-        into.insert(self_id, element);
-
-        // TODO: serialize model
-        //element.insert("name".to_owned(), toml::Value::String((*self.model_name()).clone()));
+        into.insert_view(self_id, element);
     }
 }
 
@@ -1502,12 +1491,7 @@ impl ElementController<dyn RdfElement> for RdfLiteralController {
 }
 
 impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
-    for RdfLiteralController
-{
-    fn controller_for(&self, _uuid: &uuid::Uuid) -> Option<ArcRwLockControllerT> {
-        None
-    }
-}
+    for RdfLiteralController {}
 
 impl
     ElementControllerGen2<
@@ -1661,7 +1645,7 @@ impl
                     })
                 } else {
                     ehc.snap_manager
-                        .coerce(translated_real_shape, |e| *e != *self.model_uuid())
+                        .coerce(translated_real_shape, |e| *e != *self.uuid)
                 };
                 let coerced_delta = coerced_pos - self.position;
 
@@ -1670,7 +1654,7 @@ impl
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
-                            std::iter::once(*self.model_uuid()).collect(),
+                            std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         )
                         .into(),
@@ -1693,7 +1677,7 @@ impl
                 self.highlight.selected = *select;
             }
             InsensitiveCommand::SelectSpecific(uuids, select) => {
-                if uuids.contains(&*self.model_uuid()) {
+                if uuids.contains(&*self.uuid) {
                     self.highlight.selected = *select;
                 }
             }
@@ -1701,12 +1685,12 @@ impl
                 self.highlight.selected = self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
-                if !uuids.contains(&*self.model_uuid()) => {}
+                if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MoveSpecificElements(_, delta)
             | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
-                    std::iter::once(*self.model_uuid()).collect(),
+                    std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
             }
@@ -1717,13 +1701,13 @@ impl
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
-                if uuids.contains(&*self.model_uuid()) {
+                if uuids.contains(&*self.uuid) {
                     for property in properties {
                         match property {
                             RdfPropChange::ContentChange(content) => {
                                 let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*model.uuid()).collect(),
+                                    std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::ContentChange(model.content.clone())],
                                 ));
                                 self.content_buffer = (**content).clone();
@@ -1732,7 +1716,7 @@ impl
                             RdfPropChange::DataTypeChange(datatype) => {
                                 let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*model.uuid()).collect(),
+                                    std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::DataTypeChange(model.datatype.clone())],
                                 ));
                                 self.datatype_buffer = (**datatype).clone();
@@ -1741,7 +1725,7 @@ impl
                             RdfPropChange::LangTagChange(langtag) => {
                                 let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*model.uuid()).collect(),
+                                    std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::LangTagChange(model.langtag.clone())],
                                 ));
                                 self.langtag_buffer = (**langtag).clone();
@@ -1750,7 +1734,7 @@ impl
                             RdfPropChange::CommentChange(comment) => {
                                 let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*model.uuid()).collect(),
+                                    std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::CommentChange(model.comment.clone())],
                                 ));
                                 self.comment_buffer = (**comment).clone();
@@ -1764,15 +1748,15 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<uuid::Uuid, SelectionStatus>) {
-        into.insert(*self.model_uuid(), self.highlight.selected.into());
+    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
+        into.insert(*self.uuid(), self.highlight.selected.into());
     }
     
     fn deep_copy_clone(
         &self,
-        uuid_present: &dyn Fn(&uuid::Uuid) -> bool,
-        tlc: &mut HashMap<uuid::Uuid, ArcRwLockControllerT>,
-        c: &mut HashMap<usize, (uuid::Uuid, 
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, ArcRwLockControllerT>,
+        c: &mut HashMap<usize, (ViewUuid,
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
@@ -1782,8 +1766,8 @@ impl
         )>
     ) {
         let model = self.model.read().unwrap();
-        let (view_uuid, model_uuid) = if uuid_present(&*model.uuid) {
-            (uuid::Uuid::now_v7(), uuid::Uuid::now_v7())
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
         } else {
             (*self.uuid, *model.uuid)
         };
@@ -1819,7 +1803,7 @@ impl MulticonnectionAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> f
         self.model.clone()
     }
 
-    fn model_uuid(&self) -> Arc<uuid::Uuid> {
+    fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().unwrap().uuid.clone()
     }
 
@@ -1887,6 +1871,7 @@ impl MulticonnectionAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> f
 
     fn apply_change(
         &self,
+        view_uuid: &ViewUuid,
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
@@ -1896,14 +1881,14 @@ impl MulticonnectionAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> f
                 match property {
                     RdfPropChange::IriChange(iri) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid).collect(),
+                            std::iter::once(*view_uuid).collect(),
                             vec![RdfPropChange::IriChange(model.iri.clone())],
                         ));
                         model.iri = iri.clone();
                     }
                     RdfPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*model.uuid).collect(),
+                            std::iter::once(*view_uuid).collect(),
                             vec![RdfPropChange::CommentChange(model.comment.clone())],
                         ));
                         model.comment = comment.clone();
@@ -1916,11 +1901,11 @@ impl MulticonnectionAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> f
 
     fn deep_copy_init(
         &self,
-        uuid: uuid::Uuid,
+        new_uuid: ModelUuid,
         m: &mut HashMap<usize, (Arc<RwLock<dyn RdfElement>>, Arc<dyn Any + Send + Sync>)>
     ) -> Self where Self: Sized {
         let model = self.model.read().unwrap();
-        let model = Arc::new(RwLock::new(RdfPredicate::new(uuid, (*model.iri).clone(), model.source.clone(), model.destination.clone())));
+        let model = Arc::new(RwLock::new(RdfPredicate::new(new_uuid, (*model.iri).clone(), model.source.clone(), model.destination.clone())));
         m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
         Self { model }
     }
@@ -1945,35 +1930,35 @@ fn rdf_predicate(
     source: (Arc<RwLock<dyn RdfElement>>, ArcRwLockControllerT),
     destination: (Arc<RwLock<dyn RdfElement>>, ArcRwLockControllerT),
 ) -> (
-    uuid::Uuid,
+    ModelUuid,
     Arc<RwLock<RdfPredicate>>,
-    uuid::Uuid,
+    ViewUuid,
     Arc<RwLock<LinkViewT>>,
 ) {
-    let predicate_view_uuid = uuid::Uuid::now_v7();
-    let predicate_model_uuid = uuid::Uuid::now_v7();
+    let predicate_view_uuid = uuid::Uuid::now_v7().into();
+    let predicate_model_uuid = uuid::Uuid::now_v7().into();
     let predicate_model = Arc::new(RwLock::new(RdfPredicate::new(
-        predicate_model_uuid.clone(),
+        predicate_model_uuid,
         iri.to_owned(),
         source.0,
         destination.0,
     )));
     let predicate_view = MulticonnectionView::new(
-        predicate_view_uuid.clone().into(),
+        Arc::new(predicate_view_uuid),
         RdfPredicateAdapter {
             model: predicate_model.clone(),
         },
         source.1,
         destination.1,
         None,
-        vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
-        vec![vec![(uuid::Uuid::now_v7(), egui::Pos2::ZERO)]],
+        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
+        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
     );
     (predicate_model_uuid, predicate_model, predicate_view_uuid, predicate_view)
 }
 
 impl RdfElementController for LinkViewT {
-    fn is_connection_from(&self, uuid: &uuid::Uuid) -> bool {
+    fn is_connection_from(&self, uuid: &ModelUuid) -> bool {
         *self.source.read().unwrap().model_uuid() == *uuid
     }
 

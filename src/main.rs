@@ -7,7 +7,8 @@ use std::io::Write;
 
 use common::canvas::{NHCanvas, UiCanvas};
 use common::controller::{ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ProjectCommand, SimpleProjectCommand};
-use common::project_serde::NHProjectHierarchyNodeDTO;
+use common::project_serde::{NHProjectHierarchyNodeDTO, NHSerializer};
+use common::uuid::ViewUuid;
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
@@ -80,7 +81,7 @@ enum NHTab {
     Properties,
     Layers,
 
-    Diagram { uuid: uuid::Uuid },
+    Diagram { uuid: ViewUuid },
     CustomTab { uuid: uuid::Uuid },
 }
 
@@ -110,9 +111,9 @@ pub trait CustomTab {
 
 struct NHContext {
     project_path: Option<std::path::PathBuf>,
-    pub diagram_controllers: HashMap<uuid::Uuid, (usize, Arc<RwLock<dyn DiagramController>>)>,
+    pub diagram_controllers: HashMap<ViewUuid, (usize, Arc<RwLock<dyn DiagramController>>)>,
     hierarchy: HierarchyNode,
-    tree_view_state: TreeViewState<uuid::Uuid>,
+    tree_view_state: TreeViewState<ViewUuid>,
     new_diagram_no: u32,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
 
@@ -123,8 +124,8 @@ struct NHContext {
     languages_order: Vec<unic_langid::LanguageIdentifier>,
     fluent_bundle: fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
 
-    undo_stack: Vec<(Arc<String>, uuid::Uuid)>,
-    redo_stack: Vec<(Arc<String>, uuid::Uuid)>,
+    undo_stack: Vec<(Arc<String>, ViewUuid)>,
+    redo_stack: Vec<(Arc<String>, ViewUuid)>,
     unprocessed_commands: Vec<ProjectCommand>,
     has_unsaved_changes: bool,
     
@@ -132,7 +133,7 @@ struct NHContext {
     shortcut_top_order: Vec<(SimpleProjectCommand, egui::KeyboardShortcut)>,
 
     open_unique_tabs: HashSet<NHTab>,
-    last_focused_diagram: Option<uuid::Uuid>,
+    last_focused_diagram: Option<ViewUuid>,
     svg_export_menu: Option<(usize, Arc<RwLock<dyn DiagramController>>, std::path::PathBuf, usize, bool, bool, f32, f32)>,
     confirm_modal_reason: Option<SimpleProjectCommand>,
 
@@ -210,17 +211,16 @@ impl NHContext {
                 HierarchyNode::Folder(uuid, _, children)
                     => NHProjectHierarchyNodeDTO::Folder(*uuid, children.iter().map(h).collect()),
                 HierarchyNode::Diagram(rw_lock)
-                    => NHProjectHierarchyNodeDTO::Leaf(*rw_lock.read().unwrap().uuid()),
+                    => NHProjectHierarchyNodeDTO::Diagram(*rw_lock.read().unwrap().uuid()),
             }
         }
 
-        let mut elements = HashMap::new();
-        self.diagram_controllers.iter().for_each(|e| e.1.1.read().unwrap().serialize_into(&mut elements));
+        let mut serializer = NHSerializer::new();
+        self.diagram_controllers.iter().for_each(|e| e.1.1.read().unwrap().serialize_into(&mut serializer));
 
         let project = common::project_serde::NHProjectDTO::new(
-            "0.1.0",
             children.iter().map(h).collect(),
-            elements.into_iter().collect(),
+            serializer,
         );
 
         toml::to_string(&project).map_err(|_| ())
@@ -228,7 +228,7 @@ impl NHContext {
     fn clear_project_data(&mut self) {
         self.project_path = None;
         self.diagram_controllers.clear();
-        self.hierarchy = HierarchyNode::Folder(uuid::Uuid::nil(), "root".to_owned().into(), vec![]);
+        self.hierarchy = HierarchyNode::Folder(uuid::Uuid::nil().into(), "root".to_owned().into(), vec![]);
         self.new_diagram_no = 1;
         self.custom_tabs.clear();
 
@@ -259,7 +259,7 @@ impl NHContext {
             if ui.button("New folder").clicked() {
                 if let HierarchyNode::Folder(.., children) = &mut self.hierarchy {
                     children.push(HierarchyNode::Folder(
-                        uuid::Uuid::now_v7(),
+                        uuid::Uuid::now_v7().into(),
                         Arc::new("New folder".to_owned()),
                         vec![],
                     ));
@@ -277,12 +277,12 @@ impl NHContext {
             self.hierarchy.for_each(|e| self.tree_view_state.set_openness(&e.uuid(), !b));
         }
 
-        fn hierarchy(builder: &mut egui_ltreeview::TreeViewBuilder<uuid::Uuid>, hn: &HierarchyNode) {
+        fn hierarchy(builder: &mut egui_ltreeview::TreeViewBuilder<ViewUuid>, hn: &HierarchyNode) {
             match hn {
                 HierarchyNode::Folder(uuid, name, children) => {
                     builder.node(
                         NodeBuilder::dir(*uuid)
-                            .label(format!("{} ({})", name, uuid))
+                            .label(format!("{} ({})", name, uuid.to_string()))
                     );
 
                     for c in children {
@@ -293,7 +293,7 @@ impl NHContext {
                 },
                 HierarchyNode::Diagram(rw_lock) => {
                     let hm = rw_lock.read().unwrap();
-                    builder.leaf(*hm.model_uuid(), format!("{} ({})", hm.model_name(), hm.uuid()));
+                    builder.leaf(*hm.uuid(), format!("{} ({})", hm.model_name(), hm.uuid().to_string()));
                 },
             }
         }
@@ -825,7 +825,7 @@ impl NHContext {
     }
     
     // In general it should draw first and handle input second, right?
-    fn diagram_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
+    fn diagram_tab(&mut self, tab_uuid: &ViewUuid, ui: &mut Ui) {
         let Some((t, arc)) = self.diagram_controllers.get(tab_uuid) else { return; };
         let mut diagram_controller = arc.write().unwrap();
 
@@ -927,7 +927,7 @@ impl Default for NHApp {
         let mut context = NHContext {
             project_path: None,
             diagram_controllers,
-            hierarchy: HierarchyNode::Folder(uuid::Uuid::nil(), Arc::new("root".to_owned()), hierarchy),
+            hierarchy: HierarchyNode::Folder(uuid::Uuid::nil().into(), Arc::new("root".to_owned()), hierarchy),
             tree_view_state: TreeViewState::default(),
             new_diagram_no: 4,
             custom_tabs: HashMap::new(),
@@ -1186,7 +1186,7 @@ impl eframe::App for NHApp {
 
                     ui.menu_button(translate!("nh-file-addnewdiagram"), |ui| {
                         type NDC =
-                            fn(u32) -> (uuid::Uuid, Arc<RwLock<(dyn DiagramController + 'static)>>);
+                            fn(u32) -> (ViewUuid, Arc<RwLock<(dyn DiagramController + 'static)>>);
                         for (label, diagram_type, fun) in [
                             (
                                 "UML Class diagram",
