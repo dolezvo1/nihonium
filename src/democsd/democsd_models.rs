@@ -210,7 +210,7 @@ impl NHSerialize for DemoCsdTransactor {
         element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
         element.insert("internal".to_owned(), toml::Value::Boolean(self.internal));
 
-        for e in &self.transaction {
+        if let Some(e) = &self.transaction {
             e.read().unwrap().serialize_into(into)?;
         }
         element.insert("transaction".to_owned(),

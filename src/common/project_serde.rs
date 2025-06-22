@@ -6,9 +6,10 @@ use serde::{Deserialize, Serialize};
 use super::{controller::DiagramController, uuid::{ModelUuid, ViewUuid}};
 
 #[derive(Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum NHProjectHierarchyNodeDTO {
-    Folder(ViewUuid, Vec<NHProjectHierarchyNodeDTO>),
-    Diagram(ViewUuid),
+    Folder { uuid: ViewUuid, hierarchy: Vec<NHProjectHierarchyNodeDTO> },
+    Diagram { uuid: ViewUuid },
 }
 
 #[derive(Serialize, Deserialize)]

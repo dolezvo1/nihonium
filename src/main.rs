@@ -209,9 +209,9 @@ impl NHContext {
         fn h(e: &HierarchyNode) -> NHProjectHierarchyNodeDTO {
             match e {
                 HierarchyNode::Folder(uuid, _, children)
-                    => NHProjectHierarchyNodeDTO::Folder(*uuid, children.iter().map(h).collect()),
+                    => NHProjectHierarchyNodeDTO::Folder { uuid: *uuid, hierarchy: children.iter().map(h).collect() },
                 HierarchyNode::Diagram(rw_lock)
-                    => NHProjectHierarchyNodeDTO::Diagram(*rw_lock.read().unwrap().uuid()),
+                    => NHProjectHierarchyNodeDTO::Diagram { uuid: *rw_lock.read().unwrap().uuid() },
             }
         }
 
