@@ -4,12 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+derive_more = { version = "2.0", features = [ "from" ] }
 eframe = "0.31"
 egui_extras = "0.31"
 egui_dock = "0.16"
 egui_ltreeview = "0.4"
 rfd = "0.15"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = [ "derive" ] }
 toml = "0.8"
 uuid = { version = "1.16", features = [ "std", "v7", "serde" ] }
 

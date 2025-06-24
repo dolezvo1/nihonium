@@ -33,7 +33,6 @@ impl UmlClassCollector {
         }
 
         for e in &package.contained_elements {
-            let e = e.read().unwrap();
             e.accept(self);
         }
 
@@ -94,14 +93,55 @@ impl UmlClassCollector {
     }
 }
 
-pub trait UmlClassElement: Model + NHSerialize + Send + Sync {
-    fn accept(&self, visitor: &mut UmlClassCollector);
+#[derive(Clone, derive_more::From)]
+pub enum UmlClassElement {
+    UmlClassPackage(Arc<RwLock<UmlClassPackage>>),
+    UmlClass(Arc<RwLock<UmlClass>>),
+    UmlClassLink(Arc<RwLock<UmlClassLink>>),
+}
+
+impl UmlClassElement {
+    fn accept(&self, visitor: &mut UmlClassCollector) {
+        match self {
+            UmlClassElement::UmlClassPackage(rw_lock) => visitor.visit_package(&rw_lock.read().unwrap()),
+            UmlClassElement::UmlClass(rw_lock) => visitor.visit_class(&rw_lock.read().unwrap()),
+            UmlClassElement::UmlClassLink(rw_lock) => visitor.visit_link(&rw_lock.read().unwrap()),
+        }
+    }
+}
+
+impl Model for UmlClassElement {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        match self {
+            UmlClassElement::UmlClassPackage(rw_lock) => rw_lock.read().unwrap().uuid(),
+            UmlClassElement::UmlClass(rw_lock) => rw_lock.read().unwrap().uuid(),
+            UmlClassElement::UmlClassLink(rw_lock) => rw_lock.read().unwrap().uuid(),
+        }
+    }
+
+    fn name(&self) -> Arc<String> {
+        match self {
+            UmlClassElement::UmlClassPackage(rw_lock) => rw_lock.read().unwrap().name(),
+            UmlClassElement::UmlClass(rw_lock) => rw_lock.read().unwrap().name(),
+            UmlClassElement::UmlClassLink(rw_lock) => rw_lock.read().unwrap().name(),
+        }
+    }
+}
+
+impl NHSerialize for UmlClassElement {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        match self {
+            UmlClassElement::UmlClassPackage(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
+            UmlClassElement::UmlClass(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
+            UmlClassElement::UmlClassLink(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
+        }
+    }
 }
 
 pub struct UmlClassDiagram {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
-    pub contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
+    pub contained_elements: Vec<UmlClassElement>,
 
     pub comment: Arc<String>,
 }
@@ -110,7 +150,7 @@ impl UmlClassDiagram {
     pub fn new(
         uuid: ModelUuid,
         name: String,
-        contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
+        contained_elements: Vec<UmlClassElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -129,14 +169,12 @@ impl UmlClassDiagram {
         };
 
         for e in &self.contained_elements {
-            let e = e.read().unwrap();
             e.accept(&mut collector);
         }
 
         collector.collecting_absolute_paths = false;
 
         for e in &self.contained_elements {
-            let e = e.read().unwrap();
             e.accept(&mut collector);
         }
 
@@ -153,8 +191,8 @@ impl Model for UmlClassDiagram {
     }
 }
 
-impl ContainerModel<dyn UmlClassElement> for UmlClassDiagram {
-    fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
+impl ContainerModel<UmlClassElement> for UmlClassDiagram {
+    fn add_element(&mut self, element: UmlClassElement) {
         self.contained_elements.push(element);
     }
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
@@ -174,10 +212,10 @@ impl NHSerialize for UmlClassDiagram {
         element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
 
         for e in &self.contained_elements {
-            e.read().unwrap().serialize_into(into)?;
+            e.serialize_into(into)?;
         }
         element.insert("contained_elements".to_owned(),
-            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.read().unwrap().uuid().to_string())).collect())
+            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.uuid().to_string())).collect())
         );
 
         into.insert_model(*self.uuid, element);
@@ -189,7 +227,7 @@ impl NHSerialize for UmlClassDiagram {
 pub struct UmlClassPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
-    pub contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
+    pub contained_elements: Vec<UmlClassElement>,
 
     pub comment: Arc<String>,
 }
@@ -198,7 +236,7 @@ impl UmlClassPackage {
     pub fn new(
         uuid: ModelUuid,
         name: String,
-        contained_elements: Vec<Arc<RwLock<dyn UmlClassElement>>>,
+        contained_elements: Vec<UmlClassElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -218,14 +256,8 @@ impl Model for UmlClassPackage {
     }
 }
 
-impl UmlClassElement for UmlClassPackage {
-    fn accept(&self, visitor: &mut UmlClassCollector) {
-        visitor.visit_package(&self);
-    }
-}
-
-impl ContainerModel<dyn UmlClassElement> for UmlClassPackage {
-    fn add_element(&mut self, element: Arc<RwLock<dyn UmlClassElement>>) {
+impl ContainerModel<UmlClassElement> for UmlClassPackage {
+    fn add_element(&mut self, element: UmlClassElement) {
         self.contained_elements.push(element);
     }
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
@@ -245,10 +277,10 @@ impl NHSerialize for UmlClassPackage {
         element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
 
         for e in &self.contained_elements {
-            e.read().unwrap().serialize_into(into)?;
+            e.serialize_into(into)?;
         }
         element.insert("contained_elements".to_owned(),
-            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.read().unwrap().uuid().to_string())).collect())
+            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.uuid().to_string())).collect())
         );
 
         into.insert_model(*self.uuid, element);
@@ -378,12 +410,6 @@ impl Model for UmlClass {
     }
 }
 
-impl UmlClassElement for UmlClass {
-    fn accept(&self, visitor: &mut UmlClassCollector) {
-        visitor.visit_class(&self);
-    }
-}
-
 impl NHSerialize for UmlClass {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         if into.contains_model(&self.uuid) {
@@ -467,9 +493,9 @@ pub struct UmlClassLink {
     pub uuid: Arc<ModelUuid>,
     pub link_type: UmlClassLinkType,
     pub description: Arc<String>,
-    pub source: Arc<RwLock<dyn UmlClassElement>>,
+    pub source: Arc<RwLock<UmlClass>>,
     pub source_arrowhead_label: Arc<String>,
-    pub destination: Arc<RwLock<dyn UmlClassElement>>,
+    pub destination: Arc<RwLock<UmlClass>>,
     pub destination_arrowhead_label: Arc<String>,
 
     pub comment: Arc<String>,
@@ -480,8 +506,8 @@ impl UmlClassLink {
         uuid: ModelUuid,
         link_type: UmlClassLinkType,
         description: impl Into<String>,
-        source: Arc<RwLock<dyn UmlClassElement>>,
-        destination: Arc<RwLock<dyn UmlClassElement>>,
+        source: Arc<RwLock<UmlClass>>,
+        destination: Arc<RwLock<UmlClass>>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -502,12 +528,6 @@ impl Model for UmlClassLink {
     }
     fn name(&self) -> Arc<String> {
         self.description.clone()
-    }
-}
-
-impl UmlClassElement for UmlClassLink {
-    fn accept(&self, visitor: &mut UmlClassCollector) {
-        visitor.visit_link(&self)
     }
 }
 

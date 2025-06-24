@@ -9,14 +9,51 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-pub trait DemoCsdElement: Model + NHSerialize + Send + Sync {}
+#[derive(Clone, derive_more::From)]
+pub enum DemoCsdElement {
+    DemoCsdPackage(Arc<RwLock<DemoCsdPackage>>),
+    DemoCsdTransactor(Arc<RwLock<DemoCsdTransactor>>),
+    DemoCsdTransaction(Arc<RwLock<DemoCsdTransaction>>),
+    DemoCsdLink(Arc<RwLock<DemoCsdLink>>),
+}
+
+impl Model for DemoCsdElement {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        match self {
+            DemoCsdElement::DemoCsdPackage(rw_lock) => rw_lock.read().unwrap().uuid(),
+            DemoCsdElement::DemoCsdTransactor(rw_lock) => rw_lock.read().unwrap().uuid(),
+            DemoCsdElement::DemoCsdTransaction(rw_lock) => rw_lock.read().unwrap().uuid(),
+            DemoCsdElement::DemoCsdLink(rw_lock) => rw_lock.read().unwrap().uuid(),
+        }
+    }
+
+    fn name(&self) -> Arc<String> {
+        match self {
+            DemoCsdElement::DemoCsdPackage(rw_lock) => rw_lock.read().unwrap().name(),
+            DemoCsdElement::DemoCsdTransactor(rw_lock) => rw_lock.read().unwrap().name(),
+            DemoCsdElement::DemoCsdTransaction(rw_lock) => rw_lock.read().unwrap().name(),
+            DemoCsdElement::DemoCsdLink(rw_lock) => rw_lock.read().unwrap().name(),
+        }
+    }
+}
+
+impl NHSerialize for DemoCsdElement {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        match self {
+            DemoCsdElement::DemoCsdPackage(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
+            DemoCsdElement::DemoCsdTransactor(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
+            DemoCsdElement::DemoCsdTransaction(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
+            DemoCsdElement::DemoCsdLink(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
+        }
+    }
+}
 
 // ---
 
 pub struct DemoCsdDiagram {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
-    pub contained_elements: Vec<Arc<RwLock<dyn DemoCsdElement>>>,
+    pub contained_elements: Vec<DemoCsdElement>,
 
     pub comment: Arc<String>,
 }
@@ -25,7 +62,7 @@ impl DemoCsdDiagram {
     pub fn new(
         uuid: ModelUuid,
         name: String,
-        contained_elements: Vec<Arc<RwLock<dyn DemoCsdElement>>>,
+        contained_elements: Vec<DemoCsdElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -45,10 +82,8 @@ impl Model for DemoCsdDiagram {
     }
 }
 
-impl DemoCsdElement for DemoCsdDiagram {}
-
-impl ContainerModel<dyn DemoCsdElement> for DemoCsdDiagram {
-    fn add_element(&mut self, element: Arc<RwLock<dyn DemoCsdElement>>) {
+impl ContainerModel<DemoCsdElement> for DemoCsdDiagram {
+    fn add_element(&mut self, element: DemoCsdElement) {
         self.contained_elements.push(element);
     }
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
@@ -68,10 +103,10 @@ impl NHSerialize for DemoCsdDiagram {
         element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
 
         for e in &self.contained_elements {
-            e.read().unwrap().serialize_into(into)?;
+            e.serialize_into(into)?;
         }
         element.insert("contained_elements".to_owned(),
-            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.read().unwrap().uuid().to_string())).collect())
+            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.uuid().to_string())).collect())
         );
 
         into.insert_model(*self.uuid, element);
@@ -85,7 +120,7 @@ impl NHSerialize for DemoCsdDiagram {
 pub struct DemoCsdPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
-    pub contained_elements: Vec<Arc<RwLock<dyn DemoCsdElement>>>,
+    pub contained_elements: Vec<DemoCsdElement>,
 
     pub comment: Arc<String>,
 }
@@ -94,7 +129,7 @@ impl DemoCsdPackage {
     pub fn new(
         uuid: ModelUuid,
         name: String,
-        contained_elements: Vec<Arc<RwLock<dyn DemoCsdElement>>>,
+        contained_elements: Vec<DemoCsdElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -114,10 +149,8 @@ impl Model for DemoCsdPackage {
     }
 }
 
-impl DemoCsdElement for DemoCsdPackage {}
-
-impl ContainerModel<dyn DemoCsdElement> for DemoCsdPackage {
-    fn add_element(&mut self, element: Arc<RwLock<dyn DemoCsdElement>>) {
+impl ContainerModel<DemoCsdElement> for DemoCsdPackage {
+    fn add_element(&mut self, element: DemoCsdElement) {
         self.contained_elements.push(element);
     }
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
@@ -137,10 +170,10 @@ impl NHSerialize for DemoCsdPackage {
         element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
 
         for e in &self.contained_elements {
-            e.read().unwrap().serialize_into(into)?;
+            e.serialize_into(into)?;
         }
         element.insert("contained_elements".to_owned(),
-            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.read().unwrap().uuid().to_string())).collect())
+            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.uuid().to_string())).collect())
         );
 
         into.insert_model(*self.uuid, element);
@@ -194,8 +227,6 @@ impl Model for DemoCsdTransactor {
         self.name.clone()
     }
 }
-
-impl DemoCsdElement for DemoCsdTransactor {}
 
 impl NHSerialize for DemoCsdTransactor {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
@@ -257,8 +288,6 @@ impl Model for DemoCsdTransaction {
         self.name.clone()
     }
 }
-
-impl DemoCsdElement for DemoCsdTransaction {}
 
 impl NHSerialize for DemoCsdTransaction {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
@@ -342,8 +371,6 @@ impl Model for DemoCsdLink {
         self.name.clone()
     }
 }
-
-impl DemoCsdElement for DemoCsdLink {}
 
 impl NHSerialize for DemoCsdLink {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {

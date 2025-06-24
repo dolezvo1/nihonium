@@ -372,8 +372,8 @@ pub trait DiagramController: Any + View + NHSerialize {
     fn apply_command(&mut self, command: DiagramCommand, global_undo: &mut Vec<Arc<String>>);
 }
 
-pub trait ElementController<CommonElementT: ?Sized>: View {
-    fn model(&self) -> Arc<RwLock<CommonElementT>>;
+pub trait ElementController<CommonElementT>: View {
+    fn model(&self) -> CommonElementT;
 
     fn min_shape(&self) -> NHShape;
     fn max_shape(&self) -> NHShape {
@@ -633,12 +633,12 @@ pub trait Model: 'static {
     fn name(&self) -> Arc<String>;
 }
 
-pub trait ContainerModel<ModelT: ?Sized>: Model {
-    fn add_element(&mut self, _: Arc<RwLock<ModelT>>);
+pub trait ContainerModel<CommonElementT>: Model {
+    fn add_element(&mut self, _: CommonElementT);
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>);
 }
 
-pub trait Tool<CommonElementT: ?Sized, QueryableT, AddCommandElementT, PropChangeT> {
+pub trait Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT> {
     type KindedElement<'a>;
     type Stage;
 
@@ -669,7 +669,7 @@ pub trait Tool<CommonElementT: ?Sized, QueryableT, AddCommandElementT, PropChang
     fn reset_event_lock(&mut self);
 }
 
-pub trait ContainerGen2<CommonElementT: ?Sized, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+pub trait ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
 {
     fn controller_for(
         &self,
@@ -725,7 +725,7 @@ pub struct EventHandlingContext<'a> {
 }
 
 pub trait ElementControllerGen2<
-    CommonElementT: ?Sized,
+    CommonElementT,
     QueryableT,
     ToolT,
     AddCommandElementT: Clone + Debug,
@@ -777,11 +777,8 @@ pub trait ElementControllerGen2<
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, (
-            Arc<RwLock<CommonElementT>>,
-            Arc<dyn Any + Send + Sync>,
-        )>)
-    {
+        m: &mut HashMap<usize, CommonElementT>,
+    ) {
         if requested.is_none_or(|e| e.contains(&self.uuid())) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         }
@@ -796,35 +793,30 @@ pub trait ElementControllerGen2<
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, (
-            Arc<RwLock<CommonElementT>>,
-            Arc<dyn Any + Send + Sync>,
-        )>);
+        m: &mut HashMap<usize, CommonElementT>,
+    );
     fn deep_copy_relink(
         &mut self,
         c: &HashMap<usize, (ViewUuid,
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &HashMap<usize, (
-            Arc<RwLock<CommonElementT>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
+        m: &HashMap<usize, CommonElementT>,
     ) {}
 }
 
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
 pub struct DiagramControllerGen2<
-    DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
-    ElementModelT: ?Sized + 'static,
+    DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+    CommonElementT: 'static,
     QueryableT,
     BufferT,
     ToolT,
     AddCommandElementT: Clone + Debug + 'static,
     PropChangeT: Clone + Debug + 'static,
 > where
-    ToolT: Tool<ElementModelT, QueryableT, AddCommandElementT, PropChangeT>,
+    ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
 {
     uuid: Arc<ViewUuid>,
     model: Arc<RwLock<DiagramModelT>>,
@@ -834,7 +826,7 @@ pub struct DiagramControllerGen2<
         Arc<
             RwLock<
                 dyn ElementControllerGen2<
-                    ElementModelT,
+                    CommonElementT,
                     QueryableT,
                     ToolT,
                     AddCommandElementT,
@@ -848,7 +840,7 @@ pub struct DiagramControllerGen2<
     clipboard_elements: HashMap<ViewUuid, Arc<
             RwLock<
                 dyn ElementControllerGen2<
-                    ElementModelT,
+                    CommonElementT,
                     QueryableT,
                     ToolT,
                     AddCommandElementT,
@@ -895,8 +887,8 @@ pub struct DiagramControllerGen2<
 }
 
 impl<
-        DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
-        ElementModelT: ?Sized + 'static,
+        DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+        CommonElementT: 'static,
         QueryableT: 'static,
         BufferT: 'static,
         ToolT: 'static,
@@ -905,7 +897,7 @@ impl<
     >
     DiagramControllerGen2<
         DiagramModelT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         BufferT,
         ToolT,
@@ -914,7 +906,7 @@ impl<
     >
 where
     ToolT: for<'a> Tool<
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         AddCommandElementT,
         PropChangeT,
@@ -925,7 +917,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -938,7 +930,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -956,7 +948,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -1140,7 +1132,7 @@ where
     
     fn element_deep_copy<F, P>(requested: Option<&HashSet<ViewUuid>>, from: F, uuid_present: P) -> HashMap<ViewUuid, Arc<RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -1150,7 +1142,7 @@ where
         where
             F: Iterator<Item=(ViewUuid, Arc<RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -1351,8 +1343,8 @@ where
 
 
 impl<
-        DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
-        ElementModelT: ?Sized + 'static,
+        DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+        CommonElementT: 'static,
         QueryableT: 'static,
         BufferT: 'static,
         ToolT: 'static,
@@ -1361,7 +1353,7 @@ impl<
     > View
     for DiagramControllerGen2<
         DiagramModelT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         BufferT,
         ToolT,
@@ -1370,7 +1362,7 @@ impl<
     >
 where
     ToolT: for<'a> Tool<
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         AddCommandElementT,
         PropChangeT,
@@ -1389,8 +1381,8 @@ where
 }
 
 impl<
-        DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
-        ElementModelT: ?Sized + 'static,
+        DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+        CommonElementT: 'static,
         QueryableT: 'static,
         BufferT: 'static,
         ToolT: 'static,
@@ -1399,7 +1391,7 @@ impl<
     > NHSerialize
     for DiagramControllerGen2<
         DiagramModelT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         BufferT,
         ToolT,
@@ -1408,7 +1400,7 @@ impl<
     >
 where
     ToolT: for<'a> Tool<
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         AddCommandElementT,
         PropChangeT,
@@ -1437,8 +1429,8 @@ where
 }
 
 impl<
-        DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
-        ElementModelT: ?Sized + 'static,
+        DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+        CommonElementT: 'static,
         QueryableT: 'static,
         BufferT: 'static,
         ToolT: 'static,
@@ -1447,7 +1439,7 @@ impl<
     > DiagramController
     for DiagramControllerGen2<
         DiagramModelT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         BufferT,
         ToolT,
@@ -1456,7 +1448,7 @@ impl<
     >
 where
     ToolT: for<'a> Tool<
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         AddCommandElementT,
         PropChangeT,
@@ -1467,7 +1459,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -1480,7 +1472,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -1773,17 +1765,17 @@ where
 }
 
 impl<
-        DiagramModelT: ContainerModel<ElementModelT> + NHSerialize,
-        ElementModelT: ?Sized + 'static,
+        DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+        CommonElementT: 'static,
         QueryableT: 'static,
         BufferT: 'static,
         ToolT,
         AddCommandElementT: Clone + Debug,
         PropChangeT: Clone + Debug,
-    > ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+    > ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for DiagramControllerGen2<
         DiagramModelT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         BufferT,
         ToolT,
@@ -1791,13 +1783,13 @@ impl<
         PropChangeT,
     >
 where
-    ToolT: Tool<ElementModelT, QueryableT, AddCommandElementT, PropChangeT>,
+    ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
     AddCommandElementT: From<(
             ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -1810,7 +1802,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -1827,7 +1819,7 @@ where
         Arc<
             RwLock<
                 dyn ElementControllerGen2<
-                    ElementModelT,
+                    CommonElementT,
                     QueryableT,
                     ToolT,
                     AddCommandElementT,
@@ -1844,16 +1836,16 @@ where
 
 
 pub trait PackageAdapter<
-    ElementModelT: ?Sized + 'static,
+    CommonElementT: 'static,
     AddCommandElementT: Clone + Debug,
     PropChangeT: Clone + Debug,
 >: Send + Sync + 'static {
-    fn model(&self) -> Arc<RwLock<ElementModelT>>;
+    fn model(&self) -> CommonElementT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
     fn view_type(&self) -> &'static str;
     
-    fn add_element(&mut self, _: Arc<RwLock<ElementModelT>>);
+    fn add_element(&mut self, _: CommonElementT);
     fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>);
 
     fn show_properties(
@@ -1871,11 +1863,11 @@ pub trait PackageAdapter<
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, (Arc<RwLock<ElementModelT>>, Arc<dyn Any + Send + Sync>)>,
+        m: &mut HashMap<usize, CommonElementT>,
     ) -> Self where Self: Sized;
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, (Arc<RwLock<ElementModelT>>, Arc<dyn Any + Send + Sync>)>
+        m: &HashMap<usize, CommonElementT>
     );
 }
 
@@ -1886,8 +1878,8 @@ pub enum PackageDragType {
 }
 
 pub struct PackageView<
-    AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-    ElementModelT: ?Sized + 'static,
+    AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+    CommonElementT: 'static,
     QueryableT: 'static,
     ToolT: 'static,
     AddCommandElementT: Clone + Debug,
@@ -1898,7 +1890,7 @@ pub struct PackageView<
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -1911,7 +1903,7 @@ pub struct PackageView<
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -1930,7 +1922,7 @@ pub struct PackageView<
         Arc<
             RwLock<
                 dyn ElementControllerGen2<
-                    ElementModelT,
+                    CommonElementT,
                     QueryableT,
                     ToolT,
                     AddCommandElementT,
@@ -1949,21 +1941,21 @@ pub struct PackageView<
 }
 
 impl<
-        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+        CommonElementT: 'static,
         QueryableT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug,
         PropChangeT: Clone + Debug,
     >
-    PackageView<AdapterT, ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+    PackageView<AdapterT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
 where
     AddCommandElementT: From<(
             ViewUuid,
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -1976,7 +1968,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -1995,7 +1987,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -2040,8 +2032,8 @@ where
 }
 
 impl<
-        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+        CommonElementT: 'static,
         QueryableT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
@@ -2049,7 +2041,7 @@ impl<
     > View
     for PackageView<
         AdapterT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         ToolT,
         AddCommandElementT,
@@ -2057,7 +2049,7 @@ impl<
     >
 where
     ToolT: for<'a> Tool<
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         AddCommandElementT,
         PropChangeT,
@@ -2068,7 +2060,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -2081,7 +2073,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -2103,8 +2095,8 @@ where
 }
 
 impl<
-        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+        CommonElementT: 'static,
         QueryableT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
@@ -2112,7 +2104,7 @@ impl<
     > NHSerialize
     for PackageView<
         AdapterT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         ToolT,
         AddCommandElementT,
@@ -2124,7 +2116,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -2137,7 +2129,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -2167,16 +2159,16 @@ where
 }
 
 impl<
-        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+        CommonElementT: 'static,
         QueryableT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
-    > ElementController<ElementModelT>
+    > ElementController<CommonElementT>
     for PackageView<
         AdapterT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         ToolT,
         AddCommandElementT,
@@ -2184,7 +2176,7 @@ impl<
     >
 where
     ToolT: for<'a> Tool<
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         AddCommandElementT,
         PropChangeT,
@@ -2195,7 +2187,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -2208,7 +2200,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -2218,7 +2210,7 @@ where
             >,
         )>,
 {
-    fn model(&self) -> Arc<RwLock<ElementModelT>> {
+    fn model(&self) -> CommonElementT {
         self.adapter.model()
     }
 
@@ -2234,16 +2226,16 @@ where
 }
 
 impl<
-        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+        CommonElementT: 'static,
         QueryableT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
-    > ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+    > ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for PackageView<
         AdapterT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         ToolT,
         AddCommandElementT,
@@ -2255,7 +2247,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -2268,7 +2260,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -2285,7 +2277,7 @@ where
         Arc<
             RwLock<
                 dyn ElementControllerGen2<
-                    ElementModelT,
+                    CommonElementT,
                     QueryableT,
                     ToolT,
                     AddCommandElementT,
@@ -2301,16 +2293,16 @@ where
 }
 
 impl<
-        AdapterT: PackageAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+        CommonElementT: 'static,
         QueryableT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
-    > ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+    > ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for PackageView<
         AdapterT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         ToolT,
         AddCommandElementT,
@@ -2318,7 +2310,7 @@ impl<
     >
 where
     ToolT: for<'a> Tool<
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         AddCommandElementT,
         PropChangeT,
@@ -2329,7 +2321,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -2342,7 +2334,7 @@ where
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
-                        ElementModelT,
+                        CommonElementT,
                         QueryableT,
                         ToolT,
                         AddCommandElementT,
@@ -2825,17 +2817,14 @@ where
         requested: Option<&HashSet<ViewUuid>>,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
         tlc: &mut HashMap<ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
         >,
         c: &mut HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, (
-            Arc<RwLock<ElementModelT>>,
-            Arc<dyn Any + Send + Sync>,
-        )>)
-    {
+        m: &mut HashMap<usize, CommonElementT>,
+    ) {
         if requested.is_none_or(|e| e.contains(&self.uuid)) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         } else {
@@ -2847,16 +2836,13 @@ where
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
         tlc: &mut HashMap<ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
         >,
         c: &mut HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, (
-            Arc<RwLock<ElementModelT>>,
-            Arc<dyn Any + Send + Sync>,
-        )>
+        m: &mut HashMap<usize, CommonElementT>,
     ) {
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
@@ -2887,24 +2873,21 @@ where
     fn deep_copy_relink(
         &mut self,
         c: &HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &HashMap<usize, (
-            Arc<RwLock<ElementModelT>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
+        m: &HashMap<usize, CommonElementT>,
     ) {
         self.owned_controllers.iter().for_each(|e| e.1.write().unwrap().deep_copy_relink(c, m));
     }
 }
 
 pub trait MulticonnectionAdapter<
-    ElementModelT: ?Sized + 'static,
+    CommonElementT: 'static,
     AddCommandElementT: Clone + Debug,
     PropChangeT: Clone + Debug,
 >: Send + Sync {
-    fn model(&self) -> Arc<RwLock<ElementModelT>>;
+    fn model(&self) -> CommonElementT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
     fn view_type(&self) -> &'static str;
@@ -2928,11 +2911,11 @@ pub trait MulticonnectionAdapter<
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, (Arc<RwLock<ElementModelT>>, Arc<dyn Any + Send + Sync>)>,
+        m: &mut HashMap<usize, CommonElementT>,
     ) -> Self where Self: Sized;
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, (Arc<RwLock<ElementModelT>>, Arc<dyn Any + Send + Sync>)>
+        m: &HashMap<usize, CommonElementT>,
     );
 }
 
@@ -2946,8 +2929,8 @@ pub struct VertexInformation {
 pub struct FlipMulticonnection {}
 
 pub struct MulticonnectionView<
-    AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-    ElementModelT: ?Sized + 'static,
+    AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+    CommonElementT: 'static,
     QueryableT,
     ToolT,
     AddCommandElementT: Clone + Debug,
@@ -2963,7 +2946,7 @@ pub struct MulticonnectionView<
     pub source: Arc<
         RwLock<
             dyn ElementControllerGen2<
-                ElementModelT,
+                CommonElementT,
                 QueryableT,
                 ToolT,
                 AddCommandElementT,
@@ -2974,7 +2957,7 @@ pub struct MulticonnectionView<
     pub destination: Arc<
         RwLock<
             dyn ElementControllerGen2<
-                ElementModelT,
+                CommonElementT,
                 QueryableT,
                 ToolT,
                 AddCommandElementT,
@@ -2993,8 +2976,8 @@ pub struct MulticonnectionView<
 }
 
 impl<
-        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+        CommonElementT: 'static,
         QueryableT,
         ToolT,
         AddCommandElementT: Clone + Debug,
@@ -3002,7 +2985,7 @@ impl<
     >
     MulticonnectionView<
         AdapterT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         ToolT,
         AddCommandElementT,
@@ -3018,7 +3001,7 @@ where
         source: Arc<
             RwLock<
                 dyn ElementControllerGen2<
-                    ElementModelT,
+                    CommonElementT,
                     QueryableT,
                     ToolT,
                     AddCommandElementT,
@@ -3029,7 +3012,7 @@ where
         destination: Arc<
             RwLock<
                 dyn ElementControllerGen2<
-                    ElementModelT,
+                    CommonElementT,
                     QueryableT,
                     ToolT,
                     AddCommandElementT,
@@ -3084,8 +3067,8 @@ where
 }
 
 impl<
-        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+        CommonElementT: 'static,
         QueryableT,
         ToolT,
         AddCommandElementT: Clone + Debug,
@@ -3093,7 +3076,7 @@ impl<
     > View
     for MulticonnectionView<
         AdapterT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         ToolT,
         AddCommandElementT,
@@ -3115,8 +3098,8 @@ where
 }
 
 impl<
-        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT> + 'static,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+        CommonElementT: 'static,
         QueryableT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
@@ -3124,7 +3107,7 @@ impl<
     > NHSerialize
     for MulticonnectionView<
         AdapterT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         ToolT,
         AddCommandElementT,
@@ -3150,16 +3133,16 @@ where
 }
 
 impl<
-        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+        CommonElementT: 'static,
         QueryableT,
         ToolT,
         AddCommandElementT: Clone + Debug,
         PropChangeT: Clone + Debug,
-    > ElementController<ElementModelT>
+    > ElementController<CommonElementT>
     for MulticonnectionView<
         AdapterT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         ToolT,
         AddCommandElementT,
@@ -3169,7 +3152,7 @@ where
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
-    fn model(&self) -> Arc<RwLock<ElementModelT>> {
+    fn model(&self) -> CommonElementT {
         self.adapter.model()
     }
 
@@ -3191,16 +3174,16 @@ where
 }
 
 impl<
-        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT>,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
+        CommonElementT: 'static,
         QueryableT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
-    > ContainerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+    > ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for MulticonnectionView<
         AdapterT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         ToolT,
         AddCommandElementT,
@@ -3211,23 +3194,23 @@ where
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection> {}
 
 impl<
-        AdapterT: MulticonnectionAdapter<ElementModelT, AddCommandElementT, PropChangeT> +'static,
-        ElementModelT: ?Sized + 'static,
+        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT> +'static,
+        CommonElementT: 'static,
         QueryableT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
-    > ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
+    > ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for MulticonnectionView<
         AdapterT,
-        ElementModelT,
+        CommonElementT,
         QueryableT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
     >
 where
-    ToolT: Tool<ElementModelT, QueryableT, AddCommandElementT, PropChangeT>,
+    ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
     AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
 {
@@ -3773,16 +3756,13 @@ where
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
         tlc: &mut HashMap<ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
         >,
         c: &mut HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, (
-            Arc<RwLock<ElementModelT>>,
-            Arc<dyn Any + Send + Sync>,
-        )>
+        m: &mut HashMap<usize, CommonElementT>,
     ) {
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
@@ -3812,13 +3792,10 @@ where
     fn deep_copy_relink(
         &mut self,
         c: &HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<ElementModelT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
+            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &HashMap<usize, (
-            Arc<RwLock<ElementModelT>>,
-            Arc<dyn Any + Send + Sync>,
-        )>
+        m: &HashMap<usize, CommonElementT>,
     ) {
         self.adapter.deep_copy_finish(m);
     

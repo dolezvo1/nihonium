@@ -4,13 +4,14 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation, View
 };
 use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::CustomTab;
 use eframe::egui;
 use std::any::Any;
+use std::collections::HashSet;
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter},
@@ -18,7 +19,7 @@ use std::{
 };
 
 type ControllerT = dyn ElementControllerGen2<
-    dyn UmlClassElement,
+    UmlClassElement,
     UmlClassQueryable,
     NaiveUmlClassTool,
     UmlClassElementOrVertex,
@@ -27,7 +28,7 @@ type ControllerT = dyn ElementControllerGen2<
 type ArcRwLockControllerT = Arc<RwLock<ControllerT>>;
 type DiagramViewT = DiagramControllerGen2<
     UmlClassDiagram,
-    dyn UmlClassElement,
+    UmlClassElement,
     UmlClassQueryable,
     UmlClassDiagramBuffer,
     NaiveUmlClassTool,
@@ -36,7 +37,7 @@ type DiagramViewT = DiagramControllerGen2<
 >;
 type PackageViewT = crate::common::controller::PackageView<
     UmlClassPackageAdapter,
-    dyn UmlClassElement,
+    UmlClassElement,
     UmlClassQueryable,
     NaiveUmlClassTool,
     UmlClassElementOrVertex,
@@ -44,7 +45,7 @@ type PackageViewT = crate::common::controller::PackageView<
 >;
 type LinkViewT = MulticonnectionView<
     UmlClassLinkAdapter,
-    dyn UmlClassElement,
+    UmlClassElement,
     UmlClassQueryable,
     NaiveUmlClassTool,
     UmlClassElementOrVertex,
@@ -478,17 +479,17 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
         diagram_model_uuid,
         name.clone(),
         vec![
-            class_af,
-            class_cfx,
-            class_cfy,
-            realization_cfx,
-            realization_cfy,
-            class_client,
-            usage_client_af,
-            class_producta,
-            usage_client_producta,
-            class_productb,
-            usage_client_productb,
+            class_af.into(),
+            class_cfx.into(),
+            class_cfy.into(),
+            realization_cfx.into(),
+            realization_cfy.into(),
+            class_client.into(),
+            usage_client_af.into(),
+            class_producta.into(),
+            usage_client_producta.into(),
+            class_productb.into(),
+            usage_client_productb.into(),
         ],
     )));
     (
@@ -547,9 +548,9 @@ enum PartialUmlClassElement {
     Some((ViewUuid, ArcRwLockControllerT)),
     Link {
         link_type: UmlClassLinkType,
-        source: Arc<RwLock<dyn UmlClassElement>>,
+        source: Arc<RwLock<UmlClass>>,
         source_view: ArcRwLockControllerT,
-        dest: Option<Arc<RwLock<dyn UmlClassElement>>>,
+        dest: Option<Arc<RwLock<UmlClass>>>,
     },
     Package {
         a: egui::Pos2,
@@ -579,7 +580,7 @@ impl NaiveUmlClassTool {
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
 const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
 
-impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassPropChange>
+impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassPropChange>
     for NaiveUmlClassTool
 {
     type KindedElement<'a> = KindedUmlClassElement<'a>;
@@ -719,7 +720,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
     fn try_construct(
         &mut self,
         into: &dyn ContainerGen2<
-            dyn UmlClassElement,
+            UmlClassElement,
             UmlClassQueryable,
             Self,
             UmlClassElementOrVertex,
@@ -730,7 +731,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
         Arc<
             RwLock<
                 dyn ElementControllerGen2<
-                    dyn UmlClassElement,
+                    UmlClassElement,
                     UmlClassQueryable,
                     Self,
                     UmlClassElementOrVertex,
@@ -795,7 +796,7 @@ impl Tool<dyn UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlCl
 
 pub trait UmlClassElementController:
     ElementControllerGen2<
-    dyn UmlClassElement,
+    UmlClassElement,
     UmlClassQueryable,
     NaiveUmlClassTool,
     UmlClassElementOrVertex,
@@ -815,9 +816,9 @@ pub struct UmlClassPackageAdapter {
     model: Arc<RwLock<UmlClassPackage>>,
 }
 
-impl PackageAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassPackageAdapter {
-    fn model(&self) -> Arc<RwLock<dyn UmlClassElement>> {
-        self.model.clone()
+impl PackageAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassPackageAdapter {
+    fn model(&self) -> UmlClassElement {
+        self.model.clone().into()
     }
 
     fn model_uuid(&self) -> Arc<ModelUuid> {
@@ -832,11 +833,11 @@ impl PackageAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlClassPropCh
         "umlclass-package-view"
     }
     
-    fn add_element(&mut self, e: Arc<RwLock<dyn UmlClassElement>>) {
+    fn add_element(&mut self, e: UmlClassElement) {
         self.model.write().unwrap().add_element(e);
     }
 
-    fn delete_elements(&mut self, uuids: &std::collections::HashSet<uuid::Uuid>) {
+    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
         self.model.write().unwrap().delete_elements(uuids);
     }
 
@@ -908,17 +909,17 @@ impl PackageAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlClassPropCh
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, (Arc<RwLock<dyn UmlClassElement>>, Arc<dyn Any + Send + Sync>)>,
+        m: &mut HashMap<usize, UmlClassElement>,
     ) -> Self where Self: Sized {
         let model = self.model.read().unwrap();
         let model = Arc::new(RwLock::new(UmlClassPackage::new(new_uuid, (*model.name).clone(), model.contained_elements.clone())));
-        m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
+        m.insert(arc_to_usize(&self.model), model.clone().into());
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, (Arc<RwLock<dyn UmlClassElement>>, Arc<dyn Any + Send + Sync>)>
+        m: &HashMap<usize, UmlClassElement>,
     ) {
         todo!()
     }
@@ -1033,9 +1034,9 @@ impl NHSerialize for UmlClassController {
     }
 }
 
-impl ElementController<dyn UmlClassElement> for UmlClassController {
-    fn model(&self) -> Arc<RwLock<dyn UmlClassElement>> {
-        self.model.clone()
+impl ElementController<UmlClassElement> for UmlClassController {
+    fn model(&self) -> UmlClassElement {
+        self.model.clone().into()
     }
 
     fn min_shape(&self) -> NHShape {
@@ -1051,7 +1052,7 @@ impl ElementController<dyn UmlClassElement> for UmlClassController {
 
 impl
     ContainerGen2<
-        dyn UmlClassElement,
+        UmlClassElement,
         UmlClassQueryable,
         NaiveUmlClassTool,
         UmlClassElementOrVertex,
@@ -1060,7 +1061,7 @@ impl
 
 impl
     ElementControllerGen2<
-        dyn UmlClassElement,
+        UmlClassElement,
         UmlClassQueryable,
         NaiveUmlClassTool,
         UmlClassElementOrVertex,
@@ -1394,10 +1395,7 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, (
-            Arc<RwLock<dyn UmlClassElement>>,
-            Arc<dyn Any + Send + Sync>,
-        )>
+        m: &mut HashMap<usize, UmlClassElement>,
     ) {
         let model = self.model.read().unwrap();
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
@@ -1406,7 +1404,7 @@ impl
             (*self.uuid, *model.uuid)
         };
         let modelish = Arc::new(RwLock::new(UmlClass::new(model_uuid, model.stereotype, (*model.name).clone(), (*model.properties).clone(), (*model.functions).clone())));
-        m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
+        m.insert(arc_to_usize(&self.model), modelish.clone().into());
         
         let mut cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
@@ -1433,9 +1431,9 @@ pub struct UmlClassLinkAdapter {
     model: Arc<RwLock<UmlClassLink>>,
 }
 
-impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassLinkAdapter {
-    fn model(&self) -> Arc<RwLock<dyn UmlClassElement>> {
-        self.model.clone()
+impl MulticonnectionAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassLinkAdapter {
+    fn model(&self) -> UmlClassElement {
+        self.model.clone().into()
     }
 
     fn model_uuid(&self) -> Arc<ModelUuid> {
@@ -1623,24 +1621,24 @@ impl MulticonnectionAdapter<dyn UmlClassElement, UmlClassElementOrVertex, UmlCla
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, (Arc<RwLock<dyn UmlClassElement>>, Arc<dyn Any + Send + Sync>)>
+        m: &mut HashMap<usize, UmlClassElement>,
     ) -> Self where Self: Sized {
         let model = self.model.read().unwrap();
         let model = Arc::new(RwLock::new(UmlClassLink::new(new_uuid, model.link_type, (*model.description).clone(), model.source.clone(), model.destination.clone())));
-        m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
+        m.insert(arc_to_usize(&self.model), model.clone().into());
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, (Arc<RwLock<dyn UmlClassElement>>, Arc<dyn Any + Send + Sync>)>
+        m: &HashMap<usize, UmlClassElement>,
     ) {
         let mut model = self.model.write().unwrap();
         
-        if let Some((new_source, _)) = m.get(&arc_to_usize(&model.source)) {
+        if let Some(UmlClassElement::UmlClass(new_source)) = m.get(&arc_to_usize(&model.source)) {
             model.source = new_source.clone();
         }
-        if let Some((new_dest, _)) = m.get(&arc_to_usize(&model.destination)) {
+        if let Some(UmlClassElement::UmlClass(new_dest)) = m.get(&arc_to_usize(&model.destination)) {
             model.destination = new_dest.clone();
         }
     }
@@ -1650,14 +1648,8 @@ fn umlclass_link(
     link_type: UmlClassLinkType,
     description: impl Into<String>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (
-        Arc<RwLock<dyn UmlClassElement>>,
-        ArcRwLockControllerT,
-    ),
-    destination: (
-        Arc<RwLock<dyn UmlClassElement>>,
-        ArcRwLockControllerT,
-    ),
+    source: (Arc<RwLock<UmlClass>>, ArcRwLockControllerT),
+    destination: (Arc<RwLock<UmlClass>>, ArcRwLockControllerT),
 ) -> (
     ModelUuid,
     Arc<RwLock<UmlClassLink>>,

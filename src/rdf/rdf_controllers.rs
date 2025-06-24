@@ -1,7 +1,7 @@
-use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate};
+use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, View, InputEvent, InsensitiveCommand, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation, View
 };
 use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
@@ -19,7 +19,7 @@ use sophia::api::{prelude::SparqlDataset, sparql::Query};
 use sophia_sparql::{ResultTerm, SparqlQuery, SparqlWrapper};
 
 type ControllerT = dyn ElementControllerGen2<
-    dyn RdfElement,
+    RdfElement,
     RdfQueryable,
     NaiveRdfTool,
     RdfElementOrVertex,
@@ -28,7 +28,7 @@ type ControllerT = dyn ElementControllerGen2<
 type ArcRwLockControllerT = Arc<RwLock<ControllerT>>;
 type DiagramViewT = DiagramControllerGen2<
     RdfDiagram,
-    dyn RdfElement,
+    RdfElement,
     RdfQueryable,
     RdfDiagramBuffer,
     NaiveRdfTool,
@@ -37,7 +37,7 @@ type DiagramViewT = DiagramControllerGen2<
 >;
 type PackageViewT = crate::common::controller::PackageView<
     RdfGraphAdapter,
-    dyn RdfElement,
+    RdfElement,
     RdfQueryable,
     NaiveRdfTool,
     RdfElementOrVertex,
@@ -45,7 +45,7 @@ type PackageViewT = crate::common::controller::PackageView<
 >;
 type LinkViewT = MulticonnectionView<
     RdfPredicateAdapter,
-    dyn RdfElement,
+    RdfElement,
     RdfQueryable,
     NaiveRdfTool,
     RdfElementOrVertex,
@@ -559,7 +559,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     let (_, predicate, predicate_uuid, predicate_view) = rdf_predicate(
         "http://www.w3.org/2000/10/swap/pim/contact#fullName",
         (node.clone(), node_view.clone()),
-        (literal_model.clone(), literal_view.clone()),
+        (literal_model.clone().into(), literal_view.clone()),
     );
 
     let (_, graph, graph_uuid, graph_view) = rdf_graph(
@@ -568,7 +568,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     );
 
     //<stress test>
-    let mut models_st = Vec::<Arc<RwLock<dyn RdfElement>>>::new();
+    let mut models_st = Vec::<RdfElement>::new();
     let mut controllers_st = HashMap::<_, ArcRwLockControllerT>::new();
 
     for xx in 0..=10 {
@@ -577,7 +577,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
                 "http://www.w3.org/People/EM/contact#me",
                 egui::Pos2::new(xx as f32, yy as f32),
             );
-            models_st.push(node_st);
+            models_st.push(RdfTargettableElement::from(node_st).into());
             controllers_st.insert(node_st_uuid, node_st_view);
         }
     }
@@ -588,7 +588,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
                 "http://www.w3.org/People/EM/contact#me",
                 egui::Pos2::new(xx as f32, yy as f32),
             );
-            models_st.push(node_st);
+            models_st.push(RdfTargettableElement::from(node_st).into());
             controllers_st.insert(node_st_uuid, node_st_view);
         }
     }
@@ -612,7 +612,11 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     let diagram = Arc::new(RwLock::new(RdfDiagram::new(
         model_uuid,
         name.clone(),
-        vec![node, literal_model, predicate, graph, graph_st],
+        vec![
+            RdfTargettableElement::from(node).into(),
+            RdfTargettableElement::from(literal_model).into(),
+            predicate.into(), graph.into(), graph_st.into(),
+        ],
     )));
     (
         view_uuid,
@@ -671,9 +675,9 @@ enum PartialRdfElement {
     None,
     Some((ViewUuid, ArcRwLockControllerT)),
     Predicate {
-        source: Arc<RwLock<dyn RdfElement>>,
+        source: Arc<RwLock<RdfNode>>,
         source_view: ArcRwLockControllerT,
-        dest: Option<Arc<RwLock<dyn RdfElement>>>,
+        dest: Option<RdfTargettableElement>,
     },
     Graph {
         a: egui::Pos2,
@@ -702,7 +706,7 @@ impl NaiveRdfTool {
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
 const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
 
-impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for NaiveRdfTool {
+impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for NaiveRdfTool {
     type KindedElement<'a> = KindedRdfElement<'a>;
     type Stage = RdfToolStage;
 
@@ -831,7 +835,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
             KindedRdfElement::Graph { .. } => {}
             KindedRdfElement::Literal { inner } => match (self.current_stage, &mut self.result) {
                 (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { ref mut dest, .. }) => {
-                    *dest = Some(inner.model.clone());
+                    *dest = Some(RdfTargettableElement::from(inner.model.clone()).into());
                     self.event_lock = true;
                 }
                 _ => {}
@@ -847,7 +851,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
                     self.event_lock = true;
                 }
                 (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { ref mut dest, .. }) => {
-                    *dest = Some(inner.model.clone());
+                    *dest = Some(RdfTargettableElement::from(inner.model.clone()).into());
                 }
                 _ => {}
             },
@@ -858,7 +862,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
     fn try_construct(
         &mut self,
         into: &dyn ContainerGen2<
-            dyn RdfElement,
+            RdfElement,
             RdfQueryable,
             Self,
             RdfElementOrVertex,
@@ -882,7 +886,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
                 let predicate_controller: Option<(_, ArcRwLockControllerT)> =
                     if let (Some(source_controller), Some(dest_controller)) = (
                         into.controller_for(&source.read().unwrap().uuid()),
-                        into.controller_for(&dest.read().unwrap().uuid()),
+                        into.controller_for(&dest.uuid()),
                     ) {
                         let (_model_uuid, _predicate_model, view_uuid, predicate_view) = rdf_predicate(
                             "http://www.w3.org/2000/10/swap/pim/contact#fullName",
@@ -917,7 +921,7 @@ impl Tool<dyn RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for N
 }
 
 pub trait RdfElementController:
-    ElementControllerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
+    ElementControllerGen2<RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
 {
     fn is_connection_from(&self, _uuid: &ModelUuid) -> bool {
         false
@@ -952,9 +956,9 @@ pub struct RdfGraphAdapter {
     model: Arc<RwLock<RdfGraph>>,
 }
 
-impl PackageAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGraphAdapter {
-    fn model(&self) -> Arc<RwLock<dyn RdfElement>> {
-        self.model.clone()
+impl PackageAdapter<RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGraphAdapter {
+    fn model(&self) -> RdfElement {
+        self.model.clone().into()
     }
 
     fn model_uuid(&self) -> Arc<ModelUuid> {
@@ -969,7 +973,7 @@ impl PackageAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGr
         "rdf-graph-view"
     }
 
-    fn add_element(&mut self, e: Arc<RwLock<dyn RdfElement>>) {
+    fn add_element(&mut self, e: RdfElement) {
         self.model.write().unwrap().add_element(e);
     }
 
@@ -1045,17 +1049,17 @@ impl PackageAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGr
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, (Arc<RwLock<dyn RdfElement>>, Arc<dyn Any + Send + Sync>)>,
+        m: &mut HashMap<usize, RdfElement>,
     ) -> Self where Self: Sized {
         let model = self.model.read().unwrap();
         let model = Arc::new(RwLock::new(RdfGraph::new(new_uuid, (*model.iri).clone(), model.contained_elements.clone())));
-        m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
+        m.insert(arc_to_usize(&self.model), model.clone().into());
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, (Arc<RwLock<dyn RdfElement>>, Arc<dyn Any + Send + Sync>)>
+        m: &HashMap<usize, RdfElement>,
     ) {
         todo!()
     }
@@ -1150,9 +1154,9 @@ impl NHSerialize for RdfNodeController {
     }
 }
 
-impl ElementController<dyn RdfElement> for RdfNodeController {
-    fn model(&self) -> Arc<RwLock<dyn RdfElement>> {
-        self.model.clone()
+impl ElementController<RdfElement> for RdfNodeController {
+    fn model(&self) -> RdfElement {
+        RdfTargettableElement::from(self.model.clone()).into()
     }
 
     fn min_shape(&self) -> NHShape {
@@ -1167,12 +1171,12 @@ impl ElementController<dyn RdfElement> for RdfNodeController {
     }
 }
 
-impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
+impl ContainerGen2<RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
     for RdfNodeController {}
 
 impl
     ElementControllerGen2<
-        dyn RdfElement,
+        RdfElement,
         RdfQueryable,
         NaiveRdfTool,
         RdfElementOrVertex,
@@ -1405,10 +1409,7 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, (
-            Arc<RwLock<dyn RdfElement>>,
-            Arc<dyn Any + Send + Sync>,
-        )>
+        m: &mut HashMap<usize, RdfElement>,
     ) {
         let model = self.model.read().unwrap();
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
@@ -1417,7 +1418,7 @@ impl
             (*self.uuid, *model.uuid)
         };
         let modelish = Arc::new(RwLock::new(RdfNode::new(model_uuid, (*model.iri).clone())));
-        m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
+        m.insert(arc_to_usize(&self.model), RdfTargettableElement::from(modelish.clone()).into());
         
         let cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
@@ -1476,9 +1477,9 @@ impl NHSerialize for RdfLiteralController {
     }
 }
 
-impl ElementController<dyn RdfElement> for RdfLiteralController {
-    fn model(&self) -> Arc<RwLock<dyn RdfElement>> {
-        self.model.clone()
+impl ElementController<RdfElement> for RdfLiteralController {
+    fn model(&self) -> RdfElement {
+        RdfTargettableElement::from(self.model.clone()).into()
     }
 
     fn min_shape(&self) -> NHShape {
@@ -1492,12 +1493,12 @@ impl ElementController<dyn RdfElement> for RdfLiteralController {
     }
 }
 
-impl ContainerGen2<dyn RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
+impl ContainerGen2<RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
     for RdfLiteralController {}
 
 impl
     ElementControllerGen2<
-        dyn RdfElement,
+        RdfElement,
         RdfQueryable,
         NaiveRdfTool,
         RdfElementOrVertex,
@@ -1762,10 +1763,7 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, (
-            Arc<RwLock<dyn RdfElement>>,
-            Arc<dyn Any + Send + Sync>,
-        )>
+        m: &mut HashMap<usize, RdfElement>,
     ) {
         let model = self.model.read().unwrap();
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
@@ -1774,7 +1772,7 @@ impl
             (*self.uuid, *model.uuid)
         };
         let modelish = Arc::new(RwLock::new(RdfLiteral::new(model_uuid, (*model.content).clone(), (*model.datatype).clone(), (*model.langtag).clone())));
-        m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
+        m.insert(arc_to_usize(&self.model), RdfTargettableElement::from(modelish.clone()).into());
         
         let cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
@@ -1800,9 +1798,9 @@ pub struct RdfPredicateAdapter {
     model: Arc<RwLock<RdfPredicate>>,
 }
 
-impl MulticonnectionAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> for RdfPredicateAdapter {
-    fn model(&self) -> Arc<RwLock<dyn RdfElement>> {
-        self.model.clone()
+impl MulticonnectionAdapter<RdfElement, RdfElementOrVertex, RdfPropChange> for RdfPredicateAdapter {
+    fn model(&self) -> RdfElement {
+        self.model.clone().into()
     }
 
     fn model_uuid(&self) -> Arc<ModelUuid> {
@@ -1815,6 +1813,10 @@ impl MulticonnectionAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> f
 
     fn view_type(&self) -> &'static str {
         "rdf-predicate-view"
+    }
+
+    fn midpoint_label(&self) -> Option<Arc<String>> {
+        Some(self.model_name())
     }
 
     fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
@@ -1904,24 +1906,29 @@ impl MulticonnectionAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> f
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, (Arc<RwLock<dyn RdfElement>>, Arc<dyn Any + Send + Sync>)>
+        m: &mut HashMap<usize, RdfElement>
     ) -> Self where Self: Sized {
         let model = self.model.read().unwrap();
         let model = Arc::new(RwLock::new(RdfPredicate::new(new_uuid, (*model.iri).clone(), model.source.clone(), model.destination.clone())));
-        m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
+        m.insert(arc_to_usize(&self.model), model.clone().into());
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, (Arc<RwLock<dyn RdfElement>>, Arc<dyn Any + Send + Sync>)>
+        m: &HashMap<usize, RdfElement>,
     ) {
         let mut model = self.model.write().unwrap();
         
-        if let Some((new_source, _)) = m.get(&arc_to_usize(&model.source)) {
+        if let Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(new_source))) = m.get(&arc_to_usize(&model.source)) {
             model.source = new_source.clone();
         }
-        if let Some((new_dest, _)) = m.get(&arc_to_usize(&model.destination)) {
+
+        let model_usize = match &model.destination {
+            RdfTargettableElement::RdfLiteral(rw_lock) => arc_to_usize(&rw_lock),
+            RdfTargettableElement::RdfNode(rw_lock) => arc_to_usize(&rw_lock),
+        };
+        if let Some(RdfElement::RdfTargettable(new_dest)) = m.get(&model_usize) {
             model.destination = new_dest.clone();
         }
     }
@@ -1929,8 +1936,8 @@ impl MulticonnectionAdapter<dyn RdfElement, RdfElementOrVertex, RdfPropChange> f
 
 fn rdf_predicate(
     iri: &str,
-    source: (Arc<RwLock<dyn RdfElement>>, ArcRwLockControllerT),
-    destination: (Arc<RwLock<dyn RdfElement>>, ArcRwLockControllerT),
+    source: (Arc<RwLock<RdfNode>>, ArcRwLockControllerT),
+    destination: (RdfTargettableElement, ArcRwLockControllerT),
 ) -> (
     ModelUuid,
     Arc<RwLock<RdfPredicate>>,

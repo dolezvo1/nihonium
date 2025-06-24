@@ -18,7 +18,7 @@ use std::{
 };
 
 type ControllerT = dyn ElementControllerGen2<
-    dyn DemoCsdElement,
+    DemoCsdElement,
     DemoCsdQueryable,
     NaiveDemoCsdTool,
     DemoCsdElementOrVertex,
@@ -27,7 +27,7 @@ type ControllerT = dyn ElementControllerGen2<
 type ArcRwLockControllerT = Arc<RwLock<ControllerT>>;
 type DiagramViewT = DiagramControllerGen2<
     DemoCsdDiagram,
-    dyn DemoCsdElement,
+    DemoCsdElement,
     DemoCsdQueryable,
     DemoCsdDiagramBuffer,
     NaiveDemoCsdTool,
@@ -36,7 +36,7 @@ type DiagramViewT = DiagramControllerGen2<
 >;
 type PackageViewT = crate::common::controller::PackageView<
     DemoCsdPackageAdapter,
-    dyn DemoCsdElement,
+    DemoCsdElement,
     DemoCsdQueryable,
     NaiveDemoCsdTool,
     DemoCsdElementOrVertex,
@@ -44,7 +44,7 @@ type PackageViewT = crate::common::controller::PackageView<
 >;
 type LinkViewT = MulticonnectionView<
     DemoCsdLinkAdapter,
-    dyn DemoCsdElement,
+    DemoCsdElement,
     DemoCsdQueryable,
     NaiveDemoCsdTool,
     DemoCsdElementOrVertex,
@@ -329,7 +329,7 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
 }
 
 pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
-    let mut models: Vec<Arc<RwLock<dyn DemoCsdElement>>> = vec![];
+    let mut models: Vec<DemoCsdElement> = vec![];
     let mut controllers =
         HashMap::<_, Arc<RwLock<dyn ElementControllerGen2<_, _, _, _, _>>>>::new();
 
@@ -343,7 +343,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             egui::Pos2::new(200.0, 200.0),
         );
 
-        models.push(client);
+        models.push(client.into());
         controllers.insert(client_uuid, client_view);
     }
 
@@ -363,7 +363,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             false,
             egui::Pos2::new(200.0, 400.0),
         );
-        models.push(ta);
+        models.push(ta.into());
         controllers.insert(ta_uuid, ta_view);
     }
 
@@ -383,7 +383,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             false,
             egui::Pos2::new(200.0, 600.0),
         );
-        models.push(ta_model);
+        models.push(ta_model.into());
         controllers.insert(ta_uuid, ta_view);
     }
 
@@ -403,7 +403,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             true,
             egui::Pos2::new(400.0, 200.0),
         );
-        models.push(ta_model);
+        models.push(ta_model.into());
         controllers.insert(ta_uuid, ta_view);
     }
 
@@ -509,7 +509,7 @@ impl NaiveDemoCsdTool {
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
 const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
 
-impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropChange>
+impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropChange>
     for NaiveDemoCsdTool
 {
     type KindedElement<'a> = KindedDemoCsdElement<'a>;
@@ -680,7 +680,7 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
     fn try_construct(
         &mut self,
         into: &dyn ContainerGen2<
-            dyn DemoCsdElement,
+            DemoCsdElement,
             DemoCsdQueryable,
             Self,
             DemoCsdElementOrVertex,
@@ -741,7 +741,7 @@ impl Tool<dyn DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdP
 
 pub trait DemoCsdElementController:
     ElementControllerGen2<
-    dyn DemoCsdElement,
+    DemoCsdElement,
     DemoCsdQueryable,
     NaiveDemoCsdTool,
     DemoCsdElementOrVertex,
@@ -756,7 +756,7 @@ pub trait DemoCsdElementController:
     }
 }
 
-pub trait RdfContainerController {
+pub trait DemoCsdContainerController {
     fn controller_for(
         &self,
         uuid: &uuid::Uuid,
@@ -768,9 +768,9 @@ pub struct DemoCsdPackageAdapter {
     model: Arc<RwLock<DemoCsdPackage>>,
 }
 
-impl PackageAdapter<dyn DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdPackageAdapter {
-    fn model(&self) -> Arc<RwLock<dyn DemoCsdElement>> {
-        self.model.clone()
+impl PackageAdapter<DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdPackageAdapter {
+    fn model(&self) -> DemoCsdElement {
+        self.model.clone().into()
     }
 
     fn model_uuid(&self) -> Arc<ModelUuid> {
@@ -785,7 +785,7 @@ impl PackageAdapter<dyn DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChang
         "democsd-package-view"
     }
 
-    fn add_element(&mut self, e: Arc<RwLock<dyn DemoCsdElement>>) {
+    fn add_element(&mut self, e: DemoCsdElement) {
         self.model.write().unwrap().add_element(e);
     }
 
@@ -861,17 +861,17 @@ impl PackageAdapter<dyn DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChang
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, (Arc<RwLock<dyn DemoCsdElement>>, Arc<dyn Any + Send + Sync>)>,
+        m: &mut HashMap<usize, DemoCsdElement>,
     ) -> Self where Self: Sized {
         let model = self.model.read().unwrap();
         let model = Arc::new(RwLock::new(DemoCsdPackage::new(new_uuid, (*model.name).clone(), model.contained_elements.clone())));
-        m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
+        m.insert(arc_to_usize(&self.model), model.clone().into());
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, (Arc<RwLock<dyn DemoCsdElement>>, Arc<dyn Any + Send + Sync>)>
+        m: &HashMap<usize, DemoCsdElement>,
     ) {
         todo!()
     }
@@ -912,8 +912,8 @@ fn democsd_transactor(
     name: &str,
     internal: bool,
     transaction: Option<(
-        Arc<std::sync::RwLock<DemoCsdTransaction>>,
-        Arc<std::sync::RwLock<DemoCsdTransactionView>>,
+        Arc<RwLock<DemoCsdTransaction>>,
+        Arc<RwLock<DemoCsdTransactionView>>,
     )>,
     transaction_selfactivating: bool,
     position: egui::Pos2,
@@ -1004,9 +1004,9 @@ impl NHSerialize for DemoCsdTransactorView {
     }
 }
 
-impl ElementController<dyn DemoCsdElement> for DemoCsdTransactorView {
-    fn model(&self) -> Arc<RwLock<dyn DemoCsdElement>> {
-        self.model.clone()
+impl ElementController<DemoCsdElement> for DemoCsdTransactorView {
+    fn model(&self) -> DemoCsdElement {
+        self.model.clone().into()
     }
     fn min_shape(&self) -> canvas::NHShape {
         canvas::NHShape::Rect {
@@ -1020,7 +1020,7 @@ impl ElementController<dyn DemoCsdElement> for DemoCsdTransactorView {
 
 impl
     ContainerGen2<
-        dyn DemoCsdElement,
+        DemoCsdElement,
         DemoCsdQueryable,
         NaiveDemoCsdTool,
         DemoCsdElementOrVertex,
@@ -1039,7 +1039,7 @@ impl
 
 impl
     ElementControllerGen2<
-        dyn DemoCsdElement,
+        DemoCsdElement,
         DemoCsdQueryable,
         NaiveDemoCsdTool,
         DemoCsdElementOrVertex,
@@ -1519,17 +1519,14 @@ impl
         requested: Option<&HashSet<ViewUuid>>,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
         tlc: &mut HashMap<ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<dyn DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange>>>,
+            Arc<RwLock<dyn ElementControllerGen2<DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange>>>,
         >,
         c: &mut HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<dyn DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange>>>,
+            Arc<RwLock<dyn ElementControllerGen2<DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, (
-            Arc<RwLock<dyn DemoCsdElement>>,
-            Arc<dyn Any + Send + Sync>,
-        )>)
-    {
+        m: &mut HashMap<usize, DemoCsdElement>,
+    ) {
         if requested.is_none_or(|e| e.contains(&self.uuid()) || self.transaction_view.as_ref().is_some_and(|t| e.contains(&t.read().unwrap().uuid()))) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         }
@@ -1542,10 +1539,7 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, (
-            Arc<RwLock<dyn DemoCsdElement>>,
-            Arc<dyn Any + Send + Sync>,
-        )>
+        m: &mut HashMap<usize, DemoCsdElement>,
     ) {
         let tx_clone = if let Some(t) = self.transaction_view.as_ref() {
             let mut inner = HashMap::new();
@@ -1564,7 +1558,7 @@ impl
         };
         let modelish = Arc::new(RwLock::new(DemoCsdTransactor::new(model_uuid, (*model.identifier).clone(), (*model.name).clone(), model.internal,
             model.transaction.clone(), model.transaction_selfactivating)));
-        m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
+        m.insert(arc_to_usize(&self.model), modelish.clone().into());
         
         let cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
@@ -1591,10 +1585,7 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &HashMap<usize, (
-            Arc<RwLock<dyn DemoCsdElement>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
+        m: &HashMap<usize, DemoCsdElement>,
     ) {
         if let Some((_, _, new_ta)) = self.transaction_view.as_ref().and_then(|e| c.get(&arc_to_usize(e)))  {
             let new_ta: Result<Arc<RwLock<DemoCsdTransactionView>>, _> = Arc::downcast(new_ta.clone());
@@ -1685,9 +1676,9 @@ impl NHSerialize for DemoCsdTransactionView {
     }
 }
 
-impl ElementController<dyn DemoCsdElement> for DemoCsdTransactionView {
-    fn model(&self) -> Arc<RwLock<dyn DemoCsdElement>> {
-        self.model.clone()
+impl ElementController<DemoCsdElement> for DemoCsdTransactionView {
+    fn model(&self) -> DemoCsdElement {
+        self.model.clone().into()
     }
     fn min_shape(&self) -> canvas::NHShape {
         self.min_shape
@@ -1699,7 +1690,7 @@ impl ElementController<dyn DemoCsdElement> for DemoCsdTransactionView {
 
 impl
     ContainerGen2<
-        dyn DemoCsdElement,
+        DemoCsdElement,
         DemoCsdQueryable,
         NaiveDemoCsdTool,
         DemoCsdElementOrVertex,
@@ -1759,7 +1750,7 @@ fn draw_tx_mark(
 
 impl
     ElementControllerGen2<
-        dyn DemoCsdElement,
+        DemoCsdElement,
         DemoCsdQueryable,
         NaiveDemoCsdTool,
         DemoCsdElementOrVertex,
@@ -2019,10 +2010,7 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, (
-            Arc<RwLock<dyn DemoCsdElement>>,
-            Arc<dyn Any + Send + Sync>,
-        )>
+        m: &mut HashMap<usize, DemoCsdElement>
     ) {
         let model = self.model.read().unwrap();
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
@@ -2031,7 +2019,7 @@ impl
             (*self.uuid, *model.uuid)
         };
         let modelish = Arc::new(RwLock::new(DemoCsdTransaction::new(model_uuid, (*model.identifier).clone(), (*model.name).clone())));
-        m.insert(arc_to_usize(&self.model), (modelish.clone(), modelish.clone()));
+        m.insert(arc_to_usize(&self.model), modelish.clone().into());
         
         let cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
@@ -2067,9 +2055,9 @@ impl DemoCsdLinkAdapter {
     }
 }
 
-impl MulticonnectionAdapter<dyn DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdLinkAdapter {
-    fn model(&self) -> Arc<RwLock<dyn DemoCsdElement>> {
-        self.model.clone()
+impl MulticonnectionAdapter<DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdLinkAdapter {
+    fn model(&self) -> DemoCsdElement {
+        self.model.clone().into()
     }
 
     fn model_uuid(&self) -> Arc<ModelUuid> {
@@ -2173,31 +2161,25 @@ impl MulticonnectionAdapter<dyn DemoCsdElement, DemoCsdElementOrVertex, DemoCsdP
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, (Arc<RwLock<dyn DemoCsdElement>>, Arc<dyn Any + Send + Sync>)>
+        m: &mut HashMap<usize, DemoCsdElement>
     ) -> Self where Self: Sized {
         let model = self.model.read().unwrap();
         let model = Arc::new(RwLock::new(DemoCsdLink::new(new_uuid, model.link_type, model.source.clone(), model.target.clone())));
-        m.insert(arc_to_usize(&self.model), (model.clone(), model.clone()));
+        m.insert(arc_to_usize(&self.model), model.clone().into());
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, (Arc<RwLock<dyn DemoCsdElement>>, Arc<dyn Any + Send + Sync>)>
+        m: &HashMap<usize, DemoCsdElement>
     ) {
         let mut model = self.model.write().unwrap();
         
-        if let Some((_, new_source)) = m.get(&arc_to_usize(&model.source)) {
-            let new_source: Result<Arc<RwLock<DemoCsdTransactor>>, _> = Arc::downcast(new_source.clone());
-            if let Ok(new_source) = new_source {
-                model.source = new_source;
-            }
+        if let Some(DemoCsdElement::DemoCsdTransactor(new_source)) = m.get(&arc_to_usize(&model.source)) {
+            model.source = new_source.clone();
         }
-        if let Some((_, new_dest)) = m.get(&arc_to_usize(&model.target)) {
-            let new_dest: Result<Arc<RwLock<DemoCsdTransaction>>, _> = Arc::downcast(new_dest.clone());
-            if let Ok(new_dest) = new_dest {
-                model.target = new_dest;
-            }
+        if let Some(DemoCsdElement::DemoCsdTransaction(new_dest)) = m.get(&arc_to_usize(&model.target)) {
+            model.target = new_dest.clone();
         }
     }
 }
@@ -2205,11 +2187,11 @@ impl MulticonnectionAdapter<dyn DemoCsdElement, DemoCsdElementOrVertex, DemoCsdP
 fn democsd_link(
     link_type: DemoCsdLinkType,
     source: (
-        Arc<std::sync::RwLock<DemoCsdTransactor>>,
+        Arc<RwLock<DemoCsdTransactor>>,
         ArcRwLockControllerT,
     ),
     destination: (
-        Arc<std::sync::RwLock<DemoCsdTransaction>>,
+        Arc<RwLock<DemoCsdTransaction>>,
         ArcRwLockControllerT,
     ),
 ) -> (ModelUuid, Arc<RwLock<DemoCsdLink>>, ViewUuid, Arc<RwLock<LinkViewT>>) {
