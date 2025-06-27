@@ -86,8 +86,8 @@ impl ContainerModel<DemoCsdElement> for DemoCsdDiagram {
     fn add_element(&mut self, element: DemoCsdElement) {
         self.contained_elements.push(element);
     }
-    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
-        // TODO
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
+        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
     }
 }
 
@@ -153,8 +153,8 @@ impl ContainerModel<DemoCsdElement> for DemoCsdPackage {
     fn add_element(&mut self, element: DemoCsdElement) {
         self.contained_elements.push(element);
     }
-    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
-        // TODO
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
+        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
     }
 }
 

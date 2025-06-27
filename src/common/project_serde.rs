@@ -16,8 +16,8 @@ pub enum NHProjectHierarchyNodeDTO {
 pub struct NHProjectDTO {
     format_version: String,
     hierarchy: Vec<NHProjectHierarchyNodeDTO>,
-    flattened_models: Vec<toml::Value>,
-    flattened_views: Vec<toml::Value>,
+    models: Vec<toml::Value>,
+    views: Vec<toml::Value>,
 }
 
 impl NHProjectDTO {
@@ -25,7 +25,7 @@ impl NHProjectDTO {
         hierarchy: Vec<NHProjectHierarchyNodeDTO>,
         serializer: NHSerializer,
     ) -> Self {
-        let (flattened_models, flattened_views) = {
+        let (models, views) = {
             let NHSerializer { models, views } = serializer;
             let (mut m, mut v): (Vec<_>, Vec<_>) = (models.into_iter().collect(), views.into_iter().collect());
             m.sort_by_key(|e| e.0);
@@ -35,8 +35,8 @@ impl NHProjectDTO {
         Self {
             format_version: "0.1.0".into(),
             hierarchy,
-            flattened_models: flattened_models.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
-            flattened_views: flattened_views.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
+            models: models.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
+            views: views.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
         }
     }
 }
@@ -83,6 +83,11 @@ impl From<toml::ser::Error> for NHSerializeError {
 pub trait NHSerialize {
     #[clippy::must_use]
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>;
+}
+
+pub trait NHSerializeToScalar {
+    #[clippy::must_use]
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<toml::Value, NHSerializeError>;
 }
 
 pub trait NHDeserialize: Sized {

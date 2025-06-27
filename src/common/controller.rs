@@ -92,7 +92,7 @@ macro_rules! build_colors {
 }
 pub(crate) use build_colors;
 
-use super::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
+use super::project_serde::{NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use super::uuid::{ModelUuid, ViewUuid};
 
 
@@ -634,8 +634,8 @@ pub trait Model: 'static {
 }
 
 pub trait ContainerModel<CommonElementT>: Model {
-    fn add_element(&mut self, _: CommonElementT);
-    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>);
+    fn add_element(&mut self, element: CommonElementT);
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
 }
 
 pub trait Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT> {
@@ -805,21 +805,52 @@ pub trait ElementControllerGen2<
     ) {}
 }
 
+pub trait DiagramAdapter<
+    DiagramModelT: ContainerModel<CommonElementT>,
+    CommonElementT,
+    AddCommandElementT: Clone + Debug + 'static,
+    PropChangeT: Clone + Debug + 'static,
+>: NHSerializeToScalar {
+    fn model(&self) -> Arc<RwLock<DiagramModelT>>;
+    fn model_uuid(&self) -> Arc<ModelUuid>;
+    fn model_name(&self) -> Arc<String>;
+
+    fn add_element(&mut self, element: CommonElementT) {
+        self.model().write().unwrap().add_element(element);
+    }
+    fn delete_elements(&mut self, elements: &HashSet<ModelUuid>) {
+        self.model().write().unwrap().delete_elements(elements);
+    }
+
+    fn show_props_fun(
+        &mut self,
+        view_uuid: &ViewUuid,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+    );
+    fn apply_property_change_fun(
+        &mut self,
+        view_uuid: &ViewUuid,
+        command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+    );
+}
+
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
 pub struct DiagramControllerGen2<
-    DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+    DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+    DiagramModelT: ContainerModel<CommonElementT>,
     CommonElementT: 'static,
-    QueryableT,
-    BufferT,
-    ToolT,
+    QueryableT: 'static,
+    ToolT: 'static,
     AddCommandElementT: Clone + Debug + 'static,
     PropChangeT: Clone + Debug + 'static,
 > where
     ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
 {
     uuid: Arc<ViewUuid>,
-    model: Arc<RwLock<DiagramModelT>>,
+    adapter: DiagramAdapterT,
     self_reference: Weak<RwLock<Self>>,
     owned_controllers: HashMap<
         ViewUuid,
@@ -868,41 +899,29 @@ pub struct DiagramControllerGen2<
 
     // q: dyn Fn(&Vec<DomainElementT>) -> QueryableT,
     queryable: QueryableT,
-    buffer: BufferT,
     view_type: &'static str,
-    show_props_fun: fn(
-        &mut BufferT,
-        &mut egui::Ui,
-        &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-    ),
-    apply_property_change_fun: fn(
-        &mut BufferT,
-        &mut DiagramModelT,
-        &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-        &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
-    ),
 
     tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
     menubar_options_fun: fn(&mut Self, &mut egui::Ui, &mut Vec<ProjectCommand>),
 }
 
 impl<
-        DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
         QueryableT: 'static,
-        BufferT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
     >
     DiagramControllerGen2<
+        DiagramAdapterT,
         DiagramModelT,
         CommonElementT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
-        PropChangeT,
+        PropChangeT
     >
 where
     ToolT: for<'a> Tool<
@@ -942,7 +961,7 @@ where
 {
     pub fn new(
         uuid: Arc<ViewUuid>,
-        model: Arc<RwLock<DiagramModelT>>,
+        adapter: DiagramAdapterT,
         owned_controllers: HashMap<
             ViewUuid,
             Arc<
@@ -958,26 +977,14 @@ where
             >,
         >,
         queryable: QueryableT,
-        buffer: BufferT,
         view_type: &'static str,
-        show_props_fun: fn(
-            &mut BufferT,
-            &mut egui::Ui,
-            &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
-        ),
-        apply_property_change_fun: fn(
-            &mut BufferT,
-            &mut DiagramModelT,
-            &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-            &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
-        ),
         tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
         menubar_options_fun: fn(&mut Self, &mut egui::Ui, &mut Vec<ProjectCommand>),
     ) -> Arc<RwLock<Self>> {
         let event_order = owned_controllers.keys().map(|e| *e).collect();
         let ret = Arc::new(RwLock::new(Self {
             uuid,
-            model,
+            adapter,
             self_reference: Weak::new(),
             owned_controllers,
             event_order,
@@ -999,10 +1006,7 @@ where
             redo_stack: Vec::new(),
 
             queryable,
-            buffer,
             view_type,
-            show_props_fun,
-            apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
         }));
@@ -1011,7 +1015,7 @@ where
     }
 
     pub fn model(&self) -> Arc<RwLock<DiagramModelT>> {
-        self.model.clone()
+        self.adapter.model()
     }
 
     fn self_reference_dyn(&self) -> Arc<RwLock<dyn DiagramController>> {
@@ -1197,19 +1201,20 @@ where
                 | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
                 InsensitiveCommand::DeleteSpecificElements(uuids)
                 | InsensitiveCommand::CutSpecificElements(uuids) => {
+
+                    let mut model_uuids = HashSet::new();
                     for (uuid, element) in self
                         .owned_controllers
                         .iter()
                         .filter(|e| uuids.contains(&e.0))
                     {
+                        model_uuids.insert(*element.read().unwrap().model_uuid());
                         undo_accumulator.push(InsensitiveCommand::AddElement(
                             *self.uuid(),
                             AddCommandElementT::from((*uuid, element.clone())),
                         ));
                     }
-
-                    let mut self_m = self.model.write().unwrap();
-                    // TODO: self_m.delete_elements(uuids);
+                    self.adapter.delete_elements(&model_uuids);
 
                     self.owned_controllers.retain(|k, _v| !uuids.contains(&k));
                     self.event_order.retain(|e| !uuids.contains(&e));
@@ -1221,10 +1226,7 @@ where
                                 std::iter::once(uuid).collect(),
                             ));
 
-                            let new_c = element.read().unwrap();
-                            let mut self_m = self.model.write().unwrap();
-                            self_m.add_element(new_c.model());
-                            drop(new_c);
+                            self.adapter.add_element(element.read().unwrap().model());
 
                             self.owned_controllers.insert(uuid, element);
                             self.event_order.push(uuid);
@@ -1238,10 +1240,7 @@ where
                                 std::iter::once(uuid).collect(),
                             ));
 
-                            let new_c = element.read().unwrap();
-                            let mut self_m = self.model.write().unwrap();
-                            self_m.add_element(new_c.model());
-                            drop(new_c);
+                            self.adapter.add_element(element.read().unwrap().model());
 
                             self.owned_controllers.insert(uuid, element);
                             self.event_order.push(uuid);
@@ -1250,10 +1249,8 @@ where
                 }
                 InsensitiveCommand::PropertyChange(uuids, _property) => {
                     if uuids.contains(&*self.uuid) {
-                        let mut m = self.model.write().unwrap();
-                        (self.apply_property_change_fun)(
-                            &mut self.buffer,
-                            &mut m,
+                        self.adapter.apply_property_change_fun(
+                            &self.uuid,
                             &command,
                             &mut undo_accumulator,
                         );
@@ -1343,19 +1340,19 @@ where
 
 
 impl<
-        DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
         QueryableT: 'static,
-        BufferT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
     > View
     for DiagramControllerGen2<
+        DiagramAdapterT,
         DiagramModelT,
         CommonElementT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
@@ -1373,27 +1370,27 @@ where
         self.uuid.clone()
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
-        self.model.read().unwrap().uuid()
+        self.adapter.model_uuid()
     }
     fn model_name(&self) -> Arc<String> {
-        self.model.read().unwrap().name()
+        self.adapter.model_name()
     }
 }
 
 impl<
-        DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
         QueryableT: 'static,
-        BufferT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
     > NHSerialize
     for DiagramControllerGen2<
+        DiagramAdapterT,
         DiagramModelT,
         CommonElementT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
@@ -1408,16 +1405,13 @@ where
     >,
 {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        // Serialize itself
+        // Serialize itself and the model
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
         element.insert("type".to_owned(), toml::Value::String(self.view_type.to_owned()));
-        element.insert("model".to_owned(), toml::Value::String((*self.model.read().unwrap().uuid()).to_string()));
+        element.insert("adapter".to_owned(), self.adapter.serialize_into(into)?);
         element.insert("children".to_owned(), toml::Value::Array(self.event_order.iter().map(|e| toml::Value::String(e.to_string())).collect()));
         into.insert_view(*self.uuid, element);
-
-        // Serialize model
-        self.model.read().unwrap().serialize_into(into)?;
 
         // Serialize children
         for e in self.event_order.iter().flat_map(|e| self.owned_controllers.get(e)) {
@@ -1429,19 +1423,19 @@ where
 }
 
 impl<
-        DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
         QueryableT: 'static,
-        BufferT: 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
     > DiagramController
     for DiagramControllerGen2<
+        DiagramAdapterT,
         DiagramModelT,
         CommonElementT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
@@ -1611,7 +1605,7 @@ where
             })
             .is_none()
         {
-            (self.show_props_fun)(&mut self.buffer, ui, &mut commands);
+            self.adapter.show_props_fun(&self.uuid, ui, &mut commands);
         }
 
         self.apply_commands(commands, undo_accumulator, true, true);
@@ -1765,19 +1759,19 @@ where
 }
 
 impl<
-        DiagramModelT: ContainerModel<CommonElementT> + NHSerialize,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
         QueryableT: 'static,
-        BufferT: 'static,
-        ToolT,
-        AddCommandElementT: Clone + Debug,
-        PropChangeT: Clone + Debug,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
     > ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
     for DiagramControllerGen2<
+        DiagramAdapterT,
         DiagramModelT,
         CommonElementT,
         QueryableT,
-        BufferT,
         ToolT,
         AddCommandElementT,
         PropChangeT,
@@ -1845,8 +1839,8 @@ pub trait PackageAdapter<
     fn model_name(&self) -> Arc<String>;
     fn view_type(&self) -> &'static str;
     
-    fn add_element(&mut self, _: CommonElementT);
-    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>);
+    fn add_element(&mut self, element: CommonElementT);
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
 
     fn show_properties(
         &self,
@@ -2740,18 +2734,21 @@ where
             }
             InsensitiveCommand::DeleteSpecificElements(uuids)
             | InsensitiveCommand::CutSpecificElements(uuids) => {
+
+                let mut model_uuids = HashSet::new();
                 for (uuid, element) in self
                     .owned_controllers
                     .iter()
                     .filter(|e| uuids.contains(&e.0))
                 {
+                    model_uuids.insert(*element.read().unwrap().model_uuid());
                     undo_accumulator.push(InsensitiveCommand::AddElement(
                         *self.uuid,
                         AddCommandElementT::from((*uuid, element.clone())),
                     ));
                 }
+                self.adapter.delete_elements(&model_uuids);
 
-                // TODO: self.adapter.delete_elements(&uuids);
                 self.owned_controllers.retain(|k, _v| !uuids.contains(&k));
                 self.event_order.retain(|e| !uuids.contains(&e));
 
@@ -2764,9 +2761,7 @@ where
                             std::iter::once(uuid).collect(),
                         ));
 
-                        let new_c = element.read().unwrap();
-                        self.adapter.add_element(new_c.model());
-                        drop(new_c);
+                        self.adapter.add_element(element.read().unwrap().model());
 
                         self.owned_controllers.insert(uuid, element);
                         self.event_order.push(uuid);

@@ -195,8 +195,8 @@ impl ContainerModel<UmlClassElement> for UmlClassDiagram {
     fn add_element(&mut self, element: UmlClassElement) {
         self.contained_elements.push(element);
     }
-    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
-        // TODO
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
+        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
     }
 }
 
@@ -260,8 +260,8 @@ impl ContainerModel<UmlClassElement> for UmlClassPackage {
     fn add_element(&mut self, element: UmlClassElement) {
         self.contained_elements.push(element);
     }
-    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
-        // TODO
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
+        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
     }
 }
 

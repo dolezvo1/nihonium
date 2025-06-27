@@ -1,8 +1,8 @@
 use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation, View
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
-use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
+use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage,
@@ -26,10 +26,10 @@ type ControllerT = dyn ElementControllerGen2<
 >;
 type ArcRwLockControllerT = Arc<RwLock<ControllerT>>;
 type DiagramViewT = DiagramControllerGen2<
+    DemoCsdDiagramAdapter,
     DemoCsdDiagram,
     DemoCsdElement,
     DemoCsdQueryable,
-    DemoCsdDiagramBuffer,
     NaiveDemoCsdTool,
     DemoCsdElementOrVertex,
     DemoCsdPropChange,
@@ -148,83 +148,107 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
     ("DEMO CSD diagram".to_owned(), c.0, c.1)
 }
 
-pub struct DemoCsdDiagramBuffer {
-    uuid: ViewUuid,
-    name: String,
-    comment: String,
+pub struct DemoCsdDiagramAdapter {
+    model: Arc<RwLock<DemoCsdDiagram>>,
+    name_buffer: String,
+    comment_buffer: String,
 }
 
-fn show_props_fun(
-    buffer: &mut DemoCsdDiagramBuffer,
-    ui: &mut egui::Ui,
-    commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-) {
-    ui.label("Name:");
-    if ui
-        .add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::singleline(&mut buffer.name),
-        )
-        .changed()
-    {
-        commands.push(
-            InsensitiveCommand::PropertyChange(
-                std::iter::once(buffer.uuid).collect(),
-                vec![DemoCsdPropChange::NameChange(Arc::new(buffer.name.clone()))],
-            )
-            .into(),
-        );
-    };
-
-    ui.label("Comment:");
-    if ui
-        .add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::multiline(&mut buffer.comment),
-        )
-        .changed()
-    {
-        commands.push(
-            InsensitiveCommand::PropertyChange(
-                std::iter::once(buffer.uuid).collect(),
-                vec![DemoCsdPropChange::CommentChange(Arc::new(
-                    buffer.comment.clone(),
-                ))],
-            )
-            .into(),
-        );
+impl DiagramAdapter<DemoCsdDiagram, DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdDiagramAdapter {
+    fn model(&self) -> Arc<RwLock<DemoCsdDiagram>> {
+        self.model.clone()
     }
-}
-fn apply_property_change_fun(
-    buffer: &mut DemoCsdDiagramBuffer,
-    model: &mut DemoCsdDiagram,
-    command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
-    undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-) {
-    if let InsensitiveCommand::PropertyChange(_, properties) = command {
-        for property in properties {
-            match property {
-                DemoCsdPropChange::NameChange(name) => {
-                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                        std::iter::once(buffer.uuid).collect(),
-                        vec![DemoCsdPropChange::NameChange(model.name.clone())],
-                    ));
-                    buffer.name = (**name).clone();
-                    model.name = name.clone();
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().unwrap().uuid()
+    }
+    fn model_name(&self) -> Arc<String> {
+        self.model.read().unwrap().name()
+    }
+
+    fn show_props_fun(
+        &mut self,
+        view_uuid: &ViewUuid,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+    ) {
+        ui.label("Name:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::singleline(&mut self.name_buffer),
+            )
+            .changed()
+        {
+            commands.push(
+                InsensitiveCommand::PropertyChange(
+                    std::iter::once(*view_uuid).collect(),
+                    vec![DemoCsdPropChange::NameChange(Arc::new(self.name_buffer.clone()))],
+                )
+                .into(),
+            );
+        };
+
+        ui.label("Comment:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.comment_buffer),
+            )
+            .changed()
+        {
+            commands.push(
+                InsensitiveCommand::PropertyChange(
+                    std::iter::once(*view_uuid).collect(),
+                    vec![DemoCsdPropChange::CommentChange(Arc::new(
+                        self.comment_buffer.clone(),
+                    ))],
+                )
+                .into(),
+            );
+        }
+    }
+
+    fn apply_property_change_fun(
+        &mut self,
+        view_uuid: &ViewUuid,
+        command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            let mut model = self.model.write().unwrap();
+            for property in properties {
+                match property {
+                    DemoCsdPropChange::NameChange(name) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![DemoCsdPropChange::NameChange(model.name.clone())],
+                        ));
+                        self.name_buffer = (**name).clone();
+                        model.name = name.clone();
+                    }
+                    DemoCsdPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![DemoCsdPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        self.comment_buffer = (**comment).clone();
+                        model.comment = comment.clone();
+                    }
+                    _ => {}
                 }
-                DemoCsdPropChange::CommentChange(comment) => {
-                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                        std::iter::once(buffer.uuid).collect(),
-                        vec![DemoCsdPropChange::CommentChange(model.comment.clone())],
-                    ));
-                    buffer.comment = (**comment).clone();
-                    model.comment = comment.clone();
-                }
-                _ => {}
             }
         }
     }
 }
+
+impl NHSerializeToScalar for DemoCsdDiagramAdapter {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<toml::Value, NHSerializeError> {
+        self.model.read().unwrap().serialize_into(into)?;
+
+        Ok(toml::Value::String(self.model.read().unwrap().uuid().to_string()))
+    }
+}
+
 fn tool_change_fun(tool: &mut Option<NaiveDemoCsdTool>, ui: &mut egui::Ui) {
     let width = ui.available_width();
 
@@ -311,17 +335,14 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
         view_uuid,
         DiagramControllerGen2::new(
             view_uuid.into(),
-            diagram.clone(),
+            DemoCsdDiagramAdapter {
+                model: diagram,
+                name_buffer: name,
+                comment_buffer: "".to_owned(),
+            },
             HashMap::new(),
             DemoCsdQueryable {},
-            DemoCsdDiagramBuffer {
-                uuid: view_uuid,
-                name,
-                comment: "".to_owned(),
-            },
             DIAGRAM_VIEW_TYPE,
-            show_props_fun,
-            apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
         ),
@@ -422,17 +443,14 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             view_uuid,
             DiagramControllerGen2::new(
                 view_uuid.into(),
-                diagram.clone(),
+                DemoCsdDiagramAdapter {
+                    model: diagram,
+                    name_buffer: name,
+                    comment_buffer: "".to_owned(),
+                },
                 controllers,
                 DemoCsdQueryable {},
-                DemoCsdDiagramBuffer {
-                    uuid: view_uuid,
-                    name,
-                    comment: "".to_owned(),
-                },
                 DIAGRAM_VIEW_TYPE,
-                show_props_fun,
-                apply_property_change_fun,
                 tool_change_fun,
                 menubar_options_fun,
             ),
@@ -772,11 +790,9 @@ impl PackageAdapter<DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> f
     fn model(&self) -> DemoCsdElement {
         self.model.clone().into()
     }
-
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().unwrap().uuid.clone()
     }
-
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
     }
@@ -788,8 +804,7 @@ impl PackageAdapter<DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> f
     fn add_element(&mut self, e: DemoCsdElement) {
         self.model.write().unwrap().add_element(e);
     }
-
-    fn delete_elements(&mut self, uuids: &std::collections::HashSet<uuid::Uuid>) {
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
         self.model.write().unwrap().delete_elements(uuids);
     }
     

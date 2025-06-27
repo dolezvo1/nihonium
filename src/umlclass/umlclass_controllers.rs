@@ -4,9 +4,9 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation, View
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation, View
 };
-use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
+use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::CustomTab;
 use eframe::egui;
@@ -27,10 +27,10 @@ type ControllerT = dyn ElementControllerGen2<
 >;
 type ArcRwLockControllerT = Arc<RwLock<ControllerT>>;
 type DiagramViewT = DiagramControllerGen2<
+    UmlClassDiagramAdapter,
     UmlClassDiagram,
     UmlClassElement,
     UmlClassQueryable,
-    UmlClassDiagramBuffer,
     NaiveUmlClassTool,
     UmlClassElementOrVertex,
     UmlClassPropChange,
@@ -151,85 +151,109 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
     ("UML Class diagram".to_owned(), c.0, c.1)
 }
 
-pub struct UmlClassDiagramBuffer {
-    uuid: ViewUuid,
-    name: String,
-    comment: String,
+pub struct UmlClassDiagramAdapter {
+    model: Arc<RwLock<UmlClassDiagram>>,
+    name_buffer: String,
+    comment_buffer: String,
 }
 
-fn show_props_fun(
-    buffer: &mut UmlClassDiagramBuffer,
-    ui: &mut egui::Ui,
-    commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
-) {
-    ui.label("Name:");
-    if ui
-        .add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::singleline(&mut buffer.name),
-        )
-        .changed()
-    {
-        commands.push(
-            InsensitiveCommand::PropertyChange(
-                std::iter::once(buffer.uuid).collect(),
-                vec![UmlClassPropChange::NameChange(Arc::new(
-                    buffer.name.clone(),
-                ))],
-            )
-            .into(),
-        );
+impl DiagramAdapter<UmlClassDiagram, UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassDiagramAdapter {
+    fn model(&self) -> Arc<RwLock<UmlClassDiagram>> {
+        self.model.clone()
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().unwrap().uuid()
+    }
+    fn model_name(&self) -> Arc<String> {
+        self.model.read().unwrap().name()
     }
 
-    ui.label("Comment:");
-    if ui
-        .add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::multiline(&mut buffer.comment),
-        )
-        .changed()
-    {
-        commands.push(
-            InsensitiveCommand::PropertyChange(
-                std::iter::once(buffer.uuid).collect(),
-                vec![UmlClassPropChange::CommentChange(Arc::new(
-                    buffer.comment.clone(),
-                ))],
+    fn show_props_fun(
+        &mut self,
+        view_uuid: &ViewUuid,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+    ) {
+        ui.label("Name:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::singleline(&mut self.name_buffer),
             )
-            .into(),
-        );
+            .changed()
+        {
+            commands.push(
+                InsensitiveCommand::PropertyChange(
+                    std::iter::once(*view_uuid).collect(),
+                    vec![UmlClassPropChange::NameChange(Arc::new(
+                        self.name_buffer.clone(),
+                    ))],
+                )
+                .into(),
+            );
+        }
+
+        ui.label("Comment:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.comment_buffer),
+            )
+            .changed()
+        {
+            commands.push(
+                InsensitiveCommand::PropertyChange(
+                    std::iter::once(*view_uuid).collect(),
+                    vec![UmlClassPropChange::CommentChange(Arc::new(
+                        self.comment_buffer.clone(),
+                    ))],
+                )
+                .into(),
+            );
+        }
     }
-}
-fn apply_property_change_fun(
-    buffer: &mut UmlClassDiagramBuffer,
-    model: &mut UmlClassDiagram,
-    command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
-    undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
-) {
-    if let InsensitiveCommand::PropertyChange(_, properties) = command {
-        for property in properties {
-            match property {
-                UmlClassPropChange::NameChange(name) => {
-                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                        std::iter::once(buffer.uuid).collect(),
-                        vec![UmlClassPropChange::NameChange(model.name.clone())],
-                    ));
-                    buffer.name = (**name).clone();
-                    model.name = name.clone();
+
+    fn apply_property_change_fun(
+        &mut self,
+        view_uuid: &ViewUuid,
+        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            let mut model = self.model.write().unwrap();
+            for property in properties {
+                match property {
+                    UmlClassPropChange::NameChange(name) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![UmlClassPropChange::NameChange(model.name.clone())],
+                        ));
+                        self.name_buffer = (**name).clone();
+                        model.name = name.clone();
+                    }
+                    UmlClassPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![UmlClassPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        self.comment_buffer = (**comment).clone();
+                        model.comment = comment.clone();
+                    }
+                    _ => {}
                 }
-                UmlClassPropChange::CommentChange(comment) => {
-                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                        std::iter::once(buffer.uuid).collect(),
-                        vec![UmlClassPropChange::CommentChange(model.comment.clone())],
-                    ));
-                    buffer.comment = (**comment).clone();
-                    model.comment = comment.clone();
-                }
-                _ => {}
             }
         }
     }
 }
+
+impl NHSerializeToScalar for UmlClassDiagramAdapter {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<toml::Value, NHSerializeError> {
+        self.model.read().unwrap().serialize_into(into)?;
+
+        Ok(toml::Value::String(self.model.read().unwrap().uuid().to_string()))
+    }
+}
+
 fn tool_change_fun(tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
     let width = ui.available_width();
 
@@ -346,18 +370,15 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     (
         view_uuid,
         DiagramControllerGen2::new(
-            Arc::new(view_uuid),
-            diagram,
+            view_uuid.into(),
+            UmlClassDiagramAdapter {
+                model: diagram,
+                name_buffer: name,
+                comment_buffer: "".to_owned(),
+            },
             HashMap::new(),
             UmlClassQueryable {},
-            UmlClassDiagramBuffer {
-                uuid: view_uuid,
-                name,
-                comment: "".to_owned(),
-            },
             DIAGRAM_VIEW_TYPE,
-            show_props_fun,
-            apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
         ),
@@ -496,17 +517,14 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
         diagram_view_uuid,
         DiagramControllerGen2::new(
             diagram_view_uuid.into(),
-            diagram2.clone(),
+            UmlClassDiagramAdapter {
+                model: diagram2,
+                name_buffer: name,
+                comment_buffer: "".to_owned(),
+            },
             owned_controllers,
             UmlClassQueryable {},
-            UmlClassDiagramBuffer {
-                uuid: diagram_view_uuid,
-                name,
-                comment: "".to_owned(),
-            },
             DIAGRAM_VIEW_TYPE,
-            show_props_fun,
-            apply_property_change_fun,
             tool_change_fun,
             menubar_options_fun,
         ),
@@ -820,11 +838,9 @@ impl PackageAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
-
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().unwrap().uuid.clone()
     }
-
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name.clone()
     }
@@ -833,11 +849,10 @@ impl PackageAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange
         "umlclass-package-view"
     }
     
-    fn add_element(&mut self, e: UmlClassElement) {
-        self.model.write().unwrap().add_element(e);
+    fn add_element(&mut self, element: UmlClassElement) {
+        self.model.write().unwrap().add_element(element);
     }
-
-    fn delete_elements(&mut self, uuids: &HashSet<uuid::Uuid>) {
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
         self.model.write().unwrap().delete_elements(uuids);
     }
 
