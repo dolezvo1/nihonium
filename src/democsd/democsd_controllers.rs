@@ -1078,6 +1078,8 @@ impl
             return false;
         }
 
+        ui.label("Model properties");
+
         ui.label("Identifier:");
         if ui
             .add_sized(
@@ -1136,6 +1138,21 @@ impl
                 DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ]));
         }
+
+        ui.label("View properties");
+
+        ui.horizontal(|ui| {
+            let egui::Pos2 { mut x, mut y } = self.position;
+
+            ui.label("x");
+            if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+            }
+            ui.label("y");
+            if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+            }
+        });
 
         true
     }
@@ -1782,6 +1799,8 @@ impl
             return false;
         }
 
+        ui.label("Model properties");
+
         ui.label("Identifier:");
         if ui
             .add_sized(
@@ -1820,6 +1839,21 @@ impl
                 DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ]));
         }
+
+        ui.label("View properties");
+
+        ui.horizontal(|ui| {
+            let egui::Pos2 { mut x, mut y } = self.position;
+
+            ui.label("x");
+            if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+            }
+            ui.label("y");
+            if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+            }
+        });
 
         true
     }

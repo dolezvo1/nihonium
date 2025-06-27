@@ -2352,7 +2352,43 @@ where
         {
             true
         } else if self.highlight.selected {
+            ui.label("Model properties");
+
             self.adapter.show_properties(ui, commands);
+
+            ui.add_space(1.0);
+            ui.label("View properties");
+
+            egui::Grid::new("size_grid").show(ui, |ui| {
+                {
+                    let egui::Pos2 { mut x, mut y } = self.bounds_rect.left_top();
+
+                    ui.label("x");
+                    if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                        commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.bounds_rect.left(), 0.0)));
+                    }
+                    ui.label("y");
+                    if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                        commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.bounds_rect.top())));
+                    }
+                    ui.end_row();
+                }
+
+                {
+                    let egui::Vec2 { mut x, mut y } = self.bounds_rect.size();
+
+                    ui.label("width");
+                    if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                        commands.push(SensitiveCommand::ResizeSelectedElementsBy(egui::Align2::LEFT_CENTER, egui::Vec2::new(x - self.bounds_rect.width(), 0.0)));
+                    }
+                    ui.label("height");
+                    if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                        commands.push(SensitiveCommand::ResizeSelectedElementsBy(egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, y - self.bounds_rect.height())));
+                    }
+                    ui.end_row();
+                }
+            });
+
             true
         } else {
             false
