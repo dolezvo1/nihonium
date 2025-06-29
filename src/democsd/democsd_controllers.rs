@@ -1,8 +1,8 @@
 use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation, View
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
-use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
+use crate::common::project_serde::{get_model_uuid, NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage,
@@ -52,6 +52,12 @@ type LinkViewT = MulticonnectionView<
 >;
 
 pub struct DemoCsdQueryable {}
+
+impl Queryable for DemoCsdQueryable {
+    fn new() -> Self {
+        Self {}
+    }
+}
 
 #[derive(Clone)]
 pub enum DemoCsdPropChange {
@@ -154,7 +160,7 @@ pub struct DemoCsdDiagramAdapter {
     comment_buffer: String,
 }
 
-impl DiagramAdapter<DemoCsdDiagram, DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdDiagramAdapter {
+impl DiagramAdapter<DemoCsdDiagram, DemoCsdElement, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdDiagramAdapter {
     fn model(&self) -> Arc<RwLock<DemoCsdDiagram>> {
         self.model.clone()
     }
@@ -163,6 +169,9 @@ impl DiagramAdapter<DemoCsdDiagram, DemoCsdElement, DemoCsdElementOrVertex, Demo
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name()
+    }
+    fn view_type(&self) -> &'static str {
+        "democsd-diagram-view"
     }
 
     fn show_props_fun(
@@ -239,6 +248,76 @@ impl DiagramAdapter<DemoCsdDiagram, DemoCsdElement, DemoCsdElementOrVertex, Demo
             }
         }
     }
+
+    fn tool_change_fun(&self, tool: &mut Option<NaiveDemoCsdTool>, ui: &mut egui::Ui) {
+        let width = ui.available_width();
+
+        let stage = tool.as_ref().map(|e| e.initial_stage());
+        let c = |s: DemoCsdToolStage| -> egui::Color32 {
+            if stage.is_some_and(|e| e == s) {
+                egui::Color32::BLUE
+            } else {
+                egui::Color32::BLACK
+            }
+        };
+
+        if ui
+            .add_sized(
+                [width, 20.0],
+                egui::Button::new("Select/Move").fill(if stage == None {
+                    egui::Color32::BLUE
+                } else {
+                    egui::Color32::BLACK
+                }),
+            )
+            .clicked()
+        {
+            *tool = None;
+        }
+        ui.separator();
+
+        for cat in [
+            &[
+                (DemoCsdToolStage::Client, "Client Role"),
+                (DemoCsdToolStage::Transactor, "Actor Role"),
+                (DemoCsdToolStage::Bank, "Transaction Bank"),
+            ][..],
+            &[
+                (
+                    DemoCsdToolStage::LinkStart {
+                        link_type: DemoCsdLinkType::Initiation,
+                    },
+                    "Initiation",
+                ),
+                (
+                    DemoCsdToolStage::LinkStart {
+                        link_type: DemoCsdLinkType::Interstriction,
+                    },
+                    "Interstriction",
+                ),
+                (
+                    DemoCsdToolStage::LinkStart {
+                        link_type: DemoCsdLinkType::Interimpediment,
+                    },
+                    "Interimpediment",
+                ),
+            ][..],
+            &[(DemoCsdToolStage::PackageStart, "Package")][..],
+            &[(DemoCsdToolStage::Note, "Note")][..],
+        ] {
+            for (stage, name) in cat {
+                if ui
+                    .add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage)))
+                    .clicked()
+                {
+                    *tool = Some(NaiveDemoCsdTool::new(*stage));
+                }
+            }
+            ui.separator();
+        }
+    }
+
+    fn menubar_options_fun(&self, _ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {}
 }
 
 impl NHSerializeToScalar for DemoCsdDiagramAdapter {
@@ -249,77 +328,21 @@ impl NHSerializeToScalar for DemoCsdDiagramAdapter {
     }
 }
 
-fn tool_change_fun(tool: &mut Option<NaiveDemoCsdTool>, ui: &mut egui::Ui) {
-    let width = ui.available_width();
-
-    let stage = tool.as_ref().map(|e| e.initial_stage());
-    let c = |s: DemoCsdToolStage| -> egui::Color32 {
-        if stage.is_some_and(|e| e == s) {
-            egui::Color32::BLUE
-        } else {
-            egui::Color32::BLACK
-        }
-    };
-
-    if ui
-        .add_sized(
-            [width, 20.0],
-            egui::Button::new("Select/Move").fill(if stage == None {
-                egui::Color32::BLUE
-            } else {
-                egui::Color32::BLACK
-            }),
-        )
-        .clicked()
-    {
-        *tool = None;
-    }
-    ui.separator();
-
-    for cat in [
-        &[
-            (DemoCsdToolStage::Client, "Client Role"),
-            (DemoCsdToolStage::Transactor, "Actor Role"),
-            (DemoCsdToolStage::Bank, "Transaction Bank"),
-        ][..],
-        &[
-            (
-                DemoCsdToolStage::LinkStart {
-                    link_type: DemoCsdLinkType::Initiation,
-                },
-                "Initiation",
-            ),
-            (
-                DemoCsdToolStage::LinkStart {
-                    link_type: DemoCsdLinkType::Interstriction,
-                },
-                "Interstriction",
-            ),
-            (
-                DemoCsdToolStage::LinkStart {
-                    link_type: DemoCsdLinkType::Interimpediment,
-                },
-                "Interimpediment",
-            ),
-        ][..],
-        &[(DemoCsdToolStage::PackageStart, "Package")][..],
-        &[(DemoCsdToolStage::Note, "Note")][..],
-    ] {
-        for (stage, name) in cat {
-            if ui
-                .add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage)))
-                .clicked()
-            {
-                *tool = Some(NaiveDemoCsdTool::new(*stage));
-            }
-        }
-        ui.separator();
+impl NHDeserializeScalar for DemoCsdDiagramAdapter {
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        let toml::Value::String(s) = source else {
+            return Err(NHDeserializeError::StructureError(format!("expected string, got {:?}", source)));
+        };
+        let uuid = uuid::Uuid::parse_str(s)?.into();
+        let model = deserializer.get_or_instantiate_model::<DemoCsdDiagram>(&uuid)?;
+        let name_buffer = (*model.read().unwrap().name).clone();
+        let comment_buffer = (*model.read().unwrap().comment).clone();
+        Ok(Self { model, name_buffer, comment_buffer })
     }
 }
-
-fn menubar_options_fun(_controller: &mut DiagramViewT, _ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {}
-
-const DIAGRAM_VIEW_TYPE: &str = "democsd-diagram-view";
 
 pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     let view_uuid = uuid::Uuid::now_v7().into();
@@ -340,19 +363,14 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
                 name_buffer: name,
                 comment_buffer: "".to_owned(),
             },
-            HashMap::new(),
-            DemoCsdQueryable {},
-            DIAGRAM_VIEW_TYPE,
-            tool_change_fun,
-            menubar_options_fun,
+            Vec::new(),
         ),
     )
 }
 
 pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     let mut models: Vec<DemoCsdElement> = vec![];
-    let mut controllers =
-        HashMap::<_, Arc<RwLock<dyn ElementControllerGen2<_, _, _, _, _>>>>::new();
+    let mut controllers = Vec::<ArcRwLockControllerT>::new();
 
     {
         let (_, client, client_uuid, client_view) = democsd_transactor(
@@ -365,7 +383,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
         );
 
         models.push(client.into());
-        controllers.insert(client_uuid, client_view);
+        controllers.push(client_view);
     }
 
     {
@@ -385,7 +403,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             egui::Pos2::new(200.0, 400.0),
         );
         models.push(ta.into());
-        controllers.insert(ta_uuid, ta_view);
+        controllers.push(ta_view);
     }
 
     {
@@ -405,7 +423,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             egui::Pos2::new(200.0, 600.0),
         );
         models.push(ta_model.into());
-        controllers.insert(ta_uuid, ta_view);
+        controllers.push(ta_view);
     }
 
     {
@@ -425,7 +443,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             egui::Pos2::new(400.0, 200.0),
         );
         models.push(ta_model.into());
-        controllers.insert(ta_uuid, ta_view);
+        controllers.push(ta_view);
     }
 
     // TK02 - Purchase completer
@@ -449,10 +467,6 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
                     comment_buffer: "".to_owned(),
                 },
                 controllers,
-                DemoCsdQueryable {},
-                DIAGRAM_VIEW_TYPE,
-                tool_change_fun,
-                menubar_options_fun,
             ),
         )
     }

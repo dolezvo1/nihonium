@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::canvas;
 use crate::common::controller::{ContainerModel, Model};
-use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializer};
+use crate::common::project_serde::{NHDeserializeEntity, NHDeserializeError, NHDeserializer, NHSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashSet},
@@ -101,6 +101,7 @@ impl NHSerialize for DemoCsdDiagram {
         element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
         element.insert("type".to_owned(), toml::Value::String("democsd-diagram-model".to_owned()));
         element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
+        element.insert("comment".to_owned(), toml::Value::String((*self.name).clone()));
 
         for e in &self.contained_elements {
             e.serialize_into(into)?;
@@ -112,6 +113,37 @@ impl NHSerialize for DemoCsdDiagram {
         into.insert_model(*self.uuid, element);
 
         Ok(())
+    }
+}
+
+impl NHDeserializeEntity for DemoCsdDiagram {
+    fn deserialize(
+        source: &toml::Table,
+        deserializer: &NHDeserializer,
+    ) -> Result<Arc<RwLock<Self>>, NHDeserializeError> {
+        let uuid = {
+            let v = source.get("uuid").ok_or_else(|| NHDeserializeError::StructureError(format!("missing uuid")))?;
+            let toml::Value::String(s) = v else {
+                return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
+            };
+            Arc::new(uuid::Uuid::parse_str(s)?.into())
+        };
+        let name = {
+            let v = source.get("name").ok_or_else(|| NHDeserializeError::StructureError(format!("missing name")))?;
+            let toml::Value::String(s) = v else {
+                return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
+            };
+            Arc::new(s.clone())
+        };
+        let comment = {
+            let v = source.get("comment").ok_or_else(|| NHDeserializeError::StructureError(format!("missing comment")))?;
+            let toml::Value::String(s) = v else {
+                return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
+            };
+            Arc::new(s.clone())
+        };
+
+        Ok(Arc::new(RwLock::new(Self { uuid, name, contained_elements: Vec::new(), comment })))
     }
 }
 

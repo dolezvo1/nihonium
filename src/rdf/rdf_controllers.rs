@@ -1,9 +1,9 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation, View
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation, View
 };
-use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
+use crate::common::project_serde::{NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::{CustomTab};
 use eframe::egui;
@@ -54,6 +54,12 @@ type LinkViewT = MulticonnectionView<
 >;
 
 pub struct RdfQueryable {}
+
+impl Queryable for RdfQueryable {
+    fn new() -> Self {
+        Self {}
+    }
+}
 
 #[derive(Clone)]
 pub enum RdfPropChange {
@@ -168,11 +174,11 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
 
 pub struct RdfDiagramAdapter {
     model: Arc<RwLock<RdfDiagram>>,
-    name: String,
-    comment: String,
+    name_buffer: String,
+    comment_buffer: String,
 }
 
-impl DiagramAdapter<RdfDiagram, RdfElement, RdfElementOrVertex, RdfPropChange> for RdfDiagramAdapter {
+impl DiagramAdapter<RdfDiagram, RdfElement, NaiveRdfTool, RdfElementOrVertex, RdfPropChange> for RdfDiagramAdapter {
     fn model(&self) -> Arc<RwLock<RdfDiagram>> {
         self.model.clone()
     }
@@ -181,6 +187,9 @@ impl DiagramAdapter<RdfDiagram, RdfElement, RdfElementOrVertex, RdfPropChange> f
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name()
+    }
+    fn view_type(&self) -> &'static str {
+        "rdf-diagram-view"
     }
 
     fn show_props_fun(
@@ -193,14 +202,14 @@ impl DiagramAdapter<RdfDiagram, RdfElement, RdfElementOrVertex, RdfPropChange> f
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.name),
+                egui::TextEdit::singleline(&mut self.name_buffer),
             )
             .changed()
         {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
-                    vec![RdfPropChange::NameChange(Arc::new(self.name.clone()))],
+                    vec![RdfPropChange::NameChange(Arc::new(self.name_buffer.clone()))],
                 )
                 .into(),
             );
@@ -210,7 +219,7 @@ impl DiagramAdapter<RdfDiagram, RdfElement, RdfElementOrVertex, RdfPropChange> f
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment),
+                egui::TextEdit::multiline(&mut self.comment_buffer),
             )
             .changed()
         {
@@ -218,7 +227,7 @@ impl DiagramAdapter<RdfDiagram, RdfElement, RdfElementOrVertex, RdfPropChange> f
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
                     vec![RdfPropChange::CommentChange(Arc::new(
-                        self.comment.clone(),
+                        self.comment_buffer.clone(),
                     ))],
                 )
                 .into(),
@@ -241,7 +250,7 @@ impl DiagramAdapter<RdfDiagram, RdfElement, RdfElementOrVertex, RdfPropChange> f
                             std::iter::once(*view_uuid).collect(),
                             vec![RdfPropChange::NameChange(model.name.clone())],
                         ));
-                        self.name = (**name).clone();
+                        self.name_buffer = (**name).clone();
                         model.name = name.clone();
                     }
                     RdfPropChange::CommentChange(comment) => {
@@ -249,13 +258,85 @@ impl DiagramAdapter<RdfDiagram, RdfElement, RdfElementOrVertex, RdfPropChange> f
                             std::iter::once(*view_uuid).collect(),
                             vec![RdfPropChange::CommentChange(model.comment.clone())],
                         ));
-                        self.comment = (**comment).clone();
+                        self.comment_buffer = (**comment).clone();
                         model.comment = comment.clone();
                     }
                     _ => {}
                 }
             }
         }
+    }
+
+    fn tool_change_fun(&self, tool: &mut Option<NaiveRdfTool>, ui: &mut egui::Ui) {
+        let width = ui.available_width();
+
+        let stage = tool.as_ref().map(|e| e.initial_stage());
+        let c = |s: RdfToolStage| -> egui::Color32 {
+            if stage.is_some_and(|e| e == s) {
+                egui::Color32::BLUE
+            } else {
+                egui::Color32::BLACK
+            }
+        };
+
+        if ui
+            .add_sized(
+                [width, 20.0],
+                egui::Button::new("Select/Move").fill(if stage == None {
+                    egui::Color32::BLUE
+                } else {
+                    egui::Color32::BLACK
+                }),
+            )
+            .clicked()
+        {
+            *tool = None;
+        }
+        ui.separator();
+
+        for cat in [
+            &[
+                (RdfToolStage::Literal, "Literal"),
+                (RdfToolStage::Node, "Node"),
+                (RdfToolStage::PredicateStart, "Predicate"),
+                (RdfToolStage::GraphStart, "Graph"),
+            ][..],
+            &[(RdfToolStage::Note, "Note")][..],
+        ] {
+            for (stage, name) in cat {
+                if ui
+                    .add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage)))
+                    .clicked()
+                {
+                    *tool = Some(NaiveRdfTool::new(*stage));
+                }
+            }
+            ui.separator();
+        }
+    }
+
+    fn menubar_options_fun(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
+        if ui.button("Import RDF data").clicked() {
+            // TODO: import stuff
+        }
+        if ui.button("SPARQL Queries").clicked() {
+            let uuid = uuid::Uuid::now_v7();
+            commands.push(ProjectCommand::AddCustomTab(
+                uuid,
+                Arc::new(RwLock::new(SparqlQueriesTab {
+                    diagram: self.model.clone(),
+                    selected_query: None,
+                    query_name_buffer: "".to_owned(),
+                    query_value_buffer: "".to_owned(),
+                    debug_message: None,
+                    query_results: None,
+                })),
+            ));
+        }
+        if ui.button("Ontology alignment").clicked() {
+            // TODO: similar to the above?
+        }
+        ui.separator();
     }
 }
 
@@ -267,51 +348,19 @@ impl NHSerializeToScalar for RdfDiagramAdapter {
     }
 }
 
-fn tool_change_fun(tool: &mut Option<NaiveRdfTool>, ui: &mut egui::Ui) {
-    let width = ui.available_width();
-
-    let stage = tool.as_ref().map(|e| e.initial_stage());
-    let c = |s: RdfToolStage| -> egui::Color32 {
-        if stage.is_some_and(|e| e == s) {
-            egui::Color32::BLUE
-        } else {
-            egui::Color32::BLACK
-        }
-    };
-
-    if ui
-        .add_sized(
-            [width, 20.0],
-            egui::Button::new("Select/Move").fill(if stage == None {
-                egui::Color32::BLUE
-            } else {
-                egui::Color32::BLACK
-            }),
-        )
-        .clicked()
-    {
-        *tool = None;
-    }
-    ui.separator();
-
-    for cat in [
-        &[
-            (RdfToolStage::Literal, "Literal"),
-            (RdfToolStage::Node, "Node"),
-            (RdfToolStage::PredicateStart, "Predicate"),
-            (RdfToolStage::GraphStart, "Graph"),
-        ][..],
-        &[(RdfToolStage::Note, "Note")][..],
-    ] {
-        for (stage, name) in cat {
-            if ui
-                .add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage)))
-                .clicked()
-            {
-                *tool = Some(NaiveRdfTool::new(*stage));
-            }
-        }
-        ui.separator();
+impl NHDeserializeScalar for RdfDiagramAdapter {
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        let toml::Value::String(s) = source else {
+            return Err(NHDeserializeError::StructureError(format!("expected string, got {:?}", source)));
+        };
+        let uuid = uuid::Uuid::parse_str(s)?.into();
+        let model = deserializer.get_or_instantiate_model::<RdfDiagram>(&uuid)?;
+        let name_buffer = (*model.read().unwrap().name).clone();
+        let comment_buffer = (*model.read().unwrap().comment).clone();
+        Ok(Self { model, name_buffer, comment_buffer })
     }
 }
 
@@ -493,32 +542,6 @@ impl CustomTab for SparqlQueriesTab {
     }
 }
 
-fn menubar_options_fun(controller: &mut DiagramViewT, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
-    if ui.button("Import RDF data").clicked() {
-        // TODO: import stuff
-    }
-    if ui.button("SPARQL Queries").clicked() {
-        let uuid = uuid::Uuid::now_v7();
-        commands.push(ProjectCommand::AddCustomTab(
-            uuid,
-            Arc::new(RwLock::new(SparqlQueriesTab {
-                diagram: controller.model(),
-                selected_query: None,
-                query_name_buffer: "".to_owned(),
-                query_value_buffer: "".to_owned(),
-                debug_message: None,
-                query_results: None,
-            })),
-        ));
-    }
-    if ui.button("Ontology alignment").clicked() {
-        // TODO: similar to the above?
-    }
-    ui.separator();
-}
-
-const DIAGRAM_VIEW_TYPE: &str = "rdf-diagram-view";
-
 pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
@@ -535,14 +558,10 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             view_uuid.into(),
             RdfDiagramAdapter {
                 model: diagram,
-                name,
-                comment: "".to_owned(),
+                name_buffer: name,
+                comment_buffer: "".to_owned(),
             },
-            HashMap::new(),
-            RdfQueryable {},
-            DIAGRAM_VIEW_TYPE,
-            tool_change_fun,
-            menubar_options_fun,
+            Vec::new(),
         ),
     )
 }
@@ -591,7 +610,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
 
     //<stress test>
     let mut models_st = Vec::<RdfElement>::new();
-    let mut controllers_st = HashMap::<_, ArcRwLockControllerT>::new();
+    let mut controllers_st = Vec::<ArcRwLockControllerT>::new();
 
     for xx in 0..=10 {
         for yy in 300..=400 {
@@ -600,7 +619,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
                 egui::Pos2::new(xx as f32, yy as f32),
             );
             models_st.push(RdfTargettableElement::from(node_st).into());
-            controllers_st.insert(node_st_uuid, node_st_view);
+            controllers_st.push(node_st_view);
         }
     }
 
@@ -611,7 +630,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
                 egui::Pos2::new(xx as f32, yy as f32),
             );
             models_st.push(RdfTargettableElement::from(node_st).into());
-            controllers_st.insert(node_st_uuid, node_st_view);
+            controllers_st.push(node_st_view);
         }
     }
 
@@ -621,12 +640,12 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     );
     //</stress test>
 
-    let mut owned_controllers = HashMap::<_, ArcRwLockControllerT>::new();
-    owned_controllers.insert(node_uuid, node_view);
-    owned_controllers.insert(literal_view_uuid, literal_view);
-    owned_controllers.insert(predicate_uuid, predicate_view);
-    owned_controllers.insert(graph_uuid, graph_view);
-    owned_controllers.insert(graph_st_uuid, graph_st_view);
+    let mut owned_controllers = Vec::<ArcRwLockControllerT>::new();
+    owned_controllers.push(node_view);
+    owned_controllers.push(literal_view);
+    owned_controllers.push(predicate_view);
+    owned_controllers.push(graph_view);
+    owned_controllers.push(graph_st_view);
 
     let name = format!("Demo RDF diagram {}", no);
     let view_uuid = uuid::Uuid::now_v7().into();
@@ -646,14 +665,10 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             view_uuid.into(),
             RdfDiagramAdapter {
                 model: diagram,
-                name,
-                comment: "".to_owned(),
+                name_buffer: name,
+                comment_buffer: "".to_owned(),
             },
             owned_controllers,
-            RdfQueryable {},
-            DIAGRAM_VIEW_TYPE,
-            tool_change_fun,
-            menubar_options_fun,
         ),
     )
 }

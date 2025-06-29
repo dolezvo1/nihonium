@@ -32,7 +32,7 @@ macro_rules! build_colors {
      [$($pair_front:expr),* $(,)?],
      [$($pair_aux:expr),* $(,)?] $(,)?) => {{
         let mut vec_profiles = Vec::<crate::common::controller::ColorProfile>::new();
-        
+
         for name in vec![$($profile_names),*] {
             vec_profiles.push(ColorProfile {
                 name: name.to_string(),
@@ -41,7 +41,7 @@ macro_rules! build_colors {
                 auxiliary: [egui::Color32::PLACEHOLDER; crate::common::controller::AUXILIARY_COLORS],
             });
         }
-        
+
         let mut vec_labels_back = Vec::new();
         for (idx1, (label, values)) in vec![$($pair_back),*].into_iter().enumerate() {
             vec_labels_back.push(label);
@@ -49,7 +49,7 @@ macro_rules! build_colors {
                 vec_profiles[idx2].backgrounds[idx1] = v;
             }
         }
-        
+
         let mut vec_labels_front = Vec::new();
         for (idx1, (label, values)) in vec![$($pair_front),*].into_iter().enumerate() {
             vec_labels_front.push(label);
@@ -57,7 +57,7 @@ macro_rules! build_colors {
                 vec_profiles[idx2].foregrounds[idx1] = v;
             }
         }
-        
+
         let mut vec_labels_aux = Vec::new();
         for (idx1, (label, values)) in vec![$($pair_aux),*].into_iter().enumerate() {
             vec_labels_aux.push(label);
@@ -65,7 +65,7 @@ macro_rules! build_colors {
                 vec_profiles[idx2].auxiliary[idx1] = v;
             }
         }
-        
+
         let mut labels_back_iterator = vec_labels_back.into_iter()
             .take(crate::common::controller::BACKGROUND_COLORS).map(|e| Some(e.to_owned()));
         let mut labels_front_iterator = vec_labels_front.into_iter()
@@ -86,13 +86,13 @@ macro_rules! build_colors {
                     .unwrap_or_else(|| None)
             }),
         };
-        
+
         (labels, vec_profiles)
     }};
 }
 pub(crate) use build_colors;
 
-use super::project_serde::{NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
+use super::project_serde::{NHDeserializeScalar, NHDeserializeEntity, NHDeserializeError, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use super::uuid::{ModelUuid, ViewUuid};
 
 
@@ -124,14 +124,14 @@ impl SnapManager {
         self.guidelines_x.sort_by(|a, b| a.0.total_cmp(&b.0));
         self.guidelines_y.sort_by(|a, b| a.0.total_cmp(&b.0));
     }
-    
+
     pub fn coerce<F>(&self, s: canvas::NHShape, uuids_filter: F) -> egui::Pos2
     where F: Fn(&ViewUuid) -> bool
     {
         *self.best_xy.write().unwrap() = (None, None);
         let (mut least_x, mut least_y): (Option<(f32, f32)>, Option<(f32, f32)>) = (None, None);
         let center = s.center();
-        
+
         // Naive guidelines coordinate matching
         for p in s.guidelines_anchors().into_iter() {
             let start_x = self.guidelines_x.binary_search_by(|probe| probe.0.total_cmp(&(p.0.x - self.max_delta.x))).unwrap_or_else(|e| e);
@@ -149,15 +149,15 @@ impl SnapManager {
                 }
             }
         }
-        
+
         // TODO: try pairwise projection of guidelines with matching Align
-        
+
         least_x = least_x.filter(|e| e.0.abs() < self.max_delta.x);
         least_y = least_y.filter(|e| e.0.abs() < self.max_delta.y);
         *self.best_xy.write().unwrap() = (least_x.map(|e| e.1), least_y.map(|e| e.1));
         egui::Pos2::new(center.x - least_x.map(|e| e.0).unwrap_or(0.0), center.y - least_y.map(|e| e.0).unwrap_or(0.0))
     }
-    
+
     pub fn draw_best(&self, canvas: &mut dyn NHCanvas, profile: &ColorProfile, rect: egui::Rect) {
         let (best_x, best_y) = *self.best_xy.read().unwrap();
         if let Some(bx) = best_x {
@@ -342,20 +342,20 @@ pub trait View {
 
 pub trait DiagramController: Any + View + NHSerialize {
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
-    
+
     fn new_ui_canvas(
         &mut self,
         context: &DrawingContext,
         ui: &mut egui::Ui,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
-    
+
     fn draw_in(
         &mut self,
         context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>,
     );
-    
+
     fn context_menu(&mut self, ui: &mut egui::Ui);
 
     fn show_toolbar(&mut self, ui: &mut egui::Ui);
@@ -487,7 +487,7 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
         if let SC::PasteClipboardElements = self {
             return IC::PasteSpecificElements(uuid::Uuid::nil().into(), clipboard_elements());
         }
-        
+
         let se = selected_elements();
         match self {
             SC::MoveSelectedElements(delta) => IC::MoveSpecificElements(se, delta),
@@ -602,7 +602,7 @@ pub fn arc_to_usize<T: ?Sized>(e: &Arc<T>) -> usize {
 mod test {
     use super::*;
     use std::sync::Weak;
-    
+
     #[test]
     fn arc_to_usize_test() {
         let data = "Hello, world!\nThis is a test.\n";
@@ -617,8 +617,8 @@ mod test {
         let clone3: Arc<RwLock<dyn std::io::Read>> = clone2.clone();
         // Upgraded weak
         let clone4 = Weak::upgrade(&Arc::downgrade(&reader)).unwrap();
-        
-    
+
+
         // Assert all obtained identifiers are equal
         let base = arc_to_usize(&reader);
         assert_eq!(base, arc_to_usize(&clone1));
@@ -636,6 +636,11 @@ pub trait Model: 'static {
 pub trait ContainerModel<CommonElementT>: Model {
     fn add_element(&mut self, element: CommonElementT);
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
+}
+
+pub trait Queryable {
+    // TODO: This is actually not a very good idea. Should be required only where instantiated.
+    fn new() -> Self;
 }
 
 pub trait Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT> {
@@ -764,7 +769,7 @@ pub trait ElementControllerGen2<
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
     fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>);
-    
+
     // Create a deep copy, including the models
     fn deep_copy_walk(
         &self,
@@ -808,12 +813,15 @@ pub trait ElementControllerGen2<
 pub trait DiagramAdapter<
     DiagramModelT: ContainerModel<CommonElementT>,
     CommonElementT,
+    ToolT: 'static,
     AddCommandElementT: Clone + Debug + 'static,
     PropChangeT: Clone + Debug + 'static,
->: NHSerializeToScalar {
+>: NHSerializeToScalar + NHDeserializeScalar {
     fn model(&self) -> Arc<RwLock<DiagramModelT>>;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
+
+    fn view_type(&self) -> &'static str;
 
     fn add_element(&mut self, element: CommonElementT) {
         self.model().write().unwrap().add_element(element);
@@ -834,15 +842,17 @@ pub trait DiagramAdapter<
         command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
+    fn tool_change_fun(&self, tool: &mut Option<ToolT>, ui: &mut egui::Ui);
+    fn menubar_options_fun(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
 }
 
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
 pub struct DiagramControllerGen2<
-    DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+    DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
     DiagramModelT: ContainerModel<CommonElementT>,
     CommonElementT: 'static,
-    QueryableT: 'static,
+    QueryableT: Queryable + 'static,
     ToolT: 'static,
     AddCommandElementT: Clone + Debug + 'static,
     PropChangeT: Clone + Debug + 'static,
@@ -889,27 +899,20 @@ pub struct DiagramControllerGen2<
     snap_manager: SnapManager,
     current_tool: Option<ToolT>,
     select_by_drag: Option<(egui::Pos2, egui::Pos2)>,
-    
+
     last_change_flag: bool,
     undo_stack: Vec<(
         InsensitiveCommand<AddCommandElementT, PropChangeT>,
         Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     )>,
     redo_stack: Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
-
-    // q: dyn Fn(&Vec<DomainElementT>) -> QueryableT,
-    queryable: QueryableT,
-    view_type: &'static str,
-
-    tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
-    menubar_options_fun: fn(&mut Self, &mut egui::Ui, &mut Vec<ProjectCommand>),
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
         DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
-        QueryableT: 'static,
+        QueryableT: Queryable + 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
@@ -962,8 +965,7 @@ where
     pub fn new(
         uuid: Arc<ViewUuid>,
         adapter: DiagramAdapterT,
-        owned_controllers: HashMap<
-            ViewUuid,
+        owned_controllers: Vec<
             Arc<
                 RwLock<
                     dyn ElementControllerGen2<
@@ -976,12 +978,10 @@ where
                 >,
             >,
         >,
-        queryable: QueryableT,
-        view_type: &'static str,
-        tool_change_fun: fn(&mut Option<ToolT>, &mut egui::Ui),
-        menubar_options_fun: fn(&mut Self, &mut egui::Ui, &mut Vec<ProjectCommand>),
     ) -> Arc<RwLock<Self>> {
-        let event_order = owned_controllers.keys().map(|e| *e).collect();
+        let event_order = owned_controllers.iter().map(|e| *e.read().unwrap().uuid()).collect();
+        let owned_controllers = owned_controllers.into_iter().map(|e| { let uuid = *e.read().unwrap().uuid(); (uuid, e) }).collect();
+
         let ret = Arc::new(RwLock::new(Self {
             uuid,
             adapter,
@@ -1000,15 +1000,10 @@ where
             snap_manager: SnapManager::new(egui::Rect::ZERO, egui::Vec2::ZERO),
             current_tool: None,
             select_by_drag: None,
-            
+
             last_change_flag: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-
-            queryable,
-            view_type,
-            tool_change_fun,
-            menubar_options_fun,
         }));
         ret.write().unwrap().self_reference = Arc::downgrade(&ret);
         ret
@@ -1021,7 +1016,7 @@ where
     fn self_reference_dyn(&self) -> Arc<RwLock<dyn DiagramController>> {
         self.self_reference.upgrade().unwrap()
     }
-    
+
     fn handle_event(&mut self, event: InputEvent, modifiers: ModifierKeys, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
         // Collect alignment guides
         self.snap_manager = SnapManager::new(self.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.camera_scale));
@@ -1029,21 +1024,21 @@ where
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
             .for_each(|uc| uc.1.write().unwrap().collect_allignment(&mut self.snap_manager));
         self.snap_manager.sort_guidelines();
-        
+
         // Handle events
         let mut commands = Vec::new();
-        
+
         if matches!(event, InputEvent::Click(_)) {
             self.current_tool.as_mut().map(|e| e.reset_event_lock());
         }
-        
+
         let ehc = EventHandlingContext {
             modifiers,
             ui_scale: self.camera_scale,
             all_elements: &self.all_elements,
             snap_manager: &self.snap_manager,
         };
-        
+
         let child = self.event_order
             .iter()
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
@@ -1074,7 +1069,7 @@ where
                     a => a,
                 }
             });
-        
+
         let handled = match event {
             InputEvent::MouseDown(_) | InputEvent::MouseUp(_) | InputEvent::Drag { .. }
                 if child.is_some() || self.current_tool.is_some() => child.is_some(),
@@ -1105,7 +1100,7 @@ where
                         t.add_position(pos);
                     }
                 }
-                
+
                 let mut tool = self.current_tool.take();
                 if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
                     commands.push(InsensitiveCommand::AddElement(
@@ -1119,7 +1114,7 @@ where
                 handled
             },
         };
-        
+
         self.apply_commands(commands, undo_accumulator, true, true);
 
         handled
@@ -1133,7 +1128,7 @@ where
             |_| false,
         );
     }
-    
+
     fn element_deep_copy<F, P>(requested: Option<&HashSet<ViewUuid>>, from: F, uuid_present: P) -> HashMap<ViewUuid, Arc<RwLock<
                     dyn ElementControllerGen2<
                         CommonElementT,
@@ -1158,7 +1153,7 @@ where
         let mut top_level_views = HashMap::new();
         let mut views = HashMap::new();
         let mut models = HashMap::new();
-        
+
         for (_uuid, c) in from {
             let c = c.read().unwrap();
             c.deep_copy_walk(requested, &uuid_present, &mut top_level_views, &mut views, &mut models);
@@ -1167,10 +1162,10 @@ where
             let mut v1 = v1.write().unwrap();
             v1.deep_copy_relink(&views, &models);
         }
-        
+
         top_level_views
     }
-    
+
     fn apply_commands(
         &mut self,
         commands: Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
@@ -1340,10 +1335,10 @@ where
 
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
         DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
-        QueryableT: 'static,
+        QueryableT: Queryable + 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
@@ -1378,10 +1373,10 @@ where
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
         DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
-        QueryableT: 'static,
+        QueryableT: Queryable + 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
@@ -1408,7 +1403,7 @@ where
         // Serialize itself and the model
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("type".to_owned(), toml::Value::String(self.view_type.to_owned()));
+        element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
         element.insert("adapter".to_owned(), self.adapter.serialize_into(into)?);
         element.insert("children".to_owned(), toml::Value::Array(self.event_order.iter().map(|e| toml::Value::String(e.to_string())).collect()));
         into.insert_view(*self.uuid, element);
@@ -1423,10 +1418,95 @@ where
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
         DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
-        QueryableT: 'static,
+        QueryableT: Queryable + 'static,
+        ToolT: 'static,
+        AddCommandElementT: Clone + Debug + 'static,
+        PropChangeT: Clone + Debug + 'static,
+    > NHDeserializeEntity
+    for DiagramControllerGen2<
+        DiagramAdapterT,
+        DiagramModelT,
+        CommonElementT,
+        QueryableT,
+        ToolT,
+        AddCommandElementT,
+        PropChangeT,
+    >
+where
+    ToolT: for<'a> Tool<
+        CommonElementT,
+        QueryableT,
+        AddCommandElementT,
+        PropChangeT,
+        KindedElement<'a>: From<&'a Self>,
+    >,
+    AddCommandElementT: From<(
+            ViewUuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        CommonElementT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
+            >,
+        )> + TryInto<(
+            ViewUuid,
+            Arc<
+                RwLock<
+                    dyn ElementControllerGen2<
+                        CommonElementT,
+                        QueryableT,
+                        ToolT,
+                        AddCommandElementT,
+                        PropChangeT,
+                    >,
+                >,
+            >,
+        )>,
+{
+    fn deserialize(
+        table: &toml::Table,
+        deserializer: &NHDeserializer,
+    ) -> Result<Arc<RwLock<Self>>, NHDeserializeError> {
+        // Serialize itself and the model
+        let mut element = toml::Table::new();
+        let uuid = {
+            let v = table.get("uuid").ok_or_else(|| NHDeserializeError::StructureError(format!("missing uuid")))?;
+            let toml::Value::String(s) = v else {
+                return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
+            };
+            Arc::new(uuid::Uuid::parse_str(s)?.into())
+        };
+        let adapter = table.get("adapter")
+            .ok_or_else(|| NHDeserializeError::StructureError(format!("missing adapter")))
+            .and_then(|e| DiagramAdapterT::deserialize(e, deserializer))?;
+        let children = {
+            let v = table.get("children").ok_or_else(|| NHDeserializeError::StructureError(format!("missing children")))?;
+            let toml::Value::Array(a) = v else {
+                return Err(NHDeserializeError::StructureError(format!("expected array, found {:?}", v)));
+            };
+        };
+
+        Ok(Self::new(
+            uuid,
+            adapter,
+            Vec::new() // TODO: children,
+        ))
+    }
+}
+
+impl<
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramModelT: ContainerModel<CommonElementT>,
+        CommonElementT: 'static,
+        QueryableT: Queryable + 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
@@ -1511,7 +1591,7 @@ where
             .map(|e| {
                 ((e - self.camera_offset - canvas_pos.to_vec2()) / self.camera_scale).to_pos2()
             });
-        
+
         self.last_interactive_canvas_rect = egui::Rect::from_min_size(self.camera_offset / -self.camera_scale, canvas_size / self.camera_scale);
 
         (Box::new(ui_canvas), painter_response, inner_mouse)
@@ -1522,7 +1602,7 @@ where
                 (($pos - self.camera_offset - response.rect.min.to_vec2()) / self.camera_scale).to_pos2()
             };
         }
-        
+
         // Handle mouse_down/drag/click/mouse_up
         let modifiers = ui.input(|i| ModifierKeys::from_egui(&i.modifiers));
         ui.input(|is| is.events.iter()
@@ -1555,7 +1635,7 @@ where
                 _ => {}
             })
         );
-        
+
         // Handle diagram drag
         if response.dragged_by(egui::PointerButton::Middle) {
             self.camera_offset += response.drag_delta();
@@ -1590,10 +1670,11 @@ where
     }
 
     fn show_toolbar(&mut self, ui: &mut egui::Ui) {
-        (self.tool_change_fun)(&mut self.current_tool, ui);
+        self.adapter.tool_change_fun(&mut self.current_tool, ui);
     }
     fn show_properties(&mut self, ui: &mut egui::Ui, undo_accumulator: &mut Vec<Arc<String>>) {
         let mut commands = Vec::new();
+        let queryable = QueryableT::new();
 
         if self
             .owned_controllers
@@ -1601,7 +1682,7 @@ where
             .find(|e| {
                 e.1.write()
                     .unwrap()
-                    .show_properties(&self.queryable, ui, &mut commands)
+                    .show_properties(&queryable, ui, &mut commands)
             })
             .is_none()
         {
@@ -1615,8 +1696,8 @@ where
     }
     fn show_menubar_edit_options(&mut self, _ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {}
     fn show_menubar_diagram_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
-        (self.menubar_options_fun)(self, ui, commands);
-        
+        self.adapter.menubar_options_fun(/*self,*/ ui, commands);
+
         if ui.button("Layout selected elements").clicked() {
             todo!();
         }
@@ -1672,7 +1753,7 @@ where
                 if matches!(command, DiagramCommand::CutSelectedElements) {
                     self.set_clipboard_from_selected();
                 }
-                
+
                 let mut undo = vec![];
                 self.apply_commands(vec![
                     match command {
@@ -1703,6 +1784,7 @@ where
             None
         };
         let mut drawn_targetting = TargettingStatus::NotDrawn;
+        let queryable = QueryableT::new();
 
         self.event_order
             .iter()
@@ -1714,7 +1796,7 @@ where
                     .1
                     .write()
                     .unwrap()
-                    .draw_in(&self.queryable, context, canvas, &tool)
+                    .draw_in(&queryable, context, canvas, &tool)
                     == TargettingStatus::Drawn
                 {
                     drawn_targetting = TargettingStatus::Drawn;
@@ -1739,7 +1821,7 @@ where
                         .for_each(|uc| {
                             uc.1.write()
                                 .unwrap()
-                                .draw_in(&self.queryable, context, canvas, &Some((pos, tool)));
+                                .draw_in(&queryable, context, canvas, &Some((pos, tool)));
                         });
                 }
                 tool.draw_status_hint(canvas, pos);
@@ -1752,17 +1834,17 @@ where
                     canvas::Highlight::NONE,
                 );
             }
-            
+
             self.snap_manager.draw_best(canvas, context.profile, self.last_interactive_canvas_rect);
         }
     }
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
         DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
-        QueryableT: 'static,
+        QueryableT: Queryable + 'static,
         ToolT: 'static,
         AddCommandElementT: Clone + Debug + 'static,
         PropChangeT: Clone + Debug + 'static,
@@ -1838,7 +1920,7 @@ pub trait PackageAdapter<
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
     fn view_type(&self) -> &'static str;
-    
+
     fn add_element(&mut self, element: CommonElementT);
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
 
@@ -1853,7 +1935,7 @@ pub trait PackageAdapter<
         command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
-    
+
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
@@ -2010,7 +2092,7 @@ where
         c.write().unwrap().self_reference = Arc::downgrade(&c);
         c
     }
-    
+
     fn handle_size(&self, ui_scale: f32) -> f32 {
         10.0_f32
             .min(self.bounds_rect.width() * ui_scale / 6.0)
@@ -2417,12 +2499,12 @@ where
             canvas::CLASS_MIDDLE_FONT_SIZE,
             context.profile.foregrounds[1],
         );
-        
+
         // Draw resize/drag handles
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
             let handle_size = self.handle_size(ui_scale);
             for h in [self.bounds_rect.left_top(), self.bounds_rect.center_top(), self.bounds_rect.right_top(),
-                      self.bounds_rect.left_center(), self.bounds_rect.right_center(), 
+                      self.bounds_rect.left_center(), self.bounds_rect.right_center(),
                       self.bounds_rect.left_bottom(), self.bounds_rect.center_bottom(), self.bounds_rect.right_bottom()]
             {
                 canvas.draw_rectangle(
@@ -2433,7 +2515,7 @@ where
                     canvas::Highlight::NONE,
                 );
             }
-            
+
             canvas.draw_rectangle(
                 egui::Rect::from_center_size(
                     self.drag_handle_position(ui_scale),
@@ -2471,7 +2553,7 @@ where
                     egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.max.y),
                 ], canvas::Stroke::new_solid(1.0, egui::Color32::BLUE), canvas::Highlight::NONE);
             }
-            
+
             match (drawn_child_targetting, tool) {
                 (TargettingStatus::NotDrawn, Some((pos, t))) if self.min_shape().contains(*pos) => {
                     canvas.draw_rectangle(
@@ -2502,7 +2584,7 @@ where
 
     fn collect_allignment(&mut self, am: &mut SnapManager) {
         am.add_shape(*self.uuid, self.min_shape());
-        
+
         self.event_order.iter()
             .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
             .for_each(|uc| uc.1.write().unwrap().collect_allignment(am));
@@ -2527,7 +2609,7 @@ where
                 )
             })
             .find(|e| e.1 != EventHandlingStatus::NotHandled);
-        
+
         match event {
             InputEvent::MouseDown(_pos) | InputEvent::MouseUp(_pos) if uc_status.is_some() => {
                 EventHandlingStatus::HandledByContainer
@@ -2548,7 +2630,7 @@ where
                         return EventHandlingStatus::HandledByElement;
                     }
                 }
-                
+
                 if self.min_shape().border_distance(pos) <= 2.0 / ehc.ui_scale
                     || egui::Rect::from_center_size(
                         self.drag_handle_position(ehc.ui_scale),
@@ -2572,11 +2654,11 @@ where
                     if let Some(tool) = tool {
                         tool.add_position(*event.mouse_position());
                         tool.add_element(ToolT::KindedElement::from(self));
-                        
+
                         if let Some(new_a) = tool.try_construct(self) {
                             commands.push(InsensitiveCommand::AddElement(*self.uuid, new_a.into()).into());
                         }
-                        
+
                         EventHandlingStatus::HandledByContainer
                     } else if let Some((uc, status)) = uc_status {
                         if status == EventHandlingStatus::HandledByElement {
@@ -2610,7 +2692,7 @@ where
                         |e| !self.all_elements.get(e).is_some() && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected) } else {*e == *self.uuid}
                     );
                     let coerced_delta = coerced_pos - self.position();
-                    
+
                     if self.highlight.selected {
                         commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                     } else {
@@ -2649,7 +2731,7 @@ where
                         |e| !self.all_elements.get(e).is_some() && !ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected)
                     );
                     let coerced_delta = coerced_point - egui::Pos2::new(handle_x.1, handle_y.1);
-                    
+
                     commands.push(SensitiveCommand::ResizeSelectedElementsBy(align, coerced_delta));
                     EventHandlingStatus::HandledByElement
                 },
@@ -2685,9 +2767,9 @@ where
                     egui::Align::Center => (0.0, 0.0),
                     egui::Align::Max => ((-$delta.y).max(min_delta_y), 0.0),
                 };
-                
+
                 let r = self.bounds_rect + epaint::Marginf{left, right, top, bottom};
-                
+
                 undo_accumulator.push(InsensitiveCommand::ResizeSpecificElementsTo(
                     std::iter::once(*self.uuid).collect(),
                     *$align,
@@ -2725,7 +2807,7 @@ where
             }
             InsensitiveCommand::SelectByDrag(rect) => {
                 self.highlight.selected = self.min_shape().contained_within(*rect);
-                
+
                 recurse!(self);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid) => {
@@ -2746,7 +2828,7 @@ where
                 if uuids.contains(&self.uuid) {
                     resize_by!(align, delta);
                 }
-                
+
                 recurse!(self);
             }
             InsensitiveCommand::ResizeSpecificElementsTo(uuids, align, size) => {
@@ -2762,10 +2844,10 @@ where
                         egui::Align::Center => 0.0,
                         egui::Align::Max => -delta_naive.y,
                     };
-                    
+
                     resize_by!(align, egui::Vec2::new(x, y));
                 }
-                
+
                 recurse!(self);
             }
             InsensitiveCommand::DeleteSpecificElements(uuids)
@@ -2810,7 +2892,7 @@ where
                 if *target == *self.uuid {
                     todo!("undo = delete")
                 }
-                
+
                 recurse!(self);
             },
             InsensitiveCommand::PropertyChange(uuids, _property) => {
@@ -2842,7 +2924,7 @@ where
             });
         }
     }
-    
+
     fn deep_copy_walk(
         &self,
         requested: Option<&HashSet<ViewUuid>>,
@@ -2880,10 +2962,10 @@ where
         } else {
             (*self.uuid, *self.model_uuid())
         };
-        
+
         let mut inner = HashMap::new();
         self.owned_controllers.iter().for_each(|e| e.1.read().unwrap().deep_copy_clone(uuid_present, &mut inner, c, m));
-        
+
         let cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
             adapter: self.adapter.deep_copy_init(model_uuid, m),
@@ -2938,7 +3020,7 @@ pub trait MulticonnectionAdapter<
         command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
-    
+
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
@@ -3067,7 +3149,7 @@ where
                 point_to_origin.insert(p.0, (true, idx));
             }
         }
-        
+
         let c = Arc::new(RwLock::new(
             Self {
                 uuid,
@@ -3088,7 +3170,7 @@ where
         c.write().unwrap().self_reference = Arc::downgrade(&c);
         c
     }
-    
+
     const VERTEX_RADIUS: f32 = 5.0;
     fn all_vertices(&self) -> impl Iterator<Item = &(ViewUuid, egui::Pos2)> {
         self.center_point.iter()
@@ -3269,7 +3351,7 @@ where
     ) -> TargettingStatus {
         let source_bounds = self.source.read().unwrap().min_shape();
         let dest_bounds = self.destination.read().unwrap().min_shape();
-        
+
         let (source_next_point, dest_next_point) = match (
             self.source_points[0].iter().skip(1)
                 .map(|e| *e)
@@ -3291,12 +3373,12 @@ where
                 dest_next_point.unwrap_or(source_bounds.center()),
             ),
         };
-        
+
         //canvas.draw_ellipse(source_next_point, egui::Vec2::splat(5.0), egui::Color32::RED, canvas::Stroke::new_solid(1.0, egui::Color32::RED), canvas::Highlight::NONE);
         //canvas.draw_ellipse(dest_next_point, egui::Vec2::splat(5.0), egui::Color32::GREEN, canvas::Stroke::new_solid(1.0, egui::Color32::GREEN), canvas::Highlight::NONE);
-        
+
         // The bounds may use different intersection method only if the target points are not the same or it's the real midpoint
-        let (source_intersect, dest_intersect) = 
+        let (source_intersect, dest_intersect) =
             match (source_bounds.orthogonal_intersect(source_next_point), dest_bounds.orthogonal_intersect(dest_next_point)) {
                 (Some(a), Some(b)) => (a, b),
                 (a, b) if source_next_point != dest_next_point || self.center_point.is_some() =>
@@ -3304,12 +3386,12 @@ where
                      b.unwrap_or_else(|| dest_bounds.center_intersect(dest_next_point))),
                 _ => (source_bounds.center_intersect(source_next_point), dest_bounds.center_intersect(dest_next_point))
             };
-        
+
         self.source_points[0][0].1 = source_intersect;
         self.dest_points[0][0].1 = dest_intersect;
-        
+
         //canvas.draw_ellipse((self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0, egui::Vec2::splat(5.0), egui::Color32::BROWN, canvas::Stroke::new_solid(1.0, egui::Color32::BROWN), canvas::Highlight::NONE);
-        
+
         fn s_to_p(canvas: &mut dyn NHCanvas, bounds: NHShape, pos: egui::Pos2, s: &str) -> egui::Pos2 {
             let size = canvas.measure_text(pos, egui::Align2::CENTER_CENTER, s, canvas::CLASS_MIDDLE_FONT_SIZE).size();
             bounds.place_labels(pos, [size, egui::Vec2::ZERO])[0]
@@ -3375,7 +3457,7 @@ where
         let is_over = |a: egui::Pos2, b: egui::Pos2| -> bool {
             a.distance(b) <= Self::VERTEX_RADIUS / ehc.ui_scale
         };
-        
+
         fn dist_to_line_segment(p: egui::Pos2, a: egui::Pos2, b: egui::Pos2) -> f32 {
             fn dist2(a: egui::Pos2, b: egui::Pos2) -> f32 {
                 (a.x - b.x).powf(2.0) + (a.y - b.y).powf(2.0)
@@ -3393,11 +3475,11 @@ where
             };
             return distance_squared.sqrt();
         }
-        
+
         match event {
             InputEvent::MouseDown(pos) => {
                 // Either add a new node and drag it or mark existing node as dragged
-                
+
                 // Check whether over center point
                 match self.center_point {
                     Some((uuid, pos2)) if is_over(pos, pos2) => {
@@ -3416,12 +3498,12 @@ where
                             }
                             .into(),
                         ).into());
-                        
+
                         return EventHandlingStatus::HandledByContainer;
                     }
                     _ => {}
                 }
-                
+
                 // Check whether over midpoint, if so add a new joint
                 macro_rules! check_midpoints {
                     ($v:ident) => {
@@ -3438,7 +3520,7 @@ where
                                 } else {
                                     break;
                                 };
-                                
+
                                 let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
                                 if is_over(pos, midpoint) {
                                     self.dragged_node = Some((uuid::Uuid::now_v7().into(), pos));
@@ -3451,7 +3533,7 @@ where
                                         }
                                         .into(),
                                     )));
-                                    
+
                                     return EventHandlingStatus::HandledByContainer;
                                 }
                             }
@@ -3460,7 +3542,7 @@ where
                 }
                 check_midpoints!(source_points);
                 check_midpoints!(dest_points);
-                
+
                 // Check whether over a joint, if so drag it
                 macro_rules! check_joints {
                     ($v:ident) => {
@@ -3469,7 +3551,7 @@ where
                             for joint in &mut path[1..stop_idx] {
                                 if is_over(pos, joint.1) {
                                     self.dragged_node = Some((joint.0, pos));
-                                    
+
                                     return EventHandlingStatus::HandledByContainer;
                                 }
                             }
@@ -3478,7 +3560,7 @@ where
                 }
                 check_joints!(source_points);
                 check_joints!(dest_points);
-                
+
                 EventHandlingStatus::NotHandled
             },
             InputEvent::MouseUp(_) => {
@@ -3506,11 +3588,11 @@ where
                         return EventHandlingStatus::HandledByContainer;
                     };
                 }
-                
+
                 if let Some((uuid, _)) = self.center_point.as_ref().filter(|e| is_over(pos, e.1)) {
                     handle_vertex_click!(uuid);
                 }
-                
+
                 macro_rules! check_joints_click {
                     ($pos:expr, $v:ident) => {
                         for path in &self.$v {
@@ -3523,10 +3605,10 @@ where
                         }
                     };
                 }
-                
+
                 check_joints_click!(pos, source_points);
                 check_joints_click!(pos, dest_points);
-                
+
                 // Check segments on paths
                 macro_rules! check_path_segments {
                     ($v:ident) => {
@@ -3540,7 +3622,7 @@ where
                                 } else {
                                     break;
                                 };
-                                
+
                                 if dist_to_line_segment(pos, u.1, v.1) <= SEGMENT_DISTANCE_THRESHOLD {
                                     return EventHandlingStatus::HandledByElement;
                                 }
@@ -3550,7 +3632,7 @@ where
                 }
                 check_path_segments!(source_points);
                 check_path_segments!(dest_points);
-                
+
                 // In case there is no center_point, also check all-to-all of last points
                 if self.center_point == None {
                     for u in self.source_points.iter().flat_map(|e| e.last()) {
@@ -3567,7 +3649,7 @@ where
                 let Some(dragged_node) = self.dragged_node else {
                     return EventHandlingStatus::NotHandled;
                 };
-                
+
                 let translated_real_pos = dragged_node.1 + delta;
                 self.dragged_node = Some((dragged_node.0, translated_real_pos));
                 let translated_real_shape = NHShape::Rect { inner: egui::Rect::from_min_size(translated_real_pos, egui::Vec2::ZERO) };
@@ -3578,7 +3660,7 @@ where
                 };
                 let coerced_delta = coerced_pos - self.all_vertices()
                     .find(|e| e.0 == dragged_node.0).unwrap().1;
-                
+
                 if self.selected_vertices.contains(&dragged_node.0) {
                     commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                 } else {
@@ -3587,7 +3669,7 @@ where
                         coerced_delta,
                     ).into());
                 }
-                
+
                 EventHandlingStatus::HandledByContainer
             },
         }
@@ -3671,7 +3753,7 @@ where
                             position: center_point.1,
                         }),
                     ));
-                    
+
                     // Move any last point to the center
                     self.center_point = 'a: {
                         if let Some(path) = self.source_points.iter_mut().filter(|p| p.len() > 1).nth(0) {
@@ -3729,7 +3811,7 @@ where
                                     self.dest_points[o.1].push(self.center_point.unwrap());
                                 }
                             }
-                            
+
                             self.center_point = Some((id, position));
 
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
@@ -3773,7 +3855,7 @@ where
 
     fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
         into.insert(*self.uuid, self.highlight.selected.into());
-        
+
         for e in self.all_vertices() {
             into.insert(e.0, match self.selected_vertices.contains(&e.0) {
                 true => SelectionStatus::Selected,
@@ -3782,7 +3864,7 @@ where
             });
         }
     }
-    
+
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
@@ -3800,7 +3882,7 @@ where
         } else {
             (*self.uuid, *self.model_uuid())
         };
-        
+
         let cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
             adapter: self.adapter.deep_copy_init(model_uuid, m),
@@ -3819,7 +3901,7 @@ where
         tlc.insert(view_uuid, cloneish.clone());
         c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
     }
-    
+
     fn deep_copy_relink(
         &mut self,
         c: &HashMap<usize, (ViewUuid,
@@ -3829,7 +3911,7 @@ where
         m: &HashMap<usize, CommonElementT>,
     ) {
         self.adapter.deep_copy_finish(m);
-    
+
         if let Some((_u, s, _)) = c.get(&arc_to_usize(&self.source)) {
             self.source = s.clone();
         }

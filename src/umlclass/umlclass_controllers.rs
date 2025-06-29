@@ -4,9 +4,9 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation, View
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation, View
 };
-use crate::common::project_serde::{NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
+use crate::common::project_serde::{NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::CustomTab;
 use eframe::egui;
@@ -53,6 +53,12 @@ type LinkViewT = MulticonnectionView<
 >;
 
 pub struct UmlClassQueryable {}
+
+impl Queryable for UmlClassQueryable {
+    fn new() -> Self {
+        Self {}
+    }
+}
 
 #[derive(Clone)]
 pub enum UmlClassPropChange {
@@ -157,7 +163,7 @@ pub struct UmlClassDiagramAdapter {
     comment_buffer: String,
 }
 
-impl DiagramAdapter<UmlClassDiagram, UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassDiagramAdapter {
+impl DiagramAdapter<UmlClassDiagram, UmlClassElement, NaiveUmlClassTool, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassDiagramAdapter {
     fn model(&self) -> Arc<RwLock<UmlClassDiagram>> {
         self.model.clone()
     }
@@ -166,6 +172,9 @@ impl DiagramAdapter<UmlClassDiagram, UmlClassElement, UmlClassElementOrVertex, U
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().unwrap().name()
+    }
+    fn view_type(&self) -> &'static str {
+        "umlclass-diagram-view"
     }
 
     fn show_props_fun(
@@ -244,6 +253,86 @@ impl DiagramAdapter<UmlClassDiagram, UmlClassElement, UmlClassElementOrVertex, U
             }
         }
     }
+
+    fn tool_change_fun(&self, tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
+        let width = ui.available_width();
+
+        let stage = tool.as_ref().map(|e| e.initial_stage());
+        let c = |s: UmlClassToolStage| -> egui::Color32 {
+            if stage.is_some_and(|e| e == s) {
+                egui::Color32::BLUE
+            } else {
+                egui::Color32::BLACK
+            }
+        };
+
+        if ui
+            .add_sized(
+                [width, 20.0],
+                egui::Button::new("Select/Move").fill(if stage == None {
+                    egui::Color32::BLUE
+                } else {
+                    egui::Color32::BLACK
+                }),
+            )
+            .clicked()
+        {
+            *tool = None;
+        }
+        ui.separator();
+
+        for cat in [
+            &[
+                (UmlClassToolStage::Class, "Class"),
+                (UmlClassToolStage::PackageStart, "Package"),
+            ][..],
+            &[
+                (
+                    UmlClassToolStage::LinkStart {
+                        link_type: UmlClassLinkType::Association,
+                    },
+                    "Association",
+                ),
+                (
+                    UmlClassToolStage::LinkStart {
+                        link_type: UmlClassLinkType::InterfaceRealization,
+                    },
+                    "IntReal",
+                ),
+                (
+                    UmlClassToolStage::LinkStart {
+                        link_type: UmlClassLinkType::Usage,
+                    },
+                    "Usage",
+                ),
+            ][..],
+            &[(UmlClassToolStage::Note, "Note")][..],
+        ] {
+            for (stage, name) in cat {
+                if ui
+                    .add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage)))
+                    .clicked()
+                {
+                    *tool = Some(NaiveUmlClassTool::new(*stage));
+                }
+            }
+            ui.separator();
+        }
+    }
+
+    fn menubar_options_fun(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
+        if ui.button("PlantUML description").clicked() {
+            let uuid = uuid::Uuid::now_v7();
+            commands.push(ProjectCommand::AddCustomTab(
+                uuid,
+                Arc::new(RwLock::new(PlantUmlTab {
+                    diagram: self.model.clone(),
+                    plantuml_description: "".to_owned(),
+                })),
+            ));
+        }
+        ui.separator();
+    }
 }
 
 impl NHSerializeToScalar for UmlClassDiagramAdapter {
@@ -254,83 +343,20 @@ impl NHSerializeToScalar for UmlClassDiagramAdapter {
     }
 }
 
-fn tool_change_fun(tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
-    let width = ui.available_width();
-
-    let stage = tool.as_ref().map(|e| e.initial_stage());
-    let c = |s: UmlClassToolStage| -> egui::Color32 {
-        if stage.is_some_and(|e| e == s) {
-            egui::Color32::BLUE
-        } else {
-            egui::Color32::BLACK
-        }
-    };
-
-    if ui
-        .add_sized(
-            [width, 20.0],
-            egui::Button::new("Select/Move").fill(if stage == None {
-                egui::Color32::BLUE
-            } else {
-                egui::Color32::BLACK
-            }),
-        )
-        .clicked()
-    {
-        *tool = None;
+impl NHDeserializeScalar for UmlClassDiagramAdapter {
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        let toml::Value::String(s) = source else {
+            return Err(NHDeserializeError::StructureError(format!("expected string, got {:?}", source)));
+        };
+        let uuid = uuid::Uuid::parse_str(s)?.into();
+        let model = deserializer.get_or_instantiate_model::<UmlClassDiagram>(&uuid)?;
+        let name_buffer = (*model.read().unwrap().name).clone();
+        let comment_buffer = (*model.read().unwrap().comment).clone();
+        Ok(Self { model, name_buffer, comment_buffer })
     }
-    ui.separator();
-
-    for cat in [
-        &[
-            (UmlClassToolStage::Class, "Class"),
-            (UmlClassToolStage::PackageStart, "Package"),
-        ][..],
-        &[
-            (
-                UmlClassToolStage::LinkStart {
-                    link_type: UmlClassLinkType::Association,
-                },
-                "Association",
-            ),
-            (
-                UmlClassToolStage::LinkStart {
-                    link_type: UmlClassLinkType::InterfaceRealization,
-                },
-                "IntReal",
-            ),
-            (
-                UmlClassToolStage::LinkStart {
-                    link_type: UmlClassLinkType::Usage,
-                },
-                "Usage",
-            ),
-        ][..],
-        &[(UmlClassToolStage::Note, "Note")][..],
-    ] {
-        for (stage, name) in cat {
-            if ui
-                .add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage)))
-                .clicked()
-            {
-                *tool = Some(NaiveUmlClassTool::new(*stage));
-            }
-        }
-        ui.separator();
-    }
-}
-fn menubar_options_fun(controller: &mut DiagramViewT, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
-    if ui.button("PlantUML description").clicked() {
-        let uuid = uuid::Uuid::now_v7();
-        commands.push(ProjectCommand::AddCustomTab(
-            uuid,
-            Arc::new(RwLock::new(PlantUmlTab {
-                diagram: controller.model(),
-                plantuml_description: "".to_owned(),
-            })),
-        ));
-    }
-    ui.separator();
 }
 
 struct PlantUmlTab {
@@ -356,8 +382,6 @@ impl CustomTab for PlantUmlTab {
     }
 }
 
-const DIAGRAM_VIEW_TYPE: &str = "umlclass-diagram-view";
-
 pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
@@ -376,11 +400,7 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
                 name_buffer: name,
                 comment_buffer: "".to_owned(),
             },
-            HashMap::new(),
-            UmlClassQueryable {},
-            DIAGRAM_VIEW_TYPE,
-            tool_change_fun,
-            menubar_options_fun,
+            Vec::new(),
         ),
     )
 }
@@ -479,19 +499,18 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             (class_productb.clone(), class_productb_view.clone()),
         );
 
-    let mut owned_controllers =
-        HashMap::<_, Arc<RwLock<dyn ElementControllerGen2<_, _, _, _, _>>>>::new();
-    owned_controllers.insert(class_af_uuid, class_af_view);
-    owned_controllers.insert(class_cfx_uuid, class_cfx_view);
-    owned_controllers.insert(class_cfy_uuid, class_cfy_view);
-    owned_controllers.insert(realization_cfx_uuid, realization_cfx_view);
-    owned_controllers.insert(realization_cfy_uuid, realization_cfy_view);
-    owned_controllers.insert(class_client_uuid, class_client_view);
-    owned_controllers.insert(usage_client_af_uuid, usage_client_af_view);
-    owned_controllers.insert(class_producta_uuid, class_producta_view);
-    owned_controllers.insert(usage_client_producta_uuid, usage_client_producta_view);
-    owned_controllers.insert(class_productb_uuid, class_productb_view);
-    owned_controllers.insert(usage_client_productb_uuid, usage_client_productb_view);
+    let mut owned_controllers = Vec::<ArcRwLockControllerT>::new();
+    owned_controllers.push(class_af_view);
+    owned_controllers.push(class_cfx_view);
+    owned_controllers.push(class_cfy_view);
+    owned_controllers.push(realization_cfx_view);
+    owned_controllers.push(realization_cfy_view);
+    owned_controllers.push(class_client_view);
+    owned_controllers.push(usage_client_af_view);
+    owned_controllers.push(class_producta_view);
+    owned_controllers.push(usage_client_producta_view);
+    owned_controllers.push(class_productb_view);
+    owned_controllers.push(usage_client_productb_view);
 
     let diagram_view_uuid = uuid::Uuid::now_v7().into();
     let diagram_model_uuid = uuid::Uuid::now_v7().into();
@@ -523,10 +542,6 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
                 comment_buffer: "".to_owned(),
             },
             owned_controllers,
-            UmlClassQueryable {},
-            DIAGRAM_VIEW_TYPE,
-            tool_change_fun,
-            menubar_options_fun,
         ),
     )
 }
