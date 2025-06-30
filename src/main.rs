@@ -1171,22 +1171,22 @@ impl eframe::App for NHApp {
             
             // Menubar UI
             egui::menu::bar(ui, |ui| {
-                ui.menu_button(translate!("nh-file"), |ui| {
-                    if ui.button(translate!("nh-file-newproject")).clicked() {
+                ui.menu_button(translate!("nh-project"), |ui| {
+                    if ui.button(translate!("nh-project-newproject")).clicked() {
                         let _ = new_project();
                     }
 
-                    button!(ui, "nh-file-openproject", SimpleProjectCommand::OpenProject(false));
+                    button!(ui, "nh-project-openproject", SimpleProjectCommand::OpenProject(false));
 
                     // TODO: implement
-                    ui.menu_button(translate!("nh-file-recentprojects"), |ui| {
+                    ui.menu_button(translate!("nh-project-recentprojects"), |ui| {
                         if ui.button("asdf").clicked() {
                             println!("TODO");
                         }
                     });
                     ui.separator();
 
-                    ui.menu_button(translate!("nh-file-addnewdiagram"), |ui| {
+                    ui.menu_button(translate!("nh-project-addnewdiagram"), |ui| {
                         type NDC =
                             fn(u32) -> (ViewUuid, Arc<RwLock<(dyn DiagramController + 'static)>>);
                         for (label, diagram_type, fun) in [
@@ -1213,12 +1213,12 @@ impl eframe::App for NHApp {
                     });
                     ui.separator();
 
-                    button!(ui, "nh-file-save", SimpleProjectCommand::SaveProject);
-                    button!(ui, "nh-file-saveas", SimpleProjectCommand::SaveProjectAs);
+                    button!(ui, "nh-project-save", SimpleProjectCommand::SaveProject);
+                    button!(ui, "nh-project-saveas", SimpleProjectCommand::SaveProjectAs);
                     ui.separator();
-                    button!(ui, "nh-file-closeproject", SimpleProjectCommand::CloseProject(false));
+                    button!(ui, "nh-project-closeproject", SimpleProjectCommand::CloseProject(false));
                     #[cfg(not(target_arch = "wasm32"))]
-                    button!(ui, "nh-file-exit", SimpleProjectCommand::Exit(false));
+                    button!(ui, "nh-project-exit", SimpleProjectCommand::Exit(false));
                 });
 
                 ui.menu_button(translate!("nh-edit"), |ui| {
@@ -1519,13 +1519,13 @@ impl eframe::App for NHApp {
 
                     match confirm_reason {
                         SimpleProjectCommand::OpenProject(_) => {
-                            ui.label(translate!("nh-file-openproject-confirm"));
+                            ui.label(translate!("nh-project-openproject-confirm"));
                         },
                         SimpleProjectCommand::CloseProject(_) => {
-                            ui.label(translate!("nh-file-closeproject-confirm"));
+                            ui.label(translate!("nh-project-closeproject-confirm"));
                         },
                         SimpleProjectCommand::Exit(_) => {
-                            ui.label(translate!("nh-file-exit-confirm"));
+                            ui.label(translate!("nh-project-exit-confirm"));
                         },
                         _ => unreachable!("Unexpected confirm modal reason"),
                     }
