@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::common::canvas;
-use crate::common::controller::{ContainerModel, Model};
+use crate::common::controller::{ContainerModel, Model, StructuralVisitor};
 use crate::common::project_serde::{NHDeserializeEntity, NHDeserializeError, NHDeserializer, NHSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::ModelUuid;
 use std::{
@@ -33,6 +33,15 @@ impl Model for DemoCsdElement {
             DemoCsdElement::DemoCsdTransactor(rw_lock) => rw_lock.read().unwrap().name(),
             DemoCsdElement::DemoCsdTransaction(rw_lock) => rw_lock.read().unwrap().name(),
             DemoCsdElement::DemoCsdLink(rw_lock) => rw_lock.read().unwrap().name(),
+        }
+    }
+
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
+        match self {
+            DemoCsdElement::DemoCsdPackage(rw_lock) => rw_lock.read().unwrap().accept(v),
+            DemoCsdElement::DemoCsdTransactor(rw_lock) => rw_lock.read().unwrap().accept(v),
+            DemoCsdElement::DemoCsdTransaction(rw_lock) => rw_lock.read().unwrap().accept(v),
+            DemoCsdElement::DemoCsdLink(rw_lock) => rw_lock.read().unwrap().accept(v),
         }
     }
 }
@@ -79,6 +88,13 @@ impl Model for DemoCsdDiagram {
     }
     fn name(&self) -> Arc<String> {
         self.name.clone()
+    }
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
+        v.open_complex(self);
+        for e in &self.contained_elements {
+            e.accept(v);
+        }
+        v.close_complex(self);
     }
 }
 
@@ -179,6 +195,13 @@ impl Model for DemoCsdPackage {
     fn name(&self) -> Arc<String> {
         self.name.clone()
     }
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
+        v.open_complex(self);
+        for e in &self.contained_elements {
+            e.accept(v);
+        }
+        v.close_complex(self);
+    }
 }
 
 impl ContainerModel<DemoCsdElement> for DemoCsdPackage {
@@ -257,6 +280,15 @@ impl Model for DemoCsdTransactor {
     }
     fn name(&self) -> Arc<String> {
         self.name.clone()
+    }
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
+        if let Some(t) = &self.transaction {
+            v.open_complex(self);
+            t.read().unwrap().accept(v);
+            v.close_complex(self);
+        } else {
+            v.visit_simple(self);
+        }
     }
 }
 

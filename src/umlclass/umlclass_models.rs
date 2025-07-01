@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::common::canvas::{ArrowheadType, LineType};
-use crate::common::controller::{ContainerModel, Model};
+use crate::common::controller::{ContainerModel, Model, StructuralVisitor};
 use crate::common::project_serde::{NHDeserializeEntity, NHDeserializeError, NHDeserializer, NHSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::ModelUuid;
 use std::{
@@ -33,7 +33,7 @@ impl UmlClassCollector {
         }
 
         for e in &package.contained_elements {
-            e.accept(self);
+            e.accept_uml(self);
         }
 
         self.package_stack.pop();
@@ -101,7 +101,7 @@ pub enum UmlClassElement {
 }
 
 impl UmlClassElement {
-    fn accept(&self, visitor: &mut UmlClassCollector) {
+    fn accept_uml(&self, visitor: &mut UmlClassCollector) {
         match self {
             UmlClassElement::UmlClassPackage(rw_lock) => visitor.visit_package(&rw_lock.read().unwrap()),
             UmlClassElement::UmlClass(rw_lock) => visitor.visit_class(&rw_lock.read().unwrap()),
@@ -124,6 +124,14 @@ impl Model for UmlClassElement {
             UmlClassElement::UmlClassPackage(rw_lock) => rw_lock.read().unwrap().name(),
             UmlClassElement::UmlClass(rw_lock) => rw_lock.read().unwrap().name(),
             UmlClassElement::UmlClassLink(rw_lock) => rw_lock.read().unwrap().name(),
+        }
+    }
+
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
+        match self {
+            UmlClassElement::UmlClassPackage(rw_lock) => rw_lock.read().unwrap().accept(v),
+            UmlClassElement::UmlClass(rw_lock) => rw_lock.read().unwrap().accept(v),
+            UmlClassElement::UmlClassLink(rw_lock) => rw_lock.read().unwrap().accept(v),
         }
     }
 }
@@ -169,13 +177,13 @@ impl UmlClassDiagram {
         };
 
         for e in &self.contained_elements {
-            e.accept(&mut collector);
+            e.accept_uml(&mut collector);
         }
 
         collector.collecting_absolute_paths = false;
 
         for e in &self.contained_elements {
-            e.accept(&mut collector);
+            e.accept_uml(&mut collector);
         }
 
         collector.plantuml_data
@@ -188,6 +196,13 @@ impl Model for UmlClassDiagram {
     }
     fn name(&self) -> Arc<String> {
         self.name.clone()
+    }
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
+        v.open_complex(self);
+        for e in &self.contained_elements {
+            e.accept(v);
+        }
+        v.close_complex(self);
     }
 }
 
@@ -285,6 +300,13 @@ impl Model for UmlClassPackage {
     }
     fn name(&self) -> Arc<String> {
         self.name.clone()
+    }
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
+        v.open_complex(self);
+        for e in &self.contained_elements {
+            e.accept(v);
+        }
+        v.close_complex(self);
     }
 }
 

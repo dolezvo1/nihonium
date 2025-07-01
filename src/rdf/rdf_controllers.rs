@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation, View
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, TargettingStatus, Tool, VertexInformation, View
 };
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
@@ -542,7 +542,7 @@ impl CustomTab for SparqlQueriesTab {
     }
 }
 
-pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
+pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New RDF diagram {}", no);
@@ -557,16 +557,17 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
         DiagramControllerGen2::new(
             view_uuid.into(),
             RdfDiagramAdapter {
-                model: diagram,
+                model: diagram.clone(),
                 name_buffer: name,
                 comment_buffer: "".to_owned(),
             },
             Vec::new(),
         ),
+        Box::new(SimpleModelHierarchyView::new(diagram)),
     )
 }
 
-pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
+pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
     let (_, node, node_uuid, node_view) = rdf_node(
         "http://www.w3.org/People/EM/contact#me",
         egui::Pos2::new(300.0, 100.0),
@@ -664,12 +665,13 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
         DiagramControllerGen2::new(
             view_uuid.into(),
             RdfDiagramAdapter {
-                model: diagram,
+                model: diagram.clone(),
                 name_buffer: name,
                 comment_buffer: "".to_owned(),
             },
             owned_controllers,
         ),
+        Box::new(SimpleModelHierarchyView::new(diagram)),
     )
 }
 
@@ -1445,8 +1447,13 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
-        into.insert(*self.uuid(), self.highlight.selected.into());
+    fn head_count(
+        &mut self,
+        views: &mut HashMap<ViewUuid, SelectionStatus>,
+        models: &mut HashSet<ModelUuid>,
+    ) {
+        views.insert(*self.uuid(), self.highlight.selected.into());
+        models.insert(*self.model_uuid());
     }
     
     fn deep_copy_clone(
@@ -1816,8 +1823,13 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
-        into.insert(*self.uuid(), self.highlight.selected.into());
+    fn head_count(
+        &mut self,
+        views: &mut HashMap<ViewUuid, SelectionStatus>,
+        models: &mut HashSet<ModelUuid>,
+    ) {
+        views.insert(*self.uuid(), self.highlight.selected.into());
+        models.insert(*self.model_uuid());
     }
     
     fn deep_copy_clone(

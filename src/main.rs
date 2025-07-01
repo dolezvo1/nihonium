@@ -6,9 +6,9 @@ use std::sync::{Arc, RwLock};
 use std::io::Write;
 
 use common::canvas::{NHCanvas, UiCanvas};
-use common::controller::{ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ProjectCommand, SimpleProjectCommand};
+use common::controller::{ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleModelHierarchyView, SimpleProjectCommand};
 use common::project_serde::{NHProjectHierarchyNodeDTO, NHSerializeError, NHSerializer};
-use common::uuid::ViewUuid;
+use common::uuid::{ModelUuid, ViewUuid};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
@@ -76,6 +76,7 @@ enum NHTab {
     StyleEditor,
 
     ProjectHierarchy,
+    ModelHierarchy,
 
     Toolbar,
     Properties,
@@ -92,6 +93,7 @@ impl NHTab {
             NHTab::StyleEditor => "Style Editor",
 
             NHTab::ProjectHierarchy => "Project Hierarchy",
+            NHTab::ModelHierarchy => "Model Hierarchy",
 
             NHTab::Toolbar => "Toolbar",
             NHTab::Properties => "Properties",
@@ -114,6 +116,7 @@ struct NHContext {
     pub diagram_controllers: HashMap<ViewUuid, (usize, Arc<RwLock<dyn DiagramController>>)>,
     hierarchy: HierarchyNode,
     tree_view_state: TreeViewState<ViewUuid>,
+    model_hierarchy_views: HashMap<ModelUuid, Box<dyn ModelHierarchyView>>,
     new_diagram_no: u32,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
 
@@ -172,7 +175,8 @@ impl TabViewer for NHContext {
             },
             NHTab::StyleEditor => self.style_editor_tab(ui),
 
-            NHTab::ProjectHierarchy => self.hierarchy(ui),
+            NHTab::ProjectHierarchy => self.project_hierarchy(ui),
+            NHTab::ModelHierarchy => self.model_hierarchy(ui),
 
             NHTab::Toolbar => self.toolbar(ui),
             NHTab::Properties => self.properties(ui),
@@ -254,7 +258,7 @@ impl NHContext {
         self.shortcut_top_order.sort_by(|a, b| weight(&b.1).cmp(&weight(&a.1)));
     }
 
-    fn hierarchy(&mut self, ui: &mut Ui) {
+    fn project_hierarchy(&mut self, ui: &mut Ui) {
         let mut collapse_all = None;
 
         ui.horizontal(|ui| {
@@ -349,9 +353,17 @@ impl NHContext {
         self.unprocessed_commands.extend(commands.into_iter());
     }
 
+    fn model_hierarchy(&mut self, ui: &mut Ui) {
+        let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
+        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
+        let model_uuid = c.read().unwrap().model_uuid();
+        let Some(model_hierarchy_view) = self.model_hierarchy_views.get(&model_uuid) else { return; };
+        model_hierarchy_view.show_model_hierarchy(ui, c.read().unwrap().represented_models());
+    }
+
     fn toolbar(&self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
-        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else {return;};
+        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
         let mut controller_lock = c.write().unwrap();
         controller_lock.show_toolbar(ui);
     }
@@ -382,7 +394,7 @@ impl NHContext {
 
     fn layers(&self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
-        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else {return;};
+        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
         let mut controller_lock = c.write().unwrap();
         controller_lock.show_layers(ui);
     }
@@ -881,15 +893,17 @@ impl Default for NHApp {
     fn default() -> Self {
         let mut diagram_controllers = HashMap::new();
         let mut hierarchy = vec![];
+        let mut model_hierarchy_views = HashMap::<_, Box<dyn ModelHierarchyView>>::new();
         let mut tabs = vec![NHTab::RecentlyUsed, NHTab::StyleEditor];
 
-        for (diagram_type, (uuid, controller)) in [
+        for (diagram_type, (uuid, controller, mhview)) in [
             (0, crate::rdf::rdf_controllers::demo(1)),
             (1, crate::umlclass::umlclass_controllers::demo(2)),
             (2, crate::democsd::democsd_controllers::demo(3)),
         ] {
             hierarchy.push(HierarchyNode::Diagram(controller.clone()));
-            diagram_controllers.insert(uuid, (diagram_type, controller));
+            diagram_controllers.insert(uuid, (diagram_type, controller.clone()));
+            model_hierarchy_views.insert(*controller.read().unwrap().model_uuid(), mhview);
             tabs.push(NHTab::Diagram { uuid });
         }
 
@@ -903,9 +917,10 @@ impl Default for NHApp {
         let [a, b] = dock_state.main_surface_mut().split_left(
             NodeIndex::root(),
             0.2,
-            vec![NHTab::ProjectHierarchy],
+            vec![NHTab::ProjectHierarchy, NHTab::ModelHierarchy],
         );
         open_unique_tabs.insert(NHTab::ProjectHierarchy);
+        open_unique_tabs.insert(NHTab::ModelHierarchy);
         let [_, _] = dock_state
             .main_surface_mut()
             .split_right(a, 0.7, vec![NHTab::Properties]);
@@ -931,6 +946,7 @@ impl Default for NHApp {
             diagram_controllers,
             hierarchy: HierarchyNode::Folder(uuid::Uuid::nil().into(), Arc::new("root".to_owned()), hierarchy),
             tree_view_state: TreeViewState::default(),
+            model_hierarchy_views,
             new_diagram_no: 4,
             custom_tabs: HashMap::new(),
             
@@ -1188,7 +1204,7 @@ impl eframe::App for NHApp {
 
                     ui.menu_button(translate!("nh-project-addnewdiagram"), |ui| {
                         type NDC =
-                            fn(u32) -> (ViewUuid, Arc<RwLock<(dyn DiagramController + 'static)>>);
+                            fn(u32) -> (ViewUuid, Arc<RwLock<(dyn DiagramController + 'static)>>, Box<dyn ModelHierarchyView>);
                         for (label, diagram_type, fun) in [
                             (
                                 "UML Class diagram",
@@ -1204,9 +1220,10 @@ impl eframe::App for NHApp {
                             ("RDF diagram", 2, crate::rdf::rdf_controllers::new as NDC),
                         ] {
                             if ui.button(label).clicked() {
-                                let (uuid, diagram_controller) = fun(self.context.new_diagram_no);
+                                let (uuid, diagram_controller, mhview) = fun(self.context.new_diagram_no);
                                 commands.push(ProjectCommand::SetNewDiagramNumber(self.context.new_diagram_no + 1));
                                 commands.push(ProjectCommand::AddNewDiagram(uuid, diagram_type, diagram_controller));
+                                // TODO: use mhview
                                 ui.close_menu();
                             }
                         }
@@ -1337,6 +1354,7 @@ impl eframe::App for NHApp {
                         NHTab::RecentlyUsed,
                         NHTab::StyleEditor,
                         NHTab::ProjectHierarchy,
+                        NHTab::ModelHierarchy,
                         NHTab::Toolbar,
                         NHTab::Properties,
                         NHTab::Layers,

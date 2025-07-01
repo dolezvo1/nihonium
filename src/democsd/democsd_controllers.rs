@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, VertexInformation, View
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
 use crate::common::project_serde::{get_model_uuid, NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
@@ -344,7 +344,7 @@ impl NHDeserializeScalar for DemoCsdDiagramAdapter {
     }
 }
 
-pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
+pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New DEMO CSD diagram {}", no);
@@ -359,16 +359,17 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
         DiagramControllerGen2::new(
             view_uuid.into(),
             DemoCsdDiagramAdapter {
-                model: diagram,
+                model: diagram.clone(),
                 name_buffer: name,
                 comment_buffer: "".to_owned(),
             },
             Vec::new(),
         ),
+        Box::new(SimpleModelHierarchyView::new(diagram)),
     )
 }
 
-pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
+pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
     let mut models: Vec<DemoCsdElement> = vec![];
     let mut controllers = Vec::<ArcRwLockControllerT>::new();
 
@@ -462,12 +463,13 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
             DiagramControllerGen2::new(
                 view_uuid.into(),
                 DemoCsdDiagramAdapter {
-                    model: diagram,
+                    model: diagram.clone(),
                     name_buffer: name,
                     comment_buffer: "".to_owned(),
                 },
                 controllers,
             ),
+            Box::new(SimpleModelHierarchyView::new(diagram)),
         )
     }
 }
@@ -1551,12 +1553,17 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
-        into.insert(*self.uuid(), self.highlight.selected.into());
+    fn head_count(
+        &mut self,
+        views: &mut HashMap<ViewUuid, SelectionStatus>,
+        models: &mut HashSet<ModelUuid>,
+    ) {
+        views.insert(*self.uuid(), self.highlight.selected.into());
+        models.insert(*self.model_uuid());
 
         if let Some(t) = &self.transaction_view {
             let mut t = t.write().unwrap();
-            t.head_count(into);
+            t.head_count(views, models);
         }
     }
     
@@ -2061,8 +2068,13 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
-        into.insert(*self.uuid(), self.highlight.selected.into());
+    fn head_count(
+        &mut self,
+        views: &mut HashMap<ViewUuid, SelectionStatus>,
+        models: &mut HashSet<ModelUuid>,
+    ) {
+        views.insert(*self.uuid(), self.highlight.selected.into());
+        models.insert(*self.model_uuid());
     }
     
     fn deep_copy_clone(

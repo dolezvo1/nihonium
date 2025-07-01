@@ -4,7 +4,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, TargettingStatus, Tool, VertexInformation, View
+    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, TargettingStatus, Tool, VertexInformation, View
 };
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
@@ -382,7 +382,7 @@ impl CustomTab for PlantUmlTab {
     }
 }
 
-pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
+pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New UML class diagram {}", no);
@@ -396,16 +396,17 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
         DiagramControllerGen2::new(
             view_uuid.into(),
             UmlClassDiagramAdapter {
-                model: diagram,
+                model: diagram.clone(),
                 name_buffer: name,
                 comment_buffer: "".to_owned(),
             },
             Vec::new(),
         ),
+        Box::new(SimpleModelHierarchyView::new(diagram)),
     )
 }
 
-pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
+pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
 
@@ -537,12 +538,13 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>) {
         DiagramControllerGen2::new(
             diagram_view_uuid.into(),
             UmlClassDiagramAdapter {
-                model: diagram2,
+                model: diagram2.clone(),
                 name_buffer: name,
                 comment_buffer: "".to_owned(),
             },
             owned_controllers,
         ),
+        Box::new(SimpleModelHierarchyView::new(diagram2)),
     )
 }
 
@@ -1430,8 +1432,13 @@ impl
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
-        into.insert(*self.uuid(), self.highlight.selected.into());
+    fn head_count(
+        &mut self,
+        views: &mut HashMap<ViewUuid, SelectionStatus>,
+        models: &mut HashSet<ModelUuid>,
+    ) {
+        views.insert(*self.uuid(), self.highlight.selected.into());
+        models.insert(*self.model_uuid());
     }
     
     fn deep_copy_clone(

@@ -5,6 +5,7 @@ use egui_ltreeview::DirPosition;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::sync::{Arc, RwLock, Weak};
 
 pub const BACKGROUND_COLORS: usize = 8;
@@ -328,6 +329,53 @@ impl HierarchyNode {
     }
 }
 
+pub trait ModelHierarchyView {
+    fn show_model_hierarchy(&self, ui: &mut egui::Ui, represented_models: &HashSet<ModelUuid>);
+}
+
+pub struct SimpleModelHierarchyView<ModelT: Model> {
+    model: Arc<RwLock<ModelT>>,
+}
+
+impl<ModelT: Model> SimpleModelHierarchyView<ModelT> {
+    pub fn new(model: Arc<RwLock<ModelT>>) -> Self {
+        Self { model }
+    }
+}
+
+impl<ModelT: Model> ModelHierarchyView for SimpleModelHierarchyView<ModelT> {
+    fn show_model_hierarchy(&self, ui: &mut egui::Ui, represented_models: &HashSet<ModelUuid>) {
+        struct HierarchyViewVisitor<'a, 'ui> {
+            rm: &'a HashSet<ModelUuid>,
+            builder: &'a mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
+        }
+        impl<'a, 'ui> HierarchyViewVisitor<'a, 'ui> {
+            fn c(&self, m: &ModelUuid) -> &'static str {
+                if self.rm.contains(m) {"[x]"} else {"[ ]"}
+            }
+        }
+        impl<'a, 'ui> StructuralVisitor<dyn Model> for HierarchyViewVisitor<'a, 'ui> {
+            fn open_complex(&mut self, e: &dyn Model) {
+                self.builder.dir(*e.uuid(), format!("{} {} ({})", self.c(&e.uuid()), e.name(), e.uuid().to_string()));
+            }
+
+            fn close_complex(&mut self, e: &dyn Model) {
+                self.builder.close_dir();
+            }
+
+            fn visit_simple(&mut self, e: &dyn Model) {
+                self.builder.leaf(*e.uuid(), format!("{} {} ({})", self.c(&e.uuid()), e.name(), e.uuid().to_string()));
+            }
+        }
+
+        egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show(ui, |builder| {
+            let mut hvv = HierarchyViewVisitor { rm: represented_models, builder };
+
+            self.model.read().unwrap().accept(&mut hvv);
+        });
+    }
+}
+
 
 pub struct DrawingContext<'a> {
     pub profile: &'a ColorProfile,
@@ -341,6 +389,8 @@ pub trait View {
 }
 
 pub trait DiagramController: Any + View + NHSerialize {
+    fn represented_models(&self) -> &HashSet<ModelUuid>;
+
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
 
     fn new_ui_canvas(
@@ -628,9 +678,18 @@ mod test {
     }
 }
 
+pub trait StructuralVisitor<T: ?Sized> {
+    fn open_complex(&mut self, e: &T);
+    fn close_complex(&mut self, e: &T);
+    fn visit_simple(&mut self, e: &T);
+}
+
 pub trait Model: 'static {
     fn uuid(&self) -> Arc<ModelUuid>;
     fn name(&self) -> Arc<String>;
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
+        v.visit_simple(self);
+    }
 }
 
 pub trait ContainerModel<CommonElementT>: Model {
@@ -639,7 +698,7 @@ pub trait ContainerModel<CommonElementT>: Model {
 }
 
 pub trait Queryable {
-    // TODO: This is actually not a very good idea. Should be required only where instantiated.
+    // TODO: This is actually not a very good idea. Constructor should only be required where instantiated.
     fn new() -> Self;
 }
 
@@ -768,7 +827,11 @@ pub trait ElementControllerGen2<
         command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
     );
-    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>);
+    fn head_count(
+        &mut self,
+        views: &mut HashMap<ViewUuid, SelectionStatus>,
+        models: &mut HashSet<ModelUuid>,
+    );
 
     // Create a deep copy, including the models
     fn deep_copy_walk(
@@ -878,6 +941,7 @@ pub struct DiagramControllerGen2<
     >,
     event_order: Vec<ViewUuid>,
     all_elements: HashMap<ViewUuid, SelectionStatus>,
+    represented_models: HashSet<ModelUuid>,
     clipboard_elements: HashMap<ViewUuid, Arc<
             RwLock<
                 dyn ElementControllerGen2<
@@ -989,6 +1053,7 @@ where
             owned_controllers,
             event_order,
             all_elements: HashMap::new(),
+            represented_models: HashSet::new(),
             clipboard_elements: HashMap::new(),
 
             _layers: vec![true],
@@ -1005,7 +1070,12 @@ where
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
         }));
+        // Bind self reference
         ret.write().unwrap().self_reference = Arc::downgrade(&ret);
+
+        // Unselect all elements to trigger head_count
+        ret.write().unwrap().apply_commands(vec![InsensitiveCommand::SelectAll(false).into()], &mut vec![], false, false);
+
         ret
     }
 
@@ -1324,9 +1394,10 @@ where
 
             if modifies_selection {
                 self.all_elements = HashMap::new();
+                self.represented_models = HashSet::new();
                 for (_uuid, c) in &self.owned_controllers {
                     let mut c = c.write().unwrap();
-                    c.head_count(&mut self.all_elements);
+                    c.head_count(&mut self.all_elements, &mut self.represented_models);
                 }
             }
         }
@@ -1556,6 +1627,10 @@ where
             >,
         )>,
 {
+    fn represented_models(&self) -> &HashSet<ModelUuid> {
+        &self.represented_models
+    }
+
     fn new_ui_canvas(
         &mut self,
         context: &DrawingContext,
@@ -2909,16 +2984,21 @@ where
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
-        into.insert(*self.uuid, self.highlight.selected.into());
+    fn head_count(
+        &mut self,
+        views: &mut HashMap<ViewUuid, SelectionStatus>,
+        models: &mut HashSet<ModelUuid>,
+    ) {
+        views.insert(*self.uuid, self.highlight.selected.into());
+        models.insert(*self.adapter.model_uuid());
 
         self.all_elements.clear();
         for e in &self.owned_controllers {
             let mut e = e.1.write().unwrap();
-            e.head_count(&mut self.all_elements);
+            e.head_count(&mut self.all_elements, models);
         }
         for e in &self.all_elements {
-            into.insert(*e.0, match *e.1 {
+            views.insert(*e.0, match *e.1 {
                 SelectionStatus::NotSelected if self.highlight.selected => SelectionStatus::TransitivelySelected,
                 e => e,
             });
@@ -3853,11 +3933,16 @@ where
         }
     }
 
-    fn head_count(&mut self, into: &mut HashMap<ViewUuid, SelectionStatus>) {
-        into.insert(*self.uuid, self.highlight.selected.into());
+    fn head_count(
+        &mut self,
+        views: &mut HashMap<ViewUuid, SelectionStatus>,
+        models: &mut HashSet<ModelUuid>,
+    ) {
+        views.insert(*self.uuid, self.highlight.selected.into());
+        models.insert(*self.adapter.model_uuid());
 
         for e in self.all_vertices() {
-            into.insert(e.0, match self.selected_vertices.contains(&e.0) {
+            views.insert(e.0, match self.selected_vertices.contains(&e.0) {
                 true => SelectionStatus::Selected,
                 false if self.highlight.selected => SelectionStatus::TransitivelySelected,
                 false => SelectionStatus::NotSelected,

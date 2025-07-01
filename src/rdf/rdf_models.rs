@@ -1,4 +1,4 @@
-use crate::common::controller::{ContainerModel, Model};
+use crate::common::controller::{ContainerModel, Model, StructuralVisitor};
 use crate::common::project_serde::{NHDeserializeEntity, NHDeserializeError, NHDeserializer, NHSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::ModelUuid;
 use std::{
@@ -94,6 +94,14 @@ impl Model for RdfElement {
             RdfElement::RdfPredicate(rw_lock) => rw_lock.read().unwrap().name(),
         }
     }
+
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
+        match self {
+            RdfElement::RdfGraph(rw_lock) => rw_lock.read().unwrap().accept(v),
+            RdfElement::RdfTargettable(rdf_targettable_element) => rdf_targettable_element.accept(v),
+            RdfElement::RdfPredicate(rw_lock) => rw_lock.read().unwrap().accept(v),
+        }
+    }
 }
 
 impl Model for RdfTargettableElement {
@@ -108,6 +116,13 @@ impl Model for RdfTargettableElement {
         match self {
             RdfTargettableElement::RdfLiteral(rw_lock) => rw_lock.read().unwrap().name(),
             RdfTargettableElement::RdfNode(rw_lock) => rw_lock.read().unwrap().name(),
+        }
+    }
+
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
+        match self {
+            RdfTargettableElement::RdfLiteral(rw_lock) => rw_lock.read().unwrap().accept(v),
+            RdfTargettableElement::RdfNode(rw_lock) => rw_lock.read().unwrap().accept(v),
         }
     }
 }
@@ -182,6 +197,13 @@ impl Model for RdfDiagram {
     }
     fn name(&self) -> Arc<String> {
         self.name.clone()
+    }
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
+        v.open_complex(self);
+        for e in &self.contained_elements {
+            e.accept(v);
+        }
+        v.close_complex(self);
     }
 }
 
@@ -318,6 +340,13 @@ impl Model for RdfGraph {
     }
     fn name(&self) -> Arc<String> {
         self.iri.clone()
+    }
+    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
+        v.open_complex(self);
+        for e in &self.contained_elements {
+            e.accept(v);
+        }
+        v.close_complex(self);
     }
 }
 
