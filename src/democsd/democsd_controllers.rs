@@ -670,7 +670,7 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
                 self.current_stage = DemoCsdToolStage::PackageEnd;
                 self.event_lock = true;
             }
-            (DemoCsdToolStage::PackageEnd, PartialDemoCsdElement::Package { ref mut b, .. }) => {
+            (DemoCsdToolStage::PackageEnd, PartialDemoCsdElement::Package { b, .. }) => {
                 *b = Some(pos)
             }
             (DemoCsdToolStage::Note, _) => {}
@@ -701,7 +701,7 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
                 }
             }
             KindedDemoCsdElement::Bank { inner } => match (self.current_stage, &mut self.result) {
-                (DemoCsdToolStage::LinkEnd, PartialDemoCsdElement::Link { ref mut dest, .. }) => {
+                (DemoCsdToolStage::LinkEnd, PartialDemoCsdElement::Link { dest, .. }) => {
                     *dest = Some(inner.model.clone());
                     self.event_lock = true;
                 }

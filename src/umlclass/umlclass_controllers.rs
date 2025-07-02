@@ -711,7 +711,7 @@ impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassP
                 self.current_stage = UmlClassToolStage::PackageEnd;
                 self.event_lock = true;
             }
-            (UmlClassToolStage::PackageEnd, PartialUmlClassElement::Package { ref mut b, .. }) => {
+            (UmlClassToolStage::PackageEnd, PartialUmlClassElement::Package { b, .. }) => {
                 *b = Some(pos);
                 self.event_lock = true;
             }
@@ -741,7 +741,7 @@ impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassP
                     }
                     (
                         UmlClassToolStage::LinkEnd,
-                        PartialUmlClassElement::Link { ref mut dest, .. },
+                        PartialUmlClassElement::Link { dest, .. },
                     ) => {
                         *dest = Some(inner.model.clone());
                         self.event_lock = true;

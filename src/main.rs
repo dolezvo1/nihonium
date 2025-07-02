@@ -62,7 +62,9 @@ macro_rules! unit_slider {
 }
 
 fn main() -> eframe::Result<()> {
-    std::env::set_var("RUST_BACKTRACE", "1");
+    unsafe {
+        std::env::set_var("RUST_BACKTRACE", "1");
+    }
     let options = NativeOptions {
         viewport: ViewportBuilder::default().with_inner_size(vec2(1024.0, 1024.0)),
         ..Default::default()
@@ -114,7 +116,7 @@ pub trait CustomTab {
 struct NHContext {
     project_path: Option<std::path::PathBuf>,
     pub diagram_controllers: HashMap<ViewUuid, (usize, Arc<RwLock<dyn DiagramController>>)>,
-    hierarchy: HierarchyNode,
+    project_hierarchy: HierarchyNode,
     tree_view_state: TreeViewState<ViewUuid>,
     model_hierarchy_views: HashMap<ModelUuid, Box<dyn ModelHierarchyView>>,
     new_diagram_no: u32,
@@ -206,7 +208,7 @@ impl TabViewer for NHContext {
 
 impl NHContext {
     fn export_project(&self) -> Result<String, NHSerializeError> {
-        let HierarchyNode::Folder(.., children) = &self.hierarchy else {
+        let HierarchyNode::Folder(.., children) = &self.project_hierarchy else {
             return Err(NHSerializeError::StructureError("invalid hierarchy root".into()))
         };
 
@@ -234,7 +236,7 @@ impl NHContext {
     fn clear_project_data(&mut self) {
         self.project_path = None;
         self.diagram_controllers.clear();
-        self.hierarchy = HierarchyNode::Folder(uuid::Uuid::nil().into(), "root".to_owned().into(), vec![]);
+        self.project_hierarchy = HierarchyNode::Folder(uuid::Uuid::nil().into(), "root".to_owned().into(), vec![]);
         self.new_diagram_no = 1;
         self.custom_tabs.clear();
 
@@ -259,40 +261,56 @@ impl NHContext {
     }
 
     fn project_hierarchy(&mut self, ui: &mut Ui) {
-        let mut collapse_all = None;
+        enum ContextMenuAction {
+            NewFolder(ViewUuid),
+            RecCollapseAt(bool, ViewUuid),
+            Delete(ViewUuid),
+        }
+
+        let mut context_menu_actions = vec![];
 
         ui.horizontal(|ui| {
             if ui.button("New folder").clicked() {
-                if let HierarchyNode::Folder(.., children) = &mut self.hierarchy {
-                    children.push(HierarchyNode::Folder(
-                        uuid::Uuid::now_v7().into(),
-                        Arc::new("New folder".to_owned()),
-                        vec![],
-                    ));
-                }
+                context_menu_actions.push(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
             }
             if ui.button("Collapse all").clicked() {
-                collapse_all = Some(true);
+                context_menu_actions.push(ContextMenuAction::RecCollapseAt(true, uuid::Uuid::nil().into()));
             }
             if ui.button("Uncollapse all").clicked() {
-                collapse_all = Some(false);
+                context_menu_actions.push(ContextMenuAction::RecCollapseAt(false, uuid::Uuid::nil().into()));
             }
         });
 
-        if let Some(b) = collapse_all {
-            self.hierarchy.for_each(|e| self.tree_view_state.set_openness(&e.uuid(), !b));
-        }
-
-        fn hierarchy(builder: &mut egui_ltreeview::TreeViewBuilder<ViewUuid>, hn: &HierarchyNode) {
+        fn hierarchy(builder: &mut egui_ltreeview::TreeViewBuilder<ViewUuid>, hn: &HierarchyNode, cma: &mut Vec<ContextMenuAction>) {
             match hn {
                 HierarchyNode::Folder(uuid, name, children) => {
                     builder.node(
                         NodeBuilder::dir(*uuid)
                             .label(format!("{} ({})", name, uuid.to_string()))
+                            .context_menu(|ui| {
+                                if ui.button("New Folder").clicked() {
+                                    cma.push(ContextMenuAction::NewFolder(*uuid));
+                                    ui.close_menu();
+                                }
+                                ui.separator();
+                                if ui.button("Collapse children").clicked() {
+                                    cma.push(ContextMenuAction::RecCollapseAt(true, *uuid));
+                                    ui.close_menu();
+                                }
+                                if ui.button("Uncollapse children").clicked() {
+                                    cma.push(ContextMenuAction::RecCollapseAt(false, *uuid));
+                                    ui.close_menu();
+                                }
+                                ui.separator();
+                                if ui.button("Delete").clicked() {
+                                    cma.push(ContextMenuAction::Delete(*uuid));
+                                    ui.close_menu();
+                                }
+                            })
                     );
 
                     for c in children {
-                        hierarchy(builder, c);
+                        hierarchy(builder, c, cma);
                     }
 
                     builder.close_dir();
@@ -314,21 +332,21 @@ impl NHContext {
                     ui,
                     &mut self.tree_view_state,
                     |builder| {
-                        hierarchy(builder, &self.hierarchy);
+                        hierarchy(builder, &self.project_hierarchy, &mut context_menu_actions);
                     }
                 );
 
                 for action in actions.into_iter() {
                     match action {
                         egui_ltreeview::Action::Move(dnd) => {
-                            let target_is_folder = matches!(self.hierarchy.get(&dnd.target), Some((HierarchyNode::Folder(..), _)));
+                            let target_is_folder = matches!(self.project_hierarchy.get(&dnd.target), Some((HierarchyNode::Folder(..), _)));
 
                             for source_id in &dnd.source {
-                                if let Some((source_node, source_node_parent)) = self.hierarchy.get(source_id) {
+                                if let Some((source_node, source_node_parent)) = self.project_hierarchy.get(source_id) {
                                     if (target_is_folder && matches!(source_node, HierarchyNode::Folder(..) | HierarchyNode::Diagram(..)))
                                         || dnd.target == source_node_parent.uuid() {
-                                        if let Some(source) = self.hierarchy.remove(source_id) {
-                                            _ = self.hierarchy.insert(&dnd.target, dnd.position, source);
+                                        if let Some(source) = self.project_hierarchy.remove(source_id) {
+                                            _ = self.project_hierarchy.insert(&dnd.target, dnd.position, source);
                                         }
                                     }
                                 }
@@ -336,7 +354,7 @@ impl NHContext {
                         }
                         egui_ltreeview::Action::Activate(a) => {
                             for selected in &a.selected {
-                                match self.hierarchy.get(selected) {
+                                match self.project_hierarchy.get(selected) {
                                     Some((HierarchyNode::Diagram(..), _)) => {
                                         commands.push(ProjectCommand::OpenAndFocusDiagram(*selected));
                                     }
@@ -349,6 +367,26 @@ impl NHContext {
                     }
                 }
             });
+
+        for c in context_menu_actions {
+            match c {
+                ContextMenuAction::NewFolder(view_uuid) => {
+                    self.project_hierarchy.insert(
+                        &view_uuid,
+                        egui_ltreeview::DirPosition::Last,
+                        HierarchyNode::Folder(uuid::Uuid::now_v7().into(), Arc::new("New folder".into()), vec![]),
+                    );
+                },
+                ContextMenuAction::RecCollapseAt(b, view_uuid) => {
+                    if let Some(e) = self.project_hierarchy.get(&view_uuid) {
+                        e.0.for_each(|e| self.tree_view_state.set_openness(&e.uuid(), !b));
+                    }
+                },
+                ContextMenuAction::Delete(view_uuid) => {
+                    self.project_hierarchy.remove(&view_uuid);
+                },
+            }
+        }
 
         self.unprocessed_commands.extend(commands.into_iter());
     }
@@ -944,7 +982,7 @@ impl Default for NHApp {
         let mut context = NHContext {
             project_path: None,
             diagram_controllers,
-            hierarchy: HierarchyNode::Folder(uuid::Uuid::nil().into(), Arc::new("root".to_owned()), hierarchy),
+            project_hierarchy: HierarchyNode::Folder(uuid::Uuid::nil().into(), Arc::new("root".to_owned()), hierarchy),
             tree_view_state: TreeViewState::default(),
             model_hierarchy_views,
             new_diagram_no: 4,
@@ -1670,7 +1708,7 @@ impl eframe::App for NHApp {
                 ProjectCommand::SetSvgExportMenu(sem) => self.context.svg_export_menu = sem,
                 ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
                 ProjectCommand::AddNewDiagram(uuid, diagram_type, diagram_controller) => {
-                    if let HierarchyNode::Folder(.., children) = &mut self.context.hierarchy {
+                    if let HierarchyNode::Folder(.., children) = &mut self.context.project_hierarchy {
                         children.push(HierarchyNode::Diagram(diagram_controller.clone()));
                     }
                     self.context

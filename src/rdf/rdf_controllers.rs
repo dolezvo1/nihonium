@@ -856,7 +856,7 @@ impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for Naive
                 self.current_stage = RdfToolStage::GraphEnd;
                 self.event_lock = true;
             }
-            (RdfToolStage::GraphEnd, PartialRdfElement::Graph { ref mut b, .. }) => *b = Some(pos),
+            (RdfToolStage::GraphEnd, PartialRdfElement::Graph { b, .. }) => *b = Some(pos),
             (RdfToolStage::Note, _) => {}
             _ => {}
         }
@@ -870,7 +870,7 @@ impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for Naive
             KindedRdfElement::Diagram { .. } => {}
             KindedRdfElement::Graph { .. } => {}
             KindedRdfElement::Literal { inner } => match (self.current_stage, &mut self.result) {
-                (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { ref mut dest, .. }) => {
+                (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) => {
                     *dest = Some(RdfTargettableElement::from(inner.model.clone()).into());
                     self.event_lock = true;
                 }
@@ -886,7 +886,7 @@ impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for Naive
                     self.current_stage = RdfToolStage::PredicateEnd;
                     self.event_lock = true;
                 }
-                (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { ref mut dest, .. }) => {
+                (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) => {
                     *dest = Some(RdfTargettableElement::from(inner.model.clone()).into());
                 }
                 _ => {}
