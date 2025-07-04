@@ -1583,8 +1583,16 @@ impl
         models.insert(*self.model_uuid());
 
         if let Some(t) = &self.transaction_view {
+            let mut views_tx = HashMap::new();
             let mut t = t.write().unwrap();
-            t.head_count(views, models);
+            t.head_count(&mut views_tx, models);
+
+            for e in views_tx {
+                views.insert(e.0, match e.1 {
+                    SelectionStatus::NotSelected if self.highlight.selected => SelectionStatus::TransitivelySelected,
+                    e => e,
+                });
+            }
         }
     }
     
