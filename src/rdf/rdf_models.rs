@@ -57,7 +57,7 @@ impl RdfElement {
                     let s = model.source.read().unwrap();
                     s.term_repr()
                 };
-                let object = model.destination.term_repr();
+                let object = model.target.term_repr();
 
                 collector.add_triple([
                     subject,
@@ -144,6 +144,132 @@ impl NHSerialize for RdfTargettableElement {
             RdfTargettableElement::RdfNode(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
         }
     }
+}
+
+pub fn deep_copy_diagram(d: &RdfDiagram) -> (Arc<RwLock<RdfDiagram>>, HashMap<ModelUuid, RdfElement>) {
+    fn walk(e: &RdfElement, into: &mut HashMap<ModelUuid, RdfElement>) -> RdfElement {
+        let new_uuid = Arc::new(uuid::Uuid::now_v7().into());
+        match e {
+            RdfElement::RdfGraph(rw_lock) => {
+                let model = rw_lock.read().unwrap();
+
+                let new_model = RdfGraph {
+                    uuid: new_uuid,
+                    iri: model.iri.clone(),
+                    contained_elements: model.contained_elements.iter().map(|e| {
+                        let new_model = walk(e, into);
+                        into.insert(*e.uuid(), new_model.clone());
+                        new_model
+                    }).collect(),
+                    comment: model.comment.clone()
+                };
+                RdfElement::RdfGraph(Arc::new(RwLock::new(new_model)))
+            },
+            RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(rw_lock)) => {
+                let model = rw_lock.read().unwrap();
+
+                let new_model = RdfLiteral {
+                    uuid: new_uuid,
+                    content: model.content.clone(),
+                    datatype: model.datatype.clone(),
+                    langtag: model.langtag.clone(),
+                    comment: model.comment.clone(),
+                };
+                RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(Arc::new(RwLock::new(new_model))))
+            },
+            RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(rw_lock)) => {
+                let model = rw_lock.read().unwrap();
+
+                let new_model = RdfNode {
+                    uuid: new_uuid,
+                    iri: model.iri.clone(),
+                    comment: model.comment.clone(),
+                };
+                RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(Arc::new(RwLock::new(new_model))))
+            },
+            RdfElement::RdfPredicate(rw_lock) => {
+                let model = rw_lock.read().unwrap();
+
+                let new_model = RdfPredicate {
+                    uuid: new_uuid,
+                    iri: model.iri.clone(),
+                    source: model.source.clone(),
+                    target: model.target.clone(),
+                    comment: model.comment.clone(),
+                };
+                RdfElement::RdfPredicate(Arc::new(RwLock::new(new_model)))
+            },
+        }
+    }
+
+    fn relink(e: &mut RdfElement, all_models: &HashMap<ModelUuid, RdfElement>) {
+        match e {
+            RdfElement::RdfGraph(rw_lock) => {
+                let mut model = rw_lock.write().unwrap();
+                for e in model.contained_elements.iter_mut() {
+                    relink(e, all_models);
+                }
+            }
+            RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(rw_lock)) => {},
+            RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(rw_lock)) => {},
+            RdfElement::RdfPredicate(rw_lock) => {
+                let mut model = rw_lock.write().unwrap();
+
+                let source_uuid = *model.source.read().unwrap().uuid;
+                if let Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(n))) = all_models.get(&source_uuid) {
+                    model.source = n.clone();
+                }
+                let target_uuid = *model.target.uuid();
+                if let Some(RdfElement::RdfTargettable(t)) = all_models.get(&target_uuid) {
+                    model.target = t.clone();
+                }
+            },
+        }
+    }
+
+    let mut all_models = HashMap::new();
+    let mut new_contained_elements = Vec::new();
+    for e in &d.contained_elements {
+        let new_model = walk(&e, &mut all_models);
+        all_models.insert(*e.uuid(), new_model.clone());
+        new_contained_elements.push(new_model);
+    }
+    for e in new_contained_elements.iter_mut() {
+        relink(e, &all_models);
+    }
+
+    let new_diagram = RdfDiagram {
+        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        name: d.name.clone(),
+        contained_elements: new_contained_elements,
+        comment: d.comment.clone(),
+        stored_queries: d.stored_queries.iter().map(|e| (uuid::Uuid::now_v7(), e.1.clone())).collect(),
+    };
+    (Arc::new(RwLock::new(new_diagram)), all_models)
+}
+
+pub fn fake_copy_diagram(d: &RdfDiagram) -> HashMap<ModelUuid, RdfElement> {
+    fn walk(e: &RdfElement, into: &mut HashMap<ModelUuid, RdfElement>) {
+        match e {
+            RdfElement::RdfGraph(rw_lock) => {
+                let model = rw_lock.read().unwrap();
+
+                for e in &model.contained_elements {
+                    walk(e, into);
+                    into.insert(*e.uuid(), e.clone());
+                }
+            },
+            _ => {},
+        }
+    }
+
+    let mut all_models = HashMap::new();
+    for e in &d.contained_elements {
+        walk(e, &mut all_models);
+        all_models.insert(*e.uuid(), e.clone());
+    }
+
+    all_models
 }
 
 pub struct RdfDiagram {
@@ -503,7 +629,7 @@ pub struct RdfPredicate {
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
     pub source: Arc<RwLock<RdfNode>>,
-    pub destination: RdfTargettableElement,
+    pub target: RdfTargettableElement,
 
     pub comment: Arc<String>,
 }
@@ -519,7 +645,7 @@ impl RdfPredicate {
             uuid: Arc::new(uuid),
             iri: Arc::new(iri),
             source,
-            destination,
+            target: destination,
             comment: Arc::new("".to_owned()),
         }
     }
@@ -545,7 +671,7 @@ impl NHSerialize for RdfPredicate {
         element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
         element.insert("iri".to_owned(), toml::Value::String((*self.iri).clone()));
         element.insert("source".to_owned(), toml::Value::String(self.source.read().unwrap().uuid().to_string()));
-        element.insert("destination".to_owned(), toml::Value::String(self.destination.uuid().to_string()));
+        element.insert("destination".to_owned(), toml::Value::String(self.target.uuid().to_string()));
         element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
         into.insert_model(*self.uuid, element);
 

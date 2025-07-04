@@ -182,7 +182,9 @@ pub enum ProjectCommand {
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetSvgExportMenu(Option<(usize, Arc<RwLock<dyn DiagramController>>, std::path::PathBuf, usize, bool, bool, f32, f32)>),
     SetNewDiagramNumber(u32),
-    AddNewDiagram(ViewUuid, usize, Arc<RwLock<dyn DiagramController>>),
+    AddNewDiagram(usize, Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>),
+    CopyDiagram(ViewUuid, /*deep:*/ bool),
+    DeleteDiagram(ViewUuid),
 }
 
 impl From<SimpleProjectCommand> for ProjectCommand {
@@ -420,6 +422,11 @@ pub trait DiagramController: Any + View + NHSerialize {
     //}
 
     fn apply_command(&mut self, command: DiagramCommand, global_undo: &mut Vec<Arc<String>>);
+
+    /// Create new view with new model
+    fn deep_copy(&self) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>);
+    /// Create new view with the same model
+    fn shallow_copy(&self) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>);
 }
 
 pub trait ElementController<CommonElementT>: View {
@@ -845,7 +852,7 @@ pub trait ElementControllerGen2<
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, CommonElementT>,
+        m: &mut HashMap<ModelUuid, CommonElementT>,
     ) {
         if requested.is_none_or(|e| e.contains(&self.uuid())) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
@@ -861,7 +868,7 @@ pub trait ElementControllerGen2<
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, CommonElementT>,
+        m: &mut HashMap<ModelUuid, CommonElementT>,
     );
     fn deep_copy_relink(
         &mut self,
@@ -869,7 +876,7 @@ pub trait ElementControllerGen2<
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &HashMap<usize, CommonElementT>,
+        m: &HashMap<ModelUuid, CommonElementT>,
     ) {}
 }
 
@@ -907,6 +914,9 @@ pub trait DiagramAdapter<
     );
     fn tool_change_fun(&self, tool: &mut Option<ToolT>, ui: &mut egui::Ui);
     fn menubar_options_fun(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
+
+    fn deep_copy(&self) -> (Self, HashMap<ModelUuid, CommonElementT>);
+    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, CommonElementT>);
 }
 
 /// This is a generic DiagramController implementation.
@@ -1192,14 +1202,20 @@ where
 
     fn set_clipboard_from_selected(&mut self) {
         let selected = self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect();
-        self.clipboard_elements = Self::element_deep_copy(
+        self.clipboard_elements = Self::elements_deep_copy(
             Some(&selected),
-            self.owned_controllers.iter().map(|e| (*e.0, e.1.clone())),
             |_| false,
+            HashMap::new(),
+            self.owned_controllers.iter().map(|e| (*e.0, e.1.clone())),
         );
     }
 
-    fn element_deep_copy<F, P>(requested: Option<&HashSet<ViewUuid>>, from: F, uuid_present: P) -> HashMap<ViewUuid, Arc<RwLock<
+    fn elements_deep_copy<VI>(
+        requested: Option<&HashSet<ViewUuid>>,
+        view_uuid_present: impl Fn(&ViewUuid) -> bool,
+        existing_models: HashMap<ModelUuid, CommonElementT>,
+        source_views: VI,
+    ) -> HashMap<ViewUuid, Arc<RwLock<
                     dyn ElementControllerGen2<
                         CommonElementT,
                         QueryableT,
@@ -1209,7 +1225,7 @@ where
                     >,
                 >>>
         where
-            F: Iterator<Item=(ViewUuid, Arc<RwLock<
+            VI: Iterator<Item=(ViewUuid, Arc<RwLock<
                     dyn ElementControllerGen2<
                         CommonElementT,
                         QueryableT,
@@ -1218,15 +1234,14 @@ where
                         PropChangeT,
                     >,
                 >>)>,
-            P: Fn(&ViewUuid) -> bool,
     {
         let mut top_level_views = HashMap::new();
         let mut views = HashMap::new();
-        let mut models = HashMap::new();
+        let mut models = existing_models;
 
-        for (_uuid, c) in from {
+        for (_uuid, c) in source_views {
             let c = c.read().unwrap();
-            c.deep_copy_walk(requested, &uuid_present, &mut top_level_views, &mut views, &mut models);
+            c.deep_copy_walk(requested, &view_uuid_present, &mut top_level_views, &mut views, &mut models);
         }
         for (_usize, (_uuid, v1, v2)) in views.iter() {
             let mut v1 = v1.write().unwrap();
@@ -1247,10 +1262,11 @@ where
             // TODO: transitive closure of dependency when deleting elements
             let command = command.to_selection_insensitive(
                 || self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
-                || Self::element_deep_copy(
+                || Self::elements_deep_copy(
                     None,
-                    self.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
                     |e| self.all_elements.get(e).is_some(),
+                    HashMap::new(),
+                    self.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
                     ).into_iter().map(|e| e.into()).collect(),
             );
 
@@ -1401,6 +1417,26 @@ where
                 }
             }
         }
+    }
+
+    fn some_kind_of_copy(
+        &self,
+        new_adapter: DiagramAdapterT,
+        models: HashMap<ModelUuid, CommonElementT>
+    ) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
+        let new_diagram_view = Self::new(
+            Arc::new(uuid::Uuid::now_v7().into()),
+            new_adapter,
+            Self::elements_deep_copy(
+                None,
+                |_| false,
+                models,
+                self.owned_controllers.iter().map(|e| (*e.0, e.1.clone())),
+            ).into_iter().map(|e| e.1).collect(),
+        );
+        let new_model_view = SimpleModelHierarchyView::new(new_diagram_view.read().unwrap().model());
+
+        (new_diagram_view, Arc::new(new_model_view))
     }
 }
 
@@ -1913,6 +1949,16 @@ where
             self.snap_manager.draw_best(canvas, context.profile, self.last_interactive_canvas_rect);
         }
     }
+
+    fn deep_copy(&self) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
+        let (new_adapter, models) = self.adapter.deep_copy();
+        self.some_kind_of_copy(new_adapter, models)
+    }
+
+    fn shallow_copy(&self) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
+        let (new_adapter, models) = self.adapter.fake_copy();
+        self.some_kind_of_copy(new_adapter, models)
+    }
 }
 
 impl<
@@ -2014,11 +2060,11 @@ pub trait PackageAdapter<
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, CommonElementT>,
+        m: &mut HashMap<ModelUuid, CommonElementT>,
     ) -> Self where Self: Sized;
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, CommonElementT>
+        m: &HashMap<ModelUuid, CommonElementT>
     );
 }
 
@@ -3016,7 +3062,7 @@ where
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, CommonElementT>,
+        m: &mut HashMap<ModelUuid, CommonElementT>,
     ) {
         if requested.is_none_or(|e| e.contains(&self.uuid)) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
@@ -3035,7 +3081,7 @@ where
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, CommonElementT>,
+        m: &mut HashMap<ModelUuid, CommonElementT>,
     ) {
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
@@ -3069,7 +3115,7 @@ where
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &HashMap<usize, CommonElementT>,
+        m: &HashMap<ModelUuid, CommonElementT>,
     ) {
         self.owned_controllers.iter().for_each(|e| e.1.write().unwrap().deep_copy_relink(c, m));
     }
@@ -3104,11 +3150,11 @@ pub trait MulticonnectionAdapter<
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, CommonElementT>,
+        m: &mut HashMap<ModelUuid, CommonElementT>,
     ) -> Self where Self: Sized;
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, CommonElementT>,
+        m: &HashMap<ModelUuid, CommonElementT>,
     );
 }
 
@@ -3960,7 +4006,7 @@ where
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, CommonElementT>,
+        m: &mut HashMap<ModelUuid, CommonElementT>,
     ) {
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
@@ -3993,7 +4039,7 @@ where
             Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &HashMap<usize, CommonElementT>,
+        m: &HashMap<ModelUuid, CommonElementT>,
     ) {
         self.adapter.deep_copy_finish(m);
 

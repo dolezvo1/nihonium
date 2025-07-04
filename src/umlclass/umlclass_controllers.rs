@@ -157,6 +157,7 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
     ("UML Class diagram".to_owned(), c.0, c.1)
 }
 
+#[derive(Clone)]
 pub struct UmlClassDiagramAdapter {
     model: Arc<RwLock<UmlClassDiagram>>,
     name_buffer: String,
@@ -333,6 +334,22 @@ impl DiagramAdapter<UmlClassDiagram, UmlClassElement, NaiveUmlClassTool, UmlClas
         }
         ui.separator();
     }
+
+    fn deep_copy(&self) -> (Self, HashMap<ModelUuid, UmlClassElement>) {
+        let (new_model, models) = super::umlclass_models::deep_copy_diagram(&self.model.read().unwrap());
+        (
+            Self {
+                model: new_model,
+                ..self.clone()
+            },
+            models,
+        )
+    }
+
+    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, UmlClassElement>) {
+        let models = super::umlclass_models::fake_copy_diagram(&self.model.read().unwrap());
+        (self.clone(), models)
+    }
 }
 
 impl NHSerializeToScalar for UmlClassDiagramAdapter {
@@ -382,7 +399,7 @@ impl CustomTab for PlantUmlTab {
     }
 }
 
-pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
+pub fn new(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New UML class diagram {}", no);
@@ -392,9 +409,8 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn Mo
         vec![],
     )));
     (
-        view_uuid,
         DiagramControllerGen2::new(
-            view_uuid.into(),
+            Arc::new(view_uuid),
             UmlClassDiagramAdapter {
                 model: diagram.clone(),
                 name_buffer: name,
@@ -402,11 +418,11 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn Mo
             },
             Vec::new(),
         ),
-        Box::new(SimpleModelHierarchyView::new(diagram)),
+        Arc::new(SimpleModelHierarchyView::new(diagram)),
     )
 }
 
-pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
+pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
 
@@ -534,9 +550,8 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn M
         ],
     )));
     (
-        diagram_view_uuid,
         DiagramControllerGen2::new(
-            diagram_view_uuid.into(),
+            Arc::new(diagram_view_uuid),
             UmlClassDiagramAdapter {
                 model: diagram2.clone(),
                 name_buffer: name,
@@ -544,7 +559,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn M
             },
             owned_controllers,
         ),
-        Box::new(SimpleModelHierarchyView::new(diagram2)),
+        Arc::new(SimpleModelHierarchyView::new(diagram2)),
     )
 }
 
@@ -941,17 +956,24 @@ impl PackageAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, UmlClassElement>,
+        m: &mut HashMap<ModelUuid, UmlClassElement>,
     ) -> Self where Self: Sized {
-        let model = self.model.read().unwrap();
-        let model = Arc::new(RwLock::new(UmlClassPackage::new(new_uuid, (*model.name).clone(), model.contained_elements.clone())));
-        m.insert(arc_to_usize(&self.model), model.clone().into());
+        let old_model = self.model.read().unwrap();
+
+        let model = if let Some(UmlClassElement::UmlClassPackage(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = Arc::new(RwLock::new(UmlClassPackage::new(new_uuid, (*old_model.name).clone(), old_model.contained_elements.clone())));
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, UmlClassElement>,
+        m: &HashMap<ModelUuid, UmlClassElement>,
     ) {
         todo!()
     }
@@ -1449,17 +1471,24 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, UmlClassElement>,
+        m: &mut HashMap<ModelUuid, UmlClassElement>,
     ) {
-        let model = self.model.read().unwrap();
+        let old_model = self.model.read().unwrap();
+
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
         } else {
-            (*self.uuid, *model.uuid)
+            (*self.uuid, *old_model.uuid)
         };
-        let modelish = Arc::new(RwLock::new(UmlClass::new(model_uuid, model.stereotype, (*model.name).clone(), (*model.properties).clone(), (*model.functions).clone())));
-        m.insert(arc_to_usize(&self.model), modelish.clone().into());
-        
+
+        let modelish = if let Some(UmlClassElement::UmlClass(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = Arc::new(RwLock::new(UmlClass::new(model_uuid, old_model.stereotype, (*old_model.name).clone(), (*old_model.properties).clone(), (*old_model.functions).clone())));
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
         let mut cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
@@ -1675,25 +1704,34 @@ impl MulticonnectionAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPr
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, UmlClassElement>,
+        m: &mut HashMap<ModelUuid, UmlClassElement>,
     ) -> Self where Self: Sized {
-        let model = self.model.read().unwrap();
-        let model = Arc::new(RwLock::new(UmlClassLink::new(new_uuid, model.link_type, (*model.description).clone(), model.source.clone(), model.destination.clone())));
-        m.insert(arc_to_usize(&self.model), model.clone().into());
+        let old_model = self.model.read().unwrap();
+
+        let model = if let Some(UmlClassElement::UmlClassLink(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = Arc::new(RwLock::new(UmlClassLink::new(new_uuid, old_model.link_type, (*old_model.description).clone(), old_model.source.clone(), old_model.destination.clone())));
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, UmlClassElement>,
+        m: &HashMap<ModelUuid, UmlClassElement>,
     ) {
         let mut model = self.model.write().unwrap();
         
-        if let Some(UmlClassElement::UmlClass(new_source)) = m.get(&arc_to_usize(&model.source)) {
+        let source_uuid = *model.source.read().unwrap().uuid;
+        if let Some(UmlClassElement::UmlClass(new_source)) = m.get(&source_uuid) {
             model.source = new_source.clone();
         }
-        if let Some(UmlClassElement::UmlClass(new_dest)) = m.get(&arc_to_usize(&model.destination)) {
-            model.destination = new_dest.clone();
+        let target_uuid = *model.source.read().unwrap().uuid;
+        if let Some(UmlClassElement::UmlClass(new_target)) = m.get(&target_uuid) {
+            model.destination = new_target.clone();
         }
     }
 }

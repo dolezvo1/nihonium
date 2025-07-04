@@ -172,6 +172,7 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
     ("RDF diagram".to_owned(), c.0, c.1)
 }
 
+#[derive(Clone)]
 pub struct RdfDiagramAdapter {
     model: Arc<RwLock<RdfDiagram>>,
     name_buffer: String,
@@ -337,6 +338,22 @@ impl DiagramAdapter<RdfDiagram, RdfElement, NaiveRdfTool, RdfElementOrVertex, Rd
             // TODO: similar to the above?
         }
         ui.separator();
+    }
+
+    fn deep_copy(&self) -> (Self, HashMap<ModelUuid, RdfElement>) {
+        let (new_model, models) = super::rdf_models::deep_copy_diagram(&self.model.read().unwrap());
+        (
+            Self {
+                model: new_model,
+                ..self.clone()
+            },
+            models,
+        )
+    }
+
+    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, RdfElement>) {
+        let models = super::rdf_models::fake_copy_diagram(&self.model.read().unwrap());
+        (self.clone(), models)
     }
 }
 
@@ -542,7 +559,7 @@ impl CustomTab for SparqlQueriesTab {
     }
 }
 
-pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
+pub fn new(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New RDF diagram {}", no);
@@ -553,9 +570,8 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn Mo
         vec![],
     )));
     (
-        view_uuid,
         DiagramControllerGen2::new(
-            view_uuid.into(),
+            Arc::new(view_uuid),
             RdfDiagramAdapter {
                 model: diagram.clone(),
                 name_buffer: name,
@@ -563,11 +579,11 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn Mo
             },
             Vec::new(),
         ),
-        Box::new(SimpleModelHierarchyView::new(diagram)),
+        Arc::new(SimpleModelHierarchyView::new(diagram)),
     )
 }
 
-pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
+pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
     let (_, node, node_uuid, node_view) = rdf_node(
         "http://www.w3.org/People/EM/contact#me",
         egui::Pos2::new(300.0, 100.0),
@@ -661,9 +677,8 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn M
         ],
     )));
     (
-        view_uuid,
         DiagramControllerGen2::new(
-            view_uuid.into(),
+            Arc::new(view_uuid),
             RdfDiagramAdapter {
                 model: diagram.clone(),
                 name_buffer: name,
@@ -671,7 +686,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn M
             },
             owned_controllers,
         ),
-        Box::new(SimpleModelHierarchyView::new(diagram)),
+        Arc::new(SimpleModelHierarchyView::new(diagram)),
     )
 }
 
@@ -1082,17 +1097,23 @@ impl PackageAdapter<RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGraphA
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, RdfElement>,
+        m: &mut HashMap<ModelUuid, RdfElement>,
     ) -> Self where Self: Sized {
-        let model = self.model.read().unwrap();
-        let model = Arc::new(RwLock::new(RdfGraph::new(new_uuid, (*model.iri).clone(), model.contained_elements.clone())));
-        m.insert(arc_to_usize(&self.model), model.clone().into());
+        let old_model = self.model.read().unwrap();
+
+        let model = if let Some(RdfElement::RdfGraph(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = Arc::new(RwLock::new(RdfGraph::new(new_uuid, (*old_model.iri).clone(), old_model.contained_elements.clone())));
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, RdfElement>,
+        m: &HashMap<ModelUuid, RdfElement>,
     ) {
         todo!()
     }
@@ -1464,17 +1485,24 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, RdfElement>,
+        m: &mut HashMap<ModelUuid, RdfElement>,
     ) {
-        let model = self.model.read().unwrap();
+        let old_model = self.model.read().unwrap();
+
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
         } else {
-            (*self.uuid, *model.uuid)
+            (*self.uuid, *old_model.uuid)
         };
-        let modelish = Arc::new(RwLock::new(RdfNode::new(model_uuid, (*model.iri).clone())));
-        m.insert(arc_to_usize(&self.model), RdfTargettableElement::from(modelish.clone()).into());
-        
+
+        let modelish = if let Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(m))) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = Arc::new(RwLock::new(RdfNode::new(model_uuid, (*old_model.iri).clone())));
+            m.insert(*old_model.uuid, RdfTargettableElement::from(modelish.clone()).into());
+            modelish
+        };
+
         let cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
@@ -1840,17 +1868,24 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, RdfElement>,
+        m: &mut HashMap<ModelUuid, RdfElement>,
     ) {
-        let model = self.model.read().unwrap();
+        let old_model = self.model.read().unwrap();
+
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
         } else {
-            (*self.uuid, *model.uuid)
+            (*self.uuid, *old_model.uuid)
         };
-        let modelish = Arc::new(RwLock::new(RdfLiteral::new(model_uuid, (*model.content).clone(), (*model.datatype).clone(), (*model.langtag).clone())));
-        m.insert(arc_to_usize(&self.model), RdfTargettableElement::from(modelish.clone()).into());
-        
+
+        let modelish = if let Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(m))) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = Arc::new(RwLock::new(RdfLiteral::new(model_uuid, (*old_model.content).clone(), (*old_model.datatype).clone(), (*old_model.langtag).clone())));
+            m.insert(*old_model.uuid, RdfTargettableElement::from(modelish.clone()).into());
+            modelish
+        };
+
         let cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
@@ -1983,30 +2018,35 @@ impl MulticonnectionAdapter<RdfElement, RdfElementOrVertex, RdfPropChange> for R
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, RdfElement>
+        m: &mut HashMap<ModelUuid, RdfElement>
     ) -> Self where Self: Sized {
-        let model = self.model.read().unwrap();
-        let model = Arc::new(RwLock::new(RdfPredicate::new(new_uuid, (*model.iri).clone(), model.source.clone(), model.destination.clone())));
-        m.insert(arc_to_usize(&self.model), model.clone().into());
+        let old_model = self.model.read().unwrap();
+
+        let model = if let Some(RdfElement::RdfPredicate(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = Arc::new(RwLock::new(RdfPredicate::new(new_uuid, (*old_model.iri).clone(), old_model.source.clone(), old_model.target.clone())));
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, RdfElement>,
+        m: &HashMap<ModelUuid, RdfElement>,
     ) {
         let mut model = self.model.write().unwrap();
         
-        if let Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(new_source))) = m.get(&arc_to_usize(&model.source)) {
+        let source_uuid = *model.source.read().unwrap().uuid;
+        if let Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(new_source))) = m.get(&source_uuid) {
             model.source = new_source.clone();
         }
 
-        let model_usize = match &model.destination {
-            RdfTargettableElement::RdfLiteral(rw_lock) => arc_to_usize(&rw_lock),
-            RdfTargettableElement::RdfNode(rw_lock) => arc_to_usize(&rw_lock),
-        };
-        if let Some(RdfElement::RdfTargettable(new_dest)) = m.get(&model_usize) {
-            model.destination = new_dest.clone();
+        let target_uuid = *model.target.uuid();
+        if let Some(RdfElement::RdfTargettable(new_target)) = m.get(&target_uuid) {
+            model.target = new_target.clone();
         }
     }
 }

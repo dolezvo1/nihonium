@@ -146,6 +146,124 @@ impl NHSerialize for UmlClassElement {
     }
 }
 
+pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (Arc<RwLock<UmlClassDiagram>>, HashMap<ModelUuid, UmlClassElement>) {
+    fn walk(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClassElement>) -> UmlClassElement {
+        let new_uuid = Arc::new(uuid::Uuid::now_v7().into());
+        match e {
+            UmlClassElement::UmlClassPackage(rw_lock) => {
+                let model = rw_lock.read().unwrap();
+
+                let new_model = UmlClassPackage {
+                    uuid: new_uuid,
+                    name: model.name.clone(),
+                    contained_elements: model.contained_elements.iter().map(|e| {
+                        let new_model = walk(e, into);
+                        into.insert(*e.uuid(), new_model.clone());
+                        new_model
+                    }).collect(),
+                    comment: model.comment.clone()
+                };
+                UmlClassElement::UmlClassPackage(Arc::new(RwLock::new(new_model)))
+            },
+            UmlClassElement::UmlClass(rw_lock) => {
+                let model = rw_lock.read().unwrap();
+
+                let new_model = UmlClass {
+                    uuid: new_uuid,
+                    name: model.name.clone(),
+                    stereotype: model.stereotype.clone(),
+                    functions: model.functions.clone(),
+                    properties: model.properties.clone(),
+                    comment: model.comment.clone()
+                };
+                UmlClassElement::UmlClass(Arc::new(RwLock::new(new_model)))
+            },
+            UmlClassElement::UmlClassLink(rw_lock) => {
+                let model = rw_lock.read().unwrap();
+
+                let new_model = UmlClassLink {
+                    uuid: new_uuid,
+                    description: model.description.clone(),
+                    link_type: model.link_type,
+                    source: model.source.clone(),
+                    source_arrowhead_label: model.source_arrowhead_label.clone(),
+                    destination: model.destination.clone(),
+                    destination_arrowhead_label: model.destination_arrowhead_label.clone(),
+                    comment: model.comment.clone(),
+                };
+                UmlClassElement::UmlClassLink(Arc::new(RwLock::new(new_model)))
+            },
+        }
+    }
+
+    fn relink(e: &mut UmlClassElement, all_models: &HashMap<ModelUuid, UmlClassElement>) {
+        match e {
+            UmlClassElement::UmlClassPackage(rw_lock) => {
+                let mut model = rw_lock.write().unwrap();
+                for e in model.contained_elements.iter_mut() {
+                    relink(e, all_models);
+                }
+            },
+            UmlClassElement::UmlClass(rw_lock) => {},
+            UmlClassElement::UmlClassLink(rw_lock) => {
+                let mut model = rw_lock.write().unwrap();
+
+                let source_uuid = *model.source.read().unwrap().uuid;
+                if let Some(UmlClassElement::UmlClass(s)) = all_models.get(&source_uuid) {
+                    model.source = s.clone();
+                }
+                let target_uuid = *model.destination.read().unwrap().uuid;
+                if let Some(UmlClassElement::UmlClass(t)) = all_models.get(&target_uuid) {
+                    model.destination = t.clone();
+                }
+            },
+        }
+    }
+
+    let mut all_models = HashMap::new();
+    let mut new_contained_elements = Vec::new();
+    for e in &d.contained_elements {
+        let new_model = walk(&e, &mut all_models);
+        all_models.insert(*e.uuid(), new_model.clone());
+        new_contained_elements.push(new_model);
+    }
+    for e in new_contained_elements.iter_mut() {
+        relink(e, &all_models);
+    }
+
+    let new_diagram = UmlClassDiagram {
+        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        name: d.name.clone(),
+        contained_elements: new_contained_elements,
+        comment: d.comment.clone(),
+    };
+    (Arc::new(RwLock::new(new_diagram)), all_models)
+}
+
+pub fn fake_copy_diagram(d: &UmlClassDiagram) -> HashMap<ModelUuid, UmlClassElement> {
+    fn walk(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClassElement>) {
+        match e {
+            UmlClassElement::UmlClassPackage(rw_lock) => {
+                let model = rw_lock.read().unwrap();
+
+                for e in &model.contained_elements {
+                    walk(e, into);
+                    into.insert(*e.uuid(), e.clone());
+                }
+            },
+            _ => {},
+        }
+    }
+
+    let mut all_models = HashMap::new();
+    for e in &d.contained_elements {
+        walk(e, &mut all_models);
+        all_models.insert(*e.uuid(), e.clone());
+    }
+
+    all_models
+}
+
 pub struct UmlClassDiagram {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,

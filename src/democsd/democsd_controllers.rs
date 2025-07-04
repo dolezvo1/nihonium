@@ -154,6 +154,7 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
     ("DEMO CSD diagram".to_owned(), c.0, c.1)
 }
 
+#[derive(Clone)]
 pub struct DemoCsdDiagramAdapter {
     model: Arc<RwLock<DemoCsdDiagram>>,
     name_buffer: String,
@@ -318,6 +319,22 @@ impl DiagramAdapter<DemoCsdDiagram, DemoCsdElement, NaiveDemoCsdTool, DemoCsdEle
     }
 
     fn menubar_options_fun(&self, _ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {}
+
+    fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DemoCsdElement>) {
+        let (new_model, models) = super::democsd_models::deep_copy_diagram(&self.model.read().unwrap());
+        (
+            Self {
+                model: new_model,
+                ..self.clone()
+            },
+            models,
+        )
+    }
+
+    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DemoCsdElement>) {
+        let models = super::democsd_models::fake_copy_diagram(&self.model.read().unwrap());
+        (self.clone(), models)
+    }
 }
 
 impl NHSerializeToScalar for DemoCsdDiagramAdapter {
@@ -344,7 +361,7 @@ impl NHDeserializeScalar for DemoCsdDiagramAdapter {
     }
 }
 
-pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
+pub fn new(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New DEMO CSD diagram {}", no);
@@ -355,9 +372,8 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn Mo
         vec![],
     )));
     (
-        view_uuid,
         DiagramControllerGen2::new(
-            view_uuid.into(),
+            Arc::new(view_uuid),
             DemoCsdDiagramAdapter {
                 model: diagram.clone(),
                 name_buffer: name,
@@ -365,11 +381,11 @@ pub fn new(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn Mo
             },
             Vec::new(),
         ),
-        Box::new(SimpleModelHierarchyView::new(diagram)),
+        Arc::new(SimpleModelHierarchyView::new(diagram)),
     )
 }
 
-pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn ModelHierarchyView>) {
+pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
     let mut models: Vec<DemoCsdElement> = vec![];
     let mut controllers = Vec::<ArcRwLockControllerT>::new();
 
@@ -459,9 +475,8 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn M
             models,
         )));
         (
-            view_uuid,
             DiagramControllerGen2::new(
-                view_uuid.into(),
+                Arc::new(view_uuid),
                 DemoCsdDiagramAdapter {
                     model: diagram.clone(),
                     name_buffer: name,
@@ -469,7 +484,7 @@ pub fn demo(no: u32) -> (ViewUuid, Arc<RwLock<dyn DiagramController>>, Box<dyn M
                 },
                 controllers,
             ),
-            Box::new(SimpleModelHierarchyView::new(diagram)),
+            Arc::new(SimpleModelHierarchyView::new(diagram)),
         )
     }
 }
@@ -892,17 +907,23 @@ impl PackageAdapter<DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> f
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, DemoCsdElement>,
+        m: &mut HashMap<ModelUuid, DemoCsdElement>,
     ) -> Self where Self: Sized {
-        let model = self.model.read().unwrap();
-        let model = Arc::new(RwLock::new(DemoCsdPackage::new(new_uuid, (*model.name).clone(), model.contained_elements.clone())));
-        m.insert(arc_to_usize(&self.model), model.clone().into());
+        let model_uuid = *self.model.read().unwrap().uuid;
+        let model = if let Some(DemoCsdElement::DemoCsdPackage(m)) = m.get(&model_uuid) {
+            m.clone()
+        } else {
+            let model = self.model.read().unwrap();
+            let model = Arc::new(RwLock::new(DemoCsdPackage::new(new_uuid, (*model.name).clone(), model.contained_elements.clone())));
+            m.insert(model_uuid, model.clone().into());
+            model
+        };
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, DemoCsdElement>,
+        m: &HashMap<ModelUuid, DemoCsdElement>,
     ) {
         todo!()
     }
@@ -1578,7 +1599,7 @@ impl
             Arc<RwLock<dyn ElementControllerGen2<DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange>>>,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, DemoCsdElement>,
+        m: &mut HashMap<ModelUuid, DemoCsdElement>,
     ) {
         if requested.is_none_or(|e| e.contains(&self.uuid()) || self.transaction_view.as_ref().is_some_and(|t| e.contains(&t.read().unwrap().uuid()))) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
@@ -1592,7 +1613,7 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, DemoCsdElement>,
+        m: &mut HashMap<ModelUuid, DemoCsdElement>,
     ) {
         let tx_clone = if let Some(t) = self.transaction_view.as_ref() {
             let mut inner = HashMap::new();
@@ -1602,16 +1623,22 @@ impl
                 t.ok()
             } else { None }
         } else { None };
-        
-        let model = self.model.read().unwrap();
+
+        let old_model = self.model.read().unwrap();
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
         } else {
-            (*self.uuid, *model.uuid)
+            (*self.uuid, *old_model.uuid)
         };
-        let modelish = Arc::new(RwLock::new(DemoCsdTransactor::new(model_uuid, (*model.identifier).clone(), (*model.name).clone(), model.internal,
-            model.transaction.clone(), model.transaction_selfactivating)));
-        m.insert(arc_to_usize(&self.model), modelish.clone().into());
+
+        let modelish = if let Some(DemoCsdElement::DemoCsdTransactor(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = Arc::new(RwLock::new(DemoCsdTransactor::new(model_uuid, (*old_model.identifier).clone(), (*old_model.name).clone(), old_model.internal,
+            old_model.transaction.clone(), old_model.transaction_selfactivating)));
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
         
         let cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
@@ -1638,7 +1665,7 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &HashMap<usize, DemoCsdElement>,
+        m: &HashMap<ModelUuid, DemoCsdElement>,
     ) {
         if let Some((_, _, new_ta)) = self.transaction_view.as_ref().and_then(|e| c.get(&arc_to_usize(e)))  {
             let new_ta: Result<Arc<RwLock<DemoCsdTransactionView>>, _> = Arc::downcast(new_ta.clone());
@@ -2085,17 +2112,23 @@ impl
             ArcRwLockControllerT,
             Arc<dyn Any + Send + Sync>,
         )>,
-        m: &mut HashMap<usize, DemoCsdElement>
+        m: &mut HashMap<ModelUuid, DemoCsdElement>
     ) {
-        let model = self.model.read().unwrap();
+        let old_model = self.model.read().unwrap();
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
         } else {
-            (*self.uuid, *model.uuid)
+            (*self.uuid, *old_model.uuid)
         };
-        let modelish = Arc::new(RwLock::new(DemoCsdTransaction::new(model_uuid, (*model.identifier).clone(), (*model.name).clone())));
-        m.insert(arc_to_usize(&self.model), modelish.clone().into());
-        
+
+        let modelish = if let Some(DemoCsdElement::DemoCsdTransaction(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = Arc::new(RwLock::new(DemoCsdTransaction::new(model_uuid, (*old_model.identifier).clone(), (*old_model.name).clone())));
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
         let cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
@@ -2236,25 +2269,34 @@ impl MulticonnectionAdapter<DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropC
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<usize, DemoCsdElement>
+        m: &mut HashMap<ModelUuid, DemoCsdElement>
     ) -> Self where Self: Sized {
-        let model = self.model.read().unwrap();
-        let model = Arc::new(RwLock::new(DemoCsdLink::new(new_uuid, model.link_type, model.source.clone(), model.target.clone())));
-        m.insert(arc_to_usize(&self.model), model.clone().into());
+        let model_uuid = *self.model.read().unwrap().uuid;
+        let model = if let Some(DemoCsdElement::DemoCsdLink(m)) = m.get(&model_uuid) {
+            m.clone()
+        } else {
+            let model = self.model.read().unwrap();
+            let model = Arc::new(RwLock::new(DemoCsdLink::new(new_uuid, model.link_type, model.source.clone(), model.target.clone())));
+            m.insert(model_uuid, model.clone().into());
+            model
+        };
         Self { model }
     }
 
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<usize, DemoCsdElement>
+        m: &HashMap<ModelUuid, DemoCsdElement>
     ) {
         let mut model = self.model.write().unwrap();
         
-        if let Some(DemoCsdElement::DemoCsdTransactor(new_source)) = m.get(&arc_to_usize(&model.source)) {
+        let source_uuid = *model.source.read().unwrap().uuid;
+        if let Some(DemoCsdElement::DemoCsdTransactor(new_source)) = m.get(&source_uuid) {
             model.source = new_source.clone();
         }
-        if let Some(DemoCsdElement::DemoCsdTransaction(new_dest)) = m.get(&arc_to_usize(&model.target)) {
-            model.target = new_dest.clone();
+
+        let target_uuid = *model.target.read().unwrap().uuid;
+        if let Some(DemoCsdElement::DemoCsdTransaction(new_target)) = m.get(&target_uuid) {
+            model.target = new_target.clone();
         }
     }
 }

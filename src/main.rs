@@ -118,7 +118,7 @@ struct NHContext {
     pub diagram_controllers: HashMap<ViewUuid, (usize, Arc<RwLock<dyn DiagramController>>)>,
     project_hierarchy: HierarchyNode,
     tree_view_state: TreeViewState<ViewUuid>,
-    model_hierarchy_views: HashMap<ModelUuid, Box<dyn ModelHierarchyView>>,
+    model_hierarchy_views: HashMap<ModelUuid, Arc<dyn ModelHierarchyView>>,
     new_diagram_no: u32,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
 
@@ -264,24 +264,28 @@ impl NHContext {
         enum ContextMenuAction {
             NewFolder(ViewUuid),
             RecCollapseAt(bool, ViewUuid),
-            Delete(ViewUuid),
+            DeleteFolder(ViewUuid),
+            OpenDiagram(ViewUuid),
+            DuplicateDeep(ViewUuid),
+            DuplicateShallow(ViewUuid),
+            DeleteDiagram(ViewUuid),
         }
 
-        let mut context_menu_actions = vec![];
+        let mut context_menu_action = None;
 
         ui.horizontal(|ui| {
             if ui.button("New folder").clicked() {
-                context_menu_actions.push(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
+                context_menu_action = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
             }
             if ui.button("Collapse all").clicked() {
-                context_menu_actions.push(ContextMenuAction::RecCollapseAt(true, uuid::Uuid::nil().into()));
+                context_menu_action = Some(ContextMenuAction::RecCollapseAt(true, uuid::Uuid::nil().into()));
             }
             if ui.button("Uncollapse all").clicked() {
-                context_menu_actions.push(ContextMenuAction::RecCollapseAt(false, uuid::Uuid::nil().into()));
+                context_menu_action = Some(ContextMenuAction::RecCollapseAt(false, uuid::Uuid::nil().into()));
             }
         });
 
-        fn hierarchy(builder: &mut egui_ltreeview::TreeViewBuilder<ViewUuid>, hn: &HierarchyNode, cma: &mut Vec<ContextMenuAction>) {
+        fn hierarchy(builder: &mut egui_ltreeview::TreeViewBuilder<ViewUuid>, hn: &HierarchyNode, cma: &mut Option<ContextMenuAction>) {
             match hn {
                 HierarchyNode::Folder(uuid, name, children) => {
                     builder.node(
@@ -289,21 +293,21 @@ impl NHContext {
                             .label(format!("{} ({})", name, uuid.to_string()))
                             .context_menu(|ui| {
                                 if ui.button("New Folder").clicked() {
-                                    cma.push(ContextMenuAction::NewFolder(*uuid));
+                                    *cma = Some(ContextMenuAction::NewFolder(*uuid));
                                     ui.close_menu();
                                 }
                                 ui.separator();
                                 if ui.button("Collapse children").clicked() {
-                                    cma.push(ContextMenuAction::RecCollapseAt(true, *uuid));
+                                    *cma = Some(ContextMenuAction::RecCollapseAt(true, *uuid));
                                     ui.close_menu();
                                 }
                                 if ui.button("Uncollapse children").clicked() {
-                                    cma.push(ContextMenuAction::RecCollapseAt(false, *uuid));
+                                    *cma = Some(ContextMenuAction::RecCollapseAt(false, *uuid));
                                     ui.close_menu();
                                 }
                                 ui.separator();
                                 if ui.button("Delete").clicked() {
-                                    cma.push(ContextMenuAction::Delete(*uuid));
+                                    *cma = Some(ContextMenuAction::DeleteFolder(*uuid));
                                     ui.close_menu();
                                 }
                             })
@@ -317,7 +321,30 @@ impl NHContext {
                 },
                 HierarchyNode::Diagram(rw_lock) => {
                     let hm = rw_lock.read().unwrap();
-                    builder.leaf(*hm.uuid(), format!("{} ({})", hm.model_name(), hm.uuid().to_string()));
+                    builder.node(
+                        NodeBuilder::leaf(*hm.uuid())
+                            .label(format!("{} ({})", hm.model_name(), hm.uuid().to_string()))
+                            .context_menu(|ui| {
+                                if ui.button("Open").clicked() {
+                                    *cma = Some(ContextMenuAction::OpenDiagram(*hm.uuid()));
+                                    ui.close_menu();
+                                }
+                                ui.separator();
+                                if ui.button("Duplicate (deep)").clicked() {
+                                    *cma = Some(ContextMenuAction::DuplicateDeep(*hm.uuid()));
+                                    ui.close_menu();
+                                }
+                                if ui.button("Duplicate (shallow)").clicked() {
+                                    *cma = Some(ContextMenuAction::DuplicateShallow(*hm.uuid()));
+                                    ui.close_menu();
+                                }
+                                ui.separator();
+                                if ui.button("Delete").clicked() {
+                                    *cma = Some(ContextMenuAction::DeleteDiagram(*hm.uuid()));
+                                    ui.close_menu();
+                                }
+                            })
+                    );
                 },
             }
         }
@@ -332,7 +359,7 @@ impl NHContext {
                     ui,
                     &mut self.tree_view_state,
                     |builder| {
-                        hierarchy(builder, &self.project_hierarchy, &mut context_menu_actions);
+                        hierarchy(builder, &self.project_hierarchy, &mut context_menu_action);
                     }
                 );
 
@@ -368,7 +395,7 @@ impl NHContext {
                 }
             });
 
-        for c in context_menu_actions {
+        if let Some(c) = context_menu_action {
             match c {
                 ContextMenuAction::NewFolder(view_uuid) => {
                     self.project_hierarchy.insert(
@@ -382,9 +409,13 @@ impl NHContext {
                         e.0.for_each(|e| self.tree_view_state.set_openness(&e.uuid(), !b));
                     }
                 },
-                ContextMenuAction::Delete(view_uuid) => {
+                ContextMenuAction::DeleteFolder(view_uuid) => {
                     self.project_hierarchy.remove(&view_uuid);
                 },
+                ContextMenuAction::OpenDiagram(view_uuid) => commands.push(ProjectCommand::OpenAndFocusDiagram(view_uuid)),
+                ContextMenuAction::DuplicateDeep(view_uuid) => commands.push(ProjectCommand::CopyDiagram(view_uuid, true)),
+                ContextMenuAction::DuplicateShallow(view_uuid) => commands.push(ProjectCommand::CopyDiagram(view_uuid, false)),
+                ContextMenuAction::DeleteDiagram(view_uuid) => commands.push(ProjectCommand::DeleteDiagram(view_uuid)),
             }
         }
 
@@ -931,14 +962,15 @@ impl Default for NHApp {
     fn default() -> Self {
         let mut diagram_controllers = HashMap::new();
         let mut hierarchy = vec![];
-        let mut model_hierarchy_views = HashMap::<_, Box<dyn ModelHierarchyView>>::new();
+        let mut model_hierarchy_views = HashMap::<_, Arc<dyn ModelHierarchyView>>::new();
         let mut tabs = vec![NHTab::RecentlyUsed, NHTab::StyleEditor];
 
-        for (diagram_type, (uuid, controller, mhview)) in [
+        for (diagram_type, (controller, mhview)) in [
             (0, crate::rdf::rdf_controllers::demo(1)),
             (1, crate::umlclass::umlclass_controllers::demo(2)),
             (2, crate::democsd::democsd_controllers::demo(3)),
         ] {
+            let uuid = *controller.read().unwrap().uuid();
             hierarchy.push(HierarchyNode::Diagram(controller.clone()));
             diagram_controllers.insert(uuid, (diagram_type, controller.clone()));
             model_hierarchy_views.insert(*controller.read().unwrap().model_uuid(), mhview);
@@ -1083,6 +1115,25 @@ impl NHApp {
         self.context.has_unsaved_changes = true;
     }
 
+    fn add_diagram(
+        &mut self,
+        diagram_type: usize,
+        diagram: Arc<RwLock<dyn DiagramController>>,
+        hierarchy_view: Arc<dyn ModelHierarchyView>,
+    ) {
+        let view_uuid = *diagram.read().unwrap().uuid();
+        let model_uuid = *diagram.read().unwrap().model_uuid();
+        if let HierarchyNode::Folder(.., children) = &mut self.context.project_hierarchy {
+            children.push(HierarchyNode::Diagram(diagram.clone()));
+        }
+        self.context
+            .diagram_controllers
+            .insert(view_uuid, (diagram_type, diagram));
+        self.context.model_hierarchy_views.insert(model_uuid, hierarchy_view);
+
+        let tab = NHTab::Diagram { uuid: view_uuid };
+        self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
+    }
     pub fn add_custom_tab(&mut self, uuid: uuid::Uuid, tab: Arc<RwLock<dyn CustomTab>>) {
         self.context.custom_tabs.insert(uuid, tab);
 
@@ -1242,7 +1293,7 @@ impl eframe::App for NHApp {
 
                     ui.menu_button(translate!("nh-project-addnewdiagram"), |ui| {
                         type NDC =
-                            fn(u32) -> (ViewUuid, Arc<RwLock<(dyn DiagramController + 'static)>>, Box<dyn ModelHierarchyView>);
+                            fn(u32) -> (Arc<RwLock<(dyn DiagramController + 'static)>>, Arc<dyn ModelHierarchyView>);
                         for (label, diagram_type, fun) in [
                             (
                                 "UML Class diagram",
@@ -1258,9 +1309,9 @@ impl eframe::App for NHApp {
                             ("RDF diagram", 2, crate::rdf::rdf_controllers::new as NDC),
                         ] {
                             if ui.button(label).clicked() {
-                                let (uuid, diagram_controller, mhview) = fun(self.context.new_diagram_no);
+                                let (diagram_controller, mhview) = fun(self.context.new_diagram_no);
                                 commands.push(ProjectCommand::SetNewDiagramNumber(self.context.new_diagram_no + 1));
-                                commands.push(ProjectCommand::AddNewDiagram(uuid, diagram_type, diagram_controller));
+                                commands.push(ProjectCommand::AddNewDiagram(diagram_type, diagram_controller, mhview));
                                 // TODO: use mhview
                                 ui.close_menu();
                             }
@@ -1704,22 +1755,33 @@ impl eframe::App for NHApp {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::Exit(b));
                     }
                 }
+                ProjectCommand::OpenAndFocusDiagram(_) => unreachable!("this should not happen"),
                 ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
                 ProjectCommand::SetSvgExportMenu(sem) => self.context.svg_export_menu = sem,
                 ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
-                ProjectCommand::AddNewDiagram(uuid, diagram_type, diagram_controller) => {
-                    if let HierarchyNode::Folder(.., children) = &mut self.context.project_hierarchy {
-                        children.push(HierarchyNode::Diagram(diagram_controller.clone()));
-                    }
-                    self.context
-                        .diagram_controllers
-                        .insert(uuid, (diagram_type, diagram_controller));
+                ProjectCommand::AddNewDiagram(diagram_type, diagram_controller, hierarchy_view) => {
+                    self.add_diagram(diagram_type, diagram_controller, hierarchy_view);
+                },
+                ProjectCommand::CopyDiagram(view_uuid, deep_copy) => {
+                    let Some((t, c)) = self.context.diagram_controllers.get(&view_uuid) else {
+                        continue;
+                    };
+                    let (new_diagram, hmview) = if deep_copy {
+                        c.read().unwrap().deep_copy()
+                    } else {
+                        c.read().unwrap().shallow_copy()
+                    };
 
-                    let tab = NHTab::Diagram { uuid };
-
-                    self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
+                    self.add_diagram(*t, new_diagram.clone(), hmview);
                 }
-                _ => todo!(),
+                ProjectCommand::DeleteDiagram(view_uuid) => {
+                    self.context.project_hierarchy.remove(&view_uuid);
+                    self.context.diagram_controllers.remove(&view_uuid);
+                    self.context.last_focused_diagram.take_if(|e| *e == view_uuid);
+                    if let Some(snt) = self.tree.find_tab(&NHTab::Diagram { uuid: view_uuid }) {
+                        self.tree.remove_tab(snt);
+                    }
+                },
             }
         }
         
