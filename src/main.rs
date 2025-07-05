@@ -141,6 +141,7 @@ struct NHContext {
     last_focused_diagram: Option<ViewUuid>,
     svg_export_menu: Option<(usize, Arc<RwLock<dyn DiagramController>>, std::path::PathBuf, usize, bool, bool, f32, f32)>,
     confirm_modal_reason: Option<SimpleProjectCommand>,
+    shortcut_being_set: Option<SimpleProjectCommand>,
 
     show_close_buttons: bool,
     show_add_buttons: bool,
@@ -767,7 +768,7 @@ impl NHContext {
                         "Widgets",
                     );
                 });
-            ui.collapsing("Feel", |ui|{
+            ui.collapsing("Feel", |ui| {
                 labeled_widget!(
                     ui,
                     unit_slider!(&mut style.overlay.feel.center_drop_coverage, 0.0..=1.0, "%", 100.0),
@@ -800,7 +801,7 @@ impl NHContext {
                 );
             });
 
-            ui.collapsing("Visuals", |ui|{
+            ui.collapsing("Visuals", |ui| {
                 labeled_widget!(
                     ui,
                     unit_slider!(&mut style.overlay.max_button_size, 10.0..=500.0, "ps"),
@@ -848,7 +849,7 @@ impl NHContext {
                 });
             });
 
-            ui.collapsing("Hover highlight", |ui|{
+            ui.collapsing("Hover highlight", |ui| {
                 egui::Grid::new("leaf highlighting prefs").show(ui, |ui|{
                     ui.label("Fill color:");
                     egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.hovered_leaf_highlight.color, egui::color_picker::Alpha::OnlyBlend);
@@ -871,7 +872,7 @@ impl NHContext {
             });
         });
         
-        ui.collapsing("Diagram themes", |ui|{
+        ui.collapsing("Diagram themes", |ui| {
             for (idx1, (name, l, p)) in self.color_profiles.iter_mut().enumerate() {
                 ui.horizontal(|ui| {
                     egui::ComboBox::from_label(&*name)
@@ -920,7 +921,7 @@ impl NHContext {
             }
         });
 
-        ui.collapsing("Languages", |ui|{
+        ui.collapsing("Languages", |ui| {
             for (idx, l) in self.languages_order.iter().enumerate() {
                 let text = if idx == self.selected_language { format!("[{}]", l) } else { l.to_string() };
                 if ui.add(egui::Label::new(text).sense(egui::Sense::click())).clicked() {
@@ -939,6 +940,38 @@ impl NHContext {
                 self.selected_language += 1;
                 self.fluent_bundle = common::fluent::create_fluent_bundle(&self.languages_order).unwrap();
             }
+        });
+
+        ui.collapsing("Keyboard shortcuts", |ui| {
+            egui::Grid::new("shortcut editor grid").show(ui, |ui| {
+                for (l, c) in &[("Swap top languages:", SimpleProjectCommand::SwapTopLanguages),
+                                ("Save project:", SimpleProjectCommand::SaveProject),
+                                ("Save project as:", SimpleProjectCommand::SaveProjectAs),
+                               ] {
+                    ui.label(*l);
+                    let sc = self.shortcuts.get(c);
+                    ui.horizontal(|ui| {
+                        if let Some(sc) = sc {
+                            ui.label(ui.ctx().format_shortcut(sc));
+                        }
+                    });
+
+                    if self.shortcut_being_set.is_none_or(|e| e != *c) {
+                        if ui.button("Set").clicked() {
+                            self.shortcut_being_set = Some(*c);
+                        }
+                    } else {
+                        if ui.button("Cancel").clicked() {
+                            self.shortcut_being_set = None;
+                        }
+                    }
+
+                    if sc.is_some() && ui.button("Delete").clicked() {
+                        self.shortcuts.remove(c);
+                    }
+                    ui.end_row();
+                }
+            });
         });
     }
     
@@ -1074,6 +1107,7 @@ impl Default for NHApp {
             last_focused_diagram: None,
             svg_export_menu: None,
             confirm_modal_reason: None,
+            shortcut_being_set: None,
 
             show_window_close: true,
             show_window_collapse: true,
@@ -1284,6 +1318,14 @@ impl eframe::App for NHApp {
                         egui::Event::Paste(a) => send_to_focused_diagram!(DiagramCommand::PasteClipboardElements),
                         egui::Event::Key { key, pressed, modifiers, .. } => {
                             if !pressed {continue;}
+
+                            if let Some(sc) = &self.context.shortcut_being_set {
+                                self.context.shortcuts.insert(*sc, egui::KeyboardShortcut { logical_key: *key, modifiers: *modifiers });
+                                self.context.shortcut_being_set = None;
+                                self.context.sort_shortcuts();
+                                continue;
+                            }
+
                             'inner: for ksh in &self.context.shortcut_top_order {
                                 if !(modifiers.matches_logically(ksh.1.modifiers) && *key == ksh.1.logical_key) {
                                     continue 'inner;
