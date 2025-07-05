@@ -872,16 +872,51 @@ impl NHContext {
         });
         
         ui.collapsing("Diagram themes", |ui|{
-            for (idx1, (name, l, p)) in self.color_profiles.iter().enumerate() {
-                egui::ComboBox::from_label(name)
-                    .selected_text(&p[self.selected_color_profiles[idx1]].name)
-                    .show_ui(ui, |ui| {
-                        for (idx2, profile) in p.iter().enumerate() {
-                            ui.selectable_value(&mut self.selected_color_profiles[idx1], idx2, &profile.name);
+            for (idx1, (name, l, p)) in self.color_profiles.iter_mut().enumerate() {
+                ui.horizontal(|ui| {
+                    egui::ComboBox::from_label(&*name)
+                        .selected_text(&p[self.selected_color_profiles[idx1]].name)
+                        .show_ui(ui, |ui| {
+                            for (idx2, profile) in p.iter().enumerate() {
+                                ui.selectable_value(&mut self.selected_color_profiles[idx1], idx2, &profile.name);
+                            }
                         }
-                        // TODO: allow custom profiles
+                    );
+                    if ui.button("Duplicate as a new color profile").clicked() {
+                        let current = &p[self.selected_color_profiles[idx1]];
+                        p.push(ColorProfile {
+                            name: format!("{} (copy)", current.name),
+                            backgrounds: current.backgrounds.clone(),
+                            foregrounds: current.foregrounds.clone(),
+                            auxiliary: current.auxiliary.clone(),
+                        });
                     }
-                );
+                });
+
+                egui::CollapsingHeader::new("Color editor").id_salt(("Color editor", idx1)).show(ui, |ui| {
+                    let current = &mut p[self.selected_color_profiles[idx1]];
+                    let color_editor_block = |ui: &mut Ui, name: &str, labels: &[Option<String>], colors: &mut [egui::Color32]| {
+                        egui::CollapsingHeader::new(name).id_salt((name, idx1)).show(ui, |ui| {
+                            egui::Grid::new((name, idx1, "grid")).show(ui, |ui| {
+                                for (l, c) in labels.iter().flatten().zip(colors.iter_mut()) {
+                                    ui.label(l);
+                                    ui.horizontal(|ui| {
+                                        egui::widgets::color_picker::color_edit_button_srgba(
+                                            ui,
+                                            c,
+                                            egui::widgets::color_picker::Alpha::OnlyBlend
+                                        );
+                                    });
+                                    ui.end_row();
+                                }
+                            });
+                        });
+                    };
+
+                    color_editor_block(ui, "Background colors", &l.backgrounds, &mut current.backgrounds);
+                    color_editor_block(ui, "Foreground colors", &l.foregrounds, &mut current.foregrounds);
+                    color_editor_block(ui, "Auxiliary colors", &l.auxiliary, &mut current.auxiliary);
+                });
             }
         });
 
