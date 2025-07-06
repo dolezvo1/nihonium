@@ -325,6 +325,18 @@ impl Model for UmlClassDiagram {
 }
 
 impl ContainerModel<UmlClassElement> for UmlClassDiagram {
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
+        for e in &self.contained_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone(), *self.uuid));
+            }
+            if let UmlClassElement::UmlClassPackage(p) = e
+                && let Some(e) = p.read().unwrap().find_element(uuid) {
+                return Some(e);
+            }
+        }
+        return None;
+    }
     fn add_element(&mut self, element: UmlClassElement) {
         self.contained_elements.push(element);
     }
@@ -429,6 +441,18 @@ impl Model for UmlClassPackage {
 }
 
 impl ContainerModel<UmlClassElement> for UmlClassPackage {
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
+        for e in &self.contained_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone(), *self.uuid));
+            }
+            if let UmlClassElement::UmlClassPackage(p) = e
+                && let Some(e) = p.read().unwrap().find_element(uuid) {
+                return Some(e);
+            }
+        }
+        return None;
+    }
     fn add_element(&mut self, element: UmlClassElement) {
         self.contained_elements.push(element);
     }

@@ -334,6 +334,18 @@ impl Model for RdfDiagram {
 }
 
 impl ContainerModel<RdfElement> for RdfDiagram {
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(RdfElement, ModelUuid)> {
+        for e in &self.contained_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone(), *self.uuid));
+            }
+            if let RdfElement::RdfGraph(p) = e
+                && let Some(e) = p.read().unwrap().find_element(uuid) {
+                return Some(e);
+            }
+        }
+        return None;
+    }
     fn add_element(&mut self, element: RdfElement) {
         self.contained_elements.push(element);
     }
@@ -477,6 +489,18 @@ impl Model for RdfGraph {
 }
 
 impl ContainerModel<RdfElement> for RdfGraph {
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(RdfElement, ModelUuid)> {
+        for e in &self.contained_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone(), *self.uuid));
+            }
+            if let RdfElement::RdfGraph(p) = e
+                && let Some(e) = p.read().unwrap().find_element(uuid) {
+                return Some(e);
+            }
+        }
+        return None;
+    }
     fn add_element(&mut self, element: RdfElement) {
         self.contained_elements.push(element);
     }

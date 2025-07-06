@@ -164,7 +164,7 @@ pub struct UmlClassDiagramAdapter {
     comment_buffer: String,
 }
 
-impl DiagramAdapter<UmlClassDiagram, UmlClassElement, NaiveUmlClassTool, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassDiagramAdapter {
+impl DiagramAdapter<UmlClassDiagram, UmlClassElement, UmlClassQueryable, NaiveUmlClassTool, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassDiagramAdapter {
     fn model(&self) -> Arc<RwLock<UmlClassDiagram>> {
         self.model.clone()
     }
@@ -176,6 +176,13 @@ impl DiagramAdapter<UmlClassDiagram, UmlClassElement, NaiveUmlClassTool, UmlClas
     }
     fn view_type(&self) -> &'static str {
         "umlclass-diagram-view"
+    }
+
+    fn create_view_for(
+        &self,
+        element: UmlClassElement
+    ) -> UmlClassElementOrVertex {
+        todo!("implement view creation")
     }
 
     fn show_props_fun(
@@ -1457,10 +1464,10 @@ impl
     fn head_count(
         &mut self,
         views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashSet<ModelUuid>,
+        models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
         views.insert(*self.uuid(), self.highlight.selected.into());
-        models.insert(*self.model_uuid());
+        models.insert(*self.model_uuid(), *self.uuid);
     }
     
     fn deep_copy_clone(

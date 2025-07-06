@@ -423,12 +423,44 @@ impl NHContext {
         self.unprocessed_commands.extend(commands.into_iter());
     }
 
+    fn set_modified_state(&mut self, view_uuid: ViewUuid, undo_accumulator: Vec<Arc<String>>) {
+        if !undo_accumulator.is_empty() {
+            self.has_unsaved_changes = true;
+            let Some((_t, target_diagram)) = self.diagram_controllers.get(&view_uuid) else { return; };
+
+            for (_uuid, (_t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| **uuid != view_uuid) {
+                let mut c = c.write().unwrap();
+                c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
+            }
+
+            self.redo_stack.clear();
+            target_diagram.write().unwrap().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
+            target_diagram.write().unwrap().apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
+
+            for command_label in undo_accumulator {
+                self.undo_stack.push((command_label, view_uuid));
+            }
+        }
+    }
+
     fn model_hierarchy(&mut self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
-        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
-        let model_uuid = c.read().unwrap().model_uuid();
+        let Some((_t, lfc)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
+        let model_uuid = lfc.read().unwrap().model_uuid();
         let Some(model_hierarchy_view) = self.model_hierarchy_views.get(&model_uuid) else { return; };
-        model_hierarchy_view.show_model_hierarchy(ui, c.read().unwrap().represented_models());
+
+        let cmd = {
+            let lock = lfc.read().unwrap();
+            let rm = lock.represented_models();
+            let rf = |uuid: &ModelUuid| rm.contains_key(uuid);
+            model_hierarchy_view.show_model_hierarchy(ui, &rf)
+        };
+
+        if let Some(cmd) = cmd {
+            let mut undo_accumulator = Vec::new();
+            lfc.write().unwrap().apply_command(cmd, &mut undo_accumulator);
+            self.set_modified_state(*last_focused_diagram, undo_accumulator);
+        }
     }
 
     fn toolbar(&self, ui: &mut Ui) {
@@ -441,25 +473,15 @@ impl NHContext {
     fn properties(&mut self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
-        let mut controller_lock = c.write().unwrap();
-        
-        let mut undo_accumulator = Vec::<Arc<String>>::new();
-        controller_lock.show_properties(ui, &mut undo_accumulator);
-        if !undo_accumulator.is_empty() {
-            self.has_unsaved_changes = true;
-            for (_uuid, (_t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != last_focused_diagram) {
-                let mut c = c.write().unwrap();
-                c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
-            }
-            
-            self.redo_stack.clear();
-            controller_lock.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
-            controller_lock.apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
-            
-            for command_label in undo_accumulator {
-                self.undo_stack.push((command_label, *last_focused_diagram));
-            }
-        }
+
+        let mut undo_accumulator = {
+            let mut controller_lock = c.write().unwrap();
+            let mut undo_accumulator = Vec::new();
+            controller_lock.show_properties(ui, &mut undo_accumulator);
+            undo_accumulator
+        };
+
+        self.set_modified_state(*last_focused_diagram, undo_accumulator);
     }
 
     fn layers(&self, ui: &mut Ui) {

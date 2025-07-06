@@ -161,7 +161,7 @@ pub struct DemoCsdDiagramAdapter {
     comment_buffer: String,
 }
 
-impl DiagramAdapter<DemoCsdDiagram, DemoCsdElement, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdDiagramAdapter {
+impl DiagramAdapter<DemoCsdDiagram, DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdDiagramAdapter {
     fn model(&self) -> Arc<RwLock<DemoCsdDiagram>> {
         self.model.clone()
     }
@@ -173,6 +173,13 @@ impl DiagramAdapter<DemoCsdDiagram, DemoCsdElement, NaiveDemoCsdTool, DemoCsdEle
     }
     fn view_type(&self) -> &'static str {
         "democsd-diagram-view"
+    }
+
+    fn create_view_for(
+        &self,
+        element: DemoCsdElement
+    ) -> DemoCsdElementOrVertex {
+        todo!("implement view creation")
     }
 
     fn show_props_fun(
@@ -1577,10 +1584,10 @@ impl
     fn head_count(
         &mut self,
         views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashSet<ModelUuid>,
+        models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
         views.insert(*self.uuid(), self.highlight.selected.into());
-        models.insert(*self.model_uuid());
+        models.insert(*self.model_uuid(), *self.uuid);
 
         if let Some(t) = &self.transaction_view {
             let mut views_tx = HashMap::new();
@@ -2106,10 +2113,10 @@ impl
     fn head_count(
         &mut self,
         views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashSet<ModelUuid>,
+        models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
         views.insert(*self.uuid(), self.highlight.selected.into());
-        models.insert(*self.model_uuid());
+        models.insert(*self.model_uuid(), *self.uuid);
     }
     
     fn deep_copy_clone(

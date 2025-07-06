@@ -179,7 +179,7 @@ pub struct RdfDiagramAdapter {
     comment_buffer: String,
 }
 
-impl DiagramAdapter<RdfDiagram, RdfElement, NaiveRdfTool, RdfElementOrVertex, RdfPropChange> for RdfDiagramAdapter {
+impl DiagramAdapter<RdfDiagram, RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange> for RdfDiagramAdapter {
     fn model(&self) -> Arc<RwLock<RdfDiagram>> {
         self.model.clone()
     }
@@ -191,6 +191,13 @@ impl DiagramAdapter<RdfDiagram, RdfElement, NaiveRdfTool, RdfElementOrVertex, Rd
     }
     fn view_type(&self) -> &'static str {
         "rdf-diagram-view"
+    }
+
+    fn create_view_for(
+        &self,
+        element: RdfElement
+    ) -> RdfElementOrVertex {
+        todo!("implement view creation")
     }
 
     fn show_props_fun(
@@ -1471,10 +1478,10 @@ impl
     fn head_count(
         &mut self,
         views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashSet<ModelUuid>,
+        models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
         views.insert(*self.uuid(), self.highlight.selected.into());
-        models.insert(*self.model_uuid());
+        models.insert(*self.model_uuid(), *self.uuid);
     }
     
     fn deep_copy_clone(
@@ -1854,10 +1861,10 @@ impl
     fn head_count(
         &mut self,
         views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashSet<ModelUuid>,
+        models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
         views.insert(*self.uuid(), self.highlight.selected.into());
-        models.insert(*self.model_uuid());
+        models.insert(*self.model_uuid(), *self.uuid);
     }
     
     fn deep_copy_clone(

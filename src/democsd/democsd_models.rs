@@ -252,6 +252,18 @@ impl Model for DemoCsdDiagram {
 }
 
 impl ContainerModel<DemoCsdElement> for DemoCsdDiagram {
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoCsdElement, ModelUuid)> {
+        for e in &self.contained_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone(), *self.uuid));
+            }
+            if let DemoCsdElement::DemoCsdPackage(p) = e
+                && let Some(e) = p.read().unwrap().find_element(uuid) {
+                return Some(e);
+            }
+        }
+        return None;
+    }
     fn add_element(&mut self, element: DemoCsdElement) {
         self.contained_elements.push(element);
     }
@@ -358,6 +370,18 @@ impl Model for DemoCsdPackage {
 }
 
 impl ContainerModel<DemoCsdElement> for DemoCsdPackage {
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoCsdElement, ModelUuid)> {
+        for e in &self.contained_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone(), *self.uuid));
+            }
+            if let DemoCsdElement::DemoCsdPackage(p) = e
+                && let Some(e) = p.read().unwrap().find_element(uuid) {
+                return Some(e);
+            }
+        }
+        return None;
+    }
     fn add_element(&mut self, element: DemoCsdElement) {
         self.contained_elements.push(element);
     }

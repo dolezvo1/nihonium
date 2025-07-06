@@ -193,7 +193,7 @@ impl From<SimpleProjectCommand> for ProjectCommand {
     }
 }
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
 pub enum SimpleProjectCommand {
     DiagramCommand(DiagramCommand),
     OpenProject(bool),
@@ -210,7 +210,7 @@ impl From<DiagramCommand> for SimpleProjectCommand {
     }
 }
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
 pub enum DiagramCommand {
     DropRedoStackAndLastChangeFlag,
     SetLastChangeFlag,
@@ -222,6 +222,8 @@ pub enum DiagramCommand {
     CutSelectedElements,
     CopySelectedElements,
     PasteClipboardElements,
+    CreateViewFor(ModelUuid),
+    DeleteViewFor(ModelUuid, /*including_model:*/ bool),
 }
 
 pub enum HierarchyNode {
@@ -332,7 +334,7 @@ impl HierarchyNode {
 }
 
 pub trait ModelHierarchyView {
-    fn show_model_hierarchy(&self, ui: &mut egui::Ui, represented_models: &HashSet<ModelUuid>);
+    fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Option<DiagramCommand>;
 }
 
 pub struct SimpleModelHierarchyView<ModelT: Model> {
@@ -346,19 +348,46 @@ impl<ModelT: Model> SimpleModelHierarchyView<ModelT> {
 }
 
 impl<ModelT: Model> ModelHierarchyView for SimpleModelHierarchyView<ModelT> {
-    fn show_model_hierarchy(&self, ui: &mut egui::Ui, represented_models: &HashSet<ModelUuid>) {
-        struct HierarchyViewVisitor<'a, 'ui> {
-            rm: &'a HashSet<ModelUuid>,
-            builder: &'a mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
+    fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Option<DiagramCommand> {
+        struct HierarchyViewVisitor<'data, 'ui> {
+            command: Option<DiagramCommand>,
+            is_represented: &'data dyn Fn(&ModelUuid) -> bool,
+            builder: &'data mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
         }
-        impl<'a, 'ui> HierarchyViewVisitor<'a, 'ui> {
+        impl<'data, 'ui> HierarchyViewVisitor<'data, 'ui> {
             fn c(&self, m: &ModelUuid) -> &'static str {
-                if self.rm.contains(m) {"[x]"} else {"[ ]"}
+                if (self.is_represented)(m) {"[x]"} else {"[ ]"}
+            }
+            fn show_model(&mut self, is_dir: bool, e: &dyn Model) {
+                let model_uuid = *e.uuid();
+                self.builder.node(
+                    if is_dir {
+                        egui_ltreeview::NodeBuilder::dir(model_uuid)
+                    } else {
+                        egui_ltreeview::NodeBuilder::leaf(model_uuid)
+                    }.label(format!("{} {} ({})", self.c(&model_uuid), e.name(), model_uuid.to_string()))
+                        .context_menu(|ui| {
+                            if !(self.is_represented)(&model_uuid) && ui.button("Create view").clicked() {
+                                self.command = Some(DiagramCommand::CreateViewFor(model_uuid));
+                                ui.close_menu();
+                            }
+
+                            if (self.is_represented)(&model_uuid) && ui.button("Delete view").clicked() {
+                                self.command = Some(DiagramCommand::DeleteViewFor(model_uuid, false));
+                                ui.close_menu();
+                            }
+
+                            if ui.button("Delete model").clicked() {
+                                self.command = Some(DiagramCommand::DeleteViewFor(model_uuid, true));
+                                ui.close_menu();
+                            }
+                        })
+                );
             }
         }
-        impl<'a, 'ui> StructuralVisitor<dyn Model> for HierarchyViewVisitor<'a, 'ui> {
+        impl<'data, 'ui> StructuralVisitor<dyn Model> for HierarchyViewVisitor<'data, 'ui> {
             fn open_complex(&mut self, e: &dyn Model) {
-                self.builder.dir(*e.uuid(), format!("{} {} ({})", self.c(&e.uuid()), e.name(), e.uuid().to_string()));
+                self.show_model(true, e);
             }
 
             fn close_complex(&mut self, e: &dyn Model) {
@@ -366,15 +395,20 @@ impl<ModelT: Model> ModelHierarchyView for SimpleModelHierarchyView<ModelT> {
             }
 
             fn visit_simple(&mut self, e: &dyn Model) {
-                self.builder.leaf(*e.uuid(), format!("{} {} ({})", self.c(&e.uuid()), e.name(), e.uuid().to_string()));
+                self.show_model(false, e);
             }
         }
 
+        let mut c = None;
         egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show(ui, |builder| {
-            let mut hvv = HierarchyViewVisitor { rm: represented_models, builder };
+            let mut hvv = HierarchyViewVisitor { command: None, is_represented, builder };
 
             self.model.read().unwrap().accept(&mut hvv);
+
+            c = hvv.command;
         });
+
+        c
     }
 }
 
@@ -391,7 +425,7 @@ pub trait View {
 }
 
 pub trait DiagramController: Any + View + NHSerialize {
-    fn represented_models(&self) -> &HashSet<ModelUuid>;
+    fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid>;
 
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
 
@@ -518,7 +552,7 @@ pub enum SensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     MoveSelectedElements(egui::Vec2),
     ResizeSelectedElementsBy(egui::Align2, egui::Vec2),
     ResizeSelectedElementsTo(egui::Align2, egui::Vec2),
-    DeleteSelectedElements,
+    DeleteSelectedElements(/*including_models:*/ bool),
     CutSelectedElements,
     PasteClipboardElements,
     PropertyChangeSelected(Vec<PropChangeT>),
@@ -550,7 +584,7 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
             SC::MoveSelectedElements(delta) => IC::MoveSpecificElements(se, delta),
             SC::ResizeSelectedElementsBy(align, delta) => IC::ResizeSpecificElementsBy(se, align, delta),
             SC::ResizeSelectedElementsTo(align, delta) => IC::ResizeSpecificElementsTo(se, align, delta),
-            SC::DeleteSelectedElements => IC::DeleteSpecificElements(se),
+            SC::DeleteSelectedElements(including_models) => IC::DeleteSpecificElements(se, including_models),
             SC::CutSelectedElements => IC::CutSpecificElements(se),
             SC::PropertyChangeSelected(changes) => IC::PropertyChange(se, changes),
             SC::Insensitive(..) | SC::PasteClipboardElements => unreachable!(),
@@ -574,7 +608,7 @@ pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     MoveSpecificElements(HashSet<ViewUuid>, egui::Vec2),
     ResizeSpecificElementsBy(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     ResizeSpecificElementsTo(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
-    DeleteSpecificElements(HashSet<ViewUuid>),
+    DeleteSpecificElements(HashSet<ViewUuid>, /*including_models:*/ bool),
     CutSpecificElements(HashSet<ViewUuid>),
     PasteSpecificElements(ViewUuid, Vec<ElementT>),
     AddElement(ViewUuid, ElementT),
@@ -589,7 +623,8 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
             InsensitiveCommand::SelectAll(..) | InsensitiveCommand::SelectSpecific(..) | InsensitiveCommand::SelectByDrag(..) => {
                 Arc::new("Sorry, your undo stack is broken now :/".to_owned())
             }
-            InsensitiveCommand::DeleteSpecificElements(uuids) => Arc::new(format!("Delete {} elements", uuids.len())),
+            InsensitiveCommand::DeleteSpecificElements(uuids, false) => Arc::new(format!("Delete {} elements from view", uuids.len())),
+            InsensitiveCommand::DeleteSpecificElements(uuids, true) => Arc::new(format!("Delete {} elements", uuids.len())),
             InsensitiveCommand::MoveSpecificElements(uuids, _delta) => {
                 Arc::new(format!("Move {} elements", uuids.len()))
             }
@@ -700,6 +735,7 @@ pub trait Model: 'static {
 }
 
 pub trait ContainerModel<CommonElementT>: Model {
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(CommonElementT, ModelUuid)>;
     fn add_element(&mut self, element: CommonElementT);
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
 }
@@ -837,7 +873,7 @@ pub trait ElementControllerGen2<
     fn head_count(
         &mut self,
         views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashSet<ModelUuid>,
+        models: &mut HashMap<ModelUuid, ViewUuid>,
     );
 
     // Create a deep copy, including the models
@@ -883,6 +919,7 @@ pub trait ElementControllerGen2<
 pub trait DiagramAdapter<
     DiagramModelT: ContainerModel<CommonElementT>,
     CommonElementT,
+    QueryableT,
     ToolT: 'static,
     AddCommandElementT: Clone + Debug + 'static,
     PropChangeT: Clone + Debug + 'static,
@@ -893,12 +930,19 @@ pub trait DiagramAdapter<
 
     fn view_type(&self) -> &'static str;
 
+    fn find_element(&self, model_uuid: &ModelUuid) -> Option<(CommonElementT, ModelUuid)> {
+        self.model().read().unwrap().find_element(model_uuid)
+    }
     fn add_element(&mut self, element: CommonElementT) {
         self.model().write().unwrap().add_element(element);
     }
     fn delete_elements(&mut self, elements: &HashSet<ModelUuid>) {
         self.model().write().unwrap().delete_elements(elements);
     }
+    fn create_view_for(
+        &self,
+        element: CommonElementT
+    ) -> AddCommandElementT;
 
     fn show_props_fun(
         &mut self,
@@ -922,7 +966,7 @@ pub trait DiagramAdapter<
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
 pub struct DiagramControllerGen2<
-    DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
+    DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
     DiagramModelT: ContainerModel<CommonElementT>,
     CommonElementT: 'static,
     QueryableT: Queryable + 'static,
@@ -951,7 +995,7 @@ pub struct DiagramControllerGen2<
     >,
     event_order: Vec<ViewUuid>,
     all_elements: HashMap<ViewUuid, SelectionStatus>,
-    represented_models: HashSet<ModelUuid>,
+    represented_models: HashMap<ModelUuid, ViewUuid>,
     clipboard_elements: HashMap<ViewUuid, Arc<
             RwLock<
                 dyn ElementControllerGen2<
@@ -983,7 +1027,7 @@ pub struct DiagramControllerGen2<
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
         DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
         QueryableT: Queryable + 'static,
@@ -1063,7 +1107,7 @@ where
             owned_controllers,
             event_order,
             all_elements: HashMap::new(),
-            represented_models: HashSet::new(),
+            represented_models: HashMap::new(),
             clipboard_elements: HashMap::new(),
 
             _layers: vec![true],
@@ -1280,7 +1324,7 @@ where
                 | InsensitiveCommand::MoveAllElements(..)
                 | InsensitiveCommand::ResizeSpecificElementsBy(..)
                 | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
-                InsensitiveCommand::DeleteSpecificElements(uuids)
+                InsensitiveCommand::DeleteSpecificElements(uuids, _)
                 | InsensitiveCommand::CutSpecificElements(uuids) => {
 
                     let mut model_uuids = HashSet::new();
@@ -1295,7 +1339,10 @@ where
                             AddCommandElementT::from((*uuid, element.clone())),
                         ));
                     }
-                    self.adapter.delete_elements(&model_uuids);
+                    if let InsensitiveCommand::DeleteSpecificElements(uuids, true)
+                           | InsensitiveCommand::CutSpecificElements(uuids) = &command {
+                        self.adapter.delete_elements(&model_uuids);
+                    }
 
                     self.owned_controllers.retain(|k, _v| !uuids.contains(&k));
                     self.event_order.retain(|e| !uuids.contains(&e));
@@ -1305,6 +1352,7 @@ where
                         if let Ok((uuid, element)) = element.clone().try_into() {
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(uuid).collect(),
+                                true,
                             ));
 
                             self.adapter.add_element(element.read().unwrap().model());
@@ -1319,6 +1367,7 @@ where
                         if let Ok((uuid, element)) = element.clone().try_into() {
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(uuid).collect(),
+                                true,
                             ));
 
                             self.adapter.add_element(element.read().unwrap().model());
@@ -1409,8 +1458,8 @@ where
             }
 
             if modifies_selection {
-                self.all_elements = HashMap::new();
-                self.represented_models = HashSet::new();
+                self.all_elements.clear();
+                self.represented_models.clear();
                 for (_uuid, c) in &self.owned_controllers {
                     let mut c = c.write().unwrap();
                     c.head_count(&mut self.all_elements, &mut self.represented_models);
@@ -1442,7 +1491,7 @@ where
 
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
         DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
         QueryableT: Queryable + 'static,
@@ -1480,7 +1529,7 @@ where
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
         DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
         QueryableT: Queryable + 'static,
@@ -1525,7 +1574,7 @@ where
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
         DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
         QueryableT: Queryable + 'static,
@@ -1610,7 +1659,7 @@ where
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
         DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
         QueryableT: Queryable + 'static,
@@ -1663,7 +1712,7 @@ where
             >,
         )>,
 {
-    fn represented_models(&self) -> &HashSet<ModelUuid> {
+    fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid> {
         &self.represented_models
     }
 
@@ -1868,7 +1917,7 @@ where
                 let mut undo = vec![];
                 self.apply_commands(vec![
                     match command {
-                        DiagramCommand::DeleteSelectedElements => SensitiveCommand::DeleteSelectedElements,
+                        DiagramCommand::DeleteSelectedElements => SensitiveCommand::DeleteSelectedElements(true),
                         DiagramCommand::CutSelectedElements => SensitiveCommand::CutSelectedElements,
                         DiagramCommand::PasteClipboardElements => SensitiveCommand::PasteClipboardElements,
                         _ => unreachable!(),
@@ -1880,6 +1929,29 @@ where
             DiagramCommand::CopySelectedElements => {
                 self.set_clipboard_from_selected();
             },
+            DiagramCommand::CreateViewFor(model_uuid) => {
+                if let Some((model, parent_uuid)) = self.adapter.find_element(&model_uuid)
+                      && let Some(view_uuid) = self.represented_models.get(&parent_uuid) {
+                    let new_view = self.adapter.create_view_for(model);
+
+                    let mut undo = vec![];
+                    self.apply_commands(vec![
+                        InsensitiveCommand::AddElement(*view_uuid, new_view).into()
+                    ], &mut undo, true, true);
+                    self.last_change_flag = true;
+                    global_undo.extend(undo.into_iter());
+                }
+            }
+            DiagramCommand::DeleteViewFor(model_uuid, including_model) => {
+                if let Some(view_uuid) = self.represented_models.get(&model_uuid) {
+                    let mut undo = vec![];
+                    self.apply_commands(vec![
+                        InsensitiveCommand::DeleteSpecificElements(std::iter::once(*view_uuid).collect(), including_model).into()
+                    ], &mut undo, true, true);
+                    self.last_change_flag = true;
+                    global_undo.extend(undo.into_iter());
+                }
+            }
         }
     }
 
@@ -1962,7 +2034,7 @@ where
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, ToolT, AddCommandElementT, PropChangeT> + 'static,
+        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
         DiagramModelT: ContainerModel<CommonElementT>,
         CommonElementT: 'static,
         QueryableT: Queryable + 'static,
@@ -2971,7 +3043,7 @@ where
 
                 recurse!(self);
             }
-            InsensitiveCommand::DeleteSpecificElements(uuids)
+            InsensitiveCommand::DeleteSpecificElements(uuids, _)
             | InsensitiveCommand::CutSpecificElements(uuids) => {
 
                 let mut model_uuids = HashSet::new();
@@ -2986,7 +3058,10 @@ where
                         AddCommandElementT::from((*uuid, element.clone())),
                     ));
                 }
-                self.adapter.delete_elements(&model_uuids);
+                if let InsensitiveCommand::DeleteSpecificElements(uuids, true)
+                    | InsensitiveCommand::CutSpecificElements(uuids) = &command {
+                    self.adapter.delete_elements(&model_uuids);
+                }
 
                 self.owned_controllers.retain(|k, _v| !uuids.contains(&k));
                 self.event_order.retain(|e| !uuids.contains(&e));
@@ -2998,6 +3073,7 @@ where
                     if let Ok((uuid, element)) = element.clone().try_into() {
                         undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                             std::iter::once(uuid).collect(),
+                            true
                         ));
 
                         self.adapter.add_element(element.read().unwrap().model());
@@ -3033,10 +3109,10 @@ where
     fn head_count(
         &mut self,
         views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashSet<ModelUuid>,
+        models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
         views.insert(*self.uuid, self.highlight.selected.into());
-        models.insert(*self.adapter.model_uuid());
+        models.insert(*self.adapter.model_uuid(), *self.uuid);
 
         self.all_elements.clear();
         for e in &self.owned_controllers {
@@ -3866,7 +3942,7 @@ where
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
-            InsensitiveCommand::DeleteSpecificElements(uuids) => {
+            InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
                 let self_uuid = *self.uuid;
                 if let Some(center_point) =
                     self.center_point.as_mut().filter(|e| uuids.contains(&e.0))
@@ -3942,6 +4018,7 @@ where
 
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(id).collect(),
+                                true,
                             ));
                         } else {
                             macro_rules! insert_vertex {
@@ -3954,6 +4031,7 @@ where
                                                 undo_accumulator.push(
                                                     InsensitiveCommand::DeleteSpecificElements(
                                                         std::iter::once(id).collect(),
+                                                        true,
                                                     ),
                                                 );
                                                 return;
@@ -3982,10 +4060,10 @@ where
     fn head_count(
         &mut self,
         views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashSet<ModelUuid>,
+        models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
         views.insert(*self.uuid, self.highlight.selected.into());
-        models.insert(*self.adapter.model_uuid());
+        models.insert(*self.adapter.model_uuid(), *self.uuid);
 
         for e in self.all_vertices() {
             views.insert(e.0, match self.selected_vertices.contains(&e.0) {
