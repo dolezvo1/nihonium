@@ -863,6 +863,12 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     );
+    // "depends" == cannot exist without, e.g. link cannot exist without it's target
+    // TODO: this probably should be generalized, so that one could express the fact
+    //       that a link only requires at least one element on each side to have a view
+    fn depends_on(&self, other: &ViewUuid) -> bool {
+        false
+    }
 
     // Create a deep copy, including the models
     fn deep_copy_walk(
@@ -1181,7 +1187,6 @@ impl<
         clear_redo_stack: bool,
     ) {
         for command in commands {
-            // TODO: transitive closure of dependency when deleting elements
             let command = command.to_selection_insensitive(
                 || self.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
                 || Self::elements_deep_copy(
@@ -1191,6 +1196,33 @@ impl<
                     self.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
                     ).into_iter().map(|e| e.1.into()).collect(),
             );
+
+            // compute transitive closure of dependency when deleting elements
+            let command = match command {
+                InsensitiveCommand::DeleteSpecificElements(uuids, b) => {
+                    let mut total_closure = HashSet::new();
+                    let mut searched_uuids = uuids;
+                    let mut found_uuids = HashSet::new();
+                    loop {
+                        for (k, e1) in &self.flattened_views {
+                            for e2 in &searched_uuids {
+                                if e1.depends_on(e2) {
+                                    found_uuids.insert(*k);
+                                }
+                            }
+                        }
+
+                        total_closure.extend(searched_uuids.drain());
+                        if found_uuids.is_empty() {
+                            break;
+                        }
+                        searched_uuids.extend(found_uuids.drain());
+                    }
+
+                    InsensitiveCommand::DeleteSpecificElements(total_closure, b)
+                },
+                c => c,
+            };
 
             let mut undo_accumulator = vec![];
 
@@ -2590,7 +2622,7 @@ pub struct MulticonnectionView<DomainT: Domain, AdapterT: MulticonnectionAdapter
     self_reference: Weak<RwLock<Self>>,
 
     pub source: DomainT::CommonElementViewT,
-    pub destination: DomainT::CommonElementViewT,
+    pub target: DomainT::CommonElementViewT,
 
     dragged_node: Option<(ViewUuid, egui::Pos2)>,
     highlight: canvas::Highlight,
@@ -2634,7 +2666,7 @@ where
                 adapter,
                 self_reference: Weak::new(),
                 source,
-                destination,
+                target: destination,
                 dragged_node: None,
                 highlight: canvas::Highlight::NONE,
                 selected_vertices: HashSet::new(),
@@ -2685,7 +2717,7 @@ where
         element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
         // TODO: store view ids, not model ids
         element.insert("source".to_owned(), toml::Value::String(self.source.model_uuid().to_string()));
-        element.insert("destination".to_owned(), toml::Value::String(self.destination.model_uuid().to_string()));
+        element.insert("destination".to_owned(), toml::Value::String(self.target.model_uuid().to_string()));
         // TODO: store points, etc.
         into.insert_view(*self.uuid, element);
 
@@ -2750,7 +2782,7 @@ where
         _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus {
         let source_bounds = self.source.min_shape();
-        let dest_bounds = self.destination.min_shape();
+        let dest_bounds = self.target.min_shape();
 
         let (source_next_point, dest_next_point) = match (
             self.source_points[0].iter().skip(1)
@@ -3273,6 +3305,9 @@ where
             });
         }
     }
+    fn depends_on(&self, other: &ViewUuid) -> bool {
+        *self.source.uuid() == *other || *self.target.uuid() == *other
+    }
 
     fn deep_copy_clone(
         &self,
@@ -3292,7 +3327,7 @@ where
             adapter: self.adapter.deep_copy_init(model_uuid, m),
             self_reference: Weak::new(),
             source: self.source.clone(),
-            destination: self.destination.clone(),
+            target: self.target.clone(),
             dragged_node: None,
             highlight: self.highlight,
             selected_vertices: self.selected_vertices.clone(),
@@ -3316,8 +3351,8 @@ where
         if let Some(s) = c.get(&self.source.uuid()) {
             self.source = s.clone();
         }
-        if let Some(d) = c.get(&self.destination.uuid()) {
-            self.destination = d.clone();
+        if let Some(d) = c.get(&self.target.uuid()) {
+            self.target = d.clone();
         }
     }
 }

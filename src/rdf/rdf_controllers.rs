@@ -310,6 +310,14 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
             RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
         }
     }
+    fn depends_on(&self, other: &ViewUuid) -> bool {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().depends_on(other),
+            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().depends_on(other),
+            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().depends_on(other),
+            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().depends_on(other),
+        }
+    }
     fn deep_copy_walk(
         &self,
         requested: Option<&HashSet<ViewUuid>>,

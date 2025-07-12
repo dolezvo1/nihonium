@@ -299,6 +299,14 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdElementView {
             DemoCsdElementView::Link(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
         }
     }
+    fn depends_on(&self, other: &ViewUuid) -> bool {
+        match self {
+            DemoCsdElementView::Package(rw_lock) => rw_lock.read().unwrap().depends_on(other),
+            DemoCsdElementView::Transactor(rw_lock) => rw_lock.read().unwrap().depends_on(other),
+            DemoCsdElementView::Transaction(rw_lock) => rw_lock.read().unwrap().depends_on(other),
+            DemoCsdElementView::Link(rw_lock) => rw_lock.read().unwrap().depends_on(other),
+        }
+    }
     fn deep_copy_walk(
         &self,
         requested: Option<&HashSet<ViewUuid>>,
