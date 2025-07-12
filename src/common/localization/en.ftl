@@ -24,6 +24,11 @@ nh-edit-redo = Redo
 nh-edit-cut = Cut
 nh-edit-copy = Copy
 nh-edit-paste = Paste
+nh-edit-arrange = Arrange
+nh-edit-arrange-bringtofront = Bring to Front
+nh-edit-arrange-forwardone = Forward One
+nh-edit-arrange-backwardone = Backward One
+nh-edit-arrange-sendtoback = Send to Back
 
 nh-view = View
 

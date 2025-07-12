@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 use std::io::Write;
 
 use common::canvas::{NHCanvas, UiCanvas};
-use common::controller::{ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleModelHierarchyView, SimpleProjectCommand};
+use common::controller::{Arrangement, ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleModelHierarchyView, SimpleProjectCommand};
 use common::project_serde::{NHProjectHierarchyNodeDTO, NHSerializeError, NHSerializer};
 use common::uuid::{ModelUuid, ViewUuid};
 use eframe::egui::{
@@ -123,6 +123,8 @@ struct NHContext {
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
 
     pub style: Option<Style>,
+    zoom_factor: f32,
+    zoom_with_keyboard: bool,
     color_profiles: Vec<(String, ColorLabels, Vec<ColorProfile>)>,
     selected_color_profiles: Vec<usize>,
     selected_language: usize,
@@ -969,6 +971,10 @@ impl NHContext {
                 for (l, c) in &[("Swap top languages:", SimpleProjectCommand::SwapTopLanguages),
                                 ("Save project:", SimpleProjectCommand::SaveProject),
                                 ("Save project as:", SimpleProjectCommand::SaveProjectAs),
+                                ("Arrange - Bring to Front:", DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into()),
+                                ("Arrange - Forward One:", DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into()),
+                                ("Arrange - Backward One:", DiagramCommand::ArrangeSelected(Arrangement::BackwardOne).into()),
+                                ("Arrange - Send to Back:", DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into()),
                                ] {
                     ui.label(*l);
                     let sc = self.shortcuts.get(c);
@@ -990,6 +996,7 @@ impl NHContext {
 
                     if sc.is_some() && ui.button("Delete").clicked() {
                         self.shortcuts.remove(c);
+                        self.sort_shortcuts();
                     }
                     ui.end_row();
                 }
@@ -1111,6 +1118,8 @@ impl Default for NHApp {
             custom_tabs: HashMap::new(),
             
             style: None,
+            zoom_factor: 1.0,
+            zoom_with_keyboard: false,
             color_profiles,
             selected_color_profiles,
             selected_language: 0,
@@ -1162,6 +1171,11 @@ impl Default for NHApp {
         context.shortcuts.insert(DiagramCommand::CopySelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C));
         context.shortcuts.insert(DiagramCommand::PasteClipboardElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
         context.shortcuts.insert(DiagramCommand::DeleteSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
+
+        context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Plus));
+        context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Plus));
+        context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BackwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Minus));
+        context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Minus));
         context.sort_shortcuts();
 
         Self {
@@ -1248,6 +1262,12 @@ fn new_project() -> Result<(), &'static str> {
 
 impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Set context state
+        ctx.options_mut(|op| {
+            op.zoom_factor = self.context.zoom_factor;
+            op.zoom_with_keyboard = self.context.zoom_with_keyboard;
+        });
+
         // Process ProjectCommands
         let mut commands = vec![];
         for c in self.context.unprocessed_commands.drain(..) {
@@ -1496,6 +1516,13 @@ impl eframe::App for NHApp {
                         let mut d = d.write().unwrap();
                         d.show_menubar_edit_options(ui, &mut commands);
                     }
+
+                    ui.menu_button(translate!("nh-edit-arrange"), |ui| {
+                         button!(ui, "nh-edit-arrange-bringtofront", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::BringToFront)));
+                         button!(ui, "nh-edit-arrange-forwardone", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne)));
+                         button!(ui, "nh-edit-arrange-backwardone", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::BackwardOne)));
+                         button!(ui, "nh-edit-arrange-sendtoback", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::SendToBack)));
+                    });
                 });
 
                 ui.menu_button(translate!("nh-view"), |_ui| {

@@ -1514,7 +1514,8 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassController {
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            | InsensitiveCommand::PasteSpecificElements(..)
+            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
                     for property in properties {

@@ -221,8 +221,17 @@ pub enum DiagramCommand {
     CutSelectedElements,
     CopySelectedElements,
     PasteClipboardElements,
+    ArrangeSelected(Arrangement),
     CreateViewFor(ModelUuid),
     DeleteViewFor(ModelUuid, /*including_model:*/ bool),
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
+pub enum Arrangement {
+    BringToFront,
+    ForwardOne,
+    BackwardOne,
+    SendToBack,
 }
 
 pub enum HierarchyNode {
@@ -554,6 +563,7 @@ pub enum SensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     DeleteSelectedElements(/*including_models:*/ bool),
     CutSelectedElements,
     PasteClipboardElements,
+    ArrangeSelected(Arrangement),
     PropertyChangeSelected(Vec<PropChangeT>),
     Insensitive(InsensitiveCommand<ElementT, PropChangeT>)
 }
@@ -585,6 +595,7 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
             SC::ResizeSelectedElementsTo(align, delta) => IC::ResizeSpecificElementsTo(se, align, delta),
             SC::DeleteSelectedElements(including_models) => IC::DeleteSpecificElements(se, including_models),
             SC::CutSelectedElements => IC::CutSpecificElements(se),
+            SC::ArrangeSelected(arr) => IC::ArrangeSpecificElements(se, arr),
             SC::PropertyChangeSelected(changes) => IC::PropertyChange(se, changes),
             SC::Insensitive(..) | SC::PasteClipboardElements => unreachable!(),
         }
@@ -610,6 +621,7 @@ pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     DeleteSpecificElements(HashSet<ViewUuid>, /*including_models:*/ bool),
     CutSpecificElements(HashSet<ViewUuid>),
     PasteSpecificElements(ViewUuid, Vec<ElementT>),
+    ArrangeSpecificElements(HashSet<ViewUuid>, Arrangement),
     AddElement(ViewUuid, ElementT),
     PropertyChange(HashSet<ViewUuid>, Vec<PropChangeT>),
 }
@@ -636,6 +648,7 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
             }
             InsensitiveCommand::CutSpecificElements(uuids) => Arc::new(format!("Cut {} elements", uuids.len())),
             InsensitiveCommand::PasteSpecificElements(_, uuids) => Arc::new(format!("Paste {} elements", uuids.len())),
+            InsensitiveCommand::ArrangeSpecificElements(uuids, _) => Arc::new(format!("Arranged {} elements", uuids.len())),
             InsensitiveCommand::AddElement(..) => Arc::new(format!("Add 1 element")),
             InsensitiveCommand::PropertyChange(uuids, ..) => {
                 Arc::new(format!("Modify {} elements", uuids.len()))
@@ -1241,6 +1254,9 @@ impl<
                         }
                     }
                 }
+                InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {
+                    apply_arrangement(&mut self.event_order, uuids, *arr);
+                },
                 InsensitiveCommand::PropertyChange(uuids, _property) => {
                     if uuids.contains(&*self.uuid) {
                         self.adapter.apply_property_change_fun(
@@ -1268,6 +1284,7 @@ impl<
                 | InsensitiveCommand::MoveAllElements(..)
                 | InsensitiveCommand::ResizeSpecificElementsBy(..)
                 | InsensitiveCommand::ResizeSpecificElementsTo(..)
+                | InsensitiveCommand::ArrangeSpecificElements(..)
                 | InsensitiveCommand::PropertyChange(..) => false,
             };
 
@@ -1344,6 +1361,61 @@ impl<
         let new_model_view = SimpleModelHierarchyView::new(new_diagram_view.read().unwrap().model());
 
         (new_diagram_view, Arc::new(new_model_view))
+    }
+}
+
+fn apply_arrangement(eo: &mut Vec<ViewUuid>, uuids: &HashSet<ViewUuid>, arr: Arrangement) {
+    match arr {
+        Arrangement::BringToFront
+        | Arrangement::SendToBack => {
+            let mut modified = vec![];
+            let mut remainder = vec![];
+            for e in eo.drain(..) {
+                if uuids.contains(&e) {
+                    modified.push(e);
+                } else {
+                    remainder.push(e);
+                }
+            }
+            match arr {
+                Arrangement::BringToFront => {
+                    eo.extend(modified);
+                    eo.extend(remainder);
+                }
+                Arrangement::SendToBack => {
+                    eo.extend(remainder);
+                    eo.extend(modified);
+                }
+                _ => unreachable!(),
+            }
+        },
+        Arrangement::ForwardOne => {
+            if eo.len() > 1 {
+                if uuids.contains(&eo[0])
+                    && uuids.contains(&eo[1]) {
+                    eo.swap(0, 1);
+                }
+                for ii in 0..eo.len()-1 {
+                    if uuids.contains(&eo[ii+1]) {
+                        eo.swap(ii, ii+1);
+                    }
+                }
+            }
+        },
+        Arrangement::BackwardOne => {
+            let ll = eo.len();
+            if ll > 1 {
+                if uuids.contains(&eo[ll-2])
+                    && uuids.contains(&eo[ll-1]) {
+                    eo.swap(ll-2, ll-1);
+                }
+                for ii in (0..eo.len()-1).rev() {
+                    if uuids.contains(&eo[ii]) {
+                        eo.swap(ii, ii+1);
+                    }
+                }
+            }
+        },
     }
 }
 
@@ -1624,7 +1696,8 @@ impl<
             }
             DiagramCommand::DeleteSelectedElements
             | DiagramCommand::CutSelectedElements
-            | DiagramCommand::PasteClipboardElements => {
+            | DiagramCommand::PasteClipboardElements
+            | DiagramCommand::ArrangeSelected(_) => {
                 if matches!(command, DiagramCommand::CutSelectedElements) {
                     self.set_clipboard_from_selected();
                 }
@@ -1635,6 +1708,7 @@ impl<
                         DiagramCommand::DeleteSelectedElements => SensitiveCommand::DeleteSelectedElements(true),
                         DiagramCommand::CutSelectedElements => SensitiveCommand::CutSelectedElements,
                         DiagramCommand::PasteClipboardElements => SensitiveCommand::PasteClipboardElements,
+                        DiagramCommand::ArrangeSelected(arr) => SensitiveCommand::ArrangeSelected(arr),
                         _ => unreachable!(),
                     }
                 ], &mut undo, true, true);
@@ -2370,6 +2444,9 @@ where
 
                 recurse!(self);
             },
+            InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {
+                apply_arrangement(&mut self.event_order, uuids, *arr);
+            },
             InsensitiveCommand::PropertyChange(uuids, _property) => {
                 if uuids.contains(&*self.uuid) {
                     self.adapter.apply_change(
@@ -3062,7 +3139,8 @@ where
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::CutSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            | InsensitiveCommand::PasteSpecificElements(..)
+            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
                 let self_uuid = *self.uuid;
                 if let Some(center_point) =

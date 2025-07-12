@@ -1679,7 +1679,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            | InsensitiveCommand::PasteSpecificElements(..)
+            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     for property in properties {
@@ -2212,7 +2213,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            | InsensitiveCommand::PasteSpecificElements(..)
+            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
                     for property in properties {

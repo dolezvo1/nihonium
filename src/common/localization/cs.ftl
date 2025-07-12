@@ -24,6 +24,11 @@ nh-edit-redo = Znovu
 nh-edit-cut = Vyjmout
 nh-edit-copy = Kopírovat
 nh-edit-paste = Vložit
+nh-edit-arrange = Uspořádat
+nh-edit-arrange-bringtofront = Přenést do popředí
+nh-edit-arrange-forwardone = Krok do popředí
+nh-edit-arrange-backwardone = Krok do pozadí
+nh-edit-arrange-sendtoback = Odsunout do pozadí
 
 nh-view = Pohled
 
