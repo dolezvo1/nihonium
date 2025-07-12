@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, VertexInformation, View
+    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
 use crate::common::project_serde::{get_model_uuid, NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
@@ -9,7 +9,6 @@ use crate::democsd::democsd_models::{
     DemoCsdTransaction, DemoCsdTransactor,
 };
 use eframe::egui;
-use std::any::Any;
 use std::collections::HashSet;
 use std::{
     collections::HashMap,
@@ -17,45 +16,34 @@ use std::{
     sync::{Arc, RwLock, Weak},
 };
 
-type ControllerT = dyn ElementControllerGen2<
-    DemoCsdElement,
-    DemoCsdQueryable,
-    NaiveDemoCsdTool,
-    DemoCsdElementOrVertex,
-    DemoCsdPropChange,
->;
-type ArcRwLockControllerT = Arc<RwLock<ControllerT>>;
-type DiagramViewT = DiagramControllerGen2<
-    DemoCsdDiagramAdapter,
-    DemoCsdDiagram,
-    DemoCsdElement,
-    DemoCsdQueryable,
-    NaiveDemoCsdTool,
-    DemoCsdElementOrVertex,
-    DemoCsdPropChange,
->;
-type PackageViewT = crate::common::controller::PackageView<
-    DemoCsdPackageAdapter,
-    DemoCsdElement,
-    DemoCsdQueryable,
-    NaiveDemoCsdTool,
-    DemoCsdElementOrVertex,
-    DemoCsdPropChange,
->;
-type LinkViewT = MulticonnectionView<
-    DemoCsdLinkAdapter,
-    DemoCsdElement,
-    DemoCsdQueryable,
-    NaiveDemoCsdTool,
-    DemoCsdElementOrVertex,
-    DemoCsdPropChange,
->;
+struct DemoCsdDomain;
+impl Domain for DemoCsdDomain {
+    type CommonElementT = DemoCsdElement;
+    type CommonElementViewT = DemoCsdElementView;
+    type QueryableT<'a> = DemoCsdQueryable<'a>;
+    type ToolT = NaiveDemoCsdTool;
+    type AddCommandElementT = DemoCsdElementOrVertex;
+    type PropChangeT = DemoCsdPropChange;
+}
 
-pub struct DemoCsdQueryable {}
+type PackageViewT = PackageView<DemoCsdDomain, DemoCsdPackageAdapter>;
+type LinkViewT = MulticonnectionView<DemoCsdDomain, DemoCsdLinkAdapter>;
 
-impl Queryable for DemoCsdQueryable {
-    fn new() -> Self {
-        Self {}
+pub struct DemoCsdQueryable<'a> {
+    models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
+    flattened_views: &'a HashMap<ViewUuid, DemoCsdElementView>,
+}
+
+impl<'a> Queryable<'a, DemoCsdDomain> for DemoCsdQueryable<'a> {
+    fn new(
+        models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &'a HashMap<ViewUuid, DemoCsdElementView>,
+    ) -> Self {
+        Self { models_to_views, flattened_views }
+    }
+
+    fn get_view(&self, m: &ModelUuid) -> Option<DemoCsdElementView> {
+        self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
     }
 }
 
@@ -69,7 +57,6 @@ pub enum DemoCsdPropChange {
     LinkTypeChange(DemoCsdLinkType),
 
     CommentChange(Arc<String>),
-    PackageResize(egui::Vec2),
 }
 
 impl Debug for DemoCsdPropChange {
@@ -86,21 +73,15 @@ impl TryFrom<&DemoCsdPropChange> for FlipMulticonnection {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, derive_more::From)]
 pub enum DemoCsdElementOrVertex {
-    Element((ViewUuid, ArcRwLockControllerT)),
+    Element(DemoCsdElementView),
     Vertex(VertexInformation),
 }
 
 impl Debug for DemoCsdElementOrVertex {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "DemoCsdElementOrVertex::???")
-    }
-}
-
-impl From<VertexInformation> for DemoCsdElementOrVertex {
-    fn from(value: VertexInformation) -> Self {
-        Self::Vertex(value)
     }
 }
 
@@ -115,13 +96,7 @@ impl TryFrom<DemoCsdElementOrVertex> for VertexInformation {
     }
 }
 
-impl From<(ViewUuid, ArcRwLockControllerT)> for DemoCsdElementOrVertex {
-    fn from(value: (ViewUuid, ArcRwLockControllerT)) -> Self {
-        Self::Element(value)
-    }
-}
-
-impl TryFrom<DemoCsdElementOrVertex> for (ViewUuid, ArcRwLockControllerT) {
+impl TryFrom<DemoCsdElementOrVertex> for DemoCsdElementView {
     type Error = ();
 
     fn try_from(value: DemoCsdElementOrVertex) -> Result<Self, Self::Error> {
@@ -154,6 +129,219 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
     ("DEMO CSD diagram".to_owned(), c.0, c.1)
 }
 
+#[derive(Clone, derive_more::From)]
+pub enum DemoCsdElementView {
+    Package(Arc<RwLock<PackageViewT>>),
+    Transactor(Arc<RwLock<DemoCsdTransactorView>>),
+    Transaction(Arc<RwLock<DemoCsdTransactionView>>),
+    Link(Arc<RwLock<LinkViewT>>),
+}
+
+impl Debug for DemoCsdElementView {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f, "DemoCsdElementView::???")
+    }
+}
+
+impl NHSerialize for DemoCsdElementView {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().serialize_into(into),
+            Self::Transactor(inner) => inner.read().unwrap().serialize_into(into),
+            Self::Transaction(inner) => inner.read().unwrap().serialize_into(into),
+            Self::Link(inner) => inner.read().unwrap().serialize_into(into),
+        }
+    }
+}
+// impl NHDeserialize for DemoCsdElementView {}
+impl View for DemoCsdElementView {
+    fn uuid(&self) -> Arc<ViewUuid> {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().uuid(),
+            Self::Transactor(inner) => inner.read().unwrap().uuid(),
+            Self::Transaction(inner) => inner.read().unwrap().uuid(),
+            Self::Link(inner) => inner.read().unwrap().uuid(),
+        }
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().model_uuid(),
+            Self::Transactor(inner) => inner.read().unwrap().model_uuid(),
+            Self::Transaction(inner) => inner.read().unwrap().model_uuid(),
+            Self::Link(inner) => inner.read().unwrap().model_uuid(),
+        }
+    }
+    fn model_name(&self) -> Arc<String> {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().model_name(),
+            Self::Transactor(inner) => inner.read().unwrap().model_name(),
+            Self::Transaction(inner) => inner.read().unwrap().model_name(),
+            Self::Link(inner) => inner.read().unwrap().model_name(),
+        }
+    }
+}
+impl ElementController<DemoCsdElement> for DemoCsdElementView {
+    fn model(&self) -> DemoCsdElement {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().model(),
+            Self::Transactor(inner) => inner.read().unwrap().model(),
+            Self::Transaction(inner) => inner.read().unwrap().model(),
+            Self::Link(inner) => inner.read().unwrap().model(),
+        }
+    }
+    fn min_shape(&self) -> NHShape {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().min_shape(),
+            Self::Transactor(inner) => inner.read().unwrap().min_shape(),
+            Self::Transaction(inner) => inner.read().unwrap().min_shape(),
+            Self::Link(inner) => inner.read().unwrap().min_shape(),
+        }
+    }
+    fn max_shape(&self) -> NHShape {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().max_shape(),
+            Self::Transactor(inner) => inner.read().unwrap().max_shape(),
+            Self::Transaction(inner) => inner.read().unwrap().max_shape(),
+            Self::Link(inner) => inner.read().unwrap().max_shape(),
+        }
+    }
+    fn position(&self) -> egui::Pos2 {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().position(),
+            Self::Transactor(inner) => inner.read().unwrap().position(),
+            Self::Transaction(inner) => inner.read().unwrap().position(),
+            Self::Link(inner) => inner.read().unwrap().position(),
+        }
+    }
+}
+impl ContainerGen2<DemoCsdDomain> for DemoCsdElementView {
+    fn controller_for(&self, uuid: &ModelUuid) -> Option<<DemoCsdDomain as Domain>::CommonElementViewT> {
+        match self {
+            DemoCsdElementView::Package(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+            DemoCsdElementView::Transactor(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+            DemoCsdElementView::Transaction(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+            DemoCsdElementView::Link(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+        }
+    }
+}
+impl ElementControllerGen2<DemoCsdDomain> for DemoCsdElementView {
+    fn show_properties(
+        &mut self,
+        q: &DemoCsdQueryable,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+    ) -> bool {
+        match self {
+            DemoCsdElementView::Package(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+            DemoCsdElementView::Transactor(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+            DemoCsdElementView::Transaction(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+            DemoCsdElementView::Link(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+        }
+    }
+    fn draw_in(
+        &mut self,
+        q: &DemoCsdQueryable,
+        context: &DrawingContext,
+        canvas: &mut dyn canvas::NHCanvas,
+        tool: &Option<(egui::Pos2, &NaiveDemoCsdTool)>,
+    ) -> TargettingStatus {
+        match self {
+            DemoCsdElementView::Package(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+            DemoCsdElementView::Transactor(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+            DemoCsdElementView::Transaction(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+            DemoCsdElementView::Link(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+        }
+    }
+    fn collect_allignment(&mut self, am: &mut SnapManager) {
+        match self {
+            DemoCsdElementView::Package(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+            DemoCsdElementView::Transactor(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+            DemoCsdElementView::Transaction(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+            DemoCsdElementView::Link(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+        }
+    }
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        ehc: &EventHandlingContext,
+        tool: &mut Option<NaiveDemoCsdTool>,
+        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+    ) -> EventHandlingStatus {
+        match self {
+            DemoCsdElementView::Package(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+            DemoCsdElementView::Transactor(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+            DemoCsdElementView::Transaction(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+            DemoCsdElementView::Link(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+        }
+    }
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+    ) {
+        match self {
+            DemoCsdElementView::Package(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+            DemoCsdElementView::Transactor(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+            DemoCsdElementView::Transaction(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+            DemoCsdElementView::Link(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+        }
+    }
+    fn head_count(
+        &mut self,
+        flattened_views: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        match self {
+            DemoCsdElementView::Package(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            DemoCsdElementView::Transactor(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            DemoCsdElementView::Transaction(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            DemoCsdElementView::Link(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+        }
+    }
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        c: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        m: &mut HashMap<ModelUuid, DemoCsdElement>,
+    ) {
+        match self {
+            DemoCsdElementView::Package(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            DemoCsdElementView::Transactor(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            DemoCsdElementView::Transaction(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            DemoCsdElementView::Link(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+        }
+    }
+    fn deep_copy_clone(
+        &self,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        c: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        m: &mut HashMap<ModelUuid, DemoCsdElement>,
+    ) {
+        match self {
+            DemoCsdElementView::Package(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+            DemoCsdElementView::Transactor(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+            DemoCsdElementView::Transaction(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+            DemoCsdElementView::Link(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+        }
+    }
+    fn deep_copy_relink(
+        &mut self,
+        c: &HashMap<ViewUuid, DemoCsdElementView>,
+        m: &HashMap<ModelUuid, DemoCsdElement>,
+    ) {
+        match self {
+            DemoCsdElementView::Package(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+            DemoCsdElementView::Transactor(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+            DemoCsdElementView::Transaction(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+            DemoCsdElementView::Link(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct DemoCsdDiagramAdapter {
     model: Arc<RwLock<DemoCsdDiagram>>,
@@ -161,7 +349,7 @@ pub struct DemoCsdDiagramAdapter {
     comment_buffer: String,
 }
 
-impl DiagramAdapter<DemoCsdDiagram, DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdDiagramAdapter {
+impl DiagramAdapter<DemoCsdDomain, DemoCsdDiagram> for DemoCsdDiagramAdapter {
     fn model(&self) -> Arc<RwLock<DemoCsdDiagram>> {
         self.model.clone()
     }
@@ -175,11 +363,46 @@ impl DiagramAdapter<DemoCsdDiagram, DemoCsdElement, DemoCsdQueryable, NaiveDemoC
         "democsd-diagram-view"
     }
 
-    fn create_view_for(
+    fn create_new_view_for(
         &self,
-        element: DemoCsdElement
+        q: &DemoCsdQueryable<'_>,
+        element: DemoCsdElement,
     ) -> DemoCsdElementOrVertex {
-        todo!("implement view creation")
+        let v = match element {
+            DemoCsdElement::DemoCsdPackage(rw_lock) => {
+                DemoCsdElementView::from(
+                    new_democsd_package_view(
+                        rw_lock,
+                        egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 100.0) },
+                    )
+                )
+            },
+            DemoCsdElement::DemoCsdTransactor(rw_lock) => {
+                let m = rw_lock.read().unwrap();
+                let tx_view = m.transaction.as_ref().map(|e| new_democsd_transaction_view(e.clone(), egui::Pos2::ZERO, false));
+                DemoCsdElementView::from(
+                    new_democsd_transactor_view(rw_lock.clone(), tx_view, egui::Pos2::ZERO)
+                )
+            },
+            DemoCsdElement::DemoCsdTransaction(rw_lock) => {
+                DemoCsdElementView::from(
+                    new_democsd_transaction_view(rw_lock, egui::Pos2::ZERO, false)
+                )
+            },
+            DemoCsdElement::DemoCsdLink(rw_lock) => {
+                let m = rw_lock.read().unwrap();
+                let source_view = q.get_view(&m.source.read().unwrap().uuid).unwrap();
+                let target_view = q.get_view(&m.target.read().unwrap().uuid).unwrap();
+                DemoCsdElementView::from(
+                    new_democsd_link_view(
+                        rw_lock.clone(),
+                        source_view,
+                        target_view,
+                    )
+                )
+            },
+        };
+        DemoCsdElementOrVertex::from(v)
     }
 
     fn show_props_fun(
@@ -394,10 +617,10 @@ pub fn new(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarc
 
 pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
     let mut models: Vec<DemoCsdElement> = vec![];
-    let mut controllers = Vec::<ArcRwLockControllerT>::new();
+    let mut controllers = Vec::<DemoCsdElementView>::new();
 
     {
-        let (_, client, client_uuid, client_view) = democsd_transactor(
+        let (client, client_view) = new_democsd_transactor(
             "CTAR01",
             "Client",
             false,
@@ -407,18 +630,18 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
         );
 
         models.push(client.into());
-        controllers.push(client_view);
+        controllers.push(client_view.into());
     }
 
     {
-        let (_, tx_model, _tx_uuid, tx_view) = democsd_transaction(
+        let (tx_model, tx_view) = new_democsd_transaction(
             "TK01",
             "Sale completion",
             egui::Pos2::new(200.0, 400.0),
             true,
         );
 
-        let (_, ta, ta_uuid, ta_view) = democsd_transactor(
+        let (ta, ta_view) = new_democsd_transactor(
             "AR01",
             "Sale completer",
             true,
@@ -427,18 +650,18 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
             egui::Pos2::new(200.0, 400.0),
         );
         models.push(ta.into());
-        controllers.push(ta_view);
+        controllers.push(ta_view.into());
     }
 
     {
-        let (_, tx, _tx_uuid, tx_view) = democsd_transaction(
+        let (tx, tx_view) = new_democsd_transaction(
             "TK10",
             "Sale transportation",
             egui::Pos2::new(200.0, 600.0),
             true,
         );
 
-        let (_, ta_model, ta_uuid, ta_view) = democsd_transactor(
+        let (ta_model, ta_view) = new_democsd_transactor(
             "AR02",
             "Sale transporter",
             true,
@@ -447,18 +670,18 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
             egui::Pos2::new(200.0, 600.0),
         );
         models.push(ta_model.into());
-        controllers.push(ta_view);
+        controllers.push(ta_view.into());
     }
 
     {
-        let (_, tx_model, _tx_uuid, tx_view) = democsd_transaction(
+        let (tx_model, tx_view) = new_democsd_transaction(
             "TK11",
             "Sale controlling",
             egui::Pos2::new(400.0, 200.0),
             true,
         );
 
-        let (_, ta_model, ta_uuid, ta_view) = democsd_transactor(
+        let (ta_model, ta_view) = new_democsd_transactor(
             "AR03",
             "Sale controller",
             true,
@@ -467,7 +690,7 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
             egui::Pos2::new(400.0, 200.0),
         );
         models.push(ta_model.into());
-        controllers.push(ta_view);
+        controllers.push(ta_view.into());
     }
 
     // TK02 - Purchase completer
@@ -496,27 +719,6 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum KindedDemoCsdElement<'a> {
-    Diagram {},
-    Package { inner: &'a PackageViewT },
-    Transactor { inner: &'a DemoCsdTransactorView },
-    Bank { inner: &'a DemoCsdTransactionView },
-    Link { inner: &'a LinkViewT },
-}
-
-impl<'a> From<&'a DiagramViewT> for KindedDemoCsdElement<'a> {
-    fn from(_from: &'a DiagramViewT) -> Self {
-        Self::Diagram {}
-    }
-}
-
-impl<'a> From<&'a PackageViewT> for KindedDemoCsdElement<'a> {
-    fn from(from: &'a PackageViewT) -> Self {
-        Self::Package { inner: from }
-    }
-}
-
 #[derive(Clone, Copy, PartialEq)]
 pub enum DemoCsdToolStage {
     Client,
@@ -531,11 +733,10 @@ pub enum DemoCsdToolStage {
 
 enum PartialDemoCsdElement {
     None,
-    Some((ViewUuid, ArcRwLockControllerT)),
+    Some(DemoCsdElementView),
     Link {
         link_type: DemoCsdLinkType,
         source: Arc<RwLock<DemoCsdTransactor>>,
-        source_view: ArcRwLockControllerT,
         dest: Option<Arc<RwLock<DemoCsdTransaction>>>,
     },
     Package {
@@ -565,19 +766,16 @@ impl NaiveDemoCsdTool {
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
 const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
 
-impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropChange>
-    for NaiveDemoCsdTool
-{
-    type KindedElement<'a> = KindedDemoCsdElement<'a>;
+impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
     type Stage = DemoCsdToolStage;
 
     fn initial_stage(&self) -> DemoCsdToolStage {
         self.initial_stage
     }
 
-    fn targetting_for_element<'a>(&self, controller: Self::KindedElement<'a>) -> egui::Color32 {
-        match controller {
-            KindedDemoCsdElement::Diagram { .. } => match self.current_stage {
+    fn targetting_for_element(&self, element: Option<DemoCsdElement>) -> egui::Color32 {
+        match element {
+            None => match self.current_stage {
                 DemoCsdToolStage::Client
                 | DemoCsdToolStage::Transactor
                 | DemoCsdToolStage::Bank
@@ -588,7 +786,7 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
                     NON_TARGETTABLE_COLOR
                 }
             },
-            KindedDemoCsdElement::Package { .. } => match self.current_stage {
+            Some(DemoCsdElement::DemoCsdPackage(..)) => match self.current_stage {
                 DemoCsdToolStage::Client
                 | DemoCsdToolStage::Transactor
                 | DemoCsdToolStage::Bank
@@ -599,7 +797,7 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
                     NON_TARGETTABLE_COLOR
                 }
             },
-            KindedDemoCsdElement::Transactor { .. } => match self.current_stage {
+            Some(DemoCsdElement::DemoCsdTransactor(..)) => match self.current_stage {
                 DemoCsdToolStage::LinkStart { .. } => TARGETTABLE_COLOR,
                 DemoCsdToolStage::Client
                 | DemoCsdToolStage::Transactor
@@ -609,7 +807,7 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
                 | DemoCsdToolStage::PackageEnd
                 | DemoCsdToolStage::Note => NON_TARGETTABLE_COLOR,
             },
-            KindedDemoCsdElement::Bank { .. } => match self.current_stage {
+            Some(DemoCsdElement::DemoCsdTransaction(..)) => match self.current_stage {
                 DemoCsdToolStage::LinkEnd => TARGETTABLE_COLOR,
                 DemoCsdToolStage::Client
                 | DemoCsdToolStage::Transactor
@@ -619,28 +817,30 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
                 | DemoCsdToolStage::PackageEnd
                 | DemoCsdToolStage::Note => NON_TARGETTABLE_COLOR,
             },
-            KindedDemoCsdElement::Link { .. } => todo!(),
+            Some(DemoCsdElement::DemoCsdLink(..)) => todo!(),
         }
     }
-    fn draw_status_hint(&self, canvas: &mut dyn canvas::NHCanvas, pos: egui::Pos2) {
+    fn draw_status_hint(&self, q: &DemoCsdQueryable, canvas: &mut dyn canvas::NHCanvas, pos: egui::Pos2) {
         match &self.result {
             PartialDemoCsdElement::Link {
-                source_view,
+                source,
                 link_type,
                 ..
             } => {
-                canvas.draw_line(
-                    [source_view.read().unwrap().position(), pos],
-                    match link_type.line_type() {
-                        canvas::LineType::Solid => {
-                            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
-                        }
-                        canvas::LineType::Dashed => {
-                            canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK)
-                        }
-                    },
-                    canvas::Highlight::NONE,
-                );
+                if let Some(source_view) = q.get_view(&source.read().unwrap().uuid()) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        match link_type.line_type() {
+                            canvas::LineType::Solid => {
+                                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
+                            }
+                            canvas::LineType::Dashed => {
+                                canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK)
+                            }
+                        },
+                        canvas::Highlight::NONE,
+                    );
+                }
             }
             PartialDemoCsdElement::Package { a, .. } => {
                 canvas.draw_rectangle(
@@ -662,15 +862,15 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
 
         match (self.current_stage, &mut self.result) {
             (DemoCsdToolStage::Client, _) => {
-                let (_model_uuid, _client_model, view_uuid, client_view) =
-                    democsd_transactor("CTAR01", "Client", false, None, false, pos);
-                self.result = PartialDemoCsdElement::Some((view_uuid, client_view));
+                let (_client_model, client_view) =
+                    new_democsd_transactor("CTAR01", "Client", false, None, false, pos);
+                self.result = PartialDemoCsdElement::Some(client_view.into());
                 self.event_lock = true;
             }
             (DemoCsdToolStage::Transactor, _) => {
-                let (_tx_model_uuid, tx_model, _tx_view_uuid, tx_view) =
-                    democsd_transaction("TK01", "Transaction", pos, true);
-                let (_ta_model_uuid, _ta_model, ta_view_uuid, ta_view) = democsd_transactor(
+                let (tx_model, tx_view) =
+                    new_democsd_transaction("TK01", "Transaction", pos, true);
+                let (_ta_model, ta_view) = new_democsd_transactor(
                     "AR01",
                     "Transactor",
                     true,
@@ -678,13 +878,13 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
                     false,
                     pos,
                 );
-                self.result = PartialDemoCsdElement::Some((ta_view_uuid, ta_view));
+                self.result = PartialDemoCsdElement::Some(ta_view.into());
                 self.event_lock = true;
             }
             (DemoCsdToolStage::Bank, _) => {
-                let (_model_uuid, _bank_model, view_uuid, bank_view) =
-                    democsd_transaction("TK01", "Bank", pos, false);
-                self.result = PartialDemoCsdElement::Some((view_uuid, bank_view));
+                let (_bank_model, transaction_view) =
+                    new_democsd_transaction("TK01", "Bank", pos, false);
+                self.result = PartialDemoCsdElement::Some(transaction_view.into());
                 self.event_lock = true;
             }
             (DemoCsdToolStage::PackageStart, _) => {
@@ -699,21 +899,19 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
             _ => {}
         }
     }
-    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>) {
+    fn add_element<'a>(&mut self, controller: DemoCsdElement) {
         if self.event_lock {
             return;
         }
 
         match controller {
-            KindedDemoCsdElement::Diagram { .. } => {}
-            KindedDemoCsdElement::Package { .. } => {}
-            KindedDemoCsdElement::Transactor { inner } => {
+            DemoCsdElement::DemoCsdPackage(..) => {}
+            DemoCsdElement::DemoCsdTransactor(inner) => {
                 match (self.current_stage, &mut self.result) {
                     (DemoCsdToolStage::LinkStart { link_type }, PartialDemoCsdElement::None) => {
                         self.result = PartialDemoCsdElement::Link {
                             link_type,
-                            source: inner.model.clone(),
-                            source_view: inner.self_reference.upgrade().unwrap(),
+                            source: inner,
                             dest: None,
                         };
                         self.current_stage = DemoCsdToolStage::LinkEnd;
@@ -722,27 +920,18 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
                     _ => {}
                 }
             }
-            KindedDemoCsdElement::Bank { inner } => match (self.current_stage, &mut self.result) {
+            DemoCsdElement::DemoCsdTransaction(inner) => match (self.current_stage, &mut self.result) {
                 (DemoCsdToolStage::LinkEnd, PartialDemoCsdElement::Link { dest, .. }) => {
-                    *dest = Some(inner.model.clone());
+                    *dest = Some(inner);
                     self.event_lock = true;
                 }
                 _ => {}
             },
-            KindedDemoCsdElement::Link { .. } => {}
+            DemoCsdElement::DemoCsdLink(..) => {}
         }
     }
 
-    fn try_construct(
-        &mut self,
-        into: &dyn ContainerGen2<
-            DemoCsdElement,
-            DemoCsdQueryable,
-            Self,
-            DemoCsdElementOrVertex,
-            DemoCsdPropChange,
-        >,
-    ) -> Option<(ViewUuid, ArcRwLockControllerT)> {
+    fn try_construct(&mut self, into: &dyn ContainerGen2<DemoCsdDomain>) -> Option<DemoCsdElementView> {
         match &self.result {
             PartialDemoCsdElement::Some(x) => {
                 let x = x.clone();
@@ -752,39 +941,39 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
             // TODO: check for source == dest case, set points?
             PartialDemoCsdElement::Link {
                 source,
-                dest: Some(dest),
+                dest: Some(target),
                 link_type,
                 ..
             } => {
                 self.current_stage = self.initial_stage;
 
-                let predicate_controller: Option<(_, ArcRwLockControllerT)> =
-                    if let (Some(source_controller), Some(dest_controller)) = (
+                let link_view: Option<DemoCsdElementView> =
+                    if let (Some(source_view), Some(target_view)) = (
                         into.controller_for(&source.read().unwrap().uuid()),
-                        into.controller_for(&dest.read().unwrap().uuid()),
+                        into.controller_for(&target.read().unwrap().uuid()),
                     ) {
-                        let (_model_uuid, _predicate_model, view_uuid, predicate_view) = democsd_link(
+                        let (_link_model, link_view) = new_democsd_link(
                             *link_type,
-                            (source.clone(), source_controller),
-                            (dest.clone(), dest_controller),
+                            (source.clone(), source_view),
+                            (target.clone(), target_view),
                         );
 
-                        Some((view_uuid, predicate_view))
+                        Some(link_view.into())
                     } else {
                         None
                     };
 
                 self.result = PartialDemoCsdElement::None;
-                predicate_controller
+                link_view
             }
             PartialDemoCsdElement::Package { a, b: Some(b) } => {
                 self.current_stage = DemoCsdToolStage::PackageStart;
 
-                let (_model_uuid, _package_model, view_uuid, package_view) =
-                    democsd_package("A package", egui::Rect::from_two_pos(*a, *b));
+                let (_package_model, package_view) =
+                    new_democsd_package("A package", egui::Rect::from_two_pos(*a, *b));
 
                 self.result = PartialDemoCsdElement::None;
-                Some((view_uuid, package_view))
+                Some(package_view.into())
             }
             _ => None,
         }
@@ -795,36 +984,12 @@ impl Tool<DemoCsdElement, DemoCsdQueryable, DemoCsdElementOrVertex, DemoCsdPropC
     }
 }
 
-pub trait DemoCsdElementController:
-    ElementControllerGen2<
-    DemoCsdElement,
-    DemoCsdQueryable,
-    NaiveDemoCsdTool,
-    DemoCsdElementOrVertex,
-    DemoCsdPropChange,
->
-{
-    fn is_connection_from(&self, _uuid: &uuid::Uuid) -> bool {
-        false
-    }
-    fn connection_target_name(&self) -> Option<Arc<String>> {
-        None
-    }
-}
-
-pub trait DemoCsdContainerController {
-    fn controller_for(
-        &self,
-        uuid: &uuid::Uuid,
-    ) -> Option<Arc<RwLock<dyn DemoCsdElementController>>>;
-}
-
 #[derive(Clone)]
 pub struct DemoCsdPackageAdapter {
     model: Arc<RwLock<DemoCsdPackage>>,
 }
 
-impl PackageAdapter<DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdPackageAdapter {
+impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
     fn model(&self) -> DemoCsdElement {
         self.model.clone().into()
     }
@@ -936,37 +1101,41 @@ impl PackageAdapter<DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> f
     }
 }
 
-fn democsd_package(
+fn new_democsd_package(
     name: &str,
     bounds_rect: egui::Rect,
 ) -> (
-    ModelUuid,
     Arc<RwLock<DemoCsdPackage>>,
-    ViewUuid,
     Arc<RwLock<PackageViewT>>,
 ) {
-    let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
     let graph_model = Arc::new(RwLock::new(DemoCsdPackage::new(
         model_uuid,
         name.to_owned(),
         vec![],
     )));
-    let graph_view = PackageViewT::new(
+    let graph_view = new_democsd_package_view(graph_model.clone(), bounds_rect);
+
+    (graph_model, graph_view)
+}
+fn new_democsd_package_view(
+    model: Arc<RwLock<DemoCsdPackage>>,
+    bounds_rect: egui::Rect,
+) -> Arc<RwLock<PackageViewT>> {
+    let view_uuid = uuid::Uuid::now_v7().into();
+    PackageViewT::new(
         Arc::new(view_uuid),
         DemoCsdPackageAdapter {
-            model: graph_model.clone(),
+            model,
         },
         HashMap::new(),
         bounds_rect,
-    );
-
-    (model_uuid, graph_model, view_uuid, graph_view)
+    )
 }
 
 // ---
 
-fn democsd_transactor(
+fn new_democsd_transactor(
     identifier: &str,
     name: &str,
     internal: bool,
@@ -977,12 +1146,9 @@ fn democsd_transactor(
     transaction_selfactivating: bool,
     position: egui::Pos2,
 ) -> (
-    ModelUuid,
     Arc<RwLock<DemoCsdTransactor>>,
-    ViewUuid,
     Arc<RwLock<DemoCsdTransactorView>>,
 ) {
-    let ta_view_uuid = uuid::Uuid::now_v7().into();
     let ta_model_uuid = uuid::Uuid::now_v7().into();
     let ta_model = Arc::new(RwLock::new(DemoCsdTransactor::new(
         ta_model_uuid,
@@ -992,26 +1158,40 @@ fn democsd_transactor(
         transaction.as_ref().map(|t| t.0.clone()),
         transaction_selfactivating,
     )));
+    let ta_view = new_democsd_transactor_view(
+        ta_model.clone(),
+        transaction.as_ref().map(|t| t.1.clone()),
+        position,
+    );
+
+    (ta_model, ta_view)
+}
+fn new_democsd_transactor_view(
+    model: Arc<RwLock<DemoCsdTransactor>>,
+    transaction: Option<Arc<RwLock<DemoCsdTransactionView>>>,
+    position: egui::Pos2,
+) -> Arc<RwLock<DemoCsdTransactorView>> {
+    let m = model.read().unwrap();
+    let ta_view_uuid = uuid::Uuid::now_v7().into();
     let ta_view = Arc::new(RwLock::new(DemoCsdTransactorView {
         uuid: Arc::new(ta_view_uuid),
-        model: ta_model.clone(),
+        model: model.clone(),
         self_reference: Weak::new(),
-        transaction_view: transaction.map(|t| t.1),
+        transaction_view: transaction,
 
-        identifier_buffer: identifier.to_owned(),
-        name_buffer: name.to_owned(),
-        internal_buffer: internal,
-        transaction_selfactivating_buffer: transaction_selfactivating,
-        comment_buffer: "".to_owned(),
+        identifier_buffer: (*m.identifier).clone(),
+        name_buffer: (*m.name).clone(),
+        internal_buffer: m.internal,
+        transaction_selfactivating_buffer: m.transaction_selfactivating,
+        comment_buffer: (*m.comment).clone(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::ZERO,
     }));
-
     ta_view.write().unwrap().self_reference = Arc::downgrade(&ta_view);
-    (ta_model_uuid, ta_model, ta_view_uuid, ta_view)
+    ta_view
 }
 
 pub struct DemoCsdTransactorView {
@@ -1077,34 +1257,18 @@ impl ElementController<DemoCsdElement> for DemoCsdTransactorView {
     }
 }
 
-impl
-    ContainerGen2<
-        DemoCsdElement,
-        DemoCsdQueryable,
-        NaiveDemoCsdTool,
-        DemoCsdElementOrVertex,
-        DemoCsdPropChange,
-    > for DemoCsdTransactorView
-{
-    fn controller_for(&self, uuid: &ModelUuid) -> Option<ArcRwLockControllerT> {
+impl ContainerGen2<DemoCsdDomain> for DemoCsdTransactorView {
+    fn controller_for(&self, uuid: &ModelUuid) -> Option<DemoCsdElementView> {
         match &self.transaction_view {
             Some(t) if *uuid == *t.read().unwrap().model_uuid() => {
-                Some(t.clone() as ArcRwLockControllerT)
+                Some(t.clone().into())
             }
             _ => None,
         }
     }
 }
 
-impl
-    ElementControllerGen2<
-        DemoCsdElement,
-        DemoCsdQueryable,
-        NaiveDemoCsdTool,
-        DemoCsdElementOrVertex,
-        DemoCsdPropChange,
-    > for DemoCsdTransactorView
-{
+impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
     fn show_properties(
         &mut self,
         queryable: &DemoCsdQueryable,
@@ -1339,7 +1503,7 @@ impl
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_element(KindedDemoCsdElement::Transactor { inner: self }),
+                t.targetting_for_element(Some(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -1426,7 +1590,7 @@ impl
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_element(KindedDemoCsdElement::Transactor { inner: self });
+                    tool.add_element(self.model());
                 } else {
                     if !ehc.modifiers.command {
                         self.highlight.selected = true;
@@ -1583,23 +1747,26 @@ impl
 
     fn head_count(
         &mut self,
-        views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        views.insert(*self.uuid(), self.highlight.selected.into());
-        models.insert(*self.model_uuid(), *self.uuid);
+        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
 
-        if let Some(t) = &self.transaction_view {
+        if let Some(tx) = &self.transaction_view {
             let mut views_tx = HashMap::new();
-            let mut t = t.write().unwrap();
-            t.head_count(&mut views_tx, models);
+            let mut tx_l = tx.write().unwrap();
+            tx_l.head_count(flattened_views, &mut views_tx, flattened_represented_models);
 
             for e in views_tx {
-                views.insert(e.0, match e.1 {
+                flattened_views_status.insert(e.0, match e.1 {
                     SelectionStatus::NotSelected if self.highlight.selected => SelectionStatus::TransitivelySelected,
                     e => e,
                 });
             }
+
+            flattened_views.insert(*tx_l.uuid(), tx.clone().into());
         }
     }
     
@@ -1607,13 +1774,8 @@ impl
         &self,
         requested: Option<&HashSet<ViewUuid>>,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange>>>,
-        >,
-        c: &mut HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<DemoCsdElement, DemoCsdQueryable, NaiveDemoCsdTool, DemoCsdElementOrVertex, DemoCsdPropChange>>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
+        tlc: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        c: &mut HashMap<ViewUuid, DemoCsdElementView>,
         m: &mut HashMap<ModelUuid, DemoCsdElement>,
     ) {
         if requested.is_none_or(|e| e.contains(&self.uuid()) || self.transaction_view.as_ref().is_some_and(|t| e.contains(&t.read().unwrap().uuid()))) {
@@ -1623,19 +1785,15 @@ impl
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid, ArcRwLockControllerT>,
-        c: &mut HashMap<usize, (ViewUuid,
-            ArcRwLockControllerT,
-            Arc<dyn Any + Send + Sync>,
-        )>,
+        tlc: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        c: &mut HashMap<ViewUuid, DemoCsdElementView>,
         m: &mut HashMap<ModelUuid, DemoCsdElement>,
     ) {
         let tx_clone = if let Some(t) = self.transaction_view.as_ref() {
             let mut inner = HashMap::new();
             t.read().unwrap().deep_copy_clone(uuid_present, &mut inner, c, m);
-            if let Some(t) = c.get(&arc_to_usize(t)) {
-                let t: Result<Arc<RwLock<DemoCsdTransactionView>>, _> = Arc::downcast(t.2.clone());
-                t.ok()
+            if let Some(DemoCsdElementView::Transaction(t)) = c.get(&t.read().unwrap().uuid()) {
+                Some(t.clone())
             } else { None }
         } else { None };
 
@@ -1671,52 +1829,53 @@ impl
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(view_uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
     }
     fn deep_copy_relink(
         &mut self,
-        c: &HashMap<usize, (ViewUuid,
-            ArcRwLockControllerT,
-            Arc<dyn Any + Send + Sync>,
-        )>,
+        c: &HashMap<ViewUuid, DemoCsdElementView>,
         m: &HashMap<ModelUuid, DemoCsdElement>,
     ) {
-        if let Some((_, _, new_ta)) = self.transaction_view.as_ref().and_then(|e| c.get(&arc_to_usize(e)))  {
-            let new_ta: Result<Arc<RwLock<DemoCsdTransactionView>>, _> = Arc::downcast(new_ta.clone());
-            if let Ok(new_ta) = new_ta {
-                self.transaction_view = Some(new_ta.clone());
-            }
+        if let Some(DemoCsdElementView::Transaction(new_ta)) = self.transaction_view.as_ref().and_then(|e| c.get(&e.read().unwrap().uuid()))  {
+            self.transaction_view = Some(new_ta.clone());
         }
     }
 }
 
-fn democsd_transaction(
+fn new_democsd_transaction(
     identifier: &str,
     name: &str,
     position: egui::Pos2,
     actor: bool,
 ) -> (
-    ModelUuid,
     Arc<RwLock<DemoCsdTransaction>>,
-    ViewUuid,
     Arc<RwLock<DemoCsdTransactionView>>,
 ) {
-    let tx_view_uuid = uuid::Uuid::now_v7().into();
     let tx_model_uuid = uuid::Uuid::now_v7().into();
     let tx_model = Arc::new(RwLock::new(DemoCsdTransaction::new(
         tx_model_uuid,
         identifier.to_owned(),
         name.to_owned(),
     )));
+    let tx_view = new_democsd_transaction_view(tx_model.clone(), position, actor);
+    (tx_model, tx_view)
+}
+fn new_democsd_transaction_view(
+    model: Arc<RwLock<DemoCsdTransaction>>,
+    position: egui::Pos2,
+    actor: bool,
+) -> Arc<RwLock<DemoCsdTransactionView>> {
+    let m = model.read().unwrap();
+    let tx_view_uuid = uuid::Uuid::now_v7().into();
     let tx_view = Arc::new(RwLock::new(DemoCsdTransactionView {
         uuid: Arc::new(tx_view_uuid),
-        model: tx_model.clone(),
+        model: model.clone(),
         self_reference: Weak::new(),
 
-        identifier_buffer: identifier.to_owned(),
-        name_buffer: name.to_owned(),
-        comment_buffer: "".to_owned(),
+        identifier_buffer: (*m.identifier).clone(),
+        name_buffer: (*m.name).to_owned(),
+        comment_buffer: (*m.comment).to_owned(),
 
         dragged: false,
         highlight: canvas::Highlight::NONE,
@@ -1729,7 +1888,7 @@ fn democsd_transaction(
         min_shape: canvas::NHShape::ELLIPSE_ZERO,
     }));
     tx_view.write().unwrap().self_reference = Arc::downgrade(&tx_view);
-    (tx_model_uuid, tx_model, tx_view_uuid, tx_view)
+    tx_view
 }
 
 pub struct DemoCsdTransactionView {
@@ -1783,14 +1942,7 @@ impl ElementController<DemoCsdElement> for DemoCsdTransactionView {
     }
 }
 
-impl
-    ContainerGen2<
-        DemoCsdElement,
-        DemoCsdQueryable,
-        NaiveDemoCsdTool,
-        DemoCsdElementOrVertex,
-        DemoCsdPropChange,
-    > for DemoCsdTransactionView {}
+impl ContainerGen2<DemoCsdDomain> for DemoCsdTransactionView {}
 
 fn draw_tx_mark(
     canvas: &mut dyn canvas::NHCanvas,
@@ -1843,15 +1995,7 @@ fn draw_tx_mark(
     }
 }
 
-impl
-    ElementControllerGen2<
-        DemoCsdElement,
-        DemoCsdQueryable,
-        NaiveDemoCsdTool,
-        DemoCsdElementOrVertex,
-        DemoCsdPropChange,
-    > for DemoCsdTransactionView
-{
+impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     fn show_properties(
         &mut self,
         _parent: &DemoCsdQueryable,
@@ -1958,7 +2102,7 @@ impl
             canvas.draw_ellipse(
                 self.position,
                 egui::Vec2::splat(radius),
-                t.targetting_for_element(KindedDemoCsdElement::Bank { inner: self }),
+                t.targetting_for_element(Some(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -1993,7 +2137,7 @@ impl
             }
             InputEvent::Click(_) => {
                 if let Some(tool) = tool {
-                    tool.add_element(KindedDemoCsdElement::Bank { inner: self });
+                    tool.add_element(self.model());
                 } else {
                     if !ehc.modifiers.command {
                         commands.push(InsensitiveCommand::SelectAll(false).into());
@@ -2112,21 +2256,19 @@ impl
 
     fn head_count(
         &mut self,
-        views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        views.insert(*self.uuid(), self.highlight.selected.into());
-        models.insert(*self.model_uuid(), *self.uuid);
+        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
     
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid, ArcRwLockControllerT>,
-        c: &mut HashMap<usize, (ViewUuid,
-            ArcRwLockControllerT,
-            Arc<dyn Any + Send + Sync>,
-        )>,
+        tlc: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        c: &mut HashMap<ViewUuid, DemoCsdElementView>,
         m: &mut HashMap<ModelUuid, DemoCsdElement>
     ) {
         let old_model = self.model.read().unwrap();
@@ -2157,8 +2299,8 @@ impl
             min_shape: self.min_shape,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(view_uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
     }
 }
 
@@ -2178,7 +2320,7 @@ impl DemoCsdLinkAdapter {
     }
 }
 
-impl MulticonnectionAdapter<DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropChange> for DemoCsdLinkAdapter {
+impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
     fn model(&self) -> DemoCsdElement {
         self.model.clone().into()
     }
@@ -2316,35 +2458,42 @@ impl MulticonnectionAdapter<DemoCsdElement, DemoCsdElementOrVertex, DemoCsdPropC
     }
 }
 
-fn democsd_link(
+fn new_democsd_link(
     link_type: DemoCsdLinkType,
     source: (
         Arc<RwLock<DemoCsdTransactor>>,
-        ArcRwLockControllerT,
+        DemoCsdElementView,
     ),
-    destination: (
+    target: (
         Arc<RwLock<DemoCsdTransaction>>,
-        ArcRwLockControllerT,
+        DemoCsdElementView,
     ),
-) -> (ModelUuid, Arc<RwLock<DemoCsdLink>>, ViewUuid, Arc<RwLock<LinkViewT>>) {
-    let link_view_uuid = uuid::Uuid::now_v7().into();
+) -> (Arc<RwLock<DemoCsdLink>>, Arc<RwLock<LinkViewT>>) {
     let link_model_uuid = uuid::Uuid::now_v7().into();
     let link_model = Arc::new(RwLock::new(DemoCsdLink::new(
         link_model_uuid,
         link_type,
         source.0,
-        destination.0,
+        target.0,
     )));
-    let link_view = MulticonnectionView::new(
+    let link_view = new_democsd_link_view(link_model.clone(), source.1, target.1);
+    (link_model, link_view)
+}
+fn new_democsd_link_view(
+    model: Arc<RwLock<DemoCsdLink>>,
+    source: DemoCsdElementView,
+    target: DemoCsdElementView,
+) -> Arc<RwLock<LinkViewT>> {
+    let link_view_uuid = uuid::Uuid::now_v7().into();
+    MulticonnectionView::new(
         Arc::new(link_view_uuid),
         DemoCsdLinkAdapter {
-            model: link_model.clone(),
+            model,
         },
-        source.1,
-        destination.1,
+        source,
+        target,
         None,
         vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
         vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
-    );
-    (link_model_uuid, link_model, link_view_uuid, link_view)
+    )
 }

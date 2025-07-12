@@ -5,7 +5,6 @@ use egui_ltreeview::DirPosition;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::marker::PhantomData;
 use std::sync::{Arc, RwLock, Weak};
 
 pub const BACKGROUND_COLORS: usize = 8;
@@ -720,6 +719,15 @@ mod test {
     }
 }
 
+pub trait Domain: Sized + 'static {
+    type CommonElementT: Model + Clone;
+    type CommonElementViewT: ElementControllerGen2<Self> + Clone;
+    type QueryableT<'a>: Queryable<'a, Self>;
+    type ToolT: Tool<Self>;
+    type AddCommandElementT: From<Self::CommonElementViewT> + TryInto<Self::CommonElementViewT> + Clone + Debug;
+    type PropChangeT: Clone + Debug;
+}
+
 pub trait StructuralVisitor<T: ?Sized> {
     fn open_complex(&mut self, e: &T);
     fn close_complex(&mut self, e: &T);
@@ -740,60 +748,34 @@ pub trait ContainerModel<CommonElementT>: Model {
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
 }
 
-pub trait Queryable {
+pub trait Queryable<'a, DomainT: Domain> {
     // TODO: This is actually not a very good idea. Constructor should only be required where instantiated.
-    fn new() -> Self;
+    fn new(
+        models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &'a HashMap<ViewUuid, DomainT::CommonElementViewT>,
+    ) -> Self;
+    fn get_view(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT>;
 }
 
-pub trait Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT> {
-    type KindedElement<'a>;
-    type Stage;
+pub trait Tool<DomainT: Domain> {
+    type Stage: 'static;
 
     fn initial_stage(&self) -> Self::Stage;
 
-    fn targetting_for_element(&self, controller: Self::KindedElement<'_>) -> egui::Color32;
-    fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2);
+    fn targetting_for_element(&self, element: Option<DomainT::CommonElementT>) -> egui::Color32;
+    fn draw_status_hint(&self, q: &DomainT::QueryableT<'_>, canvas: &mut dyn NHCanvas, pos: egui::Pos2);
 
     fn add_position(&mut self, pos: egui::Pos2);
-    fn add_element(&mut self, controller: Self::KindedElement<'_>);
+    fn add_element(&mut self, element: DomainT::CommonElementT);
     fn try_construct(
         &mut self,
-        into: &dyn ContainerGen2<CommonElementT, QueryableT, Self, AddCommandElementT, PropChangeT>,
-    ) -> Option<(
-        ViewUuid,
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    CommonElementT,
-                    QueryableT,
-                    Self,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >,
-    )>;
+        into: &dyn ContainerGen2<DomainT>,
+    ) -> Option<DomainT::CommonElementViewT>;
     fn reset_event_lock(&mut self);
 }
 
-pub trait ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-{
-    fn controller_for(
-        &self,
-        uuid: &ModelUuid,
-    ) -> Option<
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    CommonElementT,
-                    QueryableT,
-                    ToolT,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >,
-    > {
+pub trait ContainerGen2<DomainT: Domain> {
+    fn controller_for(&self, uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
         None
     }
 }
@@ -831,29 +813,21 @@ pub struct EventHandlingContext<'a> {
     pub snap_manager: &'a SnapManager,
 }
 
-pub trait ElementControllerGen2<
-    CommonElementT,
-    QueryableT,
-    ToolT,
-    AddCommandElementT: Clone + Debug,
-    PropChangeT: Clone + Debug,
->: ElementController<CommonElementT> + NHSerialize + ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + Send + Sync where
-    ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
-{
+pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::CommonElementT> + NHSerialize + ContainerGen2<DomainT> + Send + Sync {
     fn show_properties(
         &mut self,
-        _: &QueryableT,
+        _: &DomainT::QueryableT<'_>,
         _ui: &mut egui::Ui,
-        _commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        _commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> bool {
         false
     }
     fn draw_in(
         &mut self,
-        _: &QueryableT,
+        _: &DomainT::QueryableT<'_>,
         context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
-        tool: &Option<(egui::Pos2, &ToolT)>,
+        tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus;
     fn collect_allignment(&mut self, am: &mut SnapManager) {
         am.add_shape(*self.uuid(), self.min_shape());
@@ -862,18 +836,19 @@ pub trait ElementControllerGen2<
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        tool: &mut Option<ToolT>,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        tool: &mut Option<DomainT::ToolT>,
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus;
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn head_count(
         &mut self,
-        views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     );
 
     // Create a deep copy, including the models
@@ -881,14 +856,9 @@ pub trait ElementControllerGen2<
         &self,
         requested: Option<&HashSet<ViewUuid>>,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-        >,
-        c: &mut HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
-        m: &mut HashMap<ModelUuid, CommonElementT>,
+        tlc: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
         if requested.is_none_or(|e| e.contains(&self.uuid())) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
@@ -897,116 +867,74 @@ pub trait ElementControllerGen2<
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-        >,
-        c: &mut HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
-        m: &mut HashMap<ModelUuid, CommonElementT>,
+        tlc: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
     );
     fn deep_copy_relink(
         &mut self,
-        c: &HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
-        m: &HashMap<ModelUuid, CommonElementT>,
+        c: &HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        m: &HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {}
 }
 
-pub trait DiagramAdapter<
-    DiagramModelT: ContainerModel<CommonElementT>,
-    CommonElementT,
-    QueryableT,
-    ToolT: 'static,
-    AddCommandElementT: Clone + Debug + 'static,
-    PropChangeT: Clone + Debug + 'static,
->: NHSerializeToScalar + NHDeserializeScalar {
+pub trait DiagramAdapter<DomainT: Domain, DiagramModelT: ContainerModel<DomainT::CommonElementT>>: NHSerializeToScalar + NHDeserializeScalar + 'static {
     fn model(&self) -> Arc<RwLock<DiagramModelT>>;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
 
     fn view_type(&self) -> &'static str;
 
-    fn find_element(&self, model_uuid: &ModelUuid) -> Option<(CommonElementT, ModelUuid)> {
+    fn find_element(&self, model_uuid: &ModelUuid) -> Option<(DomainT::CommonElementT, ModelUuid)> {
         self.model().read().unwrap().find_element(model_uuid)
     }
-    fn add_element(&mut self, element: CommonElementT) {
+    fn add_element(&mut self, element: DomainT::CommonElementT) {
         self.model().write().unwrap().add_element(element);
     }
     fn delete_elements(&mut self, elements: &HashSet<ModelUuid>) {
         self.model().write().unwrap().delete_elements(elements);
     }
-    fn create_view_for(
+    fn create_new_view_for(
         &self,
-        element: CommonElementT
-    ) -> AddCommandElementT;
+        q: &DomainT::QueryableT<'_>,
+        element: DomainT::CommonElementT,
+    ) -> DomainT::AddCommandElementT;
 
     fn show_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn apply_property_change_fun(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
-    fn tool_change_fun(&self, tool: &mut Option<ToolT>, ui: &mut egui::Ui);
+    fn tool_change_fun(&self, tool: &mut Option<DomainT::ToolT>, ui: &mut egui::Ui);
     fn menubar_options_fun(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
 
-    fn deep_copy(&self) -> (Self, HashMap<ModelUuid, CommonElementT>);
-    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, CommonElementT>);
+    fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
+    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
 }
 
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
 pub struct DiagramControllerGen2<
-    DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
-    DiagramModelT: ContainerModel<CommonElementT>,
-    CommonElementT: 'static,
-    QueryableT: Queryable + 'static,
-    ToolT: 'static,
-    AddCommandElementT: Clone + Debug + 'static,
-    PropChangeT: Clone + Debug + 'static,
-> where
-    ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
-{
+    DomainT: Domain,
+    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
+> {
     uuid: Arc<ViewUuid>,
     adapter: DiagramAdapterT,
     self_reference: Weak<RwLock<Self>>,
-    owned_controllers: HashMap<
-        ViewUuid,
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    CommonElementT,
-                    QueryableT,
-                    ToolT,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >,
-    >,
+    owned_views: HashMap<ViewUuid, DomainT::CommonElementViewT>,
     event_order: Vec<ViewUuid>,
-    all_elements: HashMap<ViewUuid, SelectionStatus>,
-    represented_models: HashMap<ModelUuid, ViewUuid>,
-    clipboard_elements: HashMap<ViewUuid, Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    CommonElementT,
-                    QueryableT,
-                    ToolT,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >>,
+    flattened_views: HashMap<ViewUuid, DomainT::CommonElementViewT>,
+    flattened_views_status: HashMap<ViewUuid, SelectionStatus>,
+    flattened_represented_models: HashMap<ModelUuid, ViewUuid>,
+    clipboard_elements: HashMap<ViewUuid, DomainT::CommonElementViewT>,
 
     pub _layers: Vec<bool>,
 
@@ -1015,99 +943,39 @@ pub struct DiagramControllerGen2<
     last_unhandled_mouse_pos: Option<egui::Pos2>,
     last_interactive_canvas_rect: egui::Rect,
     snap_manager: SnapManager,
-    current_tool: Option<ToolT>,
+    current_tool: Option<DomainT::ToolT>,
     select_by_drag: Option<(egui::Pos2, egui::Pos2)>,
 
     last_change_flag: bool,
     undo_stack: Vec<(
-        InsensitiveCommand<AddCommandElementT, PropChangeT>,
-        Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+        InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     )>,
-    redo_stack: Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+    redo_stack: Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
-        DiagramModelT: ContainerModel<CommonElementT>,
-        CommonElementT: 'static,
-        QueryableT: Queryable + 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    >
-    DiagramControllerGen2<
-        DiagramAdapterT,
-        DiagramModelT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT
-    >
-where
-    ToolT: for<'a> Tool<
-        CommonElementT,
-        QueryableT,
-        AddCommandElementT,
-        PropChangeT,
-        KindedElement<'a>: From<&'a Self>,
-    >,
-    AddCommandElementT: From<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )>,
-{
+    DomainT: Domain,
+    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
+> DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     pub fn new(
         uuid: Arc<ViewUuid>,
         adapter: DiagramAdapterT,
-        owned_controllers: Vec<
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        >,
+        owned_controllers: Vec<DomainT::CommonElementViewT>,
     ) -> Arc<RwLock<Self>> {
-        let event_order = owned_controllers.iter().map(|e| *e.read().unwrap().uuid()).collect();
-        let owned_controllers = owned_controllers.into_iter().map(|e| { let uuid = *e.read().unwrap().uuid(); (uuid, e) }).collect();
+        let event_order = owned_controllers.iter().map(|e| *e.uuid()).collect();
+        let owned_views = owned_controllers.into_iter().map(|e| { let uuid = *e.uuid(); (uuid, e) }).collect();
 
         let ret = Arc::new(RwLock::new(Self {
             uuid,
             adapter,
             self_reference: Weak::new(),
-            owned_controllers,
+            owned_views,
             event_order,
-            all_elements: HashMap::new(),
-            represented_models: HashMap::new(),
+            flattened_views: HashMap::new(),
+            flattened_views_status: HashMap::new(),
+            flattened_represented_models: HashMap::new(),
             clipboard_elements: HashMap::new(),
 
             _layers: vec![true],
@@ -1126,9 +994,7 @@ where
         }));
         // Bind self reference
         ret.write().unwrap().self_reference = Arc::downgrade(&ret);
-
-        // Unselect all elements to trigger head_count
-        ret.write().unwrap().apply_commands(vec![InsensitiveCommand::SelectAll(false).into()], &mut vec![], false, false);
+        ret.write().unwrap().head_count();
 
         ret
     }
@@ -1144,9 +1010,11 @@ where
     fn handle_event(&mut self, event: InputEvent, modifiers: ModifierKeys, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
         // Collect alignment guides
         self.snap_manager = SnapManager::new(self.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.camera_scale));
-        self.event_order.iter()
-            .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
-            .for_each(|uc| uc.1.write().unwrap().collect_allignment(&mut self.snap_manager));
+        for k in &self.event_order {
+            if let Some(uc) = self.owned_views.get_mut(k) {
+                uc.collect_allignment(&mut self.snap_manager);
+            }
+        }
         self.snap_manager.sort_guidelines();
 
         // Handle events
@@ -1159,40 +1027,38 @@ where
         let ehc = EventHandlingContext {
             modifiers,
             ui_scale: self.camera_scale,
-            all_elements: &self.all_elements,
+            all_elements: &self.flattened_views_status,
             snap_manager: &self.snap_manager,
         };
 
-        let child = self.event_order
-            .iter()
-            .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
-            .map(|uc| (uc.0, uc.1.write().unwrap().handle_event(
-                    event,
-                    &ehc,
-                    &mut self.current_tool,
-                    &mut commands,
-                )))
-            .find(|e| e.1 != EventHandlingStatus::NotHandled)
-            .map(|us| {
-                match us.1 {
-                    EventHandlingStatus::HandledByElement if matches!(event, InputEvent::Click(_)) => {
-                        if !modifiers.command {
-                            commands.push(InsensitiveCommand::SelectAll(false).into());
-                            commands.push(InsensitiveCommand::SelectSpecific(
-                                std::iter::once(us.0).collect(),
-                                true,
-                            ).into());
-                        } else {
-                            commands.push(InsensitiveCommand::SelectSpecific(
-                                std::iter::once(us.0).collect(),
-                                !self.all_elements.get(&us.0).is_some_and(|e| e.selected()),
-                            ).into());
+        let mut child = None;
+        for k in &self.event_order {
+            if let Some(uc) = self.owned_views.get_mut(k) {
+                let r = uc.handle_event(event, &ehc, &mut self.current_tool, &mut commands);
+                if r != EventHandlingStatus::NotHandled {
+                    child = Some((*k, match r {
+                        EventHandlingStatus::HandledByElement if matches!(event, InputEvent::Click(_)) => {
+                            if !modifiers.command {
+                                commands.push(InsensitiveCommand::SelectAll(false).into());
+                                commands.push(InsensitiveCommand::SelectSpecific(
+                                    std::iter::once(*k).collect(),
+                                    true,
+                                ).into());
+                            } else {
+                                commands.push(InsensitiveCommand::SelectSpecific(
+                                    std::iter::once(*k).collect(),
+                                    !self.flattened_views_status.get(k).is_some_and(|e| e.selected()),
+                                ).into());
+                            }
+                            EventHandlingStatus::HandledByContainer
                         }
-                        EventHandlingStatus::HandledByContainer
-                    }
-                    a => a,
+                        a => a,
+                    }));
+
+                    break;
                 }
-            });
+            }
+        }
 
         let handled = match event {
             InputEvent::MouseDown(_) | InputEvent::MouseUp(_) | InputEvent::Drag { .. }
@@ -1229,7 +1095,7 @@ where
                 if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
                     commands.push(InsensitiveCommand::AddElement(
                         *self.uuid(),
-                        AddCommandElementT::from(new_a),
+                        DomainT::AddCommandElementT::from(new_a),
                     ).into());
                     handled = true;
                 }
@@ -1245,59 +1111,58 @@ where
     }
 
     fn set_clipboard_from_selected(&mut self) {
-        let selected = self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect();
+        let selected = self.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect();
         self.clipboard_elements = Self::elements_deep_copy(
             Some(&selected),
             |_| false,
             HashMap::new(),
-            self.owned_controllers.iter().map(|e| (*e.0, e.1.clone())),
+            self.owned_views.iter().map(|e| (*e.0, e.1.clone())),
         );
     }
 
     fn elements_deep_copy<VI>(
         requested: Option<&HashSet<ViewUuid>>,
         view_uuid_present: impl Fn(&ViewUuid) -> bool,
-        existing_models: HashMap<ModelUuid, CommonElementT>,
+        existing_models: HashMap<ModelUuid, DomainT::CommonElementT>,
         source_views: VI,
-    ) -> HashMap<ViewUuid, Arc<RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >>>
+    ) -> HashMap<ViewUuid, DomainT::CommonElementViewT>
         where
-            VI: Iterator<Item=(ViewUuid, Arc<RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >>)>,
+            VI: Iterator<Item=(ViewUuid, DomainT::CommonElementViewT)>,
     {
         let mut top_level_views = HashMap::new();
         let mut views = HashMap::new();
         let mut models = existing_models;
 
         for (_uuid, c) in source_views {
-            let c = c.read().unwrap();
             c.deep_copy_walk(requested, &view_uuid_present, &mut top_level_views, &mut views, &mut models);
         }
-        for (_usize, (_uuid, v1, v2)) in views.iter() {
-            let mut v1 = v1.write().unwrap();
-            v1.deep_copy_relink(&views, &models);
+        for (_usize, v) in top_level_views.iter_mut() {
+            v.deep_copy_relink(&views, &models);
         }
 
         top_level_views
     }
 
+    fn head_count(&mut self) {
+        self.flattened_views.clear();
+        self.flattened_views_status.clear();
+        self.flattened_represented_models.clear();
+        for (_uuid, c) in &mut self.owned_views {
+            c.head_count(
+                &mut self.flattened_views,
+                &mut self.flattened_views_status,
+                &mut self.flattened_represented_models,
+            );
+        }
+        for (k, v) in &self.owned_views {
+            self.flattened_views.insert(*k, v.clone());
+        }
+        self.flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
+    }
+
     fn apply_commands(
         &mut self,
-        commands: Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        commands: Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         global_undo_accumulator: &mut Vec<Arc<String>>,
         save_to_undo_stack: bool,
         clear_redo_stack: bool,
@@ -1305,13 +1170,13 @@ where
         for command in commands {
             // TODO: transitive closure of dependency when deleting elements
             let command = command.to_selection_insensitive(
-                || self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
+                || self.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
                 || Self::elements_deep_copy(
                     None,
-                    |e| self.all_elements.get(e).is_some(),
+                    |e| self.flattened_views_status.get(e).is_some(),
                     HashMap::new(),
                     self.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
-                    ).into_iter().map(|e| e.into()).collect(),
+                    ).into_iter().map(|e| e.1.into()).collect(),
             );
 
             let mut undo_accumulator = vec![];
@@ -1329,50 +1194,49 @@ where
 
                     let mut model_uuids = HashSet::new();
                     for (uuid, element) in self
-                        .owned_controllers
+                        .owned_views
                         .iter()
                         .filter(|e| uuids.contains(&e.0))
                     {
-                        model_uuids.insert(*element.read().unwrap().model_uuid());
-                        undo_accumulator.push(InsensitiveCommand::AddElement(
-                            *self.uuid(),
-                            AddCommandElementT::from((*uuid, element.clone())),
-                        ));
+                        model_uuids.insert(*element.model_uuid());
+                        undo_accumulator.push(InsensitiveCommand::AddElement(*self.uuid(), element.clone().into()));
                     }
                     if let InsensitiveCommand::DeleteSpecificElements(uuids, true)
                            | InsensitiveCommand::CutSpecificElements(uuids) = &command {
                         self.adapter.delete_elements(&model_uuids);
                     }
 
-                    self.owned_controllers.retain(|k, _v| !uuids.contains(&k));
+                    self.owned_views.retain(|k, _v| !uuids.contains(&k));
                     self.event_order.retain(|e| !uuids.contains(&e));
                 }
                 InsensitiveCommand::AddElement(target, element) => {
                     if *target == *self.uuid {
-                        if let Ok((uuid, element)) = element.clone().try_into() {
+                        if let Ok(view) = element.clone().try_into() {
+                            let uuid = *view.uuid();
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(uuid).collect(),
                                 true,
                             ));
 
-                            self.adapter.add_element(element.read().unwrap().model());
+                            self.adapter.add_element(view.model());
 
-                            self.owned_controllers.insert(uuid, element);
+                            self.owned_views.insert(uuid, view);
                             self.event_order.push(uuid);
                         }
                     }
                 }
                 InsensitiveCommand::PasteSpecificElements(_, elements) => {
                     for element in elements {
-                        if let Ok((uuid, element)) = element.clone().try_into() {
+                        if let Ok(view) = element.clone().try_into() {
+                            let uuid = *view.uuid();
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(uuid).collect(),
                                 true,
                             ));
 
-                            self.adapter.add_element(element.read().unwrap().model());
+                            self.adapter.add_element(view.model());
 
-                            self.owned_controllers.insert(uuid, element);
+                            self.owned_views.insert(uuid, view);
                             self.event_order.push(uuid);
                         }
                     }
@@ -1388,9 +1252,8 @@ where
                 }
             }
 
-            for e in &self.owned_controllers {
-                let mut e = e.1.write().unwrap();
-                e.apply_command(&command, &mut undo_accumulator);
+            for e in self.owned_views.iter_mut() {
+                e.1.apply_command(&command, &mut undo_accumulator);
             }
 
             let modifies_selection = match command {
@@ -1458,12 +1321,7 @@ where
             }
 
             if modifies_selection {
-                self.all_elements.clear();
-                self.represented_models.clear();
-                for (_uuid, c) in &self.owned_controllers {
-                    let mut c = c.write().unwrap();
-                    c.head_count(&mut self.all_elements, &mut self.represented_models);
-                }
+                self.head_count();
             }
         }
     }
@@ -1471,7 +1329,7 @@ where
     fn some_kind_of_copy(
         &self,
         new_adapter: DiagramAdapterT,
-        models: HashMap<ModelUuid, CommonElementT>
+        models: HashMap<ModelUuid, DomainT::CommonElementT>
     ) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
         let new_diagram_view = Self::new(
             Arc::new(uuid::Uuid::now_v7().into()),
@@ -1480,7 +1338,7 @@ where
                 None,
                 |_| false,
                 models,
-                self.owned_controllers.iter().map(|e| (*e.0, e.1.clone())),
+                self.owned_views.iter().map(|e| (*e.0, e.1.clone())),
             ).into_iter().map(|e| e.1).collect(),
         );
         let new_model_view = SimpleModelHierarchyView::new(new_diagram_view.read().unwrap().model());
@@ -1491,32 +1349,10 @@ where
 
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
-        DiagramModelT: ContainerModel<CommonElementT>,
-        CommonElementT: 'static,
-        QueryableT: Queryable + 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > View
-    for DiagramControllerGen2<
-        DiagramAdapterT,
-        DiagramModelT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    ToolT: for<'a> Tool<
-        CommonElementT,
-        QueryableT,
-        AddCommandElementT,
-        PropChangeT,
-        KindedElement<'a>: From<&'a Self>,
-    >,
-{
+    DomainT: Domain,
+    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
+> View for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -1529,32 +1365,10 @@ where
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
-        DiagramModelT: ContainerModel<CommonElementT>,
-        CommonElementT: 'static,
-        QueryableT: Queryable + 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > NHSerialize
-    for DiagramControllerGen2<
-        DiagramAdapterT,
-        DiagramModelT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    ToolT: for<'a> Tool<
-        CommonElementT,
-        QueryableT,
-        AddCommandElementT,
-        PropChangeT,
-        KindedElement<'a>: From<&'a Self>,
-    >,
-{
+    DomainT: Domain,
+    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
+> NHSerialize for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         // Serialize itself and the model
         let mut element = toml::Table::new();
@@ -1565,8 +1379,8 @@ where
         into.insert_view(*self.uuid, element);
 
         // Serialize children
-        for e in self.event_order.iter().flat_map(|e| self.owned_controllers.get(e)) {
-            e.read().unwrap().serialize_into(into)?;
+        for e in self.event_order.iter().flat_map(|e| self.owned_views.get(e)) {
+            e.serialize_into(into)?;
         }
 
         Ok(())
@@ -1574,59 +1388,10 @@ where
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
-        DiagramModelT: ContainerModel<CommonElementT>,
-        CommonElementT: 'static,
-        QueryableT: Queryable + 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > NHDeserializeEntity
-    for DiagramControllerGen2<
-        DiagramAdapterT,
-        DiagramModelT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    ToolT: for<'a> Tool<
-        CommonElementT,
-        QueryableT,
-        AddCommandElementT,
-        PropChangeT,
-        KindedElement<'a>: From<&'a Self>,
-    >,
-    AddCommandElementT: From<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )>,
-{
+    DomainT: Domain,
+    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
+> NHDeserializeEntity for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     fn deserialize(
         table: &toml::Table,
         deserializer: &NHDeserializer,
@@ -1659,61 +1424,12 @@ where
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
-        DiagramModelT: ContainerModel<CommonElementT>,
-        CommonElementT: 'static,
-        QueryableT: Queryable + 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > DiagramController
-    for DiagramControllerGen2<
-        DiagramAdapterT,
-        DiagramModelT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    ToolT: for<'a> Tool<
-        CommonElementT,
-        QueryableT,
-        AddCommandElementT,
-        PropChangeT,
-        KindedElement<'a>: From<&'a Self>,
-    >,
-    AddCommandElementT: From<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )>,
-{
+    DomainT: Domain,
+    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
+> DiagramController for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid> {
-        &self.represented_models
+        &self.flattened_represented_models
     }
 
     fn new_ui_canvas(
@@ -1834,19 +1550,18 @@ where
     }
     fn show_properties(&mut self, ui: &mut egui::Ui, undo_accumulator: &mut Vec<Arc<String>>) {
         let mut commands = Vec::new();
-        let queryable = QueryableT::new();
-
-        if self
-            .owned_controllers
-            .iter()
-            .find(|e| {
-                e.1.write()
-                    .unwrap()
-                    .show_properties(&queryable, ui, &mut commands)
-            })
-            .is_none()
         {
-            self.adapter.show_props_fun(&self.uuid, ui, &mut commands);
+            let queryable = DomainT::QueryableT::new(&self.flattened_represented_models, &self.flattened_views);
+
+            if self
+                .owned_views
+                .iter_mut()
+                .filter_map(|e| if e.1.show_properties(&queryable, ui, &mut commands) { Some(()) } else { None })
+                .next()
+                .is_none()
+            {
+                self.adapter.show_props_fun(&self.uuid, ui, &mut commands);
+            }
         }
 
         self.apply_commands(commands, undo_accumulator, true, true);
@@ -1904,7 +1619,7 @@ where
             DiagramCommand::InvertSelection => {
                 self.apply_commands(vec![
                     InsensitiveCommand::SelectAll(true).into(),
-                    InsensitiveCommand::SelectSpecific(self.all_elements.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(), false).into()
+                    InsensitiveCommand::SelectSpecific(self.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(), false).into()
                 ], &mut vec![], true, false);
             }
             DiagramCommand::DeleteSelectedElements
@@ -1931,8 +1646,11 @@ where
             },
             DiagramCommand::CreateViewFor(model_uuid) => {
                 if let Some((model, parent_uuid)) = self.adapter.find_element(&model_uuid)
-                      && let Some(view_uuid) = self.represented_models.get(&parent_uuid) {
-                    let new_view = self.adapter.create_view_for(model);
+                    && let Some(view_uuid) = self.flattened_represented_models.get(&parent_uuid) {
+                    let new_view = {
+                        let q = DomainT::QueryableT::new(&self.flattened_represented_models, &self.flattened_views);
+                        self.adapter.create_new_view_for(&q, model)
+                    };
 
                     let mut undo = vec![];
                     self.apply_commands(vec![
@@ -1943,7 +1661,7 @@ where
                 }
             }
             DiagramCommand::DeleteViewFor(model_uuid, including_model) => {
-                if let Some(view_uuid) = self.represented_models.get(&model_uuid) {
+                if let Some(view_uuid) = self.flattened_represented_models.get(&model_uuid) {
                     let mut undo = vec![];
                     self.apply_commands(vec![
                         InsensitiveCommand::DeleteSpecificElements(std::iter::once(*view_uuid).collect(), including_model).into()
@@ -1967,24 +1685,15 @@ where
             None
         };
         let mut drawn_targetting = TargettingStatus::NotDrawn;
-        let queryable = QueryableT::new();
+        let queryable = DomainT::QueryableT::new(&self.flattened_represented_models, &self.flattened_views);
 
-        self.event_order
-            .iter()
-            .rev()
-            .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
-            .filter(|_| true) // TODO: filter by layers
-            .for_each(|uc| {
-                if uc
-                    .1
-                    .write()
-                    .unwrap()
-                    .draw_in(&queryable, context, canvas, &tool)
-                    == TargettingStatus::Drawn
-                {
+        for k in self.event_order.iter().rev() {
+            if let Some(e) = self.owned_views.get_mut(k) {
+                if e.draw_in(&queryable, context, canvas, &tool) == TargettingStatus::Drawn {
                     drawn_targetting = TargettingStatus::Drawn;
                 }
-            });
+            }
+        }
 
         if canvas.ui_scale().is_some() {
             if let Some((pos, tool)) = tool {
@@ -1992,22 +1701,17 @@ where
                     canvas.draw_rectangle(
                         egui::Rect::EVERYTHING,
                         egui::CornerRadius::ZERO,
-                        tool.targetting_for_element(ToolT::KindedElement::from(self)),
+                        tool.targetting_for_element(None),
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
-                    self.event_order
-                        .iter()
-                        .rev()
-                        .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
-                        .filter(|_| true) // TODO: filter by layers
-                        .for_each(|uc| {
-                            uc.1.write()
-                                .unwrap()
-                                .draw_in(&queryable, context, canvas, &Some((pos, tool)));
-                        });
+                    for k in self.event_order.iter().rev() {
+                        if let Some(e) = self.owned_views.get_mut(k) {
+                            e.draw_in(&queryable, context, canvas, &Some((pos, tool)));
+                        }
+                    }
                 }
-                tool.draw_status_hint(canvas, pos);
+                tool.draw_status_hint(&queryable, canvas, pos);
             } else if let Some((a, b)) = self.select_by_drag {
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(a, b),
@@ -2034,109 +1738,47 @@ where
 }
 
 impl<
-        DiagramAdapterT: DiagramAdapter<DiagramModelT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT> + 'static,
-        DiagramModelT: ContainerModel<CommonElementT>,
-        CommonElementT: 'static,
-        QueryableT: Queryable + 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-    for DiagramControllerGen2<
-        DiagramAdapterT,
-        DiagramModelT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
-    AddCommandElementT: From<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )>,
-{
-    fn controller_for(
-        &self,
-        uuid: &ModelUuid,
-    ) -> Option<
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    CommonElementT,
-                    QueryableT,
-                    ToolT,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >,
-    > {
+    DomainT: Domain,
+    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
+> ContainerGen2<DomainT> for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
+    fn controller_for(&self, uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
         // TODO: store views by model uuids
-        self.owned_controllers.iter().find(|(_, c)| *c.read().unwrap().model_uuid() == *uuid).map(|(_, c)| c.clone())
-            .or_else(|| self.owned_controllers.iter().flat_map(|e| e.1.read().unwrap().controller_for(uuid)).next())
+        self.owned_views.iter().find(|(_, c)| *c.model_uuid() == *uuid).map(|(_, c)| c.clone())
+            .or_else(|| self.owned_views.iter().flat_map(|e| e.1.controller_for(uuid)).next())
     }
 }
 
 
-pub trait PackageAdapter<
-    CommonElementT: 'static,
-    AddCommandElementT: Clone + Debug,
-    PropChangeT: Clone + Debug,
->: Send + Sync + 'static {
-    fn model(&self) -> CommonElementT;
+pub trait PackageAdapter<DomainT: Domain>: Send + Sync + 'static {
+    fn model(&self) -> DomainT::CommonElementT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
     fn view_type(&self) -> &'static str;
 
-    fn add_element(&mut self, element: CommonElementT);
+    fn add_element(&mut self, element: DomainT::CommonElementT);
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
 
     fn show_properties(
         &self,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>
     );
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
 
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<ModelUuid, CommonElementT>,
+        m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
     ) -> Self where Self: Sized;
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<ModelUuid, CommonElementT>
+        m: &HashMap<ModelUuid, DomainT::CommonElementT>
     );
 }
 
@@ -2146,60 +1788,11 @@ pub enum PackageDragType {
     Resize(egui::Align2),
 }
 
-pub struct PackageView<
-    AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-    CommonElementT: 'static,
-    QueryableT: 'static,
-    ToolT: 'static,
-    AddCommandElementT: Clone + Debug,
-    PropChangeT: Clone + Debug,
-> where
-    AddCommandElementT: From<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + Clone
-        + 'static,
-{
+pub struct PackageView<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> {
     uuid: Arc<ViewUuid>,
     adapter: AdapterT,
     self_reference: Weak<RwLock<Self>>,
-    owned_controllers: HashMap<
-        ViewUuid,
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    CommonElementT,
-                    QueryableT,
-                    ToolT,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >,
-    >,
+    owned_views: HashMap<ViewUuid, DomainT::CommonElementViewT>,
     event_order: Vec<ViewUuid>,
     all_elements: HashMap<ViewUuid, SelectionStatus>,
     selected_direct_elements: HashSet<ViewUuid>,
@@ -2209,62 +1802,11 @@ pub struct PackageView<
     bounds_rect: egui::Rect,
 }
 
-impl<
-        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-        CommonElementT: 'static,
-        QueryableT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug,
-        PropChangeT: Clone + Debug,
-    >
-    PackageView<AdapterT, CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-where
-    AddCommandElementT: From<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + Clone
-        + 'static,
-{
+impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, AdapterT> {
     pub fn new(
         uuid: Arc<ViewUuid>,
         adapter: AdapterT,
-        owned_controllers: HashMap<
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        >,
+        owned_controllers: HashMap<ViewUuid, DomainT::CommonElementViewT>,
         bounds_rect: egui::Rect,
     ) -> Arc<RwLock<Self>> {
         let event_order = owned_controllers.keys().map(|e| *e).collect();
@@ -2273,7 +1815,7 @@ where
             uuid,
             adapter,
             self_reference: Weak::new(),
-            owned_controllers,
+            owned_views: owned_controllers,
             event_order,
             all_elements: HashMap::new(),
             selected_direct_elements: HashSet::new(),
@@ -2300,58 +1842,7 @@ where
     }
 }
 
-impl<
-        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-        CommonElementT: 'static,
-        QueryableT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > View
-    for PackageView<
-        AdapterT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    ToolT: for<'a> Tool<
-        CommonElementT,
-        QueryableT,
-        AddCommandElementT,
-        PropChangeT,
-        KindedElement<'a>: From<&'a Self>,
-    >,
-    AddCommandElementT: From<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )>,
-{
+impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> View for PackageView<DomainT, AdapterT> {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -2363,51 +1854,7 @@ where
     }
 }
 
-impl<
-        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-        CommonElementT: 'static,
-        QueryableT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > NHSerialize
-    for PackageView<
-        AdapterT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    AddCommandElementT: From<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )>,
-{
+impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> NHSerialize for PackageView<DomainT, AdapterT> {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>  {
         // Serialize itself
         let mut element = toml::Table::new();
@@ -2419,67 +1866,16 @@ where
         into.insert_view(*self.uuid, element);
 
         // Serialize children
-        for e in self.event_order.iter().flat_map(|e| self.owned_controllers.get(e)) {
-            e.read().unwrap().serialize_into(into)?;
+        for e in self.event_order.iter().flat_map(|e| self.owned_views.get(e)) {
+            e.serialize_into(into)?;
         }
 
         Ok(())
     }
 }
 
-impl<
-        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-        CommonElementT: 'static,
-        QueryableT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > ElementController<CommonElementT>
-    for PackageView<
-        AdapterT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    ToolT: for<'a> Tool<
-        CommonElementT,
-        QueryableT,
-        AddCommandElementT,
-        PropChangeT,
-        KindedElement<'a>: From<&'a Self>,
-    >,
-    AddCommandElementT: From<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )>,
-{
-    fn model(&self) -> CommonElementT {
+impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementController<DomainT::CommonElementT> for PackageView<DomainT, AdapterT> {
+    fn model(&self) -> DomainT::CommonElementT {
         self.adapter.model()
     }
 
@@ -2494,135 +1890,29 @@ where
     }
 }
 
-impl<
-        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-        CommonElementT: 'static,
-        QueryableT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-    for PackageView<
-        AdapterT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    AddCommandElementT: From<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )>,
-{
-    fn controller_for(
-        &self,
-        uuid: &ModelUuid,
-    ) -> Option<
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    CommonElementT,
-                    QueryableT,
-                    ToolT,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >,
-    > {
+impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ContainerGen2<DomainT> for PackageView<DomainT, AdapterT> {
+    fn controller_for(&self, uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
         // TODO: store views by model uuids
-        self.owned_controllers.iter().find(|(_, c)| *c.read().unwrap().model_uuid() == *uuid).map(|(_, c)| c.clone())
-            .or_else(|| self.owned_controllers.iter().flat_map(|e| e.1.read().unwrap().controller_for(uuid)).next())
+        self.owned_views.iter().find(|(_, c)| *c.model_uuid() == *uuid).map(|(_, c)| c.clone())
+            .or_else(|| self.owned_views.iter().flat_map(|e| e.1.controller_for(uuid)).next())
     }
 }
 
-impl<
-        AdapterT: PackageAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-        CommonElementT: 'static,
-        QueryableT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-    for PackageView<
-        AdapterT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
+impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementControllerGen2<DomainT> for PackageView<DomainT, AdapterT>
 where
-    ToolT: for<'a> Tool<
-        CommonElementT,
-        QueryableT,
-        AddCommandElementT,
-        PropChangeT,
-        KindedElement<'a>: From<&'a Self>,
-    >,
-    AddCommandElementT: From<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )> + TryInto<(
-            ViewUuid,
-            Arc<
-                RwLock<
-                    dyn ElementControllerGen2<
-                        CommonElementT,
-                        QueryableT,
-                        ToolT,
-                        AddCommandElementT,
-                        PropChangeT,
-                    >,
-                >,
-            >,
-        )>,
+    DomainT::CommonElementViewT: From<Arc<RwLock<PackageView<DomainT, AdapterT>>>>,
 {
     fn show_properties(
         &mut self,
-        parent: &QueryableT,
+        parent: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> bool {
         if self
-            .owned_controllers
-            .iter()
-            .find(|e| e.1.write().unwrap().show_properties(parent, ui, commands))
+            .owned_views
+            .iter_mut()
+            .filter_map(|e| if e.1.show_properties(parent, ui, commands) { Some(()) } else { None })
+            .next()
             .is_some()
         {
             true
@@ -2671,10 +1961,10 @@ where
     }
     fn draw_in(
         &mut self,
-        q: &QueryableT,
+        q: &DomainT::QueryableT<'_>,
         context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
-        tool: &Option<(egui::Pos2, &ToolT)>,
+        tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus {
         // Draw shape and text
         canvas.draw_rectangle(
@@ -2723,17 +2013,13 @@ where
 
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
-        self.event_order
-            .iter()
-            .rev()
-            .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
-            .filter(|_| true) // TODO: filter by layers
-            .for_each(|uc| {
-                if uc.1.write().unwrap().draw_in(q, context, canvas, &tool) == TargettingStatus::Drawn
-                {
+        for k in self.event_order.iter().rev() {
+            if let Some(e) = self.owned_views.get_mut(k) {
+                if e.draw_in(q, context, canvas, &tool) == TargettingStatus::Drawn {
                     drawn_child_targetting = TargettingStatus::Drawn;
                 }
-            });
+            }
+        }
 
         if canvas.ui_scale().is_some() {
             if self.dragged_type_and_shape.is_some() {
@@ -2752,19 +2038,16 @@ where
                     canvas.draw_rectangle(
                         self.bounds_rect,
                         egui::CornerRadius::ZERO,
-                        t.targetting_for_element(ToolT::KindedElement::from(&*self)),
+                        t.targetting_for_element(Some(self.adapter.model())),
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
 
-                    self.event_order
-                        .iter()
-                        .rev()
-                        .flat_map(|k| self.owned_controllers.get(k).map(|e| (k, e)))
-                        .filter(|_| true) // TODO: filter by layers
-                        .for_each(|uc| {
-                            uc.1.write().unwrap().draw_in(q, context, canvas, &tool);
-                        });
+                    for k in self.event_order.iter().rev() {
+                        if let Some(e) = self.owned_views.get_mut(k) {
+                            e.draw_in(q, context, canvas, &tool);
+                        }
+                    }
 
                     TargettingStatus::Drawn
                 }
@@ -2778,33 +2061,32 @@ where
     fn collect_allignment(&mut self, am: &mut SnapManager) {
         am.add_shape(*self.uuid, self.min_shape());
 
-        self.event_order.iter()
-            .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
-            .for_each(|uc| uc.1.write().unwrap().collect_allignment(am));
+        for k in self.event_order.iter() {
+            if let Some(uc) = self.owned_views.get_mut(k).map(|e| (*k, e)) {
+                uc.1.collect_allignment(am);
+            }
+        }
     }
     fn handle_event(
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        tool: &mut Option<ToolT>,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        tool: &mut Option<DomainT::ToolT>,
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
-        let uc_status = self
-            .event_order
-            .iter()
-            .flat_map(|k| self.owned_controllers.get(k).map(|e| (*k, e)))
-            .map(|uc| {
-                (
-                    uc,
-                    uc.1.write()
-                        .unwrap()
-                        .handle_event(event, ehc, tool, commands),
-                )
-            })
-            .find(|e| e.1 != EventHandlingStatus::NotHandled);
+        let mut k_status = None;
+        for k in self.event_order.iter() {
+            if let Some(e) = self.owned_views.get_mut(k) {
+                let s = e.handle_event(event, ehc, tool, commands);
+                if s != EventHandlingStatus::NotHandled {
+                    k_status = Some((*k, s));
+                    break;
+                }
+            }
+        }
 
         match event {
-            InputEvent::MouseDown(_pos) | InputEvent::MouseUp(_pos) if uc_status.is_some() => {
+            InputEvent::MouseDown(_pos) | InputEvent::MouseUp(_pos) if k_status.is_some() => {
                 EventHandlingStatus::HandledByContainer
             }
             InputEvent::MouseDown(pos) => {
@@ -2846,25 +2128,25 @@ where
                 if self.min_shape().contains(pos) {
                     if let Some(tool) = tool {
                         tool.add_position(*event.mouse_position());
-                        tool.add_element(ToolT::KindedElement::from(self));
+                        tool.add_element(self.adapter.model());
 
                         if let Some(new_a) = tool.try_construct(self) {
                             commands.push(InsensitiveCommand::AddElement(*self.uuid, new_a.into()).into());
                         }
 
                         EventHandlingStatus::HandledByContainer
-                    } else if let Some((uc, status)) = uc_status {
+                    } else if let Some((k, status)) = k_status {
                         if status == EventHandlingStatus::HandledByElement {
                             if !ehc.modifiers.command {
                                 commands.push(InsensitiveCommand::SelectAll(false).into());
                                 commands.push(InsensitiveCommand::SelectSpecific(
-                                    std::iter::once(uc.0).collect(),
+                                    std::iter::once(k).collect(),
                                     true,
                                 ).into());
                             } else {
                                 commands.push(InsensitiveCommand::SelectSpecific(
-                                    std::iter::once(uc.0).collect(),
-                                    !self.selected_direct_elements.contains(&uc.0),
+                                    std::iter::once(k).collect(),
+                                    !self.selected_direct_elements.contains(&k),
                                 ).into());
                             }
                         }
@@ -2873,7 +2155,7 @@ where
                         EventHandlingStatus::HandledByElement
                     }
                 } else {
-                    uc_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled)
+                    k_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled)
                 }
             },
             InputEvent::Drag { delta, .. } => match self.dragged_type_and_shape {
@@ -2935,14 +2217,13 @@ where
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) {
         macro_rules! recurse {
             ($self:ident) => {
-                for e in &$self.owned_controllers {
-                    let mut e = e.1.write().unwrap();
-                    e.apply_command(command, undo_accumulator);
+                for e in &mut $self.owned_views {
+                    e.1.apply_command(command, undo_accumulator);
                 }
             };
         }
@@ -2978,7 +2259,7 @@ where
                 match select {
                     true => {
                         self.selected_direct_elements =
-                            self.owned_controllers.iter().map(|e| *e.0).collect()
+                            self.owned_views.iter().map(|e| *e.0).collect()
                     }
                     false => self.selected_direct_elements.clear(),
                 }
@@ -2989,7 +2270,7 @@ where
                     self.highlight.selected = *select;
                 }
 
-                for uuid in self.owned_controllers.keys().filter(|k| uuids.contains(k)) {
+                for uuid in self.owned_views.keys().filter(|k| uuids.contains(k)) {
                     match select {
                         true => self.selected_direct_elements.insert(*uuid),
                         false => self.selected_direct_elements.remove(uuid),
@@ -3012,9 +2293,8 @@ where
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
-                for e in &self.owned_controllers {
-                    let mut e = e.1.write().unwrap();
-                    e.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![]);
+                for e in &mut self.owned_views {
+                    e.1.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![]);
                 }
             }
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
@@ -3048,37 +2328,35 @@ where
 
                 let mut model_uuids = HashSet::new();
                 for (uuid, element) in self
-                    .owned_controllers
+                    .owned_views
                     .iter()
                     .filter(|e| uuids.contains(&e.0))
                 {
-                    model_uuids.insert(*element.read().unwrap().model_uuid());
-                    undo_accumulator.push(InsensitiveCommand::AddElement(
-                        *self.uuid,
-                        AddCommandElementT::from((*uuid, element.clone())),
-                    ));
+                    model_uuids.insert(*element.model_uuid());
+                    undo_accumulator.push(InsensitiveCommand::AddElement(*self.uuid, element.clone().into()));
                 }
                 if let InsensitiveCommand::DeleteSpecificElements(uuids, true)
                     | InsensitiveCommand::CutSpecificElements(uuids) = &command {
                     self.adapter.delete_elements(&model_uuids);
                 }
 
-                self.owned_controllers.retain(|k, _v| !uuids.contains(&k));
+                self.owned_views.retain(|k, _v| !uuids.contains(&k));
                 self.event_order.retain(|e| !uuids.contains(&e));
 
                 recurse!(self);
             }
             InsensitiveCommand::AddElement(target, element) => {
                 if *target == *self.uuid {
-                    if let Ok((uuid, element)) = element.clone().try_into() {
+                    if let Ok(view) = element.clone().try_into() {
+                        let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                             std::iter::once(uuid).collect(),
                             true
                         ));
 
-                        self.adapter.add_element(element.read().unwrap().model());
+                        self.adapter.add_element(view.model());
 
-                        self.owned_controllers.insert(uuid, element);
+                        self.owned_views.insert(uuid, view);
                         self.event_order.push(uuid);
                     }
                 }
@@ -3108,22 +2386,26 @@ where
 
     fn head_count(
         &mut self,
-        views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        views.insert(*self.uuid, self.highlight.selected.into());
-        models.insert(*self.adapter.model_uuid(), *self.uuid);
+        flattened_views_status.insert(*self.uuid, self.highlight.selected.into());
+        flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
 
         self.all_elements.clear();
-        for e in &self.owned_controllers {
-            let mut e = e.1.write().unwrap();
-            e.head_count(&mut self.all_elements, models);
+        for e in self.owned_views.iter_mut() {
+            e.1.head_count(flattened_views, &mut self.all_elements, flattened_represented_models);
         }
         for e in &self.all_elements {
-            views.insert(*e.0, match *e.1 {
+            flattened_views_status.insert(*e.0, match *e.1 {
                 SelectionStatus::NotSelected if self.highlight.selected => SelectionStatus::TransitivelySelected,
                 e => e,
             });
+        }
+
+        for (k, v) in self.owned_views.iter() {
+            flattened_views.insert(*k, v.clone());
         }
     }
 
@@ -3131,33 +2413,23 @@ where
         &self,
         requested: Option<&HashSet<ViewUuid>>,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-        >,
-        c: &mut HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
-        m: &mut HashMap<ModelUuid, CommonElementT>,
+        tlc: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
         if requested.is_none_or(|e| e.contains(&self.uuid)) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         } else {
-            self.owned_controllers.iter()
-                .for_each(|e| e.1.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m));
+            self.owned_views.iter()
+                .for_each(|e| e.1.deep_copy_walk(requested, uuid_present, tlc, c, m));
         }
     }
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-        >,
-        c: &mut HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
-        m: &mut HashMap<ModelUuid, CommonElementT>,
+        tlc: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
@@ -3166,13 +2438,13 @@ where
         };
 
         let mut inner = HashMap::new();
-        self.owned_controllers.iter().for_each(|e| e.1.read().unwrap().deep_copy_clone(uuid_present, &mut inner, c, m));
+        self.owned_views.iter().for_each(|e| e.1.deep_copy_clone(uuid_present, &mut inner, c, m));
 
         let cloneish = Arc::new(RwLock::new(Self {
             uuid: view_uuid.into(),
             adapter: self.adapter.deep_copy_init(model_uuid, m),
             self_reference: Weak::new(),
-            owned_controllers: inner.iter().map(|e| (*e.0, e.1.clone())).collect(),
+            owned_views: inner.iter().map(|e| (*e.0, e.1.clone())).collect(),
             event_order: inner.iter().map(|e| *e.0).collect(),
             all_elements: HashMap::new(),
             selected_direct_elements: self.selected_direct_elements.clone(),
@@ -3181,28 +2453,20 @@ where
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(view_uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()),
-            (view_uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
     }
     fn deep_copy_relink(
         &mut self,
-        c: &HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
-        m: &HashMap<ModelUuid, CommonElementT>,
+        c: &HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        m: &HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
-        self.owned_controllers.iter().for_each(|e| e.1.write().unwrap().deep_copy_relink(c, m));
+        self.owned_views.iter_mut().for_each(|e| e.1.deep_copy_relink(c, m));
     }
 }
 
-pub trait MulticonnectionAdapter<
-    CommonElementT: 'static,
-    AddCommandElementT: Clone + Debug,
-    PropChangeT: Clone + Debug,
->: Send + Sync {
-    fn model(&self) -> CommonElementT;
+pub trait MulticonnectionAdapter<DomainT: Domain>: Send + Sync {
+    fn model(&self) -> DomainT::CommonElementT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
     fn view_type(&self) -> &'static str;
@@ -3214,23 +2478,23 @@ pub trait MulticonnectionAdapter<
     fn show_properties(
         &self,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>
     );
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
 
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<ModelUuid, CommonElementT>,
+        m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
     ) -> Self where Self: Sized;
     fn deep_copy_finish(
         &mut self,
-        m: &HashMap<ModelUuid, CommonElementT>,
+        m: &HashMap<ModelUuid, DomainT::CommonElementT>,
     );
 }
 
@@ -3243,43 +2507,13 @@ pub struct VertexInformation {
 #[derive(Clone, Debug)]
 pub struct FlipMulticonnection {}
 
-pub struct MulticonnectionView<
-    AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-    CommonElementT: 'static,
-    QueryableT,
-    ToolT,
-    AddCommandElementT: Clone + Debug,
-    PropChangeT: Clone + Debug,
-> where
-    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
-    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
-{
+pub struct MulticonnectionView<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> {
     uuid: Arc<ViewUuid>,
     adapter: AdapterT,
     self_reference: Weak<RwLock<Self>>,
 
-    pub source: Arc<
-        RwLock<
-            dyn ElementControllerGen2<
-                CommonElementT,
-                QueryableT,
-                ToolT,
-                AddCommandElementT,
-                PropChangeT,
-            >,
-        >,
-    >,
-    pub destination: Arc<
-        RwLock<
-            dyn ElementControllerGen2<
-                CommonElementT,
-                QueryableT,
-                ToolT,
-                AddCommandElementT,
-                PropChangeT,
-            >,
-        >,
-    >,
+    pub source: DomainT::CommonElementViewT,
+    pub destination: DomainT::CommonElementViewT,
 
     dragged_node: Option<(ViewUuid, egui::Pos2)>,
     highlight: canvas::Highlight,
@@ -3290,51 +2524,16 @@ pub struct MulticonnectionView<
     point_to_origin: HashMap<ViewUuid, (bool, usize)>,
 }
 
-impl<
-        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-        CommonElementT: 'static,
-        QueryableT,
-        ToolT,
-        AddCommandElementT: Clone + Debug,
-        PropChangeT: Clone + Debug,
-    >
-    MulticonnectionView<
-        AdapterT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> MulticonnectionView<DomainT, AdapterT>
 where
-    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
-    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
+    DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
+    for<'a> &'a DomainT::PropChangeT: TryInto<FlipMulticonnection>,
 {
     pub fn new(
         uuid: Arc<ViewUuid>,
         adapter: AdapterT,
-        source: Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    CommonElementT,
-                    QueryableT,
-                    ToolT,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >,
-        destination: Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    CommonElementT,
-                    QueryableT,
-                    ToolT,
-                    AddCommandElementT,
-                    PropChangeT,
-                >,
-            >,
-        >,
+        source: DomainT::CommonElementViewT,
+        destination: DomainT::CommonElementViewT,
 
         center_point: Option<(ViewUuid, egui::Pos2)>,
         source_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
@@ -3381,25 +2580,10 @@ where
     }
 }
 
-impl<
-        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-        CommonElementT: 'static,
-        QueryableT,
-        ToolT,
-        AddCommandElementT: Clone + Debug,
-        PropChangeT: Clone + Debug,
-    > View
-    for MulticonnectionView<
-        AdapterT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> View for MulticonnectionView<DomainT, AdapterT>
 where
-    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
-    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
+    DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
+    for<'a> &'a DomainT::PropChangeT: TryInto<FlipMulticonnection>,
 {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
@@ -3412,25 +2596,10 @@ where
     }
 }
 
-impl<
-        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT> + 'static,
-        CommonElementT: 'static,
-        QueryableT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > NHSerialize
-    for MulticonnectionView<
-        AdapterT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> NHSerialize for MulticonnectionView<DomainT, AdapterT>
 where
-    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
-    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
+    DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
+    for<'a> &'a DomainT::PropChangeT: TryInto<FlipMulticonnection>,
 {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>  {
         // Serialize itself
@@ -3438,8 +2607,8 @@ where
         element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
         element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
         // TODO: store view ids, not model ids
-        element.insert("source".to_owned(), toml::Value::String(self.source.read().unwrap().model_uuid().to_string()));
-        element.insert("destination".to_owned(), toml::Value::String(self.destination.read().unwrap().model_uuid().to_string()));
+        element.insert("source".to_owned(), toml::Value::String(self.source.model_uuid().to_string()));
+        element.insert("destination".to_owned(), toml::Value::String(self.destination.model_uuid().to_string()));
         // TODO: store points, etc.
         into.insert_view(*self.uuid, element);
 
@@ -3447,27 +2616,12 @@ where
     }
 }
 
-impl<
-        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-        CommonElementT: 'static,
-        QueryableT,
-        ToolT,
-        AddCommandElementT: Clone + Debug,
-        PropChangeT: Clone + Debug,
-    > ElementController<CommonElementT>
-    for MulticonnectionView<
-        AdapterT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> ElementController<DomainT::CommonElementT> for MulticonnectionView<DomainT, AdapterT>
 where
-    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
-    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
+    DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
+    for<'a> &'a DomainT::PropChangeT: TryInto<FlipMulticonnection>,
 {
-    fn model(&self) -> CommonElementT {
+    fn model(&self) -> DomainT::CommonElementT {
         self.adapter.model()
     }
 
@@ -3488,52 +2642,19 @@ where
     }
 }
 
-impl<
-        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT>,
-        CommonElementT: 'static,
-        QueryableT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > ContainerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-    for MulticonnectionView<
-        AdapterT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
-where
-    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
-    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection> {}
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> ContainerGen2<DomainT> for MulticonnectionView<DomainT, AdapterT> {}
 
-impl<
-        AdapterT: MulticonnectionAdapter<CommonElementT, AddCommandElementT, PropChangeT> +'static,
-        CommonElementT: 'static,
-        QueryableT: 'static,
-        ToolT: 'static,
-        AddCommandElementT: Clone + Debug + 'static,
-        PropChangeT: Clone + Debug + 'static,
-    > ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>
-    for MulticonnectionView<
-        AdapterT,
-        CommonElementT,
-        QueryableT,
-        ToolT,
-        AddCommandElementT,
-        PropChangeT,
-    >
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> ElementControllerGen2<DomainT> for MulticonnectionView<DomainT, AdapterT>
 where
-    ToolT: Tool<CommonElementT, QueryableT, AddCommandElementT, PropChangeT>,
-    AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
-    for<'a> &'a PropChangeT: TryInto<FlipMulticonnection>,
+    DomainT::CommonElementViewT: From<Arc<RwLock<MulticonnectionView<DomainT, AdapterT>>>>,
+    DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
+    for<'a> &'a DomainT::PropChangeT: TryInto<FlipMulticonnection>,
 {
     fn show_properties(
         &mut self,
-        _parent: &QueryableT,
+        _parent: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> bool {
         if !self.highlight.selected {
             return false;
@@ -3546,13 +2667,13 @@ where
 
     fn draw_in(
         &mut self,
-        _: &QueryableT,
+        _: &DomainT::QueryableT<'_>,
         context: &DrawingContext,
         canvas: &mut dyn NHCanvas,
-        _tool: &Option<(egui::Pos2, &ToolT)>,
+        _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus {
-        let source_bounds = self.source.read().unwrap().min_shape();
-        let dest_bounds = self.destination.read().unwrap().min_shape();
+        let source_bounds = self.source.min_shape();
+        let dest_bounds = self.destination.min_shape();
 
         let (source_next_point, dest_next_point) = match (
             self.source_points[0].iter().skip(1)
@@ -3652,8 +2773,8 @@ where
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        _tool: &mut Option<ToolT>,
-        commands: &mut Vec<SensitiveCommand<AddCommandElementT, PropChangeT>>,
+        _tool: &mut Option<DomainT::ToolT>,
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
         const SEGMENT_DISTANCE_THRESHOLD: f32 = 2.0;
         let is_over = |a: egui::Pos2, b: egui::Pos2| -> bool {
@@ -3879,8 +3000,8 @@ where
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<AddCommandElementT, PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<AddCommandElementT, PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) {
         macro_rules! all_pts_mut {
             ($self:ident) => {
@@ -3949,7 +3070,7 @@ where
                 {
                     undo_accumulator.push(InsensitiveCommand::AddElement(
                         self_uuid,
-                        AddCommandElementT::from(VertexInformation {
+                        DomainT::AddCommandElementT::from(VertexInformation {
                             after: uuid::Uuid::nil().into(),
                             id: center_point.0,
                             position: center_point.1,
@@ -3980,7 +3101,7 @@ where
                                 if uuids.contains(&b.0) {
                                     undo_accumulator.push(InsensitiveCommand::AddElement(
                                         self_uuid,
-                                        AddCommandElementT::from(VertexInformation {
+                                        DomainT::AddCommandElementT::from(VertexInformation {
                                             after: a.0,
                                             id: b.0,
                                             position: b.1,
@@ -4059,14 +3180,15 @@ where
 
     fn head_count(
         &mut self,
-        views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        views.insert(*self.uuid, self.highlight.selected.into());
-        models.insert(*self.adapter.model_uuid(), *self.uuid);
+        flattened_views_status.insert(*self.uuid, self.highlight.selected.into());
+        flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
 
         for e in self.all_vertices() {
-            views.insert(e.0, match self.selected_vertices.contains(&e.0) {
+            flattened_views_status.insert(e.0, match self.selected_vertices.contains(&e.0) {
                 true => SelectionStatus::Selected,
                 false if self.highlight.selected => SelectionStatus::TransitivelySelected,
                 false => SelectionStatus::NotSelected,
@@ -4077,14 +3199,9 @@ where
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-        >,
-        c: &mut HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
-        m: &mut HashMap<ModelUuid, CommonElementT>,
+        tlc: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
@@ -4107,24 +3224,21 @@ where
             point_to_origin: self.point_to_origin.clone(),
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(view_uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
     }
 
     fn deep_copy_relink(
         &mut self,
-        c: &HashMap<usize, (ViewUuid,
-            Arc<RwLock<dyn ElementControllerGen2<CommonElementT, QueryableT, ToolT, AddCommandElementT, PropChangeT>>>,
-            Arc<dyn Any + Send + Sync>,
-        )>,
-        m: &HashMap<ModelUuid, CommonElementT>,
+        c: &HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        m: &HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
         self.adapter.deep_copy_finish(m);
 
-        if let Some((_u, s, _)) = c.get(&arc_to_usize(&self.source)) {
+        if let Some(s) = c.get(&self.source.uuid()) {
             self.source = s.clone();
         }
-        if let Some((_u, d, _)) = c.get(&arc_to_usize(&self.destination)) {
+        if let Some(d) = c.get(&self.destination.uuid()) {
             self.destination = d.clone();
         }
     }

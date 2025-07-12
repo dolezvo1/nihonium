@@ -4,13 +4,12 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, TargettingStatus, Tool, VertexInformation, View
+    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::CustomTab;
 use eframe::egui;
-use std::any::Any;
 use std::collections::HashSet;
 use std::{
     collections::HashMap,
@@ -18,45 +17,34 @@ use std::{
     sync::{Arc, RwLock, Weak},
 };
 
-type ControllerT = dyn ElementControllerGen2<
-    UmlClassElement,
-    UmlClassQueryable,
-    NaiveUmlClassTool,
-    UmlClassElementOrVertex,
-    UmlClassPropChange,
->;
-type ArcRwLockControllerT = Arc<RwLock<ControllerT>>;
-type DiagramViewT = DiagramControllerGen2<
-    UmlClassDiagramAdapter,
-    UmlClassDiagram,
-    UmlClassElement,
-    UmlClassQueryable,
-    NaiveUmlClassTool,
-    UmlClassElementOrVertex,
-    UmlClassPropChange,
->;
-type PackageViewT = crate::common::controller::PackageView<
-    UmlClassPackageAdapter,
-    UmlClassElement,
-    UmlClassQueryable,
-    NaiveUmlClassTool,
-    UmlClassElementOrVertex,
-    UmlClassPropChange,
->;
-type LinkViewT = MulticonnectionView<
-    UmlClassLinkAdapter,
-    UmlClassElement,
-    UmlClassQueryable,
-    NaiveUmlClassTool,
-    UmlClassElementOrVertex,
-    UmlClassPropChange,
->;
+struct UmlClassDomain;
+impl Domain for UmlClassDomain {
+    type CommonElementT = UmlClassElement;
+    type CommonElementViewT = UmlClassElementView;
+    type QueryableT<'a> = UmlClassQueryable<'a>;
+    type ToolT = NaiveUmlClassTool;
+    type AddCommandElementT = UmlClassElementOrVertex;
+    type PropChangeT = UmlClassPropChange;
+}
 
-pub struct UmlClassQueryable {}
+type PackageViewT = PackageView<UmlClassDomain, UmlClassPackageAdapter>;
+type LinkViewT = MulticonnectionView<UmlClassDomain, UmlClassLinkAdapter>;
 
-impl Queryable for UmlClassQueryable {
-    fn new() -> Self {
-        Self {}
+pub struct UmlClassQueryable<'a> {
+    models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
+    flattened_views: &'a HashMap<ViewUuid, UmlClassElementView>,
+}
+
+impl<'a> Queryable<'a, UmlClassDomain> for UmlClassQueryable<'a> {
+    fn new(
+        models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &'a HashMap<ViewUuid, UmlClassElementView>,
+    ) -> Self {
+        Self { models_to_views, flattened_views }
+    }
+
+    fn get_view(&self, m: &ModelUuid) -> Option<UmlClassElementView> {
+        self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
     }
 }
 
@@ -73,7 +61,6 @@ pub enum UmlClassPropChange {
     DestinationArrowheadLabelChange(Arc<String>),
 
     CommentChange(Arc<String>),
-    PackageResize(egui::Vec2),
     FlipMulticonnection,
 }
 
@@ -94,21 +81,15 @@ impl TryFrom<&UmlClassPropChange> for FlipMulticonnection {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, derive_more::From)]
 pub enum UmlClassElementOrVertex {
-    Element((ViewUuid, ArcRwLockControllerT)),
+    Element(UmlClassElementView),
     Vertex(VertexInformation),
 }
 
 impl Debug for UmlClassElementOrVertex {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "UmlClassElementOrVertex::???")
-    }
-}
-
-impl From<VertexInformation> for UmlClassElementOrVertex {
-    fn from(v: VertexInformation) -> Self {
-        Self::Vertex(v)
     }
 }
 
@@ -123,13 +104,7 @@ impl TryFrom<UmlClassElementOrVertex> for VertexInformation {
     }
 }
 
-impl From<(ViewUuid, ArcRwLockControllerT)> for UmlClassElementOrVertex {
-    fn from(v: (ViewUuid, ArcRwLockControllerT)) -> Self {
-        Self::Element(v)
-    }
-}
-
-impl TryFrom<UmlClassElementOrVertex> for (ViewUuid, ArcRwLockControllerT) {
+impl TryFrom<UmlClassElementOrVertex> for UmlClassElementView {
     type Error = ();
 
     fn try_from(value: UmlClassElementOrVertex) -> Result<Self, Self::Error> {
@@ -157,6 +132,195 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
     ("UML Class diagram".to_owned(), c.0, c.1)
 }
 
+#[derive(Clone, derive_more::From)]
+pub enum UmlClassElementView {
+    Package(Arc<RwLock<PackageViewT>>),
+    Class(Arc<RwLock<UmlClassController>>),
+    Link(Arc<RwLock<LinkViewT>>),
+}
+
+impl NHSerialize for UmlClassElementView {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().serialize_into(into),
+            Self::Class(inner) => inner.read().unwrap().serialize_into(into),
+            Self::Link(inner) => inner.read().unwrap().serialize_into(into),
+        }
+    }
+}
+// impl NHDeserialize for UmlClassElementView {}
+impl View for UmlClassElementView {
+    fn uuid(&self) -> Arc<ViewUuid> {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().uuid(),
+            Self::Class(inner) => inner.read().unwrap().uuid(),
+            Self::Link(inner) => inner.read().unwrap().uuid(),
+        }
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().model_uuid(),
+            Self::Class(inner) => inner.read().unwrap().model_uuid(),
+            Self::Link(inner) => inner.read().unwrap().model_uuid(),
+        }
+    }
+    fn model_name(&self) -> Arc<String> {
+        match self {
+            Self::Package(inner) => inner.read().unwrap().model_name(),
+            Self::Class(inner) => inner.read().unwrap().model_name(),
+            Self::Link(inner) => inner.read().unwrap().model_name(),
+        }
+    }
+}
+impl ElementController<UmlClassElement> for UmlClassElementView {
+    fn model(&self) -> UmlClassElement {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.read().unwrap().model(),
+            UmlClassElementView::Class(rw_lock) => rw_lock.read().unwrap().model(),
+            UmlClassElementView::Link(rw_lock) => rw_lock.read().unwrap().model(),
+        }
+    }
+    fn min_shape(&self) -> NHShape {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.read().unwrap().min_shape(),
+            UmlClassElementView::Class(rw_lock) => rw_lock.read().unwrap().min_shape(),
+            UmlClassElementView::Link(rw_lock) => rw_lock.read().unwrap().min_shape(),
+        }
+    }
+    fn max_shape(&self) -> NHShape {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.read().unwrap().max_shape(),
+            UmlClassElementView::Class(rw_lock) => rw_lock.read().unwrap().max_shape(),
+            UmlClassElementView::Link(rw_lock) => rw_lock.read().unwrap().max_shape(),
+        }
+    }
+    fn position(&self) -> egui::Pos2 {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.read().unwrap().position(),
+            UmlClassElementView::Class(rw_lock) => rw_lock.read().unwrap().position(),
+            UmlClassElementView::Link(rw_lock) => rw_lock.read().unwrap().position(),
+        }
+    }
+}
+impl ContainerGen2<UmlClassDomain> for UmlClassElementView {
+    fn controller_for(&self, uuid: &ModelUuid) -> Option<<UmlClassDomain as Domain>::CommonElementViewT> {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+            UmlClassElementView::Class(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+            UmlClassElementView::Link(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+        }
+    }
+}
+impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
+    fn show_properties(
+        &mut self,
+        q: &UmlClassQueryable,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+    ) -> bool {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+            UmlClassElementView::Class(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+            UmlClassElementView::Link(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+        }
+    }
+    fn draw_in(
+        &mut self,
+        q: &UmlClassQueryable,
+        context: &DrawingContext,
+        canvas: &mut dyn canvas::NHCanvas,
+        tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>,
+    ) -> TargettingStatus {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+            UmlClassElementView::Class(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+            UmlClassElementView::Link(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+        }
+    }
+    fn collect_allignment(&mut self, am: &mut SnapManager) {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+            UmlClassElementView::Class(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+            UmlClassElementView::Link(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+        }
+    }
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        ehc: &EventHandlingContext,
+        tool: &mut Option<NaiveUmlClassTool>,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+    ) -> EventHandlingStatus {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+            UmlClassElementView::Class(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+            UmlClassElementView::Link(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+        }
+    }
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+    ) {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+            UmlClassElementView::Class(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+            UmlClassElementView::Link(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+        }
+    }
+    fn head_count(
+        &mut self,
+        flattened_views: &mut HashMap<ViewUuid, UmlClassElementView>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            UmlClassElementView::Class(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            UmlClassElementView::Link(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+        }
+    }
+
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, UmlClassElementView>,
+        c: &mut HashMap<ViewUuid, UmlClassElementView>,
+        m: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            UmlClassElementView::Class(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            UmlClassElementView::Link(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+        }
+    }
+    fn deep_copy_clone(
+        &self,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, UmlClassElementView>,
+        c: &mut HashMap<ViewUuid, UmlClassElementView>,
+        m: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+            UmlClassElementView::Class(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+            UmlClassElementView::Link(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+        }
+    }
+    fn deep_copy_relink(
+        &mut self,
+        c: &HashMap<ViewUuid, UmlClassElementView>,
+        m: &HashMap<ModelUuid, UmlClassElement>,
+    ) {
+        match self {
+            UmlClassElementView::Package(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+            UmlClassElementView::Class(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+            UmlClassElementView::Link(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct UmlClassDiagramAdapter {
     model: Arc<RwLock<UmlClassDiagram>>,
@@ -164,7 +328,7 @@ pub struct UmlClassDiagramAdapter {
     comment_buffer: String,
 }
 
-impl DiagramAdapter<UmlClassDiagram, UmlClassElement, UmlClassQueryable, NaiveUmlClassTool, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassDiagramAdapter {
+impl DiagramAdapter<UmlClassDomain, UmlClassDiagram> for UmlClassDiagramAdapter {
     fn model(&self) -> Arc<RwLock<UmlClassDiagram>> {
         self.model.clone()
     }
@@ -178,11 +342,36 @@ impl DiagramAdapter<UmlClassDiagram, UmlClassElement, UmlClassQueryable, NaiveUm
         "umlclass-diagram-view"
     }
 
-    fn create_view_for(
+    fn create_new_view_for(
         &self,
-        element: UmlClassElement
+        q: &UmlClassQueryable<'_>,
+        element: UmlClassElement,
     ) -> UmlClassElementOrVertex {
-        todo!("implement view creation")
+        let v = match element {
+            UmlClassElement::UmlClassPackage(rw_lock) => {
+                UmlClassElementView::from(
+                    new_umlclass_package_view(
+                        rw_lock,
+                        egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 100.0) },
+                    )
+                )
+            },
+            UmlClassElement::UmlClass(rw_lock) => {
+                UmlClassElementView::from(
+                    new_umlclass_class_view(rw_lock, egui::Pos2::ZERO)
+                )
+            },
+            UmlClassElement::UmlClassLink(rw_lock) => {
+                let m = rw_lock.read().unwrap();
+                let source_view = q.get_view(&m.source.read().unwrap().uuid).unwrap();
+                let target_view = q.get_view(&m.target.read().unwrap().uuid).unwrap();
+                UmlClassElementView::from(
+                    new_umlclass_link_view(rw_lock.clone(), None, source_view, target_view)
+                )
+            },
+        };
+
+        UmlClassElementOrVertex::from(v)
     }
 
     fn show_props_fun(
@@ -433,7 +622,7 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
 
-    let (_, class_af, class_af_uuid, class_af_view) = uml_class(
+    let (class_af, class_af_view) = new_umlclass_class(
         UmlClassStereotype::Interface,
         "AbstractFactory",
         "",
@@ -441,7 +630,7 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
         egui::Pos2::new(200.0, 150.0),
     );
 
-    let (_, class_cfx, class_cfx_uuid, class_cfx_view) = uml_class(
+    let (class_cfx, class_cfx_view) = new_umlclass_class(
         UmlClassStereotype::Class,
         "ConcreteFactoryX",
         "",
@@ -449,7 +638,7 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
         egui::Pos2::new(100.0, 250.0),
     );
 
-    let (_, class_cfy, class_cfy_uuid, class_cfy_view) = uml_class(
+    let (class_cfy, class_cfy_view) = new_umlclass_class(
         UmlClassStereotype::Class,
         "ConcreteFactoryY",
         "",
@@ -457,23 +646,23 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
         egui::Pos2::new(300.0, 250.0),
     );
 
-    let (_, realization_cfx, realization_cfx_uuid, realization_cfx_view) = umlclass_link(
+    let (realization_cfx, realization_cfx_view) = new_umlclass_link(
         UmlClassLinkType::InterfaceRealization,
         "",
         None,
-        (class_cfx.clone(), class_cfx_view.clone()),
-        (class_af.clone(), class_af_view.clone()),
+        (class_cfx.clone(), class_cfx_view.clone().into()),
+        (class_af.clone(), class_af_view.clone().into()),
     );
 
-    let (_, realization_cfy, realization_cfy_uuid, realization_cfy_view) = umlclass_link(
+    let (realization_cfy, realization_cfy_view) = new_umlclass_link(
         UmlClassLinkType::InterfaceRealization,
         "",
         None,
-        (class_cfy.clone(), class_cfy_view.clone()),
-        (class_af.clone(), class_af_view.clone()),
+        (class_cfy.clone(), class_cfy_view.clone().into()),
+        (class_af.clone(), class_af_view.clone().into()),
     );
 
-    let (_, class_client, class_client_uuid, class_client_view) = uml_class(
+    let (class_client, class_client_view) = new_umlclass_class(
         UmlClassStereotype::Class,
         "Client",
         "",
@@ -481,15 +670,15 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
         egui::Pos2::new(300.0, 50.0),
     );
 
-    let (_, usage_client_af, usage_client_af_uuid, usage_client_af_view) = umlclass_link(
+    let (usage_client_af, usage_client_af_view) = new_umlclass_link(
         UmlClassLinkType::Usage,
         "<<use>>",
         Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(200.0, 50.0))),
-        (class_client.clone(), class_client_view.clone()),
-        (class_af.clone(), class_af_view.clone()),
+        (class_client.clone(), class_client_view.clone().into()),
+        (class_af.clone(), class_af_view.clone().into()),
     );
 
-    let (_, class_producta, class_producta_uuid, class_producta_view) = uml_class(
+    let (class_producta, class_producta_view) = new_umlclass_class(
         UmlClassStereotype::Interface,
         "ProductA",
         "",
@@ -497,16 +686,16 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
         egui::Pos2::new(450.0, 150.0),
     );
 
-    let (_, usage_client_producta, usage_client_producta_uuid, usage_client_producta_view) =
-        umlclass_link(
+    let (usage_client_producta, usage_client_producta_view) =
+        new_umlclass_link(
             UmlClassLinkType::Usage,
             "<<use>>",
             Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(450.0, 52.0))),
-            (class_client.clone(), class_client_view.clone()),
-            (class_producta.clone(), class_producta_view.clone()),
+            (class_client.clone(), class_client_view.clone().into()),
+            (class_producta.clone(), class_producta_view.clone().into()),
         );
 
-    let (_, class_productb, class_productb_uuid, class_productb_view) = uml_class(
+    let (class_productb, class_productb_view) = new_umlclass_class(
         UmlClassStereotype::Interface,
         "ProductB",
         "",
@@ -514,27 +703,27 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
         egui::Pos2::new(650.0, 150.0),
     );
 
-    let (_, usage_client_productb, usage_client_productb_uuid, usage_client_productb_view) =
-        umlclass_link(
+    let (usage_client_productb, usage_client_productb_view) =
+        new_umlclass_link(
             UmlClassLinkType::Usage,
             "<<use>>",
             Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(650.0, 48.0))),
-            (class_client.clone(), class_client_view.clone()),
-            (class_productb.clone(), class_productb_view.clone()),
+            (class_client.clone(), class_client_view.clone().into()),
+            (class_productb.clone(), class_productb_view.clone().into()),
         );
 
-    let mut owned_controllers = Vec::<ArcRwLockControllerT>::new();
-    owned_controllers.push(class_af_view);
-    owned_controllers.push(class_cfx_view);
-    owned_controllers.push(class_cfy_view);
-    owned_controllers.push(realization_cfx_view);
-    owned_controllers.push(realization_cfy_view);
-    owned_controllers.push(class_client_view);
-    owned_controllers.push(usage_client_af_view);
-    owned_controllers.push(class_producta_view);
-    owned_controllers.push(usage_client_producta_view);
-    owned_controllers.push(class_productb_view);
-    owned_controllers.push(usage_client_productb_view);
+    let mut owned_controllers = Vec::<UmlClassElementView>::new();
+    owned_controllers.push(class_af_view.into());
+    owned_controllers.push(class_cfx_view.into());
+    owned_controllers.push(class_cfy_view.into());
+    owned_controllers.push(realization_cfx_view.into());
+    owned_controllers.push(realization_cfy_view.into());
+    owned_controllers.push(class_client_view.into());
+    owned_controllers.push(usage_client_af_view.into());
+    owned_controllers.push(class_producta_view.into());
+    owned_controllers.push(usage_client_producta_view.into());
+    owned_controllers.push(class_productb_view.into());
+    owned_controllers.push(usage_client_productb_view.into());
 
     let diagram_view_uuid = uuid::Uuid::now_v7().into();
     let diagram_model_uuid = uuid::Uuid::now_v7().into();
@@ -570,26 +759,6 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
     )
 }
 
-#[derive(Clone, Copy)]
-pub enum KindedUmlClassElement<'a> {
-    Diagram {},
-    Package { inner: &'a PackageViewT },
-    Class { inner: &'a UmlClassController },
-    Link { inner: &'a LinkViewT },
-}
-
-impl<'a> From<&'a DiagramViewT> for KindedUmlClassElement<'a> {
-    fn from(from: &'a DiagramViewT) -> Self {
-        Self::Diagram {}
-    }
-}
-
-impl<'a> From<&'a PackageViewT> for KindedUmlClassElement<'a> {
-    fn from(from: &'a PackageViewT) -> Self {
-        Self::Package { inner: from }
-    }
-}
-
 #[derive(Clone, Copy, PartialEq)]
 pub enum UmlClassToolStage {
     Class,
@@ -602,11 +771,10 @@ pub enum UmlClassToolStage {
 
 enum PartialUmlClassElement {
     None,
-    Some((ViewUuid, ArcRwLockControllerT)),
+    Some(UmlClassElementView),
     Link {
         link_type: UmlClassLinkType,
         source: Arc<RwLock<UmlClass>>,
-        source_view: ArcRwLockControllerT,
         dest: Option<Arc<RwLock<UmlClass>>>,
     },
     Package {
@@ -637,19 +805,16 @@ impl NaiveUmlClassTool {
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
 const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
 
-impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassPropChange>
-    for NaiveUmlClassTool
-{
-    type KindedElement<'a> = KindedUmlClassElement<'a>;
+impl Tool<UmlClassDomain> for NaiveUmlClassTool {
     type Stage = UmlClassToolStage;
 
     fn initial_stage(&self) -> Self::Stage {
         self.initial_stage
     }
 
-    fn targetting_for_element<'a>(&self, controller: Self::KindedElement<'a>) -> egui::Color32 {
-        match controller {
-            KindedUmlClassElement::Diagram { .. } => match self.current_stage {
+    fn targetting_for_element(&self, element: Option<UmlClassElement>) -> egui::Color32 {
+        match element {
+            None => match self.current_stage {
                 UmlClassToolStage::Class
                 | UmlClassToolStage::Note
                 | UmlClassToolStage::PackageStart
@@ -658,7 +823,7 @@ impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassP
                     NON_TARGETTABLE_COLOR
                 }
             },
-            KindedUmlClassElement::Package { .. } => match self.current_stage {
+            Some(UmlClassElement::UmlClassPackage(..)) => match self.current_stage {
                 UmlClassToolStage::Class
                 | UmlClassToolStage::Note
                 | UmlClassToolStage::PackageStart
@@ -667,7 +832,7 @@ impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassP
                     NON_TARGETTABLE_COLOR
                 }
             },
-            KindedUmlClassElement::Class { .. } => match self.current_stage {
+            Some(UmlClassElement::UmlClass(..)) => match self.current_stage {
                 UmlClassToolStage::LinkStart { .. } | UmlClassToolStage::LinkEnd => {
                     TARGETTABLE_COLOR
                 }
@@ -676,28 +841,30 @@ impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassP
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             },
-            KindedUmlClassElement::Link { .. } => todo!(),
+            Some(UmlClassElement::UmlClassLink(..)) => todo!(),
         }
     }
-    fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
+    fn draw_status_hint(&self, q: &UmlClassQueryable,  canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
         match &self.result {
             PartialUmlClassElement::Link {
-                source_view,
+                source,
                 link_type,
                 ..
             } => {
-                canvas.draw_line(
-                    [source_view.read().unwrap().position(), pos],
-                    match link_type.line_type() {
-                        canvas::LineType::Solid => {
-                            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
-                        }
-                        canvas::LineType::Dashed => {
-                            canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK)
-                        }
-                    },
-                    canvas::Highlight::NONE,
-                );
+                if let Some(source_view) = q.get_view(&source.read().unwrap().uuid()) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        match link_type.line_type() {
+                            canvas::LineType::Solid => {
+                                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
+                            }
+                            canvas::LineType::Dashed => {
+                                canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK)
+                            }
+                        },
+                        canvas::Highlight::NONE,
+                    );
+                }
             }
             PartialUmlClassElement::Package { a_display, .. } => {
                 canvas.draw_rectangle(
@@ -719,9 +886,9 @@ impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassP
 
         match (self.current_stage, &mut self.result) {
             (UmlClassToolStage::Class, _) => {
-                let (_model_uuid, _class_model, view_uuid, class_view) =
-                    uml_class(UmlClassStereotype::Class, "a class", "", "", pos);
-                self.result = PartialUmlClassElement::Some((view_uuid, class_view));
+                let (_class_model, class_view) =
+                    new_umlclass_class(UmlClassStereotype::Class, "a class", "", "", pos);
+                self.result = PartialUmlClassElement::Some(class_view.into());
                 self.event_lock = true;
             }
             (UmlClassToolStage::PackageStart, _) => {
@@ -741,21 +908,19 @@ impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassP
             _ => {}
         }
     }
-    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>) {
+    fn add_element<'a>(&mut self, controller: UmlClassElement) {
         if self.event_lock {
             return;
         }
 
         match controller {
-            KindedUmlClassElement::Diagram { .. } => {}
-            KindedUmlClassElement::Package { .. } => {}
-            KindedUmlClassElement::Class { inner } => {
+            UmlClassElement::UmlClassPackage(..) => {}
+            UmlClassElement::UmlClass(inner) => {
                 match (self.current_stage, &mut self.result) {
                     (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None) => {
                         self.result = PartialUmlClassElement::Link {
                             link_type,
-                            source: inner.model.clone(),
-                            source_view: inner.self_reference.upgrade().unwrap(),
+                            source: inner,
                             dest: None,
                         };
                         self.current_stage = UmlClassToolStage::LinkEnd;
@@ -765,38 +930,16 @@ impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassP
                         UmlClassToolStage::LinkEnd,
                         PartialUmlClassElement::Link { dest, .. },
                     ) => {
-                        *dest = Some(inner.model.clone());
+                        *dest = Some(inner);
                         self.event_lock = true;
                     }
                     _ => {}
                 }
             }
-            KindedUmlClassElement::Link { .. } => {}
+            UmlClassElement::UmlClassLink(..) => {}
         }
     }
-    fn try_construct(
-        &mut self,
-        into: &dyn ContainerGen2<
-            UmlClassElement,
-            UmlClassQueryable,
-            Self,
-            UmlClassElementOrVertex,
-            UmlClassPropChange,
-        >,
-    ) -> Option<(
-        ViewUuid,
-        Arc<
-            RwLock<
-                dyn ElementControllerGen2<
-                    UmlClassElement,
-                    UmlClassQueryable,
-                    Self,
-                    UmlClassElementOrVertex,
-                    UmlClassPropChange,
-                >,
-            >,
-        >,
-    )> {
+    fn try_construct(&mut self, into: &dyn ContainerGen2<UmlClassDomain>) -> Option<UmlClassElementView> {
         match &self.result {
             PartialUmlClassElement::Some(x) => {
                 let x = x.clone();
@@ -813,12 +956,12 @@ impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassP
                     link_type: *link_type,
                 };
 
-                let association_controller: Option<(_, ArcRwLockControllerT)>
+                let association_view: Option<UmlClassElementView>
                     = if let (Some(source_controller), Some(dest_controller)) = (
                     into.controller_for(&source.read().unwrap().uuid()),
                     into.controller_for(&dest.read().unwrap().uuid()),
                 ) {
-                    let (_model_uuid, _link_model, view_uuid, link_view) = umlclass_link(
+                    let (_link_model, link_view) = new_umlclass_link(
                         *link_type,
                         "",
                         None,
@@ -826,22 +969,22 @@ impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassP
                         (dest.clone(), dest_controller),
                     );
 
-                    Some((view_uuid, link_view))
+                    Some(link_view.into())
                 } else {
                     None
                 };
 
                 self.result = PartialUmlClassElement::None;
-                association_controller
+                association_view
             }
             PartialUmlClassElement::Package { a, b: Some(b), .. } => {
                 self.current_stage = UmlClassToolStage::PackageStart;
 
-                let (_model_uuid, _package_model, view_uuid, package_view) =
-                    umlclass_package("a package", egui::Rect::from_two_pos(*a, *b));
+                let (_package_model, package_view) =
+                    new_umlclass_package("a package", egui::Rect::from_two_pos(*a, *b));
 
                 self.result = PartialUmlClassElement::None;
-                Some((view_uuid, package_view))
+                Some(package_view.into())
             }
             _ => None,
         }
@@ -851,29 +994,12 @@ impl Tool<UmlClassElement, UmlClassQueryable, UmlClassElementOrVertex, UmlClassP
     }
 }
 
-pub trait UmlClassElementController:
-    ElementControllerGen2<
-    UmlClassElement,
-    UmlClassQueryable,
-    NaiveUmlClassTool,
-    UmlClassElementOrVertex,
-    UmlClassPropChange,
->
-{
-    fn is_connection_from(&self, _uuid: &ModelUuid) -> bool {
-        false
-    }
-    fn connection_target_name(&self) -> Option<Arc<String>> {
-        None
-    }
-}
-
 #[derive(Clone)]
 pub struct UmlClassPackageAdapter {
     model: Arc<RwLock<UmlClassPackage>>,
 }
 
-impl PackageAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassPackageAdapter {
+impl PackageAdapter<UmlClassDomain> for UmlClassPackageAdapter {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -986,47 +1112,42 @@ impl PackageAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange
     }
 }
 
-fn umlclass_package(
+fn new_umlclass_package(
     name: &str,
     bounds_rect: egui::Rect,
-) -> (
-    ModelUuid,
-    Arc<RwLock<UmlClassPackage>>,
-    ViewUuid,
-    Arc<RwLock<PackageViewT>>,
-) {
-    let view_uuid = uuid::Uuid::now_v7().into();
+) -> (Arc<RwLock<UmlClassPackage>>, Arc<RwLock<PackageViewT>>) {
     let model_uuid = uuid::Uuid::now_v7().into();
     let package_model = Arc::new(RwLock::new(UmlClassPackage::new(
         model_uuid,
         name.to_owned(),
         vec![],
     )));
-    let package_view = PackageView::new(
+    let package_view = new_umlclass_package_view(package_model.clone(), bounds_rect);
+
+    (package_model, package_view)
+}
+fn new_umlclass_package_view(
+    model: Arc<RwLock<UmlClassPackage>>,
+    bounds_rect: egui::Rect,
+) -> Arc<RwLock<PackageViewT>> {
+    let view_uuid = uuid::Uuid::now_v7().into();
+    PackageView::new(
         Arc::new(view_uuid),
         UmlClassPackageAdapter {
-            model: package_model.clone(),
+            model,
         },
         HashMap::new(),
         bounds_rect,
-    );
-
-    (model_uuid, package_model, view_uuid, package_view)
+    )
 }
 
-fn uml_class(
+fn new_umlclass_class(
     stereotype: UmlClassStereotype,
     name: &str,
     properties: &str,
     functions: &str,
     position: egui::Pos2,
-) -> (
-    ModelUuid,
-    Arc<RwLock<UmlClass>>,
-    ViewUuid,
-    Arc<RwLock<UmlClassController>>,
-) {
-    let class_view_uuid = uuid::Uuid::now_v7().into();
+) -> (Arc<RwLock<UmlClass>>, Arc<RwLock<UmlClassController>>) {
     let class_model_uuid = uuid::Uuid::now_v7().into();
     let class_model = Arc::new(RwLock::new(UmlClass::new(
         class_model_uuid,
@@ -1035,15 +1156,26 @@ fn uml_class(
         properties.to_owned(),
         functions.to_owned(),
     )));
+    let class_view = new_umlclass_class_view(class_model.clone(), position);
+
+    (class_model, class_view)
+}
+fn new_umlclass_class_view(
+    model: Arc<RwLock<UmlClass>>,
+    position: egui::Pos2,
+) -> Arc<RwLock<UmlClassController>> {
+    let m = model.read().unwrap();
+    let class_view_uuid = uuid::Uuid::now_v7().into();
     let class_view = Arc::new(RwLock::new(UmlClassController {
         uuid: Arc::new(class_view_uuid),
-        model: class_model.clone(),
+        model: model.clone(),
         self_reference: Weak::new(),
-        stereotype_buffer: stereotype,
-        name_buffer: name.to_owned(),
-        properties_buffer: properties.to_owned(),
-        functions_buffer: functions.to_owned(),
-        comment_buffer: "".to_owned(),
+
+        stereotype_buffer: m.stereotype,
+        name_buffer: (*m.name).clone(),
+        properties_buffer: (*m.properties).clone(),
+        functions_buffer: (*m.functions).clone(),
+        comment_buffer: (*m.comment).clone(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
@@ -1051,7 +1183,7 @@ fn uml_class(
         bounds_rect: egui::Rect::ZERO,
     }));
     class_view.write().unwrap().self_reference = Arc::downgrade(&class_view);
-    (class_model_uuid, class_model, class_view_uuid, class_view)
+    class_view
 }
 
 pub struct UmlClassController {
@@ -1111,24 +1243,9 @@ impl ElementController<UmlClassElement> for UmlClassController {
     }
 }
 
-impl
-    ContainerGen2<
-        UmlClassElement,
-        UmlClassQueryable,
-        NaiveUmlClassTool,
-        UmlClassElementOrVertex,
-        UmlClassPropChange,
-    > for UmlClassController {}
+impl ContainerGen2<UmlClassDomain> for UmlClassController {}
 
-impl
-    ElementControllerGen2<
-        UmlClassElement,
-        UmlClassQueryable,
-        NaiveUmlClassTool,
-        UmlClassElementOrVertex,
-        UmlClassPropChange,
-    > for UmlClassController
-{
+impl ElementControllerGen2<UmlClassDomain> for UmlClassController {
     fn show_properties(
         &mut self,
         _parent: &UmlClassQueryable,
@@ -1283,7 +1400,7 @@ impl
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::CornerRadius::ZERO,
-                    t.targetting_for_element(KindedUmlClassElement::Class { inner: self }),
+                    t.targetting_for_element(Some(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -1321,7 +1438,7 @@ impl
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_element(KindedUmlClassElement::Class { inner: self });
+                    tool.add_element(self.model());
                 } else {
                     if !ehc.modifiers.command {
                         self.highlight.selected = true;
@@ -1463,21 +1580,19 @@ impl
 
     fn head_count(
         &mut self,
-        views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &mut HashMap<ViewUuid, UmlClassElementView>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        views.insert(*self.uuid(), self.highlight.selected.into());
-        models.insert(*self.model_uuid(), *self.uuid);
+        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
     
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid, ArcRwLockControllerT>,
-        c: &mut HashMap<usize, (ViewUuid,
-            ArcRwLockControllerT,
-            Arc<dyn Any + Send + Sync>,
-        )>,
+        tlc: &mut HashMap<ViewUuid, UmlClassElementView>,
+        c: &mut HashMap<ViewUuid, UmlClassElementView>,
         m: &mut HashMap<ModelUuid, UmlClassElement>,
     ) {
         let old_model = self.model.read().unwrap();
@@ -1511,8 +1626,8 @@ impl
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(view_uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
     }
 }
 
@@ -1521,7 +1636,7 @@ pub struct UmlClassLinkAdapter {
     model: Arc<RwLock<UmlClassLink>>,
 }
 
-impl MulticonnectionAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPropChange> for UmlClassLinkAdapter {
+impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -1560,8 +1675,8 @@ impl MulticonnectionAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPr
         (
             model.link_type.line_type(),
             model.link_type.destination_arrowhead_type(),
-            if !model.destination_arrowhead_label.is_empty() {
-                Some(model.destination_arrowhead_label.clone())
+            if !model.target_arrowhead_label.is_empty() {
+                Some(model.target_arrowhead_label.clone())
             } else {
                 None
             }
@@ -1615,7 +1730,7 @@ impl MulticonnectionAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPr
         }
         ui.separator();
 
-        let mut dal_buffer = (*model.destination_arrowhead_label).clone();
+        let mut dal_buffer = (*model.target_arrowhead_label).clone();
         ui.label("Destination:");
         if ui
             .add_sized(
@@ -1690,10 +1805,10 @@ impl MulticonnectionAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPr
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*view_uuid).collect(),
                             vec![UmlClassPropChange::CommentChange(
-                                model.destination_arrowhead_label.clone(),
+                                model.target_arrowhead_label.clone(),
                             )],
                         ));
-                        model.destination_arrowhead_label = destination_arrowhead_label.clone();
+                        model.target_arrowhead_label = destination_arrowhead_label.clone();
                     }
                     UmlClassPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -1718,7 +1833,7 @@ impl MulticonnectionAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPr
         let model = if let Some(UmlClassElement::UmlClassLink(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = Arc::new(RwLock::new(UmlClassLink::new(new_uuid, old_model.link_type, (*old_model.description).clone(), old_model.source.clone(), old_model.destination.clone())));
+            let modelish = Arc::new(RwLock::new(UmlClassLink::new(new_uuid, old_model.link_type, (*old_model.description).clone(), old_model.source.clone(), old_model.target.clone())));
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -1738,52 +1853,45 @@ impl MulticonnectionAdapter<UmlClassElement, UmlClassElementOrVertex, UmlClassPr
         }
         let target_uuid = *model.source.read().unwrap().uuid;
         if let Some(UmlClassElement::UmlClass(new_target)) = m.get(&target_uuid) {
-            model.destination = new_target.clone();
+            model.target = new_target.clone();
         }
     }
 }
 
-fn umlclass_link(
+fn new_umlclass_link(
     link_type: UmlClassLinkType,
     description: impl Into<String>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (Arc<RwLock<UmlClass>>, ArcRwLockControllerT),
-    destination: (Arc<RwLock<UmlClass>>, ArcRwLockControllerT),
-) -> (
-    ModelUuid,
-    Arc<RwLock<UmlClassLink>>,
-    ViewUuid,
-    Arc<RwLock<LinkViewT>>,
-) {
-    let link_view_uuid = uuid::Uuid::now_v7().into();
+    source: (Arc<RwLock<UmlClass>>, UmlClassElementView),
+    target: (Arc<RwLock<UmlClass>>, UmlClassElementView),
+) -> (Arc<RwLock<UmlClassLink>>, Arc<RwLock<LinkViewT>>) {
     let link_model_uuid = uuid::Uuid::now_v7().into();
     let link_model = Arc::new(RwLock::new(UmlClassLink::new(
         link_model_uuid,
         link_type,
         description,
         source.0,
-        destination.0,
+        target.0,
     )));
-    let link_view = MulticonnectionView::new(
+    let link_view = new_umlclass_link_view(link_model.clone(), center_point, source.1, target.1);
+    (link_model, link_view)
+}
+fn new_umlclass_link_view(
+    model: Arc<RwLock<UmlClassLink>>,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: UmlClassElementView,
+    target: UmlClassElementView,
+) -> Arc<RwLock<LinkViewT>> {
+    let link_view_uuid = uuid::Uuid::now_v7().into();
+    MulticonnectionView::new(
         Arc::new(link_view_uuid),
         UmlClassLinkAdapter {
-            model: link_model.clone(),
+            model,
         },
-        source.1,
-        destination.1,
+        source,
+        target,
         center_point,
         vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
         vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
-    );
-    (link_model_uuid, link_model, link_view_uuid, link_view)
-}
-
-impl UmlClassElementController for LinkViewT {
-    fn is_connection_from(&self, uuid: &ModelUuid) -> bool {
-        *self.source.read().unwrap().model_uuid() == *uuid
-    }
-
-    fn connection_target_name(&self) -> Option<Arc<String>> {
-        Some(self.destination.read().unwrap().model_name())
-    }
+    )
 }

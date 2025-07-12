@@ -66,7 +66,7 @@ impl UmlClassCollector {
                 self.absolute_paths.get(&s.uuid()).unwrap()
             };
             let dest_name = {
-                let d = link.destination.read().unwrap();
+                let d = link.target.read().unwrap();
                 self.absolute_paths.get(&d.uuid()).unwrap()
             };
 
@@ -83,9 +83,9 @@ impl UmlClassCollector {
                 UmlClassLinkType::InterfaceRealization => " ..|> ",
                 UmlClassLinkType::Usage => " ..> ",
             });
-            if !link.destination_arrowhead_label.is_empty() {
+            if !link.target_arrowhead_label.is_empty() {
                 self.plantuml_data
-                    .push_str(&format!("{:?} ", link.destination_arrowhead_label));
+                    .push_str(&format!("{:?} ", link.target_arrowhead_label));
             }
             self.plantuml_data.push_str(dest_name);
             self.plantuml_data.push_str("\n");
@@ -187,8 +187,8 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (Arc<RwLock<UmlClassDiagram>>, 
                     link_type: model.link_type,
                     source: model.source.clone(),
                     source_arrowhead_label: model.source_arrowhead_label.clone(),
-                    destination: model.destination.clone(),
-                    destination_arrowhead_label: model.destination_arrowhead_label.clone(),
+                    target: model.target.clone(),
+                    target_arrowhead_label: model.target_arrowhead_label.clone(),
                     comment: model.comment.clone(),
                 };
                 UmlClassElement::UmlClassLink(Arc::new(RwLock::new(new_model)))
@@ -212,9 +212,9 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (Arc<RwLock<UmlClassDiagram>>, 
                 if let Some(UmlClassElement::UmlClass(s)) = all_models.get(&source_uuid) {
                     model.source = s.clone();
                 }
-                let target_uuid = *model.destination.read().unwrap().uuid;
+                let target_uuid = *model.target.read().unwrap().uuid;
                 if let Some(UmlClassElement::UmlClass(t)) = all_models.get(&target_uuid) {
-                    model.destination = t.clone();
+                    model.target = t.clone();
                 }
             },
         }
@@ -691,8 +691,8 @@ pub struct UmlClassLink {
     pub description: Arc<String>,
     pub source: Arc<RwLock<UmlClass>>,
     pub source_arrowhead_label: Arc<String>,
-    pub destination: Arc<RwLock<UmlClass>>,
-    pub destination_arrowhead_label: Arc<String>,
+    pub target: Arc<RwLock<UmlClass>>,
+    pub target_arrowhead_label: Arc<String>,
 
     pub comment: Arc<String>,
 }
@@ -703,7 +703,7 @@ impl UmlClassLink {
         link_type: UmlClassLinkType,
         description: impl Into<String>,
         source: Arc<RwLock<UmlClass>>,
-        destination: Arc<RwLock<UmlClass>>,
+        target: Arc<RwLock<UmlClass>>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -711,8 +711,8 @@ impl UmlClassLink {
             description: Arc::new(description.into()),
             source,
             source_arrowhead_label: Arc::new("".to_owned()),
-            destination,
-            destination_arrowhead_label: Arc::new("".to_owned()),
+            target,
+            target_arrowhead_label: Arc::new("".to_owned()),
             comment: Arc::new("".to_owned()),
         }
     }
@@ -740,8 +740,8 @@ impl NHSerialize for UmlClassLink {
         element.insert("link_type".to_owned(), toml::Value::try_from(self.link_type)?);
         element.insert("source".to_owned(), toml::Value::String(self.source.read().unwrap().uuid().to_string()));
         element.insert("source_arrowhead_label".to_owned(), toml::Value::String((*self.source_arrowhead_label).clone()));
-        element.insert("destination".to_owned(), toml::Value::String(self.destination.read().unwrap().uuid().to_string()));
-        element.insert("destination_arrowhead_label".to_owned(), toml::Value::String((*self.destination_arrowhead_label).clone()));
+        element.insert("destination".to_owned(), toml::Value::String(self.target.read().unwrap().uuid().to_string()));
+        element.insert("destination_arrowhead_label".to_owned(), toml::Value::String((*self.target_arrowhead_label).clone()));
         element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
         into.insert_model(*self.uuid, element);
 

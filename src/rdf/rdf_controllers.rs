@@ -1,14 +1,13 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    arc_to_usize, ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, TargettingStatus, Tool, VertexInformation, View
+    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
 use crate::common::project_serde::{NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::{CustomTab};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
-use std::any::Any;
 use std::collections::HashSet;
 use std::{
     collections::HashMap,
@@ -19,45 +18,34 @@ use std::{
 use sophia::api::{prelude::SparqlDataset, sparql::Query};
 use sophia_sparql::{ResultTerm, SparqlQuery, SparqlWrapper};
 
-type ControllerT = dyn ElementControllerGen2<
-    RdfElement,
-    RdfQueryable,
-    NaiveRdfTool,
-    RdfElementOrVertex,
-    RdfPropChange,
->;
-type ArcRwLockControllerT = Arc<RwLock<ControllerT>>;
-type DiagramViewT = DiagramControllerGen2<
-    RdfDiagramAdapter,
-    RdfDiagram,
-    RdfElement,
-    RdfQueryable,
-    NaiveRdfTool,
-    RdfElementOrVertex,
-    RdfPropChange,
->;
-type PackageViewT = crate::common::controller::PackageView<
-    RdfGraphAdapter,
-    RdfElement,
-    RdfQueryable,
-    NaiveRdfTool,
-    RdfElementOrVertex,
-    RdfPropChange,
->;
-type LinkViewT = MulticonnectionView<
-    RdfPredicateAdapter,
-    RdfElement,
-    RdfQueryable,
-    NaiveRdfTool,
-    RdfElementOrVertex,
-    RdfPropChange,
->;
+struct RdfDomain;
+impl Domain for RdfDomain {
+    type CommonElementT = RdfElement;
+    type CommonElementViewT = RdfElementView;
+    type QueryableT<'a> = RdfQueryable<'a>;
+    type ToolT = NaiveRdfTool;
+    type AddCommandElementT = RdfElementOrVertex;
+    type PropChangeT = RdfPropChange;
+}
 
-pub struct RdfQueryable {}
+type PackageViewT = PackageView<RdfDomain, RdfGraphAdapter>;
+type LinkViewT = MulticonnectionView<RdfDomain, RdfPredicateAdapter>;
 
-impl Queryable for RdfQueryable {
-    fn new() -> Self {
-        Self {}
+pub struct RdfQueryable<'a> {
+    models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
+    flattened_views: &'a HashMap<ViewUuid, RdfElementView>,
+}
+
+impl<'a> Queryable<'a, RdfDomain> for RdfQueryable<'a> {
+    fn new(
+        models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &'a HashMap<ViewUuid, RdfElementView>,
+    ) -> Self {
+        Self { models_to_views, flattened_views }
+    }
+
+    fn get_view(&self, m: &ModelUuid) -> Option<RdfElementView> {
+        self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
     }
 }
 
@@ -71,7 +59,6 @@ pub enum RdfPropChange {
     LangTagChange(Arc<String>),
 
     CommentChange(Arc<String>),
-    GraphResize(egui::Vec2),
     FlipMulticonnection,
 }
 
@@ -89,7 +76,6 @@ impl Debug for RdfPropChange {
                 Self::LangTagChange(langtag) => format!("LangTagChange({})", langtag),
 
                 Self::CommentChange(comment) => format!("CommentChange({})", comment),
-                Self::GraphResize(size) => format!("GraphResize({})", size),
                 Self::FlipMulticonnection => format!("FlipMulticonnection"),
             }
         )
@@ -107,21 +93,15 @@ impl TryFrom<&RdfPropChange> for FlipMulticonnection {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, derive_more::From)]
 pub enum RdfElementOrVertex {
-    Element((ViewUuid, ArcRwLockControllerT)),
+    Element(RdfElementView),
     Vertex(VertexInformation),
 }
 
 impl Debug for RdfElementOrVertex {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "RdfElementOrVertex::???")
-    }
-}
-
-impl From<VertexInformation> for RdfElementOrVertex {
-    fn from(value: VertexInformation) -> Self {
-        Self::Vertex(value)
     }
 }
 
@@ -136,13 +116,7 @@ impl TryFrom<RdfElementOrVertex> for VertexInformation {
     }
 }
 
-impl From<(ViewUuid, ArcRwLockControllerT)> for RdfElementOrVertex {
-    fn from(value: (ViewUuid, ArcRwLockControllerT)) -> Self {
-        Self::Element(value)
-    }
-}
-
-impl TryFrom<RdfElementOrVertex> for (ViewUuid, ArcRwLockControllerT) {
+impl TryFrom<RdfElementOrVertex> for RdfElementView {
     type Error = ();
 
     fn try_from(value: RdfElementOrVertex) -> Result<Self, Self::Error> {
@@ -172,6 +146,214 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
     ("RDF diagram".to_owned(), c.0, c.1)
 }
 
+#[derive(Clone, derive_more::From)]
+pub enum RdfElementView {
+    Graph(Arc<RwLock<PackageViewT>>),
+    Literal(Arc<RwLock<RdfLiteralController>>),
+    Node(Arc<RwLock<RdfNodeController>>),
+    Predicate(Arc<RwLock<LinkViewT>>),
+}
+
+impl NHSerialize for RdfElementView {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        match self {
+            Self::Graph(inner) => inner.read().unwrap().serialize_into(into),
+            Self::Literal(inner) => inner.read().unwrap().serialize_into(into),
+            Self::Node(inner) => inner.read().unwrap().serialize_into(into),
+            Self::Predicate(inner) => inner.read().unwrap().serialize_into(into),
+        }
+    }
+}
+// impl NHDeserialize for RdfElementView {}
+impl View for RdfElementView {
+    fn uuid(&self) -> Arc<ViewUuid> {
+        match self {
+            Self::Graph(inner) => inner.read().unwrap().uuid(),
+            Self::Literal(inner) => inner.read().unwrap().uuid(),
+            Self::Node(inner) => inner.read().unwrap().uuid(),
+            Self::Predicate(inner) => inner.read().unwrap().uuid(),
+        }
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        match self {
+            Self::Graph(inner) => inner.read().unwrap().model_uuid(),
+            Self::Literal(inner) => inner.read().unwrap().model_uuid(),
+            Self::Node(inner) => inner.read().unwrap().model_uuid(),
+            Self::Predicate(inner) => inner.read().unwrap().model_uuid(),
+        }
+    }
+    fn model_name(&self) -> Arc<String> {
+        match self {
+            Self::Graph(inner) => inner.read().unwrap().model_name(),
+            Self::Literal(inner) => inner.read().unwrap().model_name(),
+            Self::Node(inner) => inner.read().unwrap().model_name(),
+            Self::Predicate(inner) => inner.read().unwrap().model_name(),
+        }
+    }
+}
+impl ElementController<RdfElement> for RdfElementView {
+    fn model(&self) -> RdfElement {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().model(),
+            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().model(),
+            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().model(),
+            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().model(),
+        }
+    }
+    fn min_shape(&self) -> NHShape {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().min_shape(),
+            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().min_shape(),
+            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().min_shape(),
+            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().min_shape(),
+        }
+    }
+    fn max_shape(&self) -> NHShape {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().max_shape(),
+            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().max_shape(),
+            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().max_shape(),
+            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().max_shape(),
+        }
+    }
+    fn position(&self) -> egui::Pos2 {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().position(),
+            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().position(),
+            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().position(),
+            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().position(),
+        }
+    }
+}
+impl ContainerGen2<RdfDomain> for RdfElementView {
+    fn controller_for(&self, uuid: &ModelUuid) -> Option<<RdfDomain as Domain>::CommonElementViewT> {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+        }
+    }
+}
+impl ElementControllerGen2<RdfDomain> for RdfElementView {
+    fn show_properties(
+        &mut self,
+        q: &RdfQueryable,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+    ) -> bool {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+        }
+    }
+    fn draw_in(
+        &mut self,
+        q: &RdfQueryable,
+        context: &DrawingContext,
+        canvas: &mut dyn canvas::NHCanvas,
+        tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
+    ) -> TargettingStatus {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+        }
+    }
+    fn collect_allignment(&mut self, am: &mut SnapManager) {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+        }
+    }
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        ehc: &EventHandlingContext,
+        tool: &mut Option<NaiveRdfTool>,
+        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+    ) -> EventHandlingStatus {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+        }
+    }
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+    ) {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+        }
+    }
+    fn head_count(
+        &mut self,
+        flattened_views: &mut HashMap<ViewUuid, RdfElementView>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+        }
+    }
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, RdfElementView>,
+        c: &mut HashMap<ViewUuid, RdfElementView>,
+        m: &mut HashMap<ModelUuid, RdfElement>,
+    ) {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+        }
+    }
+    fn deep_copy_clone(
+        &self,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, RdfElementView>,
+        c: &mut HashMap<ViewUuid, RdfElementView>,
+        m: &mut HashMap<ModelUuid, RdfElement>,
+    ) {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+        }
+    }
+    fn deep_copy_relink(
+        &mut self,
+        c: &HashMap<ViewUuid, RdfElementView>,
+        m: &HashMap<ModelUuid, RdfElement>,
+    ) {
+        match self {
+            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+        }
+    }
+
+}
+
 #[derive(Clone)]
 pub struct RdfDiagramAdapter {
     model: Arc<RwLock<RdfDiagram>>,
@@ -179,7 +361,7 @@ pub struct RdfDiagramAdapter {
     comment_buffer: String,
 }
 
-impl DiagramAdapter<RdfDiagram, RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange> for RdfDiagramAdapter {
+impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
     fn model(&self) -> Arc<RwLock<RdfDiagram>> {
         self.model.clone()
     }
@@ -193,11 +375,48 @@ impl DiagramAdapter<RdfDiagram, RdfElement, RdfQueryable, NaiveRdfTool, RdfEleme
         "rdf-diagram-view"
     }
 
-    fn create_view_for(
+    fn create_new_view_for(
         &self,
-        element: RdfElement
+        q: &RdfQueryable<'_>,
+        element: RdfElement,
     ) -> RdfElementOrVertex {
-        todo!("implement view creation")
+        let v = match element {
+            RdfElement::RdfGraph(rw_lock) => {
+                RdfElementView::from(
+                    new_rdf_graph_view(
+                        rw_lock,
+                        egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 100.0) },
+                    )
+                )
+            },
+            RdfElement::RdfTargettable(rdf_targettable_element) => {
+                match rdf_targettable_element {
+                    RdfTargettableElement::RdfLiteral(rw_lock) => {
+                        RdfElementView::from(
+                            new_rdf_literal_view(rw_lock, egui::Pos2::ZERO)
+                        )
+                    },
+                    RdfTargettableElement::RdfNode(rw_lock) => {
+                        RdfElementView::from(
+                            new_rdf_node_view(rw_lock, egui::Pos2::ZERO)
+                        )
+                    },
+                }
+            },
+            RdfElement::RdfPredicate(rw_lock) => {
+                let m = rw_lock.read().unwrap();
+                let source_view = q.get_view(&m.source.read().unwrap().uuid).unwrap();
+                let target_view = q.get_view(&m.target.uuid()).unwrap();
+                RdfElementView::from(
+                    new_rdf_predicate_view(
+                        rw_lock.clone(),
+                        source_view,
+                        target_view,
+                    )
+                )
+            },
+        };
+        RdfElementOrVertex::from(v)
     }
 
     fn show_props_fun(
@@ -591,85 +810,67 @@ pub fn new(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarc
 }
 
 pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
-    let (_, node, node_uuid, node_view) = rdf_node(
+    let (node, node_view) = new_rdf_node(
         "http://www.w3.org/People/EM/contact#me",
         egui::Pos2::new(300.0, 100.0),
     );
 
-    let literal_view_uuid = uuid::Uuid::now_v7().into();
-    let literal_model_uuid = uuid::Uuid::now_v7().into();
-    let literal_model = Arc::new(RwLock::new(RdfLiteral::new(
-        literal_model_uuid,
-        "Eric Miller".to_owned(),
-        "http://www.w3.org/2001/XMLSchema#string".to_owned(),
-        "en".to_owned(),
-    )));
-    let literal_view = Arc::new(RwLock::new(RdfLiteralController {
-        uuid: Arc::new(literal_view_uuid),
-        model: literal_model.clone(),
-        self_reference: Weak::new(),
-        
-        content_buffer: "Eric Miller".to_owned(),
-        datatype_buffer: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
-        langtag_buffer: "en".to_owned(),
-        comment_buffer: "".to_owned(),
-
-        dragged_shape: None,
-        highlight: canvas::Highlight::NONE,
-        position: egui::Pos2::new(300.0, 200.0),
-        bounds_rect: egui::Rect::ZERO,
-    }));
-    literal_view.write().unwrap().self_reference = Arc::downgrade(&literal_view);
-
-    let (_, predicate, predicate_uuid, predicate_view) = rdf_predicate(
-        "http://www.w3.org/2000/10/swap/pim/contact#fullName",
-        (node.clone(), node_view.clone()),
-        (literal_model.clone().into(), literal_view.clone()),
+    let (literal_model, literal_view) = new_rdf_literal(
+        "Eric Miller",
+        "http://www.w3.org/2001/XMLSchema#string",
+        "en",
+        egui::Pos2::new(300.0, 200.0),
     );
 
-    let (_, graph, graph_uuid, graph_view) = rdf_graph(
+    let (predicate, predicate_view) = new_rdf_predicate(
+        "http://www.w3.org/2000/10/swap/pim/contact#fullName",
+        (node.clone(), node_view.clone().into()),
+        (literal_model.clone().into(), literal_view.clone().into()),
+    );
+
+    let (graph, graph_view) = new_rdf_graph(
         "http://graph",
         egui::Rect::from_min_max(egui::Pos2::new(400.0, 50.0), egui::Pos2::new(500.0, 150.0)),
     );
 
     //<stress test>
     let mut models_st = Vec::<RdfElement>::new();
-    let mut controllers_st = Vec::<ArcRwLockControllerT>::new();
+    let mut controllers_st = Vec::<RdfElementView>::new();
 
     for xx in 0..=10 {
         for yy in 300..=400 {
-            let (_, node_st, node_st_uuid, node_st_view) = rdf_node(
+            let (node_st, node_st_view) = new_rdf_node(
                 "http://www.w3.org/People/EM/contact#me",
                 egui::Pos2::new(xx as f32, yy as f32),
             );
             models_st.push(RdfTargettableElement::from(node_st).into());
-            controllers_st.push(node_st_view);
+            controllers_st.push(node_st_view.into());
         }
     }
 
     for xx in 3000..=3100 {
         for yy in 3000..=3100 {
-            let (_, node_st, node_st_uuid, node_st_view) = rdf_node(
+            let (node_st, node_st_view) = new_rdf_node(
                 "http://www.w3.org/People/EM/contact#me",
                 egui::Pos2::new(xx as f32, yy as f32),
             );
             models_st.push(RdfTargettableElement::from(node_st).into());
-            controllers_st.push(node_st_view);
+            controllers_st.push(node_st_view.into());
         }
     }
 
-    let (_, graph_st, graph_st_uuid, graph_st_view) = rdf_graph(
+    let (graph_st, graph_st_view) = new_rdf_graph(
         "http://stresstestgraph",
         egui::Rect::from_min_max(egui::Pos2::new(0.0, 300.0), egui::Pos2::new(3000.0, 3300.0)),
     );
     //</stress test>
 
-    let mut owned_controllers = Vec::<ArcRwLockControllerT>::new();
-    owned_controllers.push(node_view);
-    owned_controllers.push(literal_view);
-    owned_controllers.push(predicate_view);
-    owned_controllers.push(graph_view);
-    owned_controllers.push(graph_st_view);
+    let mut owned_controllers = Vec::<RdfElementView>::new();
+    owned_controllers.push(node_view.into());
+    owned_controllers.push(literal_view.into());
+    owned_controllers.push(predicate_view.into());
+    owned_controllers.push(graph_view.into());
+    owned_controllers.push(graph_st_view.into());
 
     let name = format!("Demo RDF diagram {}", no);
     let view_uuid = uuid::Uuid::now_v7().into();
@@ -697,27 +898,6 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
     )
 }
 
-#[derive(Clone, Copy)]
-pub enum KindedRdfElement<'a> {
-    Diagram {},
-    Graph { inner: &'a PackageViewT },
-    Literal { inner: &'a RdfLiteralController },
-    Node { inner: &'a RdfNodeController },
-    Predicate { inner: &'a LinkViewT },
-}
-
-impl<'a> From<&'a DiagramViewT> for KindedRdfElement<'a> {
-    fn from(from: &'a DiagramViewT) -> Self {
-        Self::Diagram {}
-    }
-}
-
-impl<'a> From<&'a PackageViewT> for KindedRdfElement<'a> {
-    fn from(from: &'a PackageViewT) -> Self {
-        Self::Graph { inner: from }
-    }
-}
-
 #[derive(Clone, Copy, PartialEq)]
 pub enum RdfToolStage {
     Literal,
@@ -731,10 +911,9 @@ pub enum RdfToolStage {
 
 enum PartialRdfElement {
     None,
-    Some((ViewUuid, ArcRwLockControllerT)),
+    Some(RdfElementView),
     Predicate {
         source: Arc<RwLock<RdfNode>>,
-        source_view: ArcRwLockControllerT,
         dest: Option<RdfTargettableElement>,
     },
     Graph {
@@ -764,17 +943,16 @@ impl NaiveRdfTool {
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
 const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
 
-impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for NaiveRdfTool {
-    type KindedElement<'a> = KindedRdfElement<'a>;
+impl Tool<RdfDomain> for NaiveRdfTool {
     type Stage = RdfToolStage;
 
     fn initial_stage(&self) -> RdfToolStage {
         self.initial_stage
     }
 
-    fn targetting_for_element<'a>(&self, controller: Self::KindedElement<'a>) -> egui::Color32 {
-        match controller {
-            KindedRdfElement::Diagram { .. } => match self.current_stage {
+    fn targetting_for_element(&self, element: Option<RdfElement>) -> egui::Color32 {
+        match element {
+            None => match self.current_stage {
                 RdfToolStage::Literal
                 | RdfToolStage::Node
                 | RdfToolStage::GraphStart
@@ -782,7 +960,7 @@ impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for Naive
                 | RdfToolStage::Note => TARGETTABLE_COLOR,
                 RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => NON_TARGETTABLE_COLOR,
             },
-            KindedRdfElement::Graph { .. } => match self.current_stage {
+            Some(RdfElement::RdfGraph(..)) => match self.current_stage {
                 RdfToolStage::Literal | RdfToolStage::Node | RdfToolStage::Note => {
                     TARGETTABLE_COLOR
                 }
@@ -791,7 +969,7 @@ impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for Naive
                 | RdfToolStage::GraphStart
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
-            KindedRdfElement::Literal { .. } => match self.current_stage {
+            Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(..))) => match self.current_stage {
                 RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
                 RdfToolStage::Literal
                 | RdfToolStage::Node
@@ -800,7 +978,7 @@ impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for Naive
                 | RdfToolStage::GraphEnd
                 | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
             },
-            KindedRdfElement::Node { .. } => match self.current_stage {
+            Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(..))) => match self.current_stage {
                 RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
                 RdfToolStage::Literal
                 | RdfToolStage::Node
@@ -808,17 +986,19 @@ impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for Naive
                 | RdfToolStage::GraphEnd
                 | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
             },
-            KindedRdfElement::Predicate { .. } => todo!(),
+            Some(RdfElement::RdfPredicate(..)) => todo!(),
         }
     }
-    fn draw_status_hint(&self, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
+    fn draw_status_hint(&self, q: &RdfQueryable, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
         match &self.result {
-            PartialRdfElement::Predicate { source_view, .. } => {
-                canvas.draw_line(
-                    [source_view.read().unwrap().position(), pos],
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
+            PartialRdfElement::Predicate { source, .. } => {
+                if let Some(source_view) = q.get_view(&source.read().unwrap().uuid()) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
             }
             PartialRdfElement::Graph { a, .. } => {
                 canvas.draw_rectangle(
@@ -840,37 +1020,20 @@ impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for Naive
 
         match (self.current_stage, &mut self.result) {
             (RdfToolStage::Literal, _) => {
-                let literal_model = Arc::new(RwLock::new(RdfLiteral::new(
-                    uuid::Uuid::now_v7().into(),
-                    "Eric Miller".to_owned(),
-                    "http://www.w3.org/2001/XMLSchema#string".to_owned(),
-                    "en".to_owned(),
-                )));
-                let uuid = uuid::Uuid::now_v7().into();
-                let literal_view = Arc::new(RwLock::new(RdfLiteralController {
-                        uuid: Arc::new(uuid),
-                        model: literal_model.clone(),
-                        self_reference: Weak::new(),
-                        
-                        content_buffer: "Eric Miller".to_owned(),
-                        datatype_buffer: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
-                        langtag_buffer: "en".to_owned(),
-                        comment_buffer: "".to_owned(),
-
-                        dragged_shape: None,
-                        highlight: canvas::Highlight::NONE,
-                        position: pos,
-                        bounds_rect: egui::Rect::ZERO,
-                    }));
-                literal_view.write().unwrap().self_reference = Arc::downgrade(&literal_view);
+                let (literal_model, literal_view) = new_rdf_literal(
+                    "Eric Miller",
+                    "http://www.w3.org/2001/XMLSchema#string",
+                    "en",
+                    pos,
+                );
                 
-                self.result = PartialRdfElement::Some((uuid, literal_view));
+                self.result = PartialRdfElement::Some(literal_view.into());
                 self.event_lock = true;
             }
             (RdfToolStage::Node, _) => {
-                let (_, _node, node_uuid, node_view) =
-                    rdf_node("http://www.w3.org/People/EM/contact#me", pos);
-                self.result = PartialRdfElement::Some((node_uuid, node_view));
+                let (_node, node_view) =
+                    new_rdf_node("http://www.w3.org/People/EM/contact#me", pos);
+                self.result = PartialRdfElement::Some(node_view.into());
                 self.event_lock = true;
             }
             (RdfToolStage::GraphStart, _) => {
@@ -883,50 +1046,39 @@ impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for Naive
             _ => {}
         }
     }
-    fn add_element<'a>(&mut self, controller: Self::KindedElement<'a>) {
+    fn add_element<'a>(&mut self, controller: RdfElement) {
         if self.event_lock {
             return;
         }
 
         match controller {
-            KindedRdfElement::Diagram { .. } => {}
-            KindedRdfElement::Graph { .. } => {}
-            KindedRdfElement::Literal { inner } => match (self.current_stage, &mut self.result) {
+            RdfElement::RdfGraph(..) => {}
+            RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(inner)) => match (self.current_stage, &mut self.result) {
                 (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) => {
-                    *dest = Some(RdfTargettableElement::from(inner.model.clone()).into());
+                    *dest = Some(RdfTargettableElement::from(inner).into());
                     self.event_lock = true;
                 }
                 _ => {}
             },
-            KindedRdfElement::Node { inner } => match (self.current_stage, &mut self.result) {
+            RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(inner)) => match (self.current_stage, &mut self.result) {
                 (RdfToolStage::PredicateStart, PartialRdfElement::None) => {
                     self.result = PartialRdfElement::Predicate {
-                        source: inner.model.clone(),
-                        source_view: inner.self_reference.upgrade().unwrap(),
+                        source: inner,
                         dest: None,
                     };
                     self.current_stage = RdfToolStage::PredicateEnd;
                     self.event_lock = true;
                 }
                 (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) => {
-                    *dest = Some(RdfTargettableElement::from(inner.model.clone()).into());
+                    *dest = Some(RdfTargettableElement::from(inner).into());
                 }
                 _ => {}
             },
-            KindedRdfElement::Predicate { .. } => {}
+            RdfElement::RdfPredicate(..) => {}
         }
     }
 
-    fn try_construct(
-        &mut self,
-        into: &dyn ContainerGen2<
-            RdfElement,
-            RdfQueryable,
-            Self,
-            RdfElementOrVertex,
-            RdfPropChange,
-        >,
-    ) -> Option<(ViewUuid, ArcRwLockControllerT)> {
+    fn try_construct(&mut self, into: &dyn ContainerGen2<RdfDomain>) -> Option<RdfElementView> {
         match &self.result {
             PartialRdfElement::Some(x) => {
                 let x = x.clone();
@@ -941,33 +1093,33 @@ impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for Naive
             } => {
                 self.current_stage = RdfToolStage::PredicateStart;
 
-                let predicate_controller: Option<(_, ArcRwLockControllerT)> =
+                let predicate_view: Option<RdfElementView> =
                     if let (Some(source_controller), Some(dest_controller)) = (
                         into.controller_for(&source.read().unwrap().uuid()),
                         into.controller_for(&dest.uuid()),
                     ) {
-                        let (_model_uuid, _predicate_model, view_uuid, predicate_view) = rdf_predicate(
+                        let (_predicate_model, predicate_view) = new_rdf_predicate(
                             "http://www.w3.org/2000/10/swap/pim/contact#fullName",
                             (source.clone(), source_controller),
                             (dest.clone(), dest_controller),
                         );
 
-                        Some((view_uuid, predicate_view))
+                        Some(predicate_view.into())
                     } else {
                         None
                     };
 
                 self.result = PartialRdfElement::None;
-                predicate_controller
+                predicate_view
             }
             PartialRdfElement::Graph { a, b: Some(b) } => {
                 self.current_stage = RdfToolStage::GraphStart;
 
-                let (_model_uuid, _graph_model, view_uuid, graph_view) =
-                    rdf_graph("http://a-graph", egui::Rect::from_two_pos(*a, *b));
+                let (_graph_model, graph_view) =
+                    new_rdf_graph("http://a-graph", egui::Rect::from_two_pos(*a, *b));
 
                 self.result = PartialRdfElement::None;
-                Some((view_uuid, graph_view))
+                Some(graph_view.into())
             }
             _ => None,
         }
@@ -978,43 +1130,12 @@ impl Tool<RdfElement, RdfQueryable, RdfElementOrVertex, RdfPropChange> for Naive
     }
 }
 
-pub trait RdfElementController:
-    ElementControllerGen2<RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
-{
-    fn is_connection_from(&self, _uuid: &ModelUuid) -> bool {
-        false
-    }
-    fn connection_target_name(&self) -> Option<Arc<String>> {
-        None
-    }
-}
-
-pub trait RdfContainerController {
-    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn RdfElementController>>>;
-}
-
-/*
-impl RdfDiagramController {
-    fn outgoing_for<'a>(&'a self, uuid: &'a uuid::Uuid) -> Box<dyn Iterator<Item=Arc<RwLock<dyn RdfElementController>>> + 'a> {
-        Box::new(self.owned_controllers.iter()
-                    .filter(|e| e.1.read().unwrap().is_connection_from(uuid))
-                    .map(|e| e.1.clone()))
-    }
-}
-
-impl RdfContainerController for RdfDiagramController {
-    fn controller_for(&self, uuid: &uuid::Uuid) -> Option<Arc<RwLock<dyn RdfElementController>>> {
-        self.owned_controllers.get(uuid).cloned()
-    }
-}
-*/
-
 #[derive(Clone)]
 pub struct RdfGraphAdapter {
     model: Arc<RwLock<RdfGraph>>,
 }
 
-impl PackageAdapter<RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGraphAdapter {
+impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
     fn model(&self) -> RdfElement {
         self.model.clone().into()
     }
@@ -1126,47 +1247,58 @@ impl PackageAdapter<RdfElement, RdfElementOrVertex, RdfPropChange> for RdfGraphA
     }
 }
 
-fn rdf_graph(
+fn new_rdf_graph(
     iri: &str,
     bounds_rect: egui::Rect,
-) -> (ModelUuid, Arc<RwLock<RdfGraph>>, ViewUuid, Arc<RwLock<PackageViewT>>) {
-    let view_uuid = uuid::Uuid::now_v7().into();
+) -> (Arc<RwLock<RdfGraph>>, Arc<RwLock<PackageViewT>>) {
     let model_uuid = uuid::Uuid::now_v7().into();
     let graph_model = Arc::new(RwLock::new(RdfGraph::new(
         model_uuid,
         iri.to_owned(),
         vec![],
     )));
-    let graph_view = PackageView::new(
-        Arc::new(view_uuid),
+    let graph_view = new_rdf_graph_view(graph_model.clone(), bounds_rect);
+
+    (graph_model, graph_view)
+}
+fn new_rdf_graph_view(
+    model: Arc<RwLock<RdfGraph>>,
+    bounds_rect: egui::Rect,
+) -> Arc<RwLock<PackageViewT>> {
+    PackageView::new(
+        Arc::new(uuid::Uuid::now_v7().into()),
         RdfGraphAdapter {
-            model: graph_model.clone(),
+            model,
         },
         HashMap::new(),
         bounds_rect,
-    );
-
-    (model_uuid, graph_model, view_uuid, graph_view)
+    )
 }
 
-fn rdf_node(
+fn new_rdf_node(
     iri: &str,
     position: egui::Pos2,
 ) -> (
-    ModelUuid,
     Arc<RwLock<RdfNode>>,
-    ViewUuid,
     Arc<RwLock<RdfNodeController>>,
 ) {
-    let node_view_uuid = uuid::Uuid::now_v7().into();
     let node_model_uuid = uuid::Uuid::now_v7().into();
     let node_model = Arc::new(RwLock::new(RdfNode::new(node_model_uuid, iri.to_owned())));
+    let node_view = new_rdf_node_view(node_model.clone(), position);
+    (node_model, node_view)
+}
+fn new_rdf_node_view(
+    model: Arc<RwLock<RdfNode>>,
+    position: egui::Pos2,
+) -> Arc<RwLock<RdfNodeController>> {
+    let m = model.read().unwrap();
+    let node_view_uuid = uuid::Uuid::now_v7().into();
     let node_view = Arc::new(RwLock::new(RdfNodeController {
         uuid: Arc::new(node_view_uuid),
-        model: node_model.clone(),
+        model: model.clone(),
         self_reference: Weak::new(),
-        iri_buffer: iri.to_owned(),
-        comment_buffer: "".to_owned(),
+        iri_buffer: (*m.iri).to_owned(),
+        comment_buffer: (*m.comment).to_owned(),
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
@@ -1174,7 +1306,7 @@ fn rdf_node(
         bounds_radius: egui::Vec2::ZERO,
     }));
     node_view.write().unwrap().self_reference = Arc::downgrade(&node_view);
-    (node_model_uuid, node_model, node_view_uuid, node_view)
+    node_view
 }
 
 pub struct RdfNodeController {
@@ -1232,18 +1364,9 @@ impl ElementController<RdfElement> for RdfNodeController {
     }
 }
 
-impl ContainerGen2<RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
-    for RdfNodeController {}
+impl ContainerGen2<RdfDomain> for RdfNodeController {}
 
-impl
-    ElementControllerGen2<
-        RdfElement,
-        RdfQueryable,
-        NaiveRdfTool,
-        RdfElementOrVertex,
-        RdfPropChange,
-    > for RdfNodeController
-{
+impl ElementControllerGen2<RdfDomain> for RdfNodeController {
     fn show_properties(
         &mut self,
         _: &RdfQueryable,
@@ -1340,7 +1463,7 @@ impl
             canvas.draw_ellipse(
                 self.position,
                 self.bounds_radius,
-                t.targetting_for_element(KindedRdfElement::Node { inner: self }),
+                t.targetting_for_element(Some(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -1375,7 +1498,7 @@ impl
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_element(KindedRdfElement::Node { inner: self });
+                    tool.add_element(self.model());
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -1477,21 +1600,19 @@ impl
 
     fn head_count(
         &mut self,
-        views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &mut HashMap<ViewUuid, RdfElementView>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        views.insert(*self.uuid(), self.highlight.selected.into());
-        models.insert(*self.model_uuid(), *self.uuid);
+        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
     
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid, ArcRwLockControllerT>,
-        c: &mut HashMap<usize, (ViewUuid,
-            ArcRwLockControllerT,
-            Arc<dyn Any + Send + Sync>,
-        )>,
+        tlc: &mut HashMap<ViewUuid, RdfElementView>,
+        c: &mut HashMap<ViewUuid, RdfElementView>,
         m: &mut HashMap<ModelUuid, RdfElement>,
     ) {
         let old_model = self.model.read().unwrap();
@@ -1522,9 +1643,53 @@ impl
             bounds_radius: self.bounds_radius,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(view_uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
     }
+}
+
+fn new_rdf_literal(
+    content: &str,
+    datatype: &str,
+    langtag: &str,
+    position: egui::Pos2,
+) -> (
+    Arc<RwLock<RdfLiteral>>,
+    Arc<RwLock<RdfLiteralController>>,
+) {
+    let literal_model_uuid = uuid::Uuid::now_v7().into();
+    let literal_model = Arc::new(RwLock::new(RdfLiteral::new(
+        literal_model_uuid,
+        content.to_owned(),
+        datatype.to_owned(),
+        langtag.to_owned(),
+    )));
+    let literal_view = new_rdf_literal_view(literal_model.clone(), position);
+    (literal_model, literal_view)
+}
+fn new_rdf_literal_view(
+    model: Arc<RwLock<RdfLiteral>>,
+    position: egui::Pos2,
+) -> Arc<RwLock<RdfLiteralController>> {
+    let m = model.read().unwrap();
+    let literal_view_uuid = uuid::Uuid::now_v7().into();
+    let literal_view = Arc::new(RwLock::new(RdfLiteralController {
+        uuid: Arc::new(literal_view_uuid),
+        model: model.clone(),
+        self_reference: Weak::new(),
+
+        content_buffer: (*m.content).to_owned(),
+        datatype_buffer: (*m.datatype).to_owned(),
+        langtag_buffer: (*m.langtag).to_owned(),
+        comment_buffer: (*m.comment).to_owned(),
+
+        dragged_shape: None,
+        highlight: canvas::Highlight::NONE,
+        position: position,
+        bounds_rect: egui::Rect::ZERO,
+    }));
+    literal_view.write().unwrap().self_reference = Arc::downgrade(&literal_view);
+    literal_view
 }
 
 pub struct RdfLiteralController {
@@ -1583,18 +1748,9 @@ impl ElementController<RdfElement> for RdfLiteralController {
     }
 }
 
-impl ContainerGen2<RdfElement, RdfQueryable, NaiveRdfTool, RdfElementOrVertex, RdfPropChange>
-    for RdfLiteralController {}
+impl ContainerGen2<RdfDomain> for RdfLiteralController {}
 
-impl
-    ElementControllerGen2<
-        RdfElement,
-        RdfQueryable,
-        NaiveRdfTool,
-        RdfElementOrVertex,
-        RdfPropChange,
-    > for RdfLiteralController
-{
+impl ElementControllerGen2<RdfDomain> for RdfLiteralController {
     fn show_properties(
         &mut self,
         _: &RdfQueryable,
@@ -1704,7 +1860,7 @@ impl
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_element(KindedRdfElement::Literal { inner: self }),
+                t.targetting_for_element(Some(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -1739,7 +1895,7 @@ impl
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_element(KindedRdfElement::Literal { inner: self });
+                    tool.add_element(self.model());
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -1860,21 +2016,19 @@ impl
 
     fn head_count(
         &mut self,
-        views: &mut HashMap<ViewUuid, SelectionStatus>,
-        models: &mut HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &mut HashMap<ViewUuid, RdfElementView>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
-        views.insert(*self.uuid(), self.highlight.selected.into());
-        models.insert(*self.model_uuid(), *self.uuid);
+        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
     }
     
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid, ArcRwLockControllerT>,
-        c: &mut HashMap<usize, (ViewUuid,
-            ArcRwLockControllerT,
-            Arc<dyn Any + Send + Sync>,
-        )>,
+        tlc: &mut HashMap<ViewUuid, RdfElementView>,
+        c: &mut HashMap<ViewUuid, RdfElementView>,
         m: &mut HashMap<ModelUuid, RdfElement>,
     ) {
         let old_model = self.model.read().unwrap();
@@ -1907,8 +2061,8 @@ impl
             bounds_rect: self.bounds_rect,
         }));
         cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
-        tlc.insert(view_uuid, cloneish.clone());
-        c.insert(arc_to_usize(&Weak::upgrade(&self.self_reference).unwrap()), (view_uuid, cloneish.clone(), cloneish));
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
     }
 }
 
@@ -1917,7 +2071,7 @@ pub struct RdfPredicateAdapter {
     model: Arc<RwLock<RdfPredicate>>,
 }
 
-impl MulticonnectionAdapter<RdfElement, RdfElementOrVertex, RdfPropChange> for RdfPredicateAdapter {
+impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
     fn model(&self) -> RdfElement {
         self.model.clone().into()
     }
@@ -2058,44 +2212,45 @@ impl MulticonnectionAdapter<RdfElement, RdfElementOrVertex, RdfPropChange> for R
     }
 }
 
-fn rdf_predicate(
+fn new_rdf_predicate(
     iri: &str,
-    source: (Arc<RwLock<RdfNode>>, ArcRwLockControllerT),
-    destination: (RdfTargettableElement, ArcRwLockControllerT),
+    source: (Arc<RwLock<RdfNode>>, RdfElementView),
+    target: (RdfTargettableElement, RdfElementView),
 ) -> (
-    ModelUuid,
     Arc<RwLock<RdfPredicate>>,
-    ViewUuid,
     Arc<RwLock<LinkViewT>>,
 ) {
-    let predicate_view_uuid = uuid::Uuid::now_v7().into();
     let predicate_model_uuid = uuid::Uuid::now_v7().into();
     let predicate_model = Arc::new(RwLock::new(RdfPredicate::new(
         predicate_model_uuid,
         iri.to_owned(),
         source.0,
-        destination.0,
+        target.0,
     )));
+    let predicate_view = new_rdf_predicate_view(
+        predicate_model.clone(),
+        source.1,
+        target.1
+    );
+
+    (predicate_model, predicate_view)
+}
+fn new_rdf_predicate_view(
+    model: Arc<RwLock<RdfPredicate>>,
+    source: RdfElementView,
+    target: RdfElementView,
+) -> Arc<RwLock<LinkViewT>> {
+    let predicate_view_uuid = uuid::Uuid::now_v7().into();
     let predicate_view = MulticonnectionView::new(
         Arc::new(predicate_view_uuid),
         RdfPredicateAdapter {
-            model: predicate_model.clone(),
+            model,
         },
-        source.1,
-        destination.1,
+        source,
+        target,
         None,
         vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
         vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
     );
-    (predicate_model_uuid, predicate_model, predicate_view_uuid, predicate_view)
-}
-
-impl RdfElementController for LinkViewT {
-    fn is_connection_from(&self, uuid: &ModelUuid) -> bool {
-        *self.source.read().unwrap().model_uuid() == *uuid
-    }
-
-    fn connection_target_name(&self) -> Option<Arc<String>> {
-        Some(self.destination.read().unwrap().model_name())
-    }
+    predicate_view
 }
