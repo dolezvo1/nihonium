@@ -387,7 +387,7 @@ impl DiagramAdapter<DemoCsdDomain, DemoCsdDiagram> for DemoCsdDiagramAdapter {
             },
             DemoCsdElement::DemoCsdTransactor(rw_lock) => {
                 let m = rw_lock.read().unwrap();
-                let tx_view = m.transaction.as_ref().map(|e| new_democsd_transaction_view(e.clone(), egui::Pos2::ZERO, false));
+                let tx_view = m.transaction.as_ref().map(|e| new_democsd_transaction_view(e.clone(), egui::Pos2::ZERO, true));
                 DemoCsdElementView::from(
                     new_democsd_transactor_view(rw_lock.clone(), tx_view, egui::Pos2::ZERO)
                 )
