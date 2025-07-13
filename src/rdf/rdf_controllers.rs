@@ -387,7 +387,7 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
         &self,
         q: &RdfQueryable<'_>,
         element: RdfElement,
-    ) -> RdfElementOrVertex {
+    ) -> Result<RdfElementView, HashSet<ModelUuid>> {
         let v = match element {
             RdfElement::RdfGraph(rw_lock) => {
                 RdfElementView::from(
@@ -413,8 +413,10 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
             },
             RdfElement::RdfPredicate(rw_lock) => {
                 let m = rw_lock.read().unwrap();
-                let source_view = q.get_view(&m.source.read().unwrap().uuid).unwrap();
-                let target_view = q.get_view(&m.target.uuid()).unwrap();
+                let (source_view, target_view) = match (q.get_view(&m.source.read().unwrap().uuid), q.get_view(&m.target.uuid())) {
+                    (Some(sv), Some(tv)) => (sv, tv),
+                    _ => return Err(HashSet::from([*m.source.read().unwrap().uuid, *m.target.uuid()])),
+                };
                 RdfElementView::from(
                     new_rdf_predicate_view(
                         rw_lock.clone(),
@@ -424,7 +426,8 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
                 )
             },
         };
-        RdfElementOrVertex::from(v)
+
+        Ok(v)
     }
 
     fn show_props_fun(

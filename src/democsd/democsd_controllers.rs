@@ -375,7 +375,7 @@ impl DiagramAdapter<DemoCsdDomain, DemoCsdDiagram> for DemoCsdDiagramAdapter {
         &self,
         q: &DemoCsdQueryable<'_>,
         element: DemoCsdElement,
-    ) -> DemoCsdElementOrVertex {
+    ) -> Result<DemoCsdElementView, HashSet<ModelUuid>> {
         let v = match element {
             DemoCsdElement::DemoCsdPackage(rw_lock) => {
                 DemoCsdElementView::from(
@@ -399,8 +399,10 @@ impl DiagramAdapter<DemoCsdDomain, DemoCsdDiagram> for DemoCsdDiagramAdapter {
             },
             DemoCsdElement::DemoCsdLink(rw_lock) => {
                 let m = rw_lock.read().unwrap();
-                let source_view = q.get_view(&m.source.read().unwrap().uuid).unwrap();
-                let target_view = q.get_view(&m.target.read().unwrap().uuid).unwrap();
+                let (source_view, target_view) = match (q.get_view(&m.source.read().unwrap().uuid), q.get_view(&m.target.read().unwrap().uuid)) {
+                    (Some(sv), Some(tv)) => (sv, tv),
+                    _ => return Err(HashSet::from([*m.source.read().unwrap().uuid, *m.target.read().unwrap().uuid])),
+                };
                 DemoCsdElementView::from(
                     new_democsd_link_view(
                         rw_lock.clone(),
@@ -410,7 +412,8 @@ impl DiagramAdapter<DemoCsdDomain, DemoCsdDiagram> for DemoCsdDiagramAdapter {
                 )
             },
         };
-        DemoCsdElementOrVertex::from(v)
+
+        Ok(v)
     }
 
     fn show_props_fun(

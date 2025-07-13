@@ -352,7 +352,7 @@ impl DiagramAdapter<UmlClassDomain, UmlClassDiagram> for UmlClassDiagramAdapter 
         &self,
         q: &UmlClassQueryable<'_>,
         element: UmlClassElement,
-    ) -> UmlClassElementOrVertex {
+    ) -> Result<UmlClassElementView, HashSet<ModelUuid>> {
         let v = match element {
             UmlClassElement::UmlClassPackage(rw_lock) => {
                 UmlClassElementView::from(
@@ -369,15 +369,17 @@ impl DiagramAdapter<UmlClassDomain, UmlClassDiagram> for UmlClassDiagramAdapter 
             },
             UmlClassElement::UmlClassLink(rw_lock) => {
                 let m = rw_lock.read().unwrap();
-                let source_view = q.get_view(&m.source.read().unwrap().uuid).unwrap();
-                let target_view = q.get_view(&m.target.read().unwrap().uuid).unwrap();
+                let (source_view, target_view) = match (q.get_view(&m.source.read().unwrap().uuid), q.get_view(&m.target.read().unwrap().uuid)) {
+                    (Some(sv), Some(tv)) => (sv, tv),
+                    _ => return Err(HashSet::from([*m.source.read().unwrap().uuid, *m.target.read().unwrap().uuid])),
+                };
                 UmlClassElementView::from(
                     new_umlclass_link_view(rw_lock.clone(), None, source_view, target_view)
                 )
             },
         };
 
-        UmlClassElementOrVertex::from(v)
+        Ok(v)
     }
 
     fn show_props_fun(

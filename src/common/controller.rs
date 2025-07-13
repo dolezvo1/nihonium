@@ -915,7 +915,7 @@ pub trait DiagramAdapter<DomainT: Domain, DiagramModelT: ContainerModel<DomainT:
         &self,
         q: &DomainT::QueryableT<'_>,
         element: DomainT::CommonElementT,
-    ) -> DomainT::AddCommandElementT;
+    ) -> Result<DomainT::CommonElementViewT, HashSet<ModelUuid>>;
 
     fn show_props_fun(
         &mut self,
@@ -1750,17 +1750,49 @@ impl<
                 self.set_clipboard_from_selected();
             },
             DiagramCommand::CreateViewFor(model_uuid) => {
-                if let Some((model, parent_uuid)) = self.adapter.find_element(&model_uuid)
-                    && let Some(view_uuid) = self.flattened_represented_models.get(&parent_uuid) {
-                    let new_view = {
-                        let q = DomainT::QueryableT::new(&self.flattened_represented_models, &self.flattened_views);
-                        self.adapter.create_new_view_for(&q, model)
-                    };
+                if let Some((model, parent_uuid)) = self.adapter.find_element(&model_uuid) {
+                    let mut cmds = vec![];
 
+                    // create all necessary views, such as parents or elements targetted by a link
+                    {
+                        let mut models_to_create_views_for = vec![model_uuid];
+                        let mut pseudo_fv = self.flattened_views.clone();
+                        let mut pseudo_frm = self.flattened_represented_models.clone();
+
+                        loop {
+                            let Some(model_uuid) = models_to_create_views_for.last().cloned() else {
+                                break;
+                            };
+                            if pseudo_frm.contains_key(&model_uuid) {
+                                models_to_create_views_for.pop();
+                                continue;
+                            }
+                            let (model, parent_uuid) = self.adapter.find_element(&model_uuid).unwrap();
+                            let Some(parent_view_uuid) = pseudo_frm.get(&parent_uuid).cloned() else {
+                                models_to_create_views_for.push(parent_uuid);
+                                continue;
+                            };
+
+                            let r = {
+                                let q = DomainT::QueryableT::new(&pseudo_frm, &pseudo_fv);
+                                self.adapter.create_new_view_for(&q, model.clone())
+                            };
+
+                            match r {
+                                Ok(new_view) => {
+                                    pseudo_fv.insert(*new_view.uuid(), new_view.clone());
+                                    pseudo_frm.insert(*model.uuid(), *new_view.uuid());
+                                    cmds.push(InsensitiveCommand::AddElement(parent_view_uuid, new_view.into(), false).into());
+                                    models_to_create_views_for.pop();
+                                },
+                                Err(mut prerequisites) => models_to_create_views_for.extend(prerequisites.drain()),
+                            }
+                        }
+                    }
+
+                    // apply commands
                     let mut undo = vec![];
-                    self.apply_commands(vec![
-                        InsensitiveCommand::AddElement(*view_uuid, new_view, false).into()
-                    ], &mut undo, true, true);
+                    self.apply_commands(cmds, &mut undo, true, true);
                     self.last_change_flag = true;
                     global_undo.extend(undo.into_iter());
                 }
