@@ -622,7 +622,7 @@ pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     CutSpecificElements(HashSet<ViewUuid>),
     PasteSpecificElements(ViewUuid, Vec<ElementT>),
     ArrangeSpecificElements(HashSet<ViewUuid>, Arrangement),
-    AddElement(ViewUuid, ElementT),
+    AddElement(ViewUuid, ElementT, /*into_model:*/ bool),
     PropertyChange(HashSet<ViewUuid>, Vec<PropChangeT>),
 }
 
@@ -1113,6 +1113,7 @@ impl<
                     commands.push(InsensitiveCommand::AddElement(
                         *self.uuid(),
                         DomainT::AddCommandElementT::from(new_a),
+                        true,
                     ).into());
                     handled = true;
                 }
@@ -1230,7 +1231,10 @@ impl<
                 | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
                 InsensitiveCommand::DeleteSpecificElements(uuids, _)
                 | InsensitiveCommand::CutSpecificElements(uuids) => {
-
+                    let from_model = matches!(
+                        command,
+                        InsensitiveCommand::DeleteSpecificElements(_, true) | InsensitiveCommand::CutSpecificElements(..)
+                    );
                     let mut model_uuids = HashSet::new();
                     for (uuid, element) in self
                         .owned_views
@@ -1238,26 +1242,27 @@ impl<
                         .filter(|e| uuids.contains(&e.0))
                     {
                         model_uuids.insert(*element.model_uuid());
-                        undo_accumulator.push(InsensitiveCommand::AddElement(*self.uuid(), element.clone().into()));
+                        undo_accumulator.push(InsensitiveCommand::AddElement(*self.uuid(), element.clone().into(), from_model));
                     }
-                    if let InsensitiveCommand::DeleteSpecificElements(uuids, true)
-                           | InsensitiveCommand::CutSpecificElements(uuids) = &command {
+                    if from_model {
                         self.adapter.delete_elements(&model_uuids);
                     }
 
                     self.owned_views.retain(|k, _v| !uuids.contains(&k));
                     self.event_order.retain(|e| !uuids.contains(&e));
                 }
-                InsensitiveCommand::AddElement(target, element) => {
+                InsensitiveCommand::AddElement(target, element, into_model) => {
                     if *target == *self.uuid {
                         if let Ok(view) = element.clone().try_into() {
                             let uuid = *view.uuid();
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(uuid).collect(),
-                                true,
+                                *into_model,
                             ));
 
-                            self.adapter.add_element(view.model());
+                            if *into_model {
+                                self.adapter.add_element(view.model());
+                            }
 
                             self.owned_views.insert(uuid, view);
                             self.event_order.push(uuid);
@@ -1754,7 +1759,7 @@ impl<
 
                     let mut undo = vec![];
                     self.apply_commands(vec![
-                        InsensitiveCommand::AddElement(*view_uuid, new_view).into()
+                        InsensitiveCommand::AddElement(*view_uuid, new_view, false).into()
                     ], &mut undo, true, true);
                     self.last_change_flag = true;
                     global_undo.extend(undo.into_iter());
@@ -2231,7 +2236,7 @@ where
                         tool.add_element(self.adapter.model());
 
                         if let Some(new_a) = tool.try_construct(self) {
-                            commands.push(InsensitiveCommand::AddElement(*self.uuid, new_a.into()).into());
+                            commands.push(InsensitiveCommand::AddElement(*self.uuid, new_a.into(), true).into());
                         }
 
                         EventHandlingStatus::HandledByContainer
@@ -2425,7 +2430,10 @@ where
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, _)
             | InsensitiveCommand::CutSpecificElements(uuids) => {
-
+                let from_model = matches!(
+                    command,
+                    InsensitiveCommand::DeleteSpecificElements(_, true) | InsensitiveCommand::CutSpecificElements(..)
+                );
                 let mut model_uuids = HashSet::new();
                 for (uuid, element) in self
                     .owned_views
@@ -2433,10 +2441,13 @@ where
                     .filter(|e| uuids.contains(&e.0))
                 {
                     model_uuids.insert(*element.model_uuid());
-                    undo_accumulator.push(InsensitiveCommand::AddElement(*self.uuid, element.clone().into()));
+                    undo_accumulator.push(InsensitiveCommand::AddElement(
+                        *self.uuid,
+                        element.clone().into(),
+                        from_model,
+                    ));
                 }
-                if let InsensitiveCommand::DeleteSpecificElements(uuids, true)
-                    | InsensitiveCommand::CutSpecificElements(uuids) = &command {
+                if from_model {
                     self.adapter.delete_elements(&model_uuids);
                 }
 
@@ -2445,16 +2456,18 @@ where
 
                 recurse!(self);
             }
-            InsensitiveCommand::AddElement(target, element) => {
+            InsensitiveCommand::AddElement(target, element, into_model) => {
                 if *target == *self.uuid {
                     if let Ok(view) = element.clone().try_into() {
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                             std::iter::once(uuid).collect(),
-                            true
+                            *into_model,
                         ));
 
-                        self.adapter.add_element(view.model());
+                        if *into_model {
+                            self.adapter.add_element(view.model());
+                        }
 
                         self.owned_views.insert(uuid, view);
                         self.event_order.push(uuid);
@@ -2923,6 +2936,7 @@ where
                                 position: self.position(),
                             }
                             .into(),
+                            false,
                         ).into());
 
                         return EventHandlingStatus::HandledByContainer;
@@ -2958,6 +2972,7 @@ where
                                             position: pos,
                                         }
                                         .into(),
+                                        false,
                                     )));
 
                                     return EventHandlingStatus::HandledByContainer;
@@ -3179,6 +3194,7 @@ where
                             id: center_point.0,
                             position: center_point.1,
                         }),
+                        false,
                     ));
 
                     // Move any last point to the center
@@ -3210,6 +3226,7 @@ where
                                             id: b.0,
                                             position: b.1,
                                         }),
+                                        false,
                                     ));
                                 }
                             }
@@ -3221,7 +3238,7 @@ where
                 delete_vertices!(self, source_points);
                 delete_vertices!(self, dest_points);
             }
-            InsensitiveCommand::AddElement(target, element) => {
+            InsensitiveCommand::AddElement(target, element, _) => {
                 if *target == *self.uuid {
                     if let Ok(VertexInformation {
                         after,
@@ -3243,7 +3260,7 @@ where
 
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(id).collect(),
-                                true,
+                                false,
                             ));
                         } else {
                             macro_rules! insert_vertex {
@@ -3256,7 +3273,7 @@ where
                                                 undo_accumulator.push(
                                                     InsensitiveCommand::DeleteSpecificElements(
                                                         std::iter::once(id).collect(),
-                                                        true,
+                                                        false,
                                                     ),
                                                 );
                                                 return;
