@@ -863,10 +863,8 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     );
-    // "depends" == cannot exist without, e.g. link cannot exist without it's target
-    // TODO: this probably should be generalized, so that one could express the fact
-    //       that a link only requires at least one element on each side to have a view
-    fn depends_on(&self, other: &ViewUuid) -> bool {
+    /// Must return true when a view cannot exist without these views, e.g. a link cannot exist without it's target
+    fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
         false
     }
 
@@ -1200,26 +1198,22 @@ impl<
             // compute transitive closure of dependency when deleting elements
             let command = match command {
                 InsensitiveCommand::DeleteSpecificElements(uuids, b) => {
-                    let mut total_closure = HashSet::new();
-                    let mut searched_uuids = uuids;
+                    let mut deleting = uuids;
                     let mut found_uuids = HashSet::new();
                     loop {
-                        for (k, e1) in &self.flattened_views {
-                            for e2 in &searched_uuids {
-                                if e1.depends_on(e2) {
-                                    found_uuids.insert(*k);
-                                }
+                        for (k, e1) in self.flattened_views.iter().filter(|e| !deleting.contains(e.0)) {
+                            if e1.delete_when(&deleting) {
+                                found_uuids.insert(*k);
                             }
                         }
 
-                        total_closure.extend(searched_uuids.drain());
                         if found_uuids.is_empty() {
                             break;
                         }
-                        searched_uuids.extend(found_uuids.drain());
+                        deleting.extend(found_uuids.drain());
                     }
 
-                    InsensitiveCommand::DeleteSpecificElements(total_closure, b)
+                    InsensitiveCommand::DeleteSpecificElements(deleting, b)
                 },
                 c => c,
             };
@@ -3305,8 +3299,8 @@ where
             });
         }
     }
-    fn depends_on(&self, other: &ViewUuid) -> bool {
-        *self.source.uuid() == *other || *self.target.uuid() == *other
+    fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
+        deleting.contains(&self.source.uuid()) || deleting.contains(&self.target.uuid())
     }
 
     fn deep_copy_clone(
