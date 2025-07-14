@@ -755,10 +755,18 @@ pub trait Model: 'static {
     }
 }
 
-pub trait ContainerModel<CommonElementT>: Model {
-    fn find_element(&self, uuid: &ModelUuid) -> Option<(CommonElementT, ModelUuid)>;
-    fn add_element(&mut self, element: CommonElementT);
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
+pub trait ContainerModel: Model {
+    type ElementT: Model;
+
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
+        None
+    }
+    fn add_element(&mut self, element: Self::ElementT) -> Result<(), Self::ElementT> {
+        Err(element)
+    }
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
+        Err(())
+    }
 }
 
 pub trait Queryable<'a, DomainT: Domain> {
@@ -895,7 +903,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
     ) {}
 }
 
-pub trait DiagramAdapter<DomainT: Domain, DiagramModelT: ContainerModel<DomainT::CommonElementT>>: NHSerializeToScalar + NHDeserializeScalar + 'static {
+pub trait DiagramAdapter<DomainT: Domain, DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>>: NHSerializeToScalar + NHDeserializeScalar + 'static {
     fn model(&self) -> Arc<RwLock<DiagramModelT>>;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
@@ -940,7 +948,7 @@ pub trait DiagramAdapter<DomainT: Domain, DiagramModelT: ContainerModel<DomainT:
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
 pub struct DiagramControllerGen2<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
     DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
 > {
     uuid: Arc<ViewUuid>,
@@ -973,7 +981,7 @@ pub struct DiagramControllerGen2<
 
 impl<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
     DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
 > DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     pub fn new(
@@ -1453,7 +1461,7 @@ fn apply_arrangement(eo: &mut Vec<ViewUuid>, uuids: &HashSet<ViewUuid>, arr: Arr
 
 impl<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
     DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
 > View for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     fn uuid(&self) -> Arc<ViewUuid> {
@@ -1469,7 +1477,7 @@ impl<
 
 impl<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
     DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
 > NHSerialize for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
@@ -1492,7 +1500,7 @@ impl<
 
 impl<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
     DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
 > NHDeserializeEntity for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     fn deserialize(
@@ -1528,7 +1536,7 @@ impl<
 
 impl<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
     DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
 > DiagramController for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid> {
@@ -1876,7 +1884,7 @@ impl<
 
 impl<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<DomainT::CommonElementT>,
+    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
     DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
 > ContainerGen2<DomainT> for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     fn controller_for(&self, uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {

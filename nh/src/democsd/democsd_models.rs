@@ -10,41 +10,16 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-#[derive(Clone, derive_more::From)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel)]
+#[model(default_passthrough = "arc_rwlock")]
+#[container_model(element_type = DemoCsdElement, default_passthrough = "none")]
 pub enum DemoCsdElement {
+    #[container_model(passthrough = "arc_rwlock")]
     DemoCsdPackage(Arc<RwLock<DemoCsdPackage>>),
+    #[container_model(passthrough = "arc_rwlock")]
     DemoCsdTransactor(Arc<RwLock<DemoCsdTransactor>>),
     DemoCsdTransaction(Arc<RwLock<DemoCsdTransaction>>),
     DemoCsdLink(Arc<RwLock<DemoCsdLink>>),
-}
-
-impl Model for DemoCsdElement {
-    fn uuid(&self) -> Arc<ModelUuid> {
-        match self {
-            DemoCsdElement::DemoCsdPackage(rw_lock) => rw_lock.read().unwrap().uuid(),
-            DemoCsdElement::DemoCsdTransactor(rw_lock) => rw_lock.read().unwrap().uuid(),
-            DemoCsdElement::DemoCsdTransaction(rw_lock) => rw_lock.read().unwrap().uuid(),
-            DemoCsdElement::DemoCsdLink(rw_lock) => rw_lock.read().unwrap().uuid(),
-        }
-    }
-
-    fn name(&self) -> Arc<String> {
-        match self {
-            DemoCsdElement::DemoCsdPackage(rw_lock) => rw_lock.read().unwrap().name(),
-            DemoCsdElement::DemoCsdTransactor(rw_lock) => rw_lock.read().unwrap().name(),
-            DemoCsdElement::DemoCsdTransaction(rw_lock) => rw_lock.read().unwrap().name(),
-            DemoCsdElement::DemoCsdLink(rw_lock) => rw_lock.read().unwrap().name(),
-        }
-    }
-
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
-        match self {
-            DemoCsdElement::DemoCsdPackage(rw_lock) => rw_lock.read().unwrap().accept(v),
-            DemoCsdElement::DemoCsdTransactor(rw_lock) => rw_lock.read().unwrap().accept(v),
-            DemoCsdElement::DemoCsdTransaction(rw_lock) => rw_lock.read().unwrap().accept(v),
-            DemoCsdElement::DemoCsdLink(rw_lock) => rw_lock.read().unwrap().accept(v),
-        }
-    }
 }
 
 impl NHSerialize for DemoCsdElement {
@@ -251,24 +226,27 @@ impl Model for DemoCsdDiagram {
     }
 }
 
-impl ContainerModel<DemoCsdElement> for DemoCsdDiagram {
+impl ContainerModel for DemoCsdDiagram {
+    type ElementT = DemoCsdElement;
+
     fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoCsdElement, ModelUuid)> {
         for e in &self.contained_elements {
             if *e.uuid() == *uuid {
                 return Some((e.clone(), *self.uuid));
             }
-            if let DemoCsdElement::DemoCsdPackage(p) = e
-                && let Some(e) = p.read().unwrap().find_element(uuid) {
+            if let Some(e) = e.find_element(uuid) {
                 return Some(e);
             }
         }
         return None;
     }
-    fn add_element(&mut self, element: DemoCsdElement) {
+    fn add_element(&mut self, element: DemoCsdElement) -> Result<(), DemoCsdElement> {
         self.contained_elements.push(element);
+        Ok(())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
         self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        Ok(())
     }
 }
 
@@ -369,24 +347,27 @@ impl Model for DemoCsdPackage {
     }
 }
 
-impl ContainerModel<DemoCsdElement> for DemoCsdPackage {
+impl ContainerModel for DemoCsdPackage {
+    type ElementT = DemoCsdElement;
+
     fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoCsdElement, ModelUuid)> {
         for e in &self.contained_elements {
             if *e.uuid() == *uuid {
                 return Some((e.clone(), *self.uuid));
             }
-            if let DemoCsdElement::DemoCsdPackage(p) = e
-                && let Some(e) = p.read().unwrap().find_element(uuid) {
+            if let Some(e) = e.find_element(uuid) {
                 return Some(e);
             }
         }
         return None;
     }
-    fn add_element(&mut self, element: DemoCsdElement) {
+    fn add_element(&mut self, element: DemoCsdElement) -> Result<(), DemoCsdElement> {
         self.contained_elements.push(element);
+        Ok(())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
         self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        Ok(())
     }
 }
 
@@ -465,6 +446,19 @@ impl Model for DemoCsdTransactor {
             v.close_complex(self);
         } else {
             v.visit_simple(self);
+        }
+    }
+}
+
+impl ContainerModel for DemoCsdTransactor {
+    type ElementT = DemoCsdElement;
+
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoCsdElement, ModelUuid)> {
+        if let Some(e) = &self.transaction
+            && *e.read().unwrap().uuid == *uuid {
+            Some((e.clone().into(), *self.uuid))
+        } else {
+            None
         }
     }
 }

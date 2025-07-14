@@ -1,24 +1,6 @@
-[package]
-name = "nh"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-derive_more = { version = "2.0", features = [ "from" ] }
-eframe = "0.31"
-egui_extras = "0.31"
-egui_dock = "0.16"
-egui_ltreeview = "0.4"
-rfd = "0.15"
-serde = { version = "1.0", features = [ "derive" ] }
-toml = "0.8"
-uuid = { version = "1.16", features = [ "std", "v7", "serde" ] }
-
-# Fluent
-fluent-bundle = "0.15"
-unic-langid = { version = "0.9", features = [ "macros" ] }
-unic-langid-macros = "0.9"
-
-# RDF
-sophia = { version = "0.9", features = [ "jsonld", "xml" ] }
-sophia_sparql = "0.9"
+[workspace]
+resolver = "3"
+members = [
+    "nh",
+    "nh-derive",
+]

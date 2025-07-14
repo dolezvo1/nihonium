@@ -93,8 +93,11 @@ impl UmlClassCollector {
     }
 }
 
-#[derive(Clone, derive_more::From)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel)]
+#[model(default_passthrough = "arc_rwlock")]
+#[container_model(element_type = UmlClassElement, default_passthrough = "none")]
 pub enum UmlClassElement {
+    #[container_model(passthrough = "arc_rwlock")]
     UmlClassPackage(Arc<RwLock<UmlClassPackage>>),
     UmlClass(Arc<RwLock<UmlClass>>),
     UmlClassLink(Arc<RwLock<UmlClassLink>>),
@@ -106,32 +109,6 @@ impl UmlClassElement {
             UmlClassElement::UmlClassPackage(rw_lock) => visitor.visit_package(&rw_lock.read().unwrap()),
             UmlClassElement::UmlClass(rw_lock) => visitor.visit_class(&rw_lock.read().unwrap()),
             UmlClassElement::UmlClassLink(rw_lock) => visitor.visit_link(&rw_lock.read().unwrap()),
-        }
-    }
-}
-
-impl Model for UmlClassElement {
-    fn uuid(&self) -> Arc<ModelUuid> {
-        match self {
-            UmlClassElement::UmlClassPackage(rw_lock) => rw_lock.read().unwrap().uuid(),
-            UmlClassElement::UmlClass(rw_lock) => rw_lock.read().unwrap().uuid(),
-            UmlClassElement::UmlClassLink(rw_lock) => rw_lock.read().unwrap().uuid(),
-        }
-    }
-
-    fn name(&self) -> Arc<String> {
-        match self {
-            UmlClassElement::UmlClassPackage(rw_lock) => rw_lock.read().unwrap().name(),
-            UmlClassElement::UmlClass(rw_lock) => rw_lock.read().unwrap().name(),
-            UmlClassElement::UmlClassLink(rw_lock) => rw_lock.read().unwrap().name(),
-        }
-    }
-
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
-        match self {
-            UmlClassElement::UmlClassPackage(rw_lock) => rw_lock.read().unwrap().accept(v),
-            UmlClassElement::UmlClass(rw_lock) => rw_lock.read().unwrap().accept(v),
-            UmlClassElement::UmlClassLink(rw_lock) => rw_lock.read().unwrap().accept(v),
         }
     }
 }
@@ -324,24 +301,27 @@ impl Model for UmlClassDiagram {
     }
 }
 
-impl ContainerModel<UmlClassElement> for UmlClassDiagram {
+impl ContainerModel for UmlClassDiagram {
+    type ElementT = UmlClassElement;
+
     fn find_element(&self, uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
         for e in &self.contained_elements {
             if *e.uuid() == *uuid {
                 return Some((e.clone(), *self.uuid));
             }
-            if let UmlClassElement::UmlClassPackage(p) = e
-                && let Some(e) = p.read().unwrap().find_element(uuid) {
+            if let Some(e) = e.find_element(uuid) {
                 return Some(e);
             }
         }
         return None;
     }
-    fn add_element(&mut self, element: UmlClassElement) {
+    fn add_element(&mut self, element: UmlClassElement) -> Result<(), UmlClassElement> {
         self.contained_elements.push(element);
+        Ok(())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
         self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        Ok(())
     }
 }
 
@@ -440,24 +420,27 @@ impl Model for UmlClassPackage {
     }
 }
 
-impl ContainerModel<UmlClassElement> for UmlClassPackage {
+impl ContainerModel for UmlClassPackage {
+    type ElementT = UmlClassElement;
+
     fn find_element(&self, uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
         for e in &self.contained_elements {
             if *e.uuid() == *uuid {
                 return Some((e.clone(), *self.uuid));
             }
-            if let UmlClassElement::UmlClassPackage(p) = e
-                && let Some(e) = p.read().unwrap().find_element(uuid) {
+            if let Some(e) = e.find_element(uuid) {
                 return Some(e);
             }
         }
         return None;
     }
-    fn add_element(&mut self, element: UmlClassElement) {
+    fn add_element(&mut self, element: UmlClassElement) -> Result<(), UmlClassElement> {
         self.contained_elements.push(element);
+        Ok(())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
         self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        Ok(())
     }
 }
 

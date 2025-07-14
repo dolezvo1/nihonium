@@ -22,14 +22,19 @@ impl<'a> RdfCollector<'a> {
     }
 }
 
-#[derive(Clone, derive_more::From)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel)]
+#[model(default_passthrough = "arc_rwlock")]
+#[container_model(element_type = RdfElement, default_passthrough = "none")]
 pub enum RdfElement {
+    #[container_model(passthrough = "arc_rwlock")]
     RdfGraph(Arc<RwLock<RdfGraph>>),
+    #[model(passthrough = "bare")]
     RdfTargettable(RdfTargettableElement),
     RdfPredicate(Arc<RwLock<RdfPredicate>>),
 }
 
-#[derive(Clone, derive_more::From)]
+#[derive(Clone, derive_more::From, nh_derive::Model)]
+#[model(default_passthrough = "arc_rwlock")]
 pub enum RdfTargettableElement {
     RdfLiteral(Arc<RwLock<RdfLiteral>>),
     RdfNode(Arc<RwLock<RdfNode>>),
@@ -74,55 +79,6 @@ impl RdfTargettableElement {
         match self {
             RdfTargettableElement::RdfLiteral(rw_lock) => rw_lock.read().unwrap().term_repr(),
             RdfTargettableElement::RdfNode(rw_lock) => rw_lock.read().unwrap().term_repr(),
-        }
-    }
-}
-
-impl Model for RdfElement {
-    fn uuid(&self) -> Arc<ModelUuid> {
-        match self {
-            RdfElement::RdfGraph(rw_lock) => rw_lock.read().unwrap().uuid(),
-            RdfElement::RdfTargettable(t) => t.uuid(),
-            RdfElement::RdfPredicate(rw_lock) => rw_lock.read().unwrap().uuid(),
-        }
-    }
-
-    fn name(&self) -> Arc<String> {
-        match self {
-            RdfElement::RdfGraph(rw_lock) => rw_lock.read().unwrap().name(),
-            RdfElement::RdfTargettable(t) => t.name(),
-            RdfElement::RdfPredicate(rw_lock) => rw_lock.read().unwrap().name(),
-        }
-    }
-
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
-        match self {
-            RdfElement::RdfGraph(rw_lock) => rw_lock.read().unwrap().accept(v),
-            RdfElement::RdfTargettable(rdf_targettable_element) => rdf_targettable_element.accept(v),
-            RdfElement::RdfPredicate(rw_lock) => rw_lock.read().unwrap().accept(v),
-        }
-    }
-}
-
-impl Model for RdfTargettableElement {
-    fn uuid(&self) -> Arc<ModelUuid> {
-        match self {
-            RdfTargettableElement::RdfLiteral(rw_lock) => rw_lock.read().unwrap().uuid(),
-            RdfTargettableElement::RdfNode(rw_lock) => rw_lock.read().unwrap().uuid(),
-        }
-    }
-
-    fn name(&self) -> Arc<String> {
-        match self {
-            RdfTargettableElement::RdfLiteral(rw_lock) => rw_lock.read().unwrap().name(),
-            RdfTargettableElement::RdfNode(rw_lock) => rw_lock.read().unwrap().name(),
-        }
-    }
-
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
-        match self {
-            RdfTargettableElement::RdfLiteral(rw_lock) => rw_lock.read().unwrap().accept(v),
-            RdfTargettableElement::RdfNode(rw_lock) => rw_lock.read().unwrap().accept(v),
         }
     }
 }
@@ -333,24 +289,27 @@ impl Model for RdfDiagram {
     }
 }
 
-impl ContainerModel<RdfElement> for RdfDiagram {
+impl ContainerModel for RdfDiagram {
+    type ElementT = RdfElement;
+
     fn find_element(&self, uuid: &ModelUuid) -> Option<(RdfElement, ModelUuid)> {
         for e in &self.contained_elements {
             if *e.uuid() == *uuid {
                 return Some((e.clone(), *self.uuid));
             }
-            if let RdfElement::RdfGraph(p) = e
-                && let Some(e) = p.read().unwrap().find_element(uuid) {
+            if let Some(e) = e.find_element(uuid) {
                 return Some(e);
             }
         }
         return None;
     }
-    fn add_element(&mut self, element: RdfElement) {
+    fn add_element(&mut self, element: RdfElement) -> Result<(), RdfElement> {
         self.contained_elements.push(element);
+        Ok(())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
         self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        Ok(())
     }
 }
 
@@ -488,24 +447,27 @@ impl Model for RdfGraph {
     }
 }
 
-impl ContainerModel<RdfElement> for RdfGraph {
+impl ContainerModel for RdfGraph {
+    type ElementT = RdfElement;
+
     fn find_element(&self, uuid: &ModelUuid) -> Option<(RdfElement, ModelUuid)> {
         for e in &self.contained_elements {
             if *e.uuid() == *uuid {
                 return Some((e.clone(), *self.uuid));
             }
-            if let RdfElement::RdfGraph(p) = e
-                && let Some(e) = p.read().unwrap().find_element(uuid) {
+            if let Some(e) = e.find_element(uuid) {
                 return Some(e);
             }
         }
         return None;
     }
-    fn add_element(&mut self, element: RdfElement) {
+    fn add_element(&mut self, element: RdfElement) -> Result<(), RdfElement> {
         self.contained_elements.push(element);
+        Ok(())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
         self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        Ok(())
     }
 }
 
