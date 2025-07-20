@@ -2,7 +2,7 @@ use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
     ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
-use crate::common::project_serde::{get_model_uuid, NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
+use crate::common::project_serde::{get_model_uuid, NHContextDeserialize, NHContextSerialize, NHDeserializeError, NHDeserializeInstantiator, NHDeserializer, NHSerializeError, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage,
@@ -15,6 +15,8 @@ use std::{
     fmt::{Debug, Formatter},
     sync::{Arc, RwLock, Weak},
 };
+
+use super::democsd_models::DemoCsdTransactionWrapper;
 
 struct DemoCsdDomain;
 impl Domain for DemoCsdDomain {
@@ -143,7 +145,7 @@ impl Debug for DemoCsdElementView {
     }
 }
 
-impl NHSerialize for DemoCsdElementView {
+impl NHContextSerialize for DemoCsdElementView {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         match self {
             Self::Package(inner) => inner.read().unwrap().serialize_into(into),
@@ -387,7 +389,7 @@ impl DiagramAdapter<DemoCsdDomain, DemoCsdDiagram> for DemoCsdDiagramAdapter {
             },
             DemoCsdElement::DemoCsdTransactor(rw_lock) => {
                 let m = rw_lock.read().unwrap();
-                let tx_view = m.transaction.as_ref().map(|e| new_democsd_transaction_view(e.clone(), egui::Pos2::ZERO, true));
+                let tx_view = m.transaction.as_ref().map(|e| new_democsd_transaction_view(e.clone().unwrap(), egui::Pos2::ZERO, true));
                 DemoCsdElementView::from(
                     new_democsd_transactor_view(rw_lock.clone(), tx_view, egui::Pos2::ZERO)
                 )
@@ -399,9 +401,10 @@ impl DiagramAdapter<DemoCsdDomain, DemoCsdDiagram> for DemoCsdDiagramAdapter {
             },
             DemoCsdElement::DemoCsdLink(rw_lock) => {
                 let m = rw_lock.read().unwrap();
-                let (source_view, target_view) = match (q.get_view(&m.source.read().unwrap().uuid), q.get_view(&m.target.read().unwrap().uuid)) {
+                let (sid, tid) = (m.source.uuid(), m.target.uuid());
+                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
-                    _ => return Err(HashSet::from([*m.source.read().unwrap().uuid, *m.target.read().unwrap().uuid])),
+                    _ => return Err(HashSet::from([*sid, *tid])),
                 };
                 DemoCsdElementView::from(
                     new_democsd_link_view(
@@ -578,24 +581,24 @@ impl DiagramAdapter<DemoCsdDomain, DemoCsdDiagram> for DemoCsdDiagramAdapter {
     }
 }
 
-impl NHSerializeToScalar for DemoCsdDiagramAdapter {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<toml::Value, NHSerializeError> {
+impl NHContextSerialize for DemoCsdDiagramAdapter {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         self.model.read().unwrap().serialize_into(into)?;
 
-        Ok(toml::Value::String(self.model.read().unwrap().uuid().to_string()))
+        Ok(())
     }
 }
 
-impl NHDeserializeScalar for DemoCsdDiagramAdapter {
+impl NHContextDeserialize for DemoCsdDiagramAdapter {
     fn deserialize(
         source: &toml::Value,
-        deserializer: &NHDeserializer,
+        deserializer: &mut NHDeserializer,
     ) -> Result<Self, NHDeserializeError> {
         let toml::Value::String(s) = source else {
             return Err(NHDeserializeError::StructureError(format!("expected string, got {:?}", source)));
         };
         let uuid = uuid::Uuid::parse_str(s)?.into();
-        let model = deserializer.get_or_instantiate_model::<DemoCsdDiagram>(&uuid)?;
+        let model = deserializer.get::<Arc<RwLock<DemoCsdDiagram>>>(&uuid)?;
         let name_buffer = (*model.read().unwrap().name).clone();
         let comment_buffer = (*model.read().unwrap().comment).clone();
         Ok(Self { model, name_buffer, comment_buffer })
@@ -1235,7 +1238,7 @@ impl View for DemoCsdTransactorView {
     }
 }
 
-impl NHSerialize for DemoCsdTransactorView {
+impl NHContextSerialize for DemoCsdTransactorView {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         // Serialize itself
         let mut element = toml::Table::new();
@@ -1820,7 +1823,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             m.clone()
         } else {
             let modelish = Arc::new(RwLock::new(DemoCsdTransactor::new(model_uuid, (*old_model.identifier).clone(), (*old_model.name).clone(), old_model.internal,
-            old_model.transaction.clone(), old_model.transaction_selfactivating)));
+            old_model.transaction.clone().map(|e| e.unwrap()), old_model.transaction_selfactivating)));
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -1930,7 +1933,7 @@ impl View for DemoCsdTransactionView {
     }
 }
 
-impl NHSerialize for DemoCsdTransactionView {
+impl NHContextSerialize for DemoCsdTransactionView {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
@@ -2446,7 +2449,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
             m.clone()
         } else {
             let model = self.model.read().unwrap();
-            let model = Arc::new(RwLock::new(DemoCsdLink::new(new_uuid, model.link_type, model.source.clone(), model.target.clone())));
+            let model = Arc::new(RwLock::new(DemoCsdLink::new(new_uuid, model.link_type, model.source.clone().unwrap(), model.target.clone().unwrap())));
             m.insert(model_uuid, model.clone().into());
             model
         };
@@ -2459,14 +2462,14 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
     ) {
         let mut model = self.model.write().unwrap();
         
-        let source_uuid = *model.source.read().unwrap().uuid;
+        let source_uuid = *model.source.uuid();
         if let Some(DemoCsdElement::DemoCsdTransactor(new_source)) = m.get(&source_uuid) {
-            model.source = new_source.clone();
+            model.source = new_source.clone().into();
         }
 
-        let target_uuid = *model.target.read().unwrap().uuid;
+        let target_uuid = *model.target.uuid();
         if let Some(DemoCsdElement::DemoCsdTransaction(new_target)) = m.get(&target_uuid) {
-            model.target = new_target.clone();
+            model.target = new_target.clone().into();
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::common::controller::{ContainerModel, Model, StructuralVisitor};
-use crate::common::project_serde::{NHDeserializeEntity, NHDeserializeError, NHDeserializer, NHSerialize, NHSerializeError, NHSerializer};
+use crate::common::project_serde::{NHContextDeserialize, NHDeserializeError, NHDeserializer, NHContextSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashMap, HashSet},
@@ -22,25 +22,50 @@ impl<'a> RdfCollector<'a> {
     }
 }
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerializeTag)]
 #[model(default_passthrough = "arc_rwlock")]
 #[container_model(element_type = RdfElement, default_passthrough = "none")]
+#[nh_context_serialize_tag(uuid_type = ModelUuid)]
 pub enum RdfElement {
     #[container_model(passthrough = "arc_rwlock")]
     RdfGraph(Arc<RwLock<RdfGraph>>),
-    #[model(passthrough = "bare")]
-    RdfTargettable(RdfTargettableElement),
+    RdfLiteral(Arc<RwLock<RdfLiteral>>),
+    RdfNode(Arc<RwLock<RdfNode>>),
     RdfPredicate(Arc<RwLock<RdfPredicate>>),
 }
 
-#[derive(Clone, derive_more::From, nh_derive::Model)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerializeTag)]
 #[model(default_passthrough = "arc_rwlock")]
+#[nh_context_serialize_tag(uuid_type = ModelUuid)]
+pub enum RdfNodeWrapper {
+    RdfNode(Arc<RwLock<RdfNode>>),
+}
+
+impl RdfNodeWrapper {
+    pub fn unwrap(self) -> Arc<RwLock<RdfNode>> {
+        match self {
+            Self::RdfNode(n) => n
+        }
+    }
+}
+
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerializeTag)]
+#[model(default_passthrough = "arc_rwlock")]
+#[nh_context_serialize_tag(uuid_type = ModelUuid)]
 pub enum RdfTargettableElement {
     RdfLiteral(Arc<RwLock<RdfLiteral>>),
     RdfNode(Arc<RwLock<RdfNode>>),
 }
 
 impl RdfElement {
+    pub fn as_targettable_element(&self) -> Option<RdfTargettableElement> {
+        match self {
+            RdfElement::RdfLiteral(rw_lock) => Some(RdfTargettableElement::RdfLiteral(rw_lock.clone())),
+            RdfElement::RdfNode(rw_lock) => Some(RdfTargettableElement::RdfNode(rw_lock.clone())),
+            RdfElement::RdfGraph(_) | RdfElement::RdfPredicate(_) => None,
+        }
+    }
+
     fn accept_collector(&self, collector: &mut RdfCollector<'static>) {
         match self {
             RdfElement::RdfGraph(rw_lock) => {
@@ -55,13 +80,10 @@ impl RdfElement {
 
                 collector.current_graph = old_graph;
             },
-            RdfElement::RdfTargettable(_) => {}
+            RdfElement::RdfLiteral(_) | RdfElement::RdfNode(_) => {}
             RdfElement::RdfPredicate(rw_lock) => {
                 let model = rw_lock.read().unwrap();
-                let subject = {
-                    let s = model.source.read().unwrap();
-                    s.term_repr()
-                };
+                let subject = model.source.clone().unwrap().read().unwrap().term_repr();
                 let object = model.target.term_repr();
 
                 collector.add_triple([
@@ -83,17 +105,18 @@ impl RdfTargettableElement {
     }
 }
 
-impl NHSerialize for RdfElement {
+impl NHContextSerialize for RdfElement {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         match self {
             RdfElement::RdfGraph(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
-            RdfElement::RdfTargettable(t) => t.serialize_into(into),
+            RdfElement::RdfLiteral(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
+            RdfElement::RdfNode(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
             RdfElement::RdfPredicate(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
         }
     }
 }
 
-impl NHSerialize for RdfTargettableElement {
+impl NHContextSerialize for RdfTargettableElement {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         match self {
             RdfTargettableElement::RdfLiteral(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
@@ -121,7 +144,7 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (Arc<RwLock<RdfDiagram>>, HashMap<Mo
                 };
                 RdfElement::RdfGraph(Arc::new(RwLock::new(new_model)))
             },
-            RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(rw_lock)) => {
+            RdfElement::RdfLiteral(rw_lock) => {
                 let model = rw_lock.read().unwrap();
 
                 let new_model = RdfLiteral {
@@ -131,9 +154,9 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (Arc<RwLock<RdfDiagram>>, HashMap<Mo
                     langtag: model.langtag.clone(),
                     comment: model.comment.clone(),
                 };
-                RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(Arc::new(RwLock::new(new_model))))
+                RdfElement::RdfLiteral(Arc::new(RwLock::new(new_model)))
             },
-            RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(rw_lock)) => {
+            RdfElement::RdfNode(rw_lock) => {
                 let model = rw_lock.read().unwrap();
 
                 let new_model = RdfNode {
@@ -141,7 +164,7 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (Arc<RwLock<RdfDiagram>>, HashMap<Mo
                     iri: model.iri.clone(),
                     comment: model.comment.clone(),
                 };
-                RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(Arc::new(RwLock::new(new_model))))
+                RdfElement::RdfNode(Arc::new(RwLock::new(new_model)))
             },
             RdfElement::RdfPredicate(rw_lock) => {
                 let model = rw_lock.read().unwrap();
@@ -166,18 +189,18 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (Arc<RwLock<RdfDiagram>>, HashMap<Mo
                     relink(e, all_models);
                 }
             }
-            RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(rw_lock)) => {},
-            RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(rw_lock)) => {},
+            RdfElement::RdfLiteral(rw_lock) => {},
+            RdfElement::RdfNode(rw_lock) => {},
             RdfElement::RdfPredicate(rw_lock) => {
                 let mut model = rw_lock.write().unwrap();
 
-                let source_uuid = *model.source.read().unwrap().uuid;
-                if let Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(n))) = all_models.get(&source_uuid) {
-                    model.source = n.clone();
+                let source_uuid = *model.source.uuid();
+                if let Some(RdfElement::RdfNode(n)) = all_models.get(&source_uuid) {
+                    model.source = n.clone().into();
                 }
                 let target_uuid = *model.target.uuid();
-                if let Some(RdfElement::RdfTargettable(t)) = all_models.get(&target_uuid) {
-                    model.target = t.clone();
+                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_targettable_element()) {
+                    model.target = t;
                 }
             },
         }
@@ -228,9 +251,11 @@ pub fn fake_copy_diagram(d: &RdfDiagram) -> HashMap<ModelUuid, RdfElement> {
     all_models
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct RdfDiagram {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
+    #[serde(skip_deserializing)]
     pub contained_elements: Vec<RdfElement>,
     pub stored_queries: HashMap<uuid::Uuid, (String, String)>,
 
@@ -313,104 +338,39 @@ impl ContainerModel for RdfDiagram {
     }
 }
 
-impl NHSerialize for RdfDiagram {
+impl NHContextSerialize for RdfDiagram {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         if into.contains_model(&self.uuid) {
             return Ok(());
         }
 
-        let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("type".to_owned(), toml::Value::String("rdf-diagram-model".to_owned()));
-        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
-        element.insert("comment".to_owned(), toml::Value::String((*self.name).clone()));
+        let s = toml::Table::try_from(self)?;
+        into.insert_model(*self.uuid, s);
 
         for e in &self.contained_elements {
-            e.serialize_into(into)?;
+            e.serialize_into(into);
         }
-        element.insert("contained_elements".to_owned(),
-            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.uuid().to_string())).collect())
-        );
-
-        element.insert("stored_queries".to_owned(), toml::Value::Array(self.stored_queries.iter().map(|e| {
-            let mut hm = toml::Table::new();
-            hm.insert("uuid".to_owned(), toml::Value::String(e.0.to_string()));
-            hm.insert("name".to_owned(), toml::Value::String(e.1.0.clone()));
-            hm.insert("value".to_owned(), toml::Value::String(e.1.1.clone()));
-            toml::Value::Table(hm)
-        }).collect()));
-        into.insert_model(*self.uuid, element);
 
         Ok(())
     }
 }
 
-impl NHDeserializeEntity for RdfDiagram {
+impl NHContextDeserialize for RdfDiagram {
     fn deserialize(
-        source: &toml::Table,
-        deserializer: &NHDeserializer,
-    ) -> Result<Arc<RwLock<Self>>, NHDeserializeError> {
-        let uuid = {
-            let v = source.get("uuid").ok_or_else(|| NHDeserializeError::StructureError(format!("missing uuid")))?;
-            let toml::Value::String(s) = v else {
-                return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
-            };
-            Arc::new(uuid::Uuid::parse_str(s)?.into())
-        };
-        let name = {
-            let v = source.get("name").ok_or_else(|| NHDeserializeError::StructureError(format!("missing name")))?;
-            let toml::Value::String(s) = v else {
-                return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
-            };
-            Arc::new(s.clone())
-        };
-        let comment = {
-            let v = source.get("comment").ok_or_else(|| NHDeserializeError::StructureError(format!("missing comment")))?;
-            let toml::Value::String(s) = v else {
-                return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
-            };
-            Arc::new(s.clone())
-        };
-
-        let stored_queries = {
-            let v = source.get("stored_queries").ok_or_else(|| NHDeserializeError::StructureError(format!("missing stored_queries")))?;
-            let toml::Value::Array(a) = v else {
-                return Err(NHDeserializeError::StructureError(format!("expected array, found {:?}", v)));
-            };
-            let mut stored_queries = HashMap::new();
-            for v in a {
-                let toml::Value::Table(t) = v else {
-                    return Err(NHDeserializeError::StructureError(format!("expected table, found {:?}", v)));
-                };
-
-                let v = t.get("uuid").ok_or_else(|| NHDeserializeError::StructureError(format!("missing uuid")))?;
-                let toml::Value::String(s) = v else {
-                    return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
-                };
-                let uuid = uuid::Uuid::parse_str(s)?;
-
-                let v = t.get("name").ok_or_else(|| NHDeserializeError::StructureError(format!("missing name")))?;
-                let toml::Value::String(name) = v else {
-                    return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
-                };
-
-                let v = t.get("value").ok_or_else(|| NHDeserializeError::StructureError(format!("missing value")))?;
-                let toml::Value::String(value) = v else {
-                    return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
-                };
-
-                stored_queries.insert(uuid, (name.clone(), value.clone()));
-            }
-            stored_queries
-        };
-
-        Ok(Arc::new(RwLock::new(Self { uuid, name, contained_elements: Vec::new(), comment, stored_queries })))
+        source: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        let e = source.get("contained_elements").ok_or_else(|| NHDeserializeError::StructureError("contained_elements not found".into()))?;
+        let contained_elements = Vec::<RdfElement>::deserialize(e, deserializer)?;
+        Ok(Self { contained_elements, ..toml::Value::try_into(source.clone()).unwrap() })
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct RdfGraph {
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
+    #[serde(skip_deserializing)]
     pub contained_elements: Vec<RdfElement>,
 
     pub comment: Arc<String>,
@@ -471,30 +431,35 @@ impl ContainerModel for RdfGraph {
     }
 }
 
-impl NHSerialize for RdfGraph {
+impl NHContextSerialize for RdfGraph {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         if into.contains_model(&self.uuid) {
             return Ok(());
         }
 
-        let mut element = toml::Table::new();
-        element.insert("_type".to_owned(), toml::Value::String("rdf-graph-model".to_owned()));
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("iri".to_owned(), toml::Value::String((*self.iri).clone()));
+        let s = toml::Table::try_from(self)?;
+        into.insert_model(*self.uuid, s);
 
         for e in &self.contained_elements {
-            e.serialize_into(into)?;
+            e.serialize_into(into);
         }
-        element.insert("contained_elements".to_owned(),
-            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.uuid().to_string())).collect())
-        );
-
-        into.insert_model(*self.uuid, element);
 
         Ok(())
     }
 }
 
+impl NHContextDeserialize for RdfGraph {
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        let e = source.get("contained_elements").ok_or_else(|| NHDeserializeError::StructureError("contained_elements not found".into()))?;
+        let contained_elements = Vec::<RdfElement>::deserialize(e, deserializer)?;
+        Ok(Self { contained_elements, ..toml::Value::try_into(source.clone()).unwrap() })
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct RdfLiteral {
     pub uuid: Arc<ModelUuid>,
     pub content: Arc<String>,
@@ -545,25 +510,29 @@ impl Model for RdfLiteral {
     }
 }
 
-impl NHSerialize for RdfLiteral {
+impl NHContextSerialize for RdfLiteral {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         if into.contains_model(&self.uuid) {
             return Ok(());
         }
 
-        let mut element = toml::Table::new();
-        element.insert("_type".to_owned(), toml::Value::String("rdf-literal-model".to_owned()));
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("content".to_owned(), toml::Value::String((*self.content).clone()));
-        element.insert("datatype".to_owned(), toml::Value::String((*self.datatype).clone()));
-        element.insert("langtag".to_owned(), toml::Value::String((*self.langtag).clone()));
-        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
-        into.insert_model(*self.uuid, element);
+        let s = toml::Table::try_from(self)?;
+        into.insert_model(*self.uuid, s);
 
         Ok(())
     }
 }
 
+impl NHContextDeserialize for RdfLiteral {
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        Ok(toml::Value::try_into(source.clone())?)
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct RdfNode {
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
@@ -594,31 +563,47 @@ impl Model for RdfNode {
     }
 }
 
-impl NHSerialize for RdfNode {
+impl NHContextSerialize for RdfNode {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         if into.contains_model(&self.uuid) {
             return Ok(());
         }
 
-        let mut element = toml::Table::new();
-        element.insert("_type".to_owned(), toml::Value::String("rdf-node-model".to_owned()));
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("iri".to_owned(), toml::Value::String((*self.iri).clone()));
-        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
-        into.insert_model(*self.uuid, element);
+        let s = toml::Table::try_from(self)?;
+        into.insert_model(*self.uuid, s);
 
         Ok(())
     }
 }
 
+impl NHContextDeserialize for RdfNode {
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        Ok(toml::Value::try_into(source.clone())?)
+    }
+}
+
+#[derive(serde::Serialize)]
 pub struct RdfPredicate {
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
-    pub source: Arc<RwLock<RdfNode>>,
+    pub source: RdfNodeWrapper,
     pub target: RdfTargettableElement,
 
     pub comment: Arc<String>,
 }
+
+// TODO: derive
+#[derive(serde::Deserialize)]
+struct RdfPredicateHelper {
+    pub uuid: Arc<ModelUuid>,
+    pub iri: Arc<String>,
+
+    pub comment: Arc<String>,
+}
+
 
 impl RdfPredicate {
     pub fn new(
@@ -630,7 +615,7 @@ impl RdfPredicate {
         Self {
             uuid: Arc::new(uuid),
             iri: Arc::new(iri),
-            source,
+            source: source.into(),
             target: destination,
             comment: Arc::new("".to_owned()),
         }
@@ -646,21 +631,35 @@ impl Model for RdfPredicate {
     }
 }
 
-impl NHSerialize for RdfPredicate {
+impl NHContextSerialize for RdfPredicate {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         if into.contains_model(&self.uuid) {
             return Ok(());
         }
 
-        let mut element = toml::Table::new();
-        element.insert("_type".to_owned(), toml::Value::String("rdf-predicate-model".to_owned()));
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("iri".to_owned(), toml::Value::String((*self.iri).clone()));
-        element.insert("source".to_owned(), toml::Value::String(self.source.read().unwrap().uuid().to_string()));
-        element.insert("destination".to_owned(), toml::Value::String(self.target.uuid().to_string()));
-        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
-        into.insert_model(*self.uuid, element);
+        let s = toml::Table::try_from(self)?;
+        into.insert_model(*self.uuid, s);
 
         Ok(())
+    }
+}
+
+impl NHContextDeserialize for RdfPredicate {
+    fn deserialize(
+        from: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        let s = from.get("source").unwrap();
+        let source = RdfNodeWrapper::deserialize(s, deserializer)?;
+        let t = from.get("target").unwrap();
+        let target = RdfTargettableElement::deserialize(t, deserializer)?;
+        let helper: RdfPredicateHelper = toml::Value::try_into(from.clone()).unwrap();
+
+        Ok(Self {
+            source, target,
+            uuid: helper.uuid,
+            iri: helper.iri,
+            comment: helper.comment,
+        })
     }
 }

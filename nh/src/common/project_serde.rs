@@ -1,5 +1,5 @@
 
-use std::{any::Any, collections::HashMap, sync::{Arc, RwLock}};
+use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc, sync::{Arc, RwLock}};
 
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +41,6 @@ impl NHProjectDTO {
     }
 
     pub fn deserializer(&self) -> Result<NHDeserializer, NHDeserializeError> {
-
         let source_models = self.models.iter().map(|v| {
             let toml::Value::Table(t) = v else {
                 return Err(NHDeserializeError::StructureError(format!("expected table, found {:?}", v)));
@@ -97,39 +96,39 @@ pub enum NHSerializeError {
     TomlSer(toml::ser::Error),
 }
 
-pub trait NHSerialize {
+pub trait NHContextSerialize {
     #[clippy::must_use]
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>;
-}
-
-pub trait NHSerializeToScalar {
-    #[clippy::must_use]
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<toml::Value, NHSerializeError>;
 }
 
 pub struct NHDeserializer {
     source_models: HashMap<ModelUuid, toml::Table>,
     source_views: HashMap<ViewUuid, toml::Table>,
-    instantiated_models: RwLock<HashMap<ModelUuid, Arc<dyn Any>>>,
-    instantiated_views: RwLock<HashMap<ViewUuid, Arc<dyn Any>>>,
+    instantiated_models: RwLock<HashMap<ModelUuid, Box<dyn Any>>>,
+    instantiated_views: RwLock<HashMap<ViewUuid, Box<dyn Any>>>,
 }
 
-impl NHDeserializer {
-    pub fn get_or_instantiate_model<T>(&self, uuid: &ModelUuid) -> Result<Arc<RwLock<T>>, NHDeserializeError>
-    where T: NHDeserializeEntity + 'static,
+pub trait NHDeserializeInstantiator<K> {
+    fn get<T>(&mut self, uuid: &K) -> Result<T, NHDeserializeError>
+    where T: NHContextDeserialize + Clone + 'static;
+}
+
+impl NHDeserializeInstantiator<ModelUuid> for NHDeserializer {
+    fn get<T>(&mut self, uuid: &ModelUuid) -> Result<T, NHDeserializeError>
+    where T: NHContextDeserialize + Clone + 'static,
     {
         if let Some(m) = self.instantiated_models.read().unwrap().get(uuid) {
-            return Ok(m.downcast_ref::<Arc<RwLock<T>>>()
+            return Ok(m.downcast_ref::<T>()
                 .ok_or(NHDeserializeError::StructureError(format!("model has unexpected type: {:?}", uuid)))?
                 .clone());
         }
 
-        let Some(t) = self.source_models.get(uuid) else {
+        let Some(t) = self.source_models.get(uuid).cloned().map(|e| toml::Value::Table(e)) else {
             return Err(NHDeserializeError::StructureError(format!("Model not found in source: {:?}", uuid)));
         };
 
-        let m = T::deserialize(t, self)?;
-        self.instantiated_models.write().unwrap().insert(*uuid, m.clone());
+        let m = T::deserialize(&t, self)?;
+        self.instantiated_models.write().unwrap().insert(*uuid, Box::new(m.clone()));
         Ok(m)
     }
 }
@@ -138,20 +137,46 @@ impl NHDeserializer {
 pub enum NHDeserializeError {
     StructureError(String),
     UuidError(uuid::Error),
+    TomlError(toml::de::Error),
 }
 
-pub trait NHDeserializeScalar: Sized {
+pub trait NHContextDeserialize: Sized {
     fn deserialize(
         source: &toml::Value,
-        deserializer: &NHDeserializer,
+        deserializer: &mut NHDeserializer,
     ) -> Result<Self, NHDeserializeError>;
 }
 
-pub trait NHDeserializeEntity: Sized {
-    fn deserialize(
-        source: &toml::Table,
-        deserializer: &NHDeserializer,
-    ) -> Result<Arc<RwLock<Self>>, NHDeserializeError>;
+impl<T> NHContextDeserialize for Vec<T> where T: NHContextDeserialize {
+    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
+        source.as_array().ok_or_else(|| NHDeserializeError::StructureError("expected array".into()))?
+            .iter().map(|e| T::deserialize(e, deserializer)).collect()
+    }
+}
+impl<T> NHContextDeserialize for Box<T> where T: NHContextDeserialize {
+    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
+        Ok(Box::new(T::deserialize(source, deserializer)?))
+    }
+}
+impl<T> NHContextDeserialize for Rc<T> where T: NHContextDeserialize {
+    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
+        Ok(Rc::new(T::deserialize(source, deserializer)?))
+    }
+}
+impl<T> NHContextDeserialize for RefCell<T> where T: NHContextDeserialize {
+    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
+        Ok(RefCell::new(T::deserialize(source, deserializer)?))
+    }
+}
+impl<T> NHContextDeserialize for Arc<T> where T: NHContextDeserialize {
+    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
+        Ok(Arc::new(T::deserialize(source, deserializer)?))
+    }
+}
+impl<T> NHContextDeserialize for RwLock<T> where T: NHContextDeserialize {
+    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
+        Ok(RwLock::new(T::deserialize(source, deserializer)?))
+    }
 }
 
 pub fn get_model_uuid(table: &toml::Table) -> Result<ModelUuid, NHDeserializeError> {

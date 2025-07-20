@@ -3,7 +3,7 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
-use crate::common::project_serde::{NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
+use crate::common::project_serde::{NHContextDeserialize, NHContextSerialize, NHDeserializeError, NHDeserializeInstantiator, NHDeserializer, NHSerializeError, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::{CustomTab};
 use eframe::egui;
@@ -154,7 +154,7 @@ pub enum RdfElementView {
     Predicate(Arc<RwLock<LinkViewT>>),
 }
 
-impl NHSerialize for RdfElementView {
+impl NHContextSerialize for RdfElementView {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         match self {
             Self::Graph(inner) => inner.read().unwrap().serialize_into(into),
@@ -397,25 +397,22 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
                     )
                 )
             },
-            RdfElement::RdfTargettable(rdf_targettable_element) => {
-                match rdf_targettable_element {
-                    RdfTargettableElement::RdfLiteral(rw_lock) => {
-                        RdfElementView::from(
-                            new_rdf_literal_view(rw_lock, egui::Pos2::ZERO)
-                        )
-                    },
-                    RdfTargettableElement::RdfNode(rw_lock) => {
-                        RdfElementView::from(
-                            new_rdf_node_view(rw_lock, egui::Pos2::ZERO)
-                        )
-                    },
-                }
+            RdfElement::RdfLiteral(rw_lock) => {
+                RdfElementView::from(
+                    new_rdf_literal_view(rw_lock, egui::Pos2::ZERO)
+                )
+            },
+            RdfElement::RdfNode(rw_lock) => {
+                RdfElementView::from(
+                    new_rdf_node_view(rw_lock, egui::Pos2::ZERO)
+                )
             },
             RdfElement::RdfPredicate(rw_lock) => {
                 let m = rw_lock.read().unwrap();
-                let (source_view, target_view) = match (q.get_view(&m.source.read().unwrap().uuid), q.get_view(&m.target.uuid())) {
+                let (sid, tid) = (m.source.uuid(), m.target.uuid());
+                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
-                    _ => return Err(HashSet::from([*m.source.read().unwrap().uuid, *m.target.uuid()])),
+                    _ => return Err(HashSet::from([*sid, *tid])),
                 };
                 RdfElementView::from(
                     new_rdf_predicate_view(
@@ -594,24 +591,24 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
     }
 }
 
-impl NHSerializeToScalar for RdfDiagramAdapter {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<toml::Value, NHSerializeError> {
+impl NHContextSerialize for RdfDiagramAdapter {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         self.model.read().unwrap().serialize_into(into)?;
 
-        Ok(toml::Value::String(self.model.read().unwrap().uuid().to_string()))
+        Ok(())
     }
 }
 
-impl NHDeserializeScalar for RdfDiagramAdapter {
+impl NHContextDeserialize for RdfDiagramAdapter {
     fn deserialize(
         source: &toml::Value,
-        deserializer: &NHDeserializer,
+        deserializer: &mut NHDeserializer,
     ) -> Result<Self, NHDeserializeError> {
         let toml::Value::String(s) = source else {
             return Err(NHDeserializeError::StructureError(format!("expected string, got {:?}", source)));
         };
         let uuid = uuid::Uuid::parse_str(s)?.into();
-        let model = deserializer.get_or_instantiate_model::<RdfDiagram>(&uuid)?;
+        let model = deserializer.get::<Arc<RwLock<RdfDiagram>>>(&uuid)?;
         let name_buffer = (*model.read().unwrap().name).clone();
         let comment_buffer = (*model.read().unwrap().comment).clone();
         Ok(Self { model, name_buffer, comment_buffer })
@@ -854,7 +851,7 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
                 "http://www.w3.org/People/EM/contact#me",
                 egui::Pos2::new(xx as f32, yy as f32),
             );
-            models_st.push(RdfTargettableElement::from(node_st).into());
+            models_st.push(node_st.into());
             controllers_st.push(node_st_view.into());
         }
     }
@@ -865,7 +862,7 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
                 "http://www.w3.org/People/EM/contact#me",
                 egui::Pos2::new(xx as f32, yy as f32),
             );
-            models_st.push(RdfTargettableElement::from(node_st).into());
+            models_st.push(node_st.into());
             controllers_st.push(node_st_view.into());
         }
     }
@@ -890,8 +887,7 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
         model_uuid,
         name.clone(),
         vec![
-            RdfTargettableElement::from(node).into(),
-            RdfTargettableElement::from(literal_model).into(),
+            node.into(), literal_model.into(),
             predicate.into(), graph.into(), graph_st.into(),
         ],
     )));
@@ -980,7 +976,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 | RdfToolStage::GraphStart
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(..))) => match self.current_stage {
+            Some(RdfElement::RdfLiteral(..)) => match self.current_stage {
                 RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
                 RdfToolStage::Literal
                 | RdfToolStage::Node
@@ -989,7 +985,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 | RdfToolStage::GraphEnd
                 | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
             },
-            Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(..))) => match self.current_stage {
+            Some(RdfElement::RdfNode(..)) => match self.current_stage {
                 RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
                 RdfToolStage::Literal
                 | RdfToolStage::Node
@@ -1064,14 +1060,14 @@ impl Tool<RdfDomain> for NaiveRdfTool {
 
         match controller {
             RdfElement::RdfGraph(..) => {}
-            RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(inner)) => match (self.current_stage, &mut self.result) {
+            RdfElement::RdfLiteral(inner) => match (self.current_stage, &mut self.result) {
                 (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) => {
-                    *dest = Some(RdfTargettableElement::from(inner).into());
+                    *dest = Some(RdfTargettableElement::from(inner));
                     self.event_lock = true;
                 }
                 _ => {}
             },
-            RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(inner)) => match (self.current_stage, &mut self.result) {
+            RdfElement::RdfNode(inner) => match (self.current_stage, &mut self.result) {
                 (RdfToolStage::PredicateStart, PartialRdfElement::None) => {
                     self.result = PartialRdfElement::Predicate {
                         source: inner,
@@ -1081,7 +1077,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     self.event_lock = true;
                 }
                 (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) => {
-                    *dest = Some(RdfTargettableElement::from(inner).into());
+                    *dest = Some(RdfTargettableElement::from(inner));
                 }
                 _ => {}
             },
@@ -1346,7 +1342,7 @@ impl View for RdfNodeController {
     }
 }
 
-impl NHSerialize for RdfNodeController {
+impl NHContextSerialize for RdfNodeController {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
@@ -1360,7 +1356,7 @@ impl NHSerialize for RdfNodeController {
 
 impl ElementController<RdfElement> for RdfNodeController {
     fn model(&self) -> RdfElement {
-        RdfTargettableElement::from(self.model.clone()).into()
+        self.model.clone().into()
     }
 
     fn min_shape(&self) -> NHShape {
@@ -1635,11 +1631,11 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeController {
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(m))) = m.get(&old_model.uuid) {
+        let modelish = if let Some(RdfElement::RdfNode(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = Arc::new(RwLock::new(RdfNode::new(model_uuid, (*old_model.iri).clone())));
-            m.insert(*old_model.uuid, RdfTargettableElement::from(modelish.clone()).into());
+            m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
 
@@ -1732,7 +1728,7 @@ impl View for RdfLiteralController {
     }
 }
 
-impl NHSerialize for RdfLiteralController {
+impl NHContextSerialize for RdfLiteralController {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
@@ -1746,7 +1742,7 @@ impl NHSerialize for RdfLiteralController {
 
 impl ElementController<RdfElement> for RdfLiteralController {
     fn model(&self) -> RdfElement {
-        RdfTargettableElement::from(self.model.clone()).into()
+        self.model.clone().into()
     }
 
     fn min_shape(&self) -> NHShape {
@@ -2052,11 +2048,11 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralController {
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfLiteral(m))) = m.get(&old_model.uuid) {
+        let modelish = if let Some(RdfElement::RdfLiteral(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = Arc::new(RwLock::new(RdfLiteral::new(model_uuid, (*old_model.content).clone(), (*old_model.datatype).clone(), (*old_model.langtag).clone())));
-            m.insert(*old_model.uuid, RdfTargettableElement::from(modelish.clone()).into());
+            m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
 
@@ -2199,7 +2195,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         let model = if let Some(RdfElement::RdfPredicate(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = Arc::new(RwLock::new(RdfPredicate::new(new_uuid, (*old_model.iri).clone(), old_model.source.clone(), old_model.target.clone())));
+            let modelish = Arc::new(RwLock::new(RdfPredicate::new(new_uuid, (*old_model.iri).clone(), old_model.source.clone().unwrap(), old_model.target.clone())));
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -2213,14 +2209,14 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
     ) {
         let mut model = self.model.write().unwrap();
         
-        let source_uuid = *model.source.read().unwrap().uuid;
-        if let Some(RdfElement::RdfTargettable(RdfTargettableElement::RdfNode(new_source))) = m.get(&source_uuid) {
-            model.source = new_source.clone();
+        let source_uuid = *model.source.uuid();
+        if let Some(RdfElement::RdfNode(new_source)) = m.get(&source_uuid) {
+            model.source = new_source.clone().into();
         }
 
         let target_uuid = *model.target.uuid();
-        if let Some(RdfElement::RdfTargettable(new_target)) = m.get(&target_uuid) {
-            model.target = new_target.clone();
+        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.as_targettable_element()) {
+            model.target = new_target;
         }
     }
 }

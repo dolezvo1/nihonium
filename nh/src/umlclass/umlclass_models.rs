@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::canvas::{ArrowheadType, LineType};
 use crate::common::controller::{ContainerModel, Model, StructuralVisitor};
-use crate::common::project_serde::{NHDeserializeEntity, NHDeserializeError, NHDeserializer, NHSerialize, NHSerializeError, NHSerializer};
+use crate::common::project_serde::{NHContextDeserialize, NHDeserializeError, NHDeserializer, NHContextSerialize, NHSerializeError, NHSerializer};
 use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashMap, HashSet},
@@ -61,14 +61,8 @@ impl UmlClassCollector {
     }
     fn visit_link(&mut self, link: &UmlClassLink) {
         if !self.collecting_absolute_paths {
-            let source_name = {
-                let s = link.source.read().unwrap();
-                self.absolute_paths.get(&s.uuid()).unwrap()
-            };
-            let dest_name = {
-                let d = link.target.read().unwrap();
-                self.absolute_paths.get(&d.uuid()).unwrap()
-            };
+            let source_name = self.absolute_paths.get(&link.source.uuid()).unwrap();
+            let target_name = self.absolute_paths.get(&link.target.uuid()).unwrap();
 
             self.plantuml_data.push_str(source_name);
             if !link.source_arrowhead_label.is_empty() {
@@ -87,20 +81,36 @@ impl UmlClassCollector {
                 self.plantuml_data
                     .push_str(&format!("{:?} ", link.target_arrowhead_label));
             }
-            self.plantuml_data.push_str(dest_name);
+            self.plantuml_data.push_str(target_name);
             self.plantuml_data.push_str("\n");
         }
     }
 }
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerializeTag)]
 #[model(default_passthrough = "arc_rwlock")]
 #[container_model(element_type = UmlClassElement, default_passthrough = "none")]
+#[nh_context_serialize_tag(uuid_type = ModelUuid)]
 pub enum UmlClassElement {
     #[container_model(passthrough = "arc_rwlock")]
     UmlClassPackage(Arc<RwLock<UmlClassPackage>>),
     UmlClass(Arc<RwLock<UmlClass>>),
     UmlClassLink(Arc<RwLock<UmlClassLink>>),
+}
+
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerializeTag)]
+#[model(default_passthrough = "arc_rwlock")]
+#[nh_context_serialize_tag(uuid_type = ModelUuid)]
+pub enum UmlClassWrapper {
+    UmlClass(Arc<RwLock<UmlClass>>),
+}
+
+impl UmlClassWrapper {
+    pub fn unwrap(self) -> Arc<RwLock<UmlClass>> {
+        match self {
+            Self::UmlClass(c) => c
+        }
+    }
 }
 
 impl UmlClassElement {
@@ -113,7 +123,7 @@ impl UmlClassElement {
     }
 }
 
-impl NHSerialize for UmlClassElement {
+impl NHContextSerialize for UmlClassElement {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         match self {
             UmlClassElement::UmlClassPackage(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
@@ -185,13 +195,13 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (Arc<RwLock<UmlClassDiagram>>, 
             UmlClassElement::UmlClassLink(rw_lock) => {
                 let mut model = rw_lock.write().unwrap();
 
-                let source_uuid = *model.source.read().unwrap().uuid;
+                let source_uuid = *model.source.uuid();
                 if let Some(UmlClassElement::UmlClass(s)) = all_models.get(&source_uuid) {
-                    model.source = s.clone();
+                    model.source = s.clone().into();
                 }
-                let target_uuid = *model.target.read().unwrap().uuid;
+                let target_uuid = *model.target.uuid();
                 if let Some(UmlClassElement::UmlClass(t)) = all_models.get(&target_uuid) {
-                    model.target = t.clone();
+                    model.target = t.clone().into();
                 }
             },
         }
@@ -241,9 +251,11 @@ pub fn fake_copy_diagram(d: &UmlClassDiagram) -> HashMap<ModelUuid, UmlClassElem
     all_models
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct UmlClassDiagram {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
+    #[serde(skip_deserializing)]
     pub contained_elements: Vec<UmlClassElement>,
 
     pub comment: Arc<String>,
@@ -325,65 +337,39 @@ impl ContainerModel for UmlClassDiagram {
     }
 }
 
-impl NHSerialize for UmlClassDiagram {
+impl NHContextSerialize for UmlClassDiagram {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         if into.contains_model(&self.uuid) {
             return Ok(());
         }
 
-        let mut element = toml::Table::new();
-        element.insert("_type".to_owned(), toml::Value::String("umlclass-diagram-model".to_owned()));
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
-        element.insert("comment".to_owned(), toml::Value::String((*self.name).clone()));
+        let s = toml::Table::try_from(self)?;
+        into.insert_model(*self.uuid, s);
 
         for e in &self.contained_elements {
-            e.serialize_into(into)?;
+            e.serialize_into(into);
         }
-        element.insert("contained_elements".to_owned(),
-            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.uuid().to_string())).collect())
-        );
-
-        into.insert_model(*self.uuid, element);
 
         Ok(())
     }
 }
 
-impl NHDeserializeEntity for UmlClassDiagram {
+impl NHContextDeserialize for UmlClassDiagram {
     fn deserialize(
-        source: &toml::Table,
-        deserializer: &NHDeserializer,
-    ) -> Result<Arc<RwLock<Self>>, NHDeserializeError> {
-        let uuid = {
-            let v = source.get("uuid").ok_or_else(|| NHDeserializeError::StructureError(format!("missing uuid")))?;
-            let toml::Value::String(s) = v else {
-                return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
-            };
-            Arc::new(uuid::Uuid::parse_str(s)?.into())
-        };
-        let name = {
-            let v = source.get("name").ok_or_else(|| NHDeserializeError::StructureError(format!("missing name")))?;
-            let toml::Value::String(s) = v else {
-                return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
-            };
-            Arc::new(s.clone())
-        };
-        let comment = {
-            let v = source.get("comment").ok_or_else(|| NHDeserializeError::StructureError(format!("missing comment")))?;
-            let toml::Value::String(s) = v else {
-                return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
-            };
-            Arc::new(s.clone())
-        };
-
-        Ok(Arc::new(RwLock::new(Self { uuid, name, contained_elements: Vec::new(), comment })))
+        source: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        let e = source.get("contained_elements").ok_or_else(|| NHDeserializeError::StructureError("contained_elements not found".into()))?;
+        let contained_elements = Vec::<UmlClassElement>::deserialize(e, deserializer)?;
+        Ok(Self { contained_elements, ..toml::Value::try_into(source.clone()).unwrap() })
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct UmlClassPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
+    #[serde(skip_deserializing)]
     pub contained_elements: Vec<UmlClassElement>,
 
     pub comment: Arc<String>,
@@ -444,31 +430,35 @@ impl ContainerModel for UmlClassPackage {
     }
 }
 
-impl NHSerialize for UmlClassPackage {
+impl NHContextSerialize for UmlClassPackage {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         if into.contains_model(&self.uuid) {
             return Ok(());
         }
 
-        let mut element = toml::Table::new();
-        element.insert("_type".to_owned(), toml::Value::String("umlclass-package-model".to_owned()));
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
+        let s = toml::Table::try_from(self)?;
+        into.insert_model(*self.uuid, s);
 
         for e in &self.contained_elements {
-            e.serialize_into(into)?;
+            e.serialize_into(into);
         }
-        element.insert("contained_elements".to_owned(),
-            toml::Value::Array(self.contained_elements.iter().map(|e| toml::Value::String(e.uuid().to_string())).collect())
-        );
-
-        into.insert_model(*self.uuid, element);
 
         Ok(())
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+impl NHContextDeserialize for UmlClassPackage {
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        let e = source.get("contained_elements").ok_or_else(|| NHDeserializeError::StructureError("contained_elements not found".into()))?;
+        let contained_elements = Vec::<UmlClassElement>::deserialize(e, deserializer)?;
+        Ok(Self { contained_elements, ..toml::Value::try_into(source.clone()).unwrap() })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UmlClassStereotype {
     Abstract,
     AbstractClass,
@@ -502,7 +492,7 @@ impl UmlClassStereotype {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub enum UMLClassAccessModifier {
     Public,
     Package,
@@ -521,6 +511,7 @@ impl UMLClassAccessModifier {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct UmlClass {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
@@ -589,27 +580,29 @@ impl Model for UmlClass {
     }
 }
 
-impl NHSerialize for UmlClass {
+impl NHContextSerialize for UmlClass {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         if into.contains_model(&self.uuid) {
             return Ok(());
         }
 
-        let mut element = toml::Table::new();
-        element.insert("_type".to_owned(), toml::Value::String("umlclass-class-model".to_owned()));
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("name".to_owned(), toml::Value::String((*self.name).clone()));
-        element.insert("stereotype".to_owned(), toml::Value::try_from(self.stereotype)?);
-        element.insert("properties".to_owned(), toml::Value::String((*self.properties).clone()));
-        element.insert("functions".to_owned(), toml::Value::String((*self.functions).clone()));
-        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
-        into.insert_model(*self.uuid, element);
+        let s = toml::Table::try_from(self)?;
+        into.insert_model(*self.uuid, s);
 
         Ok(())
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
+impl NHContextDeserialize for UmlClass {
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        Ok(toml::Value::try_into(source.clone())?)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UmlClassLinkType {
     Association,
     Aggregation,
@@ -668,13 +661,25 @@ impl UmlClassLinkType {
     }
 }
 
+#[derive(serde::Serialize)]
 pub struct UmlClassLink {
     pub uuid: Arc<ModelUuid>,
     pub link_type: UmlClassLinkType,
     pub description: Arc<String>,
-    pub source: Arc<RwLock<UmlClass>>,
+    pub source: UmlClassWrapper,
     pub source_arrowhead_label: Arc<String>,
-    pub target: Arc<RwLock<UmlClass>>,
+    pub target: UmlClassWrapper,
+    pub target_arrowhead_label: Arc<String>,
+
+    pub comment: Arc<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct UmlClassLinkHelper {
+    pub uuid: Arc<ModelUuid>,
+    pub link_type: UmlClassLinkType,
+    pub description: Arc<String>,
+    pub source_arrowhead_label: Arc<String>,
     pub target_arrowhead_label: Arc<String>,
 
     pub comment: Arc<String>,
@@ -692,9 +697,9 @@ impl UmlClassLink {
             uuid: Arc::new(uuid),
             link_type,
             description: Arc::new(description.into()),
-            source,
+            source: source.into(),
             source_arrowhead_label: Arc::new("".to_owned()),
-            target,
+            target: target.into(),
             target_arrowhead_label: Arc::new("".to_owned()),
             comment: Arc::new("".to_owned()),
         }
@@ -710,24 +715,38 @@ impl Model for UmlClassLink {
     }
 }
 
-impl NHSerialize for UmlClassLink {
+impl NHContextSerialize for UmlClassLink {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         if into.contains_model(&self.uuid) {
             return Ok(());
         }
 
-        let mut element = toml::Table::new();
-        element.insert("_type".to_owned(), toml::Value::String("umlclass-classlink-model".to_owned()));
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("description".to_owned(), toml::Value::String((*self.description).clone()));
-        element.insert("link_type".to_owned(), toml::Value::try_from(self.link_type)?);
-        element.insert("source".to_owned(), toml::Value::String(self.source.read().unwrap().uuid().to_string()));
-        element.insert("source_arrowhead_label".to_owned(), toml::Value::String((*self.source_arrowhead_label).clone()));
-        element.insert("destination".to_owned(), toml::Value::String(self.target.read().unwrap().uuid().to_string()));
-        element.insert("destination_arrowhead_label".to_owned(), toml::Value::String((*self.target_arrowhead_label).clone()));
-        element.insert("comment".to_owned(), toml::Value::String((*self.comment).clone()));
-        into.insert_model(*self.uuid, element);
+        let s = toml::Table::try_from(self)?;
+        into.insert_model(*self.uuid, s);
 
         Ok(())
+    }
+}
+
+impl NHContextDeserialize for UmlClassLink {
+    fn deserialize(
+        from: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        let s = from.get("source").unwrap();
+        let source = UmlClassWrapper::deserialize(s, deserializer)?;
+        let t = from.get("target").unwrap();
+        let target = UmlClassWrapper::deserialize(t, deserializer)?;
+        let helper: UmlClassLinkHelper = toml::Value::try_into(from.clone()).unwrap();
+
+        Ok(Self {
+            source, target,
+            uuid: helper.uuid,
+            link_type: helper.link_type,
+            description: helper.description,
+            source_arrowhead_label: helper.source_arrowhead_label,
+            target_arrowhead_label: helper.target_arrowhead_label,
+            comment: helper.comment,
+        })
     }
 }

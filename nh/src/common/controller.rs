@@ -92,7 +92,7 @@ macro_rules! build_colors {
 }
 pub(crate) use build_colors;
 
-use super::project_serde::{NHDeserializeScalar, NHDeserializeEntity, NHDeserializeError, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
+use super::project_serde::{NHContextDeserialize, NHDeserializeError, NHDeserializer, NHSerializeError, NHContextSerialize, NHSerializer};
 use super::uuid::{ModelUuid, ViewUuid};
 
 
@@ -432,7 +432,7 @@ pub trait View {
     fn model_name(&self) -> Arc<String>;
 }
 
-pub trait DiagramController: Any + View + NHSerialize {
+pub trait DiagramController: Any + View + NHContextSerialize {
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid>;
 
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
@@ -457,11 +457,6 @@ pub trait DiagramController: Any + View + NHSerialize {
     fn show_layers(&self, ui: &mut egui::Ui);
     fn show_menubar_edit_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
     fn show_menubar_diagram_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
-
-    // This hurts me at least as much as it hurts you
-    //fn outgoing_for<'a>(&'a self, _uuid: &'a uuid::Uuid) -> Box<dyn Iterator<Item=Arc<RwLock<dyn ElementController>>> + 'a> {
-    //    Box::new(std::iter::empty::<Arc<RwLock<dyn ElementController>>>())
-    //}
 
     fn apply_command(&mut self, command: DiagramCommand, global_undo: &mut Vec<Arc<String>>);
 
@@ -834,7 +829,7 @@ pub struct EventHandlingContext<'a> {
     pub snap_manager: &'a SnapManager,
 }
 
-pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::CommonElementT> + NHSerialize + ContainerGen2<DomainT> + Send + Sync {
+pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::CommonElementT> + NHContextSerialize + ContainerGen2<DomainT> + Send + Sync {
     fn show_properties(
         &mut self,
         _: &DomainT::QueryableT<'_>,
@@ -903,7 +898,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
     ) {}
 }
 
-pub trait DiagramAdapter<DomainT: Domain, DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>>: NHSerializeToScalar + NHDeserializeScalar + 'static {
+pub trait DiagramAdapter<DomainT: Domain, DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>>: NHContextSerialize + NHContextDeserialize + 'static {
     fn model(&self) -> Arc<RwLock<DiagramModelT>>;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
@@ -1479,17 +1474,21 @@ impl<
     DomainT: Domain,
     DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
     DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
-> NHSerialize for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
+> NHContextSerialize for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         // Serialize itself and the model
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
         element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
-        element.insert("adapter".to_owned(), self.adapter.serialize_into(into)?);
+        // TODO: element.insert("adapter".to_owned(), todo!("serialize adapter as scalar tag"));
         element.insert("children".to_owned(), toml::Value::Array(self.event_order.iter().map(|e| toml::Value::String(e.to_string())).collect()));
         into.insert_view(*self.uuid, element);
 
+        // Serialize model
+        self.adapter.serialize_into(into)?;
+
         // Serialize children
+        // TODO: rewrite
         for e in self.event_order.iter().flat_map(|e| self.owned_views.get(e)) {
             e.serialize_into(into)?;
         }
@@ -1502,12 +1501,12 @@ impl<
     DomainT: Domain,
     DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
     DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
-> NHDeserializeEntity for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
+> NHContextDeserialize for Arc<RwLock<DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT>>> {
     fn deserialize(
-        table: &toml::Table,
-        deserializer: &NHDeserializer,
-    ) -> Result<Arc<RwLock<Self>>, NHDeserializeError> {
-        // Serialize itself and the model
+        table: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        // Deserialize itself and the model
         let mut element = toml::Table::new();
         let uuid = {
             let v = table.get("uuid").ok_or_else(|| NHDeserializeError::StructureError(format!("missing uuid")))?;
@@ -1526,7 +1525,7 @@ impl<
             };
         };
 
-        Ok(Self::new(
+        Ok(DiagramControllerGen2::new(
             uuid,
             adapter,
             Vec::new() // TODO: children,
@@ -1999,7 +1998,7 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> View for PackageView<Do
     }
 }
 
-impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> NHSerialize for PackageView<DomainT, AdapterT> {
+impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> NHContextSerialize for PackageView<DomainT, AdapterT> {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>  {
         // Serialize itself
         let mut element = toml::Table::new();
@@ -2752,7 +2751,7 @@ where
     }
 }
 
-impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> NHSerialize for MulticonnectionView<DomainT, AdapterT>
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> NHContextSerialize for MulticonnectionView<DomainT, AdapterT>
 where
     DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a DomainT::PropChangeT: TryInto<FlipMulticonnection>,

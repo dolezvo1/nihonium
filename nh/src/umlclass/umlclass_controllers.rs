@@ -6,7 +6,7 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
-use crate::common::project_serde::{NHDeserializeError, NHDeserializeScalar, NHDeserializer, NHSerialize, NHSerializeError, NHSerializeToScalar, NHSerializer};
+use crate::common::project_serde::{NHContextDeserialize, NHContextSerialize, NHDeserializeError, NHDeserializeInstantiator, NHDeserializer, NHSerializeError, NHSerializer};
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::CustomTab;
 use eframe::egui;
@@ -139,7 +139,7 @@ pub enum UmlClassElementView {
     Link(Arc<RwLock<LinkViewT>>),
 }
 
-impl NHSerialize for UmlClassElementView {
+impl NHContextSerialize for UmlClassElementView {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         match self {
             Self::Package(inner) => inner.read().unwrap().serialize_into(into),
@@ -369,9 +369,10 @@ impl DiagramAdapter<UmlClassDomain, UmlClassDiagram> for UmlClassDiagramAdapter 
             },
             UmlClassElement::UmlClassLink(rw_lock) => {
                 let m = rw_lock.read().unwrap();
-                let (source_view, target_view) = match (q.get_view(&m.source.read().unwrap().uuid), q.get_view(&m.target.read().unwrap().uuid)) {
+                let (sid, tid) = (m.source.uuid(), m.target.uuid());
+                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
-                    _ => return Err(HashSet::from([*m.source.read().unwrap().uuid, *m.target.read().unwrap().uuid])),
+                    _ => return Err(HashSet::from([*sid, *tid])),
                 };
                 UmlClassElementView::from(
                     new_umlclass_link_view(rw_lock.clone(), None, source_view, target_view)
@@ -556,24 +557,24 @@ impl DiagramAdapter<UmlClassDomain, UmlClassDiagram> for UmlClassDiagramAdapter 
     }
 }
 
-impl NHSerializeToScalar for UmlClassDiagramAdapter {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<toml::Value, NHSerializeError> {
+impl NHContextSerialize for UmlClassDiagramAdapter {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         self.model.read().unwrap().serialize_into(into)?;
 
-        Ok(toml::Value::String(self.model.read().unwrap().uuid().to_string()))
+        Ok(())
     }
 }
 
-impl NHDeserializeScalar for UmlClassDiagramAdapter {
+impl NHContextDeserialize for UmlClassDiagramAdapter {
     fn deserialize(
         source: &toml::Value,
-        deserializer: &NHDeserializer,
+        deserializer: &mut NHDeserializer,
     ) -> Result<Self, NHDeserializeError> {
         let toml::Value::String(s) = source else {
             return Err(NHDeserializeError::StructureError(format!("expected string, got {:?}", source)));
         };
         let uuid = uuid::Uuid::parse_str(s)?.into();
-        let model = deserializer.get_or_instantiate_model::<UmlClassDiagram>(&uuid)?;
+        let model = deserializer.get::<Arc<RwLock<UmlClassDiagram>>>(&uuid)?;
         let name_buffer = (*model.read().unwrap().name).clone();
         let comment_buffer = (*model.read().unwrap().comment).clone();
         Ok(Self { model, name_buffer, comment_buffer })
@@ -1223,7 +1224,7 @@ impl View for UmlClassController {
     }
 }
 
-impl NHSerialize for UmlClassController {
+impl NHContextSerialize for UmlClassController {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         let mut element = toml::Table::new();
         element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
@@ -1842,7 +1843,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
         let model = if let Some(UmlClassElement::UmlClassLink(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = Arc::new(RwLock::new(UmlClassLink::new(new_uuid, old_model.link_type, (*old_model.description).clone(), old_model.source.clone(), old_model.target.clone())));
+            let modelish = Arc::new(RwLock::new(UmlClassLink::new(new_uuid, old_model.link_type, (*old_model.description).clone(), old_model.source.clone().unwrap(), old_model.target.clone().unwrap())));
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -1856,13 +1857,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
     ) {
         let mut model = self.model.write().unwrap();
         
-        let source_uuid = *model.source.read().unwrap().uuid;
+        let source_uuid = *model.source.uuid();
         if let Some(UmlClassElement::UmlClass(new_source)) = m.get(&source_uuid) {
-            model.source = new_source.clone();
+            model.source = new_source.clone().into();
         }
-        let target_uuid = *model.source.read().unwrap().uuid;
+        let target_uuid = *model.source.uuid();
         if let Some(UmlClassElement::UmlClass(new_target)) = m.get(&target_uuid) {
-            model.target = new_target.clone();
+            model.target = new_target.clone().into();
         }
     }
 }
