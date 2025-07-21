@@ -10,10 +10,10 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerializeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "arc_rwlock")]
 #[container_model(element_type = DemoCsdElement, default_passthrough = "none")]
-#[nh_context_serialize_tag(uuid_type = ModelUuid)]
+#[nh_context_serde(uuid_type = ModelUuid)]
 pub enum DemoCsdElement {
     #[container_model(passthrough = "arc_rwlock")]
     DemoCsdPackage(Arc<RwLock<DemoCsdPackage>>),
@@ -23,45 +23,18 @@ pub enum DemoCsdElement {
     DemoCsdLink(Arc<RwLock<DemoCsdLink>>),
 }
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerializeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag, nh_derive::Unwrap)]
 #[model(default_passthrough = "arc_rwlock")]
-#[nh_context_serialize_tag(uuid_type = ModelUuid)]
+#[nh_context_serde(uuid_type = ModelUuid)]
 pub enum DemoCsdTransactorWrapper {
     DemoCsdTransactor(Arc<RwLock<DemoCsdTransactor>>)
 }
 
-impl DemoCsdTransactorWrapper {
-    pub fn unwrap(self) -> Arc<RwLock<DemoCsdTransactor>> {
-        match self {
-            Self::DemoCsdTransactor(t) => t,
-        }
-    }
-}
-
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerializeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag, nh_derive::Unwrap)]
 #[model(default_passthrough = "arc_rwlock")]
-#[nh_context_serialize_tag(uuid_type = ModelUuid)]
+#[nh_context_serde(uuid_type = ModelUuid)]
 pub enum DemoCsdTransactionWrapper {
     DemoCsdTransaction(Arc<RwLock<DemoCsdTransaction>>)
-}
-
-impl DemoCsdTransactionWrapper {
-    pub fn unwrap(self) -> Arc<RwLock<DemoCsdTransaction>> {
-        match self {
-            Self::DemoCsdTransaction(t) => t,
-        }
-    }
-}
-
-impl NHContextSerialize for DemoCsdElement {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        match self {
-            DemoCsdElement::DemoCsdPackage(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
-            DemoCsdElement::DemoCsdTransactor(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
-            DemoCsdElement::DemoCsdTransaction(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
-            DemoCsdElement::DemoCsdLink(rw_lock) => rw_lock.read().unwrap().serialize_into(into),
-        }
-    }
 }
 
 pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (Arc<RwLock<DemoCsdDiagram>>, HashMap<ModelUuid, DemoCsdElement>) {
@@ -218,11 +191,12 @@ pub fn fake_copy_diagram(d: &DemoCsdDiagram) -> HashMap<ModelUuid, DemoCsdElemen
 
 // ---
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(uuid_type = ModelUuid)]
 pub struct DemoCsdDiagram {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
-    #[serde(skip_deserializing)]
+    #[nh_context_serde(entity)]
     pub contained_elements: Vec<DemoCsdElement>,
 
     pub comment: Arc<String>,
@@ -283,41 +257,14 @@ impl ContainerModel for DemoCsdDiagram {
     }
 }
 
-impl NHContextSerialize for DemoCsdDiagram {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        if into.contains_model(&self.uuid) {
-            return Ok(());
-        }
-
-        let s = toml::Table::try_from(self)?;
-        into.insert_model(*self.uuid, s);
-
-        for e in &self.contained_elements {
-            e.serialize_into(into);
-        }
-
-        Ok(())
-    }
-}
-
-impl NHContextDeserialize for DemoCsdDiagram {
-    fn deserialize(
-        source: &toml::Value,
-        deserializer: &mut NHDeserializer,
-    ) -> Result<Self, NHDeserializeError> {
-        let e = source.get("contained_elements").ok_or_else(|| NHDeserializeError::StructureError("contained_elements not found".into()))?;
-        let contained_elements = Vec::<DemoCsdElement>::deserialize(e, deserializer)?;
-        Ok(Self { contained_elements, ..toml::Value::try_into(source.clone()).unwrap() })
-    }
-}
-
 // ---
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(uuid_type = ModelUuid)]
 pub struct DemoCsdPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
-    #[serde(skip_deserializing)]
+    #[nh_context_serde(entity)]
     pub contained_elements: Vec<DemoCsdElement>,
 
     pub comment: Arc<String>,
@@ -378,44 +325,17 @@ impl ContainerModel for DemoCsdPackage {
     }
 }
 
-impl NHContextSerialize for DemoCsdPackage {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        if into.contains_model(&self.uuid) {
-            return Ok(());
-        }
-
-        let s = toml::Table::try_from(self)?;
-        into.insert_model(*self.uuid, s);
-
-        for e in &self.contained_elements {
-            e.serialize_into(into);
-        }
-
-        Ok(())
-    }
-}
-
-impl NHContextDeserialize for DemoCsdPackage {
-    fn deserialize(
-        source: &toml::Value,
-        deserializer: &mut NHDeserializer,
-    ) -> Result<Self, NHDeserializeError> {
-        let e = source.get("contained_elements").ok_or_else(|| NHDeserializeError::StructureError("contained_elements not found".into()))?;
-        let contained_elements = Vec::<DemoCsdElement>::deserialize(e, deserializer)?;
-        Ok(Self { contained_elements, ..toml::Value::try_into(source.clone()).unwrap() })
-    }
-}
-
 // ---
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(uuid_type = ModelUuid)]
 pub struct DemoCsdTransactor {
     pub uuid: Arc<ModelUuid>,
 
     pub identifier: Arc<String>,
     pub name: Arc<String>,
     pub internal: bool,
-    #[serde(skip_deserializing)]
+    #[nh_context_serde(entity, option)]
     pub transaction: Option<DemoCsdTransactionWrapper>,
     pub transaction_selfactivating: bool,
 
@@ -475,40 +395,10 @@ impl ContainerModel for DemoCsdTransactor {
     }
 }
 
-impl NHContextSerialize for DemoCsdTransactor {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        if into.contains_model(&self.uuid) {
-            return Ok(());
-        }
-
-        let s = toml::Table::try_from(self)?;
-        into.insert_model(*self.uuid, s);
-
-        if let Some(t) = &self.transaction {
-            t.clone().unwrap().read().unwrap().serialize_into(into);
-        }
-
-        Ok(())
-    }
-}
-
-impl NHContextDeserialize for DemoCsdTransactor {
-    fn deserialize(
-        source: &toml::Value,
-        deserializer: &mut NHDeserializer,
-    ) -> Result<Self, NHDeserializeError> {
-        if let Some(t) = source.get("transaction") {
-            let transaction = Some(DemoCsdTransactionWrapper::deserialize(t, deserializer)?);
-            Ok(Self { transaction, ..toml::Value::try_into(source.clone()).unwrap() })
-        } else {
-            Ok(toml::Value::try_into(source.clone()).unwrap())
-        }
-    }
-}
-
 // ---
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(uuid_type = ModelUuid)]
 pub struct DemoCsdTransaction {
     pub uuid: Arc<ModelUuid>,
 
@@ -540,28 +430,6 @@ impl Model for DemoCsdTransaction {
     }
 }
 
-impl NHContextSerialize for DemoCsdTransaction {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        if into.contains_model(&self.uuid) {
-            return Ok(());
-        }
-
-        let s = toml::Table::try_from(self)?;
-        into.insert_model(*self.uuid, s);
-
-        Ok(())
-    }
-}
-
-impl NHContextDeserialize for DemoCsdTransaction {
-    fn deserialize(
-        source: &toml::Value,
-        deserializer: &mut NHDeserializer,
-    ) -> Result<Self, NHDeserializeError> {
-        Ok(toml::Value::try_into(source.clone())?)
-    }
-}
-
 // ---
 
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -589,25 +457,17 @@ impl DemoCsdLinkType {
     }
 }
 
-#[derive(serde::Serialize)]
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(uuid_type = ModelUuid)]
 pub struct DemoCsdLink {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
 
     pub link_type: DemoCsdLinkType,
+    #[nh_context_serde(entity)]
     pub source: DemoCsdTransactorWrapper,
+    #[nh_context_serde(entity)]
     pub target: DemoCsdTransactionWrapper,
-
-    pub comment: Arc<String>,
-}
-
-// TODO: derive
-#[derive(serde::Deserialize)]
-struct DemoCsdLinkHelper {
-    pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
-
-    pub link_type: DemoCsdLinkType,
 
     pub comment: Arc<String>,
 }
@@ -636,39 +496,5 @@ impl Model for DemoCsdLink {
     }
     fn name(&self) -> Arc<String> {
         self.name.clone()
-    }
-}
-
-impl NHContextSerialize for DemoCsdLink {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        if into.contains_model(&self.uuid) {
-            return Ok(());
-        }
-
-        let s = toml::Table::try_from(self)?;
-        into.insert_model(*self.uuid, s);
-
-        Ok(())
-    }
-}
-
-impl NHContextDeserialize for DemoCsdLink {
-    fn deserialize(
-        from: &toml::Value,
-        deserializer: &mut NHDeserializer,
-    ) -> Result<Self, NHDeserializeError> {
-        let s = from.get("source").unwrap();
-        let source = DemoCsdTransactorWrapper::deserialize(s, deserializer)?;
-        let t = from.get("target").unwrap();
-        let target = DemoCsdTransactionWrapper::deserialize(t, deserializer)?;
-        let helper: DemoCsdLinkHelper = toml::Value::try_into(from.clone()).unwrap();
-
-        Ok(Self {
-            source, target,
-            uuid: helper.uuid,
-            name: helper.name,
-            link_type: helper.link_type,
-            comment: helper.comment,
-        })
     }
 }

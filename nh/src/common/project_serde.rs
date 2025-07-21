@@ -101,6 +101,24 @@ pub trait NHContextSerialize {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>;
 }
 
+impl<T> NHContextSerialize for Option<T> where T: NHContextSerialize {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        for e in self.iter() {
+            e.serialize_into(into)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T> NHContextSerialize for Vec<T> where T: NHContextSerialize {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        for e in self.iter() {
+            e.serialize_into(into)?;
+        }
+        Ok(())
+    }
+}
+
 pub struct NHDeserializer {
     source_models: HashMap<ModelUuid, toml::Table>,
     source_views: HashMap<ViewUuid, toml::Table>,
@@ -147,6 +165,11 @@ pub trait NHContextDeserialize: Sized {
     ) -> Result<Self, NHDeserializeError>;
 }
 
+impl<T> NHContextDeserialize for Option<T> where T: NHContextDeserialize {
+    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
+        Ok(Some(T::deserialize(source, deserializer)?))
+    }
+}
 impl<T> NHContextDeserialize for Vec<T> where T: NHContextDeserialize {
     fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
         source.as_array().ok_or_else(|| NHDeserializeError::StructureError("expected array".into()))?
