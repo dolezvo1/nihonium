@@ -31,6 +31,7 @@ pub fn derive_nh_context_serde_tag(input: TokenStream) -> TokenStream {
 
     let tag_mod_name = syn::Ident::new(&format!("{}_context_serde_tag", ident), ident.span());
     let output = quote! {
+        #[allow(non_snake_case)]
         mod #tag_mod_name {
             use super::*;
             use serde::ser::Error;

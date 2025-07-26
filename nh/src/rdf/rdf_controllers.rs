@@ -3,6 +3,7 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
+use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
@@ -893,6 +894,14 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
         ),
         Arc::new(SimpleModelHierarchyView::new(diagram)),
     )
+}
+
+pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<(usize, ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>), NHDeserializeError> {
+    let v = d.get_entity::<DiagramControllerGen2<RdfDomain, RdfDiagramAdapter>>(&uuid)?;
+    let mhv = Arc::new(SimpleModelHierarchyView::new(v.read().model()));
+    // TODO: this is bad, it should be handed over ready for use
+    v.write().head_count();
+    Ok((0, v, mhv))
 }
 
 #[derive(Clone, Copy, PartialEq)]

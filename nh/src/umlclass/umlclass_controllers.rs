@@ -9,6 +9,7 @@ use crate::common::controller::{
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
+use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::CustomTab;
 use eframe::egui;
 use std::collections::HashSet;
@@ -756,6 +757,14 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
         ),
         Arc::new(SimpleModelHierarchyView::new(diagram2)),
     )
+}
+
+pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<(usize, ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>), NHDeserializeError> {
+    let v = d.get_entity::<DiagramControllerGen2<UmlClassDomain, UmlClassDiagramAdapter>>(&uuid)?;
+    let mhv = Arc::new(SimpleModelHierarchyView::new(v.read().model()));
+    // TODO: this is bad, it should be handed over ready for use
+    v.write().head_count();
+    Ok((1, v, mhv))
 }
 
 #[derive(Clone, Copy, PartialEq)]

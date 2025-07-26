@@ -10,6 +10,8 @@ struct DeriveNHContextSerDeFieldOpts {
     entity: bool,
     #[darling(default)]
     skip_and_default: bool,
+    #[darling(default)]
+    skip_and_set: Option<syn::Expr>,
 }
 
 pub fn derive_nh_context_deserialize(input: TokenStream) -> TokenStream {
@@ -38,6 +40,10 @@ pub fn derive_nh_context_deserialize(input: TokenStream) -> TokenStream {
                 default_fields.push(quote! {
                     #field_name: <#field_type as Default>::default(),
                 });
+            } else if let Some(e) = o.skip_and_set {
+                default_fields.push(quote! {
+                    #field_name: #e,
+                });
             } else if o.entity {
                 entity_fields_deserialize.push(quote! {
                     #field_name: <#field_type as crate::common::project_serde::NHContextDeserialize>::deserialize(
@@ -54,6 +60,7 @@ pub fn derive_nh_context_deserialize(input: TokenStream) -> TokenStream {
 
     let des_mod_name = syn::Ident::new(&format!("{}_context_deserialize", ident), ident.span());
     let output = quote! {
+        #[allow(non_snake_case)]
         mod #des_mod_name {
             use super::*;
             use crate::common::project_serde::{NHContextDeserialize, NHDeserializer, NHDeserializeError};

@@ -8,7 +8,7 @@ use std::io::Write;
 
 use common::canvas::{NHCanvas, UiCanvas};
 use common::controller::{Arrangement, ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleProjectCommand};
-use common::project_serde::{NHProjectHierarchyNodeDTO, NHSerializeError, NHSerializer};
+use common::project_serde::{NHProjectHierarchyNodeDTO, NHSerializeError, NHSerializer, NHDeserializer, NHDeserializeError};
 use common::uuid::{ModelUuid, ViewUuid};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
@@ -115,6 +115,8 @@ pub trait CustomTab {
     //fn on_close(&mut self, context: &mut NHApp);
 }
 
+type DDes = dyn Fn(ViewUuid, &mut NHDeserializer) -> Result<(usize, ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>), NHDeserializeError>;
+
 struct NHContext {
     project_path: Option<std::path::PathBuf>,
     pub diagram_controllers: HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
@@ -123,6 +125,7 @@ struct NHContext {
     model_hierarchy_views: HashMap<ModelUuid, Arc<dyn ModelHierarchyView>>,
     new_diagram_no: u32,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
+    diagram_deserializers: HashMap<String, &'static DDes>,
 
     pub style: Option<Style>,
     zoom_factor: f32,
@@ -219,10 +222,13 @@ impl NHContext {
 
         fn h(e: &HierarchyNode) -> NHProjectHierarchyNodeDTO {
             match e {
-                HierarchyNode::Folder(uuid, _, children)
-                    => NHProjectHierarchyNodeDTO::Folder { uuid: *uuid, hierarchy: children.iter().map(h).collect() },
+                HierarchyNode::Folder(uuid, name, children)
+                    => NHProjectHierarchyNodeDTO::Folder { uuid: *uuid, name: (**name).clone(), hierarchy: children.iter().map(h).collect() },
                 HierarchyNode::Diagram(inner)
-                    => NHProjectHierarchyNodeDTO::Diagram { uuid: *inner.read().uuid() },
+                    => {
+                    let r = inner.read();
+                    NHProjectHierarchyNodeDTO::Diagram { uuid: *r.uuid(), view_type: r.view_type() }
+                }
             }
         }
 
@@ -238,10 +244,62 @@ impl NHContext {
 
         Ok(toml::to_string(&project)?)
     }
+    fn import_project(&mut self, project: &str) -> Result<(), NHDeserializeError> {
+        let pdto: common::project_serde::NHProjectDTO = toml::from_str(project).unwrap();
+        let mut deserializer = pdto.deserializer()?;
+
+        fn h(
+            e: &NHProjectHierarchyNodeDTO,
+            d: &mut NHDeserializer,
+            tl: &mut HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
+            mh: &mut HashMap<ModelUuid, Arc<dyn ModelHierarchyView>>,
+            dds: &HashMap<String, &'static DDes>,
+        ) -> Result<HierarchyNode, NHDeserializeError> {
+            match e {
+                NHProjectHierarchyNodeDTO::Folder { uuid, name, hierarchy }
+                => Ok(HierarchyNode::Folder(
+                        *uuid, Arc::new((*name).clone()),
+                        hierarchy.iter().map(|e| h(e, d, tl, mh, dds)).collect::<Result<Vec<_>, NHDeserializeError>>()?)),
+                NHProjectHierarchyNodeDTO::Diagram { uuid, view_type }
+                => {
+                    let dd = dds.get(view_type)
+                        .ok_or_else(|| format!("deserializer for type '{}' not found", view_type))?;
+                    let (type_no, v, mhview) = dd(*uuid, d)?;
+                    tl.insert(*uuid, (type_no, v.clone()));
+                    mh.insert(*v.read().model_uuid(), mhview);
+                    Ok(HierarchyNode::Diagram(v))
+                }
+            }
+        }
+
+        let mut tmph = Vec::new();
+        let mut tlv = HashMap::new();
+        let mut mhviews = HashMap::new();
+
+        for e in &pdto.hierarchy {
+            tmph.push(h(e, &mut deserializer, &mut tlv, &mut mhviews, &self.diagram_deserializers)?);
+        }
+
+        // All good, clear and set
+        self.clear_project_data();
+
+        let HierarchyNode::Folder(.., children) = &mut self.project_hierarchy else {
+            return Err(NHDeserializeError::StructureError("invalid hierarchy root".into()))
+        };
+        for e in tmph {
+            children.push(e);
+        }
+        self.new_diagram_no = (tlv.len() + 1) as u32;
+        self.diagram_controllers = tlv;
+        self.model_hierarchy_views = mhviews;
+
+        Ok(())
+    }
     fn clear_project_data(&mut self) {
         self.project_path = None;
         self.diagram_controllers.clear();
         self.project_hierarchy = HierarchyNode::Folder(uuid::Uuid::nil().into(), "root".to_owned().into(), vec![]);
+        self.model_hierarchy_views.clear();
         self.new_diagram_no = 1;
         self.custom_tabs.clear();
 
@@ -1071,6 +1129,11 @@ impl Default for NHApp {
             tabs.push(NHTab::Diagram { uuid });
         }
 
+        let mut diagram_deserializers = HashMap::new();
+        diagram_deserializers.insert("rdf-diagram-view".to_string(), &crate::rdf::rdf_controllers::deserializer as &DDes);
+        diagram_deserializers.insert("umlclass-diagram-view".to_string(), &crate::umlclass::umlclass_controllers::deserializer as &DDes);
+        diagram_deserializers.insert("democsd-diagram-view".to_string(), &crate::democsd::democsd_controllers::deserializer as &DDes);
+
         let mut dock_state = DockState::new(tabs);
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
 
@@ -1113,6 +1176,7 @@ impl Default for NHApp {
             model_hierarchy_views,
             new_diagram_no: 4,
             custom_tabs: HashMap::new(),
+            diagram_deserializers,
             
             style: None,
             zoom_factor: 1.0,
@@ -1810,11 +1874,23 @@ impl eframe::App for NHApp {
                         self.context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
                     }
                     SimpleProjectCommand::OpenProject(b) => if !self.context.has_unsaved_changes || b {
-                        todo!("TODO: Open project");
+                        if let Some(project_path) = self.context.project_path.clone()
+                            .or_else(|| rfd::FileDialog::new()
+                            .set_directory(std::env::current_dir().unwrap())
+                            .add_filter("Nihonium Project files", &["nhp"])
+                            .add_filter("All files", &["*"])
+                            .pick_file()) {
+                                let contents = std::fs::read_to_string(&project_path).unwrap();
+                                if let Ok(_) = self.context.import_project(&contents) {
+                                    self.tree = self.tree.filter_tabs(|e| !matches!(e, NHTab::Diagram { .. } | NHTab::CustomTab { .. }));
+                                }
+                            }
                     } else {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::OpenProject(b));
                     }
                     SimpleProjectCommand::SaveProject => {
+                        use std::io::Read;
+
                         if let Some(project_path) = self.context.project_path.clone()
                             .or_else(|| rfd::FileDialog::new()
                                 .set_directory(std::env::current_dir().unwrap())

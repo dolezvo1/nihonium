@@ -7,17 +7,17 @@ use super::entity::EntityUuid;
 use super::eref::ERef;
 use super::{controller::DiagramController, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
 pub enum NHProjectHierarchyNodeDTO {
-    Folder { uuid: ViewUuid, hierarchy: Vec<NHProjectHierarchyNodeDTO> },
-    Diagram { uuid: ViewUuid },
+    Folder { uuid: ViewUuid, name: String, hierarchy: Vec<NHProjectHierarchyNodeDTO> },
+    Diagram { uuid: ViewUuid, view_type: String },
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct NHProjectDTO {
     format_version: String,
-    hierarchy: Vec<NHProjectHierarchyNodeDTO>,
+    pub(crate) hierarchy: Vec<NHProjectHierarchyNodeDTO>,
     models: Vec<toml::Value>,
     views: Vec<toml::Value>,
 }

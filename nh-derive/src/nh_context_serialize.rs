@@ -16,6 +16,8 @@ struct DeriveNHContextSerDeFieldOpts {
     entity: bool,
     #[darling(default)]
     skip_and_default: bool,
+    #[darling(default)]
+    skip_and_set: Option<syn::Expr>,
 }
 
 pub fn derive_nh_context_serialize(input: TokenStream) -> TokenStream {
@@ -39,14 +41,14 @@ pub fn derive_nh_context_serialize(input: TokenStream) -> TokenStream {
         DeriveNHContextSerDeFieldOpts::from_field(e).map(|o| {
             let field = &e.ident;
             (
-                if o.skip_and_default {
+                if o.skip_and_default || o.skip_and_set.is_some() {
                     quote! {}
                 } else {
                     quote! {
                         t.insert(stringify!(#field).to_owned(), toml::Value::try_from(& self . #field) . map_err(|e| format!("field {}: {:?}", stringify!(#field), e))?);
                     }
                 },
-                if !o.skip_and_default && o.entity {
+                if !o.skip_and_default && o.skip_and_set.is_none() && o.entity {
                     Some(quote! { self . #field . serialize_into(into) ?; })
                 } else {
                     None
@@ -73,6 +75,7 @@ pub fn derive_nh_context_serialize(input: TokenStream) -> TokenStream {
 
     let ser_mod_name = syn::Ident::new(&format!("{}_context_serialize", ident), ident.span());
     let output = quote! {
+        #[allow(non_snake_case)]
         mod #ser_mod_name {
             use super::*;
             use crate::common::project_serde::{NHContextSerialize, NHSerializer, NHSerializeError, NHSerializeStore};

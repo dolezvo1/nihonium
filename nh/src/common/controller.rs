@@ -177,6 +177,17 @@ impl SnapManager {
     }
 }
 
+impl Default for SnapManager {
+    fn default() -> Self {
+        Self {
+            input_restriction: egui::Rect::ZERO,
+            max_delta: egui::Vec2::ZERO,
+            guidelines_x: Vec::new(),
+            guidelines_y: Vec::new(),
+            best_xy: RwLock::new((None, None)),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub enum ProjectCommand {
@@ -240,7 +251,7 @@ pub enum Arrangement {
 
 pub enum HierarchyNode {
     Folder(ViewUuid, Arc<String>, Vec<HierarchyNode>),
-    Diagram(ERef<dyn View>),
+    Diagram(ERef<dyn TypedView>),
 }
 
 impl HierarchyNode {
@@ -436,7 +447,11 @@ pub trait View: Entity {
     fn model_name(&self) -> Arc<String>;
 }
 
-pub trait DiagramController: Any + View + NHContextSerialize {
+pub trait TypedView: View {
+    fn view_type(&self) -> String;
+}
+
+pub trait DiagramController: Any + TypedView + NHContextSerialize {
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid>;
 
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
@@ -912,7 +927,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
 
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
-#[derive(nh_derive::NHContextSerialize)]
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(uuid_type = ViewUuid)]
 pub struct DiagramControllerGen2<
     DomainT: Domain,
@@ -923,41 +938,41 @@ pub struct DiagramControllerGen2<
     adapter: DiagramAdapterT,
     #[nh_context_serde(entity)]
     owned_views: OrderedViews<DomainT::CommonElementViewT>,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     flattened_views: HashMap<ViewUuid, DomainT::CommonElementViewT>,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     flattened_views_status: HashMap<ViewUuid, SelectionStatus>,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     flattened_represented_models: HashMap<ModelUuid, ViewUuid>,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     clipboard_elements: HashMap<ViewUuid, DomainT::CommonElementViewT>,
 
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     pub _layers: Vec<bool>,
 
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     pub camera_offset: egui::Pos2,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_set = 1.0)]
     pub camera_scale: f32,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     last_unhandled_mouse_pos: Option<egui::Pos2>,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_set = egui::Rect::ZERO)]
     last_interactive_canvas_rect: egui::Rect,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     snap_manager: SnapManager,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     current_tool: Option<DomainT::ToolT>,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     select_by_drag: Option<(egui::Pos2, egui::Pos2)>,
 
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     last_change_flag: bool,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     undo_stack: Vec<(
         InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     )>,
-    #[nh_context_serde(skip)]
+    #[nh_context_serde(skip_and_default)]
     redo_stack: Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
 }
 
@@ -985,7 +1000,7 @@ impl<
             camera_scale: 1.0,
             last_unhandled_mouse_pos: None,
             last_interactive_canvas_rect: egui::Rect::ZERO,
-            snap_manager: SnapManager::new(egui::Rect::ZERO, egui::Vec2::ZERO),
+            snap_manager: SnapManager::default(),
             current_tool: None,
             select_by_drag: None,
 
@@ -1134,7 +1149,7 @@ impl<
         top_level_views
     }
 
-    fn head_count(&mut self) {
+    pub(crate) fn head_count(&mut self) {
         self.flattened_views.clear();
         self.flattened_views_status.clear();
         self.flattened_represented_models.clear();
@@ -1390,35 +1405,9 @@ impl<
 impl<
     DomainT: Domain,
     DiagramAdapterT: DiagramAdapter<DomainT>
-> NHContextDeserialize for ERef<DiagramControllerGen2<DomainT, DiagramAdapterT>> {
-    fn deserialize(
-        table: &toml::Value,
-        deserializer: &mut NHDeserializer,
-    ) -> Result<Self, NHDeserializeError> {
-        // Deserialize itself and the model
-        let mut element = toml::Table::new();
-        let uuid = {
-            let v = table.get("uuid").ok_or_else(|| NHDeserializeError::StructureError(format!("missing uuid")))?;
-            let toml::Value::String(s) = v else {
-                return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
-            };
-            Arc::new(uuid::Uuid::parse_str(s)?.into())
-        };
-        let adapter = table.get("adapter")
-            .ok_or_else(|| NHDeserializeError::StructureError(format!("missing adapter")))
-            .and_then(|e| DiagramAdapterT::deserialize(e, deserializer))?;
-        let children = {
-            let v = table.get("children").ok_or_else(|| NHDeserializeError::StructureError(format!("missing children")))?;
-            let toml::Value::Array(a) = v else {
-                return Err(NHDeserializeError::StructureError(format!("expected array, found {:?}", v)));
-            };
-        };
-
-        Ok(DiagramControllerGen2::new(
-            uuid,
-            adapter,
-            Vec::new() // TODO: children,
-        ))
+> TypedView for DiagramControllerGen2<DomainT, DiagramAdapterT> {
+    fn view_type(&self) -> String {
+        self.adapter.view_type().to_owned()
     }
 }
 

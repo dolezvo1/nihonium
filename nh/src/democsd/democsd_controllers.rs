@@ -10,6 +10,7 @@ use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage,
     DemoCsdTransaction, DemoCsdTransactor,
 };
+use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use eframe::egui;
 use std::collections::HashSet;
 use std::{
@@ -721,6 +722,14 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
             Arc::new(SimpleModelHierarchyView::new(diagram)),
         )
     }
+}
+
+pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<(usize, ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>), NHDeserializeError> {
+    let v = d.get_entity::<DiagramControllerGen2<DemoCsdDomain, DemoCsdDiagramAdapter>>(&uuid)?;
+    let mhv = Arc::new(SimpleModelHierarchyView::new(v.read().model()));
+    // TODO: this is bad, it should be handed over ready for use
+    v.write().head_count();
+    Ok((2, v, mhv))
 }
 
 #[derive(Clone, Copy, PartialEq)]
