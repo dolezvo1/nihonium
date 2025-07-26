@@ -1,9 +1,11 @@
 
-use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc, sync::{Arc, RwLock}};
+use std::{any::Any, collections::HashMap, sync::{RwLock}};
 
 use serde::{Deserialize, Serialize};
 
-use super::{controller::DiagramController, uuid::{ModelUuid, ViewUuid}};
+use super::entity::EntityUuid;
+use super::eref::ERef;
+use super::{controller::DiagramController, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}};
 
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -75,20 +77,28 @@ impl NHSerializer {
             views: HashMap::new(),
         }
     }
-
-    pub fn contains_model(&self, uuid: &ModelUuid) -> bool {
-        self.models.contains_key(uuid)
-    }
-    pub fn insert_model(&mut self, uuid: ModelUuid, data: toml::Table) {
-        self.models.insert(uuid, data);
-    }
-    pub fn contains_view(&self, uuid: &ViewUuid) -> bool {
-        self.views.contains_key(uuid)
-    }
-    pub fn insert_view(&mut self, uuid: ViewUuid, data: toml::Table) {
-        self.views.insert(uuid, data);
-    }
 }
+
+pub trait NHSerializeStore<K> {
+    fn contains(&self, uuid: &K) -> bool;
+    fn insert(&mut self, uuid: K, data: toml::Table);
+}
+
+macro_rules! serialize_store {
+    ($uuid_type:ty, $store:ident) => {
+        impl NHSerializeStore<$uuid_type> for NHSerializer {
+            fn contains(&self, uuid: &$uuid_type) -> bool {
+                self.$store.contains_key(uuid)
+            }
+            fn insert(&mut self, uuid: $uuid_type, data: toml::Table) {
+                self.$store.insert(uuid, data);
+            }
+        }
+    };
+}
+
+serialize_store!(ModelUuid, models);
+serialize_store!(ViewUuid, views);
 
 #[derive(Debug, derive_more::From)]
 pub enum NHSerializeError {
@@ -101,12 +111,12 @@ pub trait NHContextSerialize {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>;
 }
 
-impl<T> NHContextSerialize for Option<T> where T: NHContextSerialize {
+impl<T> NHContextSerialize for UFOption<T> where T: NHContextSerialize {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        for e in self.iter() {
-            e.serialize_into(into)?;
+        match self {
+            UFOption::None => Ok(()),
+            UFOption::Some(e) => e.serialize_into(into),
         }
-        Ok(())
     }
 }
 
@@ -119,6 +129,13 @@ impl<T> NHContextSerialize for Vec<T> where T: NHContextSerialize {
     }
 }
 
+impl<T> NHContextSerialize for ERef<T> where T: NHContextSerialize {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        self.read().serialize_into(into)
+    }
+}
+
+// TODO: why is the RwLock necessary??
 pub struct NHDeserializer {
     source_models: HashMap<ModelUuid, toml::Table>,
     source_views: HashMap<ViewUuid, toml::Table>,
@@ -127,29 +144,36 @@ pub struct NHDeserializer {
 }
 
 pub trait NHDeserializeInstantiator<K> {
-    fn get<T>(&mut self, uuid: &K) -> Result<T, NHDeserializeError>
-    where T: NHContextDeserialize + Clone + 'static;
+    fn get_entity<T>(&mut self, uuid: &K) -> Result<ERef<T>, NHDeserializeError>
+    where T: NHContextDeserialize + 'static;
 }
 
-impl NHDeserializeInstantiator<ModelUuid> for NHDeserializer {
-    fn get<T>(&mut self, uuid: &ModelUuid) -> Result<T, NHDeserializeError>
-    where T: NHContextDeserialize + Clone + 'static,
-    {
-        if let Some(m) = self.instantiated_models.read().unwrap().get(uuid) {
-            return Ok(m.downcast_ref::<T>()
-                .ok_or(NHDeserializeError::StructureError(format!("model has unexpected type: {:?}", uuid)))?
-                .clone());
+macro_rules! deserialize_instantiator {
+    ($uuid_type:ty, $instantiated:ident, $source:ident) => {
+        impl NHDeserializeInstantiator<$uuid_type> for NHDeserializer {
+            fn get_entity<T>(&mut self, uuid: &$uuid_type) -> Result<ERef<T>, NHDeserializeError>
+            where T: NHContextDeserialize + 'static,
+            {
+                if let Some(e) = self.$instantiated.read().unwrap().get(uuid) {
+                    return Ok(e.downcast_ref::<ERef<T>>()
+                        .ok_or(NHDeserializeError::StructureError(format!("element has unexpected type: {:?}", uuid)))?
+                        .clone());
+                }
+
+                let Some(e) = self.$source.get(uuid).cloned().map(|e| toml::Value::Table(e)) else {
+                    return Err(NHDeserializeError::StructureError(format!("element not found in source: {:?}", uuid)));
+                };
+
+                let e = ERef::new(T::deserialize(&e, self)?);
+                self.$instantiated.write().unwrap().insert(*uuid, Box::new(e.clone()));
+                Ok(e)
+            }
         }
-
-        let Some(t) = self.source_models.get(uuid).cloned().map(|e| toml::Value::Table(e)) else {
-            return Err(NHDeserializeError::StructureError(format!("Model not found in source: {:?}", uuid)));
-        };
-
-        let m = T::deserialize(&t, self)?;
-        self.instantiated_models.write().unwrap().insert(*uuid, Box::new(m.clone()));
-        Ok(m)
-    }
+    };
 }
+
+deserialize_instantiator!(ModelUuid, instantiated_models, source_models);
+deserialize_instantiator!(ViewUuid, instantiated_views, source_views);
 
 #[derive(Debug, derive_more::From)]
 pub enum NHDeserializeError {
@@ -165,9 +189,17 @@ pub trait NHContextDeserialize: Sized {
     ) -> Result<Self, NHDeserializeError>;
 }
 
-impl<T> NHContextDeserialize for Option<T> where T: NHContextDeserialize {
+impl<T> NHContextDeserialize for UFOption<T> where T: NHContextDeserialize {
     fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
-        Ok(Some(T::deserialize(source, deserializer)?))
+        #[derive(serde::Deserialize)]
+        enum Helper {
+            None,
+            Some(toml::Value),
+        }
+        match toml::Value::try_into(source.clone())? {
+            Helper::None => Ok(UFOption::None),
+            Helper::Some(v) => Ok(UFOption::Some(T::deserialize(&v, deserializer)?)),
+        }
     }
 }
 impl<T> NHContextDeserialize for Vec<T> where T: NHContextDeserialize {
@@ -176,29 +208,13 @@ impl<T> NHContextDeserialize for Vec<T> where T: NHContextDeserialize {
             .iter().map(|e| T::deserialize(e, deserializer)).collect()
     }
 }
-impl<T> NHContextDeserialize for Box<T> where T: NHContextDeserialize {
+impl<T> NHContextDeserialize for ERef<T> where T: NHContextDeserialize + 'static {
     fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
-        Ok(Box::new(T::deserialize(source, deserializer)?))
-    }
-}
-impl<T> NHContextDeserialize for Rc<T> where T: NHContextDeserialize {
-    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
-        Ok(Rc::new(T::deserialize(source, deserializer)?))
-    }
-}
-impl<T> NHContextDeserialize for RefCell<T> where T: NHContextDeserialize {
-    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
-        Ok(RefCell::new(T::deserialize(source, deserializer)?))
-    }
-}
-impl<T> NHContextDeserialize for Arc<T> where T: NHContextDeserialize {
-    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
-        Ok(Arc::new(T::deserialize(source, deserializer)?))
-    }
-}
-impl<T> NHContextDeserialize for RwLock<T> where T: NHContextDeserialize {
-    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
-        Ok(RwLock::new(T::deserialize(source, deserializer)?))
+        let uuid = toml::Value::try_into(source.clone())?;
+        match uuid {
+            EntityUuid::Model(uuid) => deserializer.get_entity(&uuid),
+            EntityUuid::View(uuid) => deserializer.get_entity(&uuid),
+        }
     }
 }
 

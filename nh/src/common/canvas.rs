@@ -98,7 +98,7 @@ fn ellipse_orthogonal_intersection(
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub enum NHShape {
     Rect {
         inner: egui::Rect,
@@ -451,7 +451,7 @@ impl From<Stroke> for egui::Stroke {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct Highlight {
     pub selected: bool, // "blue"
     pub valid: bool,    // "green"

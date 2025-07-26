@@ -1,12 +1,11 @@
-use serde::{Deserialize, Serialize};
-
 use crate::common::canvas::{ArrowheadType, LineType};
 use crate::common::controller::{ContainerModel, Model, StructuralVisitor};
-use crate::common::project_serde::{NHContextDeserialize, NHDeserializeError, NHDeserializer, NHContextSerialize, NHSerializeError, NHSerializer};
+use crate::common::entity::{Entity, EntityUuid};
+use crate::common::eref::ERef;
 use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, LazyLock, RwLock},
+    sync::{Arc, LazyLock},
 };
 
 pub struct UmlClassCollector {
@@ -61,8 +60,8 @@ impl UmlClassCollector {
     }
     fn visit_link(&mut self, link: &UmlClassLink) {
         if !self.collecting_absolute_paths {
-            let source_name = self.absolute_paths.get(&link.source.uuid()).unwrap();
-            let target_name = self.absolute_paths.get(&link.target.uuid()).unwrap();
+            let source_name = self.absolute_paths.get(&link.source.read().uuid()).unwrap();
+            let target_name = self.absolute_paths.get(&link.target.read().uuid()).unwrap();
 
             self.plantuml_data.push_str(source_name);
             if !link.source_arrowhead_label.is_empty() {
@@ -88,39 +87,32 @@ impl UmlClassCollector {
 }
 
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
-#[model(default_passthrough = "arc_rwlock")]
+#[model(default_passthrough = "eref")]
 #[container_model(element_type = UmlClassElement, default_passthrough = "none")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlClassElement {
-    #[container_model(passthrough = "arc_rwlock")]
-    UmlClassPackage(Arc<RwLock<UmlClassPackage>>),
-    UmlClass(Arc<RwLock<UmlClass>>),
-    UmlClassLink(Arc<RwLock<UmlClassLink>>),
-}
-
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag, nh_derive::Unwrap)]
-#[model(default_passthrough = "arc_rwlock")]
-#[nh_context_serde(uuid_type = ModelUuid)]
-pub enum UmlClassWrapper {
-    UmlClass(Arc<RwLock<UmlClass>>),
+    #[container_model(passthrough = "eref")]
+    UmlClassPackage(ERef<UmlClassPackage>),
+    UmlClass(ERef<UmlClass>),
+    UmlClassLink(ERef<UmlClassLink>),
 }
 
 impl UmlClassElement {
     fn accept_uml(&self, visitor: &mut UmlClassCollector) {
         match self {
-            UmlClassElement::UmlClassPackage(rw_lock) => visitor.visit_package(&rw_lock.read().unwrap()),
-            UmlClassElement::UmlClass(rw_lock) => visitor.visit_class(&rw_lock.read().unwrap()),
-            UmlClassElement::UmlClassLink(rw_lock) => visitor.visit_link(&rw_lock.read().unwrap()),
+            UmlClassElement::UmlClassPackage(inner) => visitor.visit_package(&inner.read()),
+            UmlClassElement::UmlClass(inner) => visitor.visit_class(&inner.read()),
+            UmlClassElement::UmlClassLink(inner) => visitor.visit_link(&inner.read()),
         }
     }
 }
 
-pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (Arc<RwLock<UmlClassDiagram>>, HashMap<ModelUuid, UmlClassElement>) {
+pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap<ModelUuid, UmlClassElement>) {
     fn walk(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClassElement>) -> UmlClassElement {
         let new_uuid = Arc::new(uuid::Uuid::now_v7().into());
         match e {
-            UmlClassElement::UmlClassPackage(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            UmlClassElement::UmlClassPackage(inner) => {
+                let model = inner.read();
 
                 let new_model = UmlClassPackage {
                     uuid: new_uuid,
@@ -132,10 +124,10 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (Arc<RwLock<UmlClassDiagram>>, 
                     }).collect(),
                     comment: model.comment.clone()
                 };
-                UmlClassElement::UmlClassPackage(Arc::new(RwLock::new(new_model)))
+                UmlClassElement::UmlClassPackage(ERef::new(new_model))
             },
-            UmlClassElement::UmlClass(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            UmlClassElement::UmlClass(inner) => {
+                let model = inner.read();
 
                 let new_model = UmlClass {
                     uuid: new_uuid,
@@ -145,10 +137,10 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (Arc<RwLock<UmlClassDiagram>>, 
                     properties: model.properties.clone(),
                     comment: model.comment.clone()
                 };
-                UmlClassElement::UmlClass(Arc::new(RwLock::new(new_model)))
+                UmlClassElement::UmlClass(ERef::new(new_model))
             },
-            UmlClassElement::UmlClassLink(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            UmlClassElement::UmlClassLink(inner) => {
+                let model = inner.read();
 
                 let new_model = UmlClassLink {
                     uuid: new_uuid,
@@ -160,28 +152,28 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (Arc<RwLock<UmlClassDiagram>>, 
                     target_arrowhead_label: model.target_arrowhead_label.clone(),
                     comment: model.comment.clone(),
                 };
-                UmlClassElement::UmlClassLink(Arc::new(RwLock::new(new_model)))
+                UmlClassElement::UmlClassLink(ERef::new(new_model))
             },
         }
     }
 
     fn relink(e: &mut UmlClassElement, all_models: &HashMap<ModelUuid, UmlClassElement>) {
         match e {
-            UmlClassElement::UmlClassPackage(rw_lock) => {
-                let mut model = rw_lock.write().unwrap();
+            UmlClassElement::UmlClassPackage(inner) => {
+                let mut model = inner.write();
                 for e in model.contained_elements.iter_mut() {
                     relink(e, all_models);
                 }
             },
-            UmlClassElement::UmlClass(rw_lock) => {},
-            UmlClassElement::UmlClassLink(rw_lock) => {
-                let mut model = rw_lock.write().unwrap();
+            UmlClassElement::UmlClass(inner) => {},
+            UmlClassElement::UmlClassLink(inner) => {
+                let mut model = inner.write();
 
-                let source_uuid = *model.source.uuid();
+                let source_uuid = *model.source.read().uuid();
                 if let Some(UmlClassElement::UmlClass(s)) = all_models.get(&source_uuid) {
                     model.source = s.clone().into();
                 }
-                let target_uuid = *model.target.uuid();
+                let target_uuid = *model.target.read().uuid();
                 if let Some(UmlClassElement::UmlClass(t)) = all_models.get(&target_uuid) {
                     model.target = t.clone().into();
                 }
@@ -206,14 +198,14 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (Arc<RwLock<UmlClassDiagram>>, 
         contained_elements: new_contained_elements,
         comment: d.comment.clone(),
     };
-    (Arc::new(RwLock::new(new_diagram)), all_models)
+    (ERef::new(new_diagram), all_models)
 }
 
 pub fn fake_copy_diagram(d: &UmlClassDiagram) -> HashMap<ModelUuid, UmlClassElement> {
     fn walk(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClassElement>) {
         match e {
-            UmlClassElement::UmlClassPackage(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            UmlClassElement::UmlClassPackage(inner) => {
+                let model = inner.read();
 
                 for e in &model.contained_elements {
                     walk(e, into);
@@ -277,6 +269,12 @@ impl UmlClassDiagram {
         }
 
         collector.plantuml_data
+    }
+}
+
+impl Entity for UmlClassDiagram {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
     }
 }
 
@@ -346,6 +344,12 @@ impl UmlClassPackage {
     }
 }
 
+impl Entity for UmlClassPackage {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
+    }
+}
+
 impl Model for UmlClassPackage {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
@@ -394,6 +398,13 @@ pub enum UmlClassStereotype {
     Entity,
     Enum,
     Interface,
+}
+
+// TODO: remove, this is nonsense
+impl Default for UmlClassStereotype {
+    fn default() -> Self {
+        Self::Class
+    }
 }
 
 impl UmlClassStereotype {
@@ -500,6 +511,12 @@ impl UmlClass {
     }
 }
 
+impl Entity for UmlClass {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
+    }
+}
+
 impl Model for UmlClass {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
@@ -575,10 +592,10 @@ pub struct UmlClassLink {
     pub link_type: UmlClassLinkType,
     pub description: Arc<String>,
     #[nh_context_serde(entity)]
-    pub source: UmlClassWrapper,
+    pub source: ERef<UmlClass>,
     pub source_arrowhead_label: Arc<String>,
     #[nh_context_serde(entity)]
-    pub target: UmlClassWrapper,
+    pub target: ERef<UmlClass>,
     pub target_arrowhead_label: Arc<String>,
 
     pub comment: Arc<String>,
@@ -589,19 +606,25 @@ impl UmlClassLink {
         uuid: ModelUuid,
         link_type: UmlClassLinkType,
         description: impl Into<String>,
-        source: Arc<RwLock<UmlClass>>,
-        target: Arc<RwLock<UmlClass>>,
+        source: ERef<UmlClass>,
+        target: ERef<UmlClass>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             link_type,
             description: Arc::new(description.into()),
-            source: source.into(),
+            source,
             source_arrowhead_label: Arc::new("".to_owned()),
-            target: target.into(),
+            target,
             target_arrowhead_label: Arc::new("".to_owned()),
             comment: Arc::new("".to_owned()),
         }
+    }
+}
+
+impl Entity for UmlClassLink {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
     }
 }
 

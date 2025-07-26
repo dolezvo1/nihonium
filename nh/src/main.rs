@@ -1,3 +1,4 @@
+#![feature(unsize, coerce_unsized)]
 // hide console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -6,7 +7,7 @@ use std::sync::{Arc, RwLock};
 use std::io::Write;
 
 use common::canvas::{NHCanvas, UiCanvas};
-use common::controller::{Arrangement, ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleModelHierarchyView, SimpleProjectCommand};
+use common::controller::{Arrangement, ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleProjectCommand};
 use common::project_serde::{NHProjectHierarchyNodeDTO, NHSerializeError, NHSerializer};
 use common::uuid::{ModelUuid, ViewUuid};
 use eframe::egui::{
@@ -22,6 +23,7 @@ mod democsd;
 mod rdf;
 mod umlclass;
 
+use crate::common::eref::ERef;
 use crate::common::canvas::{MeasuringCanvas, SVGCanvas};
 use crate::common::controller::{DiagramCommand, DiagramController};
 
@@ -115,7 +117,7 @@ pub trait CustomTab {
 
 struct NHContext {
     project_path: Option<std::path::PathBuf>,
-    pub diagram_controllers: HashMap<ViewUuid, (usize, Arc<RwLock<dyn DiagramController>>)>,
+    pub diagram_controllers: HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
     project_hierarchy: HierarchyNode,
     tree_view_state: TreeViewState<ViewUuid>,
     model_hierarchy_views: HashMap<ModelUuid, Arc<dyn ModelHierarchyView>>,
@@ -141,7 +143,7 @@ struct NHContext {
 
     open_unique_tabs: HashSet<NHTab>,
     last_focused_diagram: Option<ViewUuid>,
-    svg_export_menu: Option<(usize, Arc<RwLock<dyn DiagramController>>, std::path::PathBuf, usize, bool, bool, f32, f32)>,
+    svg_export_menu: Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, usize, bool, bool, f32, f32)>,
     confirm_modal_reason: Option<SimpleProjectCommand>,
     shortcut_being_set: Option<SimpleProjectCommand>,
 
@@ -160,12 +162,12 @@ impl TabViewer for NHContext {
     fn title(&mut self, tab: &mut Self::Tab) -> WidgetText {
         match tab {
             NHTab::Diagram { uuid } => {
-                let c = self.diagram_controllers.get(uuid).unwrap().1.read().unwrap();
+                let c = self.diagram_controllers.get(uuid).unwrap().1.read();
                 (&*c.model_name()).into()
             }
             NHTab::CustomTab { uuid } => {
-                let c = self.custom_tabs.get(uuid).unwrap().read().unwrap();
-                c.title().into()
+                self.custom_tabs.get(uuid).unwrap()
+                    .read().unwrap().title().into()
             }
             t => t.name().into(),
         }
@@ -219,14 +221,14 @@ impl NHContext {
             match e {
                 HierarchyNode::Folder(uuid, _, children)
                     => NHProjectHierarchyNodeDTO::Folder { uuid: *uuid, hierarchy: children.iter().map(h).collect() },
-                HierarchyNode::Diagram(rw_lock)
-                    => NHProjectHierarchyNodeDTO::Diagram { uuid: *rw_lock.read().unwrap().uuid() },
+                HierarchyNode::Diagram(inner)
+                    => NHProjectHierarchyNodeDTO::Diagram { uuid: *inner.read().uuid() },
             }
         }
 
         let mut serializer = NHSerializer::new();
         for e in self.diagram_controllers.iter() {
-            e.1.1.read().unwrap().serialize_into(&mut serializer)?;
+            e.1.1.read().serialize_into(&mut serializer)?;
         }
 
         let project = common::project_serde::NHProjectDTO::new(
@@ -323,7 +325,7 @@ impl NHContext {
                     builder.close_dir();
                 },
                 HierarchyNode::Diagram(rw_lock) => {
-                    let hm = rw_lock.read().unwrap();
+                    let hm = rw_lock.read();
                     builder.node(
                         NodeBuilder::leaf(*hm.uuid())
                             .label(format!("{} ({})", hm.model_name(), hm.uuid().to_string()))
@@ -431,13 +433,12 @@ impl NHContext {
             let Some((_t, target_diagram)) = self.diagram_controllers.get(&view_uuid) else { return; };
 
             for (_uuid, (_t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| **uuid != view_uuid) {
-                let mut c = c.write().unwrap();
-                c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
+                c.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
             }
 
             self.redo_stack.clear();
-            target_diagram.write().unwrap().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
-            target_diagram.write().unwrap().apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
+            target_diagram.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
+            target_diagram.write().apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
 
             for command_label in undo_accumulator {
                 self.undo_stack.push((command_label, view_uuid));
@@ -448,11 +449,11 @@ impl NHContext {
     fn model_hierarchy(&mut self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((_t, lfc)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
-        let model_uuid = lfc.read().unwrap().model_uuid();
+        let model_uuid = lfc.read().model_uuid();
         let Some(model_hierarchy_view) = self.model_hierarchy_views.get(&model_uuid) else { return; };
 
         let cmd = {
-            let lock = lfc.read().unwrap();
+            let lock = lfc.read();
             let rm = lock.represented_models();
             let rf = |uuid: &ModelUuid| rm.contains_key(uuid);
             model_hierarchy_view.show_model_hierarchy(ui, &rf)
@@ -460,7 +461,7 @@ impl NHContext {
 
         if let Some(cmd) = cmd {
             let mut undo_accumulator = Vec::new();
-            lfc.write().unwrap().apply_command(cmd, &mut undo_accumulator);
+            lfc.write().apply_command(cmd, &mut undo_accumulator);
             self.set_modified_state(*last_focused_diagram, undo_accumulator);
         }
     }
@@ -468,8 +469,7 @@ impl NHContext {
     fn toolbar(&self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
-        let mut controller_lock = c.write().unwrap();
-        controller_lock.show_toolbar(ui);
+        c.write().show_toolbar(ui);
     }
 
     fn properties(&mut self, ui: &mut Ui) {
@@ -477,9 +477,8 @@ impl NHContext {
         let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
 
         let mut undo_accumulator = {
-            let mut controller_lock = c.write().unwrap();
             let mut undo_accumulator = Vec::new();
-            controller_lock.show_properties(ui, &mut undo_accumulator);
+            c.write().show_properties(ui, &mut undo_accumulator);
             undo_accumulator
         };
 
@@ -489,8 +488,7 @@ impl NHContext {
     fn layers(&self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
-        let mut controller_lock = c.write().unwrap();
-        controller_lock.show_layers(ui);
+        c.write().show_layers(ui);
     }
 
     fn style_editor_tab(&mut self, ui: &mut Ui) {
@@ -1006,8 +1004,8 @@ impl NHContext {
     
     // In general it should draw first and handle input second, right?
     fn diagram_tab(&mut self, tab_uuid: &ViewUuid, ui: &mut Ui) {
-        let Some((t, arc)) = self.diagram_controllers.get(tab_uuid) else { return; };
-        let mut diagram_controller = arc.write().unwrap();
+        let Some((t, v)) = self.diagram_controllers.get(tab_uuid) else { return; };
+        let mut diagram_controller = v.write();
 
         let drawing_context = DrawingContext {
             profile: &self.color_profiles[*t].2[self.selected_color_profiles[*t]],
@@ -1023,8 +1021,7 @@ impl NHContext {
         if !undo_accumulator.is_empty() {
             self.has_unsaved_changes = true;
             for (_uuid, (t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != tab_uuid) {
-                let mut c = c.write().unwrap();
-                c.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
+                c.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
             }
             
             self.redo_stack.clear();
@@ -1043,7 +1040,7 @@ impl NHContext {
         custom_tab.show(/*self,*/ ui);
     }
 
-    fn last_focused_diagram(&self) -> Option<(usize, Arc<RwLock<dyn DiagramController>>)> {
+    fn last_focused_diagram(&self) -> Option<(usize, ERef<dyn DiagramController>)> {
         self.last_focused_diagram
             .as_ref()
             .and_then(|e| self.diagram_controllers.get(e).cloned())
@@ -1062,15 +1059,15 @@ impl Default for NHApp {
         let mut model_hierarchy_views = HashMap::<_, Arc<dyn ModelHierarchyView>>::new();
         let mut tabs = vec![NHTab::RecentlyUsed, NHTab::StyleEditor];
 
-        for (diagram_type, (controller, mhview)) in [
+        for (diagram_type, (view, mhview)) in [
             (0, crate::rdf::rdf_controllers::demo(1)),
             (1, crate::umlclass::umlclass_controllers::demo(2)),
             (2, crate::democsd::democsd_controllers::demo(3)),
         ] {
-            let uuid = *controller.read().unwrap().uuid();
-            hierarchy.push(HierarchyNode::Diagram(controller.clone()));
-            diagram_controllers.insert(uuid, (diagram_type, controller.clone()));
-            model_hierarchy_views.insert(*controller.read().unwrap().model_uuid(), mhview);
+            let uuid = *view.read().uuid();
+            hierarchy.push(HierarchyNode::Diagram(view.clone()));
+            diagram_controllers.insert(uuid, (diagram_type, view.clone()));
+            model_hierarchy_views.insert(*view.read().model_uuid(), mhview);
             tabs.push(NHTab::Diagram { uuid });
         }
 
@@ -1198,8 +1195,7 @@ impl NHApp {
         
         {
             let Some((_t, ac)) = self.context.diagram_controllers.get(&e.1) else { return; };
-            let mut c = ac.write().unwrap();
-            c.apply_command(DiagramCommand::UndoImmediate, &mut vec![]);
+            ac.write().apply_command(DiagramCommand::UndoImmediate, &mut vec![]);
         }
         
         self.context.redo_stack.push(e);
@@ -1212,8 +1208,7 @@ impl NHApp {
         
         {
             let Some((_t, ac)) = self.context.diagram_controllers.get(&e.1) else { return; };
-            let mut c = ac.write().unwrap();
-            c.apply_command(DiagramCommand::RedoImmediate, &mut vec![]);
+            ac.write().apply_command(DiagramCommand::RedoImmediate, &mut vec![]);
         }
         
         self.context.undo_stack.push(e);
@@ -1223,17 +1218,17 @@ impl NHApp {
     fn add_diagram(
         &mut self,
         diagram_type: usize,
-        diagram: Arc<RwLock<dyn DiagramController>>,
+        diagram_view: ERef<dyn DiagramController>,
         hierarchy_view: Arc<dyn ModelHierarchyView>,
     ) {
-        let view_uuid = *diagram.read().unwrap().uuid();
-        let model_uuid = *diagram.read().unwrap().model_uuid();
+        let view_uuid = *diagram_view.read().uuid();
+        let model_uuid = *diagram_view.read().model_uuid();
         if let HierarchyNode::Folder(.., children) = &mut self.context.project_hierarchy {
-            children.push(HierarchyNode::Diagram(diagram.clone()));
+            children.push(HierarchyNode::Diagram(diagram_view.clone()));
         }
         self.context
             .diagram_controllers
-            .insert(view_uuid, (diagram_type, diagram));
+            .insert(view_uuid, (diagram_type, diagram_view));
         self.context.model_hierarchy_views.insert(model_uuid, hierarchy_view);
 
         let tab = NHTab::Diagram { uuid: view_uuid };
@@ -1340,9 +1335,8 @@ impl eframe::App for NHApp {
             ($command:expr) => {
                 if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
                     if let Some((_t, ac)) = self.context.diagram_controllers.get(&uuid) {
-                        let mut c = ac.write().unwrap();
                         let mut undo = vec![];
-                        c.apply_command($command, &mut undo);
+                        ac.write().apply_command($command, &mut undo);
                         self.context.undo_stack.extend(undo.into_iter().map(|e| (e, *uuid)));
                     }
                 }
@@ -1412,7 +1406,7 @@ impl eframe::App for NHApp {
 
                     ui.menu_button(translate!("nh-project-addnewdiagram"), |ui| {
                         type NDC =
-                            fn(u32) -> (Arc<RwLock<(dyn DiagramController + 'static)>>, Arc<dyn ModelHierarchyView>);
+                            fn(u32) -> (ERef<dyn DiagramController + 'static>, Arc<dyn ModelHierarchyView>);
                         for (label, diagram_type, fun) in [
                             (
                                 "UML Class diagram",
@@ -1461,7 +1455,7 @@ impl eframe::App for NHApp {
                                 let Some((_t, ac)) = self.context.diagram_controllers.get(uuid) else {
                                     break;
                                 };
-                                let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().unwrap().model_name()));
+                                let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().model_name()));
                                 if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
                                     button = button.shortcut_text(shortcut_text);
                                 }
@@ -1491,7 +1485,7 @@ impl eframe::App for NHApp {
                                 let Some((_t, ac)) = self.context.diagram_controllers.get(uuid) else {
                                     break;
                                 };
-                                let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().unwrap().model_name()));
+                                let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().model_name()));
                                 if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
                                     button = button.shortcut_text(shortcut_text);
                                 }
@@ -1513,8 +1507,7 @@ impl eframe::App for NHApp {
                     ui.separator();
 
                     if let Some((_t, d)) = self.context.last_focused_diagram() {
-                        let mut d = d.write().unwrap();
-                        d.show_menubar_edit_options(ui, &mut commands);
+                        d.write().show_menubar_edit_options(ui, &mut commands);
                     }
 
                     ui.menu_button(translate!("nh-edit-arrange"), |ui| {
@@ -1534,13 +1527,13 @@ impl eframe::App for NHApp {
                 });
 
                 ui.menu_button(translate!("nh-diagram"), |ui| {
-                    let Some((t, c)) = self.context.last_focused_diagram() else { return; };
-                    let mut controller = c.write().unwrap();
+                    let Some((t, v)) = self.context.last_focused_diagram() else { return; };
+                    let mut view = v.write();
 
-                    controller.show_menubar_diagram_options(ui, &mut commands);
+                    view.show_menubar_diagram_options(ui, &mut commands);
 
                     ui.menu_button(
-                        format!("Export Diagram `{}` to", controller.model_name()),
+                        format!("Export Diagram `{}` to", view.model_name()),
                         |ui| {
                             if ui.button("SVG").clicked() {
                                 // NOTE: This does not work on WASM, and in its current state it never will.
@@ -1553,7 +1546,7 @@ impl eframe::App for NHApp {
                                 {
                                     commands.push(
                                         ProjectCommand::SetSvgExportMenu(
-                                            Some((t, c.clone(), path, self.context.selected_color_profiles[t], false, false, 10.0, 10.0))
+                                            Some((t, v.clone(), path, self.context.selected_color_profiles[t], false, false, 10.0, 10.0))
                                         )
                                     );
                                 }
@@ -1599,7 +1592,7 @@ impl eframe::App for NHApp {
         // SVG export options modal
         let mut hide_svg_export_modal = false;
         if let Some((t, c, path, profile, background, gridlines, padding_x, padding_y)) = self.context.svg_export_menu.as_mut() {
-            let mut controller = c.write().unwrap();
+            let mut controller = c.write();
             
             egui::containers::Window::new("SVG export options").show(ctx, |ui| {
                 ui.label(format!("Location: `{}`", path.display()));
@@ -1893,9 +1886,9 @@ impl eframe::App for NHApp {
                         continue;
                     };
                     let (new_diagram, hmview) = if deep_copy {
-                        c.read().unwrap().deep_copy()
+                        c.read().deep_copy()
                     } else {
-                        c.read().unwrap().shallow_copy()
+                        c.read().shallow_copy()
                     };
 
                     self.add_diagram(*t, new_diagram.clone(), hmview);

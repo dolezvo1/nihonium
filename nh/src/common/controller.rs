@@ -5,7 +5,7 @@ use egui_ltreeview::DirPosition;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::sync::{Arc, RwLock, Weak};
+use std::sync::{Arc, RwLock};
 
 pub const BACKGROUND_COLORS: usize = 8;
 pub const FOREGROUND_COLORS: usize = 8;
@@ -92,8 +92,12 @@ macro_rules! build_colors {
 }
 pub(crate) use build_colors;
 
-use super::project_serde::{NHContextDeserialize, NHDeserializeError, NHDeserializer, NHSerializeError, NHContextSerialize, NHSerializer};
+use super::project_serde::{NHContextDeserialize, NHDeserializeError, NHDeserializer, NHContextSerialize, NHSerializeStore};
 use super::uuid::{ModelUuid, ViewUuid};
+use super::views::ordered_views::OrderedViews;
+use super::entity::{Entity, EntityUuid};
+use super::eref::ERef;
+use super::ufoption::UFOption;
 
 
 pub struct SnapManager {
@@ -101,7 +105,7 @@ pub struct SnapManager {
     max_delta: egui::Vec2,
     guidelines_x: Vec<(f32, egui::Align, ViewUuid)>,
     guidelines_y: Vec<(f32, egui::Align, ViewUuid)>,
-    best_xy: Arc<RwLock<(Option<f32>, Option<f32>)>>,
+    best_xy: RwLock<(Option<f32>, Option<f32>)>,
 }
 
 impl SnapManager {
@@ -109,7 +113,7 @@ impl SnapManager {
         Self {
             input_restriction, max_delta,
             guidelines_x: Vec::new(), guidelines_y: Vec::new(),
-            best_xy: Arc::new(RwLock::new((None, None))),
+            best_xy: RwLock::new((None, None)),
         }
     }
     pub fn add_shape(&mut self, uuid: ViewUuid, shape: canvas::NHShape) {
@@ -179,9 +183,9 @@ pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
     OpenAndFocusDiagram(ViewUuid),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
-    SetSvgExportMenu(Option<(usize, Arc<RwLock<dyn DiagramController>>, std::path::PathBuf, usize, bool, bool, f32, f32)>),
+    SetSvgExportMenu(Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, usize, bool, bool, f32, f32)>),
     SetNewDiagramNumber(u32),
-    AddNewDiagram(usize, Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>),
+    AddNewDiagram(usize, ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>),
     CopyDiagram(ViewUuid, /*deep:*/ bool),
     DeleteDiagram(ViewUuid),
 }
@@ -236,14 +240,14 @@ pub enum Arrangement {
 
 pub enum HierarchyNode {
     Folder(ViewUuid, Arc<String>, Vec<HierarchyNode>),
-    Diagram(Arc<RwLock<dyn View>>),
+    Diagram(ERef<dyn View>),
 }
 
 impl HierarchyNode {
     pub fn uuid(&self) -> ViewUuid {
         match self {
             HierarchyNode::Folder(uuid, ..) => *uuid,
-            HierarchyNode::Diagram(rw_lock) => *rw_lock.read().unwrap().uuid(),
+            HierarchyNode::Diagram(inner) => *inner.read().uuid(),
         }
     }
 
@@ -256,7 +260,7 @@ impl HierarchyNode {
                     children.iter().map(|e| e.collect_hierarchy()).collect()
                 )
             },
-            HierarchyNode::Diagram(rw_lock) => HierarchyNode::Diagram(rw_lock.clone()),
+            HierarchyNode::Diagram(inner) => HierarchyNode::Diagram(inner.clone()),
         }
     }
 
@@ -346,11 +350,11 @@ pub trait ModelHierarchyView {
 }
 
 pub struct SimpleModelHierarchyView<ModelT: Model> {
-    model: Arc<RwLock<ModelT>>,
+    model: ERef<ModelT>,
 }
 
 impl<ModelT: Model> SimpleModelHierarchyView<ModelT> {
-    pub fn new(model: Arc<RwLock<ModelT>>) -> Self {
+    pub fn new(model: ERef<ModelT>) -> Self {
         Self { model }
     }
 }
@@ -411,7 +415,7 @@ impl<ModelT: Model> ModelHierarchyView for SimpleModelHierarchyView<ModelT> {
         egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show(ui, |builder| {
             let mut hvv = HierarchyViewVisitor { command: None, is_represented, builder };
 
-            self.model.read().unwrap().accept(&mut hvv);
+            self.model.read().accept(&mut hvv);
 
             c = hvv.command;
         });
@@ -426,7 +430,7 @@ pub struct DrawingContext<'a> {
     pub fluent_bundle: &'a fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
 }
 
-pub trait View {
+pub trait View: Entity {
     fn uuid(&self) -> Arc<ViewUuid>;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
@@ -461,9 +465,9 @@ pub trait DiagramController: Any + View + NHContextSerialize {
     fn apply_command(&mut self, command: DiagramCommand, global_undo: &mut Vec<Arc<String>>);
 
     /// Create new view with new model
-    fn deep_copy(&self) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>);
+    fn deep_copy(&self) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>);
     /// Create new view with the same model
-    fn shallow_copy(&self) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>);
+    fn shallow_copy(&self) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>);
 }
 
 pub trait ElementController<CommonElementT>: View {
@@ -693,43 +697,10 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     }
 }
 
-pub fn arc_to_usize<T: ?Sized>(e: &Arc<T>) -> usize {
-    Arc::as_ptr(e) as *const () as usize
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use std::sync::Weak;
-
-    #[test]
-    fn arc_to_usize_test() {
-        let data = "Hello, world!\nThis is a test.\n";
-        let cursor = std::io::Cursor::new(data);
-        // Create base struct
-        let reader = Arc::new(RwLock::new(std::io::BufReader::new(cursor)));
-        // Create simple clone
-        let clone1 = reader.clone();
-        // Create dyn Clone 1
-        let clone2: Arc<RwLock<dyn std::io::BufRead>> = clone1.clone();
-        // Create dyn Clone 2
-        let clone3: Arc<RwLock<dyn std::io::Read>> = clone2.clone();
-        // Upgraded weak
-        let clone4 = Weak::upgrade(&Arc::downgrade(&reader)).unwrap();
-
-
-        // Assert all obtained identifiers are equal
-        let base = arc_to_usize(&reader);
-        assert_eq!(base, arc_to_usize(&clone1));
-        assert_eq!(base, arc_to_usize(&clone2));
-        assert_eq!(base, arc_to_usize(&clone3));
-        assert_eq!(base, arc_to_usize(&clone4));
-    }
-}
-
 pub trait Domain: Sized + 'static {
     type CommonElementT: Model + Clone;
-    type CommonElementViewT: ElementControllerGen2<Self> + Clone;
+    type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT>;
+    type CommonElementViewT: ElementControllerGen2<Self> + serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone;
     type QueryableT<'a>: Queryable<'a, Self>;
     type ToolT: Tool<Self>;
     type AddCommandElementT: From<Self::CommonElementViewT> + TryInto<Self::CommonElementViewT> + Clone + Debug;
@@ -742,7 +713,7 @@ pub trait StructuralVisitor<T: ?Sized> {
     fn visit_simple(&mut self, e: &T);
 }
 
-pub trait Model: 'static {
+pub trait Model: Entity + 'static {
     fn uuid(&self) -> Arc<ModelUuid>;
     fn name(&self) -> Arc<String>;
     fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
@@ -898,21 +869,21 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
     ) {}
 }
 
-pub trait DiagramAdapter<DomainT: Domain, DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>>: NHContextSerialize + NHContextDeserialize + 'static {
-    fn model(&self) -> Arc<RwLock<DiagramModelT>>;
+pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + 'static {
+    fn model(&self) -> ERef<DomainT::DiagramModelT>;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
 
     fn view_type(&self) -> &'static str;
 
     fn find_element(&self, model_uuid: &ModelUuid) -> Option<(DomainT::CommonElementT, ModelUuid)> {
-        self.model().read().unwrap().find_element(model_uuid)
+        self.model().read().find_element(model_uuid)
     }
     fn add_element(&mut self, element: DomainT::CommonElementT) {
-        self.model().write().unwrap().add_element(element);
+        self.model().write().add_element(element);
     }
     fn delete_elements(&mut self, elements: &HashSet<ModelUuid>) {
-        self.model().write().unwrap().delete_elements(elements);
+        self.model().write().delete_elements(elements);
     }
     fn create_new_view_for(
         &self,
@@ -941,58 +912,68 @@ pub trait DiagramAdapter<DomainT: Domain, DiagramModelT: ContainerModel<ElementT
 
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
+#[derive(nh_derive::NHContextSerialize)]
+#[nh_context_serde(uuid_type = ViewUuid)]
 pub struct DiagramControllerGen2<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
-    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
+    DiagramAdapterT: DiagramAdapter<DomainT>,
 > {
     uuid: Arc<ViewUuid>,
+    #[nh_context_serde(entity)]
     adapter: DiagramAdapterT,
-    self_reference: Weak<RwLock<Self>>,
-    owned_views: HashMap<ViewUuid, DomainT::CommonElementViewT>,
-    event_order: Vec<ViewUuid>,
+    #[nh_context_serde(entity)]
+    owned_views: OrderedViews<DomainT::CommonElementViewT>,
+    #[nh_context_serde(skip)]
     flattened_views: HashMap<ViewUuid, DomainT::CommonElementViewT>,
+    #[nh_context_serde(skip)]
     flattened_views_status: HashMap<ViewUuid, SelectionStatus>,
+    #[nh_context_serde(skip)]
     flattened_represented_models: HashMap<ModelUuid, ViewUuid>,
+    #[nh_context_serde(skip)]
     clipboard_elements: HashMap<ViewUuid, DomainT::CommonElementViewT>,
 
+    #[nh_context_serde(skip)]
     pub _layers: Vec<bool>,
 
+    #[nh_context_serde(skip)]
     pub camera_offset: egui::Pos2,
+    #[nh_context_serde(skip)]
     pub camera_scale: f32,
+    #[nh_context_serde(skip)]
     last_unhandled_mouse_pos: Option<egui::Pos2>,
+    #[nh_context_serde(skip)]
     last_interactive_canvas_rect: egui::Rect,
+    #[nh_context_serde(skip)]
     snap_manager: SnapManager,
+    #[nh_context_serde(skip)]
     current_tool: Option<DomainT::ToolT>,
+    #[nh_context_serde(skip)]
     select_by_drag: Option<(egui::Pos2, egui::Pos2)>,
 
+    #[nh_context_serde(skip)]
     last_change_flag: bool,
+    #[nh_context_serde(skip)]
     undo_stack: Vec<(
         InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     )>,
+    #[nh_context_serde(skip)]
     redo_stack: Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
 }
 
 impl<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
-    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
-> DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
+    DiagramAdapterT: DiagramAdapter<DomainT>
+> DiagramControllerGen2<DomainT, DiagramAdapterT> {
     pub fn new(
         uuid: Arc<ViewUuid>,
         adapter: DiagramAdapterT,
-        owned_controllers: Vec<DomainT::CommonElementViewT>,
-    ) -> Arc<RwLock<Self>> {
-        let event_order = owned_controllers.iter().map(|e| *e.uuid()).collect();
-        let owned_views = owned_controllers.into_iter().map(|e| { let uuid = *e.uuid(); (uuid, e) }).collect();
-
-        let ret = Arc::new(RwLock::new(Self {
+        owned_views: Vec<DomainT::CommonElementViewT>,
+    ) -> ERef<Self> {
+        let ret = ERef::new(Self {
             uuid,
             adapter,
-            self_reference: Weak::new(),
-            owned_views,
-            event_order,
+            owned_views: OrderedViews::new(owned_views),
             flattened_views: HashMap::new(),
             flattened_views_status: HashMap::new(),
             flattened_represented_models: HashMap::new(),
@@ -1011,30 +992,21 @@ impl<
             last_change_flag: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-        }));
-        // Bind self reference
-        ret.write().unwrap().self_reference = Arc::downgrade(&ret);
-        ret.write().unwrap().head_count();
+        });
+        // Initialize flattened_* fields, etc.
+        ret.write().head_count();
 
         ret
     }
 
-    pub fn model(&self) -> Arc<RwLock<DiagramModelT>> {
+    pub fn model(&self) -> ERef<DomainT::DiagramModelT> {
         self.adapter.model()
-    }
-
-    fn self_reference_dyn(&self) -> Arc<RwLock<dyn DiagramController>> {
-        self.self_reference.upgrade().unwrap()
     }
 
     fn handle_event(&mut self, event: InputEvent, modifiers: ModifierKeys, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
         // Collect alignment guides
         self.snap_manager = SnapManager::new(self.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.camera_scale));
-        for k in &self.event_order {
-            if let Some(uc) = self.owned_views.get_mut(k) {
-                uc.collect_allignment(&mut self.snap_manager);
-            }
-        }
+        self.owned_views.event_order_foreach_mut(|v| v.collect_allignment(&mut self.snap_manager));
         self.snap_manager.sort_guidelines();
 
         // Handle events
@@ -1051,34 +1023,32 @@ impl<
             snap_manager: &self.snap_manager,
         };
 
-        let mut child = None;
-        for k in &self.event_order {
-            if let Some(uc) = self.owned_views.get_mut(k) {
-                let r = uc.handle_event(event, &ehc, &mut self.current_tool, &mut commands);
-                if r != EventHandlingStatus::NotHandled {
-                    child = Some((*k, match r {
-                        EventHandlingStatus::HandledByElement if matches!(event, InputEvent::Click(_)) => {
-                            if !modifiers.command {
-                                commands.push(InsensitiveCommand::SelectAll(false).into());
-                                commands.push(InsensitiveCommand::SelectSpecific(
-                                    std::iter::once(*k).collect(),
-                                    true,
-                                ).into());
-                            } else {
-                                commands.push(InsensitiveCommand::SelectSpecific(
-                                    std::iter::once(*k).collect(),
-                                    !self.flattened_views_status.get(k).is_some_and(|e| e.selected()),
-                                ).into());
-                            }
-                            EventHandlingStatus::HandledByContainer
+        let child = self.owned_views.event_order_find_mut(|v| {
+            let r = v.handle_event(event, &ehc, &mut self.current_tool, &mut commands);
+            if r != EventHandlingStatus::NotHandled {
+                let k = v.uuid();
+                Some((*k, match r {
+                    EventHandlingStatus::HandledByElement if matches!(event, InputEvent::Click(_)) => {
+                        if !modifiers.command {
+                            commands.push(InsensitiveCommand::SelectAll(false).into());
+                            commands.push(InsensitiveCommand::SelectSpecific(
+                                std::iter::once(*k).collect(),
+                                true,
+                            ).into());
+                        } else {
+                            commands.push(InsensitiveCommand::SelectSpecific(
+                                std::iter::once(*k).collect(),
+                                !self.flattened_views_status.get(&k).is_some_and(|e| e.selected()),
+                            ).into());
                         }
-                        a => a,
-                    }));
-
-                    break;
-                }
+                        EventHandlingStatus::HandledByContainer
+                    }
+                    a => a,
+                }))
+            } else {
+                None
             }
-        }
+        });
 
         let handled = match event {
             InputEvent::MouseDown(_) | InputEvent::MouseUp(_) | InputEvent::Drag { .. }
@@ -1137,7 +1107,7 @@ impl<
             Some(&selected),
             |_| false,
             HashMap::new(),
-            self.owned_views.iter().map(|e| (*e.0, e.1.clone())),
+            self.owned_views.iter_event_order_pairs().map(|e| (e.0, e.1.clone())),
         );
     }
 
@@ -1168,15 +1138,15 @@ impl<
         self.flattened_views.clear();
         self.flattened_views_status.clear();
         self.flattened_represented_models.clear();
-        for (_uuid, c) in &mut self.owned_views {
-            c.head_count(
+        self.owned_views.event_order_foreach_mut(|v|
+            v.head_count(
                 &mut self.flattened_views,
                 &mut self.flattened_views_status,
                 &mut self.flattened_represented_models,
-            );
-        }
-        for (k, v) in &self.owned_views {
-            self.flattened_views.insert(*k, v.clone());
+            )
+        );
+        for (k, v) in self.owned_views.iter_event_order_pairs() {
+            self.flattened_views.insert(k, v.clone());
         }
         self.flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
     }
@@ -1241,7 +1211,7 @@ impl<
                     let mut model_uuids = HashSet::new();
                     for (uuid, element) in self
                         .owned_views
-                        .iter()
+                        .iter_event_order_pairs()
                         .filter(|e| uuids.contains(&e.0))
                     {
                         model_uuids.insert(*element.model_uuid());
@@ -1251,8 +1221,7 @@ impl<
                         self.adapter.delete_elements(&model_uuids);
                     }
 
-                    self.owned_views.retain(|k, _v| !uuids.contains(&k));
-                    self.event_order.retain(|e| !uuids.contains(&e));
+                    self.owned_views.retain(|k, _v| !uuids.contains(k));
                 }
                 InsensitiveCommand::AddElement(target, element, into_model) => {
                     if *target == *self.uuid {
@@ -1267,8 +1236,7 @@ impl<
                                 self.adapter.add_element(view.model());
                             }
 
-                            self.owned_views.insert(uuid, view);
-                            self.event_order.push(uuid);
+                            self.owned_views.push(uuid, view);
                         }
                     }
                 }
@@ -1283,13 +1251,12 @@ impl<
 
                             self.adapter.add_element(view.model());
 
-                            self.owned_views.insert(uuid, view);
-                            self.event_order.push(uuid);
+                            self.owned_views.push(uuid, view);
                         }
                     }
                 }
                 InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {
-                    apply_arrangement(&mut self.event_order, uuids, *arr);
+                    self.owned_views.apply_arrangement(uuids, *arr);
                 },
                 InsensitiveCommand::PropertyChange(uuids, _property) => {
                     if uuids.contains(&*self.uuid) {
@@ -1302,9 +1269,7 @@ impl<
                 }
             }
 
-            for e in self.owned_views.iter_mut() {
-                e.1.apply_command(&command, &mut undo_accumulator);
-            }
+            self.owned_views.event_order_foreach_mut(|v| v.apply_command(&command, &mut undo_accumulator));
 
             let modifies_selection = match command {
                 InsensitiveCommand::SelectAll(..)
@@ -1381,7 +1346,7 @@ impl<
         &self,
         new_adapter: DiagramAdapterT,
         models: HashMap<ModelUuid, DomainT::CommonElementT>
-    ) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
+    ) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
         let new_diagram_view = Self::new(
             Arc::new(uuid::Uuid::now_v7().into()),
             new_adapter,
@@ -1389,76 +1354,28 @@ impl<
                 None,
                 |_| false,
                 models,
-                self.owned_views.iter().map(|e| (*e.0, e.1.clone())),
+                self.owned_views.iter_event_order_pairs().map(|e| (e.0, e.1.clone())),
             ).into_iter().map(|e| e.1).collect(),
         );
-        let new_model_view = SimpleModelHierarchyView::new(new_diagram_view.read().unwrap().model());
+        let new_model_view = SimpleModelHierarchyView::new(new_diagram_view.read().model());
 
         (new_diagram_view, Arc::new(new_model_view))
     }
 }
 
-fn apply_arrangement(eo: &mut Vec<ViewUuid>, uuids: &HashSet<ViewUuid>, arr: Arrangement) {
-    match arr {
-        Arrangement::BringToFront
-        | Arrangement::SendToBack => {
-            let mut modified = vec![];
-            let mut remainder = vec![];
-            for e in eo.drain(..) {
-                if uuids.contains(&e) {
-                    modified.push(e);
-                } else {
-                    remainder.push(e);
-                }
-            }
-            match arr {
-                Arrangement::BringToFront => {
-                    eo.extend(modified);
-                    eo.extend(remainder);
-                }
-                Arrangement::SendToBack => {
-                    eo.extend(remainder);
-                    eo.extend(modified);
-                }
-                _ => unreachable!(),
-            }
-        },
-        Arrangement::ForwardOne => {
-            if eo.len() > 1 {
-                if uuids.contains(&eo[0])
-                    && uuids.contains(&eo[1]) {
-                    eo.swap(0, 1);
-                }
-                for ii in 0..eo.len()-1 {
-                    if uuids.contains(&eo[ii+1]) {
-                        eo.swap(ii, ii+1);
-                    }
-                }
-            }
-        },
-        Arrangement::BackwardOne => {
-            let ll = eo.len();
-            if ll > 1 {
-                if uuids.contains(&eo[ll-2])
-                    && uuids.contains(&eo[ll-1]) {
-                    eo.swap(ll-2, ll-1);
-                }
-                for ii in (0..eo.len()-1).rev() {
-                    if uuids.contains(&eo[ii]) {
-                        eo.swap(ii, ii+1);
-                    }
-                }
-            }
-        },
+impl<
+    DomainT: Domain,
+    DiagramAdapterT: DiagramAdapter<DomainT>
+> Entity for DiagramControllerGen2<DomainT, DiagramAdapterT> {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::View(*self.uuid)
     }
 }
 
-
 impl<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
-    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
-> View for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
+    DiagramAdapterT: DiagramAdapter<DomainT>
+> View for DiagramControllerGen2<DomainT, DiagramAdapterT> {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -1472,36 +1389,8 @@ impl<
 
 impl<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
-    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
-> NHContextSerialize for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        // Serialize itself and the model
-        let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
-        // TODO: element.insert("adapter".to_owned(), todo!("serialize adapter as scalar tag"));
-        element.insert("children".to_owned(), toml::Value::Array(self.event_order.iter().map(|e| toml::Value::String(e.to_string())).collect()));
-        into.insert_view(*self.uuid, element);
-
-        // Serialize model
-        self.adapter.serialize_into(into)?;
-
-        // Serialize children
-        // TODO: rewrite
-        for e in self.event_order.iter().flat_map(|e| self.owned_views.get(e)) {
-            e.serialize_into(into)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl<
-    DomainT: Domain,
-    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
-    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
-> NHContextDeserialize for Arc<RwLock<DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT>>> {
+    DiagramAdapterT: DiagramAdapter<DomainT>
+> NHContextDeserialize for ERef<DiagramControllerGen2<DomainT, DiagramAdapterT>> {
     fn deserialize(
         table: &toml::Value,
         deserializer: &mut NHDeserializer,
@@ -1535,9 +1424,8 @@ impl<
 
 impl<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
-    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
-> DiagramController for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
+    DiagramAdapterT: DiagramAdapter<DomainT>
+> DiagramController for DiagramControllerGen2<DomainT, DiagramAdapterT> {
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid> {
         &self.flattened_represented_models
     }
@@ -1665,9 +1553,7 @@ impl<
 
             if self
                 .owned_views
-                .iter_mut()
-                .filter_map(|e| if e.1.show_properties(&queryable, ui, &mut commands) { Some(()) } else { None })
-                .next()
+                .event_order_find_mut(|v| if v.show_properties(&queryable, ui, &mut commands) { Some(()) } else { None })
                 .is_none()
             {
                 self.adapter.show_props_fun(&self.uuid, ui, &mut commands);
@@ -1831,13 +1717,11 @@ impl<
         let mut drawn_targetting = TargettingStatus::NotDrawn;
         let queryable = DomainT::QueryableT::new(&self.flattened_represented_models, &self.flattened_views);
 
-        for k in self.event_order.iter().rev() {
-            if let Some(e) = self.owned_views.get_mut(k) {
-                if e.draw_in(&queryable, context, canvas, &tool) == TargettingStatus::Drawn {
-                    drawn_targetting = TargettingStatus::Drawn;
-                }
+        self.owned_views.draw_order_foreach_mut(|v|
+            if v.draw_in(&queryable, context, canvas, &tool) == TargettingStatus::Drawn {
+                drawn_targetting = TargettingStatus::Drawn;
             }
-        }
+        );
 
         if canvas.ui_scale().is_some() {
             if let Some((pos, tool)) = tool {
@@ -1849,11 +1733,9 @@ impl<
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
-                    for k in self.event_order.iter().rev() {
-                        if let Some(e) = self.owned_views.get_mut(k) {
-                            e.draw_in(&queryable, context, canvas, &Some((pos, tool)));
-                        }
-                    }
+                    self.owned_views.draw_order_foreach_mut(|v| {
+                        v.draw_in(&queryable, context, canvas, &Some((pos, tool)));
+                    });
                 }
                 tool.draw_status_hint(&queryable, canvas, pos);
             } else if let Some((a, b)) = self.select_by_drag {
@@ -1870,12 +1752,12 @@ impl<
         }
     }
 
-    fn deep_copy(&self) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
+    fn deep_copy(&self) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
         let (new_adapter, models) = self.adapter.deep_copy();
         self.some_kind_of_copy(new_adapter, models)
     }
 
-    fn shallow_copy(&self) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
+    fn shallow_copy(&self) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
         let (new_adapter, models) = self.adapter.fake_copy();
         self.some_kind_of_copy(new_adapter, models)
     }
@@ -1883,22 +1765,18 @@ impl<
 
 impl<
     DomainT: Domain,
-    DiagramModelT: ContainerModel<ElementT = DomainT::CommonElementT>,
-    DiagramAdapterT: DiagramAdapter<DomainT, DiagramModelT>
-> ContainerGen2<DomainT> for DiagramControllerGen2<DomainT, DiagramModelT, DiagramAdapterT> {
+    DiagramAdapterT: DiagramAdapter<DomainT>
+> ContainerGen2<DomainT> for DiagramControllerGen2<DomainT, DiagramAdapterT> {
     fn controller_for(&self, uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
-        // TODO: store views by model uuids
-        self.owned_views.iter().find(|(_, c)| *c.model_uuid() == *uuid).map(|(_, c)| c.clone())
-            .or_else(|| self.owned_views.iter().flat_map(|e| e.1.controller_for(uuid)).next())
+        self.flattened_represented_models.get(uuid).and_then(|e| self.flattened_views.get(e)).cloned()
     }
 }
 
 
-pub trait PackageAdapter<DomainT: Domain>: Send + Sync + 'static {
+pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
     fn model(&self) -> DomainT::CommonElementT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
-    fn view_type(&self) -> &'static str;
 
     fn add_element(&mut self, element: DomainT::CommonElementT);
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
@@ -1932,16 +1810,22 @@ pub enum PackageDragType {
     Resize(egui::Align2),
 }
 
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(uuid_type = ViewUuid)]
 pub struct PackageView<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> {
     uuid: Arc<ViewUuid>,
+    #[nh_context_serde(entity)]
     adapter: AdapterT,
-    self_reference: Weak<RwLock<Self>>,
-    owned_views: HashMap<ViewUuid, DomainT::CommonElementViewT>,
-    event_order: Vec<ViewUuid>,
+    #[nh_context_serde(entity)]
+    owned_views: OrderedViews<DomainT::CommonElementViewT>,
+    #[nh_context_serde(skip_and_default)]
     all_elements: HashMap<ViewUuid, SelectionStatus>,
+    #[nh_context_serde(skip_and_default)]
     selected_direct_elements: HashSet<ViewUuid>,
 
+    #[nh_context_serde(skip_and_default)]
     dragged_type_and_shape: Option<(PackageDragType, egui::Rect)>,
+    #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     bounds_rect: egui::Rect,
 }
@@ -1950,26 +1834,22 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
     pub fn new(
         uuid: Arc<ViewUuid>,
         adapter: AdapterT,
-        owned_controllers: HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        owned_views: Vec<DomainT::CommonElementViewT>,
         bounds_rect: egui::Rect,
-    ) -> Arc<RwLock<Self>> {
-        let event_order = owned_controllers.keys().map(|e| *e).collect();
-        let c = Arc::new(RwLock::new(
-        Self {
-            uuid,
-            adapter,
-            self_reference: Weak::new(),
-            owned_views: owned_controllers,
-            event_order,
-            all_elements: HashMap::new(),
-            selected_direct_elements: HashSet::new(),
+    ) -> ERef<Self> {
+        ERef::new(
+            Self {
+                uuid,
+                adapter,
+                owned_views: OrderedViews::new(owned_views),
+                all_elements: HashMap::new(),
+                selected_direct_elements: HashSet::new(),
 
-            dragged_type_and_shape: None,
-            highlight: canvas::Highlight::NONE,
-            bounds_rect,
-        }));
-        c.write().unwrap().self_reference = Arc::downgrade(&c);
-        c
+                dragged_type_and_shape: None,
+                highlight: canvas::Highlight::NONE,
+                bounds_rect,
+            }
+        )
     }
 
     fn handle_size(&self, ui_scale: f32) -> f32 {
@@ -1986,6 +1866,12 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
     }
 }
 
+impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> Entity for PackageView<DomainT, AdapterT> {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::View(*self.uuid)
+    }
+}
+
 impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> View for PackageView<DomainT, AdapterT> {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
@@ -1995,26 +1881,6 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> View for PackageView<Do
     }
     fn model_name(&self) -> Arc<String> {
         self.adapter.model_name()
-    }
-}
-
-impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> NHContextSerialize for PackageView<DomainT, AdapterT> {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>  {
-        // Serialize itself
-        let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
-        element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.bounds_rect.center().x as f64), toml::Value::Float(self.bounds_rect.center().y as f64)]));
-        element.insert("size".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.bounds_rect.width() as f64), toml::Value::Float(self.bounds_rect.height() as f64)]));
-        element.insert("children".to_owned(), toml::Value::Array(self.event_order.iter().map(|e| toml::Value::String(e.to_string())).collect()));
-        into.insert_view(*self.uuid, element);
-
-        // Serialize children
-        for e in self.event_order.iter().flat_map(|e| self.owned_views.get(e)) {
-            e.serialize_into(into)?;
-        }
-
-        Ok(())
     }
 }
 
@@ -2036,15 +1902,15 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementController<Domai
 
 impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ContainerGen2<DomainT> for PackageView<DomainT, AdapterT> {
     fn controller_for(&self, uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
-        // TODO: store views by model uuids
-        self.owned_views.iter().find(|(_, c)| *c.model_uuid() == *uuid).map(|(_, c)| c.clone())
-            .or_else(|| self.owned_views.iter().flat_map(|e| e.1.controller_for(uuid)).next())
+        // TODO: store views by model uuids?
+        self.owned_views.iter_event_order_pairs().find(|(_, v)| *v.model_uuid() == *uuid).map(|(_, v)| v.clone())
+            .or_else(|| self.owned_views.iter_event_order_pairs().flat_map(|(_, v)| v.controller_for(uuid)).next())
     }
 }
 
 impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementControllerGen2<DomainT> for PackageView<DomainT, AdapterT>
 where
-    DomainT::CommonElementViewT: From<Arc<RwLock<PackageView<DomainT, AdapterT>>>>,
+    DomainT::CommonElementViewT: From<ERef<PackageView<DomainT, AdapterT>>>,
 {
     fn show_properties(
         &mut self,
@@ -2054,9 +1920,7 @@ where
     ) -> bool {
         if self
             .owned_views
-            .iter_mut()
-            .filter_map(|e| if e.1.show_properties(parent, ui, commands) { Some(()) } else { None })
-            .next()
+            .event_order_find_mut(|v| if v.show_properties(parent, ui, commands) { Some(()) } else { None })
             .is_some()
         {
             true
@@ -2157,13 +2021,11 @@ where
 
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
-        for k in self.event_order.iter().rev() {
-            if let Some(e) = self.owned_views.get_mut(k) {
-                if e.draw_in(q, context, canvas, &tool) == TargettingStatus::Drawn {
-                    drawn_child_targetting = TargettingStatus::Drawn;
-                }
+        self.owned_views.draw_order_foreach_mut(|v|
+            if v.draw_in(q, context, canvas, &tool) == TargettingStatus::Drawn {
+                drawn_child_targetting = TargettingStatus::Drawn;
             }
-        }
+        );
 
         if canvas.ui_scale().is_some() {
             if self.dragged_type_and_shape.is_some() {
@@ -2187,11 +2049,9 @@ where
                         canvas::Highlight::NONE,
                     );
 
-                    for k in self.event_order.iter().rev() {
-                        if let Some(e) = self.owned_views.get_mut(k) {
-                            e.draw_in(q, context, canvas, &tool);
-                        }
-                    }
+                    self.owned_views.draw_order_foreach_mut(|v| {
+                        v.draw_in(q, context, canvas, &tool);
+                    });
 
                     TargettingStatus::Drawn
                 }
@@ -2205,11 +2065,9 @@ where
     fn collect_allignment(&mut self, am: &mut SnapManager) {
         am.add_shape(*self.uuid, self.min_shape());
 
-        for k in self.event_order.iter() {
-            if let Some(uc) = self.owned_views.get_mut(k).map(|e| (*k, e)) {
-                uc.1.collect_allignment(am);
-            }
-        }
+        self.owned_views.event_order_foreach_mut(|v|
+            v.collect_allignment(am)
+        );
     }
     fn handle_event(
         &mut self,
@@ -2218,16 +2076,14 @@ where
         tool: &mut Option<DomainT::ToolT>,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
-        let mut k_status = None;
-        for k in self.event_order.iter() {
-            if let Some(e) = self.owned_views.get_mut(k) {
-                let s = e.handle_event(event, ehc, tool, commands);
-                if s != EventHandlingStatus::NotHandled {
-                    k_status = Some((*k, s));
-                    break;
-                }
+        let k_status = self.owned_views.event_order_find_mut(|v| {
+            let s = v.handle_event(event, ehc, tool, commands);
+            if s != EventHandlingStatus::NotHandled {
+                Some((*v.uuid(), s))
+            } else {
+                None
             }
-        }
+        });
 
         match event {
             InputEvent::MouseDown(_pos) | InputEvent::MouseUp(_pos) if k_status.is_some() => {
@@ -2366,9 +2222,9 @@ where
     ) {
         macro_rules! recurse {
             ($self:ident) => {
-                for e in &mut $self.owned_views {
-                    e.1.apply_command(command, undo_accumulator);
-                }
+                $self.owned_views.event_order_foreach_mut(|v|
+                    v.apply_command(command, undo_accumulator)
+                );
             };
         }
         macro_rules! resize_by {
@@ -2403,7 +2259,7 @@ where
                 match select {
                     true => {
                         self.selected_direct_elements =
-                            self.owned_views.iter().map(|e| *e.0).collect()
+                            self.owned_views.iter_event_order_keys().collect()
                     }
                     false => self.selected_direct_elements.clear(),
                 }
@@ -2414,10 +2270,10 @@ where
                     self.highlight.selected = *select;
                 }
 
-                for uuid in self.owned_views.keys().filter(|k| uuids.contains(k)) {
+                for k in self.owned_views.iter_event_order_keys().filter(|k| uuids.contains(k)) {
                     match select {
-                        true => self.selected_direct_elements.insert(*uuid),
-                        false => self.selected_direct_elements.remove(uuid),
+                        true => self.selected_direct_elements.insert(k),
+                        false => self.selected_direct_elements.remove(&k),
                     };
                 }
 
@@ -2437,9 +2293,9 @@ where
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
-                for e in &mut self.owned_views {
-                    e.1.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![]);
-                }
+                self.owned_views.event_order_foreach_mut(|v| {
+                    v.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![]);
+                });
             }
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
                 if uuids.contains(&self.uuid) {
@@ -2476,7 +2332,7 @@ where
                 let mut model_uuids = HashSet::new();
                 for (uuid, element) in self
                     .owned_views
-                    .iter()
+                    .iter_event_order_pairs()
                     .filter(|e| uuids.contains(&e.0))
                 {
                     model_uuids.insert(*element.model_uuid());
@@ -2490,8 +2346,7 @@ where
                     self.adapter.delete_elements(&model_uuids);
                 }
 
-                self.owned_views.retain(|k, _v| !uuids.contains(&k));
-                self.event_order.retain(|e| !uuids.contains(&e));
+                self.owned_views.retain(|k, _v| !uuids.contains(k));
 
                 recurse!(self);
             }
@@ -2508,8 +2363,7 @@ where
                             self.adapter.add_element(view.model());
                         }
 
-                        self.owned_views.insert(uuid, view);
-                        self.event_order.push(uuid);
+                        self.owned_views.push(uuid, view);
                     }
                 }
 
@@ -2523,7 +2377,7 @@ where
                 recurse!(self);
             },
             InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {
-                apply_arrangement(&mut self.event_order, uuids, *arr);
+                self.owned_views.apply_arrangement(uuids, *arr);
             },
             InsensitiveCommand::PropertyChange(uuids, _property) => {
                 if uuids.contains(&*self.uuid) {
@@ -2549,9 +2403,9 @@ where
         flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
 
         self.all_elements.clear();
-        for e in self.owned_views.iter_mut() {
-            e.1.head_count(flattened_views, &mut self.all_elements, flattened_represented_models);
-        }
+        self.owned_views.event_order_foreach_mut(|v|
+            v.head_count(flattened_views, &mut self.all_elements, flattened_represented_models)
+        );
         for e in &self.all_elements {
             flattened_views_status.insert(*e.0, match *e.1 {
                 SelectionStatus::NotSelected if self.highlight.selected => SelectionStatus::TransitivelySelected,
@@ -2559,9 +2413,9 @@ where
             });
         }
 
-        for (k, v) in self.owned_views.iter() {
-            flattened_views.insert(*k, v.clone());
-        }
+        self.owned_views.event_order_foreach_mut(|v| {
+            flattened_views.insert(*v.uuid(), v.clone());
+        });
     }
 
     fn deep_copy_walk(
@@ -2575,8 +2429,9 @@ where
         if requested.is_none_or(|e| e.contains(&self.uuid)) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         } else {
-            self.owned_views.iter()
-                .for_each(|e| e.1.deep_copy_walk(requested, uuid_present, tlc, c, m));
+            self.owned_views.event_order_foreach(|v|
+                v.deep_copy_walk(requested, uuid_present, tlc, c, m)
+            );
         }
     }
     fn deep_copy_clone(
@@ -2593,21 +2448,20 @@ where
         };
 
         let mut inner = HashMap::new();
-        self.owned_views.iter().for_each(|e| e.1.deep_copy_clone(uuid_present, &mut inner, c, m));
+        self.owned_views.event_order_foreach(|v|
+            v.deep_copy_clone(uuid_present, &mut inner, c, m)
+        );
 
-        let cloneish = Arc::new(RwLock::new(Self {
+        let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             adapter: self.adapter.deep_copy_init(model_uuid, m),
-            self_reference: Weak::new(),
-            owned_views: inner.iter().map(|e| (*e.0, e.1.clone())).collect(),
-            event_order: inner.iter().map(|e| *e.0).collect(),
+            owned_views: OrderedViews::new(inner.into_values().collect()),
             all_elements: HashMap::new(),
             selected_direct_elements: self.selected_direct_elements.clone(),
             dragged_type_and_shape: None,
             highlight: self.highlight,
             bounds_rect: self.bounds_rect,
-        }));
-        cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
     }
@@ -2616,15 +2470,16 @@ where
         c: &HashMap<ViewUuid, DomainT::CommonElementViewT>,
         m: &HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
-        self.owned_views.iter_mut().for_each(|e| e.1.deep_copy_relink(c, m));
+        self.owned_views.event_order_foreach_mut(|v|
+            v.deep_copy_relink(c, m)
+        );
     }
 }
 
-pub trait MulticonnectionAdapter<DomainT: Domain>: Send + Sync {
+pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync {
     fn model(&self) -> DomainT::CommonElementT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
-    fn view_type(&self) -> &'static str;
 
     fn midpoint_label(&self) -> Option<Arc<String>> { None }
     fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
@@ -2662,20 +2517,28 @@ pub struct VertexInformation {
 #[derive(Clone, Debug)]
 pub struct FlipMulticonnection {}
 
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(uuid_type = ViewUuid)]
 pub struct MulticonnectionView<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> {
     uuid: Arc<ViewUuid>,
+    #[nh_context_serde(entity)]
     adapter: AdapterT,
-    self_reference: Weak<RwLock<Self>>,
 
+    #[nh_context_serde(entity)]
     pub source: DomainT::CommonElementViewT,
+    #[nh_context_serde(entity)]
     pub target: DomainT::CommonElementViewT,
 
+    #[nh_context_serde(skip_and_default)]
     dragged_node: Option<(ViewUuid, egui::Pos2)>,
+    #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
+    #[nh_context_serde(skip_and_default)]
     selected_vertices: HashSet<ViewUuid>,
-    center_point: Option<(ViewUuid, egui::Pos2)>,
+    center_point: UFOption<(ViewUuid, egui::Pos2)>,
     source_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
     dest_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
+    #[nh_context_serde(skip_and_default)]
     point_to_origin: HashMap<ViewUuid, (bool, usize)>,
 }
 
@@ -2693,7 +2556,7 @@ where
         center_point: Option<(ViewUuid, egui::Pos2)>,
         source_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
         dest_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
-    ) -> Arc<RwLock<Self>> {
+    ) -> ERef<Self> {
         let mut point_to_origin = HashMap::new();
         for (idx, path) in source_points.iter().enumerate() {
             for p in path {
@@ -2706,32 +2569,35 @@ where
             }
         }
 
-        let c = Arc::new(RwLock::new(
+        ERef::new(
             Self {
                 uuid,
                 adapter,
-                self_reference: Weak::new(),
                 source,
                 target: destination,
                 dragged_node: None,
                 highlight: canvas::Highlight::NONE,
                 selected_vertices: HashSet::new(),
 
-                center_point,
+                center_point: center_point.into(),
                 source_points,
                 dest_points,
                 point_to_origin,
             }
-        ));
-        c.write().unwrap().self_reference = Arc::downgrade(&c);
-        c
+        )
     }
 
     const VERTEX_RADIUS: f32 = 5.0;
     fn all_vertices(&self) -> impl Iterator<Item = &(ViewUuid, egui::Pos2)> {
-        self.center_point.iter()
+        self.center_point.as_ref().into_iter()
             .chain(self.source_points.iter().flat_map(|e| e.iter()))
             .chain(self.dest_points.iter().flat_map(|e| e.iter()))
+    }
+}
+
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> Entity for MulticonnectionView<DomainT, AdapterT> {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::View(*self.uuid)
     }
 }
 
@@ -2748,26 +2614,6 @@ where
     }
     fn model_name(&self) -> Arc<String> {
         self.adapter.model_name()
-    }
-}
-
-impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> NHContextSerialize for MulticonnectionView<DomainT, AdapterT>
-where
-    DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
-    for<'a> &'a DomainT::PropChangeT: TryInto<FlipMulticonnection>,
-{
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>  {
-        // Serialize itself
-        let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("type".to_owned(), toml::Value::String(self.adapter.view_type().to_owned()));
-        // TODO: store view ids, not model ids
-        element.insert("source".to_owned(), toml::Value::String(self.source.model_uuid().to_string()));
-        element.insert("destination".to_owned(), toml::Value::String(self.target.model_uuid().to_string()));
-        // TODO: store points, etc.
-        into.insert_view(*self.uuid, element);
-
-        Ok(())
     }
 }
 
@@ -2791,8 +2637,8 @@ where
 
     fn position(&self) -> egui::Pos2 {
         match &self.center_point {
-            Some(point) => point.1,
-            None => (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
+            UFOption::Some(point) => point.1,
+            UFOption::None => (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
         }
     }
 }
@@ -2801,7 +2647,7 @@ impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> ContainerGen2<D
 
 impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> ElementControllerGen2<DomainT> for MulticonnectionView<DomainT, AdapterT>
 where
-    DomainT::CommonElementViewT: From<Arc<RwLock<MulticonnectionView<DomainT, AdapterT>>>>,
+    DomainT::CommonElementViewT: From<ERef<MulticonnectionView<DomainT, AdapterT>>>,
     DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a DomainT::PropChangeT: TryInto<FlipMulticonnection>,
 {
@@ -2833,12 +2679,12 @@ where
         let (source_next_point, dest_next_point) = match (
             self.source_points[0].iter().skip(1)
                 .map(|e| *e)
-                .chain(self.center_point)
+                .chain(self.center_point.as_ref().cloned())
                 .find(|p| !source_bounds.contains(p.1))
                 .map(|e| e.1),
             self.dest_points[0].iter().skip(1)
                 .map(|e| *e)
-                .chain(self.center_point)
+                .chain(self.center_point.as_ref().cloned())
                 .find(|p| !dest_bounds.contains(p.1))
                 .map(|e| e.1),
         ) {
@@ -2903,8 +2749,8 @@ where
                 l2,
             )],
             match &self.center_point {
-                Some(point) => *point,
-                None => (
+                UFOption::Some(point) => *point,
+                UFOption::None => (
                     uuid::Uuid::nil().into(),
                     (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
                 ),
@@ -2917,7 +2763,7 @@ where
     }
 
     fn collect_allignment(&mut self, am: &mut SnapManager) {
-        for p in self.center_point.iter()
+        for p in self.center_point.as_ref().into_iter()
             .chain(self.source_points.iter().flat_map(|e| e.iter().skip(1)))
             .chain(self.dest_points.iter().flat_map(|e| e.iter().skip(1)))
         {
@@ -2960,12 +2806,12 @@ where
 
                 // Check whether over center point
                 match self.center_point {
-                    Some((uuid, pos2)) if is_over(pos, pos2) => {
+                    UFOption::Some((uuid, pos2)) if is_over(pos, pos2) => {
                         self.dragged_node = Some((uuid, pos));
                         return EventHandlingStatus::HandledByContainer;
                     }
                     // TODO: this is generally wrong (why??)
-                    None if is_over(pos, self.position()) => {
+                    UFOption::None if is_over(pos, self.position()) => {
                         self.dragged_node = Some((uuid::Uuid::now_v7().into(), pos));
                         commands.push(InsensitiveCommand::AddElement(
                             *self.uuid,
@@ -2991,7 +2837,7 @@ where
                             let mut iter = path
                             .iter()
                             .map(|e| *e)
-                            .chain(self.center_point)
+                            .chain(self.center_point.as_ref().cloned())
                             .peekable();
                             while let Some(u) = iter.next() {
                                 let v = if let Some(v) = iter.peek() {
@@ -3095,7 +2941,8 @@ where
                         //let center_point = self.center_point.clone();
                         for path in &self.$v {
                             // Iterates over 2-windows
-                            let mut iter = path.iter().map(|e| *e).chain(self.center_point).peekable();
+                            let mut iter = path.iter().map(|e| *e)
+                                .chain(self.center_point.as_ref().cloned()).peekable();
                             while let Some(u) = iter.next() {
                                 let v = if let Some(v) = iter.peek() {
                                     *v
@@ -3114,7 +2961,7 @@ where
                 check_path_segments!(dest_points);
 
                 // In case there is no center_point, also check all-to-all of last points
-                if self.center_point == None {
+                if self.center_point == UFOption::None {
                     for u in self.source_points.iter().flat_map(|e| e.last()) {
                         for v in self.dest_points.iter().flat_map(|e| e.last()) {
                             if dist_to_line_segment(pos, u.1, v.1) <= SEGMENT_DISTANCE_THRESHOLD {
@@ -3238,13 +3085,13 @@ where
 
                     // Move any last point to the center
                     self.center_point = 'a: {
-                        if let Some(path) = self.source_points.iter_mut().filter(|p| p.len() > 1).nth(0) {
-                            break 'a path.pop();
+                        if let Some(path) = self.source_points.iter_mut().filter(|p| p.len() > 1).next() {
+                            break 'a path.pop().into();
                         }
-                        if let Some(path) = self.dest_points.iter_mut().filter(|p| p.len() > 1).nth(0) {
-                            break 'a path.pop();
+                        if let Some(path) = self.dest_points.iter_mut().filter(|p| p.len() > 1).next() {
+                            break 'a path.pop().into();
                         }
-                        None
+                        None.into()
                     };
                 }
 
@@ -3287,7 +3134,7 @@ where
                     {
                         if after.is_nil() {
                             // Push popped center point point back to its original path
-                            if let Some(o) = self.center_point.and_then(|e| self.point_to_origin.get(&e.0)) {
+                            if let Some(o) = self.center_point.as_ref().and_then(|e| self.point_to_origin.get(&e.0)) {
                                 if !o.0 {
                                     self.source_points[o.1].push(self.center_point.unwrap());
                                 } else {
@@ -3295,7 +3142,7 @@ where
                                 }
                             }
 
-                            self.center_point = Some((id, position));
+                            self.center_point = UFOption::Some((id, position));
 
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(id).collect(),
@@ -3372,10 +3219,9 @@ where
             (*self.uuid, *self.model_uuid())
         };
 
-        let cloneish = Arc::new(RwLock::new(Self {
+        let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             adapter: self.adapter.deep_copy_init(model_uuid, m),
-            self_reference: Weak::new(),
             source: self.source.clone(),
             target: self.target.clone(),
             dragged_node: None,
@@ -3385,8 +3231,7 @@ where
             source_points: self.source_points.clone(),
             dest_points: self.dest_points.clone(),
             point_to_origin: self.point_to_origin.clone(),
-        }));
-        cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
     }

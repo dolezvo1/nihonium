@@ -1,9 +1,10 @@
 use crate::common::controller::{ContainerModel, Model, StructuralVisitor};
-use crate::common::project_serde::{NHContextDeserialize, NHDeserializeError, NHDeserializer, NHContextSerialize, NHSerializeError, NHSerializer};
+use crate::common::entity::{Entity, EntityUuid};
+use crate::common::eref::ERef;
 use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, RwLock},
+    sync::{Arc},
 };
 
 use sophia::api::{
@@ -23,45 +24,38 @@ impl<'a> RdfCollector<'a> {
 }
 
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
-#[model(default_passthrough = "arc_rwlock")]
+#[model(default_passthrough = "eref")]
 #[container_model(element_type = RdfElement, default_passthrough = "none")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum RdfElement {
-    #[container_model(passthrough = "arc_rwlock")]
-    RdfGraph(Arc<RwLock<RdfGraph>>),
-    RdfLiteral(Arc<RwLock<RdfLiteral>>),
-    RdfNode(Arc<RwLock<RdfNode>>),
-    RdfPredicate(Arc<RwLock<RdfPredicate>>),
-}
-
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag, nh_derive::Unwrap)]
-#[model(default_passthrough = "arc_rwlock")]
-#[nh_context_serde(uuid_type = ModelUuid)]
-pub enum RdfNodeWrapper {
-    RdfNode(Arc<RwLock<RdfNode>>),
+    #[container_model(passthrough = "eref")]
+    RdfGraph(ERef<RdfGraph>),
+    RdfLiteral(ERef<RdfLiteral>),
+    RdfNode(ERef<RdfNode>),
+    RdfPredicate(ERef<RdfPredicate>),
 }
 
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
-#[model(default_passthrough = "arc_rwlock")]
+#[model(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum RdfTargettableElement {
-    RdfLiteral(Arc<RwLock<RdfLiteral>>),
-    RdfNode(Arc<RwLock<RdfNode>>),
+    RdfLiteral(ERef<RdfLiteral>),
+    RdfNode(ERef<RdfNode>),
 }
 
 impl RdfElement {
     pub fn as_targettable_element(&self) -> Option<RdfTargettableElement> {
         match self {
-            RdfElement::RdfLiteral(rw_lock) => Some(RdfTargettableElement::RdfLiteral(rw_lock.clone())),
-            RdfElement::RdfNode(rw_lock) => Some(RdfTargettableElement::RdfNode(rw_lock.clone())),
+            RdfElement::RdfLiteral(inner) => Some(RdfTargettableElement::RdfLiteral(inner.clone())),
+            RdfElement::RdfNode(inner) => Some(RdfTargettableElement::RdfNode(inner.clone())),
             RdfElement::RdfGraph(_) | RdfElement::RdfPredicate(_) => None,
         }
     }
 
     fn accept_collector(&self, collector: &mut RdfCollector<'static>) {
         match self {
-            RdfElement::RdfGraph(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            RdfElement::RdfGraph(inner) => {
+                let model = inner.read();
                 let old_graph = collector.current_graph.replace(SimpleTerm::Iri(
                     IriRef::new(MownStr::from((*model.iri).clone())).unwrap(),
                 ));
@@ -73,9 +67,9 @@ impl RdfElement {
                 collector.current_graph = old_graph;
             },
             RdfElement::RdfLiteral(_) | RdfElement::RdfNode(_) => {}
-            RdfElement::RdfPredicate(rw_lock) => {
-                let model = rw_lock.read().unwrap();
-                let subject = model.source.clone().unwrap().read().unwrap().term_repr();
+            RdfElement::RdfPredicate(inner) => {
+                let model = inner.read();
+                let subject = model.source.read().term_repr();
                 let object = model.target.term_repr();
 
                 collector.add_triple([
@@ -91,18 +85,18 @@ impl RdfElement {
 impl RdfTargettableElement {
     fn term_repr(&self) -> SimpleTerm<'static> {
         match self {
-            RdfTargettableElement::RdfLiteral(rw_lock) => rw_lock.read().unwrap().term_repr(),
-            RdfTargettableElement::RdfNode(rw_lock) => rw_lock.read().unwrap().term_repr(),
+            RdfTargettableElement::RdfLiteral(inner) => inner.read().term_repr(),
+            RdfTargettableElement::RdfNode(inner) => inner.read().term_repr(),
         }
     }
 }
 
-pub fn deep_copy_diagram(d: &RdfDiagram) -> (Arc<RwLock<RdfDiagram>>, HashMap<ModelUuid, RdfElement>) {
+pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid, RdfElement>) {
     fn walk(e: &RdfElement, into: &mut HashMap<ModelUuid, RdfElement>) -> RdfElement {
         let new_uuid = Arc::new(uuid::Uuid::now_v7().into());
         match e {
-            RdfElement::RdfGraph(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            RdfElement::RdfGraph(inner) => {
+                let model = inner.read();
 
                 let new_model = RdfGraph {
                     uuid: new_uuid,
@@ -114,10 +108,10 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (Arc<RwLock<RdfDiagram>>, HashMap<Mo
                     }).collect(),
                     comment: model.comment.clone()
                 };
-                RdfElement::RdfGraph(Arc::new(RwLock::new(new_model)))
+                RdfElement::RdfGraph(ERef::new(new_model))
             },
-            RdfElement::RdfLiteral(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            RdfElement::RdfLiteral(inner) => {
+                let model = inner.read();
 
                 let new_model = RdfLiteral {
                     uuid: new_uuid,
@@ -126,20 +120,20 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (Arc<RwLock<RdfDiagram>>, HashMap<Mo
                     langtag: model.langtag.clone(),
                     comment: model.comment.clone(),
                 };
-                RdfElement::RdfLiteral(Arc::new(RwLock::new(new_model)))
+                RdfElement::RdfLiteral(ERef::new(new_model))
             },
-            RdfElement::RdfNode(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            RdfElement::RdfNode(inner) => {
+                let model = inner.read();
 
                 let new_model = RdfNode {
                     uuid: new_uuid,
                     iri: model.iri.clone(),
                     comment: model.comment.clone(),
                 };
-                RdfElement::RdfNode(Arc::new(RwLock::new(new_model)))
+                RdfElement::RdfNode(ERef::new(new_model))
             },
-            RdfElement::RdfPredicate(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            RdfElement::RdfPredicate(inner) => {
+                let model = inner.read();
 
                 let new_model = RdfPredicate {
                     uuid: new_uuid,
@@ -148,25 +142,24 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (Arc<RwLock<RdfDiagram>>, HashMap<Mo
                     target: model.target.clone(),
                     comment: model.comment.clone(),
                 };
-                RdfElement::RdfPredicate(Arc::new(RwLock::new(new_model)))
+                RdfElement::RdfPredicate(ERef::new(new_model))
             },
         }
     }
 
     fn relink(e: &mut RdfElement, all_models: &HashMap<ModelUuid, RdfElement>) {
         match e {
-            RdfElement::RdfGraph(rw_lock) => {
-                let mut model = rw_lock.write().unwrap();
+            RdfElement::RdfGraph(inner) => {
+                let mut model = inner.write();
                 for e in model.contained_elements.iter_mut() {
                     relink(e, all_models);
                 }
             }
-            RdfElement::RdfLiteral(rw_lock) => {},
-            RdfElement::RdfNode(rw_lock) => {},
-            RdfElement::RdfPredicate(rw_lock) => {
-                let mut model = rw_lock.write().unwrap();
+            RdfElement::RdfLiteral(_) | RdfElement::RdfNode(_) => {},
+            RdfElement::RdfPredicate(inner) => {
+                let mut model = inner.write();
 
-                let source_uuid = *model.source.uuid();
+                let source_uuid = *model.source.read().uuid();
                 if let Some(RdfElement::RdfNode(n)) = all_models.get(&source_uuid) {
                     model.source = n.clone().into();
                 }
@@ -196,14 +189,14 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (Arc<RwLock<RdfDiagram>>, HashMap<Mo
         comment: d.comment.clone(),
         stored_queries: d.stored_queries.iter().map(|e| (uuid::Uuid::now_v7(), e.1.clone())).collect(),
     };
-    (Arc::new(RwLock::new(new_diagram)), all_models)
+    (ERef::new(new_diagram), all_models)
 }
 
 pub fn fake_copy_diagram(d: &RdfDiagram) -> HashMap<ModelUuid, RdfElement> {
     fn walk(e: &RdfElement, into: &mut HashMap<ModelUuid, RdfElement>) {
         match e {
-            RdfElement::RdfGraph(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            RdfElement::RdfGraph(inner) => {
+                let model = inner.read();
 
                 for e in &model.contained_elements {
                     walk(e, into);
@@ -271,6 +264,12 @@ impl RdfDiagram {
     }
 }
 
+impl Entity for RdfDiagram {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
+    }
+}
+
 impl Model for RdfDiagram {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
@@ -334,6 +333,12 @@ impl RdfGraph {
             contained_elements,
             comment: Arc::new("".to_owned()),
         }
+    }
+}
+
+impl Entity for RdfGraph {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
     }
 }
 
@@ -420,6 +425,12 @@ impl RdfLiteral {
     }
 }
 
+impl Entity for RdfLiteral {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
+    }
+}
+
 impl Model for RdfLiteral {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
@@ -452,6 +463,12 @@ impl RdfNode {
     }
 }
 
+impl Entity for RdfNode {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
+    }
+}
+
 impl Model for RdfNode {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
@@ -467,7 +484,7 @@ pub struct RdfPredicate {
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
     #[nh_context_serde(entity)]
-    pub source: RdfNodeWrapper,
+    pub source: ERef<RdfNode>,
     #[nh_context_serde(entity)]
     pub target: RdfTargettableElement,
 
@@ -478,16 +495,22 @@ impl RdfPredicate {
     pub fn new(
         uuid: ModelUuid,
         iri: String,
-        source: Arc<RwLock<RdfNode>>,
-        destination: RdfTargettableElement,
+        source: ERef<RdfNode>,
+        target: RdfTargettableElement,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             iri: Arc::new(iri),
-            source: source.into(),
-            target: destination,
+            source,
+            target,
             comment: Arc::new("".to_owned()),
         }
+    }
+}
+
+impl Entity for RdfPredicate {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
     }
 }
 

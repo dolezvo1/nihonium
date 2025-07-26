@@ -3,7 +3,8 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, FlipMulticonnection, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, MulticonnectionAdapter, MulticonnectionView, PackageAdapter, PackageView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, VertexInformation, View
 };
-use crate::common::project_serde::{NHContextDeserialize, NHContextSerialize, NHDeserializeError, NHDeserializeInstantiator, NHDeserializer, NHSerializeError, NHSerializer};
+use crate::common::entity::{Entity, EntityUuid};
+use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::{CustomTab};
 use eframe::egui;
@@ -12,7 +13,7 @@ use std::collections::HashSet;
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter},
-    sync::{Arc, RwLock, Weak},
+    sync::{Arc, RwLock},
 };
 
 use sophia::api::{prelude::SparqlDataset, sparql::Query};
@@ -21,6 +22,7 @@ use sophia_sparql::{ResultTerm, SparqlQuery, SparqlWrapper};
 struct RdfDomain;
 impl Domain for RdfDomain {
     type CommonElementT = RdfElement;
+    type DiagramModelT = RdfDiagram;
     type CommonElementViewT = RdfElementView;
     type QueryableT<'a> = RdfQueryable<'a>;
     type ToolT = NaiveRdfTool;
@@ -146,92 +148,93 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
     ("RDF diagram".to_owned(), c.0, c.1)
 }
 
-#[derive(Clone, derive_more::From)]
+#[derive(Clone, derive_more::From, nh_derive::NHContextSerDeTag)]
+#[nh_context_serde(uuid_type = ViewUuid)]
 pub enum RdfElementView {
-    Graph(Arc<RwLock<PackageViewT>>),
-    Literal(Arc<RwLock<RdfLiteralController>>),
-    Node(Arc<RwLock<RdfNodeController>>),
-    Predicate(Arc<RwLock<LinkViewT>>),
+    Graph(ERef<PackageViewT>),
+    Literal(ERef<RdfLiteralView>),
+    Node(ERef<RdfNodeView>),
+    Predicate(ERef<LinkViewT>),
 }
 
-impl NHContextSerialize for RdfElementView {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+impl Entity for RdfElementView {
+    fn tagged_uuid(&self) -> EntityUuid {
         match self {
-            Self::Graph(inner) => inner.read().unwrap().serialize_into(into),
-            Self::Literal(inner) => inner.read().unwrap().serialize_into(into),
-            Self::Node(inner) => inner.read().unwrap().serialize_into(into),
-            Self::Predicate(inner) => inner.read().unwrap().serialize_into(into),
+            Self::Graph(inner) => inner.read().tagged_uuid(),
+            Self::Literal(inner) => inner.read().tagged_uuid(),
+            Self::Node(inner) => inner.read().tagged_uuid(),
+            Self::Predicate(inner) => inner.read().tagged_uuid(),
         }
     }
 }
-// impl NHDeserialize for RdfElementView {}
+
 impl View for RdfElementView {
     fn uuid(&self) -> Arc<ViewUuid> {
         match self {
-            Self::Graph(inner) => inner.read().unwrap().uuid(),
-            Self::Literal(inner) => inner.read().unwrap().uuid(),
-            Self::Node(inner) => inner.read().unwrap().uuid(),
-            Self::Predicate(inner) => inner.read().unwrap().uuid(),
+            Self::Graph(inner) => inner.read().uuid(),
+            Self::Literal(inner) => inner.read().uuid(),
+            Self::Node(inner) => inner.read().uuid(),
+            Self::Predicate(inner) => inner.read().uuid(),
         }
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
         match self {
-            Self::Graph(inner) => inner.read().unwrap().model_uuid(),
-            Self::Literal(inner) => inner.read().unwrap().model_uuid(),
-            Self::Node(inner) => inner.read().unwrap().model_uuid(),
-            Self::Predicate(inner) => inner.read().unwrap().model_uuid(),
+            Self::Graph(inner) => inner.read().model_uuid(),
+            Self::Literal(inner) => inner.read().model_uuid(),
+            Self::Node(inner) => inner.read().model_uuid(),
+            Self::Predicate(inner) => inner.read().model_uuid(),
         }
     }
     fn model_name(&self) -> Arc<String> {
         match self {
-            Self::Graph(inner) => inner.read().unwrap().model_name(),
-            Self::Literal(inner) => inner.read().unwrap().model_name(),
-            Self::Node(inner) => inner.read().unwrap().model_name(),
-            Self::Predicate(inner) => inner.read().unwrap().model_name(),
+            Self::Graph(inner) => inner.read().model_name(),
+            Self::Literal(inner) => inner.read().model_name(),
+            Self::Node(inner) => inner.read().model_name(),
+            Self::Predicate(inner) => inner.read().model_name(),
         }
     }
 }
 impl ElementController<RdfElement> for RdfElementView {
     fn model(&self) -> RdfElement {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().model(),
-            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().model(),
-            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().model(),
-            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().model(),
+            RdfElementView::Graph(inner) => inner.read().model(),
+            RdfElementView::Literal(inner) => inner.read().model(),
+            RdfElementView::Node(inner) => inner.read().model(),
+            RdfElementView::Predicate(inner) => inner.read().model(),
         }
     }
     fn min_shape(&self) -> NHShape {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().min_shape(),
-            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().min_shape(),
-            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().min_shape(),
-            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().min_shape(),
+            RdfElementView::Graph(inner) => inner.read().min_shape(),
+            RdfElementView::Literal(inner) => inner.read().min_shape(),
+            RdfElementView::Node(inner) => inner.read().min_shape(),
+            RdfElementView::Predicate(inner) => inner.read().min_shape(),
         }
     }
     fn max_shape(&self) -> NHShape {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().max_shape(),
-            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().max_shape(),
-            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().max_shape(),
-            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().max_shape(),
+            RdfElementView::Graph(inner) => inner.read().max_shape(),
+            RdfElementView::Literal(inner) => inner.read().max_shape(),
+            RdfElementView::Node(inner) => inner.read().max_shape(),
+            RdfElementView::Predicate(inner) => inner.read().max_shape(),
         }
     }
     fn position(&self) -> egui::Pos2 {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().position(),
-            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().position(),
-            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().position(),
-            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().position(),
+            RdfElementView::Graph(inner) => inner.read().position(),
+            RdfElementView::Literal(inner) => inner.read().position(),
+            RdfElementView::Node(inner) => inner.read().position(),
+            RdfElementView::Predicate(inner) => inner.read().position(),
         }
     }
 }
 impl ContainerGen2<RdfDomain> for RdfElementView {
     fn controller_for(&self, uuid: &ModelUuid) -> Option<<RdfDomain as Domain>::CommonElementViewT> {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
-            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
-            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
-            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().controller_for(uuid),
+            RdfElementView::Graph(inner) => inner.read().controller_for(uuid),
+            RdfElementView::Literal(inner) => inner.read().controller_for(uuid),
+            RdfElementView::Node(inner) => inner.read().controller_for(uuid),
+            RdfElementView::Predicate(inner) => inner.read().controller_for(uuid),
         }
     }
 }
@@ -243,10 +246,10 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> bool {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
-            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
-            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
-            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().show_properties(q, ui, commands),
+            RdfElementView::Graph(inner) => inner.write().show_properties(q, ui, commands),
+            RdfElementView::Literal(inner) => inner.write().show_properties(q, ui, commands),
+            RdfElementView::Node(inner) => inner.write().show_properties(q, ui, commands),
+            RdfElementView::Predicate(inner) => inner.write().show_properties(q, ui, commands),
         }
     }
     fn draw_in(
@@ -257,18 +260,18 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
-            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
-            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
-            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().draw_in(q, context, canvas, tool),
+            RdfElementView::Graph(inner) => inner.write().draw_in(q, context, canvas, tool),
+            RdfElementView::Literal(inner) => inner.write().draw_in(q, context, canvas, tool),
+            RdfElementView::Node(inner) => inner.write().draw_in(q, context, canvas, tool),
+            RdfElementView::Predicate(inner) => inner.write().draw_in(q, context, canvas, tool),
         }
     }
     fn collect_allignment(&mut self, am: &mut SnapManager) {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
-            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
-            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
-            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().collect_allignment(am),
+            RdfElementView::Graph(inner) => inner.write().collect_allignment(am),
+            RdfElementView::Literal(inner) => inner.write().collect_allignment(am),
+            RdfElementView::Node(inner) => inner.write().collect_allignment(am),
+            RdfElementView::Predicate(inner) => inner.write().collect_allignment(am),
         }
     }
     fn handle_event(
@@ -279,10 +282,10 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
-            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
-            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
-            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().handle_event(event, ehc, tool, commands),
+            RdfElementView::Graph(inner) => inner.write().handle_event(event, ehc, tool, commands),
+            RdfElementView::Literal(inner) => inner.write().handle_event(event, ehc, tool, commands),
+            RdfElementView::Node(inner) => inner.write().handle_event(event, ehc, tool, commands),
+            RdfElementView::Predicate(inner) => inner.write().handle_event(event, ehc, tool, commands),
         }
     }
     fn apply_command(
@@ -291,10 +294,10 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
-            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
-            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
-            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().apply_command(command, undo_accumulator),
+            RdfElementView::Graph(inner) => inner.write().apply_command(command, undo_accumulator),
+            RdfElementView::Literal(inner) => inner.write().apply_command(command, undo_accumulator),
+            RdfElementView::Node(inner) => inner.write().apply_command(command, undo_accumulator),
+            RdfElementView::Predicate(inner) => inner.write().apply_command(command, undo_accumulator),
         }
     }
     fn head_count(
@@ -304,18 +307,18 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
-            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
-            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
-            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            RdfElementView::Graph(inner) => inner.write().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            RdfElementView::Literal(inner) => inner.write().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            RdfElementView::Node(inner) => inner.write().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            RdfElementView::Predicate(inner) => inner.write().head_count(flattened_views, flattened_views_status, flattened_represented_models),
         }
     }
     fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().delete_when(deleting),
-            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().delete_when(deleting),
-            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().delete_when(deleting),
-            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().delete_when(deleting),
+            RdfElementView::Graph(inner) => inner.read().delete_when(deleting),
+            RdfElementView::Literal(inner) => inner.read().delete_when(deleting),
+            RdfElementView::Node(inner) => inner.read().delete_when(deleting),
+            RdfElementView::Predicate(inner) => inner.read().delete_when(deleting),
         }
     }
     fn deep_copy_walk(
@@ -327,10 +330,10 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
         m: &mut HashMap<ModelUuid, RdfElement>,
     ) {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
-            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
-            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
-            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            RdfElementView::Graph(inner) => inner.read().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            RdfElementView::Literal(inner) => inner.read().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            RdfElementView::Node(inner) => inner.read().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            RdfElementView::Predicate(inner) => inner.read().deep_copy_walk(requested, uuid_present, tlc, c, m),
         }
     }
     fn deep_copy_clone(
@@ -341,10 +344,10 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
         m: &mut HashMap<ModelUuid, RdfElement>,
     ) {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
-            RdfElementView::Literal(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
-            RdfElementView::Node(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
-            RdfElementView::Predicate(rw_lock) => rw_lock.read().unwrap().deep_copy_clone(uuid_present, tlc, c, m),
+            RdfElementView::Graph(inner) => inner.read().deep_copy_clone(uuid_present, tlc, c, m),
+            RdfElementView::Literal(inner) => inner.read().deep_copy_clone(uuid_present, tlc, c, m),
+            RdfElementView::Node(inner) => inner.read().deep_copy_clone(uuid_present, tlc, c, m),
+            RdfElementView::Predicate(inner) => inner.read().deep_copy_clone(uuid_present, tlc, c, m),
         }
     }
     fn deep_copy_relink(
@@ -353,31 +356,38 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
         m: &HashMap<ModelUuid, RdfElement>,
     ) {
         match self {
-            RdfElementView::Graph(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
-            RdfElementView::Literal(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
-            RdfElementView::Node(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
-            RdfElementView::Predicate(rw_lock) => rw_lock.write().unwrap().deep_copy_relink(c, m),
+            RdfElementView::Graph(inner) => inner.write().deep_copy_relink(c, m),
+            RdfElementView::Literal(inner) => inner.write().deep_copy_relink(c, m),
+            RdfElementView::Node(inner) => inner.write().deep_copy_relink(c, m),
+            RdfElementView::Predicate(inner) => inner.write().deep_copy_relink(c, m),
         }
     }
-
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 pub struct RdfDiagramAdapter {
-    model: Arc<RwLock<RdfDiagram>>,
-    name_buffer: String,
-    comment_buffer: String,
+    #[nh_context_serde(entity)]
+    model: ERef<RdfDiagram>,
+    #[serde(skip)]
+    #[nh_context_serde(skip_and_default)]
+    buffer: RdfDiagramBuffer,
 }
 
-impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
-    fn model(&self) -> Arc<RwLock<RdfDiagram>> {
+#[derive(Clone, Default)]
+struct RdfDiagramBuffer {
+    name: String,
+    comment: String,
+}
+
+impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
+    fn model(&self) -> ERef<RdfDiagram> {
         self.model.clone()
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
-        self.model.read().unwrap().uuid()
+        self.model.read().uuid()
     }
     fn model_name(&self) -> Arc<String> {
-        self.model.read().unwrap().name()
+        self.model.read().name()
     }
     fn view_type(&self) -> &'static str {
         "rdf-diagram-view"
@@ -408,8 +418,8 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
                 )
             },
             RdfElement::RdfPredicate(rw_lock) => {
-                let m = rw_lock.read().unwrap();
-                let (sid, tid) = (m.source.uuid(), m.target.uuid());
+                let m = rw_lock.read();
+                let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
                 let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
@@ -437,14 +447,14 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.name_buffer),
+                egui::TextEdit::singleline(&mut self.buffer.name),
             )
             .changed()
         {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
-                    vec![RdfPropChange::NameChange(Arc::new(self.name_buffer.clone()))],
+                    vec![RdfPropChange::NameChange(Arc::new(self.buffer.name.clone()))],
                 )
                 .into(),
             );
@@ -454,7 +464,7 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
+                egui::TextEdit::multiline(&mut self.buffer.comment),
             )
             .changed()
         {
@@ -462,7 +472,7 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
                     vec![RdfPropChange::CommentChange(Arc::new(
-                        self.comment_buffer.clone(),
+                        self.buffer.comment.clone(),
                     ))],
                 )
                 .into(),
@@ -477,7 +487,7 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, properties) = command {
-            let mut model = self.model.write().unwrap();
+            let mut model = self.model.write();
             for property in properties {
                 match property {
                     RdfPropChange::NameChange(name) => {
@@ -485,7 +495,7 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
                             std::iter::once(*view_uuid).collect(),
                             vec![RdfPropChange::NameChange(model.name.clone())],
                         ));
-                        self.name_buffer = (**name).clone();
+                        self.buffer.name = (**name).clone();
                         model.name = name.clone();
                     }
                     RdfPropChange::CommentChange(comment) => {
@@ -493,7 +503,7 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
                             std::iter::once(*view_uuid).collect(),
                             vec![RdfPropChange::CommentChange(model.comment.clone())],
                         ));
-                        self.comment_buffer = (**comment).clone();
+                        self.buffer.comment = (**comment).clone();
                         model.comment = comment.clone();
                     }
                     _ => {}
@@ -575,7 +585,7 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
     }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, RdfElement>) {
-        let (new_model, models) = super::rdf_models::deep_copy_diagram(&self.model.read().unwrap());
+        let (new_model, models) = super::rdf_models::deep_copy_diagram(&self.model.read());
         (
             Self {
                 model: new_model,
@@ -586,37 +596,13 @@ impl DiagramAdapter<RdfDomain, RdfDiagram> for RdfDiagramAdapter {
     }
 
     fn fake_copy(&self) -> (Self, HashMap<ModelUuid, RdfElement>) {
-        let models = super::rdf_models::fake_copy_diagram(&self.model.read().unwrap());
+        let models = super::rdf_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
     }
 }
 
-impl NHContextSerialize for RdfDiagramAdapter {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        self.model.read().unwrap().serialize_into(into)?;
-
-        Ok(())
-    }
-}
-
-impl NHContextDeserialize for RdfDiagramAdapter {
-    fn deserialize(
-        source: &toml::Value,
-        deserializer: &mut NHDeserializer,
-    ) -> Result<Self, NHDeserializeError> {
-        let toml::Value::String(s) = source else {
-            return Err(NHDeserializeError::StructureError(format!("expected string, got {:?}", source)));
-        };
-        let uuid = uuid::Uuid::parse_str(s)?.into();
-        let model = deserializer.get::<Arc<RwLock<RdfDiagram>>>(&uuid)?;
-        let name_buffer = (*model.read().unwrap().name).clone();
-        let comment_buffer = (*model.read().unwrap().comment).clone();
-        Ok(Self { model, name_buffer, comment_buffer })
-    }
-}
-
 struct SparqlQueriesTab {
-    diagram: Arc<RwLock<RdfDiagram>>,
+    diagram: ERef<RdfDiagram>,
     selected_query: Option<uuid::Uuid>,
     query_name_buffer: String,
     query_value_buffer: String,
@@ -626,7 +612,7 @@ struct SparqlQueriesTab {
 
 impl SparqlQueriesTab {
     fn save(&mut self) {
-        let mut model = self.diagram.write().unwrap();
+        let mut model = self.diagram.write();
 
         if let Some(q) = self
             .selected_query
@@ -648,7 +634,7 @@ impl SparqlQueriesTab {
         }
     }
     fn execute(&mut self) {
-        let model = self.diagram.write().unwrap();
+        let model = self.diagram.write();
 
         match SparqlQuery::parse(&self.query_value_buffer) {
             Err(e) => {
@@ -677,7 +663,7 @@ impl CustomTab for SparqlQueriesTab {
     }
 
     fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui) {
-        let mut model = self.diagram.write().unwrap();
+        let mut model = self.diagram.write();
 
         egui::ComboBox::from_label("Select diagram")
             .selected_text(format!("{}", model.name))
@@ -793,23 +779,25 @@ impl CustomTab for SparqlQueriesTab {
     }
 }
 
-pub fn new(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
+pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New RDF diagram {}", no);
 
-    let diagram = Arc::new(RwLock::new(RdfDiagram::new(
+    let diagram = ERef::new(RdfDiagram::new(
         model_uuid,
         name.clone(),
         vec![],
-    )));
+    ));
     (
         DiagramControllerGen2::new(
             Arc::new(view_uuid),
             RdfDiagramAdapter {
                 model: diagram.clone(),
-                name_buffer: name,
-                comment_buffer: "".to_owned(),
+                buffer: RdfDiagramBuffer {
+                    name,
+                    comment: "".to_owned(),
+                },
             },
             Vec::new(),
         ),
@@ -817,7 +805,7 @@ pub fn new(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarc
     )
 }
 
-pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierarchyView>) {
+pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
     let (node, node_view) = new_rdf_node(
         "http://www.w3.org/People/EM/contact#me",
         egui::Pos2::new(300.0, 100.0),
@@ -883,21 +871,23 @@ pub fn demo(no: u32) -> (Arc<RwLock<dyn DiagramController>>, Arc<dyn ModelHierar
     let name = format!("Demo RDF diagram {}", no);
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
-    let diagram = Arc::new(RwLock::new(RdfDiagram::new(
+    let diagram = ERef::new(RdfDiagram::new(
         model_uuid,
         name.clone(),
         vec![
             node.into(), literal_model.into(),
             predicate.into(), graph.into(), graph_st.into(),
         ],
-    )));
+    ));
     (
         DiagramControllerGen2::new(
             Arc::new(view_uuid),
             RdfDiagramAdapter {
                 model: diagram.clone(),
-                name_buffer: name,
-                comment_buffer: "".to_owned(),
+                buffer: RdfDiagramBuffer {
+                    name,
+                    comment: "".to_owned(),
+                },
             },
             owned_controllers,
         ),
@@ -920,7 +910,7 @@ enum PartialRdfElement {
     None,
     Some(RdfElementView),
     Predicate {
-        source: Arc<RwLock<RdfNode>>,
+        source: ERef<RdfNode>,
         dest: Option<RdfTargettableElement>,
     },
     Graph {
@@ -999,7 +989,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
     fn draw_status_hint(&self, q: &RdfQueryable, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
         match &self.result {
             PartialRdfElement::Predicate { source, .. } => {
-                if let Some(source_view) = q.get_view(&source.read().unwrap().uuid()) {
+                if let Some(source_view) = q.get_view(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
@@ -1102,7 +1092,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
 
                 let predicate_view: Option<RdfElementView> =
                     if let (Some(source_controller), Some(dest_controller)) = (
-                        into.controller_for(&source.read().unwrap().uuid()),
+                        into.controller_for(&source.read().uuid()),
                         into.controller_for(&dest.uuid()),
                     ) {
                         let (_predicate_model, predicate_view) = new_rdf_predicate(
@@ -1137,9 +1127,10 @@ impl Tool<RdfDomain> for NaiveRdfTool {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 pub struct RdfGraphAdapter {
-    model: Arc<RwLock<RdfGraph>>,
+    #[nh_context_serde(entity)]
+    model: ERef<RdfGraph>,
 }
 
 impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
@@ -1147,21 +1138,17 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         self.model.clone().into()
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
-        self.model.read().unwrap().uuid.clone()
+        self.model.read().uuid.clone()
     }
     fn model_name(&self) -> Arc<String> {
-        self.model.read().unwrap().iri.clone()
-    }
-    
-    fn view_type(&self) -> &'static str {
-        "rdf-graph-view"
+        self.model.read().iri.clone()
     }
 
     fn add_element(&mut self, element: RdfElement) {
-        self.model.write().unwrap().add_element(element);
+        self.model.write().add_element(element);
     }
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
-        self.model.write().unwrap().delete_elements(uuids);
+        self.model.write().delete_elements(uuids);
     }
 
     fn show_properties(
@@ -1169,7 +1156,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) {
-        let model = self.model.read().unwrap();
+        let model = self.model.read();
         let mut iri_buffer = (*model.iri).clone();
         ui.label("IRI:");
         if ui
@@ -1206,7 +1193,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, properties) = command {
-            let mut model = self.model.write().unwrap();
+            let mut model = self.model.write();
             for property in properties {
                 match property {
                     RdfPropChange::IriChange(iri) => {
@@ -1234,12 +1221,12 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         new_uuid: ModelUuid,
         m: &mut HashMap<ModelUuid, RdfElement>,
     ) -> Self where Self: Sized {
-        let old_model = self.model.read().unwrap();
+        let old_model = self.model.read();
 
         let model = if let Some(RdfElement::RdfGraph(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = Arc::new(RwLock::new(RdfGraph::new(new_uuid, (*old_model.iri).clone(), old_model.contained_elements.clone())));
+            let modelish = ERef::new(RdfGraph::new(new_uuid, (*old_model.iri).clone(), old_model.contained_elements.clone()));
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -1257,27 +1244,27 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
 fn new_rdf_graph(
     iri: &str,
     bounds_rect: egui::Rect,
-) -> (Arc<RwLock<RdfGraph>>, Arc<RwLock<PackageViewT>>) {
+) -> (ERef<RdfGraph>, ERef<PackageViewT>) {
     let model_uuid = uuid::Uuid::now_v7().into();
-    let graph_model = Arc::new(RwLock::new(RdfGraph::new(
+    let graph_model = ERef::new(RdfGraph::new(
         model_uuid,
         iri.to_owned(),
-        vec![],
-    )));
+        Vec::new(),
+    ));
     let graph_view = new_rdf_graph_view(graph_model.clone(), bounds_rect);
 
     (graph_model, graph_view)
 }
 fn new_rdf_graph_view(
-    model: Arc<RwLock<RdfGraph>>,
+    model: ERef<RdfGraph>,
     bounds_rect: egui::Rect,
-) -> Arc<RwLock<PackageViewT>> {
+) -> ERef<PackageViewT> {
     PackageView::new(
         Arc::new(uuid::Uuid::now_v7().into()),
         RdfGraphAdapter {
             model,
         },
-        HashMap::new(),
+        Vec::new(),
         bounds_rect,
     )
 }
@@ -1285,25 +1272,21 @@ fn new_rdf_graph_view(
 fn new_rdf_node(
     iri: &str,
     position: egui::Pos2,
-) -> (
-    Arc<RwLock<RdfNode>>,
-    Arc<RwLock<RdfNodeController>>,
-) {
+) -> (ERef<RdfNode>, ERef<RdfNodeView>) {
     let node_model_uuid = uuid::Uuid::now_v7().into();
-    let node_model = Arc::new(RwLock::new(RdfNode::new(node_model_uuid, iri.to_owned())));
+    let node_model = ERef::new(RdfNode::new(node_model_uuid, iri.to_owned()));
     let node_view = new_rdf_node_view(node_model.clone(), position);
     (node_model, node_view)
 }
 fn new_rdf_node_view(
-    model: Arc<RwLock<RdfNode>>,
+    model: ERef<RdfNode>,
     position: egui::Pos2,
-) -> Arc<RwLock<RdfNodeController>> {
-    let m = model.read().unwrap();
+) -> ERef<RdfNodeView> {
+    let m = model.read();
     let node_view_uuid = uuid::Uuid::now_v7().into();
-    let node_view = Arc::new(RwLock::new(RdfNodeController {
+    let node_view = ERef::new(RdfNodeView {
         uuid: Arc::new(node_view_uuid),
         model: model.clone(),
-        self_reference: Weak::new(),
         iri_buffer: (*m.iri).to_owned(),
         comment_buffer: (*m.comment).to_owned(),
 
@@ -1311,50 +1294,50 @@ fn new_rdf_node_view(
         highlight: canvas::Highlight::NONE,
         position: position,
         bounds_radius: egui::Vec2::ZERO,
-    }));
-    node_view.write().unwrap().self_reference = Arc::downgrade(&node_view);
+    });
     node_view
 }
 
-pub struct RdfNodeController {
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(uuid_type = ViewUuid)]
+pub struct RdfNodeView {
     uuid: Arc<ViewUuid>,
-    pub model: Arc<RwLock<RdfNode>>,
-    self_reference: Weak<RwLock<Self>>,
+    #[nh_context_serde(entity)]
+    pub model: ERef<RdfNode>,
 
+    #[nh_context_serde(skip_and_default)]
     iri_buffer: String,
+    #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 
+    #[nh_context_serde(skip_and_default)]
     dragged_shape: Option<NHShape>,
+    #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
+    #[nh_context_serde(skip_and_default)]
     pub bounds_radius: egui::Vec2,
 }
 
-impl View for RdfNodeController {
+impl Entity for RdfNodeView {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::View(*self.uuid)
+    }
+}
+
+impl View for RdfNodeView {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
-        self.model.read().unwrap().uuid.clone()
+        self.model.read().uuid.clone()
     }
     fn model_name(&self) -> Arc<String> {
-        self.model.read().unwrap().iri.clone()
+        self.model.read().iri.clone()
     }
 }
 
-impl NHContextSerialize for RdfNodeController {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("type".to_owned(), toml::Value::String("rdf-node-view".to_owned()));
-        element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
-        into.insert_view(*self.uuid, element);
-
-        Ok(())
-    }
-}
-
-impl ElementController<RdfElement> for RdfNodeController {
+impl ElementController<RdfElement> for RdfNodeView {
     fn model(&self) -> RdfElement {
         self.model.clone().into()
     }
@@ -1371,9 +1354,9 @@ impl ElementController<RdfElement> for RdfNodeController {
     }
 }
 
-impl ContainerGen2<RdfDomain> for RdfNodeController {}
+impl ContainerGen2<RdfDomain> for RdfNodeView {}
 
-impl ElementControllerGen2<RdfDomain> for RdfNodeController {
+impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     fn show_properties(
         &mut self,
         _: &RdfQueryable,
@@ -1440,7 +1423,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeController {
         let text_bounds = canvas.measure_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            &self.model.read().unwrap().iri,
+            &self.model.read().iri,
             canvas::CLASS_MIDDLE_FONT_SIZE,
         );
         self.bounds_radius = text_bounds.size() / 1.5;
@@ -1456,7 +1439,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeController {
         canvas.draw_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            &self.model.read().unwrap().iri,
+            &self.model.read().iri,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             context.profile.foregrounds[3],
         );
@@ -1578,10 +1561,10 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeController {
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
+                    let mut model = self.model.write();
                     for property in properties {
                         match property {
                             RdfPropChange::IriChange(iri) => {
-                                let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::IriChange(model.iri.clone())],
@@ -1590,7 +1573,6 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeController {
                                 model.iri = iri.clone();
                             }
                             RdfPropChange::CommentChange(comment) => {
-                                let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::CommentChange(model.comment.clone())],
@@ -1623,7 +1605,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeController {
         c: &mut HashMap<ViewUuid, RdfElementView>,
         m: &mut HashMap<ModelUuid, RdfElement>,
     ) {
-        let old_model = self.model.read().unwrap();
+        let old_model = self.model.read();
 
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
@@ -1634,23 +1616,21 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeController {
         let modelish = if let Some(RdfElement::RdfNode(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = Arc::new(RwLock::new(RdfNode::new(model_uuid, (*old_model.iri).clone())));
+            let modelish = ERef::new(RdfNode::new(model_uuid, (*old_model.iri).clone()));
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
 
-        let cloneish = Arc::new(RwLock::new(Self {
+        let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            self_reference: Weak::new(),
             iri_buffer: self.iri_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,
             position: self.position,
             bounds_radius: self.bounds_radius,
-        }));
-        cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
     }
@@ -1661,30 +1641,26 @@ fn new_rdf_literal(
     datatype: &str,
     langtag: &str,
     position: egui::Pos2,
-) -> (
-    Arc<RwLock<RdfLiteral>>,
-    Arc<RwLock<RdfLiteralController>>,
-) {
+) -> (ERef<RdfLiteral>, ERef<RdfLiteralView>) {
     let literal_model_uuid = uuid::Uuid::now_v7().into();
-    let literal_model = Arc::new(RwLock::new(RdfLiteral::new(
+    let literal_model = ERef::new(RdfLiteral::new(
         literal_model_uuid,
         content.to_owned(),
         datatype.to_owned(),
         langtag.to_owned(),
-    )));
+    ));
     let literal_view = new_rdf_literal_view(literal_model.clone(), position);
     (literal_model, literal_view)
 }
 fn new_rdf_literal_view(
-    model: Arc<RwLock<RdfLiteral>>,
+    model: ERef<RdfLiteral>,
     position: egui::Pos2,
-) -> Arc<RwLock<RdfLiteralController>> {
-    let m = model.read().unwrap();
+) -> ERef<RdfLiteralView> {
+    let m = model.read();
     let literal_view_uuid = uuid::Uuid::now_v7().into();
-    let literal_view = Arc::new(RwLock::new(RdfLiteralController {
+    let literal_view = ERef::new(RdfLiteralView {
         uuid: Arc::new(literal_view_uuid),
         model: model.clone(),
-        self_reference: Weak::new(),
 
         content_buffer: (*m.content).to_owned(),
         datatype_buffer: (*m.datatype).to_owned(),
@@ -1695,52 +1671,53 @@ fn new_rdf_literal_view(
         highlight: canvas::Highlight::NONE,
         position: position,
         bounds_rect: egui::Rect::ZERO,
-    }));
-    literal_view.write().unwrap().self_reference = Arc::downgrade(&literal_view);
+    });
     literal_view
 }
 
-pub struct RdfLiteralController {
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(uuid_type = ViewUuid)]
+pub struct RdfLiteralView {
     uuid: Arc<ViewUuid>,
-    pub model: Arc<RwLock<RdfLiteral>>,
-    self_reference: Weak<RwLock<Self>>,
+    #[nh_context_serde(entity)]
+    pub model: ERef<RdfLiteral>,
 
+    #[nh_context_serde(skip_and_default)]
     content_buffer: String,
+    #[nh_context_serde(skip_and_default)]
     datatype_buffer: String,
+    #[nh_context_serde(skip_and_default)]
     langtag_buffer: String,
+    #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 
+    #[nh_context_serde(skip_and_default)]
     dragged_shape: Option<NHShape>,
+    #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
 }
 
-impl View for RdfLiteralController {
+impl Entity for RdfLiteralView {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::View(*self.uuid)
+    }
+}
+
+impl View for RdfLiteralView {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
-        self.model.read().unwrap().uuid.clone()
+        self.model.read().uuid.clone()
     }
     fn model_name(&self) -> Arc<String> {
-        self.model.read().unwrap().content.clone()
+        self.model.read().content.clone()
     }
 }
 
-impl NHContextSerialize for RdfLiteralController {
-    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
-        let mut element = toml::Table::new();
-        element.insert("uuid".to_owned(), toml::Value::String(self.uuid.to_string()));
-        element.insert("type".to_owned(), toml::Value::String("rdf-literal-view".to_owned()));
-        element.insert("position".to_owned(), toml::Value::Array(vec![toml::Value::Float(self.position.x as f64), toml::Value::Float(self.position.y as f64)]));
-        into.insert_view(*self.uuid, element);
-
-        Ok(())
-    }
-}
-
-impl ElementController<RdfElement> for RdfLiteralController {
+impl ElementController<RdfElement> for RdfLiteralView {
     fn model(&self) -> RdfElement {
         self.model.clone().into()
     }
@@ -1756,9 +1733,9 @@ impl ElementController<RdfElement> for RdfLiteralController {
     }
 }
 
-impl ContainerGen2<RdfDomain> for RdfLiteralController {}
+impl ContainerGen2<RdfDomain> for RdfLiteralView {}
 
-impl ElementControllerGen2<RdfDomain> for RdfLiteralController {
+impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     fn show_properties(
         &mut self,
         _: &RdfQueryable,
@@ -1851,7 +1828,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralController {
         self.bounds_rect = canvas.draw_class(
             self.position,
             None,
-            &self.model.read().unwrap().content,
+            &self.model.read().content,
             None,
             &[],
             context.profile.backgrounds[4],
@@ -1977,10 +1954,10 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralController {
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
+                    let mut model = self.model.write();
                     for property in properties {
                         match property {
                             RdfPropChange::ContentChange(content) => {
-                                let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::ContentChange(model.content.clone())],
@@ -1989,7 +1966,6 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralController {
                                 model.content = content.clone();
                             }
                             RdfPropChange::DataTypeChange(datatype) => {
-                                let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::DataTypeChange(model.datatype.clone())],
@@ -1998,7 +1974,6 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralController {
                                 model.datatype = datatype.clone();
                             }
                             RdfPropChange::LangTagChange(langtag) => {
-                                let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::LangTagChange(model.langtag.clone())],
@@ -2007,7 +1982,6 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralController {
                                 model.langtag = langtag.clone();
                             }
                             RdfPropChange::CommentChange(comment) => {
-                                let mut model = self.model.write().unwrap();
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::CommentChange(model.comment.clone())],
@@ -2040,7 +2014,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralController {
         c: &mut HashMap<ViewUuid, RdfElementView>,
         m: &mut HashMap<ModelUuid, RdfElement>,
     ) {
-        let old_model = self.model.read().unwrap();
+        let old_model = self.model.read();
 
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
             (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
@@ -2051,15 +2025,14 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralController {
         let modelish = if let Some(RdfElement::RdfLiteral(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = Arc::new(RwLock::new(RdfLiteral::new(model_uuid, (*old_model.content).clone(), (*old_model.datatype).clone(), (*old_model.langtag).clone())));
+            let modelish = ERef::new(RdfLiteral::new(model_uuid, (*old_model.content).clone(), (*old_model.datatype).clone(), (*old_model.langtag).clone()));
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
 
-        let cloneish = Arc::new(RwLock::new(Self {
+        let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            self_reference: Weak::new(),
             content_buffer: self.content_buffer.clone(),
             datatype_buffer: self.datatype_buffer.clone(),
             langtag_buffer: self.langtag_buffer.clone(),
@@ -2068,16 +2041,16 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralController {
             highlight: self.highlight,
             position: self.position,
             bounds_rect: self.bounds_rect,
-        }));
-        cloneish.write().unwrap().self_reference = Arc::downgrade(&cloneish);
+        });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 pub struct RdfPredicateAdapter {
-    model: Arc<RwLock<RdfPredicate>>,
+    #[nh_context_serde(entity)]
+    model: ERef<RdfPredicate>,
 }
 
 impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
@@ -2086,15 +2059,11 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
     }
 
     fn model_uuid(&self) -> Arc<ModelUuid> {
-        self.model.read().unwrap().uuid.clone()
+        self.model.read().uuid.clone()
     }
 
     fn model_name(&self) -> Arc<String> {
-        self.model.read().unwrap().iri.clone()
-    }
-
-    fn view_type(&self) -> &'static str {
-        "rdf-predicate-view"
+        self.model.read().iri.clone()
     }
 
     fn midpoint_label(&self) -> Option<Arc<String>> {
@@ -2114,7 +2083,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) {
-        let model = self.model.read().unwrap();
+        let model = self.model.read();
         let mut iri_buffer = (*model.iri).clone();
         ui.label("IRI:");
         if ui
@@ -2162,7 +2131,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, properties) = command {
-            let mut model = self.model.write().unwrap();
+            let mut model = self.model.write();
             for property in properties {
                 match property {
                     RdfPropChange::IriChange(iri) => {
@@ -2190,12 +2159,12 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         new_uuid: ModelUuid,
         m: &mut HashMap<ModelUuid, RdfElement>
     ) -> Self where Self: Sized {
-        let old_model = self.model.read().unwrap();
+        let old_model = self.model.read();
 
         let model = if let Some(RdfElement::RdfPredicate(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = Arc::new(RwLock::new(RdfPredicate::new(new_uuid, (*old_model.iri).clone(), old_model.source.clone().unwrap(), old_model.target.clone())));
+            let modelish = ERef::new(RdfPredicate::new(new_uuid, (*old_model.iri).clone(), old_model.source.clone(), old_model.target.clone()));
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -2207,9 +2176,9 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         &mut self,
         m: &HashMap<ModelUuid, RdfElement>,
     ) {
-        let mut model = self.model.write().unwrap();
+        let mut model = self.model.write();
         
-        let source_uuid = *model.source.uuid();
+        let source_uuid = *model.source.read().uuid();
         if let Some(RdfElement::RdfNode(new_source)) = m.get(&source_uuid) {
             model.source = new_source.clone().into();
         }
@@ -2223,19 +2192,16 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
 
 fn new_rdf_predicate(
     iri: &str,
-    source: (Arc<RwLock<RdfNode>>, RdfElementView),
+    source: (ERef<RdfNode>, RdfElementView),
     target: (RdfTargettableElement, RdfElementView),
-) -> (
-    Arc<RwLock<RdfPredicate>>,
-    Arc<RwLock<LinkViewT>>,
-) {
+) -> (ERef<RdfPredicate>, ERef<LinkViewT>) {
     let predicate_model_uuid = uuid::Uuid::now_v7().into();
-    let predicate_model = Arc::new(RwLock::new(RdfPredicate::new(
+    let predicate_model = ERef::new(RdfPredicate::new(
         predicate_model_uuid,
         iri.to_owned(),
         source.0,
         target.0,
-    )));
+    ));
     let predicate_view = new_rdf_predicate_view(
         predicate_model.clone(),
         source.1,
@@ -2245,10 +2211,10 @@ fn new_rdf_predicate(
     (predicate_model, predicate_view)
 }
 fn new_rdf_predicate_view(
-    model: Arc<RwLock<RdfPredicate>>,
+    model: ERef<RdfPredicate>,
     source: RdfElementView,
     target: RdfElementView,
-) -> Arc<RwLock<LinkViewT>> {
+) -> ERef<LinkViewT> {
     let predicate_view_uuid = uuid::Uuid::now_v7().into();
     let predicate_view = MulticonnectionView::new(
         Arc::new(predicate_view_uuid),

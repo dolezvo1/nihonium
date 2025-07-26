@@ -46,7 +46,7 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
         let arm_matcher = &e.0;
         match e.1.as_str() {
             "none" => Err(quote! { #arm_matcher }),
-            "arc_rwlock" => Ok(quote! { #arm_matcher => inner.read().unwrap() }),
+            "eref" => Ok(quote! { #arm_matcher => inner.read() }),
             "bare" | _ => Ok(quote! { #arm_matcher => inner }),
         }
     }).collect::<Vec<_>>();
@@ -54,7 +54,7 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
         let arm_matcher = &e.0;
         match e.1.as_str() {
             "none" => Err(quote! { #arm_matcher }),
-            "arc_rwlock" => Ok(quote! { #arm_matcher => inner.write().unwrap() }),
+            "eref" => Ok(quote! { #arm_matcher => inner.write() }),
             "bare" | _ => Ok(quote! { #arm_matcher => inner }),
         }
     }).collect::<Vec<_>>();

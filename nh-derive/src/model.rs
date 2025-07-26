@@ -44,11 +44,12 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
     let arms_immutable = arms2.iter().map(|e| {
         let arm_matcher = &e.0;
         match e.1.as_str() {
-            "arc_rwlock" => quote! { #arm_matcher => inner.read().unwrap() },
+            "eref" => quote! { #arm_matcher => inner.read() },
             "bare" | _ => quote! { #arm_matcher => inner },
         }
     }).collect::<Vec<_>>();
 
+    let arms_tagged_uuid = arms_immutable.iter().map(|e| quote! { #e.tagged_uuid() }).collect::<Vec<_>>();
     let arms_uuid = arms_immutable.iter().map(|e| quote! { #e.uuid() }).collect::<Vec<_>>();
     let arms_name = arms_immutable.iter().map(|e| quote! { #e.name() }).collect::<Vec<_>>();
     let arms_accept = arms_immutable.iter().map(|e| quote! { #e.accept(v) }).collect::<Vec<_>>();
@@ -56,6 +57,14 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
     let ident = input_ast.ident;
 
     let output = quote! {
+        impl crate::common::entity::Entity for #ident {
+            fn tagged_uuid(&self) -> crate::common::entity::EntityUuid {
+                match self {
+                    #(#arms_tagged_uuid),*
+                }
+            }
+        }
+
         impl Model for #ident {
             fn uuid(&self) -> Arc<ModelUuid> {
                 match self {

@@ -1,48 +1,33 @@
-use serde::{Deserialize, Serialize};
-
 use crate::common::canvas;
 use crate::common::controller::{ContainerModel, Model, StructuralVisitor};
-use crate::common::project_serde::{NHContextDeserialize, NHDeserializeError, NHDeserializer, NHSerializeError, NHContextSerialize, NHSerializer, NHDeserializeInstantiator};
+use crate::common::entity::{Entity, EntityUuid};
+use crate::common::eref::ERef;
+use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
-use std::collections::HashMap;
 use std::{
-    collections::{HashSet},
-    sync::{Arc, RwLock},
+    collections::{HashMap, HashSet},
+    sync::Arc,
 };
 
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
-#[model(default_passthrough = "arc_rwlock")]
+#[model(default_passthrough = "eref")]
 #[container_model(element_type = DemoCsdElement, default_passthrough = "none")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum DemoCsdElement {
-    #[container_model(passthrough = "arc_rwlock")]
-    DemoCsdPackage(Arc<RwLock<DemoCsdPackage>>),
-    #[container_model(passthrough = "arc_rwlock")]
-    DemoCsdTransactor(Arc<RwLock<DemoCsdTransactor>>),
-    DemoCsdTransaction(Arc<RwLock<DemoCsdTransaction>>),
-    DemoCsdLink(Arc<RwLock<DemoCsdLink>>),
+    #[container_model(passthrough = "eref")]
+    DemoCsdPackage(ERef<DemoCsdPackage>),
+    #[container_model(passthrough = "eref")]
+    DemoCsdTransactor(ERef<DemoCsdTransactor>),
+    DemoCsdTransaction(ERef<DemoCsdTransaction>),
+    DemoCsdLink(ERef<DemoCsdLink>),
 }
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag, nh_derive::Unwrap)]
-#[model(default_passthrough = "arc_rwlock")]
-#[nh_context_serde(uuid_type = ModelUuid)]
-pub enum DemoCsdTransactorWrapper {
-    DemoCsdTransactor(Arc<RwLock<DemoCsdTransactor>>)
-}
-
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag, nh_derive::Unwrap)]
-#[model(default_passthrough = "arc_rwlock")]
-#[nh_context_serde(uuid_type = ModelUuid)]
-pub enum DemoCsdTransactionWrapper {
-    DemoCsdTransaction(Arc<RwLock<DemoCsdTransaction>>)
-}
-
-pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (Arc<RwLock<DemoCsdDiagram>>, HashMap<ModelUuid, DemoCsdElement>) {
+pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<ModelUuid, DemoCsdElement>) {
     fn walk(e: &DemoCsdElement, into: &mut HashMap<ModelUuid, DemoCsdElement>) -> DemoCsdElement {
         let new_uuid = Arc::new(uuid::Uuid::now_v7().into());
         match e {
-            DemoCsdElement::DemoCsdPackage(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            DemoCsdElement::DemoCsdPackage(inner) => {
+                let model = inner.read();
 
                 let new_model = DemoCsdPackage {
                     uuid: new_uuid,
@@ -54,14 +39,14 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (Arc<RwLock<DemoCsdDiagram>>, Ha
                     }).collect(),
                     comment: model.comment.clone()
                 };
-                DemoCsdElement::DemoCsdPackage(Arc::new(RwLock::new(new_model)))
+                DemoCsdElement::DemoCsdPackage(ERef::new(new_model))
             },
-            DemoCsdElement::DemoCsdTransactor(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            DemoCsdElement::DemoCsdTransactor(inner) => {
+                let model = inner.read();
 
-                let new_tx = if let Some(tx) = &model.transaction {
-                    let new_tx = walk(&DemoCsdElement::DemoCsdTransaction(tx.clone().unwrap()), into);
-                    into.insert(*tx.uuid(), new_tx.clone());
+                let new_tx = if let UFOption::Some(tx) = &model.transaction {
+                    let new_tx = walk(&DemoCsdElement::DemoCsdTransaction(tx.clone()), into);
+                    into.insert(*tx.read().uuid(), new_tx.clone());
                     if let DemoCsdElement::DemoCsdTransaction(new_tx) = new_tx {
                         Some(new_tx)
                     } else {
@@ -73,14 +58,14 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (Arc<RwLock<DemoCsdDiagram>>, Ha
                     identifier: model.identifier.clone(),
                     name: model.name.clone(),
                     internal: model.internal,
-                    transaction: new_tx.map(|e| e.into()),
+                    transaction: new_tx.map(|e| e.into()).into(),
                     transaction_selfactivating: model.transaction_selfactivating,
                     comment: model.comment.clone()
                 };
-                DemoCsdElement::DemoCsdTransactor(Arc::new(RwLock::new(new_model)))
+                DemoCsdElement::DemoCsdTransactor(ERef::new(new_model))
             },
-            DemoCsdElement::DemoCsdTransaction(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            DemoCsdElement::DemoCsdTransaction(inner) => {
+                let model = inner.read();
 
                 let new_model = DemoCsdTransaction {
                     uuid: new_uuid,
@@ -88,10 +73,10 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (Arc<RwLock<DemoCsdDiagram>>, Ha
                     name: model.name.clone(),
                     comment: model.comment.clone(),
                 };
-                DemoCsdElement::DemoCsdTransaction(Arc::new(RwLock::new(new_model)))
+                DemoCsdElement::DemoCsdTransaction(ERef::new(new_model))
             },
-            DemoCsdElement::DemoCsdLink(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+            DemoCsdElement::DemoCsdLink(inner) => {
+                let model = inner.read();
 
                 let new_model = DemoCsdLink {
                     uuid: new_uuid,
@@ -101,36 +86,36 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (Arc<RwLock<DemoCsdDiagram>>, Ha
                     target: model.target.clone(),
                     comment: model.comment.clone(),
                 };
-                DemoCsdElement::DemoCsdLink(Arc::new(RwLock::new(new_model)))
+                DemoCsdElement::DemoCsdLink(ERef::new(new_model))
             },
         }
     }
 
     fn relink(e: &mut DemoCsdElement, all_models: &HashMap<ModelUuid, DemoCsdElement>) {
         match e {
-            DemoCsdElement::DemoCsdPackage(rw_lock) => {
-                let mut model = rw_lock.write().unwrap();
+            DemoCsdElement::DemoCsdPackage(inner) => {
+                let mut model = inner.write();
                 for e in model.contained_elements.iter_mut() {
                     relink(e, all_models);
                 }
             },
-            DemoCsdElement::DemoCsdTransactor(rw_lock) => {
-                let mut model = rw_lock.write().unwrap();
-                if let Some(ta) = &mut model.transaction {
-                    relink(&mut DemoCsdElement::DemoCsdTransaction(ta.clone().unwrap()), all_models);
+            DemoCsdElement::DemoCsdTransactor(inner) => {
+                let mut model = inner.write();
+                if let UFOption::Some(ta) = &mut model.transaction {
+                    relink(&mut DemoCsdElement::DemoCsdTransaction(ta.clone()), all_models);
                 }
             },
-            DemoCsdElement::DemoCsdTransaction(rw_lock) => {},
-            DemoCsdElement::DemoCsdLink(rw_lock) => {
-                let mut model = rw_lock.write().unwrap();
+            DemoCsdElement::DemoCsdTransaction(inner) => {},
+            DemoCsdElement::DemoCsdLink(inner) => {
+                let mut model = inner.write();
 
-                let source_uuid = *model.source.uuid();
+                let source_uuid = *model.source.read().uuid();
                 if let Some(DemoCsdElement::DemoCsdTransactor(ta)) = all_models.get(&source_uuid) {
-                    model.source = ta.clone().into();
+                    model.source = ta.clone();
                 }
-                let target_uuid = *model.target.uuid();
+                let target_uuid = *model.target.read().uuid();
                 if let Some(DemoCsdElement::DemoCsdTransaction(tx)) = all_models.get(&target_uuid) {
-                    model.target = tx.clone().into();
+                    model.target = tx.clone();
                 }
             },
         }
@@ -153,14 +138,14 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (Arc<RwLock<DemoCsdDiagram>>, Ha
         contained_elements: new_contained_elements,
         comment: d.comment.clone(),
     };
-    (Arc::new(RwLock::new(new_diagram)), all_models)
+    (ERef::new(new_diagram), all_models)
 }
 
 pub fn fake_copy_diagram(d: &DemoCsdDiagram) -> HashMap<ModelUuid, DemoCsdElement> {
     fn walk(e: &DemoCsdElement, into: &mut HashMap<ModelUuid, DemoCsdElement>) {
         match e {
             DemoCsdElement::DemoCsdPackage(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+                let model = rw_lock.read();
 
                 for e in &model.contained_elements {
                     walk(e, into);
@@ -168,11 +153,11 @@ pub fn fake_copy_diagram(d: &DemoCsdDiagram) -> HashMap<ModelUuid, DemoCsdElemen
                 }
             },
             DemoCsdElement::DemoCsdTransactor(rw_lock) => {
-                let model = rw_lock.read().unwrap();
+                let model = rw_lock.read();
 
-                if let Some(tx) = &model.transaction {
-                    walk(&DemoCsdElement::DemoCsdTransaction(tx.clone().unwrap()), into);
-                    into.insert(*tx.uuid(), DemoCsdElement::DemoCsdTransaction(tx.clone().unwrap()));
+                if let UFOption::Some(tx) = &model.transaction {
+                    walk(&DemoCsdElement::DemoCsdTransaction(tx.clone()), into);
+                    into.insert(*tx.read().uuid(), DemoCsdElement::DemoCsdTransaction(tx.clone()));
                 }
             },
             DemoCsdElement::DemoCsdTransaction(rw_lock) => {},
@@ -214,6 +199,12 @@ impl DemoCsdDiagram {
             contained_elements,
             comment: Arc::new("".to_owned()),
         }
+    }
+}
+
+impl Entity for DemoCsdDiagram {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
     }
 }
 
@@ -285,6 +276,12 @@ impl DemoCsdPackage {
     }
 }
 
+impl Entity for DemoCsdPackage {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
+    }
+}
+
 impl Model for DemoCsdPackage {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
@@ -335,8 +332,8 @@ pub struct DemoCsdTransactor {
     pub identifier: Arc<String>,
     pub name: Arc<String>,
     pub internal: bool,
-    #[nh_context_serde(entity, option)]
-    pub transaction: Option<DemoCsdTransactionWrapper>,
+    #[nh_context_serde(entity)]
+    pub transaction: UFOption<ERef<DemoCsdTransaction>>,
     pub transaction_selfactivating: bool,
 
     pub comment: Arc<String>,
@@ -348,7 +345,7 @@ impl DemoCsdTransactor {
         identifier: String,
         name: String,
         internal: bool,
-        transaction: Option<Arc<RwLock<DemoCsdTransaction>>>,
+        transaction: Option<ERef<DemoCsdTransaction>>,
         transaction_selfactivating: bool,
     ) -> Self {
         Self {
@@ -357,11 +354,17 @@ impl DemoCsdTransactor {
             identifier: Arc::new(identifier),
             name: Arc::new(name),
             internal,
-            transaction: transaction.map(|e| e.into()),
+            transaction: transaction.into(),
             transaction_selfactivating,
 
             comment: Arc::new("".to_owned()),
         }
+    }
+}
+
+impl Entity for DemoCsdTransactor {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
     }
 }
 
@@ -373,9 +376,9 @@ impl Model for DemoCsdTransactor {
         self.name.clone()
     }
     fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
-        if let Some(t) = &self.transaction {
+        if let UFOption::Some(t) = &self.transaction {
             v.open_complex(self);
-            t.accept(v);
+            t.read().accept(v);
             v.close_complex(self);
         } else {
             v.visit_simple(self);
@@ -387,8 +390,8 @@ impl ContainerModel for DemoCsdTransactor {
     type ElementT = DemoCsdElement;
 
     fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoCsdElement, ModelUuid)> {
-        if let Some(e) = &self.transaction && *e.uuid() == *uuid {
-            Some((e.clone().unwrap().into(), *self.uuid))
+        if let UFOption::Some(e) = &self.transaction && *e.read().uuid() == *uuid {
+            Some((e.clone().into(), *self.uuid))
         } else {
             None
         }
@@ -418,6 +421,12 @@ impl DemoCsdTransaction {
 
             comment: Arc::new("".to_owned()),
         }
+    }
+}
+
+impl Entity for DemoCsdTransaction {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
     }
 }
 
@@ -465,9 +474,9 @@ pub struct DemoCsdLink {
 
     pub link_type: DemoCsdLinkType,
     #[nh_context_serde(entity)]
-    pub source: DemoCsdTransactorWrapper,
+    pub source: ERef<DemoCsdTransactor>,
     #[nh_context_serde(entity)]
-    pub target: DemoCsdTransactionWrapper,
+    pub target: ERef<DemoCsdTransaction>,
 
     pub comment: Arc<String>,
 }
@@ -476,17 +485,23 @@ impl DemoCsdLink {
     pub fn new(
         uuid: ModelUuid,
         link_type: DemoCsdLinkType,
-        source: Arc<RwLock<DemoCsdTransactor>>,
-        target: Arc<RwLock<DemoCsdTransaction>>,
+        source: ERef<DemoCsdTransactor>,
+        target: ERef<DemoCsdTransaction>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(format!("Link ({})", link_type.char())),
             link_type,
-            source: source.into(),
-            target: target.into(),
+            source,
+            target,
             comment: Arc::new("".to_owned()),
         }
+    }
+}
+
+impl Entity for DemoCsdLink {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
     }
 }
 

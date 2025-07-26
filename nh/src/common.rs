@@ -3,3 +3,7 @@ pub mod controller;
 pub mod fluent;
 pub mod project_serde;
 pub mod uuid;
+pub mod views;
+pub mod ufoption;
+pub mod entity;
+pub mod eref;

@@ -9,7 +9,7 @@ nh-derive = { path = "../nh-derive" }
 
 derive_more = { version = "2.0", features = [ "from" ] }
 eframe = "0.31"
-egui_extras = "0.31"
+egui_extras = { version = "0.31", features = [ "serde" ] }
 egui_dock = "0.16"
 egui_ltreeview = "0.4"
 rfd = "0.15"
