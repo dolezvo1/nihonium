@@ -928,7 +928,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ViewUuid)]
+#[nh_context_serde(uuid_type = ViewUuid, initialize_with = Self::initialize)]
 pub struct DiagramControllerGen2<
     DomainT: Domain,
     DiagramAdapterT: DiagramAdapter<DomainT>,
@@ -939,41 +939,53 @@ pub struct DiagramControllerGen2<
     #[nh_context_serde(entity)]
     owned_views: OrderedViews<DomainT::CommonElementViewT>,
     #[nh_context_serde(skip_and_default)]
+    temporaries: DiagramControllerGen2Temporaries<DomainT>,
+}
+
+struct DiagramControllerGen2Temporaries<DomainT: Domain> {
     flattened_views: HashMap<ViewUuid, DomainT::CommonElementViewT>,
-    #[nh_context_serde(skip_and_default)]
     flattened_views_status: HashMap<ViewUuid, SelectionStatus>,
-    #[nh_context_serde(skip_and_default)]
     flattened_represented_models: HashMap<ModelUuid, ViewUuid>,
-    #[nh_context_serde(skip_and_default)]
     clipboard_elements: HashMap<ViewUuid, DomainT::CommonElementViewT>,
 
-    #[nh_context_serde(skip_and_default)]
-    pub _layers: Vec<bool>,
+    _layers: Vec<bool>,
 
-    #[nh_context_serde(skip_and_default)]
-    pub camera_offset: egui::Pos2,
-    #[nh_context_serde(skip_and_set = 1.0)]
-    pub camera_scale: f32,
-    #[nh_context_serde(skip_and_default)]
+    camera_offset: egui::Pos2,
+    camera_scale: f32,
     last_unhandled_mouse_pos: Option<egui::Pos2>,
-    #[nh_context_serde(skip_and_set = egui::Rect::ZERO)]
     last_interactive_canvas_rect: egui::Rect,
-    #[nh_context_serde(skip_and_default)]
     snap_manager: SnapManager,
-    #[nh_context_serde(skip_and_default)]
     current_tool: Option<DomainT::ToolT>,
-    #[nh_context_serde(skip_and_default)]
     select_by_drag: Option<(egui::Pos2, egui::Pos2)>,
 
-    #[nh_context_serde(skip_and_default)]
     last_change_flag: bool,
-    #[nh_context_serde(skip_and_default)]
     undo_stack: Vec<(
         InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     )>,
-    #[nh_context_serde(skip_and_default)]
     redo_stack: Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+}
+
+impl<DomainT: Domain> Default for DiagramControllerGen2Temporaries<DomainT> {
+    fn default() -> Self {
+        Self {
+            flattened_views: Default::default(),
+            flattened_views_status: Default::default(),
+            flattened_represented_models: Default::default(),
+            clipboard_elements: Default::default(),
+            _layers: Default::default(),
+            camera_offset: Default::default(),
+            camera_scale: 1.0,
+            last_unhandled_mouse_pos: Default::default(),
+            last_interactive_canvas_rect: egui::Rect::ZERO,
+            snap_manager: Default::default(),
+            current_tool: Default::default(),
+            select_by_drag: Default::default(),
+            last_change_flag: Default::default(),
+            undo_stack: Default::default(),
+            redo_stack: Default::default(),
+        }
+    }
 }
 
 impl<
@@ -989,29 +1001,17 @@ impl<
             uuid,
             adapter,
             owned_views: OrderedViews::new(owned_views),
-            flattened_views: HashMap::new(),
-            flattened_views_status: HashMap::new(),
-            flattened_represented_models: HashMap::new(),
-            clipboard_elements: HashMap::new(),
-
-            _layers: vec![true],
-
-            camera_offset: egui::Pos2::ZERO,
-            camera_scale: 1.0,
-            last_unhandled_mouse_pos: None,
-            last_interactive_canvas_rect: egui::Rect::ZERO,
-            snap_manager: SnapManager::default(),
-            current_tool: None,
-            select_by_drag: None,
-
-            last_change_flag: false,
-            undo_stack: Vec::new(),
-            redo_stack: Vec::new(),
+            temporaries: DiagramControllerGen2Temporaries::default(),
         });
-        // Initialize flattened_* fields, etc.
-        ret.write().head_count();
+        ret.write().initialize();
 
         ret
+    }
+
+    fn initialize(&mut self) {
+        // Initialize flattened_* fields, etc.
+        self.head_count();
+        // TODO: ingest buffers
     }
 
     pub fn model(&self) -> ERef<DomainT::DiagramModelT> {
@@ -1020,26 +1020,26 @@ impl<
 
     fn handle_event(&mut self, event: InputEvent, modifiers: ModifierKeys, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
         // Collect alignment guides
-        self.snap_manager = SnapManager::new(self.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.camera_scale));
-        self.owned_views.event_order_foreach_mut(|v| v.collect_allignment(&mut self.snap_manager));
-        self.snap_manager.sort_guidelines();
+        self.temporaries.snap_manager = SnapManager::new(self.temporaries.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.temporaries.camera_scale));
+        self.owned_views.event_order_foreach_mut(|v| v.collect_allignment(&mut self.temporaries.snap_manager));
+        self.temporaries.snap_manager.sort_guidelines();
 
         // Handle events
         let mut commands = Vec::new();
 
         if matches!(event, InputEvent::Click(_)) {
-            self.current_tool.as_mut().map(|e| e.reset_event_lock());
+            self.temporaries.current_tool.as_mut().map(|e| e.reset_event_lock());
         }
 
         let ehc = EventHandlingContext {
             modifiers,
-            ui_scale: self.camera_scale,
-            all_elements: &self.flattened_views_status,
-            snap_manager: &self.snap_manager,
+            ui_scale: self.temporaries.camera_scale,
+            all_elements: &self.temporaries.flattened_views_status,
+            snap_manager: &self.temporaries.snap_manager,
         };
 
         let child = self.owned_views.event_order_find_mut(|v| {
-            let r = v.handle_event(event, &ehc, &mut self.current_tool, &mut commands);
+            let r = v.handle_event(event, &ehc, &mut self.temporaries.current_tool, &mut commands);
             if r != EventHandlingStatus::NotHandled {
                 let k = v.uuid();
                 Some((*k, match r {
@@ -1053,7 +1053,7 @@ impl<
                         } else {
                             commands.push(InsensitiveCommand::SelectSpecific(
                                 std::iter::once(*k).collect(),
-                                !self.flattened_views_status.get(&k).is_some_and(|e| e.selected()),
+                                !self.temporaries.flattened_views_status.get(&k).is_some_and(|e| e.selected()),
                             ).into());
                         }
                         EventHandlingStatus::HandledByContainer
@@ -1067,18 +1067,18 @@ impl<
 
         let handled = match event {
             InputEvent::MouseDown(_) | InputEvent::MouseUp(_) | InputEvent::Drag { .. }
-                if child.is_some() || self.current_tool.is_some() => child.is_some(),
+                if child.is_some() || self.temporaries.current_tool.is_some() => child.is_some(),
             InputEvent::MouseDown(pos) => {
-                self.select_by_drag = Some((pos, pos));
+                self.temporaries.select_by_drag = Some((pos, pos));
                 true
             }
             InputEvent::MouseUp(_) => {
-                self.select_by_drag = None;
+                self.temporaries.select_by_drag = None;
                 true
             }
             InputEvent::Drag{ delta, ..} => {
-                if let Some((a,b)) = self.select_by_drag {
-                    self.select_by_drag = Some((a, b + delta));
+                if let Some((a,b)) = self.temporaries.select_by_drag {
+                    self.temporaries.select_by_drag = Some((a, b + delta));
                     commands.push(InsensitiveCommand::SelectByDrag(egui::Rect::from_two_pos(a, b + delta)).into());
                 }
                 true
@@ -1091,12 +1091,12 @@ impl<
                     .is_ok();
 
                 if !handled {
-                    if let Some(t) = self.current_tool.as_mut() {
+                    if let Some(t) = self.temporaries.current_tool.as_mut() {
                         t.add_position(pos);
                     }
                 }
 
-                let mut tool = self.current_tool.take();
+                let mut tool = self.temporaries.current_tool.take();
                 if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
                     commands.push(InsensitiveCommand::AddElement(
                         *self.uuid(),
@@ -1105,7 +1105,7 @@ impl<
                     ).into());
                     handled = true;
                 }
-                self.current_tool = tool;
+                self.temporaries.current_tool = tool;
 
                 handled
             },
@@ -1117,8 +1117,8 @@ impl<
     }
 
     fn set_clipboard_from_selected(&mut self) {
-        let selected = self.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect();
-        self.clipboard_elements = Self::elements_deep_copy(
+        let selected = self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect();
+        self.temporaries.clipboard_elements = Self::elements_deep_copy(
             Some(&selected),
             |_| false,
             HashMap::new(),
@@ -1149,21 +1149,21 @@ impl<
         top_level_views
     }
 
-    pub(crate) fn head_count(&mut self) {
-        self.flattened_views.clear();
-        self.flattened_views_status.clear();
-        self.flattened_represented_models.clear();
+    fn head_count(&mut self) {
+        self.temporaries.flattened_views.clear();
+        self.temporaries.flattened_views_status.clear();
+        self.temporaries.flattened_represented_models.clear();
         self.owned_views.event_order_foreach_mut(|v|
             v.head_count(
-                &mut self.flattened_views,
-                &mut self.flattened_views_status,
-                &mut self.flattened_represented_models,
+                &mut self.temporaries.flattened_views,
+                &mut self.temporaries.flattened_views_status,
+                &mut self.temporaries.flattened_represented_models,
             )
         );
         for (k, v) in self.owned_views.iter_event_order_pairs() {
-            self.flattened_views.insert(k, v.clone());
+            self.temporaries.flattened_views.insert(k, v.clone());
         }
-        self.flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
+        self.temporaries.flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
     }
 
     fn apply_commands(
@@ -1175,12 +1175,12 @@ impl<
     ) {
         for command in commands {
             let command = command.to_selection_insensitive(
-                || self.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
+                || self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
                 || Self::elements_deep_copy(
                     None,
-                    |e| self.flattened_views_status.get(e).is_some(),
+                    |e| self.temporaries.flattened_views_status.get(e).is_some(),
                     HashMap::new(),
-                    self.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
+                    self.temporaries.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
                     ).into_iter().map(|e| e.1.into()).collect(),
             );
 
@@ -1190,7 +1190,7 @@ impl<
                     let mut deleting = uuids;
                     let mut found_uuids = HashSet::new();
                     loop {
-                        for (k, e1) in self.flattened_views.iter().filter(|e| !deleting.contains(e.0)) {
+                        for (k, e1) in self.temporaries.flattened_views.iter().filter(|e| !deleting.contains(e.0)) {
                             if e1.delete_when(&deleting) {
                                 found_uuids.insert(*k);
                             }
@@ -1304,14 +1304,14 @@ impl<
 
             if !undo_accumulator.is_empty() {
                 if clear_redo_stack {
-                    self.redo_stack.clear();
+                    self.temporaries.redo_stack.clear();
                 }
                 if save_to_undo_stack {
-                    if let Some(merged) = self.undo_stack.last()
-                        .filter(|_| self.last_change_flag)
+                    if let Some(merged) = self.temporaries.undo_stack.last()
+                        .filter(|_| self.temporaries.last_change_flag)
                         .and_then(|e| e.0.merge(&command))
                     {
-                        let last = self.undo_stack.last_mut().unwrap();
+                        let last = self.temporaries.undo_stack.last_mut().unwrap();
                         last.0 = merged;
                         let unique_prop_changes: Vec<_> = last
                             .1
@@ -1346,7 +1346,7 @@ impl<
                         last.1.extend(unique_prop_changes);
                     } else {
                         global_undo_accumulator.push(command.info_text());
-                        self.undo_stack.push((command, undo_accumulator));
+                        self.temporaries.undo_stack.push((command, undo_accumulator));
                     }
                 }
             }
@@ -1416,7 +1416,7 @@ impl<
     DiagramAdapterT: DiagramAdapter<DomainT>
 > DiagramController for DiagramControllerGen2<DomainT, DiagramAdapterT> {
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid> {
-        &self.flattened_represented_models
+        &self.temporaries.flattened_represented_models
     }
 
     fn new_ui_canvas(
@@ -1434,10 +1434,10 @@ impl<
             true,
             painter,
             canvas_rect,
-            self.camera_offset,
-            self.camera_scale,
+            self.temporaries.camera_offset,
+            self.temporaries.camera_scale,
             ui.ctx().pointer_interact_pos().map(|e| {
-                ((e - self.camera_offset - painter_response.rect.min.to_vec2()) / self.camera_scale)
+                ((e - self.temporaries.camera_offset - painter_response.rect.min.to_vec2()) / self.temporaries.camera_scale)
                     .to_pos2()
             }),
         );
@@ -1452,17 +1452,17 @@ impl<
             .pointer_interact_pos()
             .filter(|e| canvas_rect.contains(*e))
             .map(|e| {
-                ((e - self.camera_offset - canvas_pos.to_vec2()) / self.camera_scale).to_pos2()
+                ((e - self.temporaries.camera_offset - canvas_pos.to_vec2()) / self.temporaries.camera_scale).to_pos2()
             });
 
-        self.last_interactive_canvas_rect = egui::Rect::from_min_size(self.camera_offset / -self.camera_scale, canvas_size / self.camera_scale);
+        self.temporaries.last_interactive_canvas_rect = egui::Rect::from_min_size(self.temporaries.camera_offset / -self.temporaries.camera_scale, canvas_size / self.temporaries.camera_scale);
 
         (Box::new(ui_canvas), painter_response, inner_mouse)
     }
     fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>) {
         macro_rules! pos_to_abs {
             ($pos:expr) => {
-                (($pos - self.camera_offset - response.rect.min.to_vec2()) / self.camera_scale).to_pos2()
+                (($pos - self.temporaries.camera_offset - response.rect.min.to_vec2()) / self.temporaries.camera_scale).to_pos2()
             };
         }
 
@@ -1471,17 +1471,17 @@ impl<
         ui.input(|is| is.events.iter()
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if *pressed && *button == egui::PointerButton::Primary => {
-                    self.last_unhandled_mouse_pos = Some(pos_to_abs!(*pos));
+                    self.temporaries.last_unhandled_mouse_pos = Some(pos_to_abs!(*pos));
                     self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifiers, undo_accumulator);
                 },
                 _ => {}
             })
         );
         if response.dragged_by(egui::PointerButton::Primary) {
-            if let Some(old_pos) = self.last_unhandled_mouse_pos {
-                let delta = response.drag_delta() / self.camera_scale;
+            if let Some(old_pos) = self.temporaries.last_unhandled_mouse_pos {
+                let delta = response.drag_delta() / self.temporaries.camera_scale;
                 self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifiers, undo_accumulator);
-                self.last_unhandled_mouse_pos = Some(old_pos + delta);
+                self.temporaries.last_unhandled_mouse_pos = Some(old_pos + delta);
             }
         }
         if response.clicked_by(egui::PointerButton::Primary) {
@@ -1493,7 +1493,7 @@ impl<
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if !*pressed && *button == egui::PointerButton::Primary => {
                     self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifiers, undo_accumulator);
-                    self.last_unhandled_mouse_pos = None;
+                    self.temporaries.last_unhandled_mouse_pos = None;
                 },
                 _ => {}
             })
@@ -1501,16 +1501,16 @@ impl<
 
         // Handle diagram drag
         if response.dragged_by(egui::PointerButton::Middle) {
-            self.camera_offset += response.drag_delta();
+            self.temporaries.camera_offset += response.drag_delta();
         }
 
         // Handle diagram zoom
         if response.hovered() {
             let scroll_delta = ui.input(|i| i.raw_scroll_delta);
 
-            let factor = if scroll_delta.y > 0.0 && self.camera_scale < 10.0 {
+            let factor = if scroll_delta.y > 0.0 && self.temporaries.camera_scale < 10.0 {
                 1.5
-            } else if scroll_delta.y < 0.0 && self.camera_scale > 0.01 {
+            } else if scroll_delta.y < 0.0 && self.temporaries.camera_scale > 0.01 {
                 0.66
             } else {
                 0.0
@@ -1518,12 +1518,12 @@ impl<
 
             if factor != 0.0 {
                 if let Some(cursor_pos) = ui.ctx().pointer_interact_pos() {
-                    let old_factor = self.camera_scale;
-                    self.camera_scale *= factor;
-                    self.camera_offset -=
-                        ((cursor_pos - self.camera_offset - response.rect.min.to_vec2())
+                    let old_factor = self.temporaries.camera_scale;
+                    self.temporaries.camera_scale *= factor;
+                    self.temporaries.camera_offset -=
+                        ((cursor_pos - self.temporaries.camera_offset - response.rect.min.to_vec2())
                             / old_factor)
-                            * (self.camera_scale - old_factor);
+                            * (self.temporaries.camera_scale - old_factor);
                 }
             }
         }
@@ -1533,12 +1533,12 @@ impl<
     }
 
     fn show_toolbar(&mut self, ui: &mut egui::Ui) {
-        self.adapter.tool_change_fun(&mut self.current_tool, ui);
+        self.adapter.tool_change_fun(&mut self.temporaries.current_tool, ui);
     }
     fn show_properties(&mut self, ui: &mut egui::Ui, undo_accumulator: &mut Vec<Arc<String>>) {
         let mut commands = Vec::new();
         {
-            let queryable = DomainT::QueryableT::new(&self.flattened_represented_models, &self.flattened_views);
+            let queryable = DomainT::QueryableT::new(&self.temporaries.flattened_represented_models, &self.temporaries.flattened_views);
 
             if self
                 .owned_views
@@ -1571,14 +1571,14 @@ impl<
     ) {
         match command {
             DiagramCommand::DropRedoStackAndLastChangeFlag => {
-                self.redo_stack.clear();
-                self.last_change_flag = false;
+                self.temporaries.redo_stack.clear();
+                self.temporaries.last_change_flag = false;
             },
             DiagramCommand::SetLastChangeFlag => {
-                self.last_change_flag = true;
+                self.temporaries.last_change_flag = true;
             },
             DiagramCommand::UndoImmediate => {
-                let Some((og_command, undo_commands)) = self.undo_stack.pop() else {
+                let Some((og_command, undo_commands)) = self.temporaries.undo_stack.pop() else {
                     return;
                 };
                 self.apply_commands(
@@ -1590,10 +1590,10 @@ impl<
                     false,
                     false,
                 );
-                self.redo_stack.push(og_command);
+                self.temporaries.redo_stack.push(og_command);
             },
             DiagramCommand::RedoImmediate => {
-                let Some(redo_command) = self.redo_stack.pop() else {
+                let Some(redo_command) = self.temporaries.redo_stack.pop() else {
                     return;
                 };
                 self.apply_commands(vec![redo_command.into()], &mut vec![], true, false);
@@ -1604,7 +1604,7 @@ impl<
             DiagramCommand::InvertSelection => {
                 self.apply_commands(vec![
                     InsensitiveCommand::SelectAll(true).into(),
-                    InsensitiveCommand::SelectSpecific(self.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(), false).into()
+                    InsensitiveCommand::SelectSpecific(self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(), false).into()
                 ], &mut vec![], true, false);
             }
             DiagramCommand::DeleteSelectedElements
@@ -1625,7 +1625,7 @@ impl<
                         _ => unreachable!(),
                     }
                 ], &mut undo, true, true);
-                self.last_change_flag = true;
+                self.temporaries.last_change_flag = true;
                 global_undo.extend(undo.into_iter());
             }
             DiagramCommand::CopySelectedElements => {
@@ -1638,8 +1638,8 @@ impl<
                     // create all necessary views, such as parents or elements targetted by a link
                     {
                         let mut models_to_create_views_for = vec![model_uuid];
-                        let mut pseudo_fv = self.flattened_views.clone();
-                        let mut pseudo_frm = self.flattened_represented_models.clone();
+                        let mut pseudo_fv = self.temporaries.flattened_views.clone();
+                        let mut pseudo_frm = self.temporaries.flattened_represented_models.clone();
 
                         loop {
                             let Some(model_uuid) = models_to_create_views_for.last().cloned() else {
@@ -1675,17 +1675,17 @@ impl<
                     // apply commands
                     let mut undo = vec![];
                     self.apply_commands(cmds, &mut undo, true, true);
-                    self.last_change_flag = true;
+                    self.temporaries.last_change_flag = true;
                     global_undo.extend(undo.into_iter());
                 }
             }
             DiagramCommand::DeleteViewFor(model_uuid, including_model) => {
-                if let Some(view_uuid) = self.flattened_represented_models.get(&model_uuid) {
+                if let Some(view_uuid) = self.temporaries.flattened_represented_models.get(&model_uuid) {
                     let mut undo = vec![];
                     self.apply_commands(vec![
                         InsensitiveCommand::DeleteSpecificElements(std::iter::once(*view_uuid).collect(), including_model).into()
                     ], &mut undo, true, true);
-                    self.last_change_flag = true;
+                    self.temporaries.last_change_flag = true;
                     global_undo.extend(undo.into_iter());
                 }
             }
@@ -1698,13 +1698,13 @@ impl<
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>
     ) {
-        let tool = if let (Some(pos), Some(stage)) = (mouse_pos, self.current_tool.as_ref()) {
+        let tool = if let (Some(pos), Some(stage)) = (mouse_pos, self.temporaries.current_tool.as_ref()) {
             Some((pos, stage))
         } else {
             None
         };
         let mut drawn_targetting = TargettingStatus::NotDrawn;
-        let queryable = DomainT::QueryableT::new(&self.flattened_represented_models, &self.flattened_views);
+        let queryable = DomainT::QueryableT::new(&self.temporaries.flattened_represented_models, &self.temporaries.flattened_views);
 
         self.owned_views.draw_order_foreach_mut(|v|
             if v.draw_in(&queryable, context, canvas, &tool) == TargettingStatus::Drawn {
@@ -1727,7 +1727,7 @@ impl<
                     });
                 }
                 tool.draw_status_hint(&queryable, canvas, pos);
-            } else if let Some((a, b)) = self.select_by_drag {
+            } else if let Some((a, b)) = self.temporaries.select_by_drag {
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(a, b),
                     egui::CornerRadius::ZERO,
@@ -1737,7 +1737,7 @@ impl<
                 );
             }
 
-            self.snap_manager.draw_best(canvas, context.profile, self.last_interactive_canvas_rect);
+            self.temporaries.snap_manager.draw_best(canvas, context.profile, self.temporaries.last_interactive_canvas_rect);
         }
     }
 
@@ -1757,7 +1757,7 @@ impl<
     DiagramAdapterT: DiagramAdapter<DomainT>
 > ContainerGen2<DomainT> for DiagramControllerGen2<DomainT, DiagramAdapterT> {
     fn controller_for(&self, uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
-        self.flattened_represented_models.get(uuid).and_then(|e| self.flattened_views.get(e)).cloned()
+        self.temporaries.flattened_represented_models.get(uuid).and_then(|e| self.temporaries.flattened_views.get(e)).cloned()
     }
 }
 

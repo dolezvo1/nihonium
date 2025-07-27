@@ -724,12 +724,10 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
     }
 }
 
-pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<(usize, ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>), NHDeserializeError> {
+pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<(ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>), NHDeserializeError> {
     let v = d.get_entity::<DiagramControllerGen2<DemoCsdDomain, DemoCsdDiagramAdapter>>(&uuid)?;
     let mhv = Arc::new(SimpleModelHierarchyView::new(v.read().model()));
-    // TODO: this is bad, it should be handed over ready for use
-    v.write().head_count();
-    Ok((2, v, mhv))
+    Ok((v, mhv))
 }
 
 #[derive(Clone, Copy, PartialEq)]

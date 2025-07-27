@@ -1,7 +1,14 @@
 
-use darling::{FromField};
+use darling::{FromDeriveInput, FromField};
 use proc_macro::{self, TokenStream};
 use quote::quote;
+
+#[derive(FromDeriveInput)]
+#[darling(attributes(nh_context_serde))]
+struct DeriveNHContextSerDeOpts {
+    uuid_type: Option<syn::Path>,
+    initialize_with: Option<syn::Path>,
+}
 
 #[derive(FromField)]
 #[darling(attributes(nh_context_serde))]
@@ -10,12 +17,14 @@ struct DeriveNHContextSerDeFieldOpts {
     entity: bool,
     #[darling(default)]
     skip_and_default: bool,
-    #[darling(default)]
-    skip_and_set: Option<syn::Expr>,
 }
 
 pub fn derive_nh_context_deserialize(input: TokenStream) -> TokenStream {
     let input_ast = syn::parse_macro_input!(input as syn::DeriveInput);
+    let opts = match DeriveNHContextSerDeOpts::from_derive_input(&input_ast) {
+        Ok(opts) => opts,
+        Err(e) => return e.write_errors().into(),
+    };
     let syn::Data::Struct(struct_data) = &input_ast.data else {
         return syn::Error::new(
                 input_ast.ident.span(),
@@ -40,10 +49,6 @@ pub fn derive_nh_context_deserialize(input: TokenStream) -> TokenStream {
                 default_fields.push(quote! {
                     #field_name: <#field_type as Default>::default(),
                 });
-            } else if let Some(e) = o.skip_and_set {
-                default_fields.push(quote! {
-                    #field_name: #e,
-                });
             } else if o.entity {
                 entity_fields_deserialize.push(quote! {
                     #field_name: <#field_type as crate::common::project_serde::NHContextDeserialize>::deserialize(
@@ -57,6 +62,27 @@ pub fn derive_nh_context_deserialize(input: TokenStream) -> TokenStream {
             }
         }
     });
+
+    let instance = quote! {
+        Self {
+            #(#entity_fields_deserialize)*
+            #(#basic_fields_move)*
+            #(#default_fields)*
+        }
+    };
+    let instance_initialized = if let Some(initializer) = &opts.initialize_with {
+        quote! {
+            let mut instance = #instance;
+
+            #initializer(&mut instance);
+
+            Ok(instance)
+        }
+    } else {
+        quote! {
+            Ok(#instance)
+        }
+    };
 
     let des_mod_name = syn::Ident::new(&format!("{}_context_deserialize", ident), ident.span());
     let output = quote! {
@@ -73,11 +99,7 @@ pub fn derive_nh_context_deserialize(input: TokenStream) -> TokenStream {
                     }
                     let helper: Helper = toml::Value::try_into(source.clone())?;
 
-                    Ok(Self {
-                        #(#entity_fields_deserialize)*
-                        #(#basic_fields_move)*
-                        #(#default_fields)*
-                    })
+                    #instance_initialized
                 }
             }
         }
