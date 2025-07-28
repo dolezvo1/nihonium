@@ -265,11 +265,19 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
         &mut self,
         command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         match self {
-            UmlClassElementView::Package(inner) => inner.write().apply_command(command, undo_accumulator),
-            UmlClassElementView::Class(inner) => inner.write().apply_command(command, undo_accumulator),
-            UmlClassElementView::Link(inner) => inner.write().apply_command(command, undo_accumulator),
+            UmlClassElementView::Package(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
+            UmlClassElementView::Class(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
+            UmlClassElementView::Link(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
+        }
+    }
+    fn refresh_buffers(&mut self) {
+        match self {
+            UmlClassElementView::Package(inner) => inner.write().refresh_buffers(),
+            UmlClassElementView::Class(inner) => inner.write().refresh_buffers(),
+            UmlClassElementView::Link(inner) => inner.write().refresh_buffers(),
         }
     }
     fn head_count(
@@ -441,7 +449,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
     }
 
     fn apply_property_change_fun(
-        &mut self,
+        &self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
@@ -455,7 +463,6 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
                             std::iter::once(*view_uuid).collect(),
                             vec![UmlClassPropChange::NameChange(model.name.clone())],
                         ));
-                        self.buffer.name = (**name).clone();
                         model.name = name.clone();
                     }
                     UmlClassPropChange::CommentChange(comment) => {
@@ -463,13 +470,17 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
                             std::iter::once(*view_uuid).collect(),
                             vec![UmlClassPropChange::CommentChange(model.comment.clone())],
                         ));
-                        self.buffer.comment = (**comment).clone();
                         model.comment = comment.clone();
                     }
                     _ => {}
                 }
             }
         }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.buffer.name = (*model.name).clone();
+        self.buffer.comment = (*model.comment).clone();
     }
 
     fn tool_change_fun(&self, tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
@@ -1004,6 +1015,10 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
 pub struct UmlClassPackageAdapter {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassPackage>,
+    #[nh_context_serde(skip_and_default)]
+    name_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    comment_buffer: String,
 }
 
 impl PackageAdapter<UmlClassDomain> for UmlClassPackageAdapter {
@@ -1025,40 +1040,36 @@ impl PackageAdapter<UmlClassDomain> for UmlClassPackageAdapter {
     }
 
     fn show_properties(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
     ) {
-        let model = self.model.read();
-        let mut name_buffer = (*model.name).clone();
         ui.label("Name:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut name_buffer),
+                egui::TextEdit::multiline(&mut self.name_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::NameChange(Arc::new(name_buffer)),
+                UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ]));
         }
 
-        let mut comment_buffer = (*model.comment).clone();
         ui.label("Comment:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut comment_buffer),
+                egui::TextEdit::multiline(&mut self.comment_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::CommentChange(Arc::new(comment_buffer)),
+                UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ]));
         }
     }
-
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
@@ -1088,6 +1099,11 @@ impl PackageAdapter<UmlClassDomain> for UmlClassPackageAdapter {
             }
         }
     }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.name_buffer = (*model.name).clone();
+        self.comment_buffer = (*model.comment).clone();
+    }
 
     fn deep_copy_init(
         &self,
@@ -1104,7 +1120,7 @@ impl PackageAdapter<UmlClassDomain> for UmlClassPackageAdapter {
             modelish
         };
 
-        Self { model }
+        Self { model, name_buffer: self.name_buffer.clone(), comment_buffer: self.comment_buffer.clone() }
     }
 
     fn deep_copy_finish(
@@ -1119,9 +1135,8 @@ fn new_umlclass_package(
     name: &str,
     bounds_rect: egui::Rect,
 ) -> (ERef<UmlClassPackage>, ERef<PackageViewT>) {
-    let model_uuid = uuid::Uuid::now_v7().into();
     let package_model = ERef::new(UmlClassPackage::new(
-        model_uuid,
+        uuid::Uuid::now_v7().into(),
         name.to_owned(),
         Vec::new(),
     ));
@@ -1133,11 +1148,13 @@ fn new_umlclass_package_view(
     model: ERef<UmlClassPackage>,
     bounds_rect: egui::Rect,
 ) -> ERef<PackageViewT> {
-    let view_uuid = uuid::Uuid::now_v7().into();
+    let m = model.read();
     PackageView::new(
-        Arc::new(view_uuid),
+        Arc::new(uuid::Uuid::now_v7().into()),
         UmlClassPackageAdapter {
-            model,
+            model: model.clone(),
+            name_buffer: (*m.name).clone(),
+            comment_buffer: (*m.comment).clone(),
         },
         Vec::new(),
         bounds_rect,
@@ -1151,9 +1168,8 @@ fn new_umlclass_class(
     functions: &str,
     position: egui::Pos2,
 ) -> (ERef<UmlClass>, ERef<UmlClassView>) {
-    let class_model_uuid = uuid::Uuid::now_v7().into();
     let class_model = ERef::new(UmlClass::new(
-        class_model_uuid,
+        uuid::Uuid::now_v7().into(),
         stereotype,
         name.to_owned(),
         properties.to_owned(),
@@ -1168,9 +1184,8 @@ fn new_umlclass_class_view(
     position: egui::Pos2,
 ) -> ERef<UmlClassView> {
     let m = model.read();
-    let class_view_uuid = uuid::Uuid::now_v7().into();
-    let class_view = ERef::new(UmlClassView {
-        uuid: Arc::new(class_view_uuid),
+    ERef::new(UmlClassView {
+        uuid: Arc::new(uuid::Uuid::now_v7().into()),
         model: model.clone(),
 
         stereotype_buffer: m.stereotype,
@@ -1183,8 +1198,7 @@ fn new_umlclass_class_view(
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::ZERO,
-    });
-    class_view
+    })
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -1490,6 +1504,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         &mut self,
         command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
             InsensitiveCommand::SelectAll(select) => {
@@ -1522,6 +1537,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
+                    affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
                     for property in properties {
                         match property {
@@ -1532,7 +1548,6 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
                                         model.stereotype.clone(),
                                     )],
                                 ));
-                                self.stereotype_buffer = stereotype.clone();
                                 model.stereotype = stereotype.clone();
                             }
                             UmlClassPropChange::NameChange(name) => {
@@ -1540,7 +1555,6 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
                                     std::iter::once(*self.uuid).collect(),
                                     vec![UmlClassPropChange::NameChange(model.name.clone())],
                                 ));
-                                self.name_buffer = (**name).clone();
                                 model.name = name.clone();
                             }
                             UmlClassPropChange::PropertiesChange(properties) => {
@@ -1550,7 +1564,6 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
                                         model.properties.clone(),
                                     )],
                                 ));
-                                self.properties_buffer = (**properties).clone();
                                 model.properties = properties.clone();
                             }
                             UmlClassPropChange::FunctionsChange(functions) => {
@@ -1560,7 +1573,6 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
                                         model.functions.clone(),
                                     )],
                                 ));
-                                self.functions_buffer = (**functions).clone();
                                 model.functions = functions.clone();
                             }
                             UmlClassPropChange::CommentChange(comment) => {
@@ -1568,7 +1580,6 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
                                     std::iter::once(*self.uuid).collect(),
                                     vec![UmlClassPropChange::CommentChange(model.comment.clone())],
                                 ));
-                                self.comment_buffer = (**comment).clone();
                                 model.comment = comment.clone();
                             }
                             _ => {}
@@ -1577,6 +1588,14 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
                 }
             }
         }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.stereotype_buffer = model.stereotype.clone();
+        self.name_buffer = (*model.name).clone();
+        self.properties_buffer = (*model.properties).clone();
+        self.functions_buffer = (*model.functions).clone();
+        self.comment_buffer = (*model.comment).clone();
     }
 
     fn head_count(
@@ -1634,6 +1653,14 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
 pub struct UmlClassLinkAdapter {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassLink>,
+    #[nh_context_serde(skip_and_default)]
+    link_type_buffer: UmlClassLinkType,
+    #[nh_context_serde(skip_and_default)]
+    sal_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    dal_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    comment_buffer: String,
 }
 
 impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
@@ -1680,15 +1707,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
     }
 
     fn show_properties(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
     ) {
-        let model = self.model.read();
-        let mut link_type_buffer = model.link_type.clone();
         ui.label("Link type:");
         egui::ComboBox::from_id_salt("link type")
-            .selected_text(&*link_type_buffer.name())
+            .selected_text(&*self.link_type_buffer.name())
             .show_ui(ui, |ui| {
                 for sv in [
                     UmlClassLinkType::Association,
@@ -1699,45 +1724,43 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
                     UmlClassLinkType::Usage,
                 ] {
                     if ui
-                        .selectable_value(&mut link_type_buffer, sv, &*sv.name())
+                        .selectable_value(&mut self.link_type_buffer, sv, &*sv.name())
                         .changed()
                     {
                         commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                            UmlClassPropChange::LinkTypeChange(link_type_buffer),
+                            UmlClassPropChange::LinkTypeChange(self.link_type_buffer),
                         ]));
                     }
                 }
             });
 
-        let mut sal_buffer = (*model.source_arrowhead_label).clone();
         ui.label("Source:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut sal_buffer),
+                egui::TextEdit::singleline(&mut self.sal_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
                 UmlClassPropChange::SourceArrowheadLabelChange(Arc::new(
-                    sal_buffer,
+                    self.sal_buffer.clone(),
                 )),
             ]));
         }
         ui.separator();
 
-        let mut dal_buffer = (*model.target_arrowhead_label).clone();
         ui.label("Destination:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut dal_buffer),
+                egui::TextEdit::singleline(&mut self.dal_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
                 UmlClassPropChange::DestinationArrowheadLabelChange(Arc::new(
-                    dal_buffer,
+                    self.dal_buffer.clone(),
                 )),
             ]));
         }
@@ -1754,21 +1777,19 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
         }
         ui.separator();
 
-        let mut comment_buffer = (*model.comment).clone();
         ui.label("Comment:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut comment_buffer),
+                egui::TextEdit::multiline(&mut self.comment_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::CommentChange(Arc::new(comment_buffer)),
+                UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ]));
         }
     }
-
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
@@ -1818,6 +1839,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
             }
         }
     }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.link_type_buffer = model.link_type;
+        self.sal_buffer = (*model.source_arrowhead_label).clone();
+        self.dal_buffer = (*model.target_arrowhead_label).clone();
+        self.comment_buffer = (*model.comment).clone();
+    }
 
     fn deep_copy_init(
         &self,
@@ -1834,7 +1862,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
             modelish
         };
 
-        Self { model }
+        Self {
+            model,
+            link_type_buffer: self.link_type_buffer.clone(),
+            sal_buffer: self.sal_buffer.clone(),
+            dal_buffer: self.dal_buffer.clone(),
+            comment_buffer: self.comment_buffer.clone(),
+        }
     }
 
     fn deep_copy_finish(
@@ -1861,9 +1895,8 @@ fn new_umlclass_link(
     source: (ERef<UmlClass>, UmlClassElementView),
     target: (ERef<UmlClass>, UmlClassElementView),
 ) -> (ERef<UmlClassLink>, ERef<LinkViewT>) {
-    let link_model_uuid = uuid::Uuid::now_v7().into();
     let link_model = ERef::new(UmlClassLink::new(
-        link_model_uuid,
+        uuid::Uuid::now_v7().into(),
         link_type,
         description,
         source.0,
@@ -1878,11 +1911,15 @@ fn new_umlclass_link_view(
     source: UmlClassElementView,
     target: UmlClassElementView,
 ) -> ERef<LinkViewT> {
-    let link_view_uuid = uuid::Uuid::now_v7().into();
+    let m = model.read();
     MulticonnectionView::new(
-        Arc::new(link_view_uuid),
+        Arc::new(uuid::Uuid::now_v7().into()),
         UmlClassLinkAdapter {
-            model,
+            model: model.clone(),
+            link_type_buffer: m.link_type,
+            sal_buffer: (*m.source_arrowhead_label).clone(),
+            dal_buffer: (*m.target_arrowhead_label).clone(),
+            comment_buffer: (*m.comment).clone(),
         },
         source,
         target,

@@ -466,6 +466,12 @@ impl DemoCsdLinkType {
     }
 }
 
+impl Default for DemoCsdLinkType {
+    fn default() -> Self {
+        Self::Initiation
+    }
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub struct DemoCsdLink {

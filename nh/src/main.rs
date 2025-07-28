@@ -485,18 +485,24 @@ impl NHContext {
         self.unprocessed_commands.extend(commands.into_iter());
     }
 
+    fn refresh_buffers(&mut self, affected_models: &HashSet<ModelUuid>) {
+        for (_, e) in self.diagram_controllers.values_mut() {
+            e.write().refresh_buffers(affected_models);
+        }
+    }
+
     fn set_modified_state(&mut self, view_uuid: ViewUuid, undo_accumulator: Vec<Arc<String>>) {
         if !undo_accumulator.is_empty() {
             self.has_unsaved_changes = true;
             let Some((_t, target_diagram)) = self.diagram_controllers.get(&view_uuid) else { return; };
 
             for (_uuid, (_t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| **uuid != view_uuid) {
-                c.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
+                c.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![], &mut HashSet::new());
             }
 
             self.redo_stack.clear();
-            target_diagram.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
-            target_diagram.write().apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
+            target_diagram.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![], &mut HashSet::new());
+            target_diagram.write().apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![], &mut HashSet::new());
 
             for command_label in undo_accumulator {
                 self.undo_stack.push((command_label, view_uuid));
@@ -519,8 +525,10 @@ impl NHContext {
 
         if let Some(cmd) = cmd {
             let mut undo_accumulator = Vec::new();
-            lfc.write().apply_command(cmd, &mut undo_accumulator);
+            let mut affected_models = HashSet::new();
+            lfc.write().apply_command(cmd, &mut undo_accumulator, &mut affected_models);
             self.set_modified_state(*last_focused_diagram, undo_accumulator);
+            self.refresh_buffers(&affected_models);
         }
     }
 
@@ -534,13 +542,15 @@ impl NHContext {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
 
+        let mut affected_models = HashSet::new();
         let mut undo_accumulator = {
             let mut undo_accumulator = Vec::new();
-            c.write().show_properties(ui, &mut undo_accumulator);
+            c.write().show_properties(ui, &mut undo_accumulator, &mut affected_models);
             undo_accumulator
         };
 
         self.set_modified_state(*last_focused_diagram, undo_accumulator);
+        self.refresh_buffers(&affected_models);
     }
 
     fn layers(&self, ui: &mut Ui) {
@@ -1070,26 +1080,31 @@ impl NHContext {
             fluent_bundle: &self.fluent_bundle,
         };
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(&drawing_context, ui);
+        response.context_menu(|ui| diagram_controller.context_menu(ui));
 
         diagram_controller.draw_in(&drawing_context, ui_canvas.as_mut(), pos);
 
         let mut undo_accumulator = Vec::<Arc<String>>::new();
-        diagram_controller.handle_input(ui, &response, &mut undo_accumulator);
-        response.context_menu(|ui| diagram_controller.context_menu(ui));
+        let mut affected_models = HashSet::new();
+        diagram_controller.handle_input(ui, &response, &mut undo_accumulator, &mut affected_models);
+
         if !undo_accumulator.is_empty() {
             self.has_unsaved_changes = true;
             for (_uuid, (t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != tab_uuid) {
-                c.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
+                c.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![], &mut HashSet::new());
             }
             
             self.redo_stack.clear();
-            diagram_controller.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![]);
-            diagram_controller.apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![]);
+            diagram_controller.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![], &mut HashSet::new());
+            diagram_controller.apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![], &mut HashSet::new());
             
             for command_label in undo_accumulator {
                 self.undo_stack.push((command_label, *tab_uuid));
             }
         }
+
+        drop(diagram_controller);
+        self.refresh_buffers(&affected_models);
     }
 
     fn custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
@@ -1259,7 +1274,9 @@ impl NHApp {
         
         {
             let Some((_t, ac)) = self.context.diagram_controllers.get(&e.1) else { return; };
-            ac.write().apply_command(DiagramCommand::UndoImmediate, &mut vec![]);
+            let mut affected_models = HashSet::new();
+            ac.write().apply_command(DiagramCommand::UndoImmediate, &mut vec![], &mut affected_models);
+            self.context.refresh_buffers(&affected_models);
         }
         
         self.context.redo_stack.push(e);
@@ -1272,7 +1289,9 @@ impl NHApp {
         
         {
             let Some((_t, ac)) = self.context.diagram_controllers.get(&e.1) else { return; };
-            ac.write().apply_command(DiagramCommand::RedoImmediate, &mut vec![]);
+            let mut affected_models = HashSet::new();
+            ac.write().apply_command(DiagramCommand::RedoImmediate, &mut vec![], &mut affected_models);
+            self.context.refresh_buffers(&affected_models);
         }
         
         self.context.undo_stack.push(e);
@@ -1400,8 +1419,10 @@ impl eframe::App for NHApp {
                 if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
                     if let Some((_t, ac)) = self.context.diagram_controllers.get(&uuid) {
                         let mut undo = vec![];
-                        ac.write().apply_command($command, &mut undo);
+                        let mut affected_models = HashSet::new();
+                        ac.write().apply_command($command, &mut undo, &mut affected_models);
                         self.context.undo_stack.extend(undo.into_iter().map(|e| (e, *uuid)));
+                        self.context.refresh_buffers(&affected_models);
                     }
                 }
             };

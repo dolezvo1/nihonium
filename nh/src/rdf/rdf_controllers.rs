@@ -293,12 +293,21 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
         &mut self,
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         match self {
-            RdfElementView::Graph(inner) => inner.write().apply_command(command, undo_accumulator),
-            RdfElementView::Literal(inner) => inner.write().apply_command(command, undo_accumulator),
-            RdfElementView::Node(inner) => inner.write().apply_command(command, undo_accumulator),
-            RdfElementView::Predicate(inner) => inner.write().apply_command(command, undo_accumulator),
+            RdfElementView::Graph(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
+            RdfElementView::Literal(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
+            RdfElementView::Node(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
+            RdfElementView::Predicate(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
+        }
+    }
+    fn refresh_buffers(&mut self) {
+        match self {
+            RdfElementView::Graph(inner) => inner.write().refresh_buffers(),
+            RdfElementView::Literal(inner) => inner.write().refresh_buffers(),
+            RdfElementView::Node(inner) => inner.write().refresh_buffers(),
+            RdfElementView::Predicate(inner) => inner.write().refresh_buffers(),
         }
     }
     fn head_count(
@@ -482,7 +491,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     }
 
     fn apply_property_change_fun(
-        &mut self,
+        &self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
@@ -496,7 +505,6 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                             std::iter::once(*view_uuid).collect(),
                             vec![RdfPropChange::NameChange(model.name.clone())],
                         ));
-                        self.buffer.name = (**name).clone();
                         model.name = name.clone();
                     }
                     RdfPropChange::CommentChange(comment) => {
@@ -504,13 +512,17 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                             std::iter::once(*view_uuid).collect(),
                             vec![RdfPropChange::CommentChange(model.comment.clone())],
                         ));
-                        self.buffer.comment = (**comment).clone();
                         model.comment = comment.clone();
                     }
                     _ => {}
                 }
             }
         }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.buffer.name = (*model.name).clone();
+        self.buffer.comment = (*model.comment).clone();
     }
 
     fn tool_change_fun(&self, tool: &mut Option<NaiveRdfTool>, ui: &mut egui::Ui) {
@@ -1138,6 +1150,10 @@ impl Tool<RdfDomain> for NaiveRdfTool {
 pub struct RdfGraphAdapter {
     #[nh_context_serde(entity)]
     model: ERef<RdfGraph>,
+    #[nh_context_serde(skip_and_default)]
+    iri_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    comment_buffer: String,
 }
 
 impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
@@ -1159,40 +1175,36 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
     }
 
     fn show_properties(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) {
-        let model = self.model.read();
-        let mut iri_buffer = (*model.iri).clone();
         ui.label("IRI:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut iri_buffer),
+                egui::TextEdit::multiline(&mut self.iri_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                RdfPropChange::IriChange(Arc::new(iri_buffer)),
+                RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
             ]));
         }
 
-        let mut comment_buffer = (*model.comment).clone();
         ui.label("Comment:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut comment_buffer),
+                egui::TextEdit::multiline(&mut self.comment_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                RdfPropChange::CommentChange(Arc::new(comment_buffer)),
+                RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ]));
         }
     }
-
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
@@ -1222,6 +1234,11 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
             }
         }
     }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.iri_buffer = (*model.iri).clone();
+        self.comment_buffer = (*model.comment).clone();
+    }
 
     fn deep_copy_init(
         &self,
@@ -1237,7 +1254,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
-        Self { model }
+        Self { model, iri_buffer: self.iri_buffer.clone(), comment_buffer: self.comment_buffer.clone() }
     }
 
     fn deep_copy_finish(
@@ -1252,9 +1269,8 @@ fn new_rdf_graph(
     iri: &str,
     bounds_rect: egui::Rect,
 ) -> (ERef<RdfGraph>, ERef<PackageViewT>) {
-    let model_uuid = uuid::Uuid::now_v7().into();
     let graph_model = ERef::new(RdfGraph::new(
-        model_uuid,
+        uuid::Uuid::now_v7().into(),
         iri.to_owned(),
         Vec::new(),
     ));
@@ -1266,10 +1282,13 @@ fn new_rdf_graph_view(
     model: ERef<RdfGraph>,
     bounds_rect: egui::Rect,
 ) -> ERef<PackageViewT> {
+    let m = model.read();
     PackageView::new(
         Arc::new(uuid::Uuid::now_v7().into()),
         RdfGraphAdapter {
-            model,
+            model: model.clone(),
+            iri_buffer: (*m.iri).clone(),
+            comment_buffer: (*m.comment).clone()
         },
         Vec::new(),
         bounds_rect,
@@ -1280,8 +1299,7 @@ fn new_rdf_node(
     iri: &str,
     position: egui::Pos2,
 ) -> (ERef<RdfNode>, ERef<RdfNodeView>) {
-    let node_model_uuid = uuid::Uuid::now_v7().into();
-    let node_model = ERef::new(RdfNode::new(node_model_uuid, iri.to_owned()));
+    let node_model = ERef::new(RdfNode::new(uuid::Uuid::now_v7().into(), iri.to_owned()));
     let node_view = new_rdf_node_view(node_model.clone(), position);
     (node_model, node_view)
 }
@@ -1290,10 +1308,10 @@ fn new_rdf_node_view(
     position: egui::Pos2,
 ) -> ERef<RdfNodeView> {
     let m = model.read();
-    let node_view_uuid = uuid::Uuid::now_v7().into();
     let node_view = ERef::new(RdfNodeView {
-        uuid: Arc::new(node_view_uuid),
+        uuid: Arc::new(uuid::Uuid::now_v7().into()),
         model: model.clone(),
+
         iri_buffer: (*m.iri).to_owned(),
         comment_buffer: (*m.comment).to_owned(),
 
@@ -1536,6 +1554,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         &mut self,
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
             InsensitiveCommand::SelectAll(select) => {
@@ -1568,6 +1587,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
+                    affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
                     for property in properties {
                         match property {
@@ -1576,7 +1596,6 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::IriChange(model.iri.clone())],
                                 ));
-                                self.iri_buffer = (**iri).clone();
                                 model.iri = iri.clone();
                             }
                             RdfPropChange::CommentChange(comment) => {
@@ -1584,7 +1603,6 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::CommentChange(model.comment.clone())],
                                 ));
-                                self.comment_buffer = (**comment).clone();
                                 model.comment = comment.clone();
                             }
                             _ => {}
@@ -1593,6 +1611,11 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                 }
             }
         }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.iri_buffer = (*model.iri).clone();
+        self.comment_buffer = (*model.comment).clone();
     }
 
     fn head_count(
@@ -1929,6 +1952,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         &mut self,
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
             InsensitiveCommand::SelectAll(select) => {
@@ -1961,6 +1985,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
+                    affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
                     for property in properties {
                         match property {
@@ -1969,7 +1994,6 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::ContentChange(model.content.clone())],
                                 ));
-                                self.content_buffer = (**content).clone();
                                 model.content = content.clone();
                             }
                             RdfPropChange::DataTypeChange(datatype) => {
@@ -1977,7 +2001,6 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::DataTypeChange(model.datatype.clone())],
                                 ));
-                                self.datatype_buffer = (**datatype).clone();
                                 model.datatype = datatype.clone();
                             }
                             RdfPropChange::LangTagChange(langtag) => {
@@ -1985,7 +2008,6 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::LangTagChange(model.langtag.clone())],
                                 ));
-                                self.langtag_buffer = (**langtag).clone();
                                 model.langtag = langtag.clone();
                             }
                             RdfPropChange::CommentChange(comment) => {
@@ -1993,7 +2015,6 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                                     std::iter::once(*self.uuid).collect(),
                                     vec![RdfPropChange::CommentChange(model.comment.clone())],
                                 ));
-                                self.comment_buffer = (**comment).clone();
                                 model.comment = comment.clone();
                             }
                             _ => {}
@@ -2002,6 +2023,13 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                 }
             }
         }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.content_buffer = (*model.content).clone();
+        self.datatype_buffer = (*model.datatype).clone();
+        self.langtag_buffer = (*model.langtag).clone();
+        self.comment_buffer = (*model.comment).clone();
     }
 
     fn head_count(
@@ -2058,6 +2086,10 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
 pub struct RdfPredicateAdapter {
     #[nh_context_serde(entity)]
     model: ERef<RdfPredicate>,
+    #[nh_context_serde(skip_and_default)]
+    iri_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    comment_buffer: String,
 }
 
 impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
@@ -2086,36 +2118,33 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
     }
 
     fn show_properties(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) {
-        let model = self.model.read();
-        let mut iri_buffer = (*model.iri).clone();
         ui.label("IRI:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut iri_buffer),
+                egui::TextEdit::multiline(&mut self.iri_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                RdfPropChange::IriChange(Arc::new(iri_buffer)),
+                RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
             ]));
         }
 
-        let mut comment_buffer = (*model.comment).clone();
         ui.label("Comment:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut comment_buffer),
+                egui::TextEdit::multiline(&mut self.comment_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                RdfPropChange::CommentChange(Arc::new(comment_buffer)),
+                RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ]));
         }
 
@@ -2130,7 +2159,6 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
             ]));
         }
     }
-
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
@@ -2160,6 +2188,11 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
             }
         }
     }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.iri_buffer = (*model.iri).clone();
+        self.comment_buffer = (*model.comment).clone();
+    }
 
     fn deep_copy_init(
         &self,
@@ -2176,7 +2209,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
             modelish
         };
 
-        Self { model }
+        Self { model, iri_buffer: self.iri_buffer.clone(), comment_buffer: self.comment_buffer.clone() }
     }
 
     fn deep_copy_finish(
@@ -2202,9 +2235,8 @@ fn new_rdf_predicate(
     source: (ERef<RdfNode>, RdfElementView),
     target: (RdfTargettableElement, RdfElementView),
 ) -> (ERef<RdfPredicate>, ERef<LinkViewT>) {
-    let predicate_model_uuid = uuid::Uuid::now_v7().into();
     let predicate_model = ERef::new(RdfPredicate::new(
-        predicate_model_uuid,
+        uuid::Uuid::now_v7().into(),
         iri.to_owned(),
         source.0,
         target.0,
@@ -2222,17 +2254,18 @@ fn new_rdf_predicate_view(
     source: RdfElementView,
     target: RdfElementView,
 ) -> ERef<LinkViewT> {
-    let predicate_view_uuid = uuid::Uuid::now_v7().into();
-    let predicate_view = MulticonnectionView::new(
-        Arc::new(predicate_view_uuid),
+    let m = model.read();
+    MulticonnectionView::new(
+        Arc::new(uuid::Uuid::now_v7().into()),
         RdfPredicateAdapter {
-            model,
+            model: model.clone(),
+            iri_buffer: (*m.iri).clone(),
+            comment_buffer: (*m.comment).clone(),
         },
         source,
         target,
         None,
         vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
         vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
-    );
-    predicate_view
+    )
 }

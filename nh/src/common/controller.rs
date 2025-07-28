@@ -453,8 +453,15 @@ pub trait TypedView: View {
 
 pub trait DiagramController: Any + TypedView + NHContextSerialize {
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid>;
+    fn refresh_buffers(&mut self, affected_models: &HashSet<ModelUuid>);
 
-    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>);
+    fn handle_input(
+        &mut self,
+        ui: &mut egui::Ui,
+        response: &egui::Response,
+        undo_accumulator: &mut Vec<Arc<String>>,
+        affected_models: &mut HashSet<ModelUuid>,
+    );
 
     fn new_ui_canvas(
         &mut self,
@@ -472,12 +479,22 @@ pub trait DiagramController: Any + TypedView + NHContextSerialize {
     fn context_menu(&mut self, ui: &mut egui::Ui);
 
     fn show_toolbar(&mut self, ui: &mut egui::Ui);
-    fn show_properties(&mut self, ui: &mut egui::Ui, undo_accumulator: &mut Vec<Arc<String>>);
+    fn show_properties(
+        &mut self,
+        ui: &mut egui::Ui,
+        undo_accumulator: &mut Vec<Arc<String>>,
+        affected_models: &mut HashSet<ModelUuid>,
+    );
     fn show_layers(&self, ui: &mut egui::Ui);
     fn show_menubar_edit_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
     fn show_menubar_diagram_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
 
-    fn apply_command(&mut self, command: DiagramCommand, global_undo: &mut Vec<Arc<String>>);
+    fn apply_command(
+        &mut self,
+        command: DiagramCommand,
+        global_undo: &mut Vec<Arc<String>>,
+        affected_models: &mut HashSet<ModelUuid>,
+    );
 
     /// Create new view with new model
     fn deep_copy(&self) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>);
@@ -845,7 +862,9 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         &mut self,
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        affected_models: &mut HashSet<ModelUuid>,
     );
+    fn refresh_buffers(&mut self);
     fn head_count(
         &mut self,
         flattened_views: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
@@ -913,11 +932,12 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn apply_property_change_fun(
-        &mut self,
+        &self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
+    fn refresh_buffers(&mut self);
     fn tool_change_fun(&self, tool: &mut Option<DomainT::ToolT>, ui: &mut egui::Ui);
     fn menubar_options_fun(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
 
@@ -1011,14 +1031,29 @@ impl<
     fn initialize(&mut self) {
         // Initialize flattened_* fields, etc.
         self.head_count();
-        // TODO: ingest buffers
+        // Refresh all buffers to reflect model state
+        self.refresh_all_buffers();
+    }
+
+    fn refresh_all_buffers(&mut self) {
+        for v in self.temporaries.flattened_views.values_mut() {
+            v.refresh_buffers();
+        }
+
+        self.adapter.refresh_buffers();
     }
 
     pub fn model(&self) -> ERef<DomainT::DiagramModelT> {
         self.adapter.model()
     }
 
-    fn handle_event(&mut self, event: InputEvent, modifiers: ModifierKeys, undo_accumulator: &mut Vec<Arc<String>>) -> bool {
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        modifiers: ModifierKeys,
+        undo_accumulator: &mut Vec<Arc<String>>,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) -> bool {
         // Collect alignment guides
         self.temporaries.snap_manager = SnapManager::new(self.temporaries.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.temporaries.camera_scale));
         self.owned_views.event_order_foreach_mut(|v| v.collect_allignment(&mut self.temporaries.snap_manager));
@@ -1111,7 +1146,7 @@ impl<
             },
         };
 
-        self.apply_commands(commands, undo_accumulator, true, true);
+        self.apply_commands(commands, undo_accumulator, true, true, affected_models);
 
         handled
     }
@@ -1172,6 +1207,7 @@ impl<
         global_undo_accumulator: &mut Vec<Arc<String>>,
         save_to_undo_stack: bool,
         clear_redo_stack: bool,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         for command in commands {
             let command = command.to_selection_insensitive(
@@ -1280,11 +1316,14 @@ impl<
                             &command,
                             &mut undo_accumulator,
                         );
+                        affected_models.insert(*self.adapter.model_uuid());
                     }
                 }
             }
 
-            self.owned_views.event_order_foreach_mut(|v| v.apply_command(&command, &mut undo_accumulator));
+            self.owned_views.event_order_foreach_mut(|v|
+                v.apply_command(&command, &mut undo_accumulator, affected_models)
+            );
 
             let modifies_selection = match command {
                 InsensitiveCommand::SelectAll(..)
@@ -1419,6 +1458,19 @@ impl<
         &self.temporaries.flattened_represented_models
     }
 
+    fn refresh_buffers(&mut self, affected_models: &HashSet<ModelUuid>) {
+        if affected_models.contains(&self.adapter.model_uuid()) {
+            self.adapter.refresh_buffers();
+        }
+
+        for mk in affected_models.iter() {
+            if let Some(vk) = self.temporaries.flattened_represented_models.get(mk)
+                && let Some(v) = self.temporaries.flattened_views.get_mut(vk) {
+                v.refresh_buffers();
+            }
+        }
+    }
+
     fn new_ui_canvas(
         &mut self,
         context: &DrawingContext,
@@ -1459,7 +1511,13 @@ impl<
 
         (Box::new(ui_canvas), painter_response, inner_mouse)
     }
-    fn handle_input(&mut self, ui: &mut egui::Ui, response: &egui::Response, undo_accumulator: &mut Vec<Arc<String>>) {
+    fn handle_input(
+        &mut self,
+        ui: &mut egui::Ui,
+        response: &egui::Response,
+        undo_accumulator: &mut Vec<Arc<String>>,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
         macro_rules! pos_to_abs {
             ($pos:expr) => {
                 (($pos - self.temporaries.camera_offset - response.rect.min.to_vec2()) / self.temporaries.camera_scale).to_pos2()
@@ -1472,7 +1530,7 @@ impl<
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if *pressed && *button == egui::PointerButton::Primary => {
                     self.temporaries.last_unhandled_mouse_pos = Some(pos_to_abs!(*pos));
-                    self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifiers, undo_accumulator);
+                    self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifiers, undo_accumulator, affected_models);
                 },
                 _ => {}
             })
@@ -1480,19 +1538,19 @@ impl<
         if response.dragged_by(egui::PointerButton::Primary) {
             if let Some(old_pos) = self.temporaries.last_unhandled_mouse_pos {
                 let delta = response.drag_delta() / self.temporaries.camera_scale;
-                self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifiers, undo_accumulator);
+                self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifiers, undo_accumulator, affected_models);
                 self.temporaries.last_unhandled_mouse_pos = Some(old_pos + delta);
             }
         }
         if response.clicked_by(egui::PointerButton::Primary) {
             if let Some(pos) = ui.ctx().pointer_interact_pos() {
-                self.handle_event(InputEvent::Click(pos_to_abs!(pos)), modifiers, undo_accumulator);
+                self.handle_event(InputEvent::Click(pos_to_abs!(pos)), modifiers, undo_accumulator, affected_models);
             }
         }
         ui.input(|is| is.events.iter()
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if !*pressed && *button == egui::PointerButton::Primary => {
-                    self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifiers, undo_accumulator);
+                    self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifiers, undo_accumulator, affected_models);
                     self.temporaries.last_unhandled_mouse_pos = None;
                 },
                 _ => {}
@@ -1535,7 +1593,12 @@ impl<
     fn show_toolbar(&mut self, ui: &mut egui::Ui) {
         self.adapter.tool_change_fun(&mut self.temporaries.current_tool, ui);
     }
-    fn show_properties(&mut self, ui: &mut egui::Ui, undo_accumulator: &mut Vec<Arc<String>>) {
+    fn show_properties(
+        &mut self,
+        ui: &mut egui::Ui,
+        undo_accumulator: &mut Vec<Arc<String>>,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
         let mut commands = Vec::new();
         {
             let queryable = DomainT::QueryableT::new(&self.temporaries.flattened_represented_models, &self.temporaries.flattened_views);
@@ -1549,7 +1612,7 @@ impl<
             }
         }
 
-        self.apply_commands(commands, undo_accumulator, true, true);
+        self.apply_commands(commands, undo_accumulator, true, true, affected_models);
     }
     fn show_layers(&self, _ui: &mut egui::Ui) {
         // TODO: Layers???
@@ -1568,6 +1631,7 @@ impl<
         &mut self,
         command: DiagramCommand,
         global_undo: &mut Vec<Arc<String>>,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
             DiagramCommand::DropRedoStackAndLastChangeFlag => {
@@ -1589,6 +1653,7 @@ impl<
                     &mut vec![],
                     false,
                     false,
+                    affected_models,
                 );
                 self.temporaries.redo_stack.push(og_command);
             },
@@ -1596,16 +1661,16 @@ impl<
                 let Some(redo_command) = self.temporaries.redo_stack.pop() else {
                     return;
                 };
-                self.apply_commands(vec![redo_command.into()], &mut vec![], true, false);
+                self.apply_commands(vec![redo_command.into()], &mut vec![], true, false, affected_models);
             }
             DiagramCommand::SelectAllElements(select) => {
-                self.apply_commands(vec![InsensitiveCommand::SelectAll(select).into()], &mut vec![], true, false);
+                self.apply_commands(vec![InsensitiveCommand::SelectAll(select).into()], &mut vec![], true, false, affected_models);
             }
             DiagramCommand::InvertSelection => {
                 self.apply_commands(vec![
                     InsensitiveCommand::SelectAll(true).into(),
                     InsensitiveCommand::SelectSpecific(self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(), false).into()
-                ], &mut vec![], true, false);
+                ], &mut vec![], true, false, affected_models);
             }
             DiagramCommand::DeleteSelectedElements
             | DiagramCommand::CutSelectedElements
@@ -1624,7 +1689,7 @@ impl<
                         DiagramCommand::ArrangeSelected(arr) => SensitiveCommand::ArrangeSelected(arr),
                         _ => unreachable!(),
                     }
-                ], &mut undo, true, true);
+                ], &mut undo, true, true, affected_models);
                 self.temporaries.last_change_flag = true;
                 global_undo.extend(undo.into_iter());
             }
@@ -1674,7 +1739,7 @@ impl<
 
                     // apply commands
                     let mut undo = vec![];
-                    self.apply_commands(cmds, &mut undo, true, true);
+                    self.apply_commands(cmds, &mut undo, true, true, affected_models);
                     self.temporaries.last_change_flag = true;
                     global_undo.extend(undo.into_iter());
                 }
@@ -1684,7 +1749,7 @@ impl<
                     let mut undo = vec![];
                     self.apply_commands(vec![
                         InsensitiveCommand::DeleteSpecificElements(std::iter::once(*view_uuid).collect(), including_model).into()
-                    ], &mut undo, true, true);
+                    ], &mut undo, true, true, affected_models);
                     self.temporaries.last_change_flag = true;
                     global_undo.extend(undo.into_iter());
                 }
@@ -1771,7 +1836,7 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
 
     fn show_properties(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>
     );
@@ -1781,6 +1846,7 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
+    fn refresh_buffers(&mut self);
 
     fn deep_copy_init(
         &self,
@@ -2208,11 +2274,12 @@ where
         &mut self,
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
             ($self:ident) => {
                 $self.owned_views.event_order_foreach_mut(|v|
-                    v.apply_command(command, undo_accumulator)
+                    v.apply_command(command, undo_accumulator, affected_models)
                 );
             };
         }
@@ -2283,7 +2350,7 @@ where
                     -*delta,
                 ));
                 self.owned_views.event_order_foreach_mut(|v| {
-                    v.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![]);
+                    v.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![], affected_models);
                 });
             }
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
@@ -2375,11 +2442,15 @@ where
                         command,
                         undo_accumulator,
                     );
+                    affected_models.insert(*self.adapter.model_uuid());
                 }
 
                 recurse!(self);
             }
         }
+    }
+    fn refresh_buffers(&mut self) {
+        self.adapter.refresh_buffers();
     }
 
     fn head_count(
@@ -2475,7 +2546,7 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
     fn destination_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
 
     fn show_properties(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>
     );
@@ -2485,6 +2556,7 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
+    fn refresh_buffers(&mut self);
 
     fn deep_copy_init(
         &self,
@@ -2995,6 +3067,7 @@ where
         &mut self,
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! all_pts_mut {
             ($self:ident) => {
@@ -3169,9 +3242,13 @@ where
                         if let Ok(FlipMulticonnection {}) = property.try_into() {}
                     }
                     self.adapter.apply_change(&self.uuid, command, undo_accumulator);
+                    affected_models.insert(*self.adapter.model_uuid());
                 }
             }
         }
+    }
+    fn refresh_buffers(&mut self) {
+        self.adapter.refresh_buffers();
     }
 
     fn head_count(

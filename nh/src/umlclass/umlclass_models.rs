@@ -536,6 +536,12 @@ pub enum UmlClassLinkType {
     Usage,
 }
 
+impl Default for UmlClassLinkType {
+    fn default() -> Self {
+        Self::Association
+    }
+}
+
 // I hate this so much
 static ASSOCIATION_TEXT: LazyLock<Arc<String>> =
     LazyLock::new(|| Arc::new("Assocation".to_owned()));
