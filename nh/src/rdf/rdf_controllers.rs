@@ -20,7 +20,7 @@ use std::{
 use sophia::api::{prelude::SparqlDataset, sparql::Query};
 use sophia_sparql::{ResultTerm, SparqlQuery, SparqlWrapper};
 
-struct RdfDomain;
+pub struct RdfDomain;
 impl Domain for RdfDomain {
     type CommonElementT = RdfElement;
     type DiagramModelT = RdfDiagram;

@@ -19,7 +19,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-struct UmlClassDomain;
+pub struct UmlClassDomain;
 impl Domain for UmlClassDomain {
     type CommonElementT = UmlClassElement;
     type DiagramModelT = UmlClassDiagram;

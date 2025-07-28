@@ -8,10 +8,10 @@ edition = "2024"
 nh-derive = { path = "../nh-derive" }
 
 derive_more = { version = "2.0", features = [ "from" ] }
-eframe = "0.31"
-egui_extras = { version = "0.31", features = [ "serde" ] }
-egui_dock = "0.16"
-egui_ltreeview = "0.4"
+eframe = "0.32"
+egui_extras = { version = "0.32", features = [ "serde" ] }
+egui_dock = "0.17"
+egui_ltreeview = "0.5"
 rfd = "0.15"
 serde = { version = "1.0", features = [ "derive", "rc" ] }
 toml = "0.8"

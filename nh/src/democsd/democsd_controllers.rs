@@ -19,7 +19,7 @@ use std::{
     sync::{Arc},
 };
 
-struct DemoCsdDomain;
+pub struct DemoCsdDomain;
 impl Domain for DemoCsdDomain {
     type CommonElementT = DemoCsdElement;
     type DiagramModelT = DemoCsdDiagram;

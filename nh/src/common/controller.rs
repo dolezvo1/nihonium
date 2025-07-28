@@ -392,17 +392,17 @@ impl<ModelT: Model> ModelHierarchyView for SimpleModelHierarchyView<ModelT> {
                         .context_menu(|ui| {
                             if !(self.is_represented)(&model_uuid) && ui.button("Create view").clicked() {
                                 self.command = Some(DiagramCommand::CreateViewFor(model_uuid));
-                                ui.close_menu();
+                                ui.close();
                             }
 
                             if (self.is_represented)(&model_uuid) && ui.button("Delete view").clicked() {
                                 self.command = Some(DiagramCommand::DeleteViewFor(model_uuid, false));
-                                ui.close_menu();
+                                ui.close();
                             }
 
                             if ui.button("Delete model").clicked() {
                                 self.command = Some(DiagramCommand::DeleteViewFor(model_uuid, true));
-                                ui.close_menu();
+                                ui.close();
                             }
                         })
                 );
@@ -2244,7 +2244,7 @@ where
                         egui::Align::Center => (0.0, 0.0),
                         egui::Align::Max => (-delta.y, 0.0),
                     };
-                    let new_real_bounds = real_bounds + epaint::Marginf { left, right, top, bottom };
+                    let new_real_bounds = real_bounds + epaint::MarginF32 { left, right, top, bottom };
                     self.dragged_type_and_shape = Some((PackageDragType::Resize(align), new_real_bounds));
                     let handle_x = match align.x() {
                         egui::Align::Min => (new_real_bounds.right(), self.bounds_rect.right()),
@@ -2298,7 +2298,7 @@ where
                     egui::Align::Max => ((-$delta.y).max(min_delta_y), 0.0),
                 };
 
-                let r = self.bounds_rect + epaint::Marginf{left, right, top, bottom};
+                let r = self.bounds_rect + epaint::MarginF32{left, right, top, bottom};
 
                 undo_accumulator.push(InsensitiveCommand::ResizeSpecificElementsTo(
                     std::iter::once(*self.uuid).collect(),

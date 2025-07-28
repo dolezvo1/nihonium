@@ -15,6 +15,7 @@ use eframe::egui::{
 };
 use eframe::NativeOptions;
 
+use egui_dock::tab_viewer::OnCloseResponse;
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
 use egui_ltreeview::{NodeBuilder, TreeView, TreeViewState};
 
@@ -208,9 +209,9 @@ impl TabViewer for NHContext {
         ui.label("This is a tab context menu");
     }
 
-    fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
+    fn on_close(&mut self, tab: &mut Self::Tab) -> OnCloseResponse {
         self.open_unique_tabs.remove(tab);
-        true
+        OnCloseResponse::Close
     }
 }
 
@@ -357,21 +358,21 @@ impl NHContext {
                             .context_menu(|ui| {
                                 if ui.button("New Folder").clicked() {
                                     *cma = Some(ContextMenuAction::NewFolder(*uuid));
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                                 ui.separator();
                                 if ui.button("Collapse children").clicked() {
                                     *cma = Some(ContextMenuAction::RecCollapseAt(true, *uuid));
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                                 if ui.button("Uncollapse children").clicked() {
                                     *cma = Some(ContextMenuAction::RecCollapseAt(false, *uuid));
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                                 ui.separator();
                                 if ui.button("Delete").clicked() {
                                     *cma = Some(ContextMenuAction::DeleteFolder(*uuid));
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                             })
                     );
@@ -390,21 +391,21 @@ impl NHContext {
                             .context_menu(|ui| {
                                 if ui.button("Open").clicked() {
                                     *cma = Some(ContextMenuAction::OpenDiagram(*hm.uuid()));
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                                 ui.separator();
                                 if ui.button("Duplicate (deep)").clicked() {
                                     *cma = Some(ContextMenuAction::DuplicateDeep(*hm.uuid()));
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                                 if ui.button("Duplicate (shallow)").clicked() {
                                     *cma = Some(ContextMenuAction::DuplicateShallow(*hm.uuid()));
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                                 ui.separator();
                                 if ui.button("Delete").clicked() {
                                     *cma = Some(ContextMenuAction::DeleteDiagram(*hm.uuid()));
-                                    ui.close_menu();
+                                    ui.close();
                                 }
                             })
                     );
@@ -469,7 +470,7 @@ impl NHContext {
                 },
                 ContextMenuAction::RecCollapseAt(b, view_uuid) => {
                     if let Some(e) = self.project_hierarchy.get(&view_uuid) {
-                        e.0.for_each(|e| self.tree_view_state.set_openness(&e.uuid(), !b));
+                        e.0.for_each(|e| self.tree_view_state.set_openness(e.uuid(), !b));
                     }
                 },
                 ContextMenuAction::DeleteFolder(view_uuid) => {
@@ -1261,6 +1262,36 @@ impl Default for NHApp {
     }
 }
 
+// Push to the node of the last diagram or the largest node
+macro_rules! push_diagram_tab {
+    ($self:expr, $uuid:expr) => {
+        let tab = NHTab::Diagram { uuid: $uuid };
+        if let Some(lfd_uuid) = &$self.context.last_focused_diagram
+            && let Some((si, ni, _ti)) = $self.tree.find_tab(&NHTab::Diagram { uuid: *lfd_uuid }) {
+            $self.tree.set_focused_node_and_surface((si, ni));
+            $self.tree.push_to_focused_leaf(tab);
+        } else {
+            let mut current_largest_leaf = None;
+            let mut current_max_area = None;
+            for (_si, ln) in $self.tree.iter_leaves() {
+                let leaf_node_area = ln.viewport.area();
+                if current_max_area.is_none_or(|e| leaf_node_area > e) {
+                    if let Some(tab) = ln.tabs.get(ln.active.0)
+                        && let Some((si, ni, _ti)) = $self.tree.find_tab(tab) {
+                        current_largest_leaf = Some((si, ni));
+                        current_max_area = Some(leaf_node_area);
+                    }
+                }
+            }
+            if let Some((si, ni)) = current_largest_leaf {
+                $self.tree.set_focused_node_and_surface((si, ni));
+            }
+
+            $self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
+        }
+    };
+}
+
 impl NHApp {
     fn switch_to_tab(&mut self, tab: &NHTab) {
         let Some(t) = self.tree.find_tab(&tab) else { return; };
@@ -1313,10 +1344,9 @@ impl NHApp {
             .diagram_controllers
             .insert(view_uuid, (diagram_type, diagram_view));
         self.context.model_hierarchy_views.insert(model_uuid, hierarchy_view);
-
-        let tab = NHTab::Diagram { uuid: view_uuid };
-        self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
+        push_diagram_tab!(self, view_uuid);
     }
+
     pub fn add_custom_tab(&mut self, uuid: uuid::Uuid, tab: Arc<RwLock<dyn CustomTab>>) {
         self.context.custom_tabs.insert(uuid, tab);
 
@@ -1356,12 +1386,7 @@ impl eframe::App for NHApp {
                         self.tree.set_focused_node_and_surface((t.0, t.1));
                         self.tree.set_active_tab(t);
                     } else {
-                        if let Some(t) = self.context.last_focused_diagram
-                            .and_then(|e| self.tree.find_tab(&NHTab::Diagram { uuid: e })) {
-                            self.tree.set_focused_node_and_surface((t.0, t.1));
-                            self.tree.set_active_tab(t);
-                        }
-                        self.tree[SurfaceIndex::main()].push_to_focused_leaf(target_tab);
+                        push_diagram_tab!(self, uuid);
                     }
                 },
                 other => commands.push(other),
@@ -1408,7 +1433,7 @@ impl eframe::App for NHApp {
                     }
                     if $ui.add(button).clicked() {
                         commands.push($simple_project_command.into());
-                        $ui.close_menu();
+                        $ui.close();
                     }
                 }
             };
@@ -1473,7 +1498,7 @@ impl eframe::App for NHApp {
             );
             
             // Menubar UI
-            egui::menu::bar(ui, |ui| {
+            egui::MenuBar::new().ui(ui, |ui| {
                 ui.menu_button(translate!("nh-project"), |ui| {
                     if ui.button(translate!("nh-project-newproject")).clicked() {
                         let _ = new_project();
@@ -1510,8 +1535,7 @@ impl eframe::App for NHApp {
                                 let (diagram_controller, mhview) = fun(self.context.new_diagram_no);
                                 commands.push(ProjectCommand::SetNewDiagramNumber(self.context.new_diagram_no + 1));
                                 commands.push(ProjectCommand::AddNewDiagram(diagram_type, diagram_controller, mhview));
-                                // TODO: use mhview
-                                ui.close_menu();
+                                ui.close();
                             }
                         }
                     });
@@ -1635,7 +1659,7 @@ impl eframe::App for NHApp {
                                         )
                                     );
                                 }
-                                ui.close_menu();
+                                ui.close();
                             }
                         },
                     );
@@ -1667,7 +1691,7 @@ impl eframe::App for NHApp {
                                 self.context.open_unique_tabs.insert(tab.clone());
                             }
 
-                            ui.close_menu();
+                            ui.close();
                         }
                     }
                 });
