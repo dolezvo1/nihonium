@@ -614,6 +614,7 @@ pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>
     (
         DiagramControllerGen2::new(
             Arc::new(view_uuid),
+            name.clone().into(),
             UmlClassDiagramAdapter {
                 model: diagram.clone(),
                 buffer: UmlClassDiagramBuffer {
@@ -757,6 +758,7 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
     (
         DiagramControllerGen2::new(
             Arc::new(diagram_view_uuid),
+            name.clone().into(),
             UmlClassDiagramAdapter {
                 model: diagram2.clone(),
                 buffer: UmlClassDiagramBuffer {

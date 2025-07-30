@@ -805,6 +805,7 @@ pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>
     (
         DiagramControllerGen2::new(
             Arc::new(view_uuid),
+            name.clone().into(),
             RdfDiagramAdapter {
                 model: diagram.clone(),
                 buffer: RdfDiagramBuffer {
@@ -895,6 +896,7 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
     (
         DiagramControllerGen2::new(
             Arc::new(view_uuid),
+            name.clone().into(),
             RdfDiagramAdapter {
                 model: diagram.clone(),
                 buffer: RdfDiagramBuffer {

@@ -105,7 +105,7 @@ impl NHTab {
             NHTab::Layers => "Layers",
 
             NHTab::Diagram { .. } => "Diagram",
-            NHTab::CustomTab { .. } => todo!(),
+            NHTab::CustomTab { .. } => "Custom Tab",
         }
     }
 }
@@ -163,11 +163,15 @@ struct NHContext {
 impl TabViewer for NHContext {
     type Tab = NHTab;
 
+    fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
+        egui::Id::new(tab)
+    }
+
     fn title(&mut self, tab: &mut Self::Tab) -> WidgetText {
         match tab {
             NHTab::Diagram { uuid } => {
                 let c = self.diagram_controllers.get(uuid).unwrap().1.read();
-                (&*c.model_name()).into()
+                (&*c.view_name()).into()
             }
             NHTab::CustomTab { uuid } => {
                 self.custom_tabs.get(uuid).unwrap()
@@ -387,7 +391,7 @@ impl NHContext {
                     let hm = rw_lock.read();
                     builder.node(
                         NodeBuilder::leaf(*hm.uuid())
-                            .label(format!("{} ({})", hm.model_name(), hm.uuid().to_string()))
+                            .label(format!("{} ({})", hm.view_name(), hm.uuid().to_string()))
                             .context_menu(|ui| {
                                 if ui.button("Open").clicked() {
                                     *cma = Some(ContextMenuAction::OpenDiagram(*hm.uuid()));
@@ -1564,7 +1568,7 @@ impl eframe::App for NHApp {
                                 let Some((_t, ac)) = self.context.diagram_controllers.get(uuid) else {
                                     break;
                                 };
-                                let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().model_name()));
+                                let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().view_name()));
                                 if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
                                     button = button.shortcut_text(shortcut_text);
                                 }
@@ -1594,7 +1598,7 @@ impl eframe::App for NHApp {
                                 let Some((_t, ac)) = self.context.diagram_controllers.get(uuid) else {
                                     break;
                                 };
-                                let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().model_name()));
+                                let mut button = egui::Button::new(format!("{} in '{}'", &*c, ac.read().view_name()));
                                 if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
                                     button = button.shortcut_text(shortcut_text);
                                 }
@@ -1642,7 +1646,7 @@ impl eframe::App for NHApp {
                     view.show_menubar_diagram_options(ui, &mut commands);
 
                     ui.menu_button(
-                        format!("Export Diagram `{}` to", view.model_name()),
+                        format!("Export Diagram `{}` to", view.view_name()),
                         |ui| {
                             if ui.button("SVG").clicked() {
                                 // NOTE: This does not work on WASM, and in its current state it never will.

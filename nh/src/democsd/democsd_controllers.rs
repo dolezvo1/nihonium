@@ -616,6 +616,7 @@ pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>
     (
         DiagramControllerGen2::new(
             Arc::new(uuid::Uuid::now_v7().into()),
+            name.clone().into(),
             DemoCsdDiagramAdapter {
                 model: diagram.clone(),
                 buffer: DemoCsdDiagramBuffer {
@@ -719,6 +720,7 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
         (
             DiagramControllerGen2::new(
                 Arc::new(uuid::Uuid::now_v7().into()),
+                name.clone().into(),
                 DemoCsdDiagramAdapter {
                     model: diagram.clone(),
                     buffer: DemoCsdDiagramBuffer {

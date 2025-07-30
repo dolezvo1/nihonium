@@ -251,7 +251,7 @@ pub enum Arrangement {
 
 pub enum HierarchyNode {
     Folder(ViewUuid, Arc<String>, Vec<HierarchyNode>),
-    Diagram(ERef<dyn TypedView>),
+    Diagram(ERef<dyn TopLevelView>),
 }
 
 impl HierarchyNode {
@@ -436,6 +436,8 @@ impl<ModelT: Model> ModelHierarchyView for SimpleModelHierarchyView<ModelT> {
 }
 
 
+const VIEW_MODEL_PROPERTIES_BLOCK_SPACING: f32 = 10.0;
+
 pub struct DrawingContext<'a> {
     pub profile: &'a ColorProfile,
     pub fluent_bundle: &'a fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
@@ -447,11 +449,12 @@ pub trait View: Entity {
     fn model_name(&self) -> Arc<String>;
 }
 
-pub trait TypedView: View {
+pub trait TopLevelView: View {
+    fn view_name(&self) -> Arc<String>;
     fn view_type(&self) -> String;
 }
 
-pub trait DiagramController: Any + TypedView + NHContextSerialize {
+pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid>;
     fn refresh_buffers(&mut self, affected_models: &HashSet<ModelUuid>);
 
@@ -954,6 +957,7 @@ pub struct DiagramControllerGen2<
     DiagramAdapterT: DiagramAdapter<DomainT>,
 > {
     uuid: Arc<ViewUuid>,
+    name: Arc<String>,
     #[nh_context_serde(entity)]
     adapter: DiagramAdapterT,
     #[nh_context_serde(entity)]
@@ -963,6 +967,8 @@ pub struct DiagramControllerGen2<
 }
 
 struct DiagramControllerGen2Temporaries<DomainT: Domain> {
+    name_buffer: String,
+
     flattened_views: HashMap<ViewUuid, DomainT::CommonElementViewT>,
     flattened_views_status: HashMap<ViewUuid, SelectionStatus>,
     flattened_represented_models: HashMap<ModelUuid, ViewUuid>,
@@ -989,6 +995,7 @@ struct DiagramControllerGen2Temporaries<DomainT: Domain> {
 impl<DomainT: Domain> Default for DiagramControllerGen2Temporaries<DomainT> {
     fn default() -> Self {
         Self {
+            name_buffer: Default::default(),
             flattened_views: Default::default(),
             flattened_views_status: Default::default(),
             flattened_represented_models: Default::default(),
@@ -1014,11 +1021,13 @@ impl<
 > DiagramControllerGen2<DomainT, DiagramAdapterT> {
     pub fn new(
         uuid: Arc<ViewUuid>,
+        name: Arc<String>,
         adapter: DiagramAdapterT,
         owned_views: Vec<DomainT::CommonElementViewT>,
     ) -> ERef<Self> {
         let ret = ERef::new(Self {
             uuid,
+            name,
             adapter,
             owned_views: OrderedViews::new(owned_views),
             temporaries: DiagramControllerGen2Temporaries::default(),
@@ -1040,6 +1049,7 @@ impl<
             v.refresh_buffers();
         }
 
+        self.temporaries.name_buffer = (*self.name).clone();
         self.adapter.refresh_buffers();
     }
 
@@ -1403,6 +1413,7 @@ impl<
     ) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
         let new_diagram_view = Self::new(
             Arc::new(uuid::Uuid::now_v7().into()),
+            format!("{} (copy)", self.name).into(),
             new_adapter,
             Self::elements_deep_copy(
                 None,
@@ -1444,7 +1455,11 @@ impl<
 impl<
     DomainT: Domain,
     DiagramAdapterT: DiagramAdapter<DomainT>
-> TypedView for DiagramControllerGen2<DomainT, DiagramAdapterT> {
+> TopLevelView for DiagramControllerGen2<DomainT, DiagramAdapterT> {
+    fn view_name(&self) -> Arc<String> {
+        self.name.clone()
+    }
+
     fn view_type(&self) -> String {
         self.adapter.view_type().to_owned()
     }
@@ -1608,6 +1623,14 @@ impl<
                 .event_order_find_mut(|v| if v.show_properties(&queryable, ui, &mut commands) { Some(()) } else { None })
                 .is_none()
             {
+                ui.label("View properties:");
+                ui.label("Name:");
+                if ui.text_edit_singleline(&mut self.temporaries.name_buffer).changed() {
+                    self.name = Arc::new(self.temporaries.name_buffer.clone());
+                }
+                ui.add_space(VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
+
+                ui.label("Model properties:");
                 self.adapter.show_props_fun(&self.uuid, ui, &mut commands);
             }
         }
@@ -1984,7 +2007,7 @@ where
 
             self.adapter.show_properties(ui, commands);
 
-            ui.add_space(1.0);
+            ui.add_space(VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
             ui.label("View properties");
 
             egui::Grid::new("size_grid").show(ui, |ui| {
