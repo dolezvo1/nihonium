@@ -192,7 +192,10 @@ impl Default for SnapManager {
 #[derive(Clone)]
 pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
+    /// Open given diagram wherever
     OpenAndFocusDiagram(ViewUuid),
+    /// Open and/or move diagram to be at given position
+    OpenAndFocusDiagramAt(ViewUuid, egui::Pos2),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetSvgExportMenu(Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, usize, bool, bool, f32, f32)>),
     SetNewDiagramNumber(u32),

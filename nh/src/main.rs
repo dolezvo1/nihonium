@@ -433,6 +433,20 @@ impl NHContext {
 
                 for action in actions.into_iter() {
                     match action {
+                        egui_ltreeview::Action::Activate(a) => {
+                            for selected in &a.selected {
+                                if let Some((HierarchyNode::Diagram(..), _)) = self.project_hierarchy.get(selected) {
+                                    commands.push(ProjectCommand::OpenAndFocusDiagram(*selected));
+                                }
+                            }
+                        }
+                        egui_ltreeview::Action::MoveExternal(dnde) => {
+                            for selected in &dnde.source {
+                                if let Some((HierarchyNode::Diagram(..), _)) = self.project_hierarchy.get(selected) {
+                                    commands.push(ProjectCommand::OpenAndFocusDiagramAt(*selected, dnde.position));
+                                }
+                            }
+                        }
                         egui_ltreeview::Action::Move(dnd) => {
                             let target_is_folder = matches!(self.project_hierarchy.get(&dnd.target), Some((HierarchyNode::Folder(..), _)));
 
@@ -444,17 +458,6 @@ impl NHContext {
                                             _ = self.project_hierarchy.insert(&dnd.target, dnd.position, source);
                                         }
                                     }
-                                }
-                            }
-                        }
-                        egui_ltreeview::Action::Activate(a) => {
-                            for selected in &a.selected {
-                                match self.project_hierarchy.get(selected) {
-                                    Some((HierarchyNode::Diagram(..), _)) => {
-                                        commands.push(ProjectCommand::OpenAndFocusDiagram(*selected));
-                                    }
-                                    // TODO: jump to activated Element/CompositeElement
-                                    _ => {}
                                 }
                             }
                         }
@@ -1393,6 +1396,28 @@ impl eframe::App for NHApp {
                         push_diagram_tab!(self, uuid);
                     }
                 },
+                ProjectCommand::OpenAndFocusDiagramAt(uuid, pos) => {
+                    let target_tab = NHTab::Diagram { uuid };
+                    if let Some(t) = self.tree.find_tab(&target_tab)
+                        && let egui_dock::Node::Leaf(ln) = &self.tree[t.0][t.1]
+                        && ln.rect.contains(pos) {
+                        self.tree.set_focused_node_and_surface((t.0, t.1));
+                        self.tree.set_active_tab(t);
+                    } else {
+                        self.tree.retain_tabs(|e| *e != target_tab);
+                        let mut it = self.tree.iter_leaves();
+                        while let Some((_si, ln)) = it.next() {
+                            if ln.rect.contains(pos)
+                                && let Some(tab) = ln.tabs.get(ln.active.0)
+                                && let Some(t) = self.tree.find_tab(tab) {
+                                    drop(it);
+                                    self.tree.set_focused_node_and_surface((t.0, t.1));
+                                    self.tree[t.0].push_to_focused_leaf(target_tab);
+                                    break;
+                            }
+                        }
+                    }
+                }
                 other => commands.push(other),
             }
         }
@@ -1997,7 +2022,8 @@ impl eframe::App for NHApp {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::Exit(b));
                     }
                 }
-                ProjectCommand::OpenAndFocusDiagram(_) => unreachable!("this should not happen"),
+                ProjectCommand::OpenAndFocusDiagram(..)
+                | ProjectCommand::OpenAndFocusDiagramAt(..) => unreachable!("this should not happen"),
                 ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
                 ProjectCommand::SetSvgExportMenu(sem) => self.context.svg_export_menu = sem,
                 ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
