@@ -1160,6 +1160,15 @@ impl<'a> MeasuringCanvas<'a> {
     pub fn bounds(&self) -> egui::Rect {
         self.bounds
     }
+
+    pub fn scale_offset_to_fit(&self, rect: egui::Vec2) -> (f32, egui::Pos2) {
+        let scale_x = rect.x / self.bounds.width();
+        let scale_y = rect.y / self.bounds.height();
+        let scale_min = scale_x.min(scale_y);
+        let offset_x = (rect.x - self.bounds().width() * scale_min) / 2.0 - self.bounds.min.x * scale_min;
+        let offset_y = (rect.y - self.bounds().height() * scale_min) / 2.0 - self.bounds.min.y * scale_min;
+        (scale_min, egui::Pos2::new(offset_x, offset_y))
+    }
 }
 
 impl<'a> NHCanvas for MeasuringCanvas<'a> {

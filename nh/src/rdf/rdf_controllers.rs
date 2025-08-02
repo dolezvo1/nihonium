@@ -381,12 +381,57 @@ pub struct RdfDiagramAdapter {
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     buffer: RdfDiagramBuffer,
+    #[serde(skip)]
+    #[nh_context_serde(skip_and_default)]
+    placeholders: RdfPlaceholderViews,
 }
 
 #[derive(Clone, Default)]
 struct RdfDiagramBuffer {
     name: String,
     comment: String,
+}
+
+#[derive(Clone)]
+struct RdfPlaceholderViews {
+    views: [RdfElementView; 5],
+}
+
+impl Default for RdfPlaceholderViews {
+    fn default() -> Self {
+        let (literal, literal_view) = new_rdf_literal("Eric Miller", "http://www.w3.org/2001/XMLSchema#string", "en", egui::Pos2::new(100.0, 75.0));
+        let literal = (literal.into(), literal_view.into());
+        let (node, node_view) = new_rdf_node("http://iri", egui::Pos2::ZERO);
+        let node = (node, node_view.into());
+        let (predicate, predicate_view) = new_rdf_predicate("http://iri", node.clone(), literal.clone());
+
+        let (_graph, graph_view) = new_rdf_graph("http://graph", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+        let note_view = literal.clone();
+
+        Self {
+            views: [
+                literal.1,
+                node.1,
+                predicate_view.into(),
+                graph_view.into(),
+                note_view.1,
+            ],
+        }
+    }
+}
+
+impl RdfDiagramAdapter {
+    fn new(model: ERef<RdfDiagram>) -> Self {
+        let m = model.read();
+         Self {
+            model: model.clone(),
+            buffer: RdfDiagramBuffer {
+                name: (*m.name).clone(),
+                comment: (*m.comment).clone(),
+            },
+            placeholders: Default::default(),
+        }
+    }
 }
 
 impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
@@ -525,7 +570,13 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         self.buffer.comment = (*model.comment).clone();
     }
 
-    fn tool_change_fun(&self, tool: &mut Option<NaiveRdfTool>, ui: &mut egui::Ui) {
+    fn show_tool_palette(
+        &mut self,
+        tool: &mut Option<NaiveRdfTool>,
+        drawing_context: &DrawingContext,
+        ui: &mut egui::Ui,
+    ) {
+        let button_height = 60.0;
         let width = ui.available_width();
 
         let stage = tool.as_ref().map(|e| e.initial_stage());
@@ -539,7 +590,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
 
         if ui
             .add_sized(
-                [width, 20.0],
+                [width, button_height],
                 egui::Button::new("Select/Move").fill(if stage == None {
                     egui::Color32::BLUE
                 } else {
@@ -552,22 +603,37 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         }
         ui.separator();
 
+        let (empty_a, empty_b) = (HashMap::new(), HashMap::new());
+        let empty_q = RdfQueryable::new(&empty_a, &empty_b);
+        let mut icon_counter = 0;
         for cat in [
             &[
                 (RdfToolStage::Literal, "Literal"),
                 (RdfToolStage::Node, "Node"),
                 (RdfToolStage::PredicateStart, "Predicate"),
-                (RdfToolStage::GraphStart, "Graph"),
             ][..],
+            &[(RdfToolStage::GraphStart, "Graph")][..],
             &[(RdfToolStage::Note, "Note")][..],
         ] {
             for (stage, name) in cat {
-                if ui
-                    .add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage)))
-                    .clicked()
-                {
-                    *tool = Some(NaiveRdfTool::new(*stage));
+                let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
+                if response.clicked() {
+                    if let Some(t) = &tool && t.initial_stage == *stage {
+                        *tool = None;
+                    } else {
+                        *tool = Some(NaiveRdfTool::new(*stage));
+                    }
                 }
+
+                let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
+                let mut painter = ui.painter().with_clip_rect(icon_rect);
+                let mut mc = canvas::MeasuringCanvas::new(&painter);
+                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
+                let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
+                let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None);
+                c.clear(drawing_context.profile.backgrounds[0].gamma_multiply(0.75));
+                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
+                icon_counter += 1;
             }
             ui.separator();
         }
@@ -806,13 +872,7 @@ pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>
         DiagramControllerGen2::new(
             Arc::new(view_uuid),
             name.clone().into(),
-            RdfDiagramAdapter {
-                model: diagram.clone(),
-                buffer: RdfDiagramBuffer {
-                    name,
-                    comment: "".to_owned(),
-                },
-            },
+            RdfDiagramAdapter::new(diagram.clone()),
             Vec::new(),
         ),
         Arc::new(SimpleModelHierarchyView::new(diagram)),
@@ -897,13 +957,7 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
         DiagramControllerGen2::new(
             Arc::new(view_uuid),
             name.clone().into(),
-            RdfDiagramAdapter {
-                model: diagram.clone(),
-                buffer: RdfDiagramBuffer {
-                    name,
-                    comment: "".to_owned(),
-                },
-            },
+            RdfDiagramAdapter::new(diagram.clone()),
             owned_controllers,
         ),
         Arc::new(SimpleModelHierarchyView::new(diagram)),

@@ -542,8 +542,12 @@ impl NHContext {
 
     fn toolbar(&self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
-        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
-        c.write().show_toolbar(ui);
+        let Some((t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
+        let drawing_context = DrawingContext {
+            profile: &self.color_profiles[*t].2[self.selected_color_profiles[*t]],
+            fluent_bundle: &self.fluent_bundle,
+        };
+        c.write().show_toolbar(&drawing_context, ui);
     }
 
     fn properties(&mut self, ui: &mut Ui) {
@@ -1549,16 +1553,16 @@ impl eframe::App for NHApp {
                         for (label, diagram_type, fun) in [
                             (
                                 "UML Class diagram",
-                                0,
+                                1,
                                 crate::umlclass::umlclass_controllers::new as NDC,
                             ),
                             //("Add New OntoUML diagram"),
                             (
                                 "DEMO CSD diagram",
-                                1,
+                                2,
                                 crate::democsd::democsd_controllers::new as NDC,
                             ),
-                            ("RDF diagram", 2, crate::rdf::rdf_controllers::new as NDC),
+                            ("RDF diagram", 0, crate::rdf::rdf_controllers::new as NDC),
                         ] {
                             if ui.button(label).clicked() {
                                 let (diagram_controller, mhview) = fun(self.context.new_diagram_no);

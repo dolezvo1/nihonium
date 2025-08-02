@@ -484,7 +484,11 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
 
     fn context_menu(&mut self, ui: &mut egui::Ui);
 
-    fn show_toolbar(&mut self, ui: &mut egui::Ui);
+    fn show_toolbar(
+        &mut self,
+        context: &DrawingContext,
+        ui: &mut egui::Ui,
+    );
     fn show_properties(
         &mut self,
         ui: &mut egui::Ui,
@@ -944,7 +948,12 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn refresh_buffers(&mut self);
-    fn tool_change_fun(&self, tool: &mut Option<DomainT::ToolT>, ui: &mut egui::Ui);
+    fn show_tool_palette(
+        &mut self,
+        tool: &mut Option<DomainT::ToolT>,
+        drawing_context: &DrawingContext,
+        ui: &mut egui::Ui,
+    );
     fn menubar_options_fun(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
@@ -1608,8 +1617,12 @@ impl<
         ui.label("asdf");
     }
 
-    fn show_toolbar(&mut self, ui: &mut egui::Ui) {
-        self.adapter.tool_change_fun(&mut self.temporaries.current_tool, ui);
+    fn show_toolbar(
+        &mut self,
+        context: &DrawingContext,
+        ui: &mut egui::Ui,
+    ) {
+        self.adapter.show_tool_palette(&mut self.temporaries.current_tool, context, ui);
     }
     fn show_properties(
         &mut self,

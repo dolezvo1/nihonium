@@ -372,12 +372,66 @@ pub struct DemoCsdDiagramAdapter {
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     buffer: DemoCsdDiagramBuffer,
+    #[serde(skip)]
+    #[nh_context_serde(skip_and_default)]
+    placeholders: DemoCsdPlaceholderViews,
 }
 
 #[derive(Clone, Default)]
 struct DemoCsdDiagramBuffer {
     name: String,
     comment: String,
+}
+
+#[derive(Clone)]
+struct DemoCsdPlaceholderViews {
+    views: [DemoCsdElementView; 8],
+}
+
+impl Default for DemoCsdPlaceholderViews {
+    fn default() -> Self {
+        let (client, client_view) = new_democsd_transactor("CTAR01", "Client", false, None, false, egui::Pos2::ZERO);
+        let (_actor, actor_view) = {
+            let tx = new_democsd_transaction("TK01", "Transaction", egui::Pos2::ZERO, true);
+            new_democsd_transactor("AR01", "Transactor", true, Some(tx), false, egui::Pos2::ZERO)
+        };
+        let (bank, bank_view) = new_democsd_transaction("TK01", "Bank", egui::Pos2::new(100.0, 0.0), false);
+        let bank = (bank, bank_view.into());
+
+        let (_init, init_view) = new_democsd_link(DemoCsdLinkType::Initiation, (client.clone(), client_view.clone().into()), bank.clone());
+        let (_ints, ints_view) = new_democsd_link(DemoCsdLinkType::Interstriction, (client.clone(), client_view.clone().into()), bank.clone());
+        let (_inim, inim_view) = new_democsd_link(DemoCsdLinkType::Interimpediment, (client.clone(), client_view.clone().into()), bank.clone());
+
+        let (_package, package_view) = new_democsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+        let note_view = client_view.clone();
+
+        Self {
+            views: [
+                client_view.into(),
+                actor_view.into(),
+                bank.1,
+                init_view.into(),
+                ints_view.into(),
+                inim_view.into(),
+                package_view.into(),
+                note_view.into(),
+            ],
+        }
+    }
+}
+
+impl DemoCsdDiagramAdapter {
+    fn new(model: ERef<DemoCsdDiagram>) -> Self {
+        let m = model.read();
+        Self {
+            model: model.clone(),
+            buffer: DemoCsdDiagramBuffer {
+                name: (*m.name).clone(),
+                comment: (*m.comment).clone(),
+            },
+            placeholders: Default::default(),
+        }
+    }
 }
 
 impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
@@ -518,7 +572,13 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         self.buffer.comment = (*model.comment).clone();
     }
 
-    fn tool_change_fun(&self, tool: &mut Option<NaiveDemoCsdTool>, ui: &mut egui::Ui) {
+    fn show_tool_palette(
+        &mut self,
+        tool: &mut Option<NaiveDemoCsdTool>,
+        drawing_context: &DrawingContext,
+        ui: &mut egui::Ui,
+    ) {
+        let button_height = 60.0;
         let width = ui.available_width();
 
         let stage = tool.as_ref().map(|e| e.initial_stage());
@@ -532,7 +592,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
 
         if ui
             .add_sized(
-                [width, 20.0],
+                [width, button_height],
                 egui::Button::new("Select/Move").fill(if stage == None {
                     egui::Color32::BLUE
                 } else {
@@ -545,6 +605,9 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         }
         ui.separator();
 
+        let (empty_a, empty_b) = (HashMap::new(), HashMap::new());
+        let empty_q = DemoCsdQueryable::new(&empty_a, &empty_b);
+        let mut icon_counter = 0;
         for cat in [
             &[
                 (DemoCsdToolStage::Client, "Client Role"),
@@ -575,12 +638,24 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
             &[(DemoCsdToolStage::Note, "Note")][..],
         ] {
             for (stage, name) in cat {
-                if ui
-                    .add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage)))
-                    .clicked()
-                {
-                    *tool = Some(NaiveDemoCsdTool::new(*stage));
+                let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
+                if response.clicked() {
+                    if let Some(t) = &tool && t.initial_stage == *stage {
+                        *tool = None;
+                    } else {
+                        *tool = Some(NaiveDemoCsdTool::new(*stage));
+                    }
                 }
+
+                let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
+                let mut painter = ui.painter().with_clip_rect(icon_rect);
+                let mut mc = canvas::MeasuringCanvas::new(&painter);
+                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
+                let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
+                let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None);
+                c.clear(drawing_context.profile.backgrounds[0].gamma_multiply(0.75));
+                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
+                icon_counter += 1;
             }
             ui.separator();
         }
@@ -617,13 +692,7 @@ pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>
         DiagramControllerGen2::new(
             Arc::new(uuid::Uuid::now_v7().into()),
             name.clone().into(),
-            DemoCsdDiagramAdapter {
-                model: diagram.clone(),
-                buffer: DemoCsdDiagramBuffer {
-                    name,
-                    comment: "".to_owned(),
-                },
-            },
+            DemoCsdDiagramAdapter::new(diagram.clone()),
             Vec::new(),
         ),
         Arc::new(SimpleModelHierarchyView::new(diagram)),
@@ -721,13 +790,7 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
             DiagramControllerGen2::new(
                 Arc::new(uuid::Uuid::now_v7().into()),
                 name.clone().into(),
-                DemoCsdDiagramAdapter {
-                    model: diagram.clone(),
-                    buffer: DemoCsdDiagramBuffer {
-                        name,
-                        comment: "".to_owned(),
-                    },
-                },
+                DemoCsdDiagramAdapter::new(diagram.clone()),
                 controllers,
             ),
             Arc::new(SimpleModelHierarchyView::new(diagram)),

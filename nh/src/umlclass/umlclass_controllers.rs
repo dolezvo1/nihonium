@@ -346,12 +346,59 @@ pub struct UmlClassDiagramAdapter {
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     buffer: UmlClassDiagramBuffer,
+    #[serde(skip)]
+    #[nh_context_serde(skip_and_default)]
+    placeholders: UmlClassPlaceholderViews,
 }
 
 #[derive(Clone, Default)]
 struct UmlClassDiagramBuffer {
     name: String,
     comment: String,
+}
+
+#[derive(Clone)]
+struct UmlClassPlaceholderViews {
+    views: [UmlClassElementView; 6],
+}
+
+impl Default for UmlClassPlaceholderViews {
+    fn default() -> Self {
+        let (class, class_view) = new_umlclass_class(UmlClassStereotype::Class, "a class", "", "", egui::Pos2::ZERO);
+        let class = (class, class_view.into());
+        let (d, dv) = new_umlclass_class(UmlClassStereotype::Class, "dummy", "", "", egui::Pos2::new(100.0, 50.0));
+        let dummy = (d, dv.into());
+        let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+
+        let (_assoc, assoc_view) = new_umlclass_link(UmlClassLinkType::Association, "", None, class.clone(), dummy.clone());
+        let (_intreal, intreal_view) = new_umlclass_link(UmlClassLinkType::InterfaceRealization, "", None, class.clone(), dummy.clone());
+        let (_usage, usage_view) = new_umlclass_link(UmlClassLinkType::Usage, "", None, class.clone(), dummy.clone());
+
+        Self {
+            views: [
+                class.1.clone(),
+                package_view.into(),
+                assoc_view.into(),
+                intreal_view.into(),
+                usage_view.into(),
+                class.1.clone(),
+            ]
+        }
+    }
+}
+
+impl UmlClassDiagramAdapter {
+    fn new(model: ERef<UmlClassDiagram>) -> Self {
+        let m = model.read();
+         Self {
+            model: model.clone(),
+            buffer: UmlClassDiagramBuffer {
+                name: (*m.name).clone(),
+                comment: (*m.comment).clone(),
+            },
+            placeholders: Default::default(),
+        }
+    }
 }
 
 impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
@@ -483,7 +530,13 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
         self.buffer.comment = (*model.comment).clone();
     }
 
-    fn tool_change_fun(&self, tool: &mut Option<NaiveUmlClassTool>, ui: &mut egui::Ui) {
+    fn show_tool_palette(
+        &mut self,
+        tool: &mut Option<NaiveUmlClassTool>,
+        drawing_context: &DrawingContext,
+        ui: &mut egui::Ui,
+    ) {
+        let button_height = 60.0;
         let width = ui.available_width();
 
         let stage = tool.as_ref().map(|e| e.initial_stage());
@@ -497,7 +550,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
 
         if ui
             .add_sized(
-                [width, 20.0],
+                [width, button_height],
                 egui::Button::new("Select/Move").fill(if stage == None {
                     egui::Color32::BLUE
                 } else {
@@ -510,6 +563,9 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
         }
         ui.separator();
 
+        let (empty_a, empty_b) = (HashMap::new(), HashMap::new());
+        let empty_q = UmlClassQueryable::new(&empty_a, &empty_b);
+        let mut icon_counter = 0;
         for cat in [
             &[
                 (UmlClassToolStage::Class, "Class"),
@@ -538,12 +594,24 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
             &[(UmlClassToolStage::Note, "Note")][..],
         ] {
             for (stage, name) in cat {
-                if ui
-                    .add_sized([width, 20.0], egui::Button::new(*name).fill(c(*stage)))
-                    .clicked()
-                {
-                    *tool = Some(NaiveUmlClassTool::new(*stage));
+                let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
+                if response.clicked() {
+                    if let Some(t) = &tool && t.initial_stage == *stage {
+                        *tool = None;
+                    } else {
+                        *tool = Some(NaiveUmlClassTool::new(*stage));
+                    }
                 }
+
+                let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
+                let mut painter = ui.painter().with_clip_rect(icon_rect);
+                let mut mc = canvas::MeasuringCanvas::new(&painter);
+                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
+                let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
+                let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None);
+                c.clear(drawing_context.profile.backgrounds[0].gamma_multiply(0.75));
+                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
+                icon_counter += 1;
             }
             ui.separator();
         }
@@ -615,13 +683,7 @@ pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>
         DiagramControllerGen2::new(
             Arc::new(view_uuid),
             name.clone().into(),
-            UmlClassDiagramAdapter {
-                model: diagram.clone(),
-                buffer: UmlClassDiagramBuffer {
-                    name,
-                    comment: "".to_owned(),
-                },
-            },
+            UmlClassDiagramAdapter::new(diagram.clone()),
             Vec::new(),
         ),
         Arc::new(SimpleModelHierarchyView::new(diagram)),
@@ -759,13 +821,7 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
         DiagramControllerGen2::new(
             Arc::new(diagram_view_uuid),
             name.clone().into(),
-            UmlClassDiagramAdapter {
-                model: diagram2.clone(),
-                buffer: UmlClassDiagramBuffer {
-                    name,
-                    comment: "".to_owned(),
-                },
-            },
+            UmlClassDiagramAdapter::new(diagram2.clone()),
             owned_controllers,
         ),
         Arc::new(SimpleModelHierarchyView::new(diagram2)),
@@ -1199,7 +1255,7 @@ fn new_umlclass_class_view(
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position,
-        bounds_rect: egui::Rect::ZERO,
+        bounds_rect: egui::Rect::from_min_max(position, position),
     })
 }
 
