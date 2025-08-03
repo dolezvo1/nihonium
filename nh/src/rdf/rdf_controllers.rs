@@ -394,7 +394,7 @@ struct RdfDiagramBuffer {
 
 #[derive(Clone)]
 struct RdfPlaceholderViews {
-    views: [RdfElementView; 5],
+    views: [RdfElementView; 4],
 }
 
 impl Default for RdfPlaceholderViews {
@@ -406,7 +406,6 @@ impl Default for RdfPlaceholderViews {
         let (predicate, predicate_view) = new_rdf_predicate("http://iri", node.clone(), literal.clone());
 
         let (_graph, graph_view) = new_rdf_graph("http://graph", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-        let note_view = literal.clone();
 
         Self {
             views: [
@@ -414,7 +413,6 @@ impl Default for RdfPlaceholderViews {
                 node.1,
                 predicate_view.into(),
                 graph_view.into(),
-                note_view.1,
             ],
         }
     }
@@ -613,7 +611,6 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                 (RdfToolStage::PredicateStart, "Predicate"),
             ][..],
             &[(RdfToolStage::GraphStart, "Graph")][..],
-            &[(RdfToolStage::Note, "Note")][..],
         ] {
             for (stage, name) in cat {
                 let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
@@ -978,7 +975,6 @@ pub enum RdfToolStage {
     PredicateEnd,
     GraphStart,
     GraphEnd,
-    Note,
 }
 
 enum PartialRdfElement {
@@ -1028,12 +1024,11 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 RdfToolStage::Literal
                 | RdfToolStage::Node
                 | RdfToolStage::GraphStart
-                | RdfToolStage::GraphEnd
-                | RdfToolStage::Note => TARGETTABLE_COLOR,
+                | RdfToolStage::GraphEnd => TARGETTABLE_COLOR,
                 RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => NON_TARGETTABLE_COLOR,
             },
             Some(RdfElement::RdfGraph(..)) => match self.current_stage {
-                RdfToolStage::Literal | RdfToolStage::Node | RdfToolStage::Note => {
+                RdfToolStage::Literal | RdfToolStage::Node => {
                     TARGETTABLE_COLOR
                 }
                 RdfToolStage::PredicateStart
@@ -1047,16 +1042,14 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 | RdfToolStage::Node
                 | RdfToolStage::PredicateStart
                 | RdfToolStage::GraphStart
-                | RdfToolStage::GraphEnd
-                | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
+                | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
             Some(RdfElement::RdfNode(..)) => match self.current_stage {
                 RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
                 RdfToolStage::Literal
                 | RdfToolStage::Node
                 | RdfToolStage::GraphStart
-                | RdfToolStage::GraphEnd
-                | RdfToolStage::Note => NON_TARGETTABLE_COLOR,
+                | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
             Some(RdfElement::RdfPredicate(..)) => todo!(),
         }
@@ -1114,7 +1107,6 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 self.event_lock = true;
             }
             (RdfToolStage::GraphEnd, PartialRdfElement::Graph { b, .. }) => *b = Some(pos),
-            (RdfToolStage::Note, _) => {}
             _ => {}
         }
     }

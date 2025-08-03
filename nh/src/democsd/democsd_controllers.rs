@@ -385,7 +385,7 @@ struct DemoCsdDiagramBuffer {
 
 #[derive(Clone)]
 struct DemoCsdPlaceholderViews {
-    views: [DemoCsdElementView; 8],
+    views: [DemoCsdElementView; 7],
 }
 
 impl Default for DemoCsdPlaceholderViews {
@@ -395,7 +395,7 @@ impl Default for DemoCsdPlaceholderViews {
             let tx = new_democsd_transaction("TK01", "Transaction", egui::Pos2::ZERO, true);
             new_democsd_transactor("AR01", "Transactor", true, Some(tx), false, egui::Pos2::ZERO)
         };
-        let (bank, bank_view) = new_democsd_transaction("TK01", "Bank", egui::Pos2::new(100.0, 0.0), false);
+        let (bank, bank_view) = new_democsd_transaction("TK01", "Bank", egui::Pos2::new(100.0, 75.0), false);
         let bank = (bank, bank_view.into());
 
         let (_init, init_view) = new_democsd_link(DemoCsdLinkType::Initiation, (client.clone(), client_view.clone().into()), bank.clone());
@@ -403,7 +403,6 @@ impl Default for DemoCsdPlaceholderViews {
         let (_inim, inim_view) = new_democsd_link(DemoCsdLinkType::Interimpediment, (client.clone(), client_view.clone().into()), bank.clone());
 
         let (_package, package_view) = new_democsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-        let note_view = client_view.clone();
 
         Self {
             views: [
@@ -414,7 +413,6 @@ impl Default for DemoCsdPlaceholderViews {
                 ints_view.into(),
                 inim_view.into(),
                 package_view.into(),
-                note_view.into(),
             ],
         }
     }
@@ -635,7 +633,6 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
                 ),
             ][..],
             &[(DemoCsdToolStage::PackageStart, "Package")][..],
-            &[(DemoCsdToolStage::Note, "Note")][..],
         ] {
             for (stage, name) in cat {
                 let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
@@ -813,7 +810,6 @@ pub enum DemoCsdToolStage {
     LinkEnd,
     PackageStart,
     PackageEnd,
-    Note,
 }
 
 enum PartialDemoCsdElement {
@@ -865,8 +861,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 | DemoCsdToolStage::Transactor
                 | DemoCsdToolStage::Bank
                 | DemoCsdToolStage::PackageStart
-                | DemoCsdToolStage::PackageEnd
-                | DemoCsdToolStage::Note => TARGETTABLE_COLOR,
+                | DemoCsdToolStage::PackageEnd => TARGETTABLE_COLOR,
                 DemoCsdToolStage::LinkStart { .. } | DemoCsdToolStage::LinkEnd => {
                     NON_TARGETTABLE_COLOR
                 }
@@ -876,8 +871,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 | DemoCsdToolStage::Transactor
                 | DemoCsdToolStage::Bank
                 | DemoCsdToolStage::PackageStart
-                | DemoCsdToolStage::PackageEnd
-                | DemoCsdToolStage::Note => TARGETTABLE_COLOR,
+                | DemoCsdToolStage::PackageEnd => TARGETTABLE_COLOR,
                 DemoCsdToolStage::LinkStart { .. } | DemoCsdToolStage::LinkEnd => {
                     NON_TARGETTABLE_COLOR
                 }
@@ -889,8 +883,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 | DemoCsdToolStage::Bank
                 | DemoCsdToolStage::LinkEnd
                 | DemoCsdToolStage::PackageStart
-                | DemoCsdToolStage::PackageEnd
-                | DemoCsdToolStage::Note => NON_TARGETTABLE_COLOR,
+                | DemoCsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             },
             Some(DemoCsdElement::DemoCsdTransaction(..)) => match self.current_stage {
                 DemoCsdToolStage::LinkEnd => TARGETTABLE_COLOR,
@@ -899,8 +892,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 | DemoCsdToolStage::Bank
                 | DemoCsdToolStage::LinkStart { .. }
                 | DemoCsdToolStage::PackageStart
-                | DemoCsdToolStage::PackageEnd
-                | DemoCsdToolStage::Note => NON_TARGETTABLE_COLOR,
+                | DemoCsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             },
             Some(DemoCsdElement::DemoCsdLink(..)) => todo!(),
         }
@@ -980,7 +972,6 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             (DemoCsdToolStage::PackageEnd, PartialDemoCsdElement::Package { b, .. }) => {
                 *b = Some(pos)
             }
-            (DemoCsdToolStage::Note, _) => {}
             _ => {}
         }
     }

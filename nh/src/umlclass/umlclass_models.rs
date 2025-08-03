@@ -95,6 +95,8 @@ pub enum UmlClassElement {
     UmlClassPackage(ERef<UmlClassPackage>),
     UmlClass(ERef<UmlClass>),
     UmlClassLink(ERef<UmlClassLink>),
+    UmlClassComment(ERef<UmlClassComment>),
+    UmlClassCommentLink(ERef<UmlClassCommentLink>),
 }
 
 impl UmlClassElement {
@@ -103,6 +105,7 @@ impl UmlClassElement {
             UmlClassElement::UmlClassPackage(inner) => visitor.visit_package(&inner.read()),
             UmlClassElement::UmlClass(inner) => visitor.visit_class(&inner.read()),
             UmlClassElement::UmlClassLink(inner) => visitor.visit_link(&inner.read()),
+            UmlClassElement::UmlClassComment(..) | UmlClassElement::UmlClassCommentLink(..) => {},
         }
     }
 }
@@ -154,6 +157,25 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 };
                 UmlClassElement::UmlClassLink(ERef::new(new_model))
             },
+            UmlClassElement::UmlClassComment(inner) => {
+                let model = inner.read();
+
+                let new_model = UmlClassComment {
+                    uuid: new_uuid,
+                    text: model.text.clone(),
+                };
+                UmlClassElement::UmlClassComment(ERef::new(new_model))
+            }
+            UmlClassElement::UmlClassCommentLink(inner) => {
+                let model = inner.read();
+
+                let new_model = UmlClassCommentLink {
+                    uuid: new_uuid,
+                    source: model.source.clone(),
+                    target: model.target.clone(),
+                };
+                UmlClassElement::UmlClassCommentLink(ERef::new(new_model))
+            }
         }
     }
 
@@ -165,7 +187,7 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                     relink(e, all_models);
                 }
             },
-            UmlClassElement::UmlClass(inner) => {},
+            UmlClassElement::UmlClass(_inner) => {},
             UmlClassElement::UmlClassLink(inner) => {
                 let mut model = inner.write();
 
@@ -176,6 +198,19 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 let target_uuid = *model.target.read().uuid();
                 if let Some(UmlClassElement::UmlClass(t)) = all_models.get(&target_uuid) {
                     model.target = t.clone().into();
+                }
+            },
+            UmlClassElement::UmlClassComment(_inner) => {},
+            UmlClassElement::UmlClassCommentLink(inner) => {
+                let mut model = inner.write();
+
+                let source_uuid = *model.source.read().uuid();
+                if let Some(UmlClassElement::UmlClassComment(s)) = all_models.get(&source_uuid) {
+                    model.source = s.clone().into();
+                }
+                let target_uuid = *model.target.uuid();
+                if let Some(t) = all_models.get(&target_uuid) {
+                    model.target = t.clone();
                 }
             },
         }
@@ -640,5 +675,82 @@ impl Model for UmlClassLink {
     }
     fn name(&self) -> Arc<String> {
         self.description.clone()
+    }
+}
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(uuid_type = ModelUuid)]
+pub struct UmlClassComment {
+    pub uuid: Arc<ModelUuid>,
+    pub text: Arc<String>,
+}
+
+impl UmlClassComment {
+    pub fn new(
+        uuid: ModelUuid,
+        text: String,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            text: Arc::new(text),
+        }
+    }
+}
+
+impl Entity for UmlClassComment {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
+    }
+}
+
+impl Model for UmlClassComment {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+    fn name(&self) -> Arc<String> {
+        self.text.clone()
+    }
+}
+
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(uuid_type = ModelUuid)]
+pub struct UmlClassCommentLink {
+    pub uuid: Arc<ModelUuid>,
+    #[nh_context_serde(entity)]
+    pub source: ERef<UmlClassComment>,
+    #[nh_context_serde(entity)]
+    pub target: UmlClassElement,
+}
+
+impl UmlClassCommentLink {
+    pub fn new(
+        uuid: ModelUuid,
+        source: ERef<UmlClassComment>,
+        target: UmlClassElement,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            source,
+            target,
+        }
+    }
+}
+
+impl Entity for UmlClassCommentLink {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
+    }
+}
+
+static COMMENT_LINK_TEXT: LazyLock<Arc<String>> =
+    LazyLock::new(|| Arc::new("Comment link".to_owned()));
+
+impl Model for UmlClassCommentLink {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+    fn name(&self) -> Arc<String> {
+        COMMENT_LINK_TEXT.clone()
     }
 }
