@@ -546,6 +546,7 @@ impl NHContext {
         let drawing_context = DrawingContext {
             profile: &self.color_profiles[*t].2[self.selected_color_profiles[*t]],
             fluent_bundle: &self.fluent_bundle,
+            shortcuts: &self.shortcuts,
         };
         c.write().show_toolbar(&drawing_context, ui);
     }
@@ -1090,9 +1091,12 @@ impl NHContext {
         let drawing_context = DrawingContext {
             profile: &self.color_profiles[*t].2[self.selected_color_profiles[*t]],
             fluent_bundle: &self.fluent_bundle,
+            shortcuts: &self.shortcuts,
         };
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(&drawing_context, ui);
-        response.context_menu(|ui| diagram_controller.context_menu(ui));
+        response.context_menu(|ui| {
+            diagram_controller.context_menu(&drawing_context, ui, &mut self.unprocessed_commands);
+        });
 
         diagram_controller.draw_in(&drawing_context, ui_canvas.as_mut(), pos);
 
@@ -1763,6 +1767,7 @@ impl eframe::App for NHApp {
                     let drawing_context = DrawingContext {
                         profile: color_profile,
                         fluent_bundle: &self.context.fluent_bundle,
+                        shortcuts: &self.context.shortcuts,
                     };
                     
                     // Measure the diagram
@@ -1837,6 +1842,7 @@ impl eframe::App for NHApp {
                         let drawing_context = DrawingContext {
                             profile: color_profile,
                             fluent_bundle: &self.context.fluent_bundle,
+                            shortcuts: &self.context.shortcuts,
                         };
                         
                         let mut measuring_canvas =

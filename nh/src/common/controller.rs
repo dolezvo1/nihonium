@@ -444,6 +444,7 @@ const VIEW_MODEL_PROPERTIES_BLOCK_SPACING: f32 = 10.0;
 pub struct DrawingContext<'a> {
     pub profile: &'a ColorProfile,
     pub fluent_bundle: &'a fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
+    pub shortcuts: &'a HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
 }
 
 pub trait View: Entity {
@@ -482,7 +483,12 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
         mouse_pos: Option<egui::Pos2>,
     );
 
-    fn context_menu(&mut self, ui: &mut egui::Ui);
+    fn context_menu(
+        &mut self,
+        context: &DrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
 
     fn show_toolbar(
         &mut self,
@@ -1613,8 +1619,52 @@ impl<
             }
         }
     }
-    fn context_menu(&mut self, ui: &mut egui::Ui) {
-        ui.label("asdf");
+    fn context_menu(
+        &mut self,
+        context: &DrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
+        macro_rules! translate {
+            ($msg_name:expr) => {
+                context.fluent_bundle.format_pattern(
+                    context.fluent_bundle.get_message($msg_name).unwrap().value().unwrap(),
+                    None,
+                    &mut vec![],
+                )
+            };
+        }
+        macro_rules! shortcut_text {
+            ($ui:expr, $simple_project_command:expr) => {
+                context.shortcuts.get(&$simple_project_command).map(|e| $ui.ctx().format_shortcut(&e))
+            };
+        }
+        macro_rules! button {
+            ($ui:expr, $msg_name:expr, $simple_project_command:expr) => {
+                {
+                    let mut button = egui::Button::new(translate!($msg_name));
+                    if let Some(shortcut_text) = shortcut_text!($ui, $simple_project_command) {
+                        button = button.shortcut_text(shortcut_text);
+                    }
+                    if $ui.add(button).clicked() {
+                        commands.push($simple_project_command.into());
+                        $ui.close();
+                    }
+                }
+            };
+        }
+
+        button!(ui, "nh-edit-cut", SimpleProjectCommand::from(DiagramCommand::CutSelectedElements));
+        button!(ui, "nh-edit-copy", SimpleProjectCommand::from(DiagramCommand::CopySelectedElements));
+        button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements));
+        ui.separator();
+
+        ui.menu_button(translate!("nh-edit-arrange"), |ui| {
+                button!(ui, "nh-edit-arrange-bringtofront", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::BringToFront)));
+                button!(ui, "nh-edit-arrange-forwardone", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne)));
+                button!(ui, "nh-edit-arrange-backwardone", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::BackwardOne)));
+                button!(ui, "nh-edit-arrange-sendtoback", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::SendToBack)));
+        });
     }
 
     fn show_toolbar(
