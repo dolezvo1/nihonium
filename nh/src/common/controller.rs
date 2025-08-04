@@ -7,9 +7,9 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::{Arc, RwLock};
 
-pub const BACKGROUND_COLORS: usize = 8;
-pub const FOREGROUND_COLORS: usize = 8;
-pub const AUXILIARY_COLORS: usize = 8;
+pub const BACKGROUND_COLORS: usize = 12;
+pub const FOREGROUND_COLORS: usize = 12;
+pub const AUXILIARY_COLORS: usize = 12;
 
 #[derive(PartialEq)]
 pub struct ColorProfile {

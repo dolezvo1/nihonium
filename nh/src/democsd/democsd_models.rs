@@ -69,6 +69,7 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<M
 
                 let new_model = DemoCsdTransaction {
                     uuid: new_uuid,
+                    kind: model.kind,
                     identifier: model.identifier.clone(),
                     name: model.name.clone(),
                     comment: model.comment.clone(),
@@ -80,7 +81,7 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<M
 
                 let new_model = DemoCsdLink {
                     uuid: new_uuid,
-                    name: model.name.clone(),
+                    pseudo_name: model.pseudo_name.clone(),
                     link_type: model.link_type,
                     source: model.source.clone(),
                     target: model.target.clone(),
@@ -400,11 +401,35 @@ impl ContainerModel for DemoCsdTransactor {
 
 // ---
 
+#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DemoCsdTransactionKind {
+    Performa,
+    Informa,
+    Forma
+}
+
+impl DemoCsdTransactionKind {
+    pub fn char(&self) -> &str {
+        match self {
+            Self::Performa => "Performa",
+            Self::Informa => "Informa",
+            Self::Forma => "Forma",
+        }
+    }
+}
+
+impl Default for DemoCsdTransactionKind {
+    fn default() -> Self {
+        Self::Performa
+    }
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub struct DemoCsdTransaction {
     pub uuid: Arc<ModelUuid>,
 
+    pub(super) kind: DemoCsdTransactionKind,
     pub identifier: Arc<String>,
     pub name: Arc<String>,
 
@@ -412,10 +437,11 @@ pub struct DemoCsdTransaction {
 }
 
 impl DemoCsdTransaction {
-    pub fn new(uuid: ModelUuid, identifier: String, name: String) -> Self {
+    pub fn new(uuid: ModelUuid, kind: DemoCsdTransactionKind, identifier: String, name: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
 
+            kind,
             identifier: Arc::new(identifier),
             name: Arc::new(name),
 
@@ -451,17 +477,17 @@ pub enum DemoCsdLinkType {
 impl DemoCsdLinkType {
     pub fn char(&self) -> &str {
         match self {
-            DemoCsdLinkType::Initiation => "Initiation",
-            DemoCsdLinkType::Interstriction => "Interstriction",
-            DemoCsdLinkType::Interimpediment => "Interimpediment",
+            Self::Initiation => "Initiation",
+            Self::Interstriction => "Interstriction",
+            Self::Interimpediment => "Interimpediment",
         }
     }
 
     pub fn line_type(&self) -> canvas::LineType {
         match self {
-            DemoCsdLinkType::Initiation => canvas::LineType::Solid,
-            DemoCsdLinkType::Interstriction => canvas::LineType::Dashed,
-            DemoCsdLinkType::Interimpediment => canvas::LineType::Dashed,
+            Self::Initiation => canvas::LineType::Solid,
+            Self::Interstriction => canvas::LineType::Dashed,
+            Self::Interimpediment => canvas::LineType::Dashed,
         }
     }
 }
@@ -476,9 +502,9 @@ impl Default for DemoCsdLinkType {
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub struct DemoCsdLink {
     pub uuid: Arc<ModelUuid>,
-    pub name: Arc<String>,
+    pub(super) pseudo_name: Arc<String>,
 
-    pub link_type: DemoCsdLinkType,
+    pub(super) link_type: DemoCsdLinkType,
     #[nh_context_serde(entity)]
     pub source: ERef<DemoCsdTransactor>,
     #[nh_context_serde(entity)]
@@ -494,14 +520,22 @@ impl DemoCsdLink {
         source: ERef<DemoCsdTransactor>,
         target: ERef<DemoCsdTransaction>,
     ) -> Self {
-        Self {
+        let mut m = Self {
             uuid: Arc::new(uuid),
-            name: Arc::new(format!("Link ({})", link_type.char())),
+            pseudo_name: Arc::new("".to_owned()),
             link_type,
             source,
             target,
             comment: Arc::new("".to_owned()),
-        }
+        };
+        m.set_link_type(link_type);
+        m
+    }
+
+    pub fn set_link_type(&mut self, t: DemoCsdLinkType) {
+        self.link_type = t;
+        // TODO: model names?
+        self.pseudo_name = Arc::new(format!("Link ({})", t.char()));
     }
 }
 
@@ -516,6 +550,6 @@ impl Model for DemoCsdLink {
         self.uuid.clone()
     }
     fn name(&self) -> Arc<String> {
-        self.name.clone()
+        self.pseudo_name.clone()
     }
 }

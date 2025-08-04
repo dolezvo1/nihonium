@@ -9,8 +9,7 @@ use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::democsd::democsd_models::{
-    DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage,
-    DemoCsdTransaction, DemoCsdTransactor,
+    DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage, DemoCsdTransaction, DemoCsdTransactionKind, DemoCsdTransactor
 };
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use eframe::egui;
@@ -59,6 +58,7 @@ pub enum DemoCsdPropChange {
     IdentifierChange(Arc<String>),
     TransactorSelfactivatingChange(bool),
     TransactorInternalChange(bool),
+    TransactionKindChange(DemoCsdTransactionKind),
 
     LinkTypeChange(DemoCsdLinkType),
 
@@ -129,7 +129,9 @@ pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
          ("External role foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
          ("Internal role foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
          ("Transaction foreground",   [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("Performa Transaction",     [egui::Color32::RED,   egui::Color32::RED,]),],
+         ("Performa Transaction",     [egui::Color32::RED,   egui::Color32::RED,]),
+         ("Informa Transaction",      [egui::Color32::from_rgb(0, 175, 0), egui::Color32::from_rgb(0, 175, 0),]),
+         ("Forma Transaction",        [egui::Color32::BLUE,  egui::Color32::BLUE,]),],
         [("Selection",                [egui::Color32::BLUE,  egui::Color32::LIGHT_BLUE,]),],
     );
     ("DEMO CSD diagram".to_owned(), c.0, c.1)
@@ -1023,26 +1025,25 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 link_type,
                 ..
             } => {
-                self.current_stage = self.initial_stage;
+                let (source_uuid, target_uuid) = (*source.read().uuid(), *target.read().uuid());
+                if let (Some(source_view), Some(target_view)) = (
+                    into.controller_for(&source_uuid),
+                    into.controller_for(&target_uuid),
+                ) {
+                    self.current_stage = self.initial_stage;
 
-                let link_view: Option<DemoCsdElementView> =
-                    if let (Some(source_view), Some(target_view)) = (
-                        into.controller_for(&source.read().uuid()),
-                        into.controller_for(&target.read().uuid()),
-                    ) {
-                        let (_link_model, link_view) = new_democsd_link(
-                            *link_type,
-                            (source.clone(), source_view),
-                            (target.clone(), target_view),
-                        );
+                    let (_link_model, link_view) = new_democsd_link(
+                        *link_type,
+                        (source.clone(), source_view),
+                        (target.clone(), target_view),
+                    );
 
-                        Some(link_view.into())
-                    } else {
-                        None
-                    };
+                    self.result = PartialDemoCsdElement::None;
 
-                self.result = PartialDemoCsdElement::None;
-                link_view
+                    Some(link_view.into())
+                } else {
+                    None
+                }
             }
             PartialDemoCsdElement::Package { a, b: Some(b) } => {
                 self.current_stage = DemoCsdToolStage::PackageStart;
@@ -1918,6 +1919,7 @@ fn new_democsd_transaction(
 ) -> (ERef<DemoCsdTransaction>, ERef<DemoCsdTransactionView>) {
     let tx_model = ERef::new(DemoCsdTransaction::new(
         uuid::Uuid::now_v7().into(),
+        super::democsd_models::DemoCsdTransactionKind::Performa,
         identifier.to_owned(),
         name.to_owned(),
     ));
@@ -1934,6 +1936,7 @@ fn new_democsd_transaction_view(
         uuid: Arc::new(uuid::Uuid::now_v7().into()),
         model: model.clone(),
 
+        kind_buffer: m.kind,
         identifier_buffer: (*m.identifier).clone(),
         name_buffer: (*m.name).to_owned(),
         comment_buffer: (*m.comment).to_owned(),
@@ -1957,6 +1960,8 @@ pub struct DemoCsdTransactionView {
     #[nh_context_serde(entity)]
     model: ERef<DemoCsdTransaction>,
 
+    #[nh_context_serde(skip_and_default)]
+    kind_buffer: DemoCsdTransactionKind,
     #[nh_context_serde(skip_and_default)]
     identifier_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2068,6 +2073,26 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
 
         ui.label("Model properties");
 
+        ui.label("Transaction Kind:");
+        egui::ComboBox::from_id_salt("Transaction Kind:")
+            .selected_text(self.kind_buffer.char())
+            .show_ui(ui, |ui| {
+                for value in [
+                    DemoCsdTransactionKind::Performa,
+                    DemoCsdTransactionKind::Informa,
+                    DemoCsdTransactionKind::Forma,
+                ] {
+                    if ui
+                        .selectable_value(&mut self.kind_buffer, value, value.char())
+                        .clicked()
+                    {
+                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                            DemoCsdPropChange::TransactionKindChange(self.kind_buffer),
+                        ]));
+                    }
+                }
+            });
+
         ui.label("Identifier:");
         if ui
             .add_sized(
@@ -2142,7 +2167,11 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             self.highlight,
             context.profile.backgrounds[5],
             context.profile.foregrounds[5],
-            context.profile.foregrounds[6],
+            match read.kind {
+                super::democsd_models::DemoCsdTransactionKind::Performa => context.profile.foregrounds[6],
+                super::democsd_models::DemoCsdTransactionKind::Informa => context.profile.foregrounds[7],
+                super::democsd_models::DemoCsdTransactionKind::Forma => context.profile.foregrounds[8],
+            },
         );
 
         canvas.draw_text(
@@ -2281,6 +2310,15 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                     let mut model = self.model.write();
                     for property in properties {
                         match property {
+                            DemoCsdPropChange::TransactionKindChange(kind) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![DemoCsdPropChange::TransactionKindChange(
+                                        model.kind,
+                                    )],
+                                ));
+                                model.kind = *kind;
+                            }
                             DemoCsdPropChange::IdentifierChange(identifier) => {
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
@@ -2313,6 +2351,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
+        self.kind_buffer = model.kind;
         self.identifier_buffer = (*model.identifier).clone();
         self.name_buffer = (*model.name).clone();
         self.comment_buffer = (*model.comment).clone();
@@ -2345,7 +2384,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         let modelish = if let Some(DemoCsdElement::DemoCsdTransaction(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(DemoCsdTransaction::new(model_uuid, (*old_model.identifier).clone(), (*old_model.name).clone()));
+            let modelish = ERef::new(DemoCsdTransaction::new(model_uuid, old_model.kind, (*old_model.identifier).clone(), (*old_model.name).clone()));
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -2353,6 +2392,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            kind_buffer: self.kind_buffer,
             identifier_buffer: self.identifier_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
@@ -2466,7 +2506,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
                             std::iter::once(*view_uuid).collect(),
                             vec![DemoCsdPropChange::LinkTypeChange(model.link_type)],
                         ));
-                        model.link_type = *link_type;
+                        model.set_link_type(*link_type);
                     }
                     DemoCsdPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
