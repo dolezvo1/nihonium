@@ -1239,32 +1239,37 @@ impl<
                 || self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
                 || Self::elements_deep_copy(
                     None,
-                    |e| self.temporaries.flattened_views_status.get(e).is_some(),
+                    |e| self.temporaries.flattened_views_status.contains_key(e),
                     HashMap::new(),
                     self.temporaries.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
                     ).into_iter().map(|e| e.1.into()).collect(),
             );
 
-            // compute transitive closure of dependency when deleting elements
-            let command = match command {
-                InsensitiveCommand::DeleteSpecificElements(uuids, b) => {
-                    let mut deleting = uuids;
-                    let mut found_uuids = HashSet::new();
-                    loop {
-                        for (k, e1) in self.temporaries.flattened_views.iter().filter(|e| !deleting.contains(e.0)) {
-                            if e1.delete_when(&deleting) {
-                                found_uuids.insert(*k);
-                            }
+            // compute transitive closure of dependency when deleting or cutting elements
+            fn tr_closure<E: ElementControllerGen2<D>, D: Domain>(
+                all: &HashMap<ViewUuid, E>,
+                mut deleting: HashSet<ViewUuid>
+            ) -> HashSet<ViewUuid> {
+                let mut found_uuids = HashSet::new();
+                loop {
+                    for (k, e1) in all.iter().filter(|e| !deleting.contains(e.0)) {
+                        if e1.delete_when(&deleting) {
+                            found_uuids.insert(*k);
                         }
-
-                        if found_uuids.is_empty() {
-                            break;
-                        }
-                        deleting.extend(found_uuids.drain());
                     }
 
-                    InsensitiveCommand::DeleteSpecificElements(deleting, b)
-                },
+                    if found_uuids.is_empty() {
+                        break;
+                    }
+                    deleting.extend(found_uuids.drain());
+                }
+                deleting
+            }
+            let command = match command {
+                InsensitiveCommand::DeleteSpecificElements(uuids, b)
+                => InsensitiveCommand::DeleteSpecificElements(tr_closure(&self.temporaries.flattened_views, uuids), b),
+                InsensitiveCommand::CutSpecificElements(uuids)
+                => InsensitiveCommand::CutSpecificElements(tr_closure(&self.temporaries.flattened_views, uuids)),
                 c => c,
             };
 
