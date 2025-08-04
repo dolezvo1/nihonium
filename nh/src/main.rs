@@ -358,7 +358,7 @@ impl NHContext {
                 HierarchyNode::Folder(uuid, name, children) => {
                     builder.node(
                         NodeBuilder::dir(*uuid)
-                            .label(format!("{} ({})", name, uuid.to_string()))
+                            .label(&**name)
                             .context_menu(|ui| {
                                 if ui.button("New Folder").clicked() {
                                     *cma = Some(ContextMenuAction::NewFolder(*uuid));
@@ -391,7 +391,7 @@ impl NHContext {
                     let hm = rw_lock.read();
                     builder.node(
                         NodeBuilder::leaf(*hm.uuid())
-                            .label(format!("{} ({})", hm.view_name(), hm.uuid().to_string()))
+                            .label(&*hm.view_name())
                             .context_menu(|ui| {
                                 if ui.button("Open").clicked() {
                                     *cma = Some(ContextMenuAction::OpenDiagram(*hm.uuid()));

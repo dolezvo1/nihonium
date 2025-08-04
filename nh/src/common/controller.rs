@@ -381,7 +381,7 @@ impl<ModelT: Model> ModelHierarchyView for SimpleModelHierarchyView<ModelT> {
             builder: &'data mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
         }
         impl<'data, 'ui> HierarchyViewVisitor<'data, 'ui> {
-            fn c(&self, m: &ModelUuid) -> &'static str {
+            fn repr_glyph(&self, m: &ModelUuid) -> &'static str {
                 if (self.is_represented)(m) {"[x]"} else {"[ ]"}
             }
             fn show_model(&mut self, is_dir: bool, e: &dyn Model) {
@@ -391,7 +391,7 @@ impl<ModelT: Model> ModelHierarchyView for SimpleModelHierarchyView<ModelT> {
                         egui_ltreeview::NodeBuilder::dir(model_uuid)
                     } else {
                         egui_ltreeview::NodeBuilder::leaf(model_uuid)
-                    }.label(format!("{} {} ({})", self.c(&model_uuid), e.name(), model_uuid.to_string()))
+                    }.label(format!("{} {}", self.repr_glyph(&model_uuid), e.name()))
                         .context_menu(|ui| {
                             if !(self.is_represented)(&model_uuid) && ui.button("Create view").clicked() {
                                 self.command = Some(DiagramCommand::CreateViewFor(model_uuid));
