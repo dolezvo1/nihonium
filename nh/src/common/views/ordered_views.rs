@@ -4,31 +4,31 @@ use crate::common::{controller::{Arrangement, View}, project_serde::{NHContextDe
 
 
 pub struct OrderedViews<T> where T: View {
-    order: Vec<ViewUuid>,
+    draw_order: Vec<ViewUuid>,
     views: HashMap<ViewUuid, T>,
 }
 
 impl<T> OrderedViews<T> where T: View {
     pub fn new(ov: Vec<T>) -> Self {
-        let order = ov.iter().map(|e| *e.uuid()).collect();
+        let draw_order = ov.iter().map(|e| *e.uuid()).rev().collect();
         let views = ov.into_iter().map(|e| { let uuid = *e.uuid(); (uuid, e) }).collect();
-        Self { order, views }
+        Self { draw_order, views }
     }
 
     pub fn iter_event_order_keys(&self) -> impl Iterator<Item = ViewUuid> {
-        self.order.iter().cloned()
+        self.draw_order.iter().rev().cloned()
     }
 
     pub fn iter_event_order_pairs(&self) -> impl Iterator<Item = (ViewUuid, &T)> {
-        self.order.iter().flat_map(|k| self.views.get(k).and_then(|e| Some((*k, e))))
+        self.draw_order.iter().rev().flat_map(|k| self.views.get(k).and_then(|e| Some((*k, e))))
     }
 
     pub fn event_order_foreach(&self, f: impl FnMut(&T)) {
-        self.order.iter().flat_map(|e| self.views.get(e)).for_each(f);
+        self.draw_order.iter().rev().flat_map(|e| self.views.get(e)).for_each(f);
     }
 
     pub fn event_order_foreach_mut(&mut self, mut f: impl FnMut(&mut T)) {
-        for k in self.order.iter() {
+        for k in self.draw_order.iter().rev() {
             if let Some(v) = self.views.get_mut(k) {
                 f(v);
             }
@@ -36,7 +36,7 @@ impl<T> OrderedViews<T> where T: View {
     }
 
     pub fn draw_order_foreach_mut(&mut self, mut f: impl FnMut(&mut T)) {
-        for k in self.order.iter().rev() {
+        for k in self.draw_order.iter() {
             if let Some(v) = self.views.get_mut(k) {
                 f(v);
             }
@@ -44,7 +44,7 @@ impl<T> OrderedViews<T> where T: View {
     }
 
     pub fn event_order_find_mut<U>(&mut self, mut f: impl FnMut(&mut T) -> Option<U>) -> Option<U> {
-        for k in self.order.iter() {
+        for k in self.draw_order.iter().rev() {
             if let Some(u) = self.views.get_mut(k).and_then(&mut f) {
                 return Some(u);
             }
@@ -54,13 +54,13 @@ impl<T> OrderedViews<T> where T: View {
 
     pub fn push(&mut self, uuid: ViewUuid, view: T) {
         self.views.insert(uuid, view);
-        self.order.push(uuid);
+        self.draw_order.push(uuid);
     }
 
     pub fn retain(&mut self, mut f: impl FnMut(&ViewUuid, &T) -> bool) {
         let mut keep = HashSet::new();
         self.views.retain(|k, v| if f(k, v) { keep.insert(*k); true } else { false });
-        self.order.retain(|k| keep.contains(k));
+        self.draw_order.retain(|k| keep.contains(k));
     }
 
     pub fn apply_arrangement(&mut self, uuids: &HashSet<ViewUuid>, arr: Arrangement) {
@@ -69,7 +69,7 @@ impl<T> OrderedViews<T> where T: View {
             | Arrangement::SendToBack => {
                 let mut modified = vec![];
                 let mut remainder = vec![];
-                for e in self.order.drain(..) {
+                for e in self.draw_order.drain(..) {
                     if uuids.contains(&e) {
                         modified.push(e);
                     } else {
@@ -78,39 +78,39 @@ impl<T> OrderedViews<T> where T: View {
                 }
                 match arr {
                     Arrangement::BringToFront => {
-                        self.order.extend(modified);
-                        self.order.extend(remainder);
+                        self.draw_order.extend(remainder);
+                        self.draw_order.extend(modified);
                     }
                     Arrangement::SendToBack => {
-                        self.order.extend(remainder);
-                        self.order.extend(modified);
+                        self.draw_order.extend(modified);
+                        self.draw_order.extend(remainder);
                     }
                     _ => unreachable!(),
                 }
             },
-            Arrangement::ForwardOne => {
-                if self.order.len() > 1 {
-                    if uuids.contains(&self.order[0])
-                        && uuids.contains(&self.order[1]) {
-                        self.order.swap(0, 1);
+            Arrangement::BackwardOne => {
+                if self.draw_order.len() > 1 {
+                    if uuids.contains(&self.draw_order[0])
+                        && uuids.contains(&self.draw_order[1]) {
+                        self.draw_order.swap(0, 1);
                     }
-                    for ii in 0..self.order.len()-1 {
-                        if uuids.contains(&self.order[ii+1]) {
-                            self.order.swap(ii, ii+1);
+                    for ii in 0..self.draw_order.len()-1 {
+                        if uuids.contains(&self.draw_order[ii+1]) {
+                            self.draw_order.swap(ii, ii+1);
                         }
                     }
                 }
             },
-            Arrangement::BackwardOne => {
-                let ll = self.order.len();
+            Arrangement::ForwardOne => {
+                let ll = self.draw_order.len();
                 if ll > 1 {
-                    if uuids.contains(&self.order[ll-2])
-                        && uuids.contains(&self.order[ll-1]) {
-                        self.order.swap(ll-2, ll-1);
+                    if uuids.contains(&self.draw_order[ll-2])
+                        && uuids.contains(&self.draw_order[ll-1]) {
+                        self.draw_order.swap(ll-2, ll-1);
                     }
-                    for ii in (0..self.order.len()-1).rev() {
-                        if uuids.contains(&self.order[ii]) {
-                            self.order.swap(ii, ii+1);
+                    for ii in (0..self.draw_order.len()-1).rev() {
+                        if uuids.contains(&self.draw_order[ii]) {
+                            self.draw_order.swap(ii, ii+1);
                         }
                     }
                 }
@@ -122,7 +122,7 @@ impl<T> OrderedViews<T> where T: View {
 impl<T> serde::Serialize for OrderedViews<T> where T: View + serde::Serialize + Clone {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: serde::Serializer {
-        self.order.iter().flat_map(|e| self.views.get(e).cloned()).collect::<Vec<_>>().serialize(serializer)
+        self.draw_order.iter().rev().flat_map(|e| self.views.get(e).cloned()).collect::<Vec<_>>().serialize(serializer)
     }
 }
 
@@ -140,6 +140,6 @@ impl<T> NHContextDeserialize for OrderedViews<T> where T: View + NHContextDeseri
         source: &toml::Value,
         deserializer: &mut NHDeserializer,
     ) -> Result<Self, NHDeserializeError> {
-        Ok(Self::new(<Vec<T>>::deserialize(source, deserializer)?))
+        Ok(Self::new(<Vec<T>>::deserialize(source, deserializer)?.into_iter().rev().collect()))
     }
 }
