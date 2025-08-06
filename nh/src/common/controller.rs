@@ -199,7 +199,7 @@ pub enum ProjectCommand {
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetSvgExportMenu(Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, usize, bool, bool, f32, f32)>),
     SetNewDiagramNumber(u32),
-    AddNewDiagram(usize, ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>),
+    AddNewDiagram(usize, ERef<dyn DiagramController>),
     CopyDiagram(ViewUuid, /*deep:*/ bool),
     DeleteDiagram(ViewUuid),
 }
@@ -363,35 +363,47 @@ pub trait ModelHierarchyView {
     fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Option<DiagramCommand>;
 }
 
-pub struct SimpleModelHierarchyView<ModelT: Model> {
-    model: ERef<ModelT>,
+pub trait ModelsLabelAcquirer where <Self::ModelT as ContainerModel>::ElementT: VisitableElement {
+    type ModelT: VisitableDiagram;
+
+    fn model_label(&self, m: &Self::ModelT) -> String;
+    fn element_label(&self, e: &<Self::ModelT as ContainerModel>::ElementT) -> String;
 }
 
-impl<ModelT: Model> SimpleModelHierarchyView<ModelT> {
-    pub fn new(model: ERef<ModelT>) -> Self {
-        Self { model }
+pub struct SimpleModelHierarchyView<AcqT: ModelsLabelAcquirer> {
+    model: ERef<AcqT::ModelT>,
+    models_label_acquirer: AcqT,
+}
+
+impl<AcqT: ModelsLabelAcquirer> SimpleModelHierarchyView<AcqT> {
+    pub fn new(
+        model: ERef<AcqT::ModelT>,
+        models_label_acquirer: AcqT,
+    ) -> Self {
+        Self { model, models_label_acquirer }
     }
 }
 
-impl<ModelT: Model> ModelHierarchyView for SimpleModelHierarchyView<ModelT> {
+impl<AcqT: ModelsLabelAcquirer> ModelHierarchyView for SimpleModelHierarchyView<AcqT> {
     fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Option<DiagramCommand> {
-        struct HierarchyViewVisitor<'data, 'ui> {
+        struct HierarchyViewVisitor<'data, 'ui, AcqT: ModelsLabelAcquirer> {
             command: Option<DiagramCommand>,
             is_represented: &'data dyn Fn(&ModelUuid) -> bool,
+            models_label_acquirer: &'data AcqT,
             builder: &'data mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
         }
-        impl<'data, 'ui> HierarchyViewVisitor<'data, 'ui> {
+        impl<'data, 'ui, AcqT: ModelsLabelAcquirer> HierarchyViewVisitor<'data, 'ui, AcqT> {
             fn repr_glyph(&self, m: &ModelUuid) -> &'static str {
                 if (self.is_represented)(m) {"[x]"} else {"[ ]"}
             }
-            fn show_model(&mut self, is_dir: bool, e: &dyn Model) {
+            fn show_element(&mut self, is_dir: bool, e: &<AcqT::ModelT as ContainerModel>::ElementT) {
                 let model_uuid = *e.uuid();
                 self.builder.node(
                     if is_dir {
                         egui_ltreeview::NodeBuilder::dir(model_uuid)
                     } else {
                         egui_ltreeview::NodeBuilder::leaf(model_uuid)
-                    }.label(format!("{} {}", self.repr_glyph(&model_uuid), e.name()))
+                    }.label(format!("{} {}", self.repr_glyph(&model_uuid), self.models_label_acquirer.element_label(e)))
                         .context_menu(|ui| {
                             if !(self.is_represented)(&model_uuid) && ui.button("Create view").clicked() {
                                 self.command = Some(DiagramCommand::CreateViewFor(model_uuid));
@@ -411,23 +423,39 @@ impl<ModelT: Model> ModelHierarchyView for SimpleModelHierarchyView<ModelT> {
                 );
             }
         }
-        impl<'data, 'ui> StructuralVisitor<dyn Model> for HierarchyViewVisitor<'data, 'ui> {
-            fn open_complex(&mut self, e: &dyn Model) {
-                self.show_model(true, e);
+        impl<'data, 'ui, AcqT: ModelsLabelAcquirer> ElementVisitor<<AcqT::ModelT as ContainerModel>::ElementT> for HierarchyViewVisitor<'data, 'ui, AcqT> {
+            fn open_complex(&mut self, e: &<AcqT::ModelT as ContainerModel>::ElementT) {
+                self.show_element(true, e);
             }
 
-            fn close_complex(&mut self, e: &dyn Model) {
+            fn close_complex(&mut self, e: &<AcqT::ModelT as ContainerModel>::ElementT) {
                 self.builder.close_dir();
             }
 
-            fn visit_simple(&mut self, e: &dyn Model) {
-                self.show_model(false, e);
+            fn visit_simple(&mut self, e: &<AcqT::ModelT as ContainerModel>::ElementT) {
+                self.show_element(false, e);
+            }
+        }
+        impl<'data, 'ui, AcqT: ModelsLabelAcquirer> DiagramVisitor<AcqT::ModelT> for HierarchyViewVisitor<'data, 'ui, AcqT> {
+            fn open_diagram(&mut self, e: &AcqT::ModelT) {
+                let model_uuid = *e.uuid();
+                self.builder.node(
+                    egui_ltreeview::NodeBuilder::dir(model_uuid).label(self.models_label_acquirer.model_label(e))
+                );
+            }
+
+            fn close_diagram(&mut self, e: &AcqT::ModelT) {
+                self.builder.close_dir();
             }
         }
 
         let mut c = None;
         egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show(ui, |builder| {
-            let mut hvv = HierarchyViewVisitor { command: None, is_represented, builder };
+            let mut hvv = HierarchyViewVisitor {
+                command: None,
+                is_represented, builder,
+                models_label_acquirer: &self.models_label_acquirer,
+            };
 
             self.model.read().accept(&mut hvv);
 
@@ -447,7 +475,6 @@ pub struct DrawingContext<'a> {
 pub trait View: Entity {
     fn uuid(&self) -> Arc<ViewUuid>;
     fn model_uuid(&self) -> Arc<ModelUuid>;
-    fn model_name(&self) -> Arc<String>;
 }
 
 pub trait TopLevelView: View {
@@ -456,6 +483,7 @@ pub trait TopLevelView: View {
 }
 
 pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
+    fn new_hierarchy_view(&self) -> Arc<dyn ModelHierarchyView>;
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid>;
     fn refresh_buffers(&mut self, affected_models: &HashSet<ModelUuid>);
 
@@ -510,9 +538,9 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
     );
 
     /// Create new view with new model
-    fn deep_copy(&self) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>);
+    fn deep_copy(&self) -> ERef<dyn DiagramController>;
     /// Create new view with the same model
-    fn shallow_copy(&self) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>);
+    fn shallow_copy(&self) -> ERef<dyn DiagramController>;
 }
 
 pub trait ElementController<CommonElementT>: View {
@@ -743,8 +771,8 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
 }
 
 pub trait Domain: Sized + 'static {
-    type CommonElementT: Model + Clone;
-    type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT>;
+    type CommonElementT: Model + VisitableElement + Clone;
+    type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT> + VisitableDiagram;
     type CommonElementViewT: ElementControllerGen2<Self> + serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone;
     type QueryableT<'a>: Queryable<'a, Self>;
     type ToolT: Tool<Self>;
@@ -752,18 +780,27 @@ pub trait Domain: Sized + 'static {
     type PropChangeT: Clone + Debug;
 }
 
-pub trait StructuralVisitor<T: ?Sized> {
+pub trait ElementVisitor<T: ?Sized> {
     fn open_complex(&mut self, e: &T);
     fn close_complex(&mut self, e: &T);
     fn visit_simple(&mut self, e: &T);
 }
+pub trait DiagramVisitor<T: ContainerModel>: ElementVisitor<T::ElementT> {
+    fn open_diagram(&mut self, e: &T);
+    fn close_diagram(&mut self, e: &T);
+}
 
 pub trait Model: Entity + 'static {
     fn uuid(&self) -> Arc<ModelUuid>;
-    fn name(&self) -> Arc<String>;
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
+}
+
+pub trait VisitableElement: Model {
+    fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
         v.visit_simple(self);
     }
+}
+pub trait VisitableDiagram: ContainerModel where <Self as ContainerModel>::ElementT: VisitableElement {
+    fn accept(&self, v: &mut dyn DiagramVisitor<Self>);
 }
 
 pub trait ContainerModel: Model {
@@ -922,6 +959,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn model_name(&self) -> Arc<String>;
 
     fn view_type(&self) -> &'static str;
+    fn new_hierarchy_view(&self) -> SimpleModelHierarchyView<impl ModelsLabelAcquirer<ModelT = DomainT::DiagramModelT> + 'static>;
 
     fn find_element(&self, model_uuid: &ModelUuid) -> Option<(DomainT::CommonElementT, ModelUuid)> {
         self.model().read().find_element(model_uuid)
@@ -1430,8 +1468,8 @@ impl<
         &self,
         new_adapter: DiagramAdapterT,
         models: HashMap<ModelUuid, DomainT::CommonElementT>
-    ) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
-        let new_diagram_view = Self::new(
+    ) -> ERef<dyn DiagramController> {
+        Self::new(
             Arc::new(uuid::Uuid::now_v7().into()),
             format!("{} (copy)", self.name).into(),
             new_adapter,
@@ -1441,10 +1479,7 @@ impl<
                 models,
                 self.owned_views.iter_event_order_pairs().map(|e| (e.0, e.1.clone())),
             ).into_iter().map(|e| e.1).collect(),
-        );
-        let new_model_view = SimpleModelHierarchyView::new(new_diagram_view.read().model());
-
-        (new_diagram_view, Arc::new(new_model_view))
+        )
     }
 }
 
@@ -1467,9 +1502,6 @@ impl<
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.adapter.model_uuid()
     }
-    fn model_name(&self) -> Arc<String> {
-        self.adapter.model_name()
-    }
 }
 
 impl<
@@ -1489,6 +1521,10 @@ impl<
     DomainT: Domain,
     DiagramAdapterT: DiagramAdapter<DomainT>
 > DiagramController for DiagramControllerGen2<DomainT, DiagramAdapterT> {
+    fn new_hierarchy_view(&self) -> Arc<dyn ModelHierarchyView> {
+        Arc::new(self.adapter.new_hierarchy_view())
+    }
+
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid> {
         &self.temporaries.flattened_represented_models
     }
@@ -1897,12 +1933,12 @@ impl<
         }
     }
 
-    fn deep_copy(&self) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
+    fn deep_copy(&self) -> ERef<dyn DiagramController> {
         let (new_adapter, models) = self.adapter.deep_copy();
         self.some_kind_of_copy(new_adapter, models)
     }
 
-    fn shallow_copy(&self) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
+    fn shallow_copy(&self) -> ERef<dyn DiagramController> {
         let (new_adapter, models) = self.adapter.fake_copy();
         self.some_kind_of_copy(new_adapter, models)
     }

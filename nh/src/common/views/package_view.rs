@@ -114,9 +114,6 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> View for PackageView<Do
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.adapter.model_uuid()
     }
-    fn model_name(&self) -> Arc<String> {
-        self.adapter.model_name()
-    }
 }
 
 impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementController<DomainT::CommonElementT> for PackageView<DomainT, AdapterT> {

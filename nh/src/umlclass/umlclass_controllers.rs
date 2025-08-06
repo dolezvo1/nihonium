@@ -4,7 +4,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -180,15 +180,6 @@ impl View for UmlClassElementView {
             Self::Link(inner) => inner.read().model_uuid(),
             Self::Comment(inner) => inner.read().model_uuid(),
             Self::CommentLink(inner) => inner.read().model_uuid(),
-        }
-    }
-    fn model_name(&self) -> Arc<String> {
-        match self {
-            Self::Package(inner) => inner.read().model_name(),
-            Self::Class(inner) => inner.read().model_name(),
-            Self::Link(inner) => inner.read().model_name(),
-            Self::Comment(inner) => inner.read().model_name(),
-            Self::CommentLink(inner) => inner.read().model_name(),
         }
     }
 }
@@ -440,6 +431,36 @@ impl Default for UmlClassPlaceholderViews {
     }
 }
 
+struct UmlClassLabelAcquirer;
+impl ModelsLabelAcquirer for UmlClassLabelAcquirer {
+    type ModelT = UmlClassDiagram;
+
+    fn model_label(&self, m: &Self::ModelT) -> String {
+        format!("{} ({} children)", m.name, m.contained_elements.len())
+    }
+
+    fn element_label(&self, e: &<Self::ModelT as ContainerModel>::ElementT) -> String {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => (*inner.read().name).clone(),
+            UmlClassElement::UmlClass(inner) => (*inner.read().name).clone(),
+            UmlClassElement::UmlClassLink(inner) => (*inner.read().link_type.name()).clone(),
+            UmlClassElement::UmlClassComment(inner) => {
+                const CUTOFF: usize = 40;
+                let r = inner.read();
+                let mut s: String = r.text.chars()
+                .map(|c| if c.is_whitespace() { ' ' } else { c } )
+                .take(CUTOFF).collect();
+                if r.text.len() > CUTOFF {
+                    s.push_str("...");
+                }
+                s
+            },
+            UmlClassElement::UmlClassCommentLink(inner) => "Comment link".to_owned(),
+        }
+    }
+}
+
+
 impl UmlClassDiagramAdapter {
     fn new(model: ERef<UmlClassDiagram>) -> Self {
         let m = model.read();
@@ -462,10 +483,13 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
         self.model.read().uuid()
     }
     fn model_name(&self) -> Arc<String> {
-        self.model.read().name()
+        self.model.read().name.clone()
     }
     fn view_type(&self) -> &'static str {
         "umlclass-diagram-view"
+    }
+    fn new_hierarchy_view(&self) -> SimpleModelHierarchyView<UmlClassLabelAcquirer> {
+        SimpleModelHierarchyView::new(self.model(), UmlClassLabelAcquirer {})
     }
 
     fn create_new_view_for(
@@ -742,7 +766,7 @@ impl CustomTab for PlantUmlTab {
     }
 }
 
-pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
+pub fn new(no: u32) -> ERef<dyn DiagramController> {
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New UML class diagram {}", no);
@@ -751,18 +775,15 @@ pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>
         name.clone(),
         vec![],
     ));
-    (
-        DiagramControllerGen2::new(
-            Arc::new(view_uuid),
-            name.clone().into(),
-            UmlClassDiagramAdapter::new(diagram.clone()),
-            Vec::new(),
-        ),
-        Arc::new(SimpleModelHierarchyView::new(diagram)),
+    DiagramControllerGen2::new(
+        Arc::new(view_uuid),
+        name.clone().into(),
+        UmlClassDiagramAdapter::new(diagram.clone()),
+        Vec::new(),
     )
 }
 
-pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
+pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
 
@@ -889,21 +910,16 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
             usage_client_productb.into(),
         ],
     ));
-    (
-        DiagramControllerGen2::new(
-            Arc::new(diagram_view_uuid),
-            name.clone().into(),
-            UmlClassDiagramAdapter::new(diagram2.clone()),
-            owned_controllers,
-        ),
-        Arc::new(SimpleModelHierarchyView::new(diagram2)),
+    DiagramControllerGen2::new(
+        Arc::new(diagram_view_uuid),
+        name.clone().into(),
+        UmlClassDiagramAdapter::new(diagram2.clone()),
+        owned_controllers,
     )
 }
 
-pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<(ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>), NHDeserializeError> {
-    let v = d.get_entity::<DiagramControllerGen2<UmlClassDomain, UmlClassDiagramAdapter>>(&uuid)?;
-    let mhv = Arc::new(SimpleModelHierarchyView::new(v.read().model()));
-    Ok((v, mhv))
+pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
+    Ok(d.get_entity::<DiagramControllerGen2<UmlClassDomain, UmlClassDiagramAdapter>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1461,9 +1477,6 @@ impl View for UmlClassView {
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
-    }
-    fn model_name(&self) -> Arc<String> {
-        self.model.read().name.clone()
     }
 }
 
@@ -2213,9 +2226,6 @@ impl View for UmlClassCommentView {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
     }
-    fn model_name(&self) -> Arc<String> {
-        self.model.read().text.clone()
-    }
 }
 
 impl ElementController<UmlClassElement> for UmlClassCommentView {
@@ -2570,6 +2580,7 @@ fn new_umlclass_commentlink_view(
         Arc::new(uuid::Uuid::now_v7().into()),
         UmlClassCommentLinkAdapter {
             model: model.clone(),
+            model_display_name: Arc::new("Comment link".to_owned()),
         },
         source,
         target,
@@ -2583,6 +2594,8 @@ fn new_umlclass_commentlink_view(
 pub struct UmlClassCommentLinkAdapter {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassCommentLink>,
+    #[nh_context_serde(skip_and_default)]
+    model_display_name: Arc<String>,
 }
 
 impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
@@ -2595,7 +2608,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
     }
 
     fn model_name(&self) -> Arc<String> {
-        self.model.read().name()
+        self.model_display_name.clone()
     }
 
     fn midpoint_label(&self) -> Option<Arc<String>> {
@@ -2647,7 +2660,10 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
             modelish
         };
 
-        Self { model }
+        Self {
+            model,
+            model_display_name: self.model_display_name.clone(),
+        }
     }
 
     fn deep_copy_finish(

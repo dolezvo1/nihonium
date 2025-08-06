@@ -1,5 +1,5 @@
 use crate::common::canvas::{ArrowheadType, LineType};
-use crate::common::controller::{ContainerModel, Model, StructuralVisitor};
+use crate::common::controller::{ContainerModel, DiagramVisitor, Model, ElementVisitor, VisitableDiagram, VisitableElement};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::ModelUuid;
@@ -106,6 +106,21 @@ impl UmlClassElement {
             UmlClassElement::UmlClass(inner) => visitor.visit_class(&inner.read()),
             UmlClassElement::UmlClassLink(inner) => visitor.visit_link(&inner.read()),
             UmlClassElement::UmlClassComment(..) | UmlClassElement::UmlClassCommentLink(..) => {},
+        }
+    }
+}
+
+impl VisitableElement for UmlClassElement {
+    fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
+        match self {
+            UmlClassElement::UmlClassPackage(inner) => {
+                v.open_complex(self);
+                for e in &inner.read().contained_elements {
+                    e.accept(v);
+                }
+                v.close_complex(self);
+            },
+            e => v.visit_simple(e),
         }
     }
 }
@@ -317,15 +332,15 @@ impl Model for UmlClassDiagram {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
-    fn name(&self) -> Arc<String> {
-        self.name.clone()
-    }
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
-        v.open_complex(self);
+}
+
+impl VisitableDiagram for UmlClassDiagram {
+    fn accept(&self, v: &mut dyn DiagramVisitor<Self>) {
+        v.open_diagram(self);
         for e in &self.contained_elements {
             e.accept(v);
         }
-        v.close_complex(self);
+        v.close_diagram(self);
     }
 }
 
@@ -388,16 +403,6 @@ impl Entity for UmlClassPackage {
 impl Model for UmlClassPackage {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-    fn name(&self) -> Arc<String> {
-        self.name.clone()
-    }
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
-        v.open_complex(self);
-        for e in &self.contained_elements {
-            e.accept(v);
-        }
-        v.close_complex(self);
     }
 }
 
@@ -556,9 +561,6 @@ impl Model for UmlClass {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
-    fn name(&self) -> Arc<String> {
-        self.name.clone()
-    }
 }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -673,9 +675,6 @@ impl Model for UmlClassLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
-    fn name(&self) -> Arc<String> {
-        self.description.clone()
-    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -706,9 +705,6 @@ impl Entity for UmlClassComment {
 impl Model for UmlClassComment {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-    fn name(&self) -> Arc<String> {
-        self.text.clone()
     }
 }
 
@@ -749,8 +745,5 @@ static COMMENT_LINK_TEXT: LazyLock<Arc<String>> =
 impl Model for UmlClassCommentLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-    fn name(&self) -> Arc<String> {
-        COMMENT_LINK_TEXT.clone()
     }
 }

@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -178,14 +178,6 @@ impl View for DemoCsdElementView {
             Self::Transactor(inner) => inner.read().model_uuid(),
             Self::Transaction(inner) => inner.read().model_uuid(),
             Self::Link(inner) => inner.read().model_uuid(),
-        }
-    }
-    fn model_name(&self) -> Arc<String> {
-        match self {
-            Self::Package(inner) => inner.read().model_name(),
-            Self::Transactor(inner) => inner.read().model_name(),
-            Self::Transaction(inner) => inner.read().model_name(),
-            Self::Link(inner) => inner.read().model_name(),
         }
     }
 }
@@ -422,6 +414,24 @@ impl Default for DemoCsdPlaceholderViews {
     }
 }
 
+struct DemoCsdLabelAcquirer;
+impl ModelsLabelAcquirer for DemoCsdLabelAcquirer {
+    type ModelT = DemoCsdDiagram;
+
+    fn model_label(&self, m: &Self::ModelT) -> String {
+        format!("{} ({} children)", m.name, m.contained_elements.len())
+    }
+
+    fn element_label(&self, e: &<Self::ModelT as ContainerModel>::ElementT) -> String {
+        match e {
+            DemoCsdElement::DemoCsdPackage(inner) => (*inner.read().name).clone(),
+            DemoCsdElement::DemoCsdTransactor(inner) => (*inner.read().name).clone(),
+            DemoCsdElement::DemoCsdTransaction(inner) => (*inner.read().name).clone(),
+            DemoCsdElement::DemoCsdLink(inner) => inner.read().link_type.char().to_owned(),
+        }
+    }
+}
+
 impl DemoCsdDiagramAdapter {
     fn new(model: ERef<DemoCsdDiagram>) -> Self {
         let m = model.read();
@@ -444,10 +454,13 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         self.model.read().uuid()
     }
     fn model_name(&self) -> Arc<String> {
-        self.model.read().name()
+        self.model.read().name.clone()
     }
     fn view_type(&self) -> &'static str {
         "democsd-diagram-view"
+    }
+    fn new_hierarchy_view(&self) -> SimpleModelHierarchyView<DemoCsdLabelAcquirer> {
+        SimpleModelHierarchyView::new(self.model(), DemoCsdLabelAcquirer {})
     }
 
     fn create_new_view_for(
@@ -681,7 +694,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     }
 }
 
-pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
+pub fn new(no: u32) -> ERef<dyn DiagramController> {
     let name = format!("New DEMO CSD diagram {}", no);
 
     let diagram = ERef::new(DemoCsdDiagram::new(
@@ -689,18 +702,15 @@ pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>
         name.clone(),
         vec![],
     ));
-    (
-        DiagramControllerGen2::new(
-            Arc::new(uuid::Uuid::now_v7().into()),
-            name.clone().into(),
-            DemoCsdDiagramAdapter::new(diagram.clone()),
-            Vec::new(),
-        ),
-        Arc::new(SimpleModelHierarchyView::new(diagram)),
+    DiagramControllerGen2::new(
+        Arc::new(uuid::Uuid::now_v7().into()),
+        name.clone().into(),
+        DemoCsdDiagramAdapter::new(diagram.clone()),
+        Vec::new(),
     )
 }
 
-pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
+pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let mut models: Vec<DemoCsdElement> = vec![];
     let mut controllers = Vec::<DemoCsdElementView>::new();
 
@@ -787,22 +797,17 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
             name.clone(),
             models,
         ));
-        (
-            DiagramControllerGen2::new(
-                Arc::new(uuid::Uuid::now_v7().into()),
-                name.clone().into(),
-                DemoCsdDiagramAdapter::new(diagram.clone()),
-                controllers,
-            ),
-            Arc::new(SimpleModelHierarchyView::new(diagram)),
+        DiagramControllerGen2::new(
+            Arc::new(uuid::Uuid::now_v7().into()),
+            name.clone().into(),
+            DemoCsdDiagramAdapter::new(diagram.clone()),
+            controllers,
         )
     }
 }
 
-pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<(ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>), NHDeserializeError> {
-    let v = d.get_entity::<DiagramControllerGen2<DemoCsdDomain, DemoCsdDiagramAdapter>>(&uuid)?;
-    let mhv = Arc::new(SimpleModelHierarchyView::new(v.read().model()));
-    Ok((v, mhv))
+pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
+    Ok(d.get_entity::<DiagramControllerGen2<DemoCsdDomain, DemoCsdDiagramAdapter>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1305,9 +1310,6 @@ impl View for DemoCsdTransactorView {
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
-    }
-    fn model_name(&self) -> Arc<String> {
-        self.model.read().name.clone()
     }
 }
 
@@ -1990,9 +1992,6 @@ impl View for DemoCsdTransactionView {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid()
     }
-    fn model_name(&self) -> Arc<String> {
-        self.model.read().name.clone()
-    }
 }
 
 impl ElementController<DemoCsdElement> for DemoCsdTransactionView {
@@ -2506,7 +2505,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
                             std::iter::once(*view_uuid).collect(),
                             vec![DemoCsdPropChange::LinkTypeChange(model.link_type)],
                         ));
-                        model.set_link_type(*link_type);
+                        model.link_type = *link_type;
                     }
                     DemoCsdPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(

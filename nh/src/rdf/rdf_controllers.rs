@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -186,14 +186,6 @@ impl View for RdfElementView {
             Self::Literal(inner) => inner.read().model_uuid(),
             Self::Node(inner) => inner.read().model_uuid(),
             Self::Predicate(inner) => inner.read().model_uuid(),
-        }
-    }
-    fn model_name(&self) -> Arc<String> {
-        match self {
-            Self::Graph(inner) => inner.read().model_name(),
-            Self::Literal(inner) => inner.read().model_name(),
-            Self::Node(inner) => inner.read().model_name(),
-            Self::Predicate(inner) => inner.read().model_name(),
         }
     }
 }
@@ -420,6 +412,24 @@ impl Default for RdfPlaceholderViews {
     }
 }
 
+struct RdfLabelAcquirer;
+impl ModelsLabelAcquirer for RdfLabelAcquirer {
+    type ModelT = RdfDiagram;
+
+    fn model_label(&self, m: &Self::ModelT) -> String {
+        format!("{} ({} children)", m.name, m.contained_elements.len())
+    }
+
+    fn element_label(&self, e: &<Self::ModelT as ContainerModel>::ElementT) -> String {
+        match e {
+            RdfElement::RdfGraph(inner) => (*inner.read().iri).clone(),
+            RdfElement::RdfLiteral(inner) => (*inner.read().content).clone(),
+            RdfElement::RdfNode(inner) => (*inner.read().iri).clone(),
+            RdfElement::RdfPredicate(inner) => (*inner.read().iri).clone(),
+        }
+    }
+}
+
 impl RdfDiagramAdapter {
     fn new(model: ERef<RdfDiagram>) -> Self {
         let m = model.read();
@@ -442,10 +452,13 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         self.model.read().uuid()
     }
     fn model_name(&self) -> Arc<String> {
-        self.model.read().name()
+        self.model.read().name.clone()
     }
     fn view_type(&self) -> &'static str {
         "rdf-diagram-view"
+    }
+    fn new_hierarchy_view(&self) -> SimpleModelHierarchyView<RdfLabelAcquirer> {
+        SimpleModelHierarchyView::new(self.model(), RdfLabelAcquirer {})
     }
 
     fn create_new_view_for(
@@ -857,7 +870,7 @@ impl CustomTab for SparqlQueriesTab {
     }
 }
 
-pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
+pub fn new(no: u32) -> ERef<dyn DiagramController> {
     let view_uuid = uuid::Uuid::now_v7().into();
     let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New RDF diagram {}", no);
@@ -867,18 +880,15 @@ pub fn new(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>
         name.clone(),
         vec![],
     ));
-    (
-        DiagramControllerGen2::new(
-            Arc::new(view_uuid),
-            name.clone().into(),
-            RdfDiagramAdapter::new(diagram.clone()),
-            Vec::new(),
-        ),
-        Arc::new(SimpleModelHierarchyView::new(diagram)),
+    DiagramControllerGen2::new(
+        Arc::new(view_uuid),
+        name.clone().into(),
+        RdfDiagramAdapter::new(diagram.clone()),
+        Vec::new(),
     )
 }
 
-pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>) {
+pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (node, node_view) = new_rdf_node(
         "http://www.w3.org/People/EM/contact#me",
         egui::Pos2::new(300.0, 100.0),
@@ -952,21 +962,16 @@ pub fn demo(no: u32) -> (ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView
             predicate.into(), graph.into(), graph_st.into(),
         ],
     ));
-    (
-        DiagramControllerGen2::new(
-            Arc::new(view_uuid),
-            name.clone().into(),
-            RdfDiagramAdapter::new(diagram.clone()),
-            owned_controllers,
-        ),
-        Arc::new(SimpleModelHierarchyView::new(diagram)),
+    DiagramControllerGen2::new(
+        Arc::new(view_uuid),
+        name.clone().into(),
+        RdfDiagramAdapter::new(diagram.clone()),
+        owned_controllers,
     )
 }
 
-pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<(ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>), NHDeserializeError> {
-    let v = d.get_entity::<DiagramControllerGen2<RdfDomain, RdfDiagramAdapter>>(&uuid)?;
-    let mhv = Arc::new(SimpleModelHierarchyView::new(v.read().model()));
-    Ok((v, mhv))
+pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
+    Ok(d.get_entity::<DiagramControllerGen2<RdfDomain, RdfDiagramAdapter>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -1407,9 +1412,6 @@ impl View for RdfNodeView {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
     }
-    fn model_name(&self) -> Arc<String> {
-        self.model.read().iri.clone()
-    }
 }
 
 impl ElementController<RdfElement> for RdfNodeView {
@@ -1791,9 +1793,6 @@ impl View for RdfLiteralView {
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
-    }
-    fn model_name(&self) -> Arc<String> {
-        self.model.read().content.clone()
     }
 }
 

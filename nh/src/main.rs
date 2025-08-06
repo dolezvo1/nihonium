@@ -116,7 +116,7 @@ pub trait CustomTab {
     //fn on_close(&mut self, context: &mut NHApp);
 }
 
-type DDes = dyn Fn(ViewUuid, &mut NHDeserializer) -> Result<(ERef<dyn DiagramController>, Arc<dyn ModelHierarchyView>), NHDeserializeError>;
+type DDes = dyn Fn(ViewUuid, &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError>;
 
 struct NHContext {
     project_path: Option<std::path::PathBuf>,
@@ -269,10 +269,14 @@ impl NHContext {
                 => {
                     let (type_no, dd) = dds.get(view_type)
                         .ok_or_else(|| format!("deserializer for type '{}' not found", view_type))?;
-                    let (v, mhview) = dd(*uuid, d)?;
-                    tl.insert(*uuid, (*type_no, v.clone()));
-                    mh.insert(*v.read().model_uuid(), mhview);
-                    Ok(HierarchyNode::Diagram(v))
+                    let view = dd(*uuid, d)?;
+                    let r = view.read();
+                    let (model_uuid, mhview) = (*r.model_uuid(), r.new_hierarchy_view());
+                    drop(r);
+
+                    tl.insert(*uuid, (*type_no, view.clone()));
+                    mh.insert(model_uuid, mhview);
+                    Ok(HierarchyNode::Diagram(view))
                 }
             }
         }
@@ -1148,16 +1152,20 @@ impl Default for NHApp {
         let mut model_hierarchy_views = HashMap::<_, Arc<dyn ModelHierarchyView>>::new();
         let mut tabs = vec![NHTab::RecentlyUsed, NHTab::StyleEditor];
 
-        for (diagram_type, (view, mhview)) in [
+        for (diagram_type, view) in [
             (0, crate::rdf::rdf_controllers::demo(1)),
             (1, crate::umlclass::umlclass_controllers::demo(2)),
             (2, crate::democsd::democsd_controllers::demo(3)),
         ] {
-            let uuid = *view.read().uuid();
+            let r = view.read();
+            let mhview = r.new_hierarchy_view();
+            let (view_uuid, model_uuid) = (*r.uuid(), *r.model_uuid());
+            drop(r);
+
             hierarchy.push(HierarchyNode::Diagram(view.clone()));
-            diagram_controllers.insert(uuid, (diagram_type, view.clone()));
-            model_hierarchy_views.insert(*view.read().model_uuid(), mhview);
-            tabs.push(NHTab::Diagram { uuid });
+            diagram_controllers.insert(view_uuid, (diagram_type, view));
+            model_hierarchy_views.insert(model_uuid, mhview);
+            tabs.push(NHTab::Diagram { uuid: view_uuid });
         }
 
         let mut diagram_deserializers = HashMap::new();
@@ -1348,10 +1356,12 @@ impl NHApp {
         &mut self,
         diagram_type: usize,
         diagram_view: ERef<dyn DiagramController>,
-        hierarchy_view: Arc<dyn ModelHierarchyView>,
     ) {
-        let view_uuid = *diagram_view.read().uuid();
-        let model_uuid = *diagram_view.read().model_uuid();
+        let r = diagram_view.read();
+        let (view_uuid, model_uuid) = (*r.uuid(), *r.model_uuid());
+        let hierarchy_view = r.new_hierarchy_view();
+        drop(r);
+
         if let HierarchyNode::Folder(.., children) = &mut self.context.project_hierarchy {
             children.push(HierarchyNode::Diagram(diagram_view.clone()));
         }
@@ -1552,8 +1562,7 @@ impl eframe::App for NHApp {
                     ui.separator();
 
                     ui.menu_button(translate!("nh-project-addnewdiagram"), |ui| {
-                        type NDC =
-                            fn(u32) -> (ERef<dyn DiagramController + 'static>, Arc<dyn ModelHierarchyView>);
+                        type NDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
                         for (label, diagram_type, fun) in [
                             (
                                 "UML Class diagram",
@@ -1569,9 +1578,9 @@ impl eframe::App for NHApp {
                             ("RDF diagram", 0, crate::rdf::rdf_controllers::new as NDC),
                         ] {
                             if ui.button(label).clicked() {
-                                let (diagram_controller, mhview) = fun(self.context.new_diagram_no);
+                                let diagram_controller = fun(self.context.new_diagram_no);
                                 commands.push(ProjectCommand::SetNewDiagramNumber(self.context.new_diagram_no + 1));
-                                commands.push(ProjectCommand::AddNewDiagram(diagram_type, diagram_controller, mhview));
+                                commands.push(ProjectCommand::AddNewDiagram(diagram_type, diagram_controller));
                                 ui.close();
                             }
                         }
@@ -2037,20 +2046,20 @@ impl eframe::App for NHApp {
                 ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
                 ProjectCommand::SetSvgExportMenu(sem) => self.context.svg_export_menu = sem,
                 ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
-                ProjectCommand::AddNewDiagram(diagram_type, diagram_controller, hierarchy_view) => {
-                    self.add_diagram(diagram_type, diagram_controller, hierarchy_view);
+                ProjectCommand::AddNewDiagram(diagram_type, diagram) => {
+                    self.add_diagram(diagram_type, diagram);
                 },
                 ProjectCommand::CopyDiagram(view_uuid, deep_copy) => {
                     let Some((t, c)) = self.context.diagram_controllers.get(&view_uuid) else {
                         continue;
                     };
-                    let (new_diagram, hmview) = if deep_copy {
+                    let new_diagram = if deep_copy {
                         c.read().deep_copy()
                     } else {
                         c.read().shallow_copy()
                     };
 
-                    self.add_diagram(*t, new_diagram.clone(), hmview);
+                    self.add_diagram(*t, new_diagram);
                 }
                 ProjectCommand::DeleteDiagram(view_uuid) => {
                     self.context.project_hierarchy.remove(&view_uuid);

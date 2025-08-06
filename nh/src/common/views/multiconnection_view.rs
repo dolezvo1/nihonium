@@ -142,9 +142,6 @@ where
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.adapter.model_uuid()
     }
-    fn model_name(&self) -> Arc<String> {
-        self.adapter.model_name()
-    }
 }
 
 impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> ElementController<DomainT::CommonElementT> for MulticonnectionView<DomainT, AdapterT>

@@ -1,4 +1,4 @@
-use crate::common::controller::{ContainerModel, Model, StructuralVisitor};
+use crate::common::controller::{ContainerModel, DiagramVisitor, Model, ElementVisitor, VisitableDiagram, VisitableElement};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::ModelUuid;
@@ -87,6 +87,21 @@ impl RdfTargettableElement {
         match self {
             RdfTargettableElement::RdfLiteral(inner) => inner.read().term_repr(),
             RdfTargettableElement::RdfNode(inner) => inner.read().term_repr(),
+        }
+    }
+}
+
+impl VisitableElement for RdfElement {
+    fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
+        match self {
+            RdfElement::RdfGraph(inner) => {
+                v.open_complex(self);
+                for e in &inner.read().contained_elements {
+                    e.accept(v);
+                }
+                v.close_complex(self);
+            },
+            e => v.visit_simple(e),
         }
     }
 }
@@ -274,15 +289,15 @@ impl Model for RdfDiagram {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
-    fn name(&self) -> Arc<String> {
-        self.name.clone()
-    }
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
-        v.open_complex(self);
+}
+
+impl VisitableDiagram for RdfDiagram {
+    fn accept(&self, v: &mut dyn DiagramVisitor<Self>) {
+        v.open_diagram(self);
         for e in &self.contained_elements {
             e.accept(v);
         }
-        v.close_complex(self);
+        v.close_diagram(self);
     }
 }
 
@@ -345,16 +360,6 @@ impl Entity for RdfGraph {
 impl Model for RdfGraph {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-    fn name(&self) -> Arc<String> {
-        self.iri.clone()
-    }
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
-        v.open_complex(self);
-        for e in &self.contained_elements {
-            e.accept(v);
-        }
-        v.close_complex(self);
     }
 }
 
@@ -435,9 +440,6 @@ impl Model for RdfLiteral {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
-    fn name(&self) -> Arc<String> {
-        self.content.clone()
-    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -472,9 +474,6 @@ impl Entity for RdfNode {
 impl Model for RdfNode {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-    fn name(&self) -> Arc<String> {
-        self.iri.clone()
     }
 }
 
@@ -517,8 +516,5 @@ impl Entity for RdfPredicate {
 impl Model for RdfPredicate {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-    fn name(&self) -> Arc<String> {
-        self.iri.clone()
     }
 }

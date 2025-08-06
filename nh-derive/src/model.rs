@@ -51,8 +51,6 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
 
     let arms_tagged_uuid = arms_immutable.iter().map(|e| quote! { #e.tagged_uuid() }).collect::<Vec<_>>();
     let arms_uuid = arms_immutable.iter().map(|e| quote! { #e.uuid() }).collect::<Vec<_>>();
-    let arms_name = arms_immutable.iter().map(|e| quote! { #e.name() }).collect::<Vec<_>>();
-    let arms_accept = arms_immutable.iter().map(|e| quote! { #e.accept(v) }).collect::<Vec<_>>();
 
     let ident = input_ast.ident;
 
@@ -69,18 +67,6 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
             fn uuid(&self) -> Arc<ModelUuid> {
                 match self {
                     #(#arms_uuid),*
-                }
-            }
-
-            fn name(&self) -> Arc<String> {
-                match self {
-                    #(#arms_name),*
-                }
-            }
-
-            fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) where Self: Sized {
-                match self {
-                    #(#arms_accept),*
                 }
             }
         }

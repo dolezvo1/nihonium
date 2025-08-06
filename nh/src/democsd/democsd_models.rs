@@ -1,5 +1,5 @@
 use crate::common::canvas;
-use crate::common::controller::{ContainerModel, Model, StructuralVisitor};
+use crate::common::controller::{ContainerModel, DiagramVisitor, Model, ElementVisitor, VisitableDiagram, VisitableElement};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
@@ -20,6 +20,30 @@ pub enum DemoCsdElement {
     DemoCsdTransactor(ERef<DemoCsdTransactor>),
     DemoCsdTransaction(ERef<DemoCsdTransaction>),
     DemoCsdLink(ERef<DemoCsdLink>),
+}
+
+impl VisitableElement for DemoCsdElement {
+    fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
+        match self {
+            DemoCsdElement::DemoCsdPackage(inner) => {
+                v.open_complex(self);
+                for e in &inner.read().contained_elements {
+                    e.accept(v);
+                }
+                v.close_complex(self);
+            },
+            DemoCsdElement::DemoCsdTransactor(inner) => {
+                if let UFOption::Some(t) = &inner.read().transaction {
+                    v.open_complex(self);
+                    DemoCsdElement::from(t.clone()).accept(v);
+                    v.close_complex(self);
+                } else {
+                    v.visit_simple(self);
+                }
+            }
+            e => v.visit_simple(e),
+        }
+    }
 }
 
 pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<ModelUuid, DemoCsdElement>) {
@@ -81,7 +105,6 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<M
 
                 let new_model = DemoCsdLink {
                     uuid: new_uuid,
-                    pseudo_name: model.pseudo_name.clone(),
                     link_type: model.link_type,
                     source: model.source.clone(),
                     target: model.target.clone(),
@@ -213,15 +236,15 @@ impl Model for DemoCsdDiagram {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
-    fn name(&self) -> Arc<String> {
-        self.name.clone()
-    }
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
-        v.open_complex(self);
+}
+
+impl VisitableDiagram for DemoCsdDiagram {
+    fn accept(&self, v: &mut dyn DiagramVisitor<Self>) {
+        v.open_diagram(self);
         for e in &self.contained_elements {
             e.accept(v);
         }
-        v.close_complex(self);
+        v.close_diagram(self);
     }
 }
 
@@ -286,16 +309,6 @@ impl Entity for DemoCsdPackage {
 impl Model for DemoCsdPackage {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-    fn name(&self) -> Arc<String> {
-        self.name.clone()
-    }
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
-        v.open_complex(self);
-        for e in &self.contained_elements {
-            e.accept(v);
-        }
-        v.close_complex(self);
     }
 }
 
@@ -373,18 +386,6 @@ impl Model for DemoCsdTransactor {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
-    fn name(&self) -> Arc<String> {
-        self.name.clone()
-    }
-    fn accept(&self, v: &mut dyn StructuralVisitor<dyn Model>) {
-        if let UFOption::Some(t) = &self.transaction {
-            v.open_complex(self);
-            t.read().accept(v);
-            v.close_complex(self);
-        } else {
-            v.visit_simple(self);
-        }
-    }
 }
 
 impl ContainerModel for DemoCsdTransactor {
@@ -460,9 +461,6 @@ impl Model for DemoCsdTransaction {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
-    fn name(&self) -> Arc<String> {
-        self.name.clone()
-    }
 }
 
 // ---
@@ -502,7 +500,6 @@ impl Default for DemoCsdLinkType {
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub struct DemoCsdLink {
     pub uuid: Arc<ModelUuid>,
-    pub(super) pseudo_name: Arc<String>,
 
     pub(super) link_type: DemoCsdLinkType,
     #[nh_context_serde(entity)]
@@ -520,22 +517,13 @@ impl DemoCsdLink {
         source: ERef<DemoCsdTransactor>,
         target: ERef<DemoCsdTransaction>,
     ) -> Self {
-        let mut m = Self {
+        Self {
             uuid: Arc::new(uuid),
-            pseudo_name: Arc::new("".to_owned()),
             link_type,
             source,
             target,
             comment: Arc::new("".to_owned()),
-        };
-        m.set_link_type(link_type);
-        m
-    }
-
-    pub fn set_link_type(&mut self, t: DemoCsdLinkType) {
-        self.link_type = t;
-        // TODO: model names?
-        self.pseudo_name = Arc::new(format!("Link ({})", t.char()));
+        }
     }
 }
 
@@ -548,8 +536,5 @@ impl Entity for DemoCsdLink {
 impl Model for DemoCsdLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-    fn name(&self) -> Arc<String> {
-        self.pseudo_name.clone()
     }
 }
