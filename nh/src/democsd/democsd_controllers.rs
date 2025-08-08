@@ -1271,7 +1271,7 @@ fn new_democsd_transactor_view(
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ViewUuid)]
+#[nh_context_serde(is_entity)]
 pub struct DemoCsdTransactorView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
@@ -1956,7 +1956,7 @@ fn new_democsd_transaction_view(
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ViewUuid)]
+#[nh_context_serde(is_entity)]
 pub struct DemoCsdTransactionView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]

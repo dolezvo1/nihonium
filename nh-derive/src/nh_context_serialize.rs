@@ -6,7 +6,12 @@ use quote::quote;
 #[derive(FromDeriveInput)]
 #[darling(attributes(nh_context_serde))]
 struct DeriveNHContextSerDeOpts {
-    uuid_type: Option<syn::Path>,
+    #[darling(default)]
+    is_entity: bool,
+    #[darling(default)]
+    is_subset_with: Option<Option<syn::Path>>,
+    #[expect(dead_code)]
+    #[darling(default)]
     initialize_with: Option<syn::Path>,
 }
 
@@ -56,20 +61,37 @@ pub fn derive_nh_context_serialize(input: TokenStream) -> TokenStream {
         }).ok()
     ).collect::<(Vec<_>, Vec<_>)>();
 
-    let check_and_insert = if let Some(uuid_type) = &opts.uuid_type {
+    let (subset_open, subset_close) = if let Some(depends_on_fn) = &opts.is_subset_with {
+        (
+            quote! {
+                into.open_new_subset(self.tagged_uuid(), #depends_on_fn(self));
+            },
+            quote! {
+                into.close_last_subset();
+            },
+        )
+    } else {
+        (quote! {}, quote! {})
+    };
+
+    let check_and_insert = if opts.is_entity {
         quote! {
             // check entity is not yet present
-            if <NHSerializer as NHSerializeStore<#uuid_type>>::contains(into, &self.uuid) {
+            if into.contains(&self.tagged_uuid()) {
                 return Ok(());
             }
+
+            #subset_open
 
             // serialize all fields
             let mut t = toml::Table::new();
             #(#all_fields_insert)*
-            <NHSerializer as NHSerializeStore<#uuid_type>>::insert(into, *self.uuid, t);
+            into.insert(self.tagged_uuid(), t);
         }
     } else {
-        quote! {}
+        quote! {
+            #subset_open
+        }
     };
 
     let ser_mod_name = syn::Ident::new(&format!("{}_context_serialize", ident), ident.span());
@@ -77,7 +99,7 @@ pub fn derive_nh_context_serialize(input: TokenStream) -> TokenStream {
         #[allow(non_snake_case)]
         mod #ser_mod_name {
             use super::*;
-            use crate::common::project_serde::{NHContextSerialize, NHSerializer, NHSerializeError, NHSerializeStore};
+            use crate::common::project_serde::{NHContextSerialize, NHSerializer, NHSerializeError};
 
             impl #impl_generics NHContextSerialize for #ident #type_generics #where_clause {
                 fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
@@ -86,6 +108,8 @@ pub fn derive_nh_context_serialize(input: TokenStream) -> TokenStream {
 
                     // propagate over all marked fields
                     #(#entity_fields_serialize)*
+
+                    #subset_close
 
                     Ok(())
                 }

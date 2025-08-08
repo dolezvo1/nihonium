@@ -6,7 +6,13 @@ use quote::quote;
 #[derive(FromDeriveInput)]
 #[darling(attributes(nh_context_serde))]
 struct DeriveNHContextSerDeOpts {
-    uuid_type: Option<syn::Path>,
+    #[expect(dead_code)]
+    #[darling(default)]
+    is_entity: bool,
+    #[expect(dead_code)]
+    #[darling(default)]
+    is_subset_with: Option<Option<syn::Path>>,
+    #[darling(default)]
     initialize_with: Option<syn::Path>,
 }
 

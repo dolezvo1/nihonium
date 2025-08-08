@@ -1,7 +1,7 @@
 
 use crate::{ModelUuid, ViewUuid};
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 pub enum EntityUuid {
     Model(ModelUuid),
     View(ViewUuid),

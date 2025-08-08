@@ -1440,7 +1440,7 @@ fn new_umlclass_class_view(
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ViewUuid)]
+#[nh_context_serde(is_entity)]
 pub struct UmlClassView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
@@ -2196,7 +2196,7 @@ fn new_umlclass_comment_view(
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ViewUuid)]
+#[nh_context_serde(is_entity)]
 pub struct UmlClassCommentView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]

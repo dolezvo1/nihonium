@@ -276,7 +276,7 @@ pub fn fake_copy_diagram(d: &UmlClassDiagram) -> HashMap<ModelUuid, UmlClassElem
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct UmlClassDiagram {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
@@ -369,7 +369,7 @@ impl ContainerModel for UmlClassDiagram {
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct UmlClassPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
@@ -491,7 +491,7 @@ impl UMLClassAccessModifier {
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct UmlClass {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
@@ -629,7 +629,7 @@ impl UmlClassLinkType {
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct UmlClassLink {
     pub uuid: Arc<ModelUuid>,
     pub link_type: UmlClassLinkType,
@@ -678,7 +678,7 @@ impl Model for UmlClassLink {
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct UmlClassComment {
     pub uuid: Arc<ModelUuid>,
     pub text: Arc<String>,
@@ -710,7 +710,7 @@ impl Model for UmlClassComment {
 
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct UmlClassCommentLink {
     pub uuid: Arc<ModelUuid>,
     #[nh_context_serde(entity)]

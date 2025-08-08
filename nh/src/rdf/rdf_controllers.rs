@@ -1379,7 +1379,7 @@ fn new_rdf_node_view(
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ViewUuid)]
+#[nh_context_serde(is_entity)]
 pub struct RdfNodeView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
@@ -1758,7 +1758,7 @@ fn new_rdf_literal_view(
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ViewUuid)]
+#[nh_context_serde(is_entity)]
 pub struct RdfLiteralView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]

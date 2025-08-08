@@ -48,7 +48,7 @@ pub struct VertexInformation {
 pub struct FlipMulticonnection {}
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ViewUuid)]
+#[nh_context_serde(is_entity)]
 pub struct MulticonnectionView<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]

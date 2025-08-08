@@ -232,7 +232,7 @@ pub fn fake_copy_diagram(d: &RdfDiagram) -> HashMap<ModelUuid, RdfElement> {
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct RdfDiagram {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
@@ -326,7 +326,7 @@ impl ContainerModel for RdfDiagram {
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct RdfGraph {
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
@@ -388,7 +388,7 @@ impl ContainerModel for RdfGraph {
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct RdfLiteral {
     pub uuid: Arc<ModelUuid>,
     pub content: Arc<String>,
@@ -443,7 +443,7 @@ impl Model for RdfLiteral {
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct RdfNode {
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
@@ -478,7 +478,7 @@ impl Model for RdfNode {
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct RdfPredicate {
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,

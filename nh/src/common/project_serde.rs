@@ -1,109 +1,257 @@
 
-use std::{any::Any, collections::HashMap, sync::{RwLock}};
+use std::collections::{HashSet, VecDeque};
+use std::ffi::OsStr;
+use std::io::Write;
+use std::sync::Arc;
+use std::{any::Any, collections::HashMap, path::PathBuf, sync::RwLock};
 
 use serde::{Deserialize, Serialize};
+
+use crate::common::controller::HierarchyNode;
+use crate::DDes;
 
 use super::entity::EntityUuid;
 use super::eref::ERef;
 use super::{controller::DiagramController, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}};
 
+pub fn no_dependencies<T>(t: &T) -> Vec<EntityUuid> {
+    vec![]
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
-pub enum NHProjectHierarchyNodeDTO {
-    Folder { uuid: ViewUuid, name: String, hierarchy: Vec<NHProjectHierarchyNodeDTO> },
+pub enum NHProjectHierarchyNodeSerialization {
+    Folder { uuid: ViewUuid, name: String, hierarchy: Vec<NHProjectHierarchyNodeSerialization> },
     Diagram { uuid: ViewUuid, view_type: String },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct NHProjectDTO {
+pub struct NHProjectSerialization {
     format_version: String,
-    pub(crate) hierarchy: Vec<NHProjectHierarchyNodeDTO>,
-    models: Vec<toml::Value>,
-    views: Vec<toml::Value>,
+    project_name: String,
+    sources_root: String,
+    new_diagram_no_counter: usize,
+    hierarchy: Vec<NHProjectHierarchyNodeSerialization>,
 }
 
-impl NHProjectDTO {
-    pub fn new(
-        hierarchy: Vec<NHProjectHierarchyNodeDTO>,
-        serializer: NHSerializer,
-    ) -> Self {
-        let (models, views) = {
-            let NHSerializer { models, views } = serializer;
-            let (mut m, mut v): (Vec<_>, Vec<_>) = (models.into_iter().collect(), views.into_iter().collect());
-            m.sort_by_key(|e| e.0);
-            v.sort_by_key(|e| e.0);
-            (m, v)
-        };
-        Self {
-            format_version: "0.1.0".into(),
-            hierarchy,
-            models: models.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
-            views: views.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
+#[derive(Serialize, Deserialize, Debug)]
+pub struct NHModelSerialization {
+    depends_on: Vec<EntityUuid>,
+    main_model: toml::Value,
+    model: Vec<toml::Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct NHViewSerialization {
+    depends_on: Vec<EntityUuid>,
+    main_view: toml::Value,
+    view: Vec<toml::Value>,
+}
+
+impl NHProjectSerialization {
+    pub fn write_to(
+        project_file_path: &PathBuf,
+        project_name: &str,
+        sources_root: &str,
+        new_diagram_no_counter: usize,
+        hierarchy: &Vec<HierarchyNode>,
+        diagram_controllers: &HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
+    ) -> Result<(), NHSerializeError> {
+        fn h(e: &HierarchyNode) -> NHProjectHierarchyNodeSerialization {
+            match e {
+                HierarchyNode::Folder(uuid, name, children)
+                    => NHProjectHierarchyNodeSerialization::Folder { uuid: *uuid, name: (**name).clone(), hierarchy: children.iter().map(h).collect() },
+                HierarchyNode::Diagram(inner)
+                    => {
+                    let r = inner.read();
+                    NHProjectHierarchyNodeSerialization::Diagram { uuid: *r.uuid(), view_type: r.view_type() }
+                }
+            }
         }
+
+        let sources_root_abs = project_file_path.parent().map(|e| e.join(sources_root))
+            .ok_or_else(|| format!("project_file_path {:?} does not have a valid parent", project_file_path))?;
+        let mut serializer = NHSerializer::new();
+        for e in diagram_controllers.iter() {
+            e.1.1.read().serialize_into(&mut serializer)?;
+        }
+        NHSerializer::write_all(serializer, &sources_root_abs);
+
+        let project_serialization = Self {
+            format_version: "0.2.0".into(),
+            project_name: project_name.to_owned(),
+            sources_root: sources_root.to_owned(),
+            new_diagram_no_counter,
+            hierarchy: hierarchy.iter().map(h).collect(),
+        };
+
+        let project_str = toml::to_string(&project_serialization)?;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&project_file_path)?;
+        file.write_all(project_str.as_bytes())?;
+
+        Ok(())
     }
 
-    pub fn deserializer(&self) -> Result<NHDeserializer, NHDeserializeError> {
-        let source_models = self.models.iter().map(|v| {
-            let toml::Value::Table(t) = v else {
-                return Err(NHDeserializeError::StructureError(format!("expected table, found {:?}", v)));
-            };
-            Ok((get_model_uuid(t)?, t.clone()))
-        }).collect::<Result<HashMap<_, _>, _>>()?;
-        let source_views = self.views.iter().map(|v| {
-            let toml::Value::Table(t) = v else {
-                return Err(NHDeserializeError::StructureError(format!("expected table, found {:?}", v)));
-            };
-            Ok((get_view_uuid(t)?, t.clone()))
-        }).collect::<Result<HashMap<_, _>, _>>()?;
+    pub fn project_name(&self) -> String {
+        self.project_name.clone()
+    }
+    pub fn new_diagram_no_counter(&self) -> usize {
+        self.new_diagram_no_counter
+    }
 
-        Ok(NHDeserializer {
-            source_models,
-            source_views,
-            instantiated_models: HashMap::new().into(),
-            instantiated_views: HashMap::new().into(),
-        })
+    pub fn deserialize_all(
+        &self,
+        project_file_path: &PathBuf,
+        diagram_deserializers: &HashMap<String, (usize, &'static DDes)>,
+    ) -> Result<(Vec<HierarchyNode>, HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>), NHDeserializeError> {
+        let sources_root = project_file_path.parent().map(|e| e.join(&self.sources_root))
+            .ok_or_else(|| format!("project_file_path {:?} does not have a valid parent", project_file_path))?;
+        let mut deserializer = NHDeserializer::new(sources_root);
+
+        // Load all necessary sources
+        fn l(e: &NHProjectHierarchyNodeSerialization, d: &mut NHDeserializer) -> Result<(), NHDeserializeError> {
+            match e {
+                NHProjectHierarchyNodeSerialization::Folder { uuid, name, hierarchy } => {
+                    for e in hierarchy {
+                        l(e, d)?;
+                    }
+                    Ok(())
+                },
+                NHProjectHierarchyNodeSerialization::Diagram { uuid, view_type } => {
+                    Ok(d.load_sources(EntityUuid::View(*uuid))?)
+                },
+            }
+        }
+
+        for e in &self.hierarchy {
+            l(e, &mut deserializer)?;
+        }
+
+        // Instantiate all entities
+        fn h(
+            e: &NHProjectHierarchyNodeSerialization,
+            d: &mut NHDeserializer,
+            tl: &mut HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
+            dds: &HashMap<String, (usize, &'static DDes)>,
+        ) -> Result<HierarchyNode, NHDeserializeError> {
+            match e {
+                NHProjectHierarchyNodeSerialization::Folder { uuid, name, hierarchy }
+                => Ok(HierarchyNode::Folder(
+                        *uuid, Arc::new((*name).clone()),
+                        hierarchy.iter().map(|e| h(e, d, tl, dds)).collect::<Result<Vec<_>, NHDeserializeError>>()?,
+                    )),
+                NHProjectHierarchyNodeSerialization::Diagram { uuid, view_type }
+                => {
+                    let (type_no, dd) = dds.get(view_type)
+                        .ok_or_else(|| format!("deserializer for type '{}' not found", view_type))?;
+                    let view = dd(*uuid, d)?;
+                    tl.insert(*uuid, (*type_no, view.clone()));
+                    Ok(HierarchyNode::Diagram(view))
+                }
+            }
+        }
+
+        let mut hierarchy = Vec::new();
+        let mut top_level_views = HashMap::new();
+
+        for e in &self.hierarchy {
+            hierarchy.push(h(e, &mut deserializer, &mut top_level_views, diagram_deserializers)?);
+        }
+        Ok((hierarchy, top_level_views))
     }
 }
 
 pub struct NHSerializer {
-    models: HashMap<ModelUuid, toml::Table>,
-    views: HashMap<ViewUuid, toml::Table>,
+    stack: Vec<(EntityUuid, Vec<EntityUuid>, HashMap<EntityUuid, toml::Table>)>,
+    all_contained: HashSet<EntityUuid>,
+    closed_subsets: HashMap<EntityUuid, (Vec<EntityUuid>, HashMap<EntityUuid, toml::Table>)>,
 }
 
 impl NHSerializer {
     pub fn new() -> Self {
         Self {
-            models: HashMap::new(),
-            views: HashMap::new(),
+            stack: Vec::new(),
+            all_contained: HashSet::new(),
+            closed_subsets: HashMap::new(),
         }
+    }
+
+    fn write_all(self, sources_root: &PathBuf) -> Result<(), NHSerializeError> {
+        std::fs::DirBuilder::new().recursive(true).create(sources_root.join("models"))?;
+        std::fs::DirBuilder::new().recursive(true).create(sources_root.join("views"))?;
+
+        for e in self.closed_subsets {
+            let (path, subset) = match e {
+                (u @ EntityUuid::Model(model_uuid), (depends_on, mut e)) => {
+                    let main_model = toml::Value::Table(e.remove(&u).unwrap());
+                    let mut models: Vec<_> = e.into_iter().collect();
+                    models.sort_by_key(|e| e.0);
+                    let subset = NHModelSerialization {
+                        depends_on,
+                        main_model,
+                        model: models.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
+                    };
+                    (
+                        sources_root.join("models").join(format!("{}.nhm", model_uuid.to_string())),
+                        toml::to_string(&subset)?,
+                    )
+                },
+                (u @ EntityUuid::View(view_uuid), (depends_on, mut e)) => {
+                    let main_view = toml::Value::Table(e.remove(&u).unwrap());
+                    let mut views: Vec<_> = e.into_iter().collect();
+                    views.sort_by_key(|e| e.0);
+                    let subset = NHViewSerialization {
+                        depends_on,
+                        main_view,
+                        view: views.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
+                    };
+                    (
+                        sources_root.join("views").join(format!("{}.nhv", view_uuid.to_string())),
+                        toml::to_string(&subset)?,
+                    )
+                },
+            };
+
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&path)?;
+            file.write_all(subset.as_bytes())?;
+        }
+
+        Ok(())
     }
 }
 
-pub trait NHSerializeStore<K> {
-    fn contains(&self, uuid: &K) -> bool;
-    fn insert(&mut self, uuid: K, data: toml::Table);
-}
+impl NHSerializer {
+    pub fn contains(&self, uuid: &EntityUuid) -> bool {
+        self.all_contained.contains(uuid)
+    }
 
-macro_rules! serialize_store {
-    ($uuid_type:ty, $store:ident) => {
-        impl NHSerializeStore<$uuid_type> for NHSerializer {
-            fn contains(&self, uuid: &$uuid_type) -> bool {
-                self.$store.contains_key(uuid)
-            }
-            fn insert(&mut self, uuid: $uuid_type, data: toml::Table) {
-                self.$store.insert(uuid, data);
-            }
-        }
-    };
-}
+    pub fn open_new_subset(&mut self, uuid: EntityUuid, depends_on: Vec<EntityUuid>) {
+        self.stack.push((uuid, depends_on, HashMap::new()));
+    }
+    pub fn close_last_subset(&mut self) {
+        let (uuid, depends_on, subset) = self.stack.pop().unwrap();
+        self.closed_subsets.insert(uuid, (depends_on, subset));
+    }
 
-serialize_store!(ModelUuid, models);
-serialize_store!(ViewUuid, views);
+    pub fn insert(&mut self, uuid: EntityUuid, data: toml::Table) {
+        self.all_contained.insert(uuid);
+        self.stack.last_mut().unwrap().2.insert(uuid, data);
+    }
+}
 
 #[derive(Debug, derive_more::From)]
 pub enum NHSerializeError {
     StructureError(String),
     TomlSer(toml::ser::Error),
+    IoError(std::io::Error),
 }
 
 pub trait NHContextSerialize {
@@ -135,12 +283,67 @@ impl<T> NHContextSerialize for ERef<T> where T: NHContextSerialize {
     }
 }
 
-// TODO: why is the RwLock necessary??
 pub struct NHDeserializer {
+    sources_root: PathBuf,
     source_models: HashMap<ModelUuid, toml::Table>,
     source_views: HashMap<ViewUuid, toml::Table>,
-    instantiated_models: RwLock<HashMap<ModelUuid, Box<dyn Any>>>,
-    instantiated_views: RwLock<HashMap<ViewUuid, Box<dyn Any>>>,
+    instantiated_models: HashMap<ModelUuid, Box<dyn Any>>,
+    instantiated_views: HashMap<ViewUuid, Box<dyn Any>>,
+}
+
+impl NHDeserializer {
+    fn new(sources_root: PathBuf) -> Self {
+        Self {
+            sources_root,
+            source_models: HashMap::new(),
+            source_views: HashMap::new(),
+            instantiated_models: HashMap::new(),
+            instantiated_views: HashMap::new(),
+        }
+    }
+    fn load_sources(&mut self, uuid: EntityUuid) -> Result<(), NHDeserializeError> {
+        let mut queue: VecDeque<_> = std::iter::once(uuid).collect();
+        // TODO: cycle detection?
+        while let Some(uuid) = queue.pop_front() {
+            match uuid {
+                EntityUuid::Model(model_uuid) => {
+                    let path = self.sources_root.join("models").join(format!("{}.nhm", model_uuid.to_string()));
+                    let content = std::fs::read_to_string(&path)?;
+                    let NHModelSerialization { depends_on, main_model, model } = toml::from_str(&content)?;
+
+                    queue.extend(depends_on);
+                    let toml::Value::Table(main_model) = main_model else {
+                        return Err(format!("expected table, found {:?}", main_model).into());
+                    };
+                    self.source_models.insert(get_model_uuid(&main_model)?, main_model);
+                    for v in model {
+                        let toml::Value::Table(t) = v else {
+                            return Err(format!("expected table, found {:?}", v).into());
+                        };
+                        self.source_models.insert(get_model_uuid(&t)?, t);
+                    }
+                },
+                EntityUuid::View(view_uuid) => {
+                    let path = self.sources_root.join("views").join(format!("{}.nhv", view_uuid.to_string()));
+                    let content = std::fs::read_to_string(&path)?;
+                    let NHViewSerialization { depends_on, main_view, view } = toml::from_str(&content)?;
+
+                    queue.extend(depends_on);
+                    let toml::Value::Table(main_view) = main_view else {
+                        return Err(format!("expected table, found {:?}", main_view).into());
+                    };
+                    self.source_views.insert(get_view_uuid(&main_view)?, main_view);
+                    for v in view {
+                        let toml::Value::Table(t) = v else {
+                            return Err(format!("expected table, found {:?}", v).into());
+                        };
+                        self.source_views.insert(get_view_uuid(&t)?, t);
+                    }
+                },
+            }
+        }
+        Ok(())
+    }
 }
 
 pub trait NHDeserializeInstantiator<K> {
@@ -154,7 +357,7 @@ macro_rules! deserialize_instantiator {
             fn get_entity<T>(&mut self, uuid: &$uuid_type) -> Result<ERef<T>, NHDeserializeError>
             where T: NHContextDeserialize + 'static,
             {
-                if let Some(e) = self.$instantiated.read().unwrap().get(uuid) {
+                if let Some(e) = self.$instantiated.get(uuid) {
                     return Ok(e.downcast_ref::<ERef<T>>()
                         .ok_or(NHDeserializeError::StructureError(format!("element has unexpected type: {:?}", uuid)))?
                         .clone());
@@ -165,7 +368,7 @@ macro_rules! deserialize_instantiator {
                 };
 
                 let e = ERef::new(T::deserialize(&e, self)?);
-                self.$instantiated.write().unwrap().insert(*uuid, Box::new(e.clone()));
+                self.$instantiated.insert(*uuid, Box::new(e.clone()));
                 Ok(e)
             }
         }
@@ -180,6 +383,7 @@ pub enum NHDeserializeError {
     StructureError(String),
     UuidError(uuid::Error),
     TomlError(toml::de::Error),
+    IoError(std::io::Error),
 }
 
 pub trait NHContextDeserialize: Sized {

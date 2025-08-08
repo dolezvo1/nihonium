@@ -92,7 +92,7 @@ macro_rules! build_colors {
 }
 pub(crate) use build_colors;
 
-use super::project_serde::{NHContextDeserialize, NHDeserializeError, NHDeserializer, NHContextSerialize, NHSerializeStore};
+use super::project_serde::{NHContextDeserialize, NHDeserializeError, NHDeserializer, NHContextSerialize};
 use super::uuid::{ModelUuid, ViewUuid};
 use super::views::ordered_views::OrderedViews;
 use super::entity::{Entity, EntityUuid};
@@ -1004,7 +1004,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ViewUuid, initialize_with = Self::initialize)]
+#[nh_context_serde(is_entity, is_subset_with = Self::depends_on , initialize_with = Self::initialize)]
 pub struct DiagramControllerGen2<
     DomainT: Domain,
     DiagramAdapterT: DiagramAdapter<DomainT>,
@@ -1104,6 +1104,10 @@ impl<
 
         self.temporaries.name_buffer = (*self.name).clone();
         self.adapter.refresh_buffers();
+    }
+
+    fn depends_on(&self) -> Vec<EntityUuid> {
+        std::iter::once(self.model().read().tagged_uuid()).collect()
     }
 
     pub fn model(&self) -> ERef<DomainT::DiagramModelT> {

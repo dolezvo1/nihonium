@@ -3,12 +3,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::io::Write;
 
 use common::canvas::{NHCanvas, UiCanvas};
 use common::controller::{Arrangement, ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleProjectCommand};
-use common::project_serde::{NHProjectHierarchyNodeDTO, NHSerializeError, NHSerializer, NHDeserializer, NHDeserializeError};
+use common::project_serde::{NHProjectHierarchyNodeSerialization, NHSerializeError, NHSerializer, NHDeserializer, NHDeserializeError};
 use common::uuid::{ModelUuid, ViewUuid};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
@@ -220,94 +221,52 @@ impl TabViewer for NHContext {
 }
 
 impl NHContext {
-    fn export_project(&self) -> Result<String, NHSerializeError> {
-        let HierarchyNode::Folder(.., children) = &self.project_hierarchy else {
-            return Err(NHSerializeError::StructureError("invalid hierarchy root".into()))
+    fn export_project(&self, project_file_path: &PathBuf) -> Result<(), NHSerializeError> {
+        let HierarchyNode::Folder(_, project_name, children) = &self.project_hierarchy else {
+            return Err(format!("invalid hierarchy root for project export").into())
         };
 
-        fn h(e: &HierarchyNode) -> NHProjectHierarchyNodeDTO {
-            match e {
-                HierarchyNode::Folder(uuid, name, children)
-                    => NHProjectHierarchyNodeDTO::Folder { uuid: *uuid, name: (**name).clone(), hierarchy: children.iter().map(h).collect() },
-                HierarchyNode::Diagram(inner)
-                    => {
-                    let r = inner.read();
-                    NHProjectHierarchyNodeDTO::Diagram { uuid: *r.uuid(), view_type: r.view_type() }
-                }
-            }
-        }
-
-        let mut serializer = NHSerializer::new();
-        for e in self.diagram_controllers.iter() {
-            e.1.1.read().serialize_into(&mut serializer)?;
-        }
-
-        let project = common::project_serde::NHProjectDTO::new(
-            children.iter().map(h).collect(),
-            serializer,
-        );
-
-        Ok(toml::to_string(&project)?)
+        Ok(common::project_serde::NHProjectSerialization::write_to(
+            project_file_path,
+            &*project_name,
+            project_file_path.file_stem()
+                .or_else(|| project_file_path.file_name())
+                .and_then(|e| e.to_str())
+                .ok_or_else(|| format!("invalid file name, probably"))?,
+            self.new_diagram_no as usize,
+            &children,
+            &self.diagram_controllers,
+        )?)
     }
-    fn import_project(&mut self, project: &str) -> Result<(), NHDeserializeError> {
-        let pdto: common::project_serde::NHProjectDTO = toml::from_str(project).unwrap();
-        let mut deserializer = pdto.deserializer()?;
+    fn import_project(&mut self, project_file_path: &PathBuf) -> Result<(), NHDeserializeError> {
+        let project_file_contents = std::fs::read_to_string(project_file_path)?;
+        let pdto: common::project_serde::NHProjectSerialization = toml::from_str(&project_file_contents)?;
+        let (hierarchy, top_level_views) = pdto.deserialize_all(project_file_path, &self.diagram_deserializers)?;
 
-        fn h(
-            e: &NHProjectHierarchyNodeDTO,
-            d: &mut NHDeserializer,
-            tl: &mut HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
-            mh: &mut HashMap<ModelUuid, Arc<dyn ModelHierarchyView>>,
-            dds: &HashMap<String, (usize, &'static DDes)>,
-        ) -> Result<HierarchyNode, NHDeserializeError> {
-            match e {
-                NHProjectHierarchyNodeDTO::Folder { uuid, name, hierarchy }
-                => Ok(HierarchyNode::Folder(
-                        *uuid, Arc::new((*name).clone()),
-                        hierarchy.iter().map(|e| h(e, d, tl, mh, dds)).collect::<Result<Vec<_>, NHDeserializeError>>()?)),
-                NHProjectHierarchyNodeDTO::Diagram { uuid, view_type }
-                => {
-                    let (type_no, dd) = dds.get(view_type)
-                        .ok_or_else(|| format!("deserializer for type '{}' not found", view_type))?;
-                    let view = dd(*uuid, d)?;
-                    let r = view.read();
-                    let (model_uuid, mhview) = (*r.model_uuid(), r.new_hierarchy_view());
-                    drop(r);
-
-                    tl.insert(*uuid, (*type_no, view.clone()));
-                    mh.insert(model_uuid, mhview);
-                    Ok(HierarchyNode::Diagram(view))
-                }
-            }
-        }
-
-        let mut tmph = Vec::new();
-        let mut tlv = HashMap::new();
-        let mut mhviews = HashMap::new();
-
-        for e in &pdto.hierarchy {
-            tmph.push(h(e, &mut deserializer, &mut tlv, &mut mhviews, &self.diagram_deserializers)?);
-        }
-
-        // All good, clear and set
+        // All good, clear and set fields
         self.clear_project_data();
 
-        let HierarchyNode::Folder(.., children) = &mut self.project_hierarchy else {
-            return Err(NHDeserializeError::StructureError("invalid hierarchy root".into()))
+        let HierarchyNode::Folder(_, project_name, children) = &mut self.project_hierarchy else {
+            unreachable!("clear_project_data set hierarchy root to non-folder value")
         };
-        for e in tmph {
+        for e in hierarchy {
             children.push(e);
         }
-        self.new_diagram_no = (tlv.len() + 1) as u32;
-        self.diagram_controllers = tlv;
-        self.model_hierarchy_views = mhviews;
+        *project_name = Arc::new(pdto.project_name());
+        self.new_diagram_no = pdto.new_diagram_no_counter() as u32;
+        for e in &top_level_views {
+            let r = e.1.1.read();
+            let (uuid, mhv) = (*r.model_uuid(), r.new_hierarchy_view());
+            self.model_hierarchy_views.insert(uuid, mhv);
+        }
+        self.diagram_controllers = top_level_views;
 
         Ok(())
     }
     fn clear_project_data(&mut self) {
         self.project_path = None;
         self.diagram_controllers.clear();
-        self.project_hierarchy = HierarchyNode::Folder(uuid::Uuid::nil().into(), "root".to_owned().into(), vec![]);
+        self.project_hierarchy = HierarchyNode::Folder(uuid::Uuid::nil().into(), "New Project".to_owned().into(), vec![]);
         self.model_hierarchy_views.clear();
         self.new_diagram_no = 1;
         self.custom_tabs.clear();
@@ -1210,7 +1169,7 @@ impl Default for NHApp {
         let mut context = NHContext {
             project_path: None,
             diagram_controllers,
-            project_hierarchy: HierarchyNode::Folder(uuid::Uuid::nil().into(), Arc::new("root".to_owned()), hierarchy),
+            project_hierarchy: HierarchyNode::Folder(uuid::Uuid::nil().into(), Arc::new("New Project".to_owned()), hierarchy),
             tree_view_state: TreeViewState::default(),
             model_hierarchy_views,
             new_diagram_no: 4,
@@ -1967,38 +1926,33 @@ impl eframe::App for NHApp {
                         self.context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
                     }
                     SimpleProjectCommand::OpenProject(b) => if !self.context.has_unsaved_changes || b {
-                        if let Some(project_path) = self.context.project_path.clone()
+                        if let Some(project_file_path) = self.context.project_path.clone()
                             .or_else(|| rfd::FileDialog::new()
                             .set_directory(std::env::current_dir().unwrap())
                             .add_filter("Nihonium Project files", &["nhp"])
                             .add_filter("All files", &["*"])
                             .pick_file()) {
-                                let contents = std::fs::read_to_string(&project_path).unwrap();
-                                if let Ok(_) = self.context.import_project(&contents) {
-                                    self.tree = self.tree.filter_tabs(|e| !matches!(e, NHTab::Diagram { .. } | NHTab::CustomTab { .. }));
+                                match self.context.import_project(&project_file_path) {
+                                    Err(e) => println!("Error opening: {:?}", e),
+                                    Ok(_) => {
+                                        self.tree = self.tree.filter_tabs(|e| !matches!(e, NHTab::Diagram { .. } | NHTab::CustomTab { .. }));
+                                    },
                                 }
                             }
                     } else {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::OpenProject(b));
                     }
                     SimpleProjectCommand::SaveProject => {
-                        if let Some(project_path) = self.context.project_path.clone()
+                        if let Some(project_file_path) = self.context.project_path.clone()
                             .or_else(|| rfd::FileDialog::new()
                                 .set_directory(std::env::current_dir().unwrap())
                                 .add_filter("Nihonium Project files", &["nhp"])
                                 .add_filter("All files", &["*"])
                                 .save_file()) {
-                            match self.context.export_project() {
+                            match self.context.export_project(&project_file_path) {
                                 Err(e) => println!("Error exporting: {:?}", e),
-                                Ok(project) => {
-                                    let mut file = std::fs::OpenOptions::new()
-                                        .create(true)
-                                        .truncate(true)
-                                        .write(true)
-                                        .open(&project_path)
-                                        .unwrap();
-                                    file.write_all(project.as_bytes());
-                                    self.context.project_path = Some(project_path);
+                                Ok(_) => {
+                                    self.context.project_path = Some(project_file_path);
                                     self.context.has_unsaved_changes = false;
                                 }
                             }
@@ -2007,23 +1961,16 @@ impl eframe::App for NHApp {
                     SimpleProjectCommand::SaveProjectAs => {
                         // NOTE: This does not work on WASM, and in its current state it never will.
                         //       This will be possible to fix once this is fixed on rfd side (#128).
-                        if let Some(path) = rfd::FileDialog::new()
+                        if let Some(project_file_path) = rfd::FileDialog::new()
                             .set_directory(std::env::current_dir().unwrap())
                             .add_filter("Nihonium Project files", &["nhp"])
                             .add_filter("All files", &["*"])
                             .save_file()
                         {
-                            match self.context.export_project() {
+                            match self.context.export_project(&project_file_path) {
                                 Err(e) => println!("Error exporting: {:?}", e),
-                                Ok(project) => {
-                                    let mut file = std::fs::OpenOptions::new()
-                                        .create(true)
-                                        .truncate(true)
-                                        .write(true)
-                                        .open(&path)
-                                        .unwrap();
-                                    file.write_all(project.as_bytes());
-                                    self.context.project_path = Some(path);
+                                Ok(_) => {
+                                    self.context.project_path = Some(project_file_path);
                                     self.context.has_unsaved_changes = false;
                                 }
                             }

@@ -201,7 +201,7 @@ pub fn fake_copy_diagram(d: &DemoCsdDiagram) -> HashMap<ModelUuid, DemoCsdElemen
 // ---
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct DemoCsdDiagram {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
@@ -275,7 +275,7 @@ impl ContainerModel for DemoCsdDiagram {
 // ---
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct DemoCsdPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
@@ -339,7 +339,7 @@ impl ContainerModel for DemoCsdPackage {
 // ---
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct DemoCsdTransactor {
     pub uuid: Arc<ModelUuid>,
 
@@ -426,7 +426,7 @@ impl Default for DemoCsdTransactionKind {
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct DemoCsdTransaction {
     pub uuid: Arc<ModelUuid>,
 
@@ -497,7 +497,7 @@ impl Default for DemoCsdLinkType {
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(uuid_type = ModelUuid)]
+#[nh_context_serde(is_entity)]
 pub struct DemoCsdLink {
     pub uuid: Arc<ModelUuid>,
 
