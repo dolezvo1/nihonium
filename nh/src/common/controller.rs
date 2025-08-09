@@ -192,16 +192,18 @@ impl Default for SnapManager {
 #[derive(Clone)]
 pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
-    /// Open given diagram wherever
-    OpenAndFocusDiagram(ViewUuid),
-    /// Open and/or move diagram to be at given position
-    OpenAndFocusDiagramAt(ViewUuid, egui::Pos2),
+    OpenAndFocusDiagram(ViewUuid, Option<egui::Pos2>),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetSvgExportMenu(Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, usize, bool, bool, f32, f32)>),
     SetNewDiagramNumber(u32),
     AddNewDiagram(usize, ERef<dyn DiagramController>),
     CopyDiagram(ViewUuid, /*deep:*/ bool),
     DeleteDiagram(ViewUuid),
+
+    AddNewDocument(ViewUuid, String),
+    OpenAndFocusDocument(ViewUuid, Option<egui::Pos2>),
+    DuplicateDocument(ViewUuid),
+    DeleteDocument(ViewUuid),
 }
 
 impl From<SimpleProjectCommand> for ProjectCommand {
@@ -255,33 +257,22 @@ pub enum Arrangement {
 pub enum HierarchyNode {
     Folder(ViewUuid, Arc<String>, Vec<HierarchyNode>),
     Diagram(ERef<dyn TopLevelView>),
+    Document(ViewUuid),
 }
 
 impl HierarchyNode {
     pub fn uuid(&self) -> ViewUuid {
         match self {
-            HierarchyNode::Folder(uuid, ..) => *uuid,
-            HierarchyNode::Diagram(inner) => *inner.read().uuid(),
-        }
-    }
-
-    pub fn collect_hierarchy(&self) -> HierarchyNode {
-        match self {
-            HierarchyNode::Folder(uuid, name, children) => {
-                HierarchyNode::Folder(
-                    *uuid,
-                    name.clone(),
-                    children.iter().map(|e| e.collect_hierarchy()).collect()
-                )
-            },
-            HierarchyNode::Diagram(inner) => HierarchyNode::Diagram(inner.clone()),
+            Self::Folder(uuid, ..) => *uuid,
+            Self::Diagram(inner) => *inner.read().uuid(),
+            Self::Document(uuid) => *uuid,
         }
     }
 
     pub fn get(&self, id: &ViewUuid) -> Option<(&HierarchyNode, &HierarchyNode)> {
         let self_id = self.uuid();
         match self {
-            HierarchyNode::Folder(.., children) => {
+            Self::Folder(.., children) => {
                 for c in children {
                     if c.uuid() == *id {
                         return Some((c, self));
@@ -291,13 +282,13 @@ impl HierarchyNode {
                     }
                 }
             }
-            HierarchyNode::Diagram(..) => {}
+            Self::Diagram(..) | Self::Document(..) => {}
         }
         None
     }
     pub fn remove(&mut self, id: &ViewUuid) -> Option<HierarchyNode> {
         match self {
-            HierarchyNode::Folder(.., children) => {
+            Self::Folder(.., children) => {
                 if let Some(index) = children.iter().position(|e| e.uuid() == *id) {
                     Some(children.remove(index))
                 } else {
@@ -310,7 +301,7 @@ impl HierarchyNode {
                     None
                 }
             }
-            HierarchyNode::Diagram(..) => None,
+            Self::Diagram(..) | Self::Document(..) => None,
         }
     }
     pub fn insert(
@@ -321,7 +312,7 @@ impl HierarchyNode {
     ) -> Result<(), HierarchyNode> {
         let self_uuid = self.uuid();
         match self {
-            HierarchyNode::Folder(.., children) => {
+            Self::Folder(.., children) => {
                 if self_uuid == *id {
                     match position {
                         DirPosition::First => children.insert(0, value),
@@ -345,16 +336,16 @@ impl HierarchyNode {
                     value
                 }
             }
-            HierarchyNode::Diagram(..) => Err(value),
+            Self::Diagram(..) | Self::Document(..) => Err(value),
         }
     }
     pub fn for_each(&self, mut f: impl FnMut(&Self)) {
         f(self);
         match self {
-            HierarchyNode::Folder(.., children) => {
+            Self::Folder(.., children) => {
                 children.iter().for_each(f);
             },
-            HierarchyNode::Diagram(..) => {},
+            Self::Diagram(..) | Self::Document(..) => {},
         }
     }
 }

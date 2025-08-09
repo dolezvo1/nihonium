@@ -11,6 +11,7 @@ nh-project-openproject = Otevřít Projekt
 nh-project-openproject-confirm = Opravdu chcete otevřít jiný projekt?
 nh-project-recentprojects = Nedávné Projekty
 nh-project-addnewdiagram = Přidat Nový Diagram
+nh-project-addnewdocument = Přidat Nový Dokument
 nh-project-save = Uložit
 nh-project-saveas = Uložit jako
 nh-project-closeproject = Zavřít Projekt

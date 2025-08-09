@@ -20,9 +20,10 @@ pub fn no_dependencies<T>(t: &T) -> Vec<EntityUuid> {
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
-pub enum NHProjectHierarchyNodeSerialization {
+enum NHProjectHierarchyNodeSerialization {
     Folder { uuid: ViewUuid, name: String, hierarchy: Vec<NHProjectHierarchyNodeSerialization> },
     Diagram { uuid: ViewUuid, view_type: String },
+    Document { uuid: ViewUuid, name: String, },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -56,15 +57,23 @@ impl NHProjectSerialization {
         new_diagram_no_counter: usize,
         hierarchy: &Vec<HierarchyNode>,
         diagram_controllers: &HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
+        documents: &HashMap<ViewUuid, (String, String)>,
     ) -> Result<(), NHSerializeError> {
-        fn h(e: &HierarchyNode) -> NHProjectHierarchyNodeSerialization {
+        fn h(e: &HierarchyNode, d: &HashMap<ViewUuid, (String, String)>) -> NHProjectHierarchyNodeSerialization {
             match e {
                 HierarchyNode::Folder(uuid, name, children)
-                    => NHProjectHierarchyNodeSerialization::Folder { uuid: *uuid, name: (**name).clone(), hierarchy: children.iter().map(h).collect() },
+                    => NHProjectHierarchyNodeSerialization::Folder {
+                        uuid: *uuid,
+                        name: (**name).clone(),
+                        hierarchy: children.iter().map(|e| h(e, d)).collect(),
+                    },
                 HierarchyNode::Diagram(inner)
                     => {
                     let r = inner.read();
                     NHProjectHierarchyNodeSerialization::Diagram { uuid: *r.uuid(), view_type: r.view_type() }
+                },
+                HierarchyNode::Document(uuid) => {
+                    NHProjectHierarchyNodeSerialization::Document { uuid: *uuid, name: d.get(uuid).unwrap().0.clone() }
                 }
             }
         }
@@ -77,12 +86,23 @@ impl NHProjectSerialization {
         }
         NHSerializer::write_all(serializer, &sources_root_abs);
 
+        std::fs::DirBuilder::new().recursive(true).create(sources_root_abs.join("documents"))?;
+        for (key, (_, content)) in documents.iter() {
+            let path = sources_root_abs.join("documents").join(format!("{}.nhd", key.to_string()));
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&path)?;
+            file.write_all(content.as_bytes())?;
+        }
+
         let project_serialization = Self {
             format_version: "0.2.0".into(),
             project_name: project_name.to_owned(),
             sources_root: sources_root.to_owned(),
             new_diagram_no_counter,
-            hierarchy: hierarchy.iter().map(h).collect(),
+            hierarchy: hierarchy.iter().map(|e| h(e, documents)).collect(),
         };
 
         let project_str = toml::to_string(&project_serialization)?;
@@ -107,7 +127,13 @@ impl NHProjectSerialization {
         &self,
         project_file_path: &PathBuf,
         diagram_deserializers: &HashMap<String, (usize, &'static DDes)>,
-    ) -> Result<(Vec<HierarchyNode>, HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>), NHDeserializeError> {
+    ) -> Result<(
+            Vec<HierarchyNode>,
+            HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
+            HashMap<ViewUuid, (String, String)>,
+        ),
+        NHDeserializeError
+    > {
         let sources_root = project_file_path.parent().map(|e| e.join(&self.sources_root))
             .ok_or_else(|| format!("project_file_path {:?} does not have a valid parent", project_file_path))?;
         let mut deserializer = NHDeserializer::new(sources_root);
@@ -124,6 +150,9 @@ impl NHProjectSerialization {
                 NHProjectHierarchyNodeSerialization::Diagram { uuid, view_type } => {
                     Ok(d.load_sources(EntityUuid::View(*uuid))?)
                 },
+                NHProjectHierarchyNodeSerialization::Document { uuid, name } => {
+                    Ok(())
+                }
             }
         }
 
@@ -136,13 +165,14 @@ impl NHProjectSerialization {
             e: &NHProjectHierarchyNodeSerialization,
             d: &mut NHDeserializer,
             tl: &mut HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
+            docs: &mut HashMap<ViewUuid, (String, String)>,
             dds: &HashMap<String, (usize, &'static DDes)>,
         ) -> Result<HierarchyNode, NHDeserializeError> {
             match e {
                 NHProjectHierarchyNodeSerialization::Folder { uuid, name, hierarchy }
                 => Ok(HierarchyNode::Folder(
                         *uuid, Arc::new((*name).clone()),
-                        hierarchy.iter().map(|e| h(e, d, tl, dds)).collect::<Result<Vec<_>, NHDeserializeError>>()?,
+                        hierarchy.iter().map(|e| h(e, d, tl, docs, dds)).collect::<Result<Vec<_>, NHDeserializeError>>()?,
                     )),
                 NHProjectHierarchyNodeSerialization::Diagram { uuid, view_type }
                 => {
@@ -152,16 +182,25 @@ impl NHProjectSerialization {
                     tl.insert(*uuid, (*type_no, view.clone()));
                     Ok(HierarchyNode::Diagram(view))
                 }
+                NHProjectHierarchyNodeSerialization::Document { uuid, name }
+                => {
+                    let path = d.sources_root.join("documents").join(format!("{}.nhd", uuid.to_string()));
+                    let content = std::fs::read_to_string(&path)?;
+                    docs.insert(*uuid, (name.clone(), content));
+                    Ok(HierarchyNode::Document(*uuid))
+                }
             }
         }
 
         let mut hierarchy = Vec::new();
         let mut top_level_views = HashMap::new();
+        let mut documents = HashMap::new();
 
         for e in &self.hierarchy {
-            hierarchy.push(h(e, &mut deserializer, &mut top_level_views, diagram_deserializers)?);
+            hierarchy.push(h(e, &mut deserializer, &mut top_level_views, &mut documents, diagram_deserializers)?);
         }
-        Ok((hierarchy, top_level_views))
+
+        Ok((hierarchy, top_level_views, documents))
     }
 }
 

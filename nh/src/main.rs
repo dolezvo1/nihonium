@@ -9,7 +9,7 @@ use std::io::Write;
 
 use common::canvas::{NHCanvas, UiCanvas};
 use common::controller::{Arrangement, ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleProjectCommand};
-use common::project_serde::{NHProjectHierarchyNodeSerialization, NHSerializeError, NHSerializer, NHDeserializer, NHDeserializeError};
+use common::project_serde::{NHSerializeError, NHSerializer, NHDeserializer, NHDeserializeError};
 use common::uuid::{ModelUuid, ViewUuid};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
@@ -89,6 +89,7 @@ enum NHTab {
     Layers,
 
     Diagram { uuid: ViewUuid },
+    Document { uuid: ViewUuid },
     CustomTab { uuid: uuid::Uuid },
 }
 
@@ -106,6 +107,7 @@ impl NHTab {
             NHTab::Layers => "Layers",
 
             NHTab::Diagram { .. } => "Diagram",
+            NHTab::Document { .. } => "Document",
             NHTab::CustomTab { .. } => "Custom Tab",
         }
     }
@@ -125,9 +127,10 @@ struct NHContext {
     project_hierarchy: HierarchyNode,
     tree_view_state: TreeViewState<ViewUuid>,
     model_hierarchy_views: HashMap<ModelUuid, Arc<dyn ModelHierarchyView>>,
-    new_diagram_no: u32,
-    pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
     diagram_deserializers: HashMap<String, (usize, &'static DDes)>,
+    new_diagram_no: u32,
+    documents: HashMap<ViewUuid, (String, String)>,
+    pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
 
     pub style: Option<Style>,
     zoom_factor: f32,
@@ -174,6 +177,9 @@ impl TabViewer for NHContext {
                 let c = self.diagram_controllers.get(uuid).unwrap().1.read();
                 (&*c.view_name()).into()
             }
+            NHTab::Document { uuid } => {
+                self.documents.get(&uuid).unwrap().0.clone().into()
+            }
             NHTab::CustomTab { uuid } => {
                 self.custom_tabs.get(uuid).unwrap()
                     .read().unwrap().title().into()
@@ -199,6 +205,7 @@ impl TabViewer for NHContext {
             NHTab::Layers => self.layers(ui),
 
             NHTab::Diagram { uuid } => self.diagram_tab(uuid, ui),
+            NHTab::Document { uuid } => self.document_tab(uuid, ui),
             NHTab::CustomTab { uuid } => self.custom_tab(uuid, ui),
         }
     }
@@ -236,12 +243,13 @@ impl NHContext {
             self.new_diagram_no as usize,
             &children,
             &self.diagram_controllers,
+            &self.documents,
         )?)
     }
     fn import_project(&mut self, project_file_path: &PathBuf) -> Result<(), NHDeserializeError> {
         let project_file_contents = std::fs::read_to_string(project_file_path)?;
         let pdto: common::project_serde::NHProjectSerialization = toml::from_str(&project_file_contents)?;
-        let (hierarchy, top_level_views) = pdto.deserialize_all(project_file_path, &self.diagram_deserializers)?;
+        let (hierarchy, top_level_views, documents) = pdto.deserialize_all(project_file_path, &self.diagram_deserializers)?;
 
         // All good, clear and set fields
         self.clear_project_data();
@@ -260,6 +268,7 @@ impl NHContext {
             self.model_hierarchy_views.insert(uuid, mhv);
         }
         self.diagram_controllers = top_level_views;
+        self.documents = documents;
 
         Ok(())
     }
@@ -269,6 +278,7 @@ impl NHContext {
         self.project_hierarchy = HierarchyNode::Folder(uuid::Uuid::nil().into(), "New Project".to_owned().into(), vec![]);
         self.model_hierarchy_views.clear();
         self.new_diagram_no = 1;
+        self.documents.clear();
         self.custom_tabs.clear();
 
         self.undo_stack.clear();
@@ -296,10 +306,15 @@ impl NHContext {
             NewFolder(ViewUuid),
             RecCollapseAt(bool, ViewUuid),
             DeleteFolder(ViewUuid),
+
             OpenDiagram(ViewUuid),
             DuplicateDeep(ViewUuid),
             DuplicateShallow(ViewUuid),
             DeleteDiagram(ViewUuid),
+
+            OpenDocument(ViewUuid),
+            DuplicateDocument(ViewUuid),
+            DeleteDocument(ViewUuid),
         }
 
         let mut context_menu_action = None;
@@ -316,7 +331,12 @@ impl NHContext {
             }
         });
 
-        fn hierarchy(builder: &mut egui_ltreeview::TreeViewBuilder<ViewUuid>, hn: &HierarchyNode, cma: &mut Option<ContextMenuAction>) {
+        fn hierarchy(
+            builder: &mut egui_ltreeview::TreeViewBuilder<ViewUuid>,
+            hn: &HierarchyNode,
+            docs: &HashMap<ViewUuid, (String, String)>,
+            cma: &mut Option<ContextMenuAction>,
+        ) {
             match hn {
                 HierarchyNode::Folder(uuid, name, children) => {
                     builder.node(
@@ -345,7 +365,7 @@ impl NHContext {
                     );
 
                     for c in children {
-                        hierarchy(builder, c, cma);
+                        hierarchy(builder, c, docs, cma);
                     }
 
                     builder.close_dir();
@@ -377,6 +397,28 @@ impl NHContext {
                             })
                     );
                 },
+                HierarchyNode::Document(uuid) => {
+                    builder.node(
+                        NodeBuilder::leaf(*uuid)
+                            .label(&docs.get(uuid).unwrap().0)
+                            .context_menu(|ui| {
+                                if ui.button("Open").clicked() {
+                                    *cma = Some(ContextMenuAction::OpenDocument(*uuid));
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui.button("Duplicate").clicked() {
+                                    *cma = Some(ContextMenuAction::DuplicateDocument(*uuid));
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui.button("Delete").clicked() {
+                                    *cma = Some(ContextMenuAction::DeleteDocument(*uuid));
+                                    ui.close();
+                                }
+                            })
+                    );
+                }
             }
         }
 
@@ -390,7 +432,7 @@ impl NHContext {
                     ui,
                     &mut self.tree_view_state,
                     |builder| {
-                        hierarchy(builder, &self.project_hierarchy, &mut context_menu_action);
+                        hierarchy(builder, &self.project_hierarchy, &self.documents, &mut context_menu_action);
                     }
                 );
 
@@ -399,14 +441,18 @@ impl NHContext {
                         egui_ltreeview::Action::Activate(a) => {
                             for selected in &a.selected {
                                 if let Some((HierarchyNode::Diagram(..), _)) = self.project_hierarchy.get(selected) {
-                                    commands.push(ProjectCommand::OpenAndFocusDiagram(*selected));
+                                    commands.push(ProjectCommand::OpenAndFocusDiagram(*selected, None));
+                                } else if let Some((HierarchyNode::Document(..), _)) = self.project_hierarchy.get(selected) {
+                                    commands.push(ProjectCommand::OpenAndFocusDocument(*selected, None));
                                 }
                             }
                         }
                         egui_ltreeview::Action::MoveExternal(dnde) => {
                             for selected in &dnde.source {
                                 if let Some((HierarchyNode::Diagram(..), _)) = self.project_hierarchy.get(selected) {
-                                    commands.push(ProjectCommand::OpenAndFocusDiagramAt(*selected, dnde.position));
+                                    commands.push(ProjectCommand::OpenAndFocusDiagram(*selected, Some(dnde.position)));
+                                } else if let Some((HierarchyNode::Document(..), _)) = self.project_hierarchy.get(selected) {
+                                    commands.push(ProjectCommand::OpenAndFocusDocument(*selected, Some(dnde.position)));
                                 }
                             }
                         }
@@ -446,10 +492,15 @@ impl NHContext {
                 ContextMenuAction::DeleteFolder(view_uuid) => {
                     self.project_hierarchy.remove(&view_uuid);
                 },
-                ContextMenuAction::OpenDiagram(view_uuid) => commands.push(ProjectCommand::OpenAndFocusDiagram(view_uuid)),
+
+                ContextMenuAction::OpenDiagram(view_uuid) => commands.push(ProjectCommand::OpenAndFocusDiagram(view_uuid, None)),
                 ContextMenuAction::DuplicateDeep(view_uuid) => commands.push(ProjectCommand::CopyDiagram(view_uuid, true)),
                 ContextMenuAction::DuplicateShallow(view_uuid) => commands.push(ProjectCommand::CopyDiagram(view_uuid, false)),
                 ContextMenuAction::DeleteDiagram(view_uuid) => commands.push(ProjectCommand::DeleteDiagram(view_uuid)),
+
+                ContextMenuAction::OpenDocument(uuid) => commands.push(ProjectCommand::OpenAndFocusDocument(uuid, None)),
+                ContextMenuAction::DuplicateDocument(uuid) => commands.push(ProjectCommand::DuplicateDocument(uuid)),
+                ContextMenuAction::DeleteDocument(uuid) => commands.push(ProjectCommand::DeleteDocument(uuid))
             }
         }
 
@@ -1086,6 +1137,13 @@ impl NHContext {
         self.refresh_buffers(&affected_models);
     }
 
+    fn document_tab(&mut self, uuid: &ViewUuid, ui: &mut Ui) {
+        let c = self.documents.get_mut(uuid).unwrap();
+        if ui.add_sized(ui.available_size(), egui::TextEdit::multiline(&mut c.1)).changed() {
+            c.0 = c.1.lines().next().unwrap_or("").to_owned();
+        }
+    }
+
     fn custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
         let x = self.custom_tabs.get(tab_uuid).map(|e| e.clone()).unwrap();
         let mut custom_tab = x.write().unwrap();
@@ -1110,6 +1168,20 @@ impl Default for NHApp {
         let mut hierarchy = vec![];
         let mut model_hierarchy_views = HashMap::<_, Arc<dyn ModelHierarchyView>>::new();
         let mut tabs = vec![NHTab::RecentlyUsed, NHTab::StyleEditor];
+
+        let documents = {
+            let mut d = HashMap::<ViewUuid, (String, String)>::new();
+            let document_uuid = uuid::Uuid::now_v7().into();
+            hierarchy.push(HierarchyNode::Document(document_uuid));
+            d.insert(
+                document_uuid,
+                (
+                    "Example Document".to_owned(),
+                    "Example Document\n\nExample Text".to_owned(),
+                )
+            );
+            d
+        };
 
         for (diagram_type, view) in [
             (0, crate::rdf::rdf_controllers::demo(1)),
@@ -1172,9 +1244,10 @@ impl Default for NHApp {
             project_hierarchy: HierarchyNode::Folder(uuid::Uuid::nil().into(), Arc::new("New Project".to_owned()), hierarchy),
             tree_view_state: TreeViewState::default(),
             model_hierarchy_views,
-            new_diagram_no: 4,
-            custom_tabs: HashMap::new(),
             diagram_deserializers,
+            new_diagram_no: 4,
+            documents,
+            custom_tabs: HashMap::new(),
             
             style: None,
             zoom_factor: 1.0,
@@ -1245,13 +1318,12 @@ impl Default for NHApp {
 }
 
 // Push to the node of the last diagram or the largest node
-macro_rules! push_diagram_tab {
-    ($self:expr, $uuid:expr) => {
-        let tab = NHTab::Diagram { uuid: $uuid };
+macro_rules! push_tab_to_best {
+    ($self:expr, $tab:expr) => {
         if let Some(lfd_uuid) = &$self.context.last_focused_diagram
             && let Some((si, ni, _ti)) = $self.tree.find_tab(&NHTab::Diagram { uuid: *lfd_uuid }) {
             $self.tree.set_focused_node_and_surface((si, ni));
-            $self.tree.push_to_focused_leaf(tab);
+            $self.tree.push_to_focused_leaf($tab);
         } else {
             let mut current_largest_leaf = None;
             let mut current_max_area = None;
@@ -1269,7 +1341,7 @@ macro_rules! push_diagram_tab {
                 $self.tree.set_focused_node_and_surface((si, ni));
             }
 
-            $self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
+            $self.tree[SurfaceIndex::main()].push_to_focused_leaf($tab);
         }
     };
 }
@@ -1328,7 +1400,7 @@ impl NHApp {
             .diagram_controllers
             .insert(view_uuid, (diagram_type, diagram_view));
         self.context.model_hierarchy_views.insert(model_uuid, hierarchy_view);
-        push_diagram_tab!(self, view_uuid);
+        push_tab_to_best!(self, NHTab::Diagram { uuid: view_uuid });
     }
 
     pub fn add_custom_tab(&mut self, uuid: uuid::Uuid, tab: Arc<RwLock<dyn CustomTab>>) {
@@ -1364,36 +1436,46 @@ impl eframe::App for NHApp {
         let mut commands = vec![];
         for c in self.context.unprocessed_commands.drain(..) {
             match c {
-                ProjectCommand::OpenAndFocusDiagram(uuid) => {
+                ProjectCommand::OpenAndFocusDiagram(uuid, pos) => {
                     let target_tab = NHTab::Diagram { uuid };
+                    if let Some(pos) = pos {
+                        if let Some(t) = self.tree.find_tab(&target_tab)
+                            && let egui_dock::Node::Leaf(ln) = &self.tree[t.0][t.1]
+                            && ln.rect.contains(pos) {
+                            self.tree.set_focused_node_and_surface((t.0, t.1));
+                            self.tree.set_active_tab(t);
+                        } else {
+                            self.tree.retain_tabs(|e| *e != target_tab);
+                            let mut it = self.tree.iter_leaves();
+                            while let Some((_si, ln)) = it.next() {
+                                if ln.rect.contains(pos)
+                                    && let Some(tab) = ln.tabs.get(ln.active.0)
+                                    && let Some(t) = self.tree.find_tab(tab) {
+                                        drop(it);
+                                        self.tree.set_focused_node_and_surface((t.0, t.1));
+                                        self.tree[t.0].push_to_focused_leaf(target_tab);
+                                        break;
+                                }
+                            }
+                        }
+                    } else {
+                        if let Some(t) = self.tree.find_tab(&target_tab) {
+                            self.tree.set_focused_node_and_surface((t.0, t.1));
+                            self.tree.set_active_tab(t);
+                        } else {
+                            push_tab_to_best!(self, target_tab);
+                        }
+                    }
+                },
+                ProjectCommand::OpenAndFocusDocument(uuid, pos) => {
+                    let target_tab = NHTab::Document { uuid };
                     if let Some(t) = self.tree.find_tab(&target_tab) {
                         self.tree.set_focused_node_and_surface((t.0, t.1));
                         self.tree.set_active_tab(t);
                     } else {
-                        push_diagram_tab!(self, uuid);
+                        push_tab_to_best!(self, target_tab);
                     }
-                },
-                ProjectCommand::OpenAndFocusDiagramAt(uuid, pos) => {
-                    let target_tab = NHTab::Diagram { uuid };
-                    if let Some(t) = self.tree.find_tab(&target_tab)
-                        && let egui_dock::Node::Leaf(ln) = &self.tree[t.0][t.1]
-                        && ln.rect.contains(pos) {
-                        self.tree.set_focused_node_and_surface((t.0, t.1));
-                        self.tree.set_active_tab(t);
-                    } else {
-                        self.tree.retain_tabs(|e| *e != target_tab);
-                        let mut it = self.tree.iter_leaves();
-                        while let Some((_si, ln)) = it.next() {
-                            if ln.rect.contains(pos)
-                                && let Some(tab) = ln.tabs.get(ln.active.0)
-                                && let Some(t) = self.tree.find_tab(tab) {
-                                    drop(it);
-                                    self.tree.set_focused_node_and_surface((t.0, t.1));
-                                    self.tree[t.0].push_to_focused_leaf(target_tab);
-                                    break;
-                            }
-                        }
-                    }
+                    // TODO: handle drag
                 }
                 other => commands.push(other),
             }
@@ -1544,6 +1626,9 @@ impl eframe::App for NHApp {
                             }
                         }
                     });
+                    if ui.button(translate!("nh-project-addnewdocument")).clicked() {
+                        commands.push(ProjectCommand::AddNewDocument(uuid::Uuid::now_v7().into(), "New Document".to_owned()));
+                    }
                     ui.separator();
 
                     button!(ui, "nh-project-save", SimpleProjectCommand::SaveProject);
@@ -1978,7 +2063,9 @@ impl eframe::App for NHApp {
                     }
                     SimpleProjectCommand::CloseProject(b) => if !self.context.has_unsaved_changes || b {
                         self.context.clear_project_data();
-                        self.tree = self.tree.filter_tabs(|e| !matches!(e, NHTab::Diagram { .. } | NHTab::CustomTab { .. }))
+                        self.tree = self.tree.filter_tabs(
+                            |e| !matches!(e, NHTab::Diagram { .. } | NHTab::Document { .. } | NHTab::CustomTab { .. })
+                        )
                     } else {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::CloseProject(b));
                     }
@@ -1989,7 +2076,7 @@ impl eframe::App for NHApp {
                     }
                 }
                 ProjectCommand::OpenAndFocusDiagram(..)
-                | ProjectCommand::OpenAndFocusDiagramAt(..) => unreachable!("this should not happen"),
+                | ProjectCommand::OpenAndFocusDocument(..) => unreachable!("this really should not happen"),
                 ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
                 ProjectCommand::SetSvgExportMenu(sem) => self.context.svg_export_menu = sem,
                 ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
@@ -2016,6 +2103,24 @@ impl eframe::App for NHApp {
                         self.tree.remove_tab(snt);
                     }
                 },
+                ProjectCommand::AddNewDocument(uuid, content) => {
+                    let first_line = content.lines().next().unwrap_or("").to_owned();
+                    self.context.documents.insert(uuid, (first_line, content));
+                    if let HierarchyNode::Folder(.., children) = &mut self.context.project_hierarchy {
+                        children.push(HierarchyNode::Document(uuid));
+                    }
+                    push_tab_to_best!(self, NHTab::Document { uuid });
+                }
+                ProjectCommand::DuplicateDocument(_uuid) => {
+                    // TODO:
+                }
+                ProjectCommand::DeleteDocument(uuid) => {
+                    self.context.project_hierarchy.remove(&uuid);
+                    self.context.documents.remove(&uuid);
+                    if let Some(snt) = self.tree.find_tab(&NHTab::Document { uuid }) {
+                        self.tree.remove_tab(snt);
+                    }
+                }
             }
         }
         
