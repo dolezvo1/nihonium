@@ -2,6 +2,7 @@
 macro_rules! impl_uuid {
     ($struct_name:ty) => {
         impl $struct_name {
+            #[allow(dead_code)]
             pub fn is_nil(&self) -> bool {
                 self.inner.is_nil()
             }

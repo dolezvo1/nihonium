@@ -1,9 +1,8 @@
 
 use std::collections::{HashSet, VecDeque};
-use std::ffi::OsStr;
 use std::io::Write;
 use std::sync::Arc;
-use std::{any::Any, collections::HashMap, path::PathBuf, sync::RwLock};
+use std::{any::Any, collections::HashMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -14,7 +13,7 @@ use super::entity::EntityUuid;
 use super::eref::ERef;
 use super::{controller::DiagramController, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}};
 
-pub fn no_dependencies<T>(t: &T) -> Vec<EntityUuid> {
+pub fn no_dependencies<T>(_t: &T) -> Vec<EntityUuid> {
     vec![]
 }
 
@@ -141,16 +140,16 @@ impl NHProjectSerialization {
         // Load all necessary sources
         fn l(e: &NHProjectHierarchyNodeSerialization, d: &mut NHDeserializer) -> Result<(), NHDeserializeError> {
             match e {
-                NHProjectHierarchyNodeSerialization::Folder { uuid, name, hierarchy } => {
+                NHProjectHierarchyNodeSerialization::Folder { hierarchy, .. } => {
                     for e in hierarchy {
                         l(e, d)?;
                     }
                     Ok(())
                 },
-                NHProjectHierarchyNodeSerialization::Diagram { uuid, view_type } => {
+                NHProjectHierarchyNodeSerialization::Diagram { uuid, .. } => {
                     Ok(d.load_sources(EntityUuid::View(*uuid))?)
                 },
-                NHProjectHierarchyNodeSerialization::Document { uuid, name } => {
+                NHProjectHierarchyNodeSerialization::Document { .. } => {
                     Ok(())
                 }
             }
@@ -286,6 +285,7 @@ impl NHSerializer {
     }
 }
 
+#[expect(dead_code)]
 #[derive(Debug, derive_more::From)]
 pub enum NHSerializeError {
     StructureError(String),
@@ -417,6 +417,7 @@ macro_rules! deserialize_instantiator {
 deserialize_instantiator!(ModelUuid, instantiated_models, source_models);
 deserialize_instantiator!(ViewUuid, instantiated_views, source_views);
 
+#[expect(dead_code)]
 #[derive(Debug, derive_more::From)]
 pub enum NHDeserializeError {
     StructureError(String),

@@ -265,7 +265,7 @@ impl RdfDiagram {
         }
     }
 
-    pub fn graph(&self) -> Vec<([SimpleTerm; 3], GraphName<SimpleTerm>)> {
+    pub fn graph(&self) -> Vec<([SimpleTerm<'_>; 3], GraphName<SimpleTerm<'_>>)> {
         let mut collector = RdfCollector {
             data: Vec::new(),
             current_graph: None,

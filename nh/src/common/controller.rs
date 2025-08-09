@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, NHCanvas, NHShape, UiCanvas};
 use crate::CustomTab;
-use eframe::{egui, epaint};
+use eframe::egui;
 use egui_ltreeview::DirPosition;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
@@ -92,13 +92,11 @@ macro_rules! build_colors {
 }
 pub(crate) use build_colors;
 
-use super::project_serde::{NHContextDeserialize, NHDeserializeError, NHDeserializer, NHContextSerialize};
+use super::project_serde::{NHContextDeserialize, NHContextSerialize};
 use super::uuid::{ModelUuid, ViewUuid};
 use super::views::ordered_views::OrderedViews;
 use super::entity::{Entity, EntityUuid};
 use super::eref::ERef;
-use super::ufoption::UFOption;
-
 
 pub struct SnapManager {
     input_restriction: egui::Rect,
@@ -270,7 +268,6 @@ impl HierarchyNode {
     }
 
     pub fn get(&self, id: &ViewUuid) -> Option<(&HierarchyNode, &HierarchyNode)> {
-        let self_id = self.uuid();
         match self {
             Self::Folder(.., children) => {
                 for c in children {
@@ -419,7 +416,7 @@ impl<AcqT: ModelsLabelAcquirer> ModelHierarchyView for SimpleModelHierarchyView<
                 self.show_element(true, e);
             }
 
-            fn close_complex(&mut self, e: &<AcqT::ModelT as ContainerModel>::ElementT) {
+            fn close_complex(&mut self, _e: &<AcqT::ModelT as ContainerModel>::ElementT) {
                 self.builder.close_dir();
             }
 
@@ -435,7 +432,7 @@ impl<AcqT: ModelsLabelAcquirer> ModelHierarchyView for SimpleModelHierarchyView<
                 );
             }
 
-            fn close_diagram(&mut self, e: &AcqT::ModelT) {
+            fn close_diagram(&mut self, _e: &AcqT::ModelT) {
                 self.builder.close_dir();
             }
         }

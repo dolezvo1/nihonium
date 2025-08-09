@@ -739,9 +739,6 @@ impl Entity for UmlClassCommentLink {
     }
 }
 
-static COMMENT_LINK_TEXT: LazyLock<Arc<String>> =
-    LazyLock::new(|| Arc::new("Comment link".to_owned()));
-
 impl Model for UmlClassCommentLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()

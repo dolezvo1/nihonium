@@ -5,11 +5,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::io::Write;
 
 use common::canvas::{NHCanvas, UiCanvas};
 use common::controller::{Arrangement, ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleProjectCommand};
-use common::project_serde::{NHSerializeError, NHSerializer, NHDeserializer, NHDeserializeError};
+use common::project_serde::{NHSerializeError, NHDeserializer, NHDeserializeError};
 use common::uuid::{ModelUuid, ViewUuid};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
@@ -1851,14 +1850,14 @@ impl eframe::App for NHApp {
                             egui::StrokeKind::Middle,
                         );
                     } else {
-                        const rect_side: f32 = 20.0;
-                        for ii in 0..((preview_width / rect_side) as u32) {
-                            for jj in 0..=((preview_height / rect_side) as u32) {
+                        const RECT_SIDE: f32 = 20.0;
+                        for ii in 0..((preview_width / RECT_SIDE) as u32) {
+                            for jj in 0..=((preview_height / RECT_SIDE) as u32) {
                                 painter.rect(
                                     egui::Rect::from_min_size(
-                                        egui::Pos2::new(ii as f32 * rect_side, jj as f32 * rect_side)
+                                        egui::Pos2::new(ii as f32 * RECT_SIDE, jj as f32 * RECT_SIDE)
                                         + canvas_rect.min.to_vec2(),
-                                        egui::Vec2::splat(rect_side)
+                                        egui::Vec2::splat(RECT_SIDE)
                                     ),
                                     egui::CornerRadius::ZERO,
                                     if (ii + jj) % 2 == 0 {egui::Color32::GRAY} else {egui::Color32::from_rgb(50, 50, 50)},

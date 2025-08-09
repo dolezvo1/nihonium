@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelHierarchyView, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -457,7 +457,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     fn view_type(&self) -> &'static str {
         "rdf-diagram-view"
     }
-    fn new_hierarchy_view(&self) -> SimpleModelHierarchyView<RdfLabelAcquirer> {
+    fn new_hierarchy_view(&self) -> SimpleModelHierarchyView<impl ModelsLabelAcquirer<ModelT = RdfDiagram> + 'static> {
         SimpleModelHierarchyView::new(self.model(), RdfLabelAcquirer {})
     }
 
@@ -638,7 +638,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                 }
 
                 let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
-                let mut painter = ui.painter().with_clip_rect(icon_rect);
+                let painter = ui.painter().with_clip_rect(icon_rect);
                 let mut mc = canvas::MeasuringCanvas::new(&painter);
                 self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
                 let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
