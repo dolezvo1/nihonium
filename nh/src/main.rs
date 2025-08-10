@@ -1139,7 +1139,8 @@ impl NHContext {
     fn document_tab(&mut self, uuid: &ViewUuid, ui: &mut Ui) {
         let c = self.documents.get_mut(uuid).unwrap();
         if ui.add_sized(ui.available_size(), egui::TextEdit::multiline(&mut c.1)).changed() {
-            c.0 = c.1.lines().next().unwrap_or("").to_owned();
+            c.0 = c.1.lines().next().unwrap_or("empty document").to_owned();
+            self.has_unsaved_changes = true;
         }
     }
 
@@ -1441,29 +1442,35 @@ impl eframe::App for NHApp {
 
         // Process ProjectCommands
         for c in self.context.unprocessed_commands.drain(..) {
+            macro_rules! push_tab_to_cursor {
+                ($self:expr, $tab:expr, $pos:expr) => {
+                    if let Some(t) = $self.tree.find_tab(&$tab)
+                        && let egui_dock::Node::Leaf(ln) = &$self.tree[t.0][t.1]
+                        && ln.rect.contains($pos) {
+                        $self.tree.set_focused_node_and_surface((t.0, t.1));
+                        $self.tree.set_active_tab(t);
+                    } else {
+                        $self.tree.retain_tabs(|e| *e != $tab);
+                        let mut it = $self.tree.iter_leaves();
+                        while let Some((_si, ln)) = it.next() {
+                            if ln.rect.contains($pos)
+                                && let Some(tab) = ln.tabs.get(ln.active.0)
+                                && let Some(t) = $self.tree.find_tab(tab) {
+                                    drop(it);
+                                    $self.tree.set_focused_node_and_surface((t.0, t.1));
+                                    $self.tree[t.0].push_to_focused_leaf($tab);
+                                    break;
+                            }
+                        }
+                    }
+                };
+            }
+
             match c {
                 ProjectCommand::OpenAndFocusDiagram(uuid, pos) => {
                     let target_tab = NHTab::Diagram { uuid };
                     if let Some(pos) = pos {
-                        if let Some(t) = self.tree.find_tab(&target_tab)
-                            && let egui_dock::Node::Leaf(ln) = &self.tree[t.0][t.1]
-                            && ln.rect.contains(pos) {
-                            self.tree.set_focused_node_and_surface((t.0, t.1));
-                            self.tree.set_active_tab(t);
-                        } else {
-                            self.tree.retain_tabs(|e| *e != target_tab);
-                            let mut it = self.tree.iter_leaves();
-                            while let Some((_si, ln)) = it.next() {
-                                if ln.rect.contains(pos)
-                                    && let Some(tab) = ln.tabs.get(ln.active.0)
-                                    && let Some(t) = self.tree.find_tab(tab) {
-                                        drop(it);
-                                        self.tree.set_focused_node_and_surface((t.0, t.1));
-                                        self.tree[t.0].push_to_focused_leaf(target_tab);
-                                        break;
-                                }
-                            }
-                        }
+                        push_tab_to_cursor!(self, target_tab, pos);
                     } else {
                         if let Some(t) = self.tree.find_tab(&target_tab) {
                             self.tree.set_focused_node_and_surface((t.0, t.1));
@@ -1475,13 +1482,16 @@ impl eframe::App for NHApp {
                 },
                 ProjectCommand::OpenAndFocusDocument(uuid, pos) => {
                     let target_tab = NHTab::Document { uuid };
-                    if let Some(t) = self.tree.find_tab(&target_tab) {
-                        self.tree.set_focused_node_and_surface((t.0, t.1));
-                        self.tree.set_active_tab(t);
+                    if let Some(pos) = pos {
+                        push_tab_to_cursor!(self, target_tab, pos);
                     } else {
-                        push_tab_to_best!(self, target_tab);
+                        if let Some(t) = self.tree.find_tab(&target_tab) {
+                            self.tree.set_focused_node_and_surface((t.0, t.1));
+                            self.tree.set_active_tab(t);
+                        } else {
+                            push_tab_to_best!(self, target_tab);
+                        }
                     }
-                    // TODO: handle drag
                 }
                 other => commands.push(other),
             }
@@ -1575,8 +1585,16 @@ impl eframe::App for NHApp {
                                     e @ SimpleProjectCommand::DiagramCommand(dc) => match dc {
                                         DiagramCommand::DropRedoStackAndLastChangeFlag
                                         | DiagramCommand::SetLastChangeFlag => unreachable!(),
-                                        DiagramCommand::UndoImmediate => self.undo_immediate(),
-                                        DiagramCommand::RedoImmediate => self.redo_immediate(),
+                                        DiagramCommand::UndoImmediate => {
+                                            if matches!(self.tree.find_active_focused(), Some((_, NHTab::Diagram { .. }))) {
+                                                self.undo_immediate()
+                                            }
+                                        },
+                                        DiagramCommand::RedoImmediate => {
+                                            if matches!(self.tree.find_active_focused(), Some((_, NHTab::Diagram { .. }))) {
+                                                self.redo_immediate()
+                                            }
+                                        },
                                         _ => commands.push(e.into())
                                     },
                                     other => commands.push(other.into()),
@@ -2110,7 +2128,7 @@ impl eframe::App for NHApp {
                     }
                 },
                 ProjectCommand::AddNewDocument(uuid, content) => {
-                    let first_line = content.lines().next().unwrap_or("").to_owned();
+                    let first_line = content.lines().next().unwrap_or("empty document").to_owned();
                     self.context.documents.insert(uuid, (first_line, content));
                     if let HierarchyNode::Folder(.., children) = &mut self.context.project_hierarchy {
                         children.push(HierarchyNode::Document(uuid));
