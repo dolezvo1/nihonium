@@ -1410,6 +1410,17 @@ impl NHApp {
 
         self.tree[SurfaceIndex::main()].push_to_focused_leaf(tab);
     }
+
+    pub fn clear_nonstatic_tabs(&mut self) {
+        self.tree.retain_tabs(
+            |e| !matches!(e, NHTab::Diagram { .. } | NHTab::Document { .. } | NHTab::CustomTab { .. })
+        );
+        for e in self.tree.iter_leaves_mut() {
+            if e.1.active.0 > e.1.tabs.len() {
+                e.1.active.0 = 0;
+            }
+        }
+    }
 }
 
 fn new_project() -> Result<(), &'static str> {
@@ -2043,9 +2054,7 @@ impl eframe::App for NHApp {
                             .pick_file()) {
                                 match self.context.import_project(&project_file_path) {
                                     Err(e) => println!("Error opening: {:?}", e),
-                                    Ok(_) => {
-                                        self.tree = self.tree.filter_tabs(|e| !matches!(e, NHTab::Diagram { .. } | NHTab::CustomTab { .. }));
-                                    },
+                                    Ok(_) => self.clear_nonstatic_tabs(),
                                 }
                             }
                     } else {
@@ -2087,9 +2096,7 @@ impl eframe::App for NHApp {
                     }
                     SimpleProjectCommand::CloseProject(b) => if !self.context.has_unsaved_changes || b {
                         self.context.clear_project_data();
-                        self.tree = self.tree.filter_tabs(
-                            |e| !matches!(e, NHTab::Diagram { .. } | NHTab::Document { .. } | NHTab::CustomTab { .. })
-                        )
+                        self.clear_nonstatic_tabs();
                     } else {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::CloseProject(b));
                     }
