@@ -482,6 +482,7 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
+    fn cancel_tool(&mut self);
 
     fn new_ui_canvas(
         &mut self,
@@ -1648,6 +1649,9 @@ impl<
                 }
             }
         }
+    }
+    fn cancel_tool(&mut self) {
+        self.temporaries.current_tool = None;
     }
     fn context_menu(
         &mut self,

@@ -1587,6 +1587,17 @@ impl eframe::App for NHApp {
                                 continue;
                             }
 
+                            if *key == egui::Key::Escape {
+                                if self.context.confirm_modal_reason.is_some() {
+                                    self.context.confirm_modal_reason = None;
+                                } else {
+                                    if let Some(e) = self.context.last_focused_diagram
+                                        .and_then(|e| self.context.diagram_controllers.get(&e)) {
+                                        e.1.write().cancel_tool();
+                                    }
+                                }
+                            }
+
                             'inner: for ksh in &self.context.shortcut_top_order {
                                 if !(modifiers.matches_logically(ksh.1.modifiers) && *key == ksh.1.logical_key) {
                                     continue 'inner;
