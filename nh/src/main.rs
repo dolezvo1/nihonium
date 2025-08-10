@@ -1431,8 +1431,15 @@ impl eframe::App for NHApp {
             op.zoom_with_keyboard = self.context.zoom_with_keyboard;
         });
 
-        // Process ProjectCommands
         let mut commands = vec![];
+
+        // Check for exit request, cancel if unsaved changes
+        if ctx.input(|i| i.viewport().close_requested()) && self.context.has_unsaved_changes {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            commands.push(SimpleProjectCommand::Exit(false).into());
+        }
+
+        // Process ProjectCommands
         for c in self.context.unprocessed_commands.drain(..) {
             match c {
                 ProjectCommand::OpenAndFocusDiagram(uuid, pos) => {
