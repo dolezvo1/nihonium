@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use eframe::{egui, epaint};
 
-use crate::common::{canvas, controller::{ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews};
+use crate::{common::{canvas, controller::{ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}, ElementSetupModal};
 
 
 
@@ -306,10 +306,11 @@ where
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<DomainT::ToolT>,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
         let k_status = self.owned_views.event_order_find_mut(|v| {
-            let s = v.handle_event(event, ehc, tool, commands);
+            let s = v.handle_event(event, ehc, tool, element_setup_modal, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*v.uuid(), s))
             } else {
@@ -362,8 +363,11 @@ where
                         tool.add_position(*event.mouse_position());
                         tool.add_element(self.adapter.model());
 
-                        if let Some(new_a) = tool.try_construct(self) {
-                            commands.push(InsensitiveCommand::AddElement(*self.uuid, new_a.into(), true).into());
+                        if let Some((new_e, esm)) = tool.try_construct(self) {
+                            commands.push(InsensitiveCommand::AddElement(*self.uuid, new_e.into(), true).into());
+                            if !ehc.modifiers.alt {
+                                *element_setup_modal = esm;
+                            }
                         }
 
                         EventHandlingStatus::HandledByContainer

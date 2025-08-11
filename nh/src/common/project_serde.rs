@@ -83,7 +83,7 @@ impl NHProjectSerialization {
         for e in diagram_controllers.iter() {
             e.1.1.read().serialize_into(&mut serializer)?;
         }
-        NHSerializer::write_all(serializer, &sources_root_abs);
+        NHSerializer::write_all(serializer, &sources_root_abs)?;
 
         std::fs::DirBuilder::new().recursive(true).create(sources_root_abs.join("documents"))?;
         for (key, (_, content)) in documents.iter() {

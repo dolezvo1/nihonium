@@ -9,7 +9,7 @@ use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeseria
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
-use crate::{CustomTab};
+use crate::{CustomTab, ElementSetupModal, SetupModalResult};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 use std::collections::HashSet;
@@ -274,13 +274,14 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveRdfTool>,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match self {
-            RdfElementView::Graph(inner) => inner.write().handle_event(event, ehc, tool, commands),
-            RdfElementView::Literal(inner) => inner.write().handle_event(event, ehc, tool, commands),
-            RdfElementView::Node(inner) => inner.write().handle_event(event, ehc, tool, commands),
-            RdfElementView::Predicate(inner) => inner.write().handle_event(event, ehc, tool, commands),
+            RdfElementView::Graph(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
+            RdfElementView::Literal(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
+            RdfElementView::Node(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
+            RdfElementView::Predicate(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
         }
     }
     fn apply_command(
@@ -1149,12 +1150,25 @@ impl Tool<RdfDomain> for NaiveRdfTool {
         }
     }
 
-    fn try_construct(&mut self, into: &dyn ContainerGen2<RdfDomain>) -> Option<RdfElementView> {
+    fn try_construct(
+        &mut self,
+        into: &dyn ContainerGen2<RdfDomain>,
+    ) -> Option<(RdfElementView, Option<Box<dyn ElementSetupModal>>)> {
         match &self.result {
             PartialRdfElement::Some(x) => {
                 let x = x.clone();
                 self.result = PartialRdfElement::None;
-                Some(x)
+                let esm: Option<Box<dyn ElementSetupModal>> = match &x {
+                    RdfElementView::Literal(eref) => {
+                        Some(Box::new(RdfLiteralSetupModal::from(&eref.read().model)))
+                    },
+                    RdfElementView::Node(eref) => {
+                        Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(eref.read().model.clone()))))
+                    },
+                    RdfElementView::Predicate(..)
+                    | RdfElementView::Graph(..) => unreachable!(),
+                };
+                Some((x, esm))
             }
             // TODO: check for source == dest case, set points?
             PartialRdfElement::Predicate {
@@ -1164,18 +1178,18 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             } => {
                 self.current_stage = RdfToolStage::PredicateStart;
 
-                let predicate_view: Option<RdfElementView> =
+                let predicate_view: Option<(_, Option<Box<dyn ElementSetupModal>>)> =
                     if let (Some(source_controller), Some(dest_controller)) = (
                         into.controller_for(&source.read().uuid()),
                         into.controller_for(&dest.uuid()),
                     ) {
-                        let (_predicate_model, predicate_view) = new_rdf_predicate(
+                        let (predicate_model, predicate_view) = new_rdf_predicate(
                             "http://www.w3.org/2000/10/swap/pim/contact#fullName",
                             (source.clone(), source_controller),
                             (dest.clone(), dest_controller),
                         );
 
-                        Some(predicate_view.into())
+                        Some((predicate_view.into(), Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(predicate_model))))))
                     } else {
                         None
                     };
@@ -1186,11 +1200,11 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             PartialRdfElement::Graph { a, b: Some(b) } => {
                 self.current_stage = RdfToolStage::GraphStart;
 
-                let (_graph_model, graph_view) =
+                let (graph_model, graph_view) =
                     new_rdf_graph("http://a-graph", egui::Rect::from_two_pos(*a, *b));
 
                 self.result = PartialRdfElement::None;
-                Some(graph_view.into())
+                Some((graph_view.into(), Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(graph_model))))))
             }
             _ => None,
         }
@@ -1198,6 +1212,54 @@ impl Tool<RdfDomain> for NaiveRdfTool {
 
     fn reset_event_lock(&mut self) {
         self.event_lock = false;
+    }
+}
+
+
+struct RdfIriBasedSetupModal {
+    model: RdfElement,
+    iri_buffer: String,
+}
+
+impl From<RdfElement> for RdfIriBasedSetupModal {
+    fn from(model: RdfElement) -> Self {
+        let iri_buffer = match &model {
+            RdfElement::RdfGraph(eref) => (*eref.read().iri).clone(),
+            RdfElement::RdfNode(eref) => (*eref.read().iri).clone(),
+            RdfElement::RdfPredicate(eref) => (*eref.read().iri).clone(),
+            RdfElement::RdfLiteral(..) => unreachable!(),
+        };
+        Self {
+            model,
+            iri_buffer,
+        }
+    }
+}
+
+impl ElementSetupModal for RdfIriBasedSetupModal {
+    fn show(&mut self, ui: &mut egui::Ui) -> crate::SetupModalResult {
+        ui.label("IRI:");
+        ui.text_edit_singleline(&mut self.iri_buffer);
+        ui.separator();
+
+        let mut result = SetupModalResult::KeepOpen;
+        ui.horizontal(|ui| {
+            if ui.button("Ok").clicked() {
+                let iri = Arc::new(self.iri_buffer.clone());
+                match &self.model {
+                    RdfElement::RdfGraph(eref) => eref.write().iri = iri,
+                    RdfElement::RdfNode(eref) => eref.write().iri = iri,
+                    RdfElement::RdfPredicate(eref) => eref.write().iri = iri,
+                    RdfElement::RdfLiteral(eref) => unreachable!(),
+                }
+                result = SetupModalResult::CloseModified(*self.model.uuid());
+            }
+            if ui.button("Cancel").clicked() {
+                result = SetupModalResult::CloseUnmodified;
+            }
+        });
+
+        result
     }
 }
 
@@ -1545,6 +1607,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveRdfTool>,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -1757,6 +1820,54 @@ fn new_rdf_literal_view(
     literal_view
 }
 
+struct RdfLiteralSetupModal {
+    model: ERef<RdfLiteral>,
+
+    content_buffer: String,
+    datatype_buffer: String,
+    langtag_buffer: String,
+}
+
+impl From<&ERef<RdfLiteral>> for RdfLiteralSetupModal {
+    fn from(model: &ERef<RdfLiteral>) -> Self {
+        let m = model.read();
+        Self {
+            model: model.clone(),
+            content_buffer: (*m.content).clone(),
+            datatype_buffer: (*m.datatype).clone(),
+            langtag_buffer: (*m.langtag).clone(),
+        }
+    }
+}
+
+impl ElementSetupModal for RdfLiteralSetupModal {
+    fn show(&mut self, ui: &mut egui::Ui) -> crate::SetupModalResult {
+        ui.label("Content:");
+        ui.text_edit_singleline(&mut self.content_buffer);
+        ui.label("Datatype:");
+        ui.text_edit_singleline(&mut self.datatype_buffer);
+        ui.label("Langtag:");
+        ui.text_edit_singleline(&mut self.langtag_buffer);
+        ui.separator();
+
+        let mut result = SetupModalResult::KeepOpen;
+        ui.horizontal(|ui| {
+            if ui.button("Ok").clicked() {
+                let mut m = self.model.write();
+                m.content = Arc::new(self.content_buffer.clone());
+                m.datatype = Arc::new(self.datatype_buffer.clone());
+                m.langtag = Arc::new(self.langtag_buffer.clone());
+                result = SetupModalResult::CloseModified(*m.uuid);
+            }
+            if ui.button("Cancel").clicked() {
+                result = SetupModalResult::CloseUnmodified;
+            }
+        });
+
+        result
+    }
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct RdfLiteralView {
@@ -1939,6 +2050,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveRdfTool>,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {

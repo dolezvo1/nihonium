@@ -1,5 +1,5 @@
 use crate::common::canvas::{self, NHCanvas, NHShape, UiCanvas};
-use crate::CustomTab;
+use crate::{CustomTab, ElementSetupModal};
 use eframe::egui;
 use egui_ltreeview::DirPosition;
 use std::any::Any;
@@ -479,6 +479,7 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
@@ -828,7 +829,7 @@ pub trait Tool<DomainT: Domain> {
     fn try_construct(
         &mut self,
         into: &dyn ContainerGen2<DomainT>,
-    ) -> Option<DomainT::CommonElementViewT>;
+    ) -> Option<(DomainT::CommonElementViewT, Option<Box<dyn ElementSetupModal>>)>;
     fn reset_event_lock(&mut self);
 }
 
@@ -895,6 +896,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<DomainT::ToolT>,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus;
     fn apply_command(
@@ -993,7 +995,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
 /// This is a generic DiagramController implementation.
 /// Hopefully it should reduce the amount of code, but nothing prevents creating fully custom DiagramController implementations.
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(is_entity, is_subset_with = Self::depends_on , initialize_with = Self::initialize)]
+#[nh_context_serde(is_entity, is_subset_with = Self::depends_on, initialize_with = Self::initialize)]
 pub struct DiagramControllerGen2<
     DomainT: Domain,
     DiagramAdapterT: DiagramAdapter<DomainT>,
@@ -1107,6 +1109,7 @@ impl<
         &mut self,
         event: InputEvent,
         modifiers: ModifierKeys,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) -> bool {
@@ -1130,7 +1133,7 @@ impl<
         };
 
         let child = self.owned_views.event_order_find_mut(|v| {
-            let r = v.handle_event(event, &ehc, &mut self.temporaries.current_tool, &mut commands);
+            let r = v.handle_event(event, &ehc, &mut self.temporaries.current_tool, element_setup_modal, &mut commands);
             if r != EventHandlingStatus::NotHandled {
                 let k = v.uuid();
                 Some((*k, match r {
@@ -1188,12 +1191,15 @@ impl<
                 }
 
                 let mut tool = self.temporaries.current_tool.take();
-                if let Some(new_a) = tool.as_mut().and_then(|e| e.try_construct(self)) {
+                if let Some((new_e, esm)) = tool.as_mut().and_then(|e| e.try_construct(self)) {
                     commands.push(InsensitiveCommand::AddElement(
                         *self.uuid(),
-                        DomainT::AddCommandElementT::from(new_a),
+                        DomainT::AddCommandElementT::from(new_e),
                         true,
                     ).into());
+                    if !modifiers.alt {
+                        *element_setup_modal = esm;
+                    }
                     handled = true;
                 }
                 self.temporaries.current_tool = tool;
@@ -1579,6 +1585,7 @@ impl<
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
@@ -1594,7 +1601,7 @@ impl<
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if *pressed && *button == egui::PointerButton::Primary => {
                     self.temporaries.last_unhandled_mouse_pos = Some(pos_to_abs!(*pos));
-                    self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifiers, undo_accumulator, affected_models);
+                    self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifiers, element_setup_modal, undo_accumulator, affected_models);
                 },
                 _ => {}
             })
@@ -1602,19 +1609,19 @@ impl<
         if response.dragged_by(egui::PointerButton::Primary) {
             if let Some(old_pos) = self.temporaries.last_unhandled_mouse_pos {
                 let delta = response.drag_delta() / self.temporaries.camera_scale;
-                self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifiers, undo_accumulator, affected_models);
+                self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifiers, element_setup_modal, undo_accumulator, affected_models);
                 self.temporaries.last_unhandled_mouse_pos = Some(old_pos + delta);
             }
         }
         if response.clicked_by(egui::PointerButton::Primary) {
             if let Some(pos) = ui.ctx().pointer_interact_pos() {
-                self.handle_event(InputEvent::Click(pos_to_abs!(pos)), modifiers, undo_accumulator, affected_models);
+                self.handle_event(InputEvent::Click(pos_to_abs!(pos)), modifiers, element_setup_modal, undo_accumulator, affected_models);
             }
         }
         ui.input(|is| is.events.iter()
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if !*pressed && *button == egui::PointerButton::Primary => {
-                    self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifiers, undo_accumulator, affected_models);
+                    self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifiers, element_setup_modal, undo_accumulator, affected_models);
                     self.temporaries.last_unhandled_mouse_pos = None;
                 },
                 _ => {}

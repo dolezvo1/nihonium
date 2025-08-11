@@ -13,7 +13,7 @@ use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::umlclass::umlclass_models::UmlClassComment;
-use crate::CustomTab;
+use crate::{CustomTab, ElementSetupModal};
 use eframe::egui;
 use std::collections::HashSet;
 use std::{
@@ -276,14 +276,15 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveUmlClassTool>,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match self {
-            Self::Package(inner) => inner.write().handle_event(event, ehc, tool, commands),
-            Self::Class(inner) => inner.write().handle_event(event, ehc, tool, commands),
-            Self::Link(inner) => inner.write().handle_event(event, ehc, tool, commands),
-            Self::Comment(inner) => inner.write().handle_event(event, ehc, tool, commands),
-            Self::CommentLink(inner) => inner.write().handle_event(event, ehc, tool, commands),
+            Self::Package(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
+            Self::Class(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
+            Self::Link(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
+            Self::Comment(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
+            Self::CommentLink(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
         }
     }
     fn apply_command(
@@ -1174,12 +1175,15 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             UmlClassElement::UmlClassCommentLink(..) => {}
         }
     }
-    fn try_construct(&mut self, into: &dyn ContainerGen2<UmlClassDomain>) -> Option<UmlClassElementView> {
+    fn try_construct(
+        &mut self,
+        into: &dyn ContainerGen2<UmlClassDomain>,
+    ) -> Option<(UmlClassElementView, Option<Box<dyn ElementSetupModal>>)> {
         match &self.result {
             PartialUmlClassElement::Some(x) => {
                 let x = x.clone();
                 self.result = PartialUmlClassElement::None;
-                Some(x)
+                Some((x, None))
             }
             PartialUmlClassElement::Link {
                 link_type,
@@ -1206,7 +1210,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
 
                     self.result = PartialUmlClassElement::None;
 
-                    Some(link_view.into())
+                    Some((link_view.into(), None))
                 } else {
                     None
                 }
@@ -1227,7 +1231,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
 
                     self.result = PartialUmlClassElement::None;
 
-                    Some(link_view.into())
+                    Some((link_view.into(), None))
                 } else {
                     None
                 }
@@ -1239,7 +1243,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                     new_umlclass_package("a package", egui::Rect::from_two_pos(*a, *b));
 
                 self.result = PartialUmlClassElement::None;
-                Some(package_view.into())
+                Some((package_view.into(), None))
             }
             _ => None,
         }
@@ -1671,6 +1675,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveUmlClassTool>,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -2384,6 +2389,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveUmlClassTool>,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {

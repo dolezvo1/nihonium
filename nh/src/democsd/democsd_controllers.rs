@@ -12,6 +12,7 @@ use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage, DemoCsdTransaction, DemoCsdTransactionKind, DemoCsdTransactor
 };
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
+use crate::{ElementSetupModal, SetupModalResult};
 use eframe::egui;
 use std::collections::HashSet;
 use std::{
@@ -266,13 +267,14 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdElementView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoCsdTool>,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         match self {
-            DemoCsdElementView::Package(inner) => inner.write().handle_event(event, ehc, tool, commands),
-            DemoCsdElementView::Transactor(inner) => inner.write().handle_event(event, ehc, tool, commands),
-            DemoCsdElementView::Transaction(inner) => inner.write().handle_event(event, ehc, tool, commands),
-            DemoCsdElementView::Link(inner) => inner.write().handle_event(event, ehc, tool, commands),
+            DemoCsdElementView::Package(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
+            DemoCsdElementView::Transactor(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
+            DemoCsdElementView::Transaction(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
+            DemoCsdElementView::Link(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
         }
     }
     fn apply_command(
@@ -989,6 +991,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             return;
         }
 
+        // TODO: prevent creating link to self
         match controller {
             DemoCsdElement::DemoCsdPackage(..) => {}
             DemoCsdElement::DemoCsdTransactor(inner) => {
@@ -1016,14 +1019,26 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         }
     }
 
-    fn try_construct(&mut self, into: &dyn ContainerGen2<DemoCsdDomain>) -> Option<DemoCsdElementView> {
+    fn try_construct(
+        &mut self,
+        into: &dyn ContainerGen2<DemoCsdDomain>,
+    ) -> Option<(DemoCsdElementView, Option<Box<dyn ElementSetupModal>>)> {
         match &self.result {
             PartialDemoCsdElement::Some(x) => {
                 let x = x.clone();
                 self.result = PartialDemoCsdElement::None;
-                Some(x)
+                let esm: Option<Box<dyn ElementSetupModal>> = match &x {
+                    DemoCsdElementView::Transactor(eref) => {
+                        Some(Box::new(DemoCsdTransactorSetupModal::from(&eref.read().model)))
+                    },
+                    DemoCsdElementView::Transaction(eref) => {
+                        Some(Box::new(DemoCsdTransactionSetupModal::from(&eref.read().model)))
+                    },
+                    DemoCsdElementView::Package(..)
+                    | DemoCsdElementView::Link(..) => unreachable!(),
+                };
+                Some((x, esm))
             }
-            // TODO: check for source == dest case, set points?
             PartialDemoCsdElement::Link {
                 source,
                 dest: Some(target),
@@ -1045,7 +1060,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
 
                     self.result = PartialDemoCsdElement::None;
 
-                    Some(link_view.into())
+                    Some((link_view.into(), None))
                 } else {
                     None
                 }
@@ -1057,7 +1072,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     new_democsd_package("A package", egui::Rect::from_two_pos(*a, *b));
 
                 self.result = PartialDemoCsdElement::None;
-                Some(package_view.into())
+                Some((package_view.into(), None))
             }
             _ => None,
         }
@@ -1270,6 +1285,48 @@ fn new_democsd_transactor_view(
     })
 }
 
+struct DemoCsdTransactorSetupModal {
+    model: ERef<DemoCsdTransactor>,
+    identifier_buffer: String,
+    name_buffer: String,
+}
+
+impl From<&ERef<DemoCsdTransactor>> for DemoCsdTransactorSetupModal {
+    fn from(model: &ERef<DemoCsdTransactor>) -> Self {
+        let m = model.read();
+
+        Self {
+            model: model.clone(),
+            identifier_buffer: (*m.identifier).clone(),
+            name_buffer: (*m.name).clone(),
+        }
+    }
+}
+
+impl ElementSetupModal for DemoCsdTransactorSetupModal {
+    fn show(&mut self, ui: &mut egui::Ui) -> crate::SetupModalResult {
+        ui.label("Identifier:");
+        ui.text_edit_singleline(&mut self.identifier_buffer);
+        ui.label("Name:");
+        ui.text_edit_multiline(&mut self.name_buffer);
+
+        let mut result = SetupModalResult::KeepOpen;
+        ui.horizontal(|ui| {
+            if ui.button("Ok").clicked() {
+                let mut m = self.model.write();
+                m.identifier = Arc::new(self.identifier_buffer.clone());
+                m.name = Arc::new(self.name_buffer.clone());
+                result = SetupModalResult::CloseModified(*m.uuid);
+            }
+            if ui.button("Cancel").clicked() {
+                result = SetupModalResult::CloseUnmodified;
+            }
+        });
+
+        result
+    }
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoCsdTransactorView {
@@ -1361,7 +1418,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.identifier_buffer),
+                egui::TextEdit::singleline(&mut self.identifier_buffer),
             )
             .changed()
         {
@@ -1600,12 +1657,13 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoCsdTool>,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         let child = self
             .transaction_view
             .as_ref()
-            .map(|t| t.write().handle_event(event, ehc, tool, commands))
+            .map(|t| t.write().handle_event(event, ehc, tool, element_setup_modal, commands))
             .filter(|e| *e != EventHandlingStatus::NotHandled);
 
         match event {
@@ -1955,6 +2013,49 @@ fn new_democsd_transaction_view(
     })
 }
 
+
+struct DemoCsdTransactionSetupModal {
+    model: ERef<DemoCsdTransaction>,
+    identifier_buffer: String,
+    name_buffer: String,
+}
+
+impl From<&ERef<DemoCsdTransaction>> for DemoCsdTransactionSetupModal {
+    fn from(model: &ERef<DemoCsdTransaction>) -> Self {
+        let m = model.read();
+
+        Self {
+            model: model.clone(),
+            identifier_buffer: (*m.identifier).clone(),
+            name_buffer: (*m.name).clone(),
+        }
+    }
+}
+
+impl ElementSetupModal for DemoCsdTransactionSetupModal {
+    fn show(&mut self, ui: &mut egui::Ui) -> crate::SetupModalResult {
+        ui.label("Identifier:");
+        ui.text_edit_singleline(&mut self.identifier_buffer);
+        ui.label("Name:");
+        ui.text_edit_multiline(&mut self.name_buffer);
+
+        let mut result = SetupModalResult::KeepOpen;
+        ui.horizontal(|ui| {
+            if ui.button("Ok").clicked() {
+                let mut m = self.model.write();
+                m.identifier = Arc::new(self.identifier_buffer.clone());
+                m.name = Arc::new(self.name_buffer.clone());
+                result = SetupModalResult::CloseModified(*m.uuid);
+            }
+            if ui.button("Cancel").clicked() {
+                result = SetupModalResult::CloseUnmodified;
+            }
+        });
+
+        result
+    }
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoCsdTransactionView {
@@ -2096,7 +2197,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.identifier_buffer),
+                egui::TextEdit::singleline(&mut self.identifier_buffer),
             )
             .changed()
         {
@@ -2205,6 +2306,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoCsdTool>,
+        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {

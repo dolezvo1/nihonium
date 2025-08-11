@@ -118,6 +118,16 @@ pub trait CustomTab {
     //fn on_close(&mut self, context: &mut NHApp);
 }
 
+pub enum SetupModalResult {
+    KeepOpen,
+    CloseUnmodified,
+    CloseModified(ModelUuid),
+}
+
+pub trait ElementSetupModal {
+    fn show(&mut self, ui: &mut egui::Ui) -> SetupModalResult;
+}
+
 type DDes = dyn Fn(ViewUuid, &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError>;
 
 struct NHContext {
@@ -130,6 +140,7 @@ struct NHContext {
     new_diagram_no: u32,
     documents: HashMap<ViewUuid, (String, String)>,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
+    element_setup_modal: Option<Box<dyn ElementSetupModal>>,
 
     pub style: Option<Style>,
     zoom_factor: f32,
@@ -1115,7 +1126,10 @@ impl NHContext {
 
         let mut undo_accumulator = Vec::<Arc<String>>::new();
         let mut affected_models = HashSet::new();
-        diagram_controller.handle_input(ui, &response, &mut undo_accumulator, &mut affected_models);
+        diagram_controller.handle_input(
+            ui, &response,
+            &mut self.element_setup_modal, &mut undo_accumulator, &mut affected_models,
+        );
 
         if !undo_accumulator.is_empty() {
             self.has_unsaved_changes = true;
@@ -1248,6 +1262,7 @@ impl Default for NHApp {
             new_diagram_no: 4,
             documents,
             custom_tabs: HashMap::new(),
+            element_setup_modal: None,
             
             style: None,
             zoom_factor: 1.0,
@@ -1590,6 +1605,8 @@ impl eframe::App for NHApp {
                             if *key == egui::Key::Escape {
                                 if self.context.confirm_modal_reason.is_some() {
                                     self.context.confirm_modal_reason = None;
+                                } else if self.context.element_setup_modal.is_some() {
+                                    self.context.element_setup_modal = None;
                                 } else {
                                     if let Some(e) = self.context.last_focused_diagram
                                         .and_then(|e| self.context.diagram_controllers.get(&e)) {
@@ -1984,8 +2001,24 @@ impl eframe::App for NHApp {
             self.context.svg_export_menu = None;
         }
 
+        if let Some(element_setup_modal) = self.context.element_setup_modal.as_mut() {
+            let result = egui::Modal::new("Element Setup Modal".into())
+                .show(ctx, |ui| element_setup_modal.show(ui)).inner;
+
+            match result {
+                SetupModalResult::KeepOpen => {},
+                SetupModalResult::CloseUnmodified => {
+                    self.context.element_setup_modal = None;
+                },
+                SetupModalResult::CloseModified(model_uuid) => {
+                    self.context.element_setup_modal = None;
+                    self.context.refresh_buffers(&std::iter::once(model_uuid).collect());
+                },
+            }
+        }
+
         if let Some(confirm_reason) = self.context.confirm_modal_reason.clone() {
-            egui::Modal::new("Modal Window".into())
+            egui::Modal::new("Confirm Modal Window".into())
                 .show(ctx, |ui| {
 
                     ui.label(translate!("nh-generic-unsavedchanges-warning"));
