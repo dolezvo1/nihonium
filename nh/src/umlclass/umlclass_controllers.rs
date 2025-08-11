@@ -2152,6 +2152,33 @@ fn new_umlclass_link_view(
     target: UmlClassElementView,
 ) -> ERef<LinkViewT> {
     let m = model.read();
+
+    let (sp, mp, tp) = if source.model_uuid() == target.model_uuid() {
+        let s = source.min_shape();
+        let (min, quarter_size) = match s {
+            NHShape::Rect { inner } => (inner.min, inner.size() / 4.0),
+            NHShape::Ellipse { position, bounds_radius } => (position - bounds_radius, bounds_radius / 2.0),
+        };
+
+        (
+            vec![vec![
+                (uuid::Uuid::now_v7().into(), egui::Pos2::ZERO),
+                (uuid::Uuid::now_v7().into(), min + egui::Vec2::new(quarter_size.x, -quarter_size.y)),
+            ]],
+            Some((uuid::Uuid::now_v7().into(), min - quarter_size)),
+            vec![vec![
+                (uuid::Uuid::now_v7().into(), egui::Pos2::ZERO),
+                (uuid::Uuid::now_v7().into(), min + egui::Vec2::new(-quarter_size.x, quarter_size.y)),
+            ]],
+        )
+    } else {
+        (
+            vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
+            center_point,
+            vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
+        )
+    };
+
     MulticonnectionView::new(
         Arc::new(uuid::Uuid::now_v7().into()),
         UmlClassLinkAdapter {
@@ -2163,9 +2190,9 @@ fn new_umlclass_link_view(
         },
         source,
         target,
-        center_point,
-        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
-        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
+        mp,
+        sp,
+        tp
     )
 }
 

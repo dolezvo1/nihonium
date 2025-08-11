@@ -896,8 +896,17 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 | DemoCsdToolStage::PackageStart
                 | DemoCsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(DemoCsdElement::DemoCsdTransaction(..)) => match self.current_stage {
-                DemoCsdToolStage::LinkEnd => TARGETTABLE_COLOR,
+            Some(DemoCsdElement::DemoCsdTransaction(tx)) => match self.current_stage {
+                DemoCsdToolStage::LinkEnd => match &self.result {
+                    PartialDemoCsdElement::Link { source, .. } => {
+                        if source.read().transaction.as_ref().is_some_and(|e| *e.read().uuid == *tx.read().uuid) {
+                            NON_TARGETTABLE_COLOR
+                        } else {
+                            TARGETTABLE_COLOR
+                        }
+                    },
+                    _ => NON_TARGETTABLE_COLOR
+                }
                 DemoCsdToolStage::Client
                 | DemoCsdToolStage::Transactor
                 | DemoCsdToolStage::Bank
@@ -991,7 +1000,6 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             return;
         }
 
-        // TODO: prevent creating link to self
         match controller {
             DemoCsdElement::DemoCsdPackage(..) => {}
             DemoCsdElement::DemoCsdTransactor(inner) => {
@@ -1009,7 +1017,11 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 }
             }
             DemoCsdElement::DemoCsdTransaction(inner) => match (self.current_stage, &mut self.result) {
-                (DemoCsdToolStage::LinkEnd, PartialDemoCsdElement::Link { dest, .. }) => {
+                (DemoCsdToolStage::LinkEnd, PartialDemoCsdElement::Link { source, dest, .. }) => {
+                    if source.read().transaction.as_ref().is_some_and(|e| *e.read().uuid == *inner.read().uuid) {
+                        return;
+                    }
+
                     *dest = Some(inner);
                     self.event_lock = true;
                 }
