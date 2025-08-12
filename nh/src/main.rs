@@ -2106,7 +2106,6 @@ impl eframe::App for NHApp {
                     SimpleProjectCommand::OpenProject(b) => if !self.context.has_unsaved_changes || b {
                         if let Some(project_file_path) = self.context.project_path.clone()
                             .or_else(|| rfd::FileDialog::new()
-                            .set_directory(std::env::current_dir().unwrap())
                             .add_filter("Nihonium Project files", &["nhp"])
                             .add_filter("All files", &["*"])
                             .pick_file()) {
@@ -2121,7 +2120,6 @@ impl eframe::App for NHApp {
                     SimpleProjectCommand::SaveProject => {
                         if let Some(project_file_path) = self.context.project_path.clone()
                             .or_else(|| rfd::FileDialog::new()
-                                .set_directory(std::env::current_dir().unwrap())
                                 .add_filter("Nihonium Project files", &["nhp"])
                                 .add_filter("All files", &["*"])
                                 .save_file()) {
@@ -2138,7 +2136,6 @@ impl eframe::App for NHApp {
                         // NOTE: This does not work on WASM, and in its current state it never will.
                         //       This will be possible to fix once this is fixed on rfd side (#128).
                         if let Some(project_file_path) = rfd::FileDialog::new()
-                            .set_directory(std::env::current_dir().unwrap())
                             .add_filter("Nihonium Project files", &["nhp"])
                             .add_filter("All files", &["*"])
                             .save_file()
