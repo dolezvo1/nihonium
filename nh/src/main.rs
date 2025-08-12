@@ -23,6 +23,7 @@ mod common;
 mod democsd;
 mod rdf;
 mod umlclass;
+mod ontouml;
 
 use crate::common::eref::ERef;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
@@ -1244,7 +1245,8 @@ impl Default for NHApp {
         let color_profiles = vec![
             crate::rdf::rdf_controllers::colors(),
             crate::umlclass::umlclass_controllers::colors(),
-            crate::democsd::democsd_controllers::colors()
+            crate::democsd::democsd_controllers::colors(),
+            crate::ontouml::ontouml_controllers::colors(),
         ];
         
         let selected_color_profiles = color_profiles.iter().map(|_| 0).collect();
@@ -1673,7 +1675,11 @@ impl eframe::App for NHApp {
                                 1,
                                 crate::umlclass::umlclass_controllers::new as NDC,
                             ),
-                            //("Add New OntoUML diagram"),
+                            (
+                                "OntoUML diagram",
+                                3,
+                                crate::ontouml::ontouml_controllers::new as NDC,
+                            ),
                             (
                                 "DEMO CSD diagram",
                                 2,
