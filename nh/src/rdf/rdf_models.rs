@@ -46,8 +46,8 @@ pub enum RdfTargettableElement {
 impl RdfElement {
     pub fn as_targettable_element(&self) -> Option<RdfTargettableElement> {
         match self {
-            RdfElement::RdfLiteral(inner) => Some(RdfTargettableElement::RdfLiteral(inner.clone())),
-            RdfElement::RdfNode(inner) => Some(RdfTargettableElement::RdfNode(inner.clone())),
+            RdfElement::RdfLiteral(inner) => Some(inner.clone().into()),
+            RdfElement::RdfNode(inner) => Some(inner.clone().into()),
             RdfElement::RdfGraph(_) | RdfElement::RdfPredicate(_) => None,
         }
     }

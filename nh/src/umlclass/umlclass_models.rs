@@ -40,6 +40,23 @@ impl UmlClassCollector {
             self.plantuml_data.push_str("}\n");
         }
     }
+    fn visit_object(&mut self, object: &UmlClassObject) {
+        if self.collecting_absolute_paths {
+            self.absolute_paths.insert(
+                (*object.uuid).clone(),
+                self.absolute_with_current_stack(&*object.instance_type),
+            );
+        } else {
+            self.plantuml_data.push_str(&format!(
+                "object {:?}\n",
+                if object.instance_name.is_empty() {
+                    format!(":{}", object.instance_type)
+                } else {
+                    format!("{}: {}", object.instance_name, object.instance_type)
+                }
+            ));
+        }
+    }
     fn visit_class(&mut self, class: &UmlClass) {
         if self.collecting_absolute_paths {
             self.absolute_paths.insert(
@@ -48,10 +65,14 @@ impl UmlClassCollector {
             );
         } else {
             self.plantuml_data.push_str(&format!(
-                "{} {:?} {{\n",
-                class.stereotype.name(),
-                class.name
+                "class {:?} ",
+                class.name,
             ));
+
+            if class.stereotype.is_empty() {
+                self.plantuml_data.push_str(&format!("<<{}>>", class.stereotype));
+            }
+            self.plantuml_data.push_str("{\n");
             self.plantuml_data.push_str(&class.properties);
             self.plantuml_data.push_str("\n");
             self.plantuml_data.push_str(&class.functions);
@@ -60,8 +81,8 @@ impl UmlClassCollector {
     }
     fn visit_link(&mut self, link: &UmlClassLink) {
         if !self.collecting_absolute_paths {
-            let source_name = self.absolute_paths.get(&link.source.read().uuid()).unwrap();
-            let target_name = self.absolute_paths.get(&link.target.read().uuid()).unwrap();
+            let source_name = self.absolute_paths.get(&link.source.uuid()).unwrap();
+            let target_name = self.absolute_paths.get(&link.target.uuid()).unwrap();
 
             self.plantuml_data.push_str(source_name);
             if !link.source_arrowhead_label.is_empty() {
@@ -93,16 +114,37 @@ impl UmlClassCollector {
 pub enum UmlClassElement {
     #[container_model(passthrough = "eref")]
     UmlClassPackage(ERef<UmlClassPackage>),
+    UmlClassObject(ERef<UmlClassObject>),
     UmlClass(ERef<UmlClass>),
     UmlClassLink(ERef<UmlClassLink>),
     UmlClassComment(ERef<UmlClassComment>),
     UmlClassCommentLink(ERef<UmlClassCommentLink>),
 }
 
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
+#[model(default_passthrough = "eref")]
+#[nh_context_serde(uuid_type = ModelUuid)]
+pub enum UmlClassClassifier {
+    UmlClassObject(ERef<UmlClassObject>),
+    UmlClass(ERef<UmlClass>),
+}
+
 impl UmlClassElement {
+    pub fn as_classifier(&self) -> Option<UmlClassClassifier> {
+        match self {
+            UmlClassElement::UmlClassObject(inner) => Some(inner.clone().into()),
+            UmlClassElement::UmlClass(inner) => Some(inner.clone().into()),
+            UmlClassElement::UmlClassPackage(..)
+            | UmlClassElement::UmlClassLink(..)
+            | UmlClassElement::UmlClassComment(..)
+            | UmlClassElement::UmlClassCommentLink(..) => None,
+        }
+    }
+
     fn accept_uml(&self, visitor: &mut UmlClassCollector) {
         match self {
             UmlClassElement::UmlClassPackage(inner) => visitor.visit_package(&inner.read()),
+            UmlClassElement::UmlClassObject(inner) => visitor.visit_object(&inner.read()),
             UmlClassElement::UmlClass(inner) => visitor.visit_class(&inner.read()),
             UmlClassElement::UmlClassLink(inner) => visitor.visit_link(&inner.read()),
             UmlClassElement::UmlClassComment(..) | UmlClassElement::UmlClassCommentLink(..) => {},
@@ -144,6 +186,17 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 };
                 UmlClassElement::UmlClassPackage(ERef::new(new_model))
             },
+            UmlClassElement::UmlClassObject(inner) => {
+                let model = inner.read();
+
+                let new_model = UmlClassObject {
+                    uuid: new_uuid,
+                    instance_name: model.instance_name.clone(),
+                    instance_type: model.instance_type.clone(),
+                    comment: model.comment.clone()
+                };
+                UmlClassElement::UmlClassObject(ERef::new(new_model))
+            }
             UmlClassElement::UmlClass(inner) => {
                 let model = inner.read();
 
@@ -162,8 +215,8 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
 
                 let new_model = UmlClassLink {
                     uuid: new_uuid,
-                    description: model.description.clone(),
                     link_type: model.link_type,
+                    stereotype: model.stereotype.clone(),
                     source: model.source.clone(),
                     source_arrowhead_label: model.source_arrowhead_label.clone(),
                     target: model.target.clone(),
@@ -202,20 +255,21 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                     relink(e, all_models);
                 }
             },
-            UmlClassElement::UmlClass(_inner) => {},
+            UmlClassElement::UmlClassObject(..)
+            | UmlClassElement::UmlClass(..) => {},
             UmlClassElement::UmlClassLink(inner) => {
                 let mut model = inner.write();
 
-                let source_uuid = *model.source.read().uuid();
-                if let Some(UmlClassElement::UmlClass(s)) = all_models.get(&source_uuid) {
-                    model.source = s.clone().into();
+                let source_uuid = *model.source.uuid();
+                if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_classifier()) {
+                    model.source = s;
                 }
-                let target_uuid = *model.target.read().uuid();
-                if let Some(UmlClassElement::UmlClass(t)) = all_models.get(&target_uuid) {
-                    model.target = t.clone().into();
+                let target_uuid = *model.target.uuid();
+                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_classifier()) {
+                    model.target = t;
                 }
             },
-            UmlClassElement::UmlClassComment(_inner) => {},
+            UmlClassElement::UmlClassComment(..) => {},
             UmlClassElement::UmlClassCommentLink(inner) => {
                 let mut model = inner.write();
 
@@ -430,46 +484,44 @@ impl ContainerModel for UmlClassPackage {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum UmlClassStereotype {
-    Abstract,
-    AbstractClass,
-    Class,
-    Entity,
-    Enum,
-    Interface,
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlClassObject {
+    pub uuid: Arc<ModelUuid>,
+    pub instance_name: Arc<String>,
+    pub instance_type: Arc<String>,
+
+    pub comment: Arc<String>,
 }
 
-// TODO: remove, this is nonsense
-impl Default for UmlClassStereotype {
-    fn default() -> Self {
-        Self::Class
-    }
-}
-
-impl UmlClassStereotype {
-    pub fn char(&self) -> &'static str {
-        match self {
-            UmlClassStereotype::Abstract => "<<abstract>>",
-            UmlClassStereotype::AbstractClass => "<<abstract class>>",
-            UmlClassStereotype::Class => "<<class>>",
-            UmlClassStereotype::Entity => "<<entity>>",
-            UmlClassStereotype::Enum => "<<enum>>",
-            UmlClassStereotype::Interface => "<<interface>>",
-        }
-    }
-
-    pub fn name(&self) -> &'static str {
-        match self {
-            UmlClassStereotype::Abstract => "abstract",
-            UmlClassStereotype::AbstractClass => "abstract class",
-            UmlClassStereotype::Class => "class",
-            UmlClassStereotype::Entity => "entity",
-            UmlClassStereotype::Enum => "enum",
-            UmlClassStereotype::Interface => "interface",
+impl UmlClassObject {
+    pub fn new(
+        uuid: ModelUuid,
+        instance_name: String,
+        instance_type: String,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            instance_name: Arc::new(instance_name),
+            instance_type: Arc::new(instance_type),
+            comment: Arc::new("".to_owned()),
         }
     }
 }
+
+impl Entity for UmlClassObject {
+    fn tagged_uuid(&self) -> EntityUuid {
+        EntityUuid::Model(*self.uuid)
+    }
+}
+
+impl Model for UmlClassObject {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
 
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub enum UMLClassAccessModifier {
@@ -495,7 +547,7 @@ impl UMLClassAccessModifier {
 pub struct UmlClass {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
-    pub stereotype: UmlClassStereotype,
+    pub stereotype: Arc<String>,
     pub properties: Arc<String>,
     pub functions: Arc<String>,
 
@@ -505,14 +557,14 @@ pub struct UmlClass {
 impl UmlClass {
     pub fn new(
         uuid: ModelUuid,
-        stereotype: UmlClassStereotype,
+        stereotype: String,
         name: String,
         properties: String,
         functions: String,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: stereotype,
+            stereotype: Arc::new(stereotype),
             name: Arc::new(name),
             properties: Arc::new(properties),
             functions: Arc::new(functions),
@@ -633,12 +685,12 @@ impl UmlClassLinkType {
 pub struct UmlClassLink {
     pub uuid: Arc<ModelUuid>,
     pub link_type: UmlClassLinkType,
-    pub description: Arc<String>,
+    pub stereotype: Arc<String>,
     #[nh_context_serde(entity)]
-    pub source: ERef<UmlClass>,
+    pub source: UmlClassClassifier,
     pub source_arrowhead_label: Arc<String>,
     #[nh_context_serde(entity)]
-    pub target: ERef<UmlClass>,
+    pub target: UmlClassClassifier,
     pub target_arrowhead_label: Arc<String>,
 
     pub comment: Arc<String>,
@@ -648,14 +700,14 @@ impl UmlClassLink {
     pub fn new(
         uuid: ModelUuid,
         link_type: UmlClassLinkType,
-        description: impl Into<String>,
-        source: ERef<UmlClass>,
-        target: ERef<UmlClass>,
+        stereotype: String,
+        source: UmlClassClassifier,
+        target: UmlClassClassifier,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             link_type,
-            description: Arc::new(description.into()),
+            stereotype: Arc::new(stereotype),
             source,
             source_arrowhead_label: Arc::new("".to_owned()),
             target,
