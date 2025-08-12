@@ -69,8 +69,8 @@ impl UmlClassCollector {
                 class.name,
             ));
 
-            if class.stereotype.is_empty() {
-                self.plantuml_data.push_str(&format!("<<{}>>", class.stereotype));
+            if !class.stereotype.is_empty() {
+                self.plantuml_data.push_str(&format!("<<{}>> ", class.stereotype));
             }
             self.plantuml_data.push_str("{\n");
             self.plantuml_data.push_str(&class.properties);
@@ -102,6 +102,9 @@ impl UmlClassCollector {
                     .push_str(&format!("{:?} ", link.target_arrowhead_label));
             }
             self.plantuml_data.push_str(target_name);
+            if !link.stereotype.is_empty() {
+                self.plantuml_data.push_str(&format!(": <<{}>>", link.stereotype));
+            }
             self.plantuml_data.push_str("\n");
         }
     }
