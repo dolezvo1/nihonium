@@ -504,7 +504,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
         self.model.read().name.clone()
     }
     fn view_type(&self) -> &'static str {
-        "umlclass-diagram-view"
+        "ontouml-diagram-view"
     }
     fn new_hierarchy_view(&self) -> SimpleModelHierarchyView<impl ModelsLabelAcquirer<ModelT = UmlClassDiagram> + 'static> {
         SimpleModelHierarchyView::new(self.model(), UmlClassLabelAcquirer {})
