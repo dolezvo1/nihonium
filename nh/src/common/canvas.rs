@@ -461,16 +461,22 @@ pub struct Highlight {
 
 impl Highlight {
     pub const NONE: Self = Self {
-        selected: false, // "blue"
-        valid: false,    // "green"
-        invalid: false,  // "red"
-        warning: false,  // "yellow"
+        selected: false,
+        valid: false,
+        invalid: false,
+        warning: false,
     };
     pub const SELECTED: Self = Self {
-        selected: true, // "blue"
-        valid: false,   // "green"
-        invalid: false, // "red"
-        warning: false, // "yellow"
+        selected: true,
+        valid: false,
+        invalid: false,
+        warning: false,
+    };
+    pub const ALL: Self = Self {
+        selected: true,
+        valid: true,
+        invalid: true,
+        warning: true,
     };
 }
 
@@ -854,6 +860,7 @@ pub struct UiCanvas {
     camera_offset: egui::Pos2,
     camera_scale: f32,
     cursor: Option<egui::Pos2>,
+    highlight_filter: Highlight,
 }
 
 impl UiCanvas {
@@ -864,6 +871,7 @@ impl UiCanvas {
         camera_offset: egui::Pos2,
         camera_scale: f32,
         cursor: Option<egui::Pos2>,
+        highlight_filter: Highlight,
     ) -> Self {
         Self {
             is_interactive,
@@ -878,6 +886,7 @@ impl UiCanvas {
             camera_offset,
             camera_scale,
             cursor,
+            highlight_filter,
         }
     }
 
@@ -921,8 +930,19 @@ impl UiCanvas {
         }
     }
 
-    pub fn sc_tr(&self, pos: egui::Pos2) -> egui::Pos2 {
+    fn sc_tr(&self, pos: egui::Pos2) -> egui::Pos2 {
         (pos * self.camera_scale) + self.canvas.min.to_vec2() + self.camera_offset.to_vec2()
+    }
+
+    fn filtered_stroke(&self, stroke: Stroke, h: Highlight) -> Stroke {
+        if !h.selected || !self.highlight_filter.selected {
+            stroke
+        } else {
+            Stroke::new_solid(
+                2.0 * stroke.width,
+                self.highlight_colors[0],
+            )
+        }
     }
 }
 
@@ -938,15 +958,7 @@ impl NHCanvas for UiCanvas {
             points[1] * self.camera_scale + offset,
         );
 
-        if highlight.selected {
-            self.painter.line_segment(
-                [p1, p2],
-                egui::Stroke::from(Stroke::new_solid(
-                    stroke.width + 1.0,
-                    self.highlight_colors[0],
-                )),
-            );
-        }
+        let stroke = self.filtered_stroke(stroke, highlight);
 
         match stroke.line_type {
             LineType::Solid => {
@@ -972,32 +984,7 @@ impl NHCanvas for UiCanvas {
         stroke: Stroke,
         highlight: Highlight,
     ) {
-        if highlight.selected {
-            for (p1, p2) in [
-                (
-                    rect.left_top() + egui::Vec2::new(-1.0, -1.0),
-                    rect.right_top() + egui::Vec2::new(1.0, -1.0),
-                ),
-                (
-                    rect.left_bottom() + egui::Vec2::new(-1.0, 1.0),
-                    rect.right_bottom() + egui::Vec2::new(1.0, 1.0),
-                ),
-                (
-                    rect.right_top() + egui::Vec2::new(1.0, -1.0),
-                    rect.right_bottom() + egui::Vec2::new(1.0, 1.0),
-                ),
-                (
-                    rect.left_top() + egui::Vec2::new(-1.0, -1.0),
-                    rect.left_bottom() + egui::Vec2::new(-1.0, 1.0),
-                ),
-            ] {
-                self.draw_line(
-                    [p1, p2],
-                    Stroke::new_solid(stroke.width, self.highlight_colors[0]),
-                    Highlight::NONE,
-                );
-            }
-        }
+        let stroke = self.filtered_stroke(stroke, highlight);
 
         if color == egui::Color32::TRANSPARENT && stroke.line_type != LineType::Solid {
             for (p1, p2) in [
@@ -1015,7 +1002,6 @@ impl NHCanvas for UiCanvas {
                     .intersect(self.canvas),
                 corner_radius,
                 color,
-                // TODO: shouldn't stroke be recalculated?
                 egui::Stroke::from(stroke),
                 egui::StrokeKind::Middle,
             );
@@ -1030,23 +1016,13 @@ impl NHCanvas for UiCanvas {
         stroke: Stroke,
         highlight: Highlight,
     ) {
-        if highlight.selected {
-            self.painter.add(eframe::epaint::EllipseShape {
-                center: self.sc_tr(position),
-                radius: (radius + egui::Vec2::new(1.0, 1.0)) * self.camera_scale,
-                fill: egui::Color32::TRANSPARENT,
-                stroke: egui::Stroke::from(Stroke::new_solid(
-                    stroke.width,
-                    self.highlight_colors[0],
-                )),
-            });
-        }
+        let stroke = self.filtered_stroke(stroke, highlight).into();
 
         self.painter.add(eframe::epaint::EllipseShape {
             center: self.sc_tr(position),
             radius: radius * self.camera_scale,
             fill: color,
-            stroke: egui::Stroke::from(stroke),
+            stroke,
         });
     }
 
@@ -1075,6 +1051,7 @@ impl NHCanvas for UiCanvas {
         stroke: Stroke,
         highlight: Highlight,
     ) {
+        let stroke = self.filtered_stroke(stroke, highlight);
         let vertices = vertices.into_iter().map(|p| self.sc_tr(p)).collect();
         self.painter.add(egui::Shape::convex_polygon(
             vertices,

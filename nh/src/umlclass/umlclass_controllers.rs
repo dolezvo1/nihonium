@@ -2,7 +2,7 @@ use super::umlclass_models::{
     UmlClass, UmlClassDiagram, UmlClassElement, UmlClassLink, UmlClassLinkType, UmlClassPackage,
     UmlClassStereotype, UmlClassCommentLink,
 };
-use crate::common::canvas::{self, NHCanvas, NHShape};
+use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
     ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
@@ -705,7 +705,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
                 let mut mc = canvas::MeasuringCanvas::new(&painter);
                 self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
                 let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
-                let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None);
+                let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
                 c.clear(drawing_context.profile.backgrounds[0].gamma_multiply(0.75));
                 self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
                 icon_counter += 1;
@@ -2395,9 +2395,14 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
                 .filter(|e| self.min_shape().contains(e.0))
                 .map(|e| e.1)
             {
-                canvas.draw_rectangle(
-                    self.bounds_rect,
-                    egui::CornerRadius::ZERO,
+                canvas.draw_polygon(
+                    [
+                        self.bounds_rect.min,
+                        egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.max.y),
+                        self.bounds_rect.max,
+                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
+                        egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
+                    ].into_iter().collect(),
                     t.targetting_for_element(Some(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,

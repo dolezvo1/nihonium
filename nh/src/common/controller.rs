@@ -1,4 +1,4 @@
-use crate::common::canvas::{self, NHCanvas, NHShape, UiCanvas};
+use crate::common::canvas::{self, Highlight, NHCanvas, NHShape, UiCanvas};
 use crate::{CustomTab, ElementSetupModal};
 use eframe::egui;
 use egui_ltreeview::DirPosition;
@@ -192,7 +192,7 @@ pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
     OpenAndFocusDiagram(ViewUuid, Option<egui::Pos2>),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
-    SetSvgExportMenu(Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, usize, bool, bool, f32, f32)>),
+    SetSvgExportMenu(Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, usize, bool, bool, Highlight, f32, f32)>),
     SetNewDiagramNumber(u32),
     AddNewDiagram(usize, ERef<dyn DiagramController>),
     CopyDiagram(ViewUuid, /*deep:*/ bool),
@@ -1562,6 +1562,7 @@ impl<
                 ((e - self.temporaries.camera_offset - painter_response.rect.min.to_vec2()) / self.temporaries.camera_scale)
                     .to_pos2()
             }),
+            Highlight::ALL,
         );
         ui_canvas.clear(context.profile.backgrounds[0]);
         ui_canvas.draw_gridlines(

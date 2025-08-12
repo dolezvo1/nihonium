@@ -25,7 +25,7 @@ mod rdf;
 mod umlclass;
 
 use crate::common::eref::ERef;
-use crate::common::canvas::{MeasuringCanvas, SVGCanvas};
+use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
 use crate::common::controller::{DiagramCommand, DiagramController};
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
@@ -161,7 +161,7 @@ struct NHContext {
 
     open_unique_tabs: HashSet<NHTab>,
     last_focused_diagram: Option<ViewUuid>,
-    svg_export_menu: Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, usize, bool, bool, f32, f32)>,
+    svg_export_menu: Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, usize, bool, bool, Highlight, f32, f32)>,
     confirm_modal_reason: Option<SimpleProjectCommand>,
     shortcut_being_set: Option<SimpleProjectCommand>,
 
@@ -1808,7 +1808,12 @@ impl eframe::App for NHApp {
                                 {
                                     commands.push(
                                         ProjectCommand::SetSvgExportMenu(
-                                            Some((t, v.clone(), path, self.context.selected_color_profiles[t], false, false, 10.0, 10.0))
+                                            Some((
+                                                t, v.clone(), path,
+                                                self.context.selected_color_profiles[t],
+                                                false, false, Highlight::NONE,
+                                                10.0, 10.0,
+                                            ))
                                         )
                                     );
                                 }
@@ -1853,7 +1858,7 @@ impl eframe::App for NHApp {
 
         // SVG export options modal
         let mut hide_svg_export_modal = false;
-        if let Some((t, c, path, profile, background, gridlines, padding_x, padding_y)) = self.context.svg_export_menu.as_mut() {
+        if let Some((t, c, path, profile, background, gridlines, highlight, padding_x, padding_y)) = self.context.svg_export_menu.as_mut() {
             let mut controller = c.write();
             
             egui::containers::Window::new("SVG export options").show(ctx, |ui| {
@@ -1870,6 +1875,12 @@ impl eframe::App for NHApp {
                 );
                 ui.checkbox(background, "Solid background");
                 ui.checkbox(gridlines, "Gridlines");
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut highlight.selected, "Select");
+                    ui.checkbox(&mut highlight.valid, "Valid");
+                    ui.checkbox(&mut highlight.warning, "Warning");
+                    ui.checkbox(&mut highlight.invalid, "Invalid");
+                });
                 
                 ui.spacing_mut().slider_width = (ui.available_width() / 2.0).max(50.0);
                 ui.add(egui::Slider::new(padding_x, 0.0..=500.0).text("Horizontal padding"));
@@ -1938,6 +1949,7 @@ impl eframe::App for NHApp {
                         diagram_bounds.min * -camera_scale + egui::Vec2::new(*padding_x, *padding_y) * camera_scale,
                         camera_scale,
                         None,
+                        *highlight,
                     );
                     if *gridlines {
                         ui_canvas.draw_gridlines(
@@ -1947,6 +1959,8 @@ impl eframe::App for NHApp {
                     }
                     controller.draw_in(&drawing_context, &mut ui_canvas, None);
                 }
+
+                ui.separator();
                 
                 // Cancel or confirm export
                 ui.horizontal(|ui| {
