@@ -6,92 +6,6 @@ use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::{Arc, RwLock};
-
-pub const BACKGROUND_COLORS: usize = 12;
-pub const FOREGROUND_COLORS: usize = 12;
-pub const AUXILIARY_COLORS: usize = 12;
-
-#[derive(PartialEq)]
-pub struct ColorProfile {
-    pub name: String,
-    pub backgrounds: [egui::Color32; BACKGROUND_COLORS],
-    pub foregrounds: [egui::Color32; FOREGROUND_COLORS],
-    pub auxiliary: [egui::Color32; AUXILIARY_COLORS],
-}
-
-/// Describes ColorProfile usage in a diagram
-pub struct ColorLabels {
-    pub backgrounds: [Option<String>; BACKGROUND_COLORS],
-    pub foregrounds: [Option<String>; FOREGROUND_COLORS],
-    pub auxiliary: [Option<String>; AUXILIARY_COLORS],
-}
-
-macro_rules! build_colors {
-    ([$($profile_names:expr),* $(,)?],
-     [$($pair_back:expr),* $(,)?],
-     [$($pair_front:expr),* $(,)?],
-     [$($pair_aux:expr),* $(,)?] $(,)?) => {{
-        let mut vec_profiles = Vec::<crate::common::controller::ColorProfile>::new();
-
-        for name in vec![$($profile_names),*] {
-            vec_profiles.push(ColorProfile {
-                name: name.to_string(),
-                backgrounds: [egui::Color32::PLACEHOLDER; crate::common::controller::BACKGROUND_COLORS],
-                foregrounds: [egui::Color32::PLACEHOLDER; crate::common::controller::FOREGROUND_COLORS],
-                auxiliary: [egui::Color32::PLACEHOLDER; crate::common::controller::AUXILIARY_COLORS],
-            });
-        }
-
-        let mut vec_labels_back = Vec::new();
-        for (idx1, (label, values)) in vec![$($pair_back),*].into_iter().enumerate() {
-            vec_labels_back.push(label);
-            for (idx2, v) in values.into_iter().enumerate() {
-                vec_profiles[idx2].backgrounds[idx1] = v;
-            }
-        }
-
-        let mut vec_labels_front = Vec::new();
-        for (idx1, (label, values)) in vec![$($pair_front),*].into_iter().enumerate() {
-            vec_labels_front.push(label);
-            for (idx2, v) in values.into_iter().enumerate() {
-                vec_profiles[idx2].foregrounds[idx1] = v;
-            }
-        }
-
-        let mut vec_labels_aux = Vec::new();
-        for (idx1, (label, values)) in vec![$($pair_aux),*].into_iter().enumerate() {
-            vec_labels_aux.push(label);
-            for (idx2, v) in values.into_iter().enumerate() {
-                vec_profiles[idx2].auxiliary[idx1] = v;
-            }
-        }
-
-        let mut labels_back_iterator = vec_labels_back.into_iter()
-            .take(crate::common::controller::BACKGROUND_COLORS).map(|e| Some(e.to_owned()));
-        let mut labels_front_iterator = vec_labels_front.into_iter()
-            .take(crate::common::controller::FOREGROUND_COLORS).map(|e| Some(e.to_owned()));
-        let mut labels_aux_iterator = vec_labels_aux.into_iter()
-            .take(crate::common::controller::AUXILIARY_COLORS).map(|e| Some(e.to_owned()));
-        let labels = ColorLabels {
-            backgrounds: std::array::from_fn(|_| {
-                labels_back_iterator.next()
-                    .unwrap_or_else(|| None)
-            }),
-            foregrounds: std::array::from_fn(|_| {
-                labels_front_iterator.next()
-                    .unwrap_or_else(|| None)
-            }),
-            auxiliary: std::array::from_fn(|_| {
-                labels_aux_iterator.next()
-                    .unwrap_or_else(|| None)
-            }),
-        };
-
-        (labels, vec_profiles)
-    }};
-}
-pub(crate) use build_colors;
-
 use super::project_serde::{NHContextDeserialize, NHContextSerialize};
 use super::uuid::{ModelUuid, ViewUuid};
 use super::views::ordered_views::OrderedViews;
@@ -160,17 +74,17 @@ impl SnapManager {
         egui::Pos2::new(center.x - least_x.map(|e| e.0).unwrap_or(0.0), center.y - least_y.map(|e| e.0).unwrap_or(0.0))
     }
 
-    pub fn draw_best(&self, canvas: &mut dyn NHCanvas, profile: &ColorProfile, rect: egui::Rect) {
+    pub fn draw_best(&self, canvas: &mut dyn NHCanvas, color: egui::Color32, rect: egui::Rect) {
         let (best_x, best_y) = *self.best_xy.read().unwrap();
         if let Some(bx) = best_x {
             canvas.draw_line([
                 egui::Pos2::new(bx, rect.min.y), egui::Pos2::new(bx, rect.max.y)
-            ], canvas::Stroke::new_solid(1.0, profile.auxiliary[0]), canvas::Highlight::NONE);
+            ], canvas::Stroke::new_solid(1.0, color), canvas::Highlight::NONE);
         }
         if let Some(by) = best_y {
             canvas.draw_line([
                 egui::Pos2::new(rect.min.x, by), egui::Pos2::new(rect.max.x, by)
-            ], canvas::Stroke::new_solid(1.0, profile.auxiliary[0]), canvas::Highlight::NONE);
+            ], canvas::Stroke::new_solid(1.0, color), canvas::Highlight::NONE);
         }
     }
 }
@@ -192,7 +106,7 @@ pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
     OpenAndFocusDiagram(ViewUuid, Option<egui::Pos2>),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
-    SetSvgExportMenu(Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, usize, bool, bool, Highlight, f32, f32)>),
+    SetSvgExportMenu(Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, bool, bool, Highlight, f32, f32)>),
     SetNewDiagramNumber(u32),
     AddNewDiagram(usize, ERef<dyn DiagramController>),
     CopyDiagram(ViewUuid, /*deep:*/ bool),
@@ -455,7 +369,6 @@ impl<AcqT: ModelsLabelAcquirer> ModelHierarchyView for SimpleModelHierarchyView<
 }
 
 pub struct DrawingContext<'a> {
-    pub profile: &'a ColorProfile,
     pub fluent_bundle: &'a fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
     pub shortcuts: &'a HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
 }
@@ -967,6 +880,9 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         element: DomainT::CommonElementT,
     ) -> Result<DomainT::CommonElementViewT, HashSet<ModelUuid>>;
 
+    fn background_color(&self) -> egui::Color32;
+    fn gridlines_color(&self) -> egui::Color32;
+    fn show_view_props_fun(&mut self, ui: &mut egui::Ui);
     fn show_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
@@ -1564,10 +1480,10 @@ impl<
             }),
             Highlight::ALL,
         );
-        ui_canvas.clear(context.profile.backgrounds[0]);
+        ui_canvas.clear(self.adapter.background_color());
         ui_canvas.draw_gridlines(
-            Some((50.0, context.profile.foregrounds[0])),
-            Some((50.0, context.profile.foregrounds[0])),
+            Some((50.0, self.adapter.gridlines_color())),
+            Some((50.0, self.adapter.gridlines_color())),
         );
 
         let inner_mouse = ui
@@ -1736,6 +1652,7 @@ impl<
                 if ui.text_edit_singleline(&mut self.temporaries.name_buffer).changed() {
                     self.name = Arc::new(self.temporaries.name_buffer.clone());
                 }
+                self.adapter.show_view_props_fun(ui);
                 ui.add_space(super::views::VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
 
                 ui.label("Model properties:");
@@ -1933,7 +1850,7 @@ impl<
                 );
             }
 
-            self.temporaries.snap_manager.draw_best(canvas, context.profile, self.temporaries.last_interactive_canvas_rect);
+            self.temporaries.snap_manager.draw_best(canvas, egui::Color32::BLUE, self.temporaries.last_interactive_canvas_rect);
         }
     }
 

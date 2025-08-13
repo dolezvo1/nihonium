@@ -4,7 +4,7 @@ use crate::umlclass::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -124,24 +124,6 @@ impl TryFrom<UmlClassElementOrVertex> for UmlClassElementView {
     }
 }
 
-pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
-    #[rustfmt::skip]
-    let c = crate::common::controller::build_colors!(
-                                   ["Light",              "Darker"],
-        [("Diagram background",    [egui::Color32::WHITE, egui::Color32::GRAY,]),
-         ("Package background",    [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),
-         ("Connection background", [egui::Color32::WHITE, egui::Color32::WHITE,]),
-         ("Class background",      [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),
-         ("Comment background",    [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),],
-        [("Diagram gridlines",     [egui::Color32::from_rgb(220, 220, 220), egui::Color32::from_rgb(127, 127, 127),]),
-         ("Package foreground",    [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("Connection foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("Class foreground",      [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("Comment foreground",    [egui::Color32::BLACK, egui::Color32::BLACK,]),],
-        [("Selection",             [egui::Color32::BLUE,  egui::Color32::LIGHT_BLUE,]),],
-    );
-    ("UML Class diagram".to_owned(), c.0, c.1)
-}
 
 #[derive(Clone, derive_more::From, nh_derive::NHContextSerDeTag)]
 #[nh_context_serde(uuid_type = ViewUuid)]
@@ -385,6 +367,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
 pub struct UmlClassDiagramAdapter {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassDiagram>,
+    background_color: egui::Color32,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     buffer: UmlClassDiagramBuffer,
@@ -488,6 +471,7 @@ impl UmlClassDiagramAdapter {
         let m = model.read();
          Self {
             model: model.clone(),
+            background_color: egui::Color32::WHITE,
             buffer: UmlClassDiagramBuffer {
                 name: (*m.name).clone(),
                 comment: (*m.comment).clone(),
@@ -568,6 +552,20 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
         Ok(v)
     }
 
+    fn background_color(&self) -> egui::Color32 {
+        self.background_color
+    }
+    fn gridlines_color(&self) -> egui::Color32 {
+        egui::Color32::from_rgb(220, 220, 220)
+    }
+    fn show_view_props_fun(&mut self, ui: &mut egui::Ui) {
+        ui.label("Background color:");
+        egui::widgets::color_picker::color_edit_button_srgba(
+            ui,
+            &mut self.background_color,
+            egui::widgets::color_picker::Alpha::OnlyBlend
+        );
+    }
     fn show_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
@@ -743,7 +741,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
                 self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
                 let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
                 let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
-                c.clear(drawing_context.profile.backgrounds[0].gamma_multiply(0.75));
+                c.clear(egui::Color32::WHITE.gamma_multiply(0.75));
                 self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
                 icon_counter += 1;
             }
@@ -1574,8 +1572,8 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             &read.name,
             None,
             &[&read.parse_properties(), &read.parse_functions()],
-            context.profile.backgrounds[3],
-            canvas::Stroke::new_solid(1.0, context.profile.foregrounds[3]),
+            egui::Color32::WHITE,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
 
@@ -2342,8 +2340,8 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
                 egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
                 egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
             ].into_iter().collect(),
-            context.profile.backgrounds[4],
-            canvas::Stroke::new_solid(1.0, context.profile.foregrounds[4]),
+            egui::Color32::WHITE,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
         canvas.draw_polygon(
@@ -2352,8 +2350,8 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
                 egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y + corner_size),
                 egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
             ].into_iter().collect(),
-            context.profile.backgrounds[4],
-            canvas::Stroke::new_solid(1.0, context.profile.foregrounds[4]),
+            egui::Color32::WHITE,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
         canvas.draw_text(
@@ -2361,7 +2359,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
             egui::Align2::CENTER_CENTER,
             &read.text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            context.profile.foregrounds[4],
+            egui::Color32::BLACK,
         );
 
         if canvas.ui_scale().is_some() {

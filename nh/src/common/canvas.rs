@@ -480,9 +480,9 @@ impl Highlight {
     };
 }
 
-pub const CLASS_TOP_FONT_SIZE: f32 = 15.0;
+pub const CLASS_TOP_FONT_SIZE: f32 = 12.0;
 pub const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
-pub const CLASS_BOTTOM_FONT_SIZE: f32 = 15.0;
+pub const CLASS_BOTTOM_FONT_SIZE: f32 = 12.0;
 pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 
 pub trait NHCanvas {
@@ -627,7 +627,7 @@ pub trait NHCanvas {
             let global_offset = offsets.last().unwrap() / 2.0;
             let rect = egui::Rect::from_center_size(
                 position,
-                egui::Vec2::new(max_width + 4.0, 2.0 * global_offset),
+                egui::Vec2::new(max_width + 14.0, 2.0 * global_offset + 14.0),
             );
             self.draw_rectangle(rect, egui::CornerRadius::ZERO, fill, stroke.into(), highlight);
 

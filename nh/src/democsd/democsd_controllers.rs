@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -114,29 +114,14 @@ impl TryFrom<DemoCsdElementOrVertex> for DemoCsdElementView {
     }
 }
 
-pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
-    #[rustfmt::skip]
-    let c = crate::common::controller::build_colors!(
-                                      ["Light",              "Darker"],
-        [("Diagram background",       [egui::Color32::WHITE, egui::Color32::GRAY,]),
-         ("Package background",       [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),
-         ("Connection background",    [egui::Color32::WHITE, egui::Color32::WHITE,]),
-         ("External role background", [egui::Color32::LIGHT_GRAY, egui::Color32::from_rgb(127, 127, 127),]),
-         ("Internal role background", [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),
-         ("Transaction background",   [egui::Color32::WHITE, egui::Color32::from_rgb(191, 191, 191),]),],
-        [("Diagram gridlines",        [egui::Color32::from_rgb(220, 220, 220), egui::Color32::from_rgb(127, 127, 127),]),
-         ("Package foreground",       [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("Connection foreground",    [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("External role foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("Internal role foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("Transaction foreground",   [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("Performa Transaction",     [egui::Color32::RED,   egui::Color32::RED,]),
-         ("Informa Transaction",      [egui::Color32::from_rgb(0, 175, 0), egui::Color32::from_rgb(0, 175, 0),]),
-         ("Forma Transaction",        [egui::Color32::BLUE,  egui::Color32::BLUE,]),],
-        [("Selection",                [egui::Color32::BLUE,  egui::Color32::LIGHT_BLUE,]),],
-    );
-    ("DEMO CSD diagram".to_owned(), c.0, c.1)
-}
+
+pub const EXTERNAL_ROLE_BACKGROUND: egui::Color32 = egui::Color32::LIGHT_GRAY;
+pub const INTERNAL_ROLE_BACKGROUND: egui::Color32 = egui::Color32::WHITE;
+
+pub const PERFORMA_DETAIL: egui::Color32 = egui::Color32::RED;
+pub const INFORMA_DETAIL: egui::Color32 = egui::Color32::from_rgb(0, 175, 0);
+pub const FORMA_DETAIL: egui::Color32 = egui::Color32::BLUE;
+
 
 #[derive(Clone, derive_more::From, nh_derive::NHContextSerDeTag)]
 #[nh_context_serde(uuid_type = ViewUuid)]
@@ -367,6 +352,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdElementView {
 pub struct DemoCsdDiagramAdapter {
     #[nh_context_serde(entity)]
     model: ERef<DemoCsdDiagram>,
+    background_color: egui::Color32,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     buffer: DemoCsdDiagramBuffer,
@@ -439,6 +425,7 @@ impl DemoCsdDiagramAdapter {
         let m = model.read();
         Self {
             model: model.clone(),
+            background_color: egui::Color32::WHITE,
             buffer: DemoCsdDiagramBuffer {
                 name: (*m.name).clone(),
                 comment: (*m.comment).clone(),
@@ -511,6 +498,20 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         Ok(v)
     }
 
+    fn background_color(&self) -> egui::Color32 {
+        self.background_color
+    }
+    fn gridlines_color(&self) -> egui::Color32 {
+        egui::Color32::from_rgb(220, 220, 220)
+    }
+    fn show_view_props_fun(&mut self, ui: &mut egui::Ui) {
+        ui.label("Background color:");
+        egui::widgets::color_picker::color_edit_button_srgba(
+            ui,
+            &mut self.background_color,
+            egui::widgets::color_picker::Alpha::OnlyBlend
+        );
+    }
     fn show_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
@@ -669,7 +670,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
                 self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
                 let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
                 let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
-                c.clear(drawing_context.profile.backgrounds[0].gamma_multiply(0.75));
+                c.clear(egui::Color32::WHITE.gamma_multiply(0.75));
                 self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
                 icon_counter += 1;
             }
@@ -1589,9 +1590,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             self.bounds_rect,
             egui::CornerRadius::ZERO,
             if read.internal {
-                context.profile.backgrounds[4]
+                INTERNAL_ROLE_BACKGROUND
             } else {
-                context.profile.backgrounds[3]
+                EXTERNAL_ROLE_BACKGROUND
             },
             canvas::Stroke::new_solid(
                 1.0,
@@ -1604,19 +1605,13 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             self.highlight,
         );
 
-        let text_color = if read.internal {
-            context.profile.foregrounds[4]
-        } else {
-            context.profile.foregrounds[3]
-        };
-
         // Draw identifier below the position (plus tx name)
         canvas.draw_text(
             self.position + identifier_offset,
             egui::Align2::CENTER_TOP,
             &read.identifier,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            text_color,
+            egui::Color32::BLACK,
         );
 
         // Draw identifier one row below the position (plus tx name)
@@ -1625,7 +1620,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             egui::Align2::CENTER_TOP,
             &read.name,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            text_color,
+            egui::Color32::BLACK,
         );
 
         // If tx is present, draw it 4 rows above the position
@@ -2277,12 +2272,12 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             self.position,
             radius,
             self.highlight,
-            context.profile.backgrounds[5],
-            context.profile.foregrounds[5],
+            egui::Color32::WHITE,
+            egui::Color32::BLACK,
             match read.kind {
-                super::democsd_models::DemoCsdTransactionKind::Performa => context.profile.foregrounds[6],
-                super::democsd_models::DemoCsdTransactionKind::Informa => context.profile.foregrounds[7],
-                super::democsd_models::DemoCsdTransactionKind::Forma => context.profile.foregrounds[8],
+                super::democsd_models::DemoCsdTransactionKind::Performa => PERFORMA_DETAIL,
+                super::democsd_models::DemoCsdTransactionKind::Informa => INFORMA_DETAIL,
+                super::democsd_models::DemoCsdTransactionKind::Forma => FORMA_DETAIL,
             },
         );
 

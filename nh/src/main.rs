@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use common::canvas::{NHCanvas, UiCanvas};
-use common::controller::{Arrangement, ColorLabels, ColorProfile, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleProjectCommand};
+use common::controller::{Arrangement, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleProjectCommand};
 use common::project_serde::{NHSerializeError, NHDeserializer, NHDeserializeError};
 use common::uuid::{ModelUuid, ViewUuid};
 use eframe::egui::{
@@ -146,8 +146,8 @@ struct NHContext {
     pub style: Option<Style>,
     zoom_factor: f32,
     zoom_with_keyboard: bool,
-    color_profiles: Vec<(String, ColorLabels, Vec<ColorProfile>)>,
-    selected_color_profiles: Vec<usize>,
+    diagram_shades: Vec<(String, Vec<egui::Color32>)>,
+    selected_diagram_shades: Vec<usize>,
     selected_language: usize,
     languages_order: Vec<unic_langid::LanguageIdentifier>,
     fluent_bundle: fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
@@ -162,7 +162,7 @@ struct NHContext {
 
     open_unique_tabs: HashSet<NHTab>,
     last_focused_diagram: Option<ViewUuid>,
-    svg_export_menu: Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, usize, bool, bool, Highlight, f32, f32)>,
+    svg_export_menu: Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, bool, bool, Highlight, f32, f32)>,
     confirm_modal_reason: Option<SimpleProjectCommand>,
     shortcut_being_set: Option<SimpleProjectCommand>,
 
@@ -569,7 +569,6 @@ impl NHContext {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
         let drawing_context = DrawingContext {
-            profile: &self.color_profiles[*t].2[self.selected_color_profiles[*t]],
             fluent_bundle: &self.fluent_bundle,
             shortcuts: &self.shortcuts,
         };
@@ -1000,51 +999,15 @@ impl NHContext {
             });
         });
         
-        ui.collapsing("Diagram themes", |ui| {
-            for (idx1, (name, l, p)) in self.color_profiles.iter_mut().enumerate() {
+        ui.collapsing("Diagram shades", |ui| {
+            for (idx1, (name, values)) in self.diagram_shades.iter_mut().enumerate() {
                 ui.horizontal(|ui| {
-                    egui::ComboBox::from_label(&*name)
-                        .selected_text(&p[self.selected_color_profiles[idx1]].name)
-                        .show_ui(ui, |ui| {
-                            for (idx2, profile) in p.iter().enumerate() {
-                                ui.selectable_value(&mut self.selected_color_profiles[idx1], idx2, &profile.name);
-                            }
-                        }
+                    ui.label(&*name);
+                    egui::widgets::color_picker::color_edit_button_srgba(
+                        ui,
+                        values.first_mut().unwrap(),
+                        egui::widgets::color_picker::Alpha::OnlyBlend
                     );
-                    if ui.button("Duplicate as a new color profile").clicked() {
-                        let current = &p[self.selected_color_profiles[idx1]];
-                        p.push(ColorProfile {
-                            name: format!("{} (copy)", current.name),
-                            backgrounds: current.backgrounds.clone(),
-                            foregrounds: current.foregrounds.clone(),
-                            auxiliary: current.auxiliary.clone(),
-                        });
-                    }
-                });
-
-                egui::CollapsingHeader::new("Color editor").id_salt(("Color editor", idx1)).show(ui, |ui| {
-                    let current = &mut p[self.selected_color_profiles[idx1]];
-                    let color_editor_block = |ui: &mut Ui, name: &str, labels: &[Option<String>], colors: &mut [egui::Color32]| {
-                        egui::CollapsingHeader::new(name).id_salt((name, idx1)).show(ui, |ui| {
-                            egui::Grid::new((name, idx1, "grid")).show(ui, |ui| {
-                                for (l, c) in labels.iter().flatten().zip(colors.iter_mut()) {
-                                    ui.label(l);
-                                    ui.horizontal(|ui| {
-                                        egui::widgets::color_picker::color_edit_button_srgba(
-                                            ui,
-                                            c,
-                                            egui::widgets::color_picker::Alpha::OnlyBlend
-                                        );
-                                    });
-                                    ui.end_row();
-                                }
-                            });
-                        });
-                    };
-
-                    color_editor_block(ui, "Background colors", &l.backgrounds, &mut current.backgrounds);
-                    color_editor_block(ui, "Foreground colors", &l.foregrounds, &mut current.foregrounds);
-                    color_editor_block(ui, "Auxiliary colors", &l.auxiliary, &mut current.auxiliary);
                 });
             }
         });
@@ -1114,7 +1077,6 @@ impl NHContext {
         let mut diagram_controller = v.write();
 
         let drawing_context = DrawingContext {
-            profile: &self.color_profiles[*t].2[self.selected_color_profiles[*t]],
             fluent_bundle: &self.fluent_bundle,
             shortcuts: &self.shortcuts,
         };
@@ -1124,6 +1086,8 @@ impl NHContext {
         });
 
         diagram_controller.draw_in(&drawing_context, ui_canvas.as_mut(), pos);
+        let shade_color = self.diagram_shades[*t].1[self.selected_diagram_shades[*t]];
+        ui_canvas.draw_rectangle(egui::Rect::EVERYTHING, egui::CornerRadius::ZERO, shade_color, common::canvas::Stroke::NONE, Highlight::NONE);
 
         let mut undo_accumulator = Vec::<Arc<String>>::new();
         let mut affected_models = HashSet::new();
@@ -1243,14 +1207,14 @@ impl Default for NHApp {
             .split_below(b, 0.7, vec![NHTab::Toolbar]);
         open_unique_tabs.insert(NHTab::Toolbar);
 
-        let color_profiles = vec![
-            crate::rdf::rdf_controllers::colors(),
-            crate::umlclass::umlclass_controllers::colors(),
-            crate::democsd::democsd_controllers::colors(),
-            crate::ontouml::ontouml_controllers::colors(),
+        let diagram_shades = vec![
+            ("RDF".to_owned(), vec![egui::Color32::TRANSPARENT]),
+            ("UML Class".to_owned(), vec![egui::Color32::TRANSPARENT]),
+            ("DEMO CSD".to_owned(), vec![egui::Color32::TRANSPARENT]),
+            ("OntoUML".to_owned(), vec![egui::Color32::TRANSPARENT]),
         ];
         
-        let selected_color_profiles = color_profiles.iter().map(|_| 0).collect();
+        let selected_diagram_shades = diagram_shades.iter().map(|_| 0).collect();
         let languages_order = common::fluent::AVAILABLE_LANGUAGES.iter().map(|e| e.0.clone()).collect();
         let fluent_bundle = common::fluent::create_fluent_bundle(&languages_order)
             .expect("Could not establish base FluentBundle");
@@ -1270,8 +1234,8 @@ impl Default for NHApp {
             style: None,
             zoom_factor: 1.0,
             zoom_with_keyboard: false,
-            color_profiles,
-            selected_color_profiles,
+            diagram_shades,
+            selected_diagram_shades,
             selected_language: 0,
             languages_order,
             fluent_bundle,
@@ -1817,7 +1781,6 @@ impl eframe::App for NHApp {
                                         ProjectCommand::SetSvgExportMenu(
                                             Some((
                                                 t, v.clone(), path,
-                                                self.context.selected_color_profiles[t],
                                                 false, false, Highlight::NONE,
                                                 10.0, 10.0,
                                             ))
@@ -1865,21 +1828,13 @@ impl eframe::App for NHApp {
 
         // SVG export options modal
         let mut hide_svg_export_modal = false;
-        if let Some((t, c, path, profile, background, gridlines, highlight, padding_x, padding_y)) = self.context.svg_export_menu.as_mut() {
+        if let Some((t, c, path, background, gridlines, highlight, padding_x, padding_y)) = self.context.svg_export_menu.as_mut() {
             let mut controller = c.write();
             
             egui::containers::Window::new("SVG export options").show(ctx, |ui| {
                 ui.label(format!("Location: `{}`", path.display()));
                 
                 // Change options
-                egui::ComboBox::from_label("Color profile")
-                    .selected_text(&self.context.color_profiles[*t].2[*profile].name)
-                    .show_ui(ui, |ui| {
-                        for (idx2, p) in self.context.color_profiles[*t].2.iter().enumerate() {
-                            ui.selectable_value(profile, idx2, &p.name);
-                        }
-                    }
-                );
                 ui.checkbox(background, "Solid background");
                 ui.checkbox(gridlines, "Gridlines");
                 ui.horizontal(|ui| {
@@ -1897,9 +1852,7 @@ impl eframe::App for NHApp {
                 
                 // Show preview
                 {
-                    let color_profile = &self.context.color_profiles[*t].2[*profile];
                     let drawing_context = DrawingContext {
-                        profile: color_profile,
                         fluent_bundle: &self.context.fluent_bundle,
                         shortcuts: &self.context.shortcuts,
                     };
@@ -1927,7 +1880,7 @@ impl eframe::App for NHApp {
                         painter.rect(
                             canvas_rect,
                             egui::CornerRadius::ZERO,
-                            color_profile.backgrounds[0],
+                            egui::Color32::WHITE, // TODO: load the actual background color
                             egui::Stroke::NONE,
                             egui::StrokeKind::Middle,
                         );
@@ -1960,8 +1913,8 @@ impl eframe::App for NHApp {
                     );
                     if *gridlines {
                         ui_canvas.draw_gridlines(
-                            Some((50.0, color_profile.foregrounds[0])),
-                            Some((50.0, color_profile.foregrounds[0])),
+                            Some((50.0, egui::Color32::from_rgb(220, 220, 220))),
+                            Some((50.0, egui::Color32::from_rgb(220, 220, 220))),
                         );
                     }
                     controller.draw_in(&drawing_context, &mut ui_canvas, None);
@@ -1975,9 +1928,7 @@ impl eframe::App for NHApp {
                         hide_svg_export_modal = true;
                     }
                     if ui.button("OK").clicked() {
-                        let color_profile = &self.context.color_profiles[*t].2[*profile];
                         let drawing_context = DrawingContext {
-                            profile: color_profile,
                             fluent_bundle: &self.context.fluent_bundle,
                             shortcuts: &self.context.shortcuts,
                         };
@@ -2005,7 +1956,7 @@ impl eframe::App for NHApp {
                                     canvas_size,
                                 ),
                                 egui::CornerRadius::ZERO,
-                                color_profile.backgrounds[0],
+                                egui::Color32::WHITE, // TODO: load the actual background color
                                 common::canvas::Stroke::NONE,
                                 common::canvas::Highlight::NONE,
                             );

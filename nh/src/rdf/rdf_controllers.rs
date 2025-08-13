@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorLabels, ColorProfile, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -132,24 +132,6 @@ impl TryFrom<RdfElementOrVertex> for RdfElementView {
     }
 }
 
-pub fn colors() -> (String, ColorLabels, Vec<ColorProfile>) {
-    #[rustfmt::skip]
-    let c = crate::common::controller::build_colors!(
-                                   ["Light",              "Darker"],
-        [("Diagram background",    [egui::Color32::WHITE, egui::Color32::GRAY,]),
-         ("Graph background",      [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),
-         ("Connection background", [egui::Color32::WHITE, egui::Color32::WHITE,]),
-         ("Node background",       [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),
-         ("Literal background",    [egui::Color32::WHITE, egui::Color32::from_rgb(159, 159, 159),]),],
-        [("Diagram gridlines",     [egui::Color32::from_rgb(220, 220, 220), egui::Color32::from_rgb(127, 127, 127),]),
-         ("Graph foreground",      [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("Connection foreground", [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("Node foreground",       [egui::Color32::BLACK, egui::Color32::BLACK,]),
-         ("Literal foreground",    [egui::Color32::BLACK, egui::Color32::BLACK,]),],
-        [("Selection",             [egui::Color32::BLUE,  egui::Color32::LIGHT_BLUE,]),],
-    );
-    ("RDF diagram".to_owned(), c.0, c.1)
-}
 
 #[derive(Clone, derive_more::From, nh_derive::NHContextSerDeTag)]
 #[nh_context_serde(uuid_type = ViewUuid)]
@@ -373,6 +355,7 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
 pub struct RdfDiagramAdapter {
     #[nh_context_serde(entity)]
     model: ERef<RdfDiagram>,
+    background_color: egui::Color32,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     buffer: RdfDiagramBuffer,
@@ -436,6 +419,7 @@ impl RdfDiagramAdapter {
         let m = model.read();
          Self {
             model: model.clone(),
+            background_color: egui::Color32::WHITE,
             buffer: RdfDiagramBuffer {
                 name: (*m.name).clone(),
                 comment: (*m.comment).clone(),
@@ -506,6 +490,20 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         Ok(v)
     }
 
+    fn background_color(&self) -> egui::Color32 {
+        self.background_color
+    }
+    fn gridlines_color(&self) -> egui::Color32 {
+        egui::Color32::from_rgb(220, 220, 220)
+    }
+    fn show_view_props_fun(&mut self, ui: &mut egui::Ui) {
+        ui.label("Background color:");
+        egui::widgets::color_picker::color_edit_button_srgba(
+            ui,
+            &mut self.background_color,
+            egui::widgets::color_picker::Alpha::OnlyBlend
+        );
+    }
     fn show_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
@@ -644,7 +642,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                 self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
                 let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
                 let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
-                c.clear(drawing_context.profile.backgrounds[0].gamma_multiply(0.75));
+                c.clear(egui::Color32::WHITE.gamma_multiply(0.75));
                 self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
                 icon_counter += 1;
             }
@@ -1570,7 +1568,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         canvas.draw_ellipse(
             self.position,
             self.bounds_radius,
-            context.profile.backgrounds[3],
+            egui::Color32::WHITE,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
@@ -1580,7 +1578,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             egui::Align2::CENTER_CENTER,
             &self.model.read().iri,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            context.profile.foregrounds[3],
+            egui::Color32::BLACK,
         );
 
         // Draw targetting ellipse
@@ -2021,8 +2019,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             &self.model.read().content,
             None,
             &[],
-            context.profile.backgrounds[4],
-            canvas::Stroke::new_solid(1.0, context.profile.foregrounds[4]),
+            egui::Color32::WHITE,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
 

@@ -15,6 +15,12 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn add_element(&mut self, element: DomainT::CommonElementT);
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
 
+    fn background_color(&self) -> egui::Color32 {
+        egui::Color32::WHITE
+    }
+    fn foreground_color(&self) -> egui::Color32 {
+        egui::Color32::BLACK
+    }
     fn show_properties(
         &mut self,
         ui: &mut egui::Ui,
@@ -210,8 +216,8 @@ where
         canvas.draw_rectangle(
             self.bounds_rect,
             egui::CornerRadius::ZERO,
-            context.profile.backgrounds[1],
-            canvas::Stroke::new_solid(1.0, context.profile.foregrounds[1]),
+            self.adapter.background_color(),
+            canvas::Stroke::new_solid(1.0, self.adapter.foreground_color()),
             self.highlight,
         );
 
@@ -220,7 +226,7 @@ where
             egui::Align2::CENTER_TOP,
             &self.adapter.model_name(),
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            context.profile.foregrounds[1],
+            self.adapter.foreground_color(),
         );
 
         // Draw resize/drag handles

@@ -10,6 +10,12 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
 
+    fn background_color(&self) -> egui::Color32 {
+        egui::Color32::WHITE
+    }
+    fn foreground_color(&self) -> egui::Color32 {
+        egui::Color32::BLACK
+    }
     fn midpoint_label(&self) -> Option<Arc<String>> { None }
     fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
     fn destination_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
@@ -259,7 +265,7 @@ where
                 source_arrow_type,
                 crate::common::canvas::Stroke {
                     width: 1.0,
-                    color: context.profile.foregrounds[2],
+                    color: self.adapter.foreground_color(),
                     line_type: source_line_type,
                 },
                 &self.source_points[0],
@@ -269,7 +275,7 @@ where
                 dest_arrow_type,
                 crate::common::canvas::Stroke {
                     width: 1.0,
-                    color: context.profile.foregrounds[2],
+                    color: self.adapter.foreground_color(),
                     line_type: dest_line_type,
                 },
                 &self.dest_points[0],
