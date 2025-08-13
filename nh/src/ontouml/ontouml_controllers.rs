@@ -401,7 +401,7 @@ struct UmlClassDiagramBuffer {
 
 #[derive(Clone)]
 struct UmlClassPlaceholderViews {
-    views: [UmlClassElementView; 9],
+    views: [UmlClassElementView; 11],
 }
 
 impl Default for UmlClassPlaceholderViews {
@@ -416,7 +416,9 @@ impl Default for UmlClassPlaceholderViews {
         let role = (role, role_view.into());
 
         let (_gen, gen_view) = new_umlclass_link(UmlClassLinkType::Generalization, "", None, kind.clone(), subkind.clone());
-        let (_assoc, assoc_view) = new_umlclass_link(UmlClassLinkType::Association, "", None, kind.clone(), subkind.clone());
+        let (_mediation, mediation_view) = new_umlclass_link(UmlClassLinkType::Association, "mediation", None, kind.clone(), subkind.clone());
+        let (_char, char_view) = new_umlclass_link(UmlClassLinkType::Association, "characterization", None, kind.clone(), subkind.clone());
+        let (_comp, comp_view) = new_umlclass_link(UmlClassLinkType::Association, "componentOf", None, kind.clone(), subkind.clone());
 
         let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
         let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
@@ -431,7 +433,9 @@ impl Default for UmlClassPlaceholderViews {
                 role.1,
 
                 gen_view.into(),
-                assoc_view.into(),
+                mediation_view.into(),
+                char_view.into(),
+                comp_view.into(),
 
                 package_view.into(),
                 comment.1,
@@ -691,14 +695,30 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
                 (
                     UmlClassToolStage::LinkStart {
                         link_type: UmlClassLinkType::Generalization,
+                        link_stereotype: "",
                     },
                     "Generalization",
                 ),
                 (
                     UmlClassToolStage::LinkStart {
                         link_type: UmlClassLinkType::Association,
+                        link_stereotype: "mediation",
                     },
-                    "Association",
+                    "Mediation",
+                ),
+                (
+                    UmlClassToolStage::LinkStart {
+                        link_type: UmlClassLinkType::Association,
+                        link_stereotype: "characterization",
+                    },
+                    "Characterization",
+                ),
+                (
+                    UmlClassToolStage::LinkStart {
+                        link_type: UmlClassLinkType::Association,
+                        link_stereotype: "componentOf",
+                    },
+                    "ComponentOf",
                 ),
             ][..],
             &[
@@ -808,7 +828,7 @@ pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn D
 #[derive(Clone, Copy, PartialEq)]
 pub enum UmlClassToolStage {
     Class { class_type: &'static str },
-    LinkStart { link_type: UmlClassLinkType },
+    LinkStart { link_type: UmlClassLinkType, link_stereotype: &'static str },
     LinkEnd,
     PackageStart,
     PackageEnd,
@@ -822,6 +842,7 @@ enum PartialUmlClassElement {
     Some(UmlClassElementView),
     Link {
         link_type: UmlClassLinkType,
+        link_stereotype: &'static str,
         source: ERef<UmlClass>,
         dest: Option<ERef<UmlClass>>,
     },
@@ -1024,9 +1045,10 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             UmlClassElement::UmlClassObject(..) => {}
             UmlClassElement::UmlClass(inner) => {
                 match (self.current_stage, &mut self.result) {
-                    (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None) => {
+                    (UmlClassToolStage::LinkStart { link_type, link_stereotype }, PartialUmlClassElement::None) => {
                         self.result = PartialUmlClassElement::Link {
                             link_type,
+                            link_stereotype,
                             source: inner.into(),
                             dest: None,
                         };
@@ -1079,6 +1101,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             }
             PartialUmlClassElement::Link {
                 link_type,
+                link_stereotype,
                 source,
                 dest: Some(dest),
                 ..
@@ -1090,11 +1113,12 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 ) {
                     self.current_stage = UmlClassToolStage::LinkStart {
                         link_type: *link_type,
+                        link_stereotype: *link_stereotype,
                     };
 
                     let (_link_model, link_view) = new_umlclass_link(
                         *link_type,
-                        if *link_type == UmlClassLinkType::Usage { "use" } else { "" },
+                        *link_stereotype,
                         None,
                         (source.clone(), source_controller),
                         (dest.clone(), dest_controller),
@@ -1816,6 +1840,23 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
     }
 }
 
+fn ontouml_link_stereotype_literal(e: &str) -> &'static str {
+    match e {
+        "" => "",
+        "formal" => "formal",
+        "mediation" => "mediation",
+        "characterization" => "characterization",
+        "structuration" => "Structuration",
+
+        "componentOf" => "componentOf",
+        "containment" => "containment",
+        "memberOf" => "memberOf",
+        "subcollectionOf" => "subcollectionOf",
+        "subquantityOf" => "subquantityOf",
+        _ => unreachable!(),
+    }
+}
+
 #[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 pub struct UmlClassLinkAdapter {
     #[nh_context_serde(entity)]
@@ -1823,7 +1864,7 @@ pub struct UmlClassLinkAdapter {
     #[nh_context_serde(skip_and_default)]
     link_type_buffer: UmlClassLinkType,
     #[nh_context_serde(skip_and_default)]
-    stereotype_buffer: String,
+    stereotype_buffer: &'static str,
     #[nh_context_serde(skip_and_default)]
     sal_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -1885,44 +1926,35 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
     ) {
-        ui.label("Link type:");
-        egui::ComboBox::from_id_salt("link type")
-            .selected_text(&*self.link_type_buffer.name())
-            .show_ui(ui, |ui| {
-                for sv in [
-                    UmlClassLinkType::Association,
-                    UmlClassLinkType::Aggregation,
-                    UmlClassLinkType::Composition,
-                    UmlClassLinkType::Generalization,
-                    UmlClassLinkType::InterfaceRealization,
-                    UmlClassLinkType::Usage,
-                ] {
-                    if ui
-                        .selectable_value(&mut self.link_type_buffer, sv, &*sv.name())
-                        .changed()
-                    {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                            UmlClassPropChange::LinkTypeChange(self.link_type_buffer),
-                        ]));
-                    }
-                }
-            });
+        if self.link_type_buffer != UmlClassLinkType::Generalization {
+            egui::ComboBox::from_label("Association type:")
+                .selected_text(format!("«{}»", self.stereotype_buffer))
+                .show_ui(ui, |ui| {
+                    for sv in [
+                        ("formal", "Formal", UmlClassLinkType::Association),
+                        ("mediation", "Mediation", UmlClassLinkType::Association),
+                        ("characterization", "Characterization", UmlClassLinkType::Association),
+                        ("structuration", "Structuration", UmlClassLinkType::Association),
 
-        ui.label("Stereotype:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.stereotype_buffer),
-            )
-            .changed()
-        {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::StereotypeChange(Arc::new(
-                    self.stereotype_buffer.clone(),
-                )),
-            ]));
+                        ("componentOf", "ComponentOf", UmlClassLinkType::Composition),
+                        ("containment", "Containment", UmlClassLinkType::Association),
+                        ("memberOf", "MemberOf", UmlClassLinkType::Aggregation),
+                        ("subcollectionOf", "SubcollectionOf", UmlClassLinkType::Composition),
+                        ("subquantityOf", "SubquantityOf", UmlClassLinkType::Composition),
+                    ] {
+                        if ui
+                            .selectable_value(&mut self.stereotype_buffer, sv.0, sv.1)
+                            .changed()
+                        {
+                            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                                UmlClassPropChange::StereotypeChange(self.stereotype_buffer.to_owned().into()),
+                                UmlClassPropChange::LinkTypeChange(sv.2),
+                            ]));
+                        }
+                    }
+                });
+            ui.separator();
         }
-        ui.separator();
 
         ui.label("Source:");
         if ui
@@ -2041,7 +2073,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
         self.link_type_buffer = model.link_type;
-        self.stereotype_buffer = (*model.stereotype).clone();
+        self.stereotype_buffer = ontouml_link_stereotype_literal(&*model.stereotype);
         self.sal_buffer = (*model.source_arrowhead_label).clone();
         self.dal_buffer = (*model.target_arrowhead_label).clone();
         self.comment_buffer = (*model.comment).clone();
@@ -2145,7 +2177,7 @@ fn new_umlclass_link_view(
         UmlClassLinkAdapter {
             model: model.clone(),
             link_type_buffer: m.link_type,
-            stereotype_buffer: (*m.stereotype).clone(),
+            stereotype_buffer: ontouml_link_stereotype_literal(&*m.stereotype),
             sal_buffer: (*m.source_arrowhead_label).clone(),
             dal_buffer: (*m.target_arrowhead_label).clone(),
             comment_buffer: (*m.comment).clone(),
