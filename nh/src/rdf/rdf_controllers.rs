@@ -2310,11 +2310,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         }
 
         if ui.button("Switch source and destination").clicked()
-            && /* TODO: must check if target isn't a literal */ true
-        {
-            // TODO: (model.source, model.destination) = (model.destination.clone(), model.source.clone());
-            // TODO: (self.source, self.destination) = (self.destination.clone(), self.source.clone());
-
+            && let RdfTargettableElement::RdfNode(_) = &self.model.read().target {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
                 RdfPropChange::FlipMulticonnection,
             ]));
@@ -2343,6 +2339,13 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
                             vec![RdfPropChange::CommentChange(model.comment.clone())],
                         ));
                         model.comment = comment.clone();
+                    }
+                    RdfPropChange::FlipMulticonnection => {
+                        if let RdfTargettableElement::RdfNode(t) = &model.target {
+                            let tmp = model.source.clone();
+                            model.source = t.clone();
+                            model.target = tmp.into();
+                        }
                     }
                     _ => {}
                 }

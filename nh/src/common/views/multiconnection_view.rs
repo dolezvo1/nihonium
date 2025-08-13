@@ -706,7 +706,10 @@ where
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
                     for property in properties {
-                        if let Ok(FlipMulticonnection {}) = property.try_into() {}
+                        if let Ok(FlipMulticonnection {}) = property.try_into() {
+                            std::mem::swap(&mut self.source, &mut self.target);
+                            std::mem::swap(&mut self.source_points, &mut self.dest_points);
+                        }
                     }
                     self.adapter.apply_change(&self.uuid, command, undo_accumulator);
                     affected_models.insert(*self.adapter.model_uuid());

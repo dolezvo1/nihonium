@@ -1825,7 +1825,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         let mut cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            stereotype_buffer: self.stereotype_buffer.clone(),
+            stereotype_buffer: self.stereotype_buffer,
             name_buffer: self.name_buffer.clone(),
             properties_buffer: self.properties_buffer.clone(),
             functions_buffer: self.functions_buffer.clone(),
@@ -1988,14 +1988,10 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
         }
         ui.separator();
 
-        ui.label("Swap source and destination:");
-        if ui.button("Swap").clicked() {
-            // (model.source, model.destination) = (model.destination.clone(), model.source.clone());
-            /* TODO:
-            (self.source, self.destination) = (self.destination.clone(), self.source.clone());
-            (self.source_points, self.dest_points) =
-                (self.dest_points.clone(), self.source_points.clone());
-                */
+        if ui.button("Switch source and destination").clicked() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::FlipMulticonnection,
+            ]));
         }
         ui.separator();
 
@@ -2065,6 +2061,11 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
                         ));
                         model.comment = comment.clone();
                     }
+                    UmlClassPropChange::FlipMulticonnection => {
+                        let tmp = model.source.clone();
+                        model.source = model.target.clone();
+                        model.target = tmp.into();
+                    }
                     _ => {}
                 }
             }
@@ -2097,7 +2098,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
         Self {
             model,
             link_type_buffer: self.link_type_buffer.clone(),
-            stereotype_buffer: self.stereotype_buffer.clone(),
+            stereotype_buffer: self.stereotype_buffer,
             sal_buffer: self.sal_buffer.clone(),
             dal_buffer: self.dal_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),

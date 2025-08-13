@@ -2535,14 +2535,10 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
         }
         ui.separator();
 
-        ui.label("Swap source and destination:");
-        if ui.button("Swap").clicked() {
-            // (model.source, model.destination) = (model.destination.clone(), model.source.clone());
-            /* TODO:
-            (self.source, self.destination) = (self.destination.clone(), self.source.clone());
-            (self.source_points, self.dest_points) =
-                (self.dest_points.clone(), self.source_points.clone());
-                */
+        if ui.button("Switch source and destination").clicked() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::FlipMulticonnection,
+            ]));
         }
         ui.separator();
 
@@ -2611,6 +2607,11 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
                             vec![UmlClassPropChange::CommentChange(model.comment.clone())],
                         ));
                         model.comment = comment.clone();
+                    }
+                    UmlClassPropChange::FlipMulticonnection => {
+                        let tmp = model.source.clone();
+                        model.source = model.target.clone();
+                        model.target = tmp.into();
                     }
                     _ => {}
                 }
