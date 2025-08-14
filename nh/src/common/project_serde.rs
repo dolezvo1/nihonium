@@ -1,6 +1,8 @@
 
 use std::collections::{HashSet, VecDeque};
-use std::io::Write;
+use std::ffi::OsStr;
+use std::io::{Read, Write};
+use std::path::Path;
 use std::sync::Arc;
 use std::{any::Any, collections::HashMap, path::PathBuf};
 
@@ -16,6 +18,180 @@ use super::{controller::DiagramController, ufoption::UFOption, uuid::{ModelUuid,
 pub fn no_dependencies<T>(_t: &T) -> Vec<EntityUuid> {
     vec![]
 }
+
+pub trait FSWriteAbstraction {
+    fn write_manifest_file(&mut self, bytes: &[u8]) -> Result<(), std::io::Error>;
+    fn write_source_file(&mut self, path: &str, bytes: &[u8]) -> Result<(), std::io::Error>;
+}
+
+pub struct FSRawWriter<'a> {
+    root: &'a Path,
+    project_file_name: &'a OsStr,
+    sources_folder: &'a OsStr,
+}
+
+impl<'a> FSRawWriter<'a> {
+    pub fn new(
+        root: &'a Path,
+        project_file_name: &'a OsStr,
+        sources_folder: &'a OsStr,
+    ) -> Result<Self, std::io::Error> {
+        std::fs::DirBuilder::new().recursive(true).create(root.join(sources_folder).join("documents"))?;
+        std::fs::DirBuilder::new().recursive(true).create(root.join(sources_folder).join("models"))?;
+        std::fs::DirBuilder::new().recursive(true).create(root.join(sources_folder).join("views"))?;
+
+        Ok(Self {
+            root,
+            project_file_name,
+            sources_folder,
+        })
+    }
+}
+
+impl FSWriteAbstraction for FSRawWriter<'_> {
+    fn write_manifest_file(&mut self, bytes: &[u8]) -> Result<(), std::io::Error> {
+        let path = self.root.join(self.project_file_name);
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&path)?;
+        file.write_all(bytes)
+    }
+    fn write_source_file(&mut self, path: &str, bytes: &[u8]) -> Result<(), std::io::Error> {
+        let path = self.root.join(self.sources_folder).join(path);
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&path)?;
+        file.write_all(bytes)
+    }
+}
+
+pub struct ZipFSWriter<'a> {
+    zip: zip::ZipWriter<std::io::Cursor<Vec<u8>>>,
+    project_file_name: &'a str,
+    sources_folder: &'a str,
+}
+
+impl<'a> ZipFSWriter<'a> {
+    pub fn new(
+        project_file_name: &'a str,
+        sources_folder: &'a str,
+    ) -> Self {
+        Self {
+            zip: zip::ZipWriter::new(std::io::Cursor::new(Vec::new())),
+            project_file_name,
+            sources_folder,
+        }
+    }
+
+    pub fn write_to(self, path: &PathBuf) -> Result<(), std::io::Error> {
+        let buffer = self.zip.finish()?.into_inner();
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&path)?;
+        file.write_all(&buffer)
+    }
+}
+
+impl FSWriteAbstraction for ZipFSWriter<'_> {
+    fn write_manifest_file(&mut self, bytes: &[u8]) -> Result<(), std::io::Error> {
+        self.zip.start_file(self.project_file_name, zip::write::SimpleFileOptions::default())?;
+        self.zip.write_all(bytes)
+    }
+    fn write_source_file(&mut self, path: &str, bytes: &[u8]) -> Result<(), std::io::Error> {
+        let path = format!("{}/{}", self.sources_folder, path);
+        self.zip.start_file(path, zip::write::SimpleFileOptions::default())?;
+        self.zip.write_all(bytes)
+    }
+}
+
+
+pub trait FSReadAbstraction {
+    fn read_manifest_file(&mut self) -> Result<Vec<u8>, std::io::Error>;
+    fn set_source_folder(&mut self, sources_folder: &str);
+    fn read_source_file(&mut self, path: &str) -> Result<Vec<u8>, std::io::Error>;
+}
+
+pub struct FSRawReader<'a> {
+    root: &'a Path,
+    project_file_name: &'a OsStr,
+    sources_folder: String,
+}
+
+impl<'a> FSRawReader<'a> {
+    pub fn new(
+        root: &'a Path,
+        project_file_name: &'a OsStr,
+    ) -> Result<Self, std::io::Error> {
+        Ok(Self {
+            root,
+            project_file_name,
+            sources_folder: ".".to_owned(),
+        })
+    }
+}
+
+impl FSReadAbstraction for FSRawReader<'_> {
+    fn read_manifest_file(&mut self) -> Result<Vec<u8>, std::io::Error> {
+        let path = self.root.join(self.project_file_name);
+        let mut file = std::fs::File::open(path)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        Ok(data)
+    }
+    fn set_source_folder(&mut self, sources_folder: &str) {
+        self.sources_folder = sources_folder.to_owned();
+    }
+    fn read_source_file(&mut self, path: &str) -> Result<Vec<u8>, std::io::Error> {
+        let path = self.root.join(&self.sources_folder).join(path);
+        let mut file = std::fs::File::open(path)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        Ok(data)
+    }
+}
+
+pub struct ZipFSReader<'a> {
+    zip: zip::ZipArchive<std::io::Cursor<Vec<u8>>>,
+    project_file_name: &'a str,
+    sources_folder: &'a str,
+}
+
+impl<'a> ZipFSReader<'a> {
+    pub fn new(
+        project_path: &PathBuf,
+        project_file_name: &'a str,
+        sources_folder: &'a str,
+    ) -> Result<Self, std::io::Error> {
+        let mut file = std::fs::File::open(project_path)?;
+        let mut data = Vec::new();
+        file.read_to_end(&mut data)?;
+        let zip = zip::ZipArchive::new(std::io::Cursor::new(data))?;
+
+        Ok(Self {
+            zip,
+            project_file_name,
+            sources_folder,
+        })
+    }
+}
+
+impl FSReadAbstraction for ZipFSReader<'_> {
+    fn read_manifest_file(&mut self) -> Result<Vec<u8>, std::io::Error> {
+        self.zip.by_name(self.project_file_name)?.bytes().collect()
+    }
+    fn set_source_folder(&mut self, _sources_folder: &str) {}
+    fn read_source_file(&mut self, path: &str) -> Result<Vec<u8>, std::io::Error> {
+        let path = format!("{}/{}", self.sources_folder, path);
+        self.zip.by_name(&path)?.bytes().collect()
+    }
+}
+
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
@@ -49,8 +225,8 @@ pub struct NHViewSerialization {
 }
 
 impl NHProjectSerialization {
-    pub fn write_to(
-        project_file_path: &PathBuf,
+    pub fn write_to<WA: FSWriteAbstraction>(
+        wa: &mut WA,
         project_name: &str,
         sources_root: &str,
         new_diagram_no_counter: usize,
@@ -77,23 +253,14 @@ impl NHProjectSerialization {
             }
         }
 
-        let sources_root_abs = project_file_path.parent().map(|e| e.join(sources_root))
-            .ok_or_else(|| format!("project_file_path {:?} does not have a valid parent", project_file_path))?;
         let mut serializer = NHSerializer::new();
         for e in diagram_controllers.iter() {
             e.1.1.read().serialize_into(&mut serializer)?;
         }
-        NHSerializer::write_all(serializer, &sources_root_abs)?;
+        NHSerializer::write_all(serializer, wa)?;
 
-        std::fs::DirBuilder::new().recursive(true).create(sources_root_abs.join("documents"))?;
         for (key, (_, content)) in documents.iter() {
-            let path = sources_root_abs.join("documents").join(format!("{}.nhd", key.to_string()));
-            let mut file = std::fs::OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .open(&path)?;
-            file.write_all(content.as_bytes())?;
+            wa.write_source_file(&format!("documents/{}.nhd", key.to_string()), content.as_bytes())?;
         }
 
         let project_serialization = Self {
@@ -103,14 +270,7 @@ impl NHProjectSerialization {
             new_diagram_no_counter,
             hierarchy: hierarchy.iter().map(|e| h(e, documents)).collect(),
         };
-
-        let project_str = toml::to_string(&project_serialization)?;
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&project_file_path)?;
-        file.write_all(project_str.as_bytes())?;
+        wa.write_manifest_file(toml::to_string(&project_serialization)?.as_bytes())?;
 
         Ok(())
     }
@@ -122,9 +282,9 @@ impl NHProjectSerialization {
         self.new_diagram_no_counter
     }
 
-    pub fn deserialize_all(
+    pub fn deserialize_all<RA: FSReadAbstraction>(
         &self,
-        project_file_path: &PathBuf,
+        ra: &mut RA,
         diagram_deserializers: &HashMap<String, (usize, &'static DDes)>,
     ) -> Result<(
             Vec<HierarchyNode>,
@@ -133,9 +293,8 @@ impl NHProjectSerialization {
         ),
         NHDeserializeError
     > {
-        let sources_root = project_file_path.parent().map(|e| e.join(&self.sources_root))
-            .ok_or_else(|| format!("project_file_path {:?} does not have a valid parent", project_file_path))?;
-        let mut deserializer = NHDeserializer::new(sources_root);
+        ra.set_source_folder(&self.sources_root);
+        let mut deserializer = NHDeserializer::new(ra);
 
         // Load all necessary sources
         fn l(e: &NHProjectHierarchyNodeSerialization, d: &mut NHDeserializer) -> Result<(), NHDeserializeError> {
@@ -183,8 +342,9 @@ impl NHProjectSerialization {
                 }
                 NHProjectHierarchyNodeSerialization::Document { uuid, name }
                 => {
-                    let path = d.sources_root.join("documents").join(format!("{}.nhd", uuid.to_string()));
-                    let content = std::fs::read_to_string(&path)?;
+                    let path = format!("documents/{}.nhd", uuid.to_string());
+                    let bytes = d.ra.read_source_file(&path)?;
+                    let content = str::from_utf8(&bytes)?.to_owned();
                     docs.insert(*uuid, (name.clone(), content));
                     Ok(HierarchyNode::Document(*uuid))
                 }
@@ -218,12 +378,9 @@ impl NHSerializer {
         }
     }
 
-    fn write_all(self, sources_root: &PathBuf) -> Result<(), NHSerializeError> {
-        std::fs::DirBuilder::new().recursive(true).create(sources_root.join("models"))?;
-        std::fs::DirBuilder::new().recursive(true).create(sources_root.join("views"))?;
-
+    fn write_all<WA: FSWriteAbstraction>(self, wa: &mut WA) -> Result<(), NHSerializeError> {
         for e in self.closed_subsets {
-            let (path, subset) = match e {
+            let (filename, subset) = match e {
                 (u @ EntityUuid::Model(model_uuid), (depends_on, mut e)) => {
                     let main_model = toml::Value::Table(e.remove(&u).unwrap());
                     let mut models: Vec<_> = e.into_iter().collect();
@@ -234,7 +391,7 @@ impl NHSerializer {
                         model: models.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
                     };
                     (
-                        sources_root.join("models").join(format!("{}.nhm", model_uuid.to_string())),
+                        format!("models/{}.nhm", model_uuid.to_string()),
                         toml::to_string(&subset)?,
                     )
                 },
@@ -248,18 +405,13 @@ impl NHSerializer {
                         view: views.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
                     };
                     (
-                        sources_root.join("views").join(format!("{}.nhv", view_uuid.to_string())),
+                        format!("views/{}.nhv", view_uuid.to_string()),
                         toml::to_string(&subset)?,
                     )
                 },
             };
 
-            let mut file = std::fs::OpenOptions::new()
-                .create(true)
-                .truncate(true)
-                .write(true)
-                .open(&path)?;
-            file.write_all(subset.as_bytes())?;
+            wa.write_source_file(&filename, subset.as_bytes())?;
         }
 
         Ok(())
@@ -322,18 +474,18 @@ impl<T> NHContextSerialize for ERef<T> where T: NHContextSerialize {
     }
 }
 
-pub struct NHDeserializer {
-    sources_root: PathBuf,
+pub struct NHDeserializer<'a> {
+    ra: &'a mut dyn FSReadAbstraction,
     source_models: HashMap<ModelUuid, toml::Table>,
     source_views: HashMap<ViewUuid, toml::Table>,
     instantiated_models: HashMap<ModelUuid, Box<dyn Any>>,
     instantiated_views: HashMap<ViewUuid, Box<dyn Any>>,
 }
 
-impl NHDeserializer {
-    fn new(sources_root: PathBuf) -> Self {
+impl<'a> NHDeserializer<'a> {
+    fn new(ra: &'a mut dyn FSReadAbstraction) -> Self {
         Self {
-            sources_root,
+            ra,
             source_models: HashMap::new(),
             source_views: HashMap::new(),
             instantiated_models: HashMap::new(),
@@ -346,8 +498,9 @@ impl NHDeserializer {
         while let Some(uuid) = queue.pop_front() {
             match uuid {
                 EntityUuid::Model(model_uuid) => {
-                    let path = self.sources_root.join("models").join(format!("{}.nhm", model_uuid.to_string()));
-                    let content = std::fs::read_to_string(&path)?;
+                    let path = format!("models/{}.nhm", model_uuid.to_string());
+                    let bytes = self.ra.read_source_file(&path)?;
+                    let content = str::from_utf8(&bytes)?;
                     let NHModelSerialization { depends_on, main_model, model } = toml::from_str(&content)?;
 
                     queue.extend(depends_on);
@@ -363,8 +516,9 @@ impl NHDeserializer {
                     }
                 },
                 EntityUuid::View(view_uuid) => {
-                    let path = self.sources_root.join("views").join(format!("{}.nhv", view_uuid.to_string()));
-                    let content = std::fs::read_to_string(&path)?;
+                    let path = format!("views/{}.nhv", view_uuid.to_string());
+                    let bytes = self.ra.read_source_file(&path)?;
+                    let content = str::from_utf8(&bytes)?;
                     let NHViewSerialization { depends_on, main_view, view } = toml::from_str(&content)?;
 
                     queue.extend(depends_on);
@@ -392,7 +546,7 @@ pub trait NHDeserializeInstantiator<K> {
 
 macro_rules! deserialize_instantiator {
     ($uuid_type:ty, $instantiated:ident, $source:ident) => {
-        impl NHDeserializeInstantiator<$uuid_type> for NHDeserializer {
+        impl NHDeserializeInstantiator<$uuid_type> for NHDeserializer<'_> {
             fn get_entity<T>(&mut self, uuid: &$uuid_type) -> Result<ERef<T>, NHDeserializeError>
             where T: NHContextDeserialize + 'static,
             {
@@ -424,6 +578,7 @@ pub enum NHDeserializeError {
     UuidError(uuid::Error),
     TomlError(toml::de::Error),
     IoError(std::io::Error),
+    Utf8Error(std::str::Utf8Error),
 }
 
 pub trait NHContextDeserialize: Sized {

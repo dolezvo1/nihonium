@@ -28,6 +28,7 @@ mod ontouml;
 use crate::common::eref::ERef;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
 use crate::common::controller::{DiagramCommand, DiagramController};
+use crate::common::project_serde::{FSRawReader, FSRawWriter, FSReadAbstraction, FSWriteAbstraction, ZipFSReader, ZipFSWriter};
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
 macro_rules! labeled_widget {
@@ -238,19 +239,45 @@ impl TabViewer for NHContext {
     }
 }
 
+macro_rules! supported_extensions {
+    ($got:expr) => {
+        format!("Expected a path with a known extension (.nhp, .nhpz), got {:?}", $got)
+    };
+}
+
 impl NHContext {
     fn export_project(&self, project_file_path: &PathBuf) -> Result<(), NHSerializeError> {
+        let extension = project_file_path.extension()
+            .and_then(|e| e.to_str())
+            .ok_or_else(|| supported_extensions!(project_file_path))?;
+        match extension {
+            "nhp" => {
+                let containing_folder = project_file_path.parent()
+                    .ok_or_else(|| format!("Path {:?} does not have a valid parent", project_file_path))?;
+                let (sources_folder_name, sources_folder_name_str, file_name) =
+                    project_file_path.file_stem()
+                    .and_then(|s| project_file_path.file_name().and_then(|n| s.to_str().map(|s2| (s, s2, n))))
+                    .ok_or_else(|| supported_extensions!(project_file_path))?;
+                let mut wa = FSRawWriter::new(containing_folder, file_name, sources_folder_name)?;
+                self.export_project_nhp(&mut wa, sources_folder_name_str)
+            },
+            "nhpz" => {
+                let mut wa = ZipFSWriter::new("project.nhp", "project");
+                self.export_project_nhp(&mut wa, "project")?;
+                Ok(ZipFSWriter::write_to(wa, project_file_path)?)
+            },
+            otherwise => Err(supported_extensions!(project_file_path).into())
+        }
+    }
+    fn export_project_nhp<WA: FSWriteAbstraction>(&self, wa: &mut WA, sources_folder_name: &str) -> Result<(), NHSerializeError> {
         let HierarchyNode::Folder(_, project_name, children) = &self.project_hierarchy else {
             return Err(format!("invalid hierarchy root for project export").into())
         };
 
         Ok(common::project_serde::NHProjectSerialization::write_to(
-            project_file_path,
+            wa,
             &*project_name,
-            project_file_path.file_stem()
-                .or_else(|| project_file_path.file_name())
-                .and_then(|e| e.to_str())
-                .ok_or_else(|| format!("invalid file name, probably"))?,
+            sources_folder_name,
             self.new_diagram_no as usize,
             &children,
             &self.diagram_controllers,
@@ -258,9 +285,30 @@ impl NHContext {
         )?)
     }
     fn import_project(&mut self, project_file_path: &PathBuf) -> Result<(), NHDeserializeError> {
-        let project_file_contents = std::fs::read_to_string(project_file_path)?;
-        let pdto: common::project_serde::NHProjectSerialization = toml::from_str(&project_file_contents)?;
-        let (hierarchy, top_level_views, documents) = pdto.deserialize_all(project_file_path, &self.diagram_deserializers)?;
+        let extension = project_file_path.extension()
+            .and_then(|e| e.to_str())
+            .ok_or_else(|| supported_extensions!(project_file_path))?;
+        match extension {
+            "nhp" => {
+                let containing_folder = project_file_path.parent()
+                    .ok_or_else(|| format!("Path {:?} does not have a valid parent", project_file_path))?;
+                let file_name = project_file_path.file_name()
+                    .ok_or_else(|| supported_extensions!(project_file_path))?;
+                let mut ra = FSRawReader::new(containing_folder, file_name)?;
+                self.import_project_nhp(&mut ra)
+            },
+            "nhpz" => {
+                let mut ra = ZipFSReader::new(project_file_path, "project.nhp", "project")?;
+                self.import_project_nhp(&mut ra)
+            },
+            otherwise => Err(supported_extensions!(project_file_path).into())
+        }
+    }
+    fn import_project_nhp<RA: FSReadAbstraction>(&mut self, ra: &mut RA) -> Result<(), NHDeserializeError> {
+        let project_file_bytes = ra.read_manifest_file()?;
+        let project_file_str = str::from_utf8(&project_file_bytes)?;
+        let pdto: common::project_serde::NHProjectSerialization = toml::from_str(&project_file_str)?;
+        let (hierarchy, top_level_views, documents) = pdto.deserialize_all(ra, &self.diagram_deserializers)?;
 
         // All good, clear and set fields
         self.clear_project_data();
@@ -2065,11 +2113,15 @@ impl eframe::App for NHApp {
                         if let Some(project_file_path) = self.context.project_path.clone()
                             .or_else(|| rfd::FileDialog::new()
                             .add_filter("Nihonium Project files", &["nhp"])
+                            .add_filter("Nihonium Project Zip files", &["nhpz"])
                             .add_filter("All files", &["*"])
                             .pick_file()) {
                                 match self.context.import_project(&project_file_path) {
                                     Err(e) => println!("Error opening: {:?}", e),
-                                    Ok(_) => self.clear_nonstatic_tabs(),
+                                    Ok(_) => {
+                                        self.context.project_path = Some(project_file_path);
+                                        self.clear_nonstatic_tabs();
+                                    }
                                 }
                             }
                     } else {
@@ -2079,6 +2131,7 @@ impl eframe::App for NHApp {
                         if let Some(project_file_path) = self.context.project_path.clone()
                             .or_else(|| rfd::FileDialog::new()
                                 .add_filter("Nihonium Project files", &["nhp"])
+                                .add_filter("Nihonium Project Zip files", &["nhpz"])
                                 .add_filter("All files", &["*"])
                                 .save_file()) {
                             match self.context.export_project(&project_file_path) {
@@ -2095,6 +2148,7 @@ impl eframe::App for NHApp {
                         //       This will be possible to fix once this is fixed on rfd side (#128).
                         if let Some(project_file_path) = rfd::FileDialog::new()
                             .add_filter("Nihonium Project files", &["nhp"])
+                            .add_filter("Nihonium Project Zip files", &["nhpz"])
                             .add_filter("All files", &["*"])
                             .save_file()
                         {
