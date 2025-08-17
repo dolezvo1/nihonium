@@ -27,7 +27,7 @@ mod ontouml;
 
 use crate::common::eref::ERef;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
-use crate::common::controller::{DiagramCommand, DiagramController};
+use crate::common::controller::{ColorBundle, DiagramCommand, DiagramController};
 use crate::common::project_serde::{FSRawReader, FSRawWriter, FSReadAbstraction, FSWriteAbstraction, ZipFSReader, ZipFSWriter};
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
@@ -120,14 +120,19 @@ pub trait CustomTab {
     //fn on_close(&mut self, context: &mut NHApp);
 }
 
-pub enum SetupModalResult {
+pub enum CustomModalResult {
     KeepOpen,
     CloseUnmodified,
     CloseModified(ModelUuid),
 }
 
-pub trait ElementSetupModal {
-    fn show(&mut self, ui: &mut egui::Ui) -> SetupModalResult;
+pub trait CustomModal {
+    fn show(
+        &mut self,
+        d: &mut DrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) -> CustomModalResult;
 }
 
 type DDes = dyn Fn(ViewUuid, &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError>;
@@ -142,7 +147,7 @@ struct NHContext {
     new_diagram_no: u32,
     documents: HashMap<ViewUuid, (String, String)>,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
-    element_setup_modal: Option<Box<dyn ElementSetupModal>>,
+    custom_modal: Option<Box<dyn CustomModal>>,
 
     pub style: Option<Style>,
     zoom_factor: f32,
@@ -151,15 +156,13 @@ struct NHContext {
     selected_diagram_shades: Vec<usize>,
     selected_language: usize,
     languages_order: Vec<unic_langid::LanguageIdentifier>,
-    fluent_bundle: fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
+    shortcut_top_order: Vec<(SimpleProjectCommand, egui::KeyboardShortcut)>,
+    drawing_context: DrawingContext,
 
     undo_stack: Vec<(Arc<String>, ViewUuid)>,
     redo_stack: Vec<(Arc<String>, ViewUuid)>,
     unprocessed_commands: Vec<ProjectCommand>,
     has_unsaved_changes: bool,
-    
-    shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
-    shortcut_top_order: Vec<(SimpleProjectCommand, egui::KeyboardShortcut)>,
 
     open_unique_tabs: HashSet<NHTab>,
     last_focused_diagram: Option<ViewUuid>,
@@ -280,6 +283,7 @@ impl NHContext {
             sources_folder_name,
             self.new_diagram_no as usize,
             &children,
+            &self.drawing_context.global_colors,
             &self.diagram_controllers,
             &self.documents,
         )?)
@@ -328,6 +332,7 @@ impl NHContext {
         }
         self.diagram_controllers = top_level_views;
         self.documents = documents;
+        self.drawing_context.global_colors = pdto.global_colors();
 
         Ok(())
     }
@@ -339,6 +344,7 @@ impl NHContext {
         self.new_diagram_no = 1;
         self.documents.clear();
         self.custom_tabs.clear();
+        self.drawing_context.global_colors.clear();
 
         self.undo_stack.clear();
         self.redo_stack.clear();
@@ -351,7 +357,7 @@ impl NHContext {
     }
 
     fn sort_shortcuts(&mut self) {
-        self.shortcut_top_order = self.shortcuts.iter().map(|(&k,&v)|(k,v)).collect();
+        self.shortcut_top_order = self.drawing_context.shortcuts.iter().map(|(&k,&v)|(k,v)).collect();
         
         fn weight(m: &egui::KeyboardShortcut) -> u32 {
             m.modifiers.alt as u32 + m.modifiers.command as u32 + m.modifiers.shift as u32
@@ -616,11 +622,7 @@ impl NHContext {
     fn toolbar(&self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
-        let drawing_context = DrawingContext {
-            fluent_bundle: &self.fluent_bundle,
-            shortcuts: &self.shortcuts,
-        };
-        c.write().show_toolbar(&drawing_context, ui);
+        c.write().show_toolbar(&self.drawing_context, ui);
     }
 
     fn properties(&mut self, ui: &mut Ui) {
@@ -630,7 +632,9 @@ impl NHContext {
         let mut affected_models = HashSet::new();
         let mut undo_accumulator = {
             let mut undo_accumulator = Vec::new();
-            c.write().show_properties(ui, &mut undo_accumulator, &mut affected_models);
+            if let Some(m) = c.write().show_properties(&self.drawing_context, ui, &mut undo_accumulator, &mut affected_models) {
+                self.custom_modal = Some(m);
+            };
             undo_accumulator
         };
 
@@ -1071,13 +1075,13 @@ impl NHContext {
             if ui.add_enabled(self.selected_language > 0, egui::Button::new("Up")).clicked() {
                 self.languages_order.swap(self.selected_language, self.selected_language - 1);
                 self.selected_language -= 1;
-                self.fluent_bundle = common::fluent::create_fluent_bundle(&self.languages_order).unwrap();
+                self.drawing_context.fluent_bundle = common::fluent::create_fluent_bundle(&self.languages_order).unwrap();
             }
 
             if ui.add_enabled(self.selected_language + 1 < self.languages_order.len(), egui::Button::new("Down")).clicked() {
                 self.languages_order.swap(self.selected_language, self.selected_language + 1);
                 self.selected_language += 1;
-                self.fluent_bundle = common::fluent::create_fluent_bundle(&self.languages_order).unwrap();
+                self.drawing_context.fluent_bundle = common::fluent::create_fluent_bundle(&self.languages_order).unwrap();
             }
         });
 
@@ -1092,7 +1096,7 @@ impl NHContext {
                                 ("Arrange - Send to Back:", DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into()),
                                ] {
                     ui.label(*l);
-                    let sc = self.shortcuts.get(c);
+                    let sc = self.drawing_context.shortcuts.get(c);
                     ui.horizontal(|ui| {
                         if let Some(sc) = sc {
                             ui.label(ui.ctx().format_shortcut(sc));
@@ -1110,7 +1114,7 @@ impl NHContext {
                     }
 
                     if sc.is_some() && ui.button("Delete").clicked() {
-                        self.shortcuts.remove(c);
+                        self.drawing_context.shortcuts.remove(c);
                         self.sort_shortcuts();
                     }
                     ui.end_row();
@@ -1124,16 +1128,12 @@ impl NHContext {
         let Some((t, v)) = self.diagram_controllers.get(tab_uuid) else { return; };
         let mut diagram_controller = v.write();
 
-        let drawing_context = DrawingContext {
-            fluent_bundle: &self.fluent_bundle,
-            shortcuts: &self.shortcuts,
-        };
-        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(&drawing_context, ui);
+        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(&self.drawing_context, ui);
         response.context_menu(|ui| {
-            diagram_controller.context_menu(&drawing_context, ui, &mut self.unprocessed_commands);
+            diagram_controller.context_menu(&self.drawing_context, ui, &mut self.unprocessed_commands);
         });
 
-        diagram_controller.draw_in(&drawing_context, ui_canvas.as_mut(), pos);
+        diagram_controller.draw_in(&self.drawing_context, ui_canvas.as_mut(), pos);
         let shade_color = self.diagram_shades[*t].1[self.selected_diagram_shades[*t]];
         ui_canvas.draw_rectangle(egui::Rect::EVERYTHING, egui::CornerRadius::ZERO, shade_color, common::canvas::Stroke::NONE, Highlight::NONE);
 
@@ -1141,7 +1141,7 @@ impl NHContext {
         let mut affected_models = HashSet::new();
         diagram_controller.handle_input(
             ui, &response,
-            &mut self.element_setup_modal, &mut undo_accumulator, &mut affected_models,
+            &mut self.custom_modal, &mut undo_accumulator, &mut affected_models,
         );
 
         if !undo_accumulator.is_empty() {
@@ -1277,7 +1277,7 @@ impl Default for NHApp {
             new_diagram_no: 4,
             documents,
             custom_tabs: HashMap::new(),
-            element_setup_modal: None,
+            custom_modal: None,
             
             style: None,
             zoom_factor: 1.0,
@@ -1286,14 +1286,17 @@ impl Default for NHApp {
             selected_diagram_shades,
             selected_language: 0,
             languages_order,
-            fluent_bundle,
+            drawing_context: DrawingContext {
+                global_colors: ColorBundle::new(),
+                fluent_bundle,
+                shortcuts: HashMap::new(),
+            },
             
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             unprocessed_commands: Vec::new(),
             has_unsaved_changes: true,
             
-            shortcuts: HashMap::new(),
             shortcut_top_order: vec![],
 
             open_unique_tabs,
@@ -1311,33 +1314,33 @@ impl Default for NHApp {
             allowed_splits: AllowedSplits::default(),
         };
         
-        context.shortcuts.insert(SimpleProjectCommand::SwapTopLanguages, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::L));
-        context.shortcuts.insert(SimpleProjectCommand::OpenProject(false), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O));
-        context.shortcuts.insert(SimpleProjectCommand::SaveProject, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S));
-        context.shortcuts.insert(SimpleProjectCommand::SaveProjectAs, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S));
-        context.shortcuts.insert(DiagramCommand::UndoImmediate.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z));
-        context.shortcuts.insert(DiagramCommand::RedoImmediate.into(), egui::KeyboardShortcut::new(
+        context.drawing_context.shortcuts.insert(SimpleProjectCommand::SwapTopLanguages, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::L));
+        context.drawing_context.shortcuts.insert(SimpleProjectCommand::OpenProject(false), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O));
+        context.drawing_context.shortcuts.insert(SimpleProjectCommand::SaveProject, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S));
+        context.drawing_context.shortcuts.insert(SimpleProjectCommand::SaveProjectAs, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S));
+        context.drawing_context.shortcuts.insert(DiagramCommand::UndoImmediate.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z));
+        context.drawing_context.shortcuts.insert(DiagramCommand::RedoImmediate.into(), egui::KeyboardShortcut::new(
             egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
             egui::Key::Z,
         ));
-        context.shortcuts.insert(DiagramCommand::SelectAllElements(true).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A));
-        context.shortcuts.insert(DiagramCommand::SelectAllElements(false).into(), egui::KeyboardShortcut::new(
+        context.drawing_context.shortcuts.insert(DiagramCommand::SelectAllElements(true).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A));
+        context.drawing_context.shortcuts.insert(DiagramCommand::SelectAllElements(false).into(), egui::KeyboardShortcut::new(
             egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
             egui::Key::A,
         ));
-        context.shortcuts.insert(DiagramCommand::InvertSelection.into(), egui::KeyboardShortcut::new(
+        context.drawing_context.shortcuts.insert(DiagramCommand::InvertSelection.into(), egui::KeyboardShortcut::new(
             egui::Modifiers::COMMAND,
             egui::Key::I,
         ));
-        context.shortcuts.insert(DiagramCommand::CutSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X));
-        context.shortcuts.insert(DiagramCommand::CopySelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C));
-        context.shortcuts.insert(DiagramCommand::PasteClipboardElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
-        context.shortcuts.insert(DiagramCommand::DeleteSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
+        context.drawing_context.shortcuts.insert(DiagramCommand::CutSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X));
+        context.drawing_context.shortcuts.insert(DiagramCommand::CopySelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C));
+        context.drawing_context.shortcuts.insert(DiagramCommand::PasteClipboardElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
+        context.drawing_context.shortcuts.insert(DiagramCommand::DeleteSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
 
-        context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Plus));
-        context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Plus));
-        context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BackwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Minus));
-        context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Minus));
+        context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Plus));
+        context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Plus));
+        context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BackwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Minus));
+        context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Minus));
         context.sort_shortcuts();
 
         Self {
@@ -1555,8 +1558,8 @@ impl eframe::App for NHApp {
 
         macro_rules! translate {
             ($msg_name:expr) => {
-                self.context.fluent_bundle.format_pattern(
-                    self.context.fluent_bundle.get_message($msg_name).unwrap().value().unwrap(),
+                self.context.drawing_context.fluent_bundle.format_pattern(
+                    self.context.drawing_context.fluent_bundle.get_message($msg_name).unwrap().value().unwrap(),
                     None,
                     &mut vec![],
                 )
@@ -1565,7 +1568,7 @@ impl eframe::App for NHApp {
 
         macro_rules! shortcut_text {
             ($ui:expr, $simple_project_command:expr) => {
-                self.context.shortcuts.get(&$simple_project_command).map(|e| $ui.ctx().format_shortcut(&e))
+                self.context.drawing_context.shortcuts.get(&$simple_project_command).map(|e| $ui.ctx().format_shortcut(&e))
             };
         }
 
@@ -1584,16 +1587,22 @@ impl eframe::App for NHApp {
             };
         }
 
+        macro_rules! send_to_diagram {
+            ($uuid:expr, $command:expr) => {
+                if let Some((_t, ac)) = self.context.diagram_controllers.get($uuid) {
+                    let mut undo = vec![];
+                    let mut affected_models = HashSet::new();
+                    ac.write().apply_command($command, &mut undo, &mut affected_models);
+                    self.context.undo_stack.extend(undo.into_iter().map(|e| (e, *$uuid)));
+                    self.context.refresh_buffers(&affected_models);
+                }
+            };
+        }
+
         macro_rules! send_to_focused_diagram {
             ($command:expr) => {
                 if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
-                    if let Some((_t, ac)) = self.context.diagram_controllers.get(&uuid) {
-                        let mut undo = vec![];
-                        let mut affected_models = HashSet::new();
-                        ac.write().apply_command($command, &mut undo, &mut affected_models);
-                        self.context.undo_stack.extend(undo.into_iter().map(|e| (e, *uuid)));
-                        self.context.refresh_buffers(&affected_models);
-                    }
+                    send_to_diagram!(uuid, $command);
                 }
             };
         }
@@ -1611,7 +1620,7 @@ impl eframe::App for NHApp {
                             if !pressed {continue;}
 
                             if let Some(sc) = &self.context.shortcut_being_set {
-                                self.context.shortcuts.insert(*sc, egui::KeyboardShortcut { logical_key: *key, modifiers: *modifiers });
+                                self.context.drawing_context.shortcuts.insert(*sc, egui::KeyboardShortcut { logical_key: *key, modifiers: *modifiers });
                                 self.context.shortcut_being_set = None;
                                 self.context.sort_shortcuts();
                                 continue;
@@ -1620,8 +1629,8 @@ impl eframe::App for NHApp {
                             if *key == egui::Key::Escape {
                                 if self.context.confirm_modal_reason.is_some() {
                                     self.context.confirm_modal_reason = None;
-                                } else if self.context.element_setup_modal.is_some() {
-                                    self.context.element_setup_modal = None;
+                                } else if self.context.custom_modal.is_some() {
+                                    self.context.custom_modal = None;
                                 } else {
                                     if let Some(e) = self.context.last_focused_diagram
                                         .and_then(|e| self.context.diagram_controllers.get(&e)) {
@@ -1636,7 +1645,7 @@ impl eframe::App for NHApp {
                                 }
                                 
                                 match ksh.0 {
-                                    e @ SimpleProjectCommand::DiagramCommand(dc) => match dc {
+                                    e @ SimpleProjectCommand::FocusedDiagramCommand(dc) => match dc {
                                         DiagramCommand::DropRedoStackAndLastChangeFlag
                                         | DiagramCommand::SetLastChangeFlag => unreachable!(),
                                         DiagramCommand::UndoImmediate => {
@@ -1743,7 +1752,7 @@ impl eframe::App for NHApp {
 
                                 if ui.add(button).clicked() {
                                     for _ in 0..=ii {
-                                        commands.push(SimpleProjectCommand::DiagramCommand(DiagramCommand::UndoImmediate).into());
+                                        commands.push(SimpleProjectCommand::FocusedDiagramCommand(DiagramCommand::UndoImmediate).into());
                                     }
                                     break;
                                 }
@@ -1773,7 +1782,7 @@ impl eframe::App for NHApp {
 
                                 if ui.add(button).clicked() {
                                     for _ in 0..=ii {
-                                        commands.push(SimpleProjectCommand::DiagramCommand(DiagramCommand::RedoImmediate).into());
+                                        commands.push(SimpleProjectCommand::FocusedDiagramCommand(DiagramCommand::RedoImmediate).into());
                                     }
                                     break;
                                 }
@@ -1900,15 +1909,10 @@ impl eframe::App for NHApp {
                 
                 // Show preview
                 {
-                    let drawing_context = DrawingContext {
-                        fluent_bundle: &self.context.fluent_bundle,
-                        shortcuts: &self.context.shortcuts,
-                    };
-                    
                     // Measure the diagram
                     let mut measuring_canvas =
                             MeasuringCanvas::new(ui.painter());
-                    controller.draw_in(&drawing_context, &mut measuring_canvas, None);
+                    controller.draw_in(&self.context.drawing_context, &mut measuring_canvas, None);
                     let diagram_bounds = measuring_canvas.bounds();
                     drop(measuring_canvas);
                     
@@ -1965,7 +1969,7 @@ impl eframe::App for NHApp {
                             Some((50.0, egui::Color32::from_rgb(220, 220, 220))),
                         );
                     }
-                    controller.draw_in(&drawing_context, &mut ui_canvas, None);
+                    controller.draw_in(&self.context.drawing_context, &mut ui_canvas, None);
                 }
 
                 ui.separator();
@@ -1976,14 +1980,9 @@ impl eframe::App for NHApp {
                         hide_svg_export_modal = true;
                     }
                     if ui.button("OK").clicked() {
-                        let drawing_context = DrawingContext {
-                            fluent_bundle: &self.context.fluent_bundle,
-                            shortcuts: &self.context.shortcuts,
-                        };
-                        
                         let mut measuring_canvas =
                             MeasuringCanvas::new(ui.painter());
-                        controller.draw_in(&drawing_context, &mut measuring_canvas, None);
+                        controller.draw_in(&self.context.drawing_context, &mut measuring_canvas, None);
 
                         let canvas_offset = -1.0 * measuring_canvas.bounds().min
                             + egui::Vec2::new(*padding_x, *padding_y);
@@ -2009,7 +2008,7 @@ impl eframe::App for NHApp {
                                 common::canvas::Highlight::NONE,
                             );
                         }
-                        controller.draw_in(&drawing_context, &mut svg_canvas, None);
+                        controller.draw_in(&self.context.drawing_context, &mut svg_canvas, None);
                         let _ = svg_canvas.save_to(&path);
                         
                         hide_svg_export_modal = true;
@@ -2021,17 +2020,23 @@ impl eframe::App for NHApp {
             self.context.svg_export_menu = None;
         }
 
-        if let Some(element_setup_modal) = self.context.element_setup_modal.as_mut() {
-            let result = egui::Modal::new("Element Setup Modal".into())
-                .show(ctx, |ui| element_setup_modal.show(ui)).inner;
+        if let Some(element_setup_modal) = self.context.custom_modal.as_mut() {
+            let result = egui::Modal::new("Custom Modal".into())
+                .show(ctx,
+                    |ui| element_setup_modal.show(
+                        &mut self.context.drawing_context,
+                        ui,
+                        &mut commands,
+                    )
+                ).inner;
 
             match result {
-                SetupModalResult::KeepOpen => {},
-                SetupModalResult::CloseUnmodified => {
-                    self.context.element_setup_modal = None;
+                CustomModalResult::KeepOpen => {},
+                CustomModalResult::CloseUnmodified => {
+                    self.context.custom_modal = None;
                 },
-                SetupModalResult::CloseModified(model_uuid) => {
-                    self.context.element_setup_modal = None;
+                CustomModalResult::CloseModified(model_uuid) => {
+                    self.context.custom_modal = None;
                     self.context.refresh_buffers(&std::iter::once(model_uuid).collect());
                 },
             }
@@ -2098,16 +2103,19 @@ impl eframe::App for NHApp {
         for c in commands {
             match c {
                 ProjectCommand::SimpleProjectCommand(spc) => match spc {
-                    SimpleProjectCommand::DiagramCommand(dc) => match dc {
+                    SimpleProjectCommand::FocusedDiagramCommand(dc) => match dc {
                         DiagramCommand::UndoImmediate => self.undo_immediate(),
                         DiagramCommand::RedoImmediate => self.redo_immediate(),
                         dc => send_to_focused_diagram!(dc),
                     },
+                    SimpleProjectCommand::SpecificDiagramCommand(v, dc) => {
+                        send_to_diagram!(&v, dc);
+                    }
                     SimpleProjectCommand::SwapTopLanguages => {
                         if self.context.languages_order.len() > 1 {
                             self.context.languages_order.swap(0, 1);
                         }
-                        self.context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
+                        self.context.drawing_context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
                     }
                     SimpleProjectCommand::OpenProject(b) => if !self.context.has_unsaved_changes || b {
                         if let Some(project_file_path) = self.context.project_path.clone()

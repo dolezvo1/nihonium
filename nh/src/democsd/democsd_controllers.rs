@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ModelsLabelAcquirer, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -12,7 +12,7 @@ use crate::democsd::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage, DemoCsdTransaction, DemoCsdTransactionKind, DemoCsdTransactor
 };
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::{ElementSetupModal, SetupModalResult};
+use crate::{CustomModal, CustomModalResult};
 use eframe::egui;
 use std::collections::HashSet;
 use std::{
@@ -63,6 +63,7 @@ pub enum DemoCsdPropChange {
 
     LinkTypeChange(DemoCsdLinkType),
 
+    ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
 }
 
@@ -80,7 +81,23 @@ impl TryFrom<&DemoCsdPropChange> for FlipMulticonnection {
     }
 }
 
-#[derive(Clone, derive_more::From)]
+impl From<ColorChangeData> for DemoCsdPropChange {
+    fn from(value: ColorChangeData) -> Self {
+        DemoCsdPropChange::ColorChange(value)
+    }
+}
+impl TryFrom<DemoCsdPropChange> for ColorChangeData {
+    type Error = ();
+
+    fn try_from(value: DemoCsdPropChange) -> Result<Self, Self::Error> {
+        match value {
+            DemoCsdPropChange::ColorChange(v) => Ok(v),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Clone, derive_more::From, derive_more::TryInto)]
 pub enum DemoCsdElementOrVertex {
     Element(DemoCsdElementView),
     Vertex(VertexInformation),
@@ -91,29 +108,6 @@ impl Debug for DemoCsdElementOrVertex {
         write!(f, "DemoCsdElementOrVertex::???")
     }
 }
-
-impl TryFrom<DemoCsdElementOrVertex> for VertexInformation {
-    type Error = ();
-
-    fn try_from(value: DemoCsdElementOrVertex) -> Result<Self, Self::Error> {
-        match value {
-            DemoCsdElementOrVertex::Vertex(v) => Ok(v),
-            _ => Err(()),
-        }
-    }
-}
-
-impl TryFrom<DemoCsdElementOrVertex> for DemoCsdElementView {
-    type Error = ();
-
-    fn try_from(value: DemoCsdElementOrVertex) -> Result<Self, Self::Error> {
-        match value {
-            DemoCsdElementOrVertex::Element(v) => Ok(v),
-            _ => Err(()),
-        }
-    }
-}
-
 
 pub const EXTERNAL_ROLE_BACKGROUND: egui::Color32 = egui::Color32::LIGHT_GRAY;
 pub const INTERNAL_ROLE_BACKGROUND: egui::Color32 = egui::Color32::WHITE;
@@ -214,15 +208,16 @@ impl ContainerGen2<DemoCsdDomain> for DemoCsdElementView {
 impl ElementControllerGen2<DemoCsdDomain> for DemoCsdElementView {
     fn show_properties(
         &mut self,
+        drawing_context: &DrawingContext,
         q: &DemoCsdQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-    ) -> bool {
+    ) -> PropertiesStatus {
         match self {
-            DemoCsdElementView::Package(inner) => inner.write().show_properties(q, ui, commands),
-            DemoCsdElementView::Transactor(inner) => inner.write().show_properties(q, ui, commands),
-            DemoCsdElementView::Transaction(inner) => inner.write().show_properties(q, ui, commands),
-            DemoCsdElementView::Link(inner) => inner.write().show_properties(q, ui, commands),
+            DemoCsdElementView::Package(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
+            DemoCsdElementView::Transactor(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
+            DemoCsdElementView::Transaction(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
+            DemoCsdElementView::Link(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
         }
     }
     fn draw_in(
@@ -252,7 +247,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdElementView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoCsdTool>,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         match self {
@@ -352,7 +347,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdElementView {
 pub struct DemoCsdDiagramAdapter {
     #[nh_context_serde(entity)]
     model: ERef<DemoCsdDiagram>,
-    background_color: egui::Color32,
+    background_color: MGlobalColor,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     buffer: DemoCsdDiagramBuffer,
@@ -425,7 +420,7 @@ impl DemoCsdDiagramAdapter {
         let m = model.read();
         Self {
             model: model.clone(),
-            background_color: egui::Color32::WHITE,
+            background_color: MGlobalColor::None,
             buffer: DemoCsdDiagramBuffer {
                 name: (*m.name).clone(),
                 comment: (*m.comment).clone(),
@@ -498,19 +493,27 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         Ok(v)
     }
 
-    fn background_color(&self) -> egui::Color32 {
-        self.background_color
+    fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
+        global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE)
     }
-    fn gridlines_color(&self) -> egui::Color32 {
+    fn gridlines_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::from_rgb(220, 220, 220)
     }
-    fn show_view_props_fun(&mut self, ui: &mut egui::Ui) {
+    fn show_view_props_fun(
+        &mut self,
+        drawing_context: &DrawingContext,
+        ui: &mut egui::Ui,
+    ) -> PropertiesStatus {
         ui.label("Background color:");
-        egui::widgets::color_picker::color_edit_button_srgba(
+        if crate::common::controller::mglobalcolor_edit_button(
+            &drawing_context.global_colors,
             ui,
             &mut self.background_color,
-            egui::widgets::color_picker::Alpha::OnlyBlend
-        );
+        ) {
+            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+        }
+
+        PropertiesStatus::Shown
     }
     fn show_props_fun(
         &mut self,
@@ -556,7 +559,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     }
 
     fn apply_property_change_fun(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
@@ -571,6 +574,13 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
                             vec![DemoCsdPropChange::NameChange(model.name.clone())],
                         ));
                         model.name = name.clone();
+                    }
+                    DemoCsdPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![DemoCsdPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
+                        ));
+                        self.background_color = *color;
                     }
                     DemoCsdPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -1035,12 +1045,12 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
     fn try_construct(
         &mut self,
         into: &dyn ContainerGen2<DemoCsdDomain>,
-    ) -> Option<(DemoCsdElementView, Option<Box<dyn ElementSetupModal>>)> {
+    ) -> Option<(DemoCsdElementView, Option<Box<dyn CustomModal>>)> {
         match &self.result {
             PartialDemoCsdElement::Some(x) => {
                 let x = x.clone();
                 self.result = PartialDemoCsdElement::None;
-                let esm: Option<Box<dyn ElementSetupModal>> = match &x {
+                let esm: Option<Box<dyn CustomModal>> = match &x {
                     DemoCsdElementView::Transactor(eref) => {
                         Some(Box::new(DemoCsdTransactorSetupModal::from(&eref.read().model)))
                     },
@@ -1316,23 +1326,28 @@ impl From<&ERef<DemoCsdTransactor>> for DemoCsdTransactorSetupModal {
     }
 }
 
-impl ElementSetupModal for DemoCsdTransactorSetupModal {
-    fn show(&mut self, ui: &mut egui::Ui) -> crate::SetupModalResult {
+impl CustomModal for DemoCsdTransactorSetupModal {
+    fn show(
+        &mut self,
+        d: &mut DrawingContext,
+        ui: &mut egui::Ui,
+        _commands: &mut Vec<ProjectCommand>,
+    ) -> CustomModalResult {
         ui.label("Identifier:");
         ui.text_edit_singleline(&mut self.identifier_buffer);
         ui.label("Name:");
         ui.text_edit_multiline(&mut self.name_buffer);
 
-        let mut result = SetupModalResult::KeepOpen;
+        let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
             if ui.button("Ok").clicked() {
                 let mut m = self.model.write();
                 m.identifier = Arc::new(self.identifier_buffer.clone());
                 m.name = Arc::new(self.name_buffer.clone());
-                result = SetupModalResult::CloseModified(*m.uuid);
+                result = CustomModalResult::CloseModified(*m.uuid);
             }
             if ui.button("Cancel").clicked() {
-                result = SetupModalResult::CloseUnmodified;
+                result = CustomModalResult::CloseUnmodified;
             }
         });
 
@@ -1411,18 +1426,18 @@ impl ContainerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
     fn show_properties(
         &mut self,
+        drawing_context: &DrawingContext,
         queryable: &DemoCsdQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-    ) -> bool {
-        if let UFOption::Some(t) = &self.transaction_view {
-            if t.write().show_properties(queryable, ui, commands) {
-                return true;
-            }
+    ) -> PropertiesStatus {
+        if let Some(child) = self.transaction_view.as_mut()
+                .and_then(|t| t.write().show_properties(drawing_context, queryable, ui, commands).to_non_default()) {
+            return child;
         }
 
         if !self.highlight.selected {
-            return false;
+            return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
@@ -1501,7 +1516,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             }
         });
 
-        true
+        PropertiesStatus::Shown
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
@@ -1664,7 +1679,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoCsdTool>,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         let child = self
@@ -2039,23 +2054,28 @@ impl From<&ERef<DemoCsdTransaction>> for DemoCsdTransactionSetupModal {
     }
 }
 
-impl ElementSetupModal for DemoCsdTransactionSetupModal {
-    fn show(&mut self, ui: &mut egui::Ui) -> crate::SetupModalResult {
+impl CustomModal for DemoCsdTransactionSetupModal {
+    fn show(
+        &mut self,
+        d: &mut DrawingContext,
+        ui: &mut egui::Ui,
+        _commands: &mut Vec<ProjectCommand>,
+    ) -> CustomModalResult {
         ui.label("Identifier:");
         ui.text_edit_singleline(&mut self.identifier_buffer);
         ui.label("Name:");
         ui.text_edit_multiline(&mut self.name_buffer);
 
-        let mut result = SetupModalResult::KeepOpen;
+        let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
             if ui.button("Ok").clicked() {
                 let mut m = self.model.write();
                 m.identifier = Arc::new(self.identifier_buffer.clone());
                 m.name = Arc::new(self.name_buffer.clone());
-                result = SetupModalResult::CloseModified(*m.uuid);
+                result = CustomModalResult::CloseModified(*m.uuid);
             }
             if ui.button("Cancel").clicked() {
-                result = SetupModalResult::CloseUnmodified;
+                result = CustomModalResult::CloseUnmodified;
             }
         });
 
@@ -2170,12 +2190,13 @@ fn draw_tx_mark(
 impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     fn show_properties(
         &mut self,
+        _drawing_context: &DrawingContext,
         _parent: &DemoCsdQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-    ) -> bool {
+    ) -> PropertiesStatus {
         if !self.highlight.selected {
-            return false;
+            return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
@@ -2254,7 +2275,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             }
         });
 
-        true
+        PropertiesStatus::Shown
     }
     fn draw_in(
         &mut self,
@@ -2313,7 +2334,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoCsdTool>,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {

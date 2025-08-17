@@ -2,9 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use eframe::{egui, epaint};
 
-use crate::{common::{canvas, controller::{ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}, ElementSetupModal};
-
-
+use crate::{common::{canvas, controller::{ColorBundle, ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}, CustomModal};
 
 
 pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
@@ -15,10 +13,10 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn add_element(&mut self, element: DomainT::CommonElementT);
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
 
-    fn background_color(&self) -> egui::Color32 {
+    fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::WHITE
     }
-    fn foreground_color(&self) -> egui::Color32 {
+    fn foreground_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::BLACK
     }
     fn show_properties(
@@ -152,16 +150,17 @@ where
 {
     fn show_properties(
         &mut self,
+        drawing_context: &DrawingContext,
         parent: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
-    ) -> bool {
-        if self
+    ) -> PropertiesStatus {
+        let child = self
             .owned_views
-            .event_order_find_mut(|v| if v.show_properties(parent, ui, commands) { Some(()) } else { None })
-            .is_some()
-        {
-            true
+            .event_order_find_mut(|v| v.show_properties(drawing_context, parent, ui, commands).to_non_default());
+
+        if let Some(child) = child {
+            child
         } else if self.highlight.selected {
             ui.label("Model properties");
 
@@ -200,9 +199,9 @@ where
                 }
             });
 
-            true
+            PropertiesStatus::Shown
         } else {
-            false
+            PropertiesStatus::NotShown
         }
     }
     fn draw_in(
@@ -216,8 +215,8 @@ where
         canvas.draw_rectangle(
             self.bounds_rect,
             egui::CornerRadius::ZERO,
-            self.adapter.background_color(),
-            canvas::Stroke::new_solid(1.0, self.adapter.foreground_color()),
+            self.adapter.background_color(&context.global_colors),
+            canvas::Stroke::new_solid(1.0, self.adapter.foreground_color(&context.global_colors)),
             self.highlight,
         );
 
@@ -226,7 +225,7 @@ where
             egui::Align2::CENTER_TOP,
             &self.adapter.model_name(),
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            self.adapter.foreground_color(),
+            self.adapter.foreground_color(&context.global_colors),
         );
 
         // Draw resize/drag handles
@@ -312,7 +311,7 @@ where
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<DomainT::ToolT>,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
         let k_status = self.owned_views.event_order_find_mut(|v| {

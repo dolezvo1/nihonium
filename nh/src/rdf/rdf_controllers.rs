@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ModelsLabelAcquirer, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -9,7 +9,7 @@ use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeseria
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
-use crate::{CustomTab, ElementSetupModal, SetupModalResult};
+use crate::{CustomTab, CustomModal, CustomModalResult};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
 use std::collections::HashSet;
@@ -63,8 +63,9 @@ pub enum RdfPropChange {
     DataTypeChange(Arc<String>),
     LangTagChange(Arc<String>),
 
+    ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
-    FlipMulticonnection,
+    FlipMulticonnection(FlipMulticonnection),
 }
 
 impl Debug for RdfPropChange {
@@ -80,8 +81,9 @@ impl Debug for RdfPropChange {
                 Self::DataTypeChange(datatype) => format!("DataTypeChange({})", datatype),
                 Self::LangTagChange(langtag) => format!("LangTagChange({})", langtag),
 
+                Self::ColorChange(color) => format!("ColorChange(..)"),
                 Self::CommentChange(comment) => format!("CommentChange({})", comment),
-                Self::FlipMulticonnection => format!("FlipMulticonnection"),
+                Self::FlipMulticonnection(_) => format!("FlipMulticonnection"),
             }
         )
     }
@@ -92,13 +94,29 @@ impl TryFrom<&RdfPropChange> for FlipMulticonnection {
 
     fn try_from(value: &RdfPropChange) -> Result<Self, Self::Error> {
         match value {
-            RdfPropChange::FlipMulticonnection => Ok(FlipMulticonnection {}),
+            RdfPropChange::FlipMulticonnection(v) => Ok(*v),
             _ => Err(()),
         }
     }
 }
 
-#[derive(Clone, derive_more::From)]
+impl From<ColorChangeData> for RdfPropChange {
+    fn from(value: ColorChangeData) -> Self {
+        RdfPropChange::ColorChange(value)
+    }
+}
+impl TryFrom<RdfPropChange> for ColorChangeData {
+    type Error = ();
+
+    fn try_from(value: RdfPropChange) -> Result<Self, Self::Error> {
+        match value {
+            RdfPropChange::ColorChange(v) => Ok(v),
+            _ => Err(()),
+        }
+    }
+}
+
+#[derive(Clone, derive_more::From, derive_more::TryInto)]
 pub enum RdfElementOrVertex {
     Element(RdfElementView),
     Vertex(VertexInformation),
@@ -109,29 +127,6 @@ impl Debug for RdfElementOrVertex {
         write!(f, "RdfElementOrVertex::???")
     }
 }
-
-impl TryFrom<RdfElementOrVertex> for VertexInformation {
-    type Error = ();
-
-    fn try_from(value: RdfElementOrVertex) -> Result<Self, Self::Error> {
-        match value {
-            RdfElementOrVertex::Vertex(v) => Ok(v),
-            _ => Err(()),
-        }
-    }
-}
-
-impl TryFrom<RdfElementOrVertex> for RdfElementView {
-    type Error = ();
-
-    fn try_from(value: RdfElementOrVertex) -> Result<Self, Self::Error> {
-        match value {
-            RdfElementOrVertex::Element(v) => Ok(v),
-            _ => Err(()),
-        }
-    }
-}
-
 
 #[derive(Clone, derive_more::From, nh_derive::NHContextSerDeTag)]
 #[nh_context_serde(uuid_type = ViewUuid)]
@@ -218,15 +213,16 @@ impl ContainerGen2<RdfDomain> for RdfElementView {
 impl ElementControllerGen2<RdfDomain> for RdfElementView {
     fn show_properties(
         &mut self,
+        drawing_context: &DrawingContext,
         q: &RdfQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
-    ) -> bool {
+    ) -> PropertiesStatus {
         match self {
-            RdfElementView::Graph(inner) => inner.write().show_properties(q, ui, commands),
-            RdfElementView::Literal(inner) => inner.write().show_properties(q, ui, commands),
-            RdfElementView::Node(inner) => inner.write().show_properties(q, ui, commands),
-            RdfElementView::Predicate(inner) => inner.write().show_properties(q, ui, commands),
+            RdfElementView::Graph(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
+            RdfElementView::Literal(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
+            RdfElementView::Node(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
+            RdfElementView::Predicate(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
         }
     }
     fn draw_in(
@@ -256,7 +252,7 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveRdfTool>,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match self {
@@ -355,7 +351,7 @@ impl ElementControllerGen2<RdfDomain> for RdfElementView {
 pub struct RdfDiagramAdapter {
     #[nh_context_serde(entity)]
     model: ERef<RdfDiagram>,
-    background_color: egui::Color32,
+    background_color: MGlobalColor,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     buffer: RdfDiagramBuffer,
@@ -419,7 +415,7 @@ impl RdfDiagramAdapter {
         let m = model.read();
          Self {
             model: model.clone(),
-            background_color: egui::Color32::WHITE,
+            background_color: MGlobalColor::None,
             buffer: RdfDiagramBuffer {
                 name: (*m.name).clone(),
                 comment: (*m.comment).clone(),
@@ -490,19 +486,27 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         Ok(v)
     }
 
-    fn background_color(&self) -> egui::Color32 {
-        self.background_color
+    fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
+        global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE)
     }
-    fn gridlines_color(&self) -> egui::Color32 {
+    fn gridlines_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::from_rgb(220, 220, 220)
     }
-    fn show_view_props_fun(&mut self, ui: &mut egui::Ui) {
+    fn show_view_props_fun(
+        &mut self,
+        drawing_context: &DrawingContext,
+        ui: &mut egui::Ui,
+    ) -> PropertiesStatus {
         ui.label("Background color:");
-        egui::widgets::color_picker::color_edit_button_srgba(
+        if crate::common::controller::mglobalcolor_edit_button(
+            &drawing_context.global_colors,
             ui,
             &mut self.background_color,
-            egui::widgets::color_picker::Alpha::OnlyBlend
-        );
+        ) {
+            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+        }
+
+        PropertiesStatus::Shown
     }
     fn show_props_fun(
         &mut self,
@@ -548,7 +552,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     }
 
     fn apply_property_change_fun(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
@@ -563,6 +567,13 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                             vec![RdfPropChange::NameChange(model.name.clone())],
                         ));
                         model.name = name.clone();
+                    }
+                    RdfPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![RdfPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
+                        ));
+                        self.background_color = *color;
                     }
                     RdfPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -1151,12 +1162,12 @@ impl Tool<RdfDomain> for NaiveRdfTool {
     fn try_construct(
         &mut self,
         into: &dyn ContainerGen2<RdfDomain>,
-    ) -> Option<(RdfElementView, Option<Box<dyn ElementSetupModal>>)> {
+    ) -> Option<(RdfElementView, Option<Box<dyn CustomModal>>)> {
         match &self.result {
             PartialRdfElement::Some(x) => {
                 let x = x.clone();
                 self.result = PartialRdfElement::None;
-                let esm: Option<Box<dyn ElementSetupModal>> = match &x {
+                let esm: Option<Box<dyn CustomModal>> = match &x {
                     RdfElementView::Literal(eref) => {
                         Some(Box::new(RdfLiteralSetupModal::from(&eref.read().model)))
                     },
@@ -1176,7 +1187,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             } => {
                 self.current_stage = RdfToolStage::PredicateStart;
 
-                let predicate_view: Option<(_, Option<Box<dyn ElementSetupModal>>)> =
+                let predicate_view: Option<(_, Option<Box<dyn CustomModal>>)> =
                     if let (Some(source_controller), Some(dest_controller)) = (
                         into.controller_for(&source.read().uuid()),
                         into.controller_for(&dest.uuid()),
@@ -1234,13 +1245,18 @@ impl From<RdfElement> for RdfIriBasedSetupModal {
     }
 }
 
-impl ElementSetupModal for RdfIriBasedSetupModal {
-    fn show(&mut self, ui: &mut egui::Ui) -> crate::SetupModalResult {
+impl CustomModal for RdfIriBasedSetupModal {
+    fn show(
+        &mut self,
+        d: &mut DrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) -> CustomModalResult {
         ui.label("IRI:");
         ui.text_edit_singleline(&mut self.iri_buffer);
         ui.separator();
 
-        let mut result = SetupModalResult::KeepOpen;
+        let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
             if ui.button("Ok").clicked() {
                 let iri = Arc::new(self.iri_buffer.clone());
@@ -1250,10 +1266,10 @@ impl ElementSetupModal for RdfIriBasedSetupModal {
                     RdfElement::RdfPredicate(eref) => eref.write().iri = iri,
                     RdfElement::RdfLiteral(eref) => unreachable!(),
                 }
-                result = SetupModalResult::CloseModified(*self.model.uuid());
+                result = CustomModalResult::CloseModified(*self.model.uuid());
             }
             if ui.button("Cancel").clicked() {
-                result = SetupModalResult::CloseUnmodified;
+                result = CustomModalResult::CloseUnmodified;
             }
         });
 
@@ -1496,12 +1512,13 @@ impl ContainerGen2<RdfDomain> for RdfNodeView {}
 impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     fn show_properties(
         &mut self,
+        drawing_context: &DrawingContext,
         _: &RdfQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
-    ) -> bool {
+    ) -> PropertiesStatus {
         if !self.highlight.selected {
-            return false;
+            return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
@@ -1547,7 +1564,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             }
         });
 
-        true
+        PropertiesStatus::Shown
     }
     fn draw_in(
         &mut self,
@@ -1605,7 +1622,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveRdfTool>,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -1838,8 +1855,13 @@ impl From<&ERef<RdfLiteral>> for RdfLiteralSetupModal {
     }
 }
 
-impl ElementSetupModal for RdfLiteralSetupModal {
-    fn show(&mut self, ui: &mut egui::Ui) -> crate::SetupModalResult {
+impl CustomModal for RdfLiteralSetupModal {
+    fn show(
+        &mut self,
+        d: &mut DrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) -> CustomModalResult {
         ui.label("Content:");
         ui.text_edit_singleline(&mut self.content_buffer);
         ui.label("Datatype:");
@@ -1848,17 +1870,17 @@ impl ElementSetupModal for RdfLiteralSetupModal {
         ui.text_edit_singleline(&mut self.langtag_buffer);
         ui.separator();
 
-        let mut result = SetupModalResult::KeepOpen;
+        let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
             if ui.button("Ok").clicked() {
                 let mut m = self.model.write();
                 m.content = Arc::new(self.content_buffer.clone());
                 m.datatype = Arc::new(self.datatype_buffer.clone());
                 m.langtag = Arc::new(self.langtag_buffer.clone());
-                result = SetupModalResult::CloseModified(*m.uuid);
+                result = CustomModalResult::CloseModified(*m.uuid);
             }
             if ui.button("Cancel").clicked() {
-                result = SetupModalResult::CloseUnmodified;
+                result = CustomModalResult::CloseUnmodified;
             }
         });
 
@@ -1926,12 +1948,13 @@ impl ContainerGen2<RdfDomain> for RdfLiteralView {}
 impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     fn show_properties(
         &mut self,
+        drawing_context: &DrawingContext,
         _: &RdfQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
-    ) -> bool {
+    ) -> PropertiesStatus {
         if !self.highlight.selected {
-            return false;
+            return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
@@ -2002,7 +2025,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             }
         });
 
-        true
+        PropertiesStatus::Shown
     }
 
     fn draw_in(
@@ -2048,7 +2071,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveRdfTool>,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -2310,7 +2333,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         if ui.button("Switch source and destination").clicked()
             && let RdfTargettableElement::RdfNode(_) = &self.model.read().target {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                RdfPropChange::FlipMulticonnection,
+                RdfPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ]));
         }
     }
@@ -2338,7 +2361,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
                         ));
                         model.comment = comment.clone();
                     }
-                    RdfPropChange::FlipMulticonnection => {
+                    RdfPropChange::FlipMulticonnection(_) => {
                         if let RdfTargettableElement::RdfNode(t) = &model.target {
                             let tmp = model.source.clone();
                             model.source = t.clone();

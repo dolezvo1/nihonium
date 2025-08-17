@@ -1,5 +1,5 @@
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape, UiCanvas};
-use crate::{CustomTab, ElementSetupModal};
+use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
 use egui_ltreeview::DirPosition;
 use std::any::Any;
@@ -126,7 +126,8 @@ impl From<SimpleProjectCommand> for ProjectCommand {
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
 pub enum SimpleProjectCommand {
-    DiagramCommand(DiagramCommand),
+    FocusedDiagramCommand(DiagramCommand),
+    SpecificDiagramCommand(ViewUuid, DiagramCommand),
     OpenProject(bool),
     SaveProject,
     SaveProjectAs,
@@ -137,7 +138,7 @@ pub enum SimpleProjectCommand {
 
 impl From<DiagramCommand> for SimpleProjectCommand {
     fn from(value: DiagramCommand) -> Self {
-        SimpleProjectCommand::DiagramCommand(value)
+        SimpleProjectCommand::FocusedDiagramCommand(value)
     }
 }
 
@@ -154,6 +155,7 @@ pub enum DiagramCommand {
     CopySelectedElements,
     PasteClipboardElements,
     ArrangeSelected(Arrangement),
+    ColorSelected(u8, MGlobalColor),
     CreateViewFor(ModelUuid),
     DeleteViewFor(ModelUuid, /*including_model:*/ bool),
 }
@@ -368,10 +370,114 @@ impl<AcqT: ModelsLabelAcquirer> ModelHierarchyView for SimpleModelHierarchyView<
     }
 }
 
-pub struct DrawingContext<'a> {
-    pub fluent_bundle: &'a fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
-    pub shortcuts: &'a HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, derive_more::From, serde::Serialize, serde::Deserialize)]
+pub enum MGlobalColor {
+    /// None means no override compared to "standard element color"
+    /// (which is usually white for background, black for foreground)
+    /// i.e. None is very distinct from Local(Color32::Transparent)
+    None,
+    Local(egui::Color32),
+    Global(uuid::Uuid),
 }
+
+pub fn mglobalcolor_edit_button(
+    global_colors: &ColorBundle,
+    ui: &mut egui::Ui,
+    color: &mut MGlobalColor,
+) -> bool {
+    ui.horizontal(|ui| {
+        let (response, painter) = ui.allocate_painter(egui::Vec2::new(30.0, 20.0), egui::Sense::click());
+
+        match color {
+            MGlobalColor::None => {
+                painter.rect(
+                    response.rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::TRANSPARENT,
+                    egui::Stroke::new(1.0, egui::Color32::RED),
+                    egui::StrokeKind::Inside,
+                );
+                painter.line_segment(
+                    [response.rect.left_top(), response.rect.right_bottom()],
+                    egui::Stroke::new(1.0, egui::Color32::RED),
+                );
+                painter.line_segment(
+                    [response.rect.right_top(), response.rect.left_bottom()],
+                    egui::Stroke::new(1.0, egui::Color32::RED),
+                );
+                ui.label("[no override]");
+            },
+            MGlobalColor::Local(color) => {
+                painter.rect(
+                    response.rect,
+                    egui::CornerRadius::ZERO,
+                    *color,
+                    egui::Stroke::NONE,
+                    egui::StrokeKind::Inside,
+                );
+                ui.label(color.to_hex());
+            },
+            MGlobalColor::Global(uuid) => {
+                match global_colors.colors.get(&uuid) {
+                    None => {
+                        ui.label("[not found]");
+                    },
+                    Some((desc, color)) => {
+                        painter.rect(
+                            response.rect,
+                            egui::CornerRadius::ZERO,
+                            *color,
+                            egui::Stroke::NONE,
+                            egui::StrokeKind::Inside,
+                        );
+                        ui.label(desc);
+                    },
+                }
+            },
+        }
+
+        if response.clicked() {
+            true
+        } else {
+            false
+        }
+    }).inner
+}
+
+#[derive(Clone, Debug)]
+pub struct ColorBundle {
+    pub colors_order: Vec<uuid::Uuid>,
+    pub colors: HashMap<uuid::Uuid, (String, egui::Color32)>,
+}
+
+impl ColorBundle {
+    pub fn new() -> Self {
+        Self {
+            colors_order: Vec::new(),
+            colors: HashMap::new(),
+        }
+    }
+    pub fn get(&self, c: &MGlobalColor) -> Option<egui::Color32> {
+        match c {
+            MGlobalColor::None => None,
+            MGlobalColor::Local(color32) => Some(*color32),
+            MGlobalColor::Global(uuid) => {
+                self.colors.get(uuid).map(|e| e.1)
+            },
+        }
+    }
+    pub fn clear(&mut self) {
+        self.colors_order.clear();
+        self.colors.clear();
+    }
+}
+
+pub struct DrawingContext {
+    pub global_colors: ColorBundle,
+    pub fluent_bundle: fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
+    pub shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
+}
+
 
 pub trait View: Entity {
     fn uuid(&self) -> Arc<ViewUuid>;
@@ -392,7 +498,7 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
@@ -425,10 +531,11 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
     );
     fn show_properties(
         &mut self,
+        context: &DrawingContext,
         ui: &mut egui::Ui,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
-    );
+    ) -> Option<Box<dyn CustomModal>>;
     fn show_layers(&self, ui: &mut egui::Ui);
     fn show_menubar_edit_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
     fn show_menubar_diagram_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
@@ -673,6 +780,12 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     }
 }
 
+#[derive(Clone)]
+pub struct ColorChangeData {
+    pub slot: u8,
+    pub color: MGlobalColor,
+}
+
 pub trait Domain: Sized + 'static {
     type CommonElementT: Model + VisitableElement + Clone;
     type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT> + VisitableDiagram;
@@ -680,7 +793,7 @@ pub trait Domain: Sized + 'static {
     type QueryableT<'a>: Queryable<'a, Self>;
     type ToolT: Tool<Self>;
     type AddCommandElementT: From<Self::CommonElementViewT> + TryInto<Self::CommonElementViewT> + Clone + Debug;
-    type PropChangeT: Clone + Debug;
+    type PropChangeT: From<ColorChangeData> + TryInto<ColorChangeData> + Clone + Debug;
 }
 
 pub trait ElementVisitor<T: ?Sized> {
@@ -742,7 +855,7 @@ pub trait Tool<DomainT: Domain> {
     fn try_construct(
         &mut self,
         into: &dyn ContainerGen2<DomainT>,
-    ) -> Option<(DomainT::CommonElementViewT, Option<Box<dyn ElementSetupModal>>)>;
+    ) -> Option<(DomainT::CommonElementViewT, Option<Box<dyn CustomModal>>)>;
     fn reset_event_lock(&mut self);
 }
 
@@ -785,14 +898,34 @@ pub struct EventHandlingContext<'a> {
     pub snap_manager: &'a SnapManager,
 }
 
+pub enum RequestType {
+    ChangeColor(u8, MGlobalColor),
+}
+
+pub enum PropertiesStatus {
+    NotShown,
+    Shown,
+    PromptRequest(RequestType),
+}
+
+impl PropertiesStatus {
+    pub fn to_non_default(self) -> Option<Self> {
+        match self {
+            Self::NotShown => None,
+            e => Some(e),
+        }
+    }
+}
+
 pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::CommonElementT> + NHContextSerialize + ContainerGen2<DomainT> + Send + Sync {
     fn show_properties(
         &mut self,
+        _drawing_context: &DrawingContext,
         _: &DomainT::QueryableT<'_>,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
-    ) -> bool {
-        false
+    ) -> PropertiesStatus {
+        PropertiesStatus::NotShown
     }
     fn draw_in(
         &mut self,
@@ -809,7 +942,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<DomainT::ToolT>,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus;
     fn apply_command(
@@ -880,9 +1013,13 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         element: DomainT::CommonElementT,
     ) -> Result<DomainT::CommonElementViewT, HashSet<ModelUuid>>;
 
-    fn background_color(&self) -> egui::Color32;
-    fn gridlines_color(&self) -> egui::Color32;
-    fn show_view_props_fun(&mut self, ui: &mut egui::Ui);
+    fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32;
+    fn gridlines_color(&self, global_colors: &ColorBundle) -> egui::Color32;
+    fn show_view_props_fun(
+        &mut self,
+        drawing_context: &DrawingContext,
+        ui: &mut egui::Ui,
+    ) -> PropertiesStatus;
     fn show_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
@@ -890,7 +1027,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn apply_property_change_fun(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
@@ -1025,7 +1162,7 @@ impl<
         &mut self,
         event: InputEvent,
         modifiers: ModifierKeys,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) -> bool {
@@ -1293,7 +1430,7 @@ impl<
                     self.owned_views.apply_arrangement(uuids, *arr);
                 },
                 InsensitiveCommand::PropertyChange(uuids, _property) => {
-                    if uuids.contains(&*self.uuid) {
+                    if uuids.is_empty() || uuids.contains(&*self.uuid) {
                         self.adapter.apply_property_change_fun(
                             &self.uuid,
                             &command,
@@ -1480,10 +1617,10 @@ impl<
             }),
             Highlight::ALL,
         );
-        ui_canvas.clear(self.adapter.background_color());
+        ui_canvas.clear(self.adapter.background_color(&context.global_colors));
         ui_canvas.draw_gridlines(
-            Some((50.0, self.adapter.gridlines_color())),
-            Some((50.0, self.adapter.gridlines_color())),
+            Some((50.0, self.adapter.gridlines_color(&context.global_colors))),
+            Some((50.0, self.adapter.gridlines_color(&context.global_colors))),
         );
 
         let inner_mouse = ui
@@ -1502,7 +1639,7 @@ impl<
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
@@ -1634,33 +1771,160 @@ impl<
     }
     fn show_properties(
         &mut self,
+        context: &DrawingContext,
         ui: &mut egui::Ui,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
-    ) {
+    ) -> Option<Box<dyn CustomModal>> {
         let mut commands = Vec::new();
-        {
+        let req = 'req: {
             let queryable = DomainT::QueryableT::new(&self.temporaries.flattened_represented_models, &self.temporaries.flattened_views);
 
-            if self
+            let child = self
                 .owned_views
-                .event_order_find_mut(|v| if v.show_properties(&queryable, ui, &mut commands) { Some(()) } else { None })
-                .is_none()
-            {
+                .event_order_find_mut(|v| v.show_properties(context, &queryable, ui, &mut commands).to_non_default());
+            if let Some(child) = child {
+                child
+            } else {
                 ui.label("View properties:");
                 ui.label("Name:");
                 if ui.text_edit_singleline(&mut self.temporaries.name_buffer).changed() {
                     self.name = Arc::new(self.temporaries.name_buffer.clone());
                 }
-                self.adapter.show_view_props_fun(ui);
+                match self.adapter.show_view_props_fun(context, ui) {
+                    PropertiesStatus::NotShown | PropertiesStatus::Shown => {},
+                    PropertiesStatus::PromptRequest(request_type) => {
+                        break 'req PropertiesStatus::PromptRequest(request_type);
+                    },
+                }
+
                 ui.add_space(super::views::VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
 
                 ui.label("Model properties:");
                 self.adapter.show_props_fun(&self.uuid, ui, &mut commands);
+
+                PropertiesStatus::Shown
             }
-        }
+        };
 
         self.apply_commands(commands, undo_accumulator, true, true, affected_models);
+
+        match req {
+            PropertiesStatus::NotShown | PropertiesStatus::Shown => None,
+            PropertiesStatus::PromptRequest(RequestType::ChangeColor(t, c)) => {
+                #[derive(PartialEq)]
+                enum MGlobalColorType {
+                    None,
+                    Local,
+                    Global,
+                }
+                struct ColorChangeModal {
+                    diagram_uuid: ViewUuid,
+                    diagram_color_slot: u8,
+                    selected_color_type: MGlobalColorType,
+                    local_color: egui::Color32,
+                    global_color: uuid::Uuid,
+                    new_global_color_name: String,
+                }
+                impl CustomModal for ColorChangeModal {
+                    fn show(
+                        &mut self,
+                        d: &mut DrawingContext,
+                        ui: &mut egui::Ui,
+                        commands: &mut Vec<ProjectCommand>,
+                    ) -> CustomModalResult {
+                        ui.heading("Color picker");
+
+                        ui.radio_value(&mut self.selected_color_type, MGlobalColorType::None, "No override");
+
+                        ui.radio_value(&mut self.selected_color_type, MGlobalColorType::Local, "Local color");
+                        ui.add_enabled_ui(self.selected_color_type == MGlobalColorType::Local, |ui| {
+                            egui::widgets::color_picker::color_picker_color32(
+                                ui,
+                                &mut self.local_color,
+                                egui::widgets::color_picker::Alpha::OnlyBlend
+                            );
+                        });
+
+                        ui.radio_value(&mut self.selected_color_type, MGlobalColorType::Global, "Global color");
+                        ui.add_enabled_ui(self.selected_color_type == MGlobalColorType::Global, |ui| {
+                            let gc = &mut d.global_colors;
+                            for id in gc.colors_order.iter() {
+                                ui.horizontal(|ui| {
+                                    if let Some(c) = gc.colors.get_mut(id) {
+                                        egui::widgets::color_picker::color_edit_button_srgba(
+                                            ui,
+                                            &mut c.1,
+                                            egui::widgets::color_picker::Alpha::OnlyBlend
+                                        );
+
+                                        let text = if *id == self.global_color {
+                                            &format!("[{}]", c.0)
+                                        } else {
+                                            &c.0
+                                        };
+                                        if ui.label(text).clicked() {
+                                            self.global_color = *id;
+                                        }
+                                    }
+                                });
+                            }
+
+                            ui.horizontal(|ui| {
+                                let r = ui.text_edit_singleline(&mut self.new_global_color_name);
+
+                                if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) || ui.button("Add new").clicked() {
+                                    let new_uuid = uuid::Uuid::now_v7();
+                                    gc.colors_order.push(new_uuid);
+                                    gc.colors.insert(new_uuid, (std::mem::take(&mut self.new_global_color_name), egui::Color32::WHITE));
+                                }
+                            })
+                        });
+
+                        ui.separator();
+
+                        let mut result = CustomModalResult::KeepOpen;
+                        ui.horizontal(|ui| {
+                            let is_valid = match self.selected_color_type {
+                                MGlobalColorType::Global => !self.global_color.is_nil(),
+                                _ => true,
+                            };
+                            if ui.add_enabled(is_valid, egui::Button::new("Ok")).clicked() {
+                                let c = match self.selected_color_type {
+                                    MGlobalColorType::None => MGlobalColor::None,
+                                    MGlobalColorType::Local => MGlobalColor::Local(self.local_color),
+                                    MGlobalColorType::Global => MGlobalColor::Global(self.global_color),
+                                };
+                                commands.push(ProjectCommand::SimpleProjectCommand(
+                                    SimpleProjectCommand::SpecificDiagramCommand(
+                                        self.diagram_uuid,
+                                        DiagramCommand::ColorSelected(self.diagram_color_slot, c),
+                                    )
+                                ));
+                                result = CustomModalResult::CloseUnmodified;
+                            }
+                            if ui.button("Cancel").clicked() {
+                                result = CustomModalResult::CloseUnmodified;
+                            }
+                        });
+
+                        result
+                    }
+                }
+                Some(Box::new(ColorChangeModal {
+                    diagram_uuid: *self.uuid,
+                    diagram_color_slot: t,
+                    selected_color_type: match c {
+                        MGlobalColor::None => MGlobalColorType::None,
+                        MGlobalColor::Local(color32) => MGlobalColorType::Local,
+                        MGlobalColor::Global(uuid) => MGlobalColorType::Global,
+                    },
+                    local_color: if let MGlobalColor::Local(color) = c { color } else { egui::Color32::WHITE },
+                    global_color: if let MGlobalColor::Global(uuid) = c { uuid } else { uuid::Uuid::nil() },
+                    new_global_color_name: String::new(),
+                }))
+            },
+        }
     }
     fn show_layers(&self, _ui: &mut egui::Ui) {
         // TODO: Layers???
@@ -1737,6 +2001,18 @@ impl<
                         DiagramCommand::ArrangeSelected(arr) => SensitiveCommand::ArrangeSelected(arr),
                         _ => unreachable!(),
                     }
+                ], &mut undo, true, true, affected_models);
+                self.temporaries.last_change_flag = true;
+                global_undo.extend(undo.into_iter());
+            }
+            DiagramCommand::ColorSelected(slot, color) => {
+                let ccd = ColorChangeData {
+                    slot,
+                    color,
+                };
+                let mut undo = vec![];
+                self.apply_commands(vec![
+                    SensitiveCommand::PropertyChangeSelected(vec![ccd.into()]),
                 ], &mut undo, true, true, affected_models);
                 self.temporaries.last_change_flag = true;
                 global_undo.extend(undo.into_iter());

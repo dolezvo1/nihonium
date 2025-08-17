@@ -6,9 +6,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::{any::Any, collections::HashMap, path::PathBuf};
 
+use crate::egui;
 use serde::{Deserialize, Serialize};
 
-use crate::common::controller::HierarchyNode;
+use crate::common::controller::{ColorBundle, HierarchyNode};
 use crate::DDes;
 
 use super::entity::EntityUuid;
@@ -202,12 +203,20 @@ enum NHProjectHierarchyNodeSerialization {
 }
 
 #[derive(Serialize, Deserialize, Debug)]
+struct GlobalColorDTO {
+    uuid: uuid::Uuid,
+    name: String,
+    color: egui::Color32,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct NHProjectSerialization {
     format_version: String,
     project_name: String,
     sources_root: String,
     new_diagram_no_counter: usize,
     hierarchy: Vec<NHProjectHierarchyNodeSerialization>,
+    global_colors: Vec<GlobalColorDTO>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -231,6 +240,7 @@ impl NHProjectSerialization {
         sources_root: &str,
         new_diagram_no_counter: usize,
         hierarchy: &Vec<HierarchyNode>,
+        global_colors: &ColorBundle,
         diagram_controllers: &HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
         documents: &HashMap<ViewUuid, (String, String)>,
     ) -> Result<(), NHSerializeError> {
@@ -263,12 +273,18 @@ impl NHProjectSerialization {
             wa.write_source_file(&format!("documents/{}.nhd", key.to_string()), content.as_bytes())?;
         }
 
+        let global_colors = global_colors.colors_order.iter()
+            .flat_map(|k| global_colors.colors.get(k).map(|e| GlobalColorDTO {
+                uuid: *k, name: e.0.clone(), color: e.1,
+            })).collect();
+
         let project_serialization = Self {
             format_version: "0.2.0".into(),
             project_name: project_name.to_owned(),
             sources_root: sources_root.to_owned(),
             new_diagram_no_counter,
             hierarchy: hierarchy.iter().map(|e| h(e, documents)).collect(),
+            global_colors,
         };
         wa.write_manifest_file(toml::to_string(&project_serialization)?.as_bytes())?;
 
@@ -280,6 +296,11 @@ impl NHProjectSerialization {
     }
     pub fn new_diagram_no_counter(&self) -> usize {
         self.new_diagram_no_counter
+    }
+    pub fn global_colors(&self) -> ColorBundle {
+        let o = self.global_colors.iter().map(|e| e.uuid).collect();
+        let c = self.global_colors.iter().map(|e| (e.uuid, (e.name.clone(), e.color))).collect();
+        ColorBundle { colors_order: o, colors: c }
     }
 
     pub fn deserialize_all<RA: FSReadAbstraction>(

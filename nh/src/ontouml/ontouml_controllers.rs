@@ -4,7 +4,7 @@ use crate::umlclass::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, Model, ModelsLabelAcquirer, ProjectCommand, Queryable, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ModelsLabelAcquirer, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -12,7 +12,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::{CustomTab, ElementSetupModal};
+use crate::{CustomTab, CustomModal};
 use eframe::egui;
 use std::collections::HashSet;
 use std::{
@@ -69,8 +69,9 @@ pub enum UmlClassPropChange {
     SourceArrowheadLabelChange(Arc<String>),
     DestinationArrowheadLabelChange(Arc<String>),
 
+    ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
-    FlipMulticonnection,
+    FlipMulticonnection(FlipMulticonnection),
 }
 
 impl Debug for UmlClassPropChange {
@@ -84,7 +85,23 @@ impl TryFrom<&UmlClassPropChange> for FlipMulticonnection {
 
     fn try_from(value: &UmlClassPropChange) -> Result<Self, Self::Error> {
         match value {
-            UmlClassPropChange::FlipMulticonnection => Ok(FlipMulticonnection {}),
+            UmlClassPropChange::FlipMulticonnection(v) => Ok(*v),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<ColorChangeData> for UmlClassPropChange {
+    fn from(value: ColorChangeData) -> Self {
+        UmlClassPropChange::ColorChange(value)
+    }
+}
+impl TryFrom<UmlClassPropChange> for ColorChangeData {
+    type Error = ();
+
+    fn try_from(value: UmlClassPropChange) -> Result<Self, Self::Error> {
+        match value {
+            UmlClassPropChange::ColorChange(v) => Ok(v),
             _ => Err(()),
         }
     }
@@ -219,16 +236,17 @@ impl ContainerGen2<UmlClassDomain> for UmlClassElementView {
 impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     fn show_properties(
         &mut self,
+        drawing_context: &DrawingContext,
         q: &UmlClassQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
-    ) -> bool {
+    ) -> PropertiesStatus {
         match self {
-            Self::Package(inner) => inner.write().show_properties(q, ui, commands),
-            Self::Class(inner) => inner.write().show_properties(q, ui, commands),
-            Self::Link(inner) => inner.write().show_properties(q, ui, commands),
-            Self::Comment(inner) => inner.write().show_properties(q, ui, commands),
-            Self::CommentLink(inner) => inner.write().show_properties(q, ui, commands),
+            Self::Package(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
+            Self::Class(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
+            Self::Link(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
+            Self::Comment(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
+            Self::CommentLink(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
         }
     }
     fn draw_in(
@@ -260,7 +278,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveUmlClassTool>,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match self {
@@ -367,7 +385,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
 pub struct UmlClassDiagramAdapter {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassDiagram>,
-    background_color: egui::Color32,
+    background_color: MGlobalColor,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     buffer: UmlClassDiagramBuffer,
@@ -471,7 +489,7 @@ impl UmlClassDiagramAdapter {
         let m = model.read();
          Self {
             model: model.clone(),
-            background_color: egui::Color32::WHITE,
+            background_color: MGlobalColor::None,
             buffer: UmlClassDiagramBuffer {
                 name: (*m.name).clone(),
                 comment: (*m.comment).clone(),
@@ -552,19 +570,27 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
         Ok(v)
     }
 
-    fn background_color(&self) -> egui::Color32 {
-        self.background_color
+    fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
+        global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE)
     }
-    fn gridlines_color(&self) -> egui::Color32 {
+    fn gridlines_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::from_rgb(220, 220, 220)
     }
-    fn show_view_props_fun(&mut self, ui: &mut egui::Ui) {
+    fn show_view_props_fun(
+        &mut self,
+        drawing_context: &DrawingContext,
+        ui: &mut egui::Ui,
+    ) -> PropertiesStatus {
         ui.label("Background color:");
-        egui::widgets::color_picker::color_edit_button_srgba(
+        if crate::common::controller::mglobalcolor_edit_button(
+            &drawing_context.global_colors,
             ui,
             &mut self.background_color,
-            egui::widgets::color_picker::Alpha::OnlyBlend
-        );
+        ) {
+            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+        }
+
+        PropertiesStatus::Shown
     }
     fn show_props_fun(
         &mut self,
@@ -612,7 +638,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
     }
 
     fn apply_property_change_fun(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
@@ -627,6 +653,13 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
                             vec![UmlClassPropChange::NameChange(model.name.clone())],
                         ));
                         model.name = name.clone();
+                    }
+                    UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
+                        ));
+                        self.background_color = *color;
                     }
                     UmlClassPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -1090,7 +1123,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
     fn try_construct(
         &mut self,
         into: &dyn ContainerGen2<UmlClassDomain>,
-    ) -> Option<(UmlClassElementView, Option<Box<dyn ElementSetupModal>>)> {
+    ) -> Option<(UmlClassElementView, Option<Box<dyn CustomModal>>)> {
         match &self.result {
             PartialUmlClassElement::Some(x) => {
                 let x = x.clone();
@@ -1441,12 +1474,13 @@ impl ContainerGen2<UmlClassDomain> for UmlClassView {}
 impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
     fn show_properties(
         &mut self,
+        drawing_context: &DrawingContext,
         _parent: &UmlClassQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
-    ) -> bool {
+    ) -> PropertiesStatus {
         if !self.highlight.selected {
-            return false;
+            return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
@@ -1548,7 +1582,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             }
         });
 
-        true
+        PropertiesStatus::Shown
     }
 
     fn draw_in(
@@ -1624,7 +1658,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveUmlClassTool>,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -1988,7 +2022,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
 
         if ui.button("Switch source and destination").clicked() {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::FlipMulticonnection,
+                UmlClassPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ]));
         }
         ui.separator();
@@ -2059,7 +2093,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
                         ));
                         model.comment = comment.clone();
                     }
-                    UmlClassPropChange::FlipMulticonnection => {
+                    UmlClassPropChange::FlipMulticonnection(_) => {
                         let tmp = model.source.clone();
                         model.source = model.target.clone();
                         model.target = tmp.into();
@@ -2274,12 +2308,13 @@ impl ContainerGen2<UmlClassDomain> for UmlClassCommentView {}
 impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
     fn show_properties(
         &mut self,
+        drawing_context: &DrawingContext,
         _parent: &UmlClassQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
-    ) -> bool {
+    ) -> PropertiesStatus {
         if !self.highlight.selected {
-            return false;
+            return PropertiesStatus::NotShown;
         }
 
         ui.label("Model properties");
@@ -2312,7 +2347,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
             }
         });
 
-        true
+        PropertiesStatus::Shown
     }
 
     fn draw_in(
@@ -2414,7 +2449,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveUmlClassTool>,
-        element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {

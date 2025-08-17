@@ -2,7 +2,7 @@
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 use eframe::egui;
 
-use crate::{common::{canvas, controller::{ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, ElementSetupModal};
+use crate::{common::{canvas, controller::{ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, CustomModal};
 
 
 pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync {
@@ -50,7 +50,7 @@ pub struct VertexInformation {
     id: ViewUuid,
     position: egui::Pos2,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct FlipMulticonnection {}
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -186,17 +186,18 @@ where
 {
     fn show_properties(
         &mut self,
+        _drawing_context: &DrawingContext,
         _parent: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
-    ) -> bool {
+    ) -> PropertiesStatus {
         if !self.highlight.selected {
-            return false;
+            return PropertiesStatus::NotShown;
         }
 
         self.adapter.show_properties(ui, commands);
 
-        true
+        PropertiesStatus::Shown
     }
 
     fn draw_in(
@@ -308,7 +309,7 @@ where
         event: InputEvent,
         ehc: &EventHandlingContext,
         _tool: &mut Option<DomainT::ToolT>,
-        _element_setup_modal: &mut Option<Box<dyn ElementSetupModal>>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
         const SEGMENT_DISTANCE_THRESHOLD: f32 = 2.0;
