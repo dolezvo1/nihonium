@@ -11,7 +11,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::umlclass::umlclass_models::{UmlClassClassifier, UmlClassComment, UmlClassObject};
+use crate::umlclass::umlclass_models::{UmlClassClassifier, UmlClassComment, UmlClassInstance};
 use crate::{CustomTab, CustomModal};
 use eframe::egui;
 use std::collections::HashSet;
@@ -58,8 +58,9 @@ impl<'a> Queryable<'a, UmlClassDomain> for UmlClassQueryable<'a> {
 pub enum UmlClassPropChange {
     StereotypeChange(Arc<String>),
 
-    ObjectName(Arc<String>),
-    ObjectType(Arc<String>),
+    InstanceName(Arc<String>),
+    InstanceType(Arc<String>),
+    InstanceSlots(Arc<String>),
 
     NameChange(Arc<String>),
     PropertiesChange(Arc<String>),
@@ -69,10 +70,10 @@ pub enum UmlClassPropChange {
     MultiplicityChange(/*target?*/ bool, Arc<String>),
     RoleChange(/*target?*/ bool, Arc<String>),
     ReadingChange(/*target?*/ bool, Arc<String>),
+    FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
-    FlipMulticonnection(FlipMulticonnection),
 }
 
 impl Debug for UmlClassPropChange {
@@ -147,7 +148,7 @@ impl TryFrom<UmlClassElementOrVertex> for UmlClassElementView {
 #[nh_context_serde(uuid_type = ViewUuid)]
 pub enum UmlClassElementView {
     Package(ERef<PackageViewT>),
-    Object(ERef<UmlClassObjectView>),
+    Instance(ERef<UmlClassInstanceView>),
     Class(ERef<UmlClassView>),
     Link(ERef<LinkViewT>),
     Comment(ERef<UmlClassCommentView>),
@@ -158,7 +159,7 @@ impl Entity for UmlClassElementView {
     fn tagged_uuid(&self) -> EntityUuid {
         match self {
             Self::Package(inner) => inner.read().tagged_uuid(),
-            Self::Object(inner) => inner.read().tagged_uuid(),
+            Self::Instance(inner) => inner.read().tagged_uuid(),
             Self::Class(inner) => inner.read().tagged_uuid(),
             Self::Link(inner) => inner.read().tagged_uuid(),
             Self::Comment(inner) => inner.read().tagged_uuid(),
@@ -171,7 +172,7 @@ impl View for UmlClassElementView {
     fn uuid(&self) -> Arc<ViewUuid> {
         match self {
             Self::Package(inner) => inner.read().uuid(),
-            Self::Object(inner) => inner.read().uuid(),
+            Self::Instance(inner) => inner.read().uuid(),
             Self::Class(inner) => inner.read().uuid(),
             Self::Link(inner) => inner.read().uuid(),
             Self::Comment(inner) => inner.read().uuid(),
@@ -181,7 +182,7 @@ impl View for UmlClassElementView {
     fn model_uuid(&self) -> Arc<ModelUuid> {
         match self {
             Self::Package(inner) => inner.read().model_uuid(),
-            Self::Object(inner) => inner.read().model_uuid(),
+            Self::Instance(inner) => inner.read().model_uuid(),
             Self::Class(inner) => inner.read().model_uuid(),
             Self::Link(inner) => inner.read().model_uuid(),
             Self::Comment(inner) => inner.read().model_uuid(),
@@ -193,7 +194,7 @@ impl ElementController<UmlClassElement> for UmlClassElementView {
     fn model(&self) -> UmlClassElement {
         match self {
             Self::Package(inner) => inner.read().model(),
-            Self::Object(inner) => inner.read().model(),
+            Self::Instance(inner) => inner.read().model(),
             Self::Class(inner) => inner.read().model(),
             Self::Link(inner) => inner.read().model(),
             Self::Comment(inner) => inner.read().model(),
@@ -203,7 +204,7 @@ impl ElementController<UmlClassElement> for UmlClassElementView {
     fn min_shape(&self) -> NHShape {
         match self {
             Self::Package(inner) => inner.read().min_shape(),
-            Self::Object(inner) => inner.read().min_shape(),
+            Self::Instance(inner) => inner.read().min_shape(),
             Self::Class(inner) => inner.read().min_shape(),
             Self::Link(inner) => inner.read().min_shape(),
             Self::Comment(inner) => inner.read().min_shape(),
@@ -213,7 +214,7 @@ impl ElementController<UmlClassElement> for UmlClassElementView {
     fn max_shape(&self) -> NHShape {
         match self {
             Self::Package(inner) => inner.read().max_shape(),
-            Self::Object(inner) => inner.read().max_shape(),
+            Self::Instance(inner) => inner.read().max_shape(),
             Self::Class(inner) => inner.read().max_shape(),
             Self::Link(inner) => inner.read().max_shape(),
             Self::Comment(inner) => inner.read().max_shape(),
@@ -223,7 +224,7 @@ impl ElementController<UmlClassElement> for UmlClassElementView {
     fn position(&self) -> egui::Pos2 {
         match self {
             Self::Package(inner) => inner.read().position(),
-            Self::Object(inner) => inner.read().position(),
+            Self::Instance(inner) => inner.read().position(),
             Self::Class(inner) => inner.read().position(),
             Self::Link(inner) => inner.read().position(),
             Self::Comment(inner) => inner.read().position(),
@@ -235,7 +236,7 @@ impl ContainerGen2<UmlClassDomain> for UmlClassElementView {
     fn controller_for(&self, uuid: &ModelUuid) -> Option<<UmlClassDomain as Domain>::CommonElementViewT> {
         match self {
             Self::Package(inner) => inner.read().controller_for(uuid),
-            Self::Object(inner) => inner.read().controller_for(uuid),
+            Self::Instance(inner) => inner.read().controller_for(uuid),
             Self::Class(inner) => inner.read().controller_for(uuid),
             Self::Link(inner) => inner.read().controller_for(uuid),
             Self::Comment(inner) => inner.read().controller_for(uuid),
@@ -253,7 +254,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     ) -> PropertiesStatus {
         match self {
             Self::Package(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
-            Self::Object(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
+            Self::Instance(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
             Self::Class(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
             Self::Link(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
             Self::Comment(inner) => inner.write().show_properties(drawing_context, q, ui, commands),
@@ -269,7 +270,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     ) -> TargettingStatus {
         match self {
             Self::Package(inner) => inner.write().draw_in(q, context, canvas, tool),
-            Self::Object(inner) => inner.write().draw_in(q, context, canvas, tool),
+            Self::Instance(inner) => inner.write().draw_in(q, context, canvas, tool),
             Self::Class(inner) => inner.write().draw_in(q, context, canvas, tool),
             Self::Link(inner) => inner.write().draw_in(q, context, canvas, tool),
             Self::Comment(inner) => inner.write().draw_in(q, context, canvas, tool),
@@ -279,7 +280,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     fn collect_allignment(&mut self, am: &mut SnapManager) {
         match self {
             Self::Package(inner) => inner.write().collect_allignment(am),
-            Self::Object(inner) => inner.write().collect_allignment(am),
+            Self::Instance(inner) => inner.write().collect_allignment(am),
             Self::Class(inner) => inner.write().collect_allignment(am),
             Self::Link(inner) => inner.write().collect_allignment(am),
             Self::Comment(inner) => inner.write().collect_allignment(am),
@@ -296,7 +297,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     ) -> EventHandlingStatus {
         match self {
             Self::Package(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
-            Self::Object(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
+            Self::Instance(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
             Self::Class(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
             Self::Link(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
             Self::Comment(inner) => inner.write().handle_event(event, ehc, tool, element_setup_modal, commands),
@@ -311,7 +312,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     ) {
         match self {
             Self::Package(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
-            Self::Object(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
+            Self::Instance(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
             Self::Class(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
             Self::Link(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
             Self::Comment(inner) => inner.write().apply_command(command, undo_accumulator, affected_models),
@@ -321,7 +322,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     fn refresh_buffers(&mut self) {
         match self {
             Self::Package(inner) => inner.write().refresh_buffers(),
-            Self::Object(inner) => inner.write().refresh_buffers(),
+            Self::Instance(inner) => inner.write().refresh_buffers(),
             Self::Class(inner) => inner.write().refresh_buffers(),
             Self::Link(inner) => inner.write().refresh_buffers(),
             Self::Comment(inner) => inner.write().refresh_buffers(),
@@ -336,7 +337,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     ) {
         match self {
             Self::Package(inner) => inner.write().head_count(flattened_views, flattened_views_status, flattened_represented_models),
-            Self::Object(inner) => inner.write().head_count(flattened_views, flattened_views_status, flattened_represented_models),
+            Self::Instance(inner) => inner.write().head_count(flattened_views, flattened_views_status, flattened_represented_models),
             Self::Class(inner) => inner.write().head_count(flattened_views, flattened_views_status, flattened_represented_models),
             Self::Link(inner) => inner.write().head_count(flattened_views, flattened_views_status, flattened_represented_models),
             Self::Comment(inner) => inner.write().head_count(flattened_views, flattened_views_status, flattened_represented_models),
@@ -346,7 +347,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
         match self {
             Self::Package(inner) => inner.read().delete_when(deleting),
-            Self::Object(inner) => inner.read().delete_when(deleting),
+            Self::Instance(inner) => inner.read().delete_when(deleting),
             Self::Class(inner) => inner.read().delete_when(deleting),
             Self::Link(inner) => inner.read().delete_when(deleting),
             Self::Comment(inner) => inner.read().delete_when(deleting),
@@ -363,7 +364,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     ) {
         match self {
             Self::Package(inner) => inner.read().deep_copy_walk(requested, uuid_present, tlc, c, m),
-            Self::Object(inner) => inner.read().deep_copy_walk(requested, uuid_present, tlc, c, m),
+            Self::Instance(inner) => inner.read().deep_copy_walk(requested, uuid_present, tlc, c, m),
             Self::Class(inner) => inner.read().deep_copy_walk(requested, uuid_present, tlc, c, m),
             Self::Link(inner) => inner.read().deep_copy_walk(requested, uuid_present, tlc, c, m),
             Self::Comment(inner) => inner.read().deep_copy_walk(requested, uuid_present, tlc, c, m),
@@ -379,7 +380,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     ) {
         match self {
             Self::Package(inner) => inner.read().deep_copy_clone(uuid_present, tlc, c, m),
-            Self::Object(inner) => inner.read().deep_copy_clone(uuid_present, tlc, c, m),
+            Self::Instance(inner) => inner.read().deep_copy_clone(uuid_present, tlc, c, m),
             Self::Class(inner) => inner.read().deep_copy_clone(uuid_present, tlc, c, m),
             Self::Link(inner) => inner.read().deep_copy_clone(uuid_present, tlc, c, m),
             Self::Comment(inner) => inner.read().deep_copy_clone(uuid_present, tlc, c, m),
@@ -393,7 +394,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassElementView {
     ) {
         match self {
             Self::Package(inner) => inner.write().deep_copy_relink(c, m),
-            Self::Object(inner) => inner.write().deep_copy_relink(c, m),
+            Self::Instance(inner) => inner.write().deep_copy_relink(c, m),
             Self::Class(inner) => inner.write().deep_copy_relink(c, m),
             Self::Link(inner) => inner.write().deep_copy_relink(c, m),
             Self::Comment(inner) => inner.write().deep_copy_relink(c, m),
@@ -428,8 +429,8 @@ struct UmlClassPlaceholderViews {
 
 impl Default for UmlClassPlaceholderViews {
     fn default() -> Self {
-        let (_object, object_view) = new_umlclass_object("o", "Object", egui::Pos2::ZERO);
-        let (class_m, class_view) = new_umlclass_class("class", "a class", "", "", egui::Pos2::ZERO);
+        let (_instance, instance_view) = new_umlclass_instance("o", "Type", "", egui::Pos2::ZERO);
+        let (class_m, class_view) = new_umlclass_class("class", "ClassName", "", "", egui::Pos2::ZERO);
         let class = (class_m.clone().into(), class_view.into());
         let (d, dv) = new_umlclass_class("class", "dummy", "", "", egui::Pos2::new(100.0, 75.0));
         let dummy = (d.into(), dv.into());
@@ -445,7 +446,7 @@ impl Default for UmlClassPlaceholderViews {
 
         Self {
             views: [
-                object_view.into(),
+                instance_view.into(),
                 class.1,
                 package_view.into(),
                 assoc_view.into(),
@@ -544,7 +545,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
             },
             UmlClassElement::UmlClassObject(inner) => {
                 UmlClassElementView::from(
-                    new_umlclass_object_view(inner, egui::Pos2::ZERO)
+                    new_umlclass_instance_view(inner, egui::Pos2::ZERO)
                 )
             }
             UmlClassElement::UmlClass(inner) => {
@@ -731,7 +732,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
         let mut icon_counter = 0;
         for cat in [
             &[
-                (UmlClassToolStage::Object, "Object"),
+                (UmlClassToolStage::Instance, "Instance"),
                 (UmlClassToolStage::Class, "Class"),
                 (UmlClassToolStage::PackageStart, "Package"),
             ][..],
@@ -995,7 +996,7 @@ pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn D
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum UmlClassToolStage {
-    Object,
+    Instance,
     Class,
     LinkStart { link_type: UmlClassLinkType },
     LinkEnd,
@@ -1056,7 +1057,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
     fn targetting_for_element(&self, element: Option<UmlClassElement>) -> egui::Color32 {
         match element {
             None => match self.current_stage {
-                UmlClassToolStage::Object
+                UmlClassToolStage::Instance
                 | UmlClassToolStage::Class
                 | UmlClassToolStage::Comment
                 | UmlClassToolStage::PackageStart
@@ -1067,7 +1068,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 }
             },
             Some(UmlClassElement::UmlClassPackage(..)) => match self.current_stage {
-                UmlClassToolStage::Object
+                UmlClassToolStage::Instance
                 | UmlClassToolStage::Class
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd
@@ -1084,7 +1085,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 | UmlClassToolStage::CommentLinkEnd => {
                     TARGETTABLE_COLOR
                 }
-                UmlClassToolStage::Object
+                UmlClassToolStage::Instance
                 | UmlClassToolStage::Class
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd
@@ -1097,7 +1098,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 }
                 UmlClassToolStage::LinkStart { .. }
                 | UmlClassToolStage::LinkEnd
-                | UmlClassToolStage::Object
+                | UmlClassToolStage::Instance
                 | UmlClassToolStage::Class
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd
@@ -1160,15 +1161,15 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
         }
 
         match (self.current_stage, &mut self.result) {
-            (UmlClassToolStage::Object, _) => {
+            (UmlClassToolStage::Instance, _) => {
                 let (_object_model, object_view) =
-                    new_umlclass_object("o", "Object", pos);
+                    new_umlclass_instance("o", "Type", "", pos);
                 self.result = PartialUmlClassElement::Some(object_view.into());
                 self.event_lock = true;
             }
             (UmlClassToolStage::Class, _) => {
                 let (_class_model, class_view) =
-                    new_umlclass_class("class", "a class", "", "", pos);
+                    new_umlclass_class("class", "ClassName", "", "", pos);
                 self.result = PartialUmlClassElement::Some(class_view.into());
                 self.event_lock = true;
             }
@@ -1514,30 +1515,33 @@ fn new_umlclass_package_view(
 }
 
 
-fn new_umlclass_object(
+fn new_umlclass_instance(
     instance_name: &str,
     instance_type: &str,
+    instance_slots: &str,
     position: egui::Pos2,
-) -> (ERef<UmlClassObject>, ERef<UmlClassObjectView>) {
-    let object_model = ERef::new(UmlClassObject::new(
+) -> (ERef<UmlClassInstance>, ERef<UmlClassInstanceView>) {
+    let instance_model = ERef::new(UmlClassInstance::new(
         uuid::Uuid::now_v7().into(),
         instance_name.to_owned(),
         instance_type.to_owned(),
+        instance_slots.to_owned(),
     ));
-    let object_view = new_umlclass_object_view(object_model.clone(), position);
+    let instance_view = new_umlclass_instance_view(instance_model.clone(), position);
 
-    (object_model, object_view)
+    (instance_model, instance_view)
 }
-fn new_umlclass_object_view(
-    model: ERef<UmlClassObject>,
+fn new_umlclass_instance_view(
+    model: ERef<UmlClassInstance>,
     position: egui::Pos2,
-) -> ERef<UmlClassObjectView> {
+) -> ERef<UmlClassInstanceView> {
     let m = model.read();
-    ERef::new(UmlClassObjectView {
+    ERef::new(UmlClassInstanceView {
         uuid: Arc::new(uuid::Uuid::now_v7().into()),
         model: model.clone(),
         name_buffer: (*m.instance_name).clone(),
         type_buffer: (*m.instance_type).clone(),
+        slots_buffer: (*m.instance_slots).clone(),
         comment_buffer: (*m.comment).clone(),
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
@@ -1549,15 +1553,17 @@ fn new_umlclass_object_view(
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-pub struct UmlClassObjectView {
+pub struct UmlClassInstanceView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
-    pub model: ERef<UmlClassObject>,
+    pub model: ERef<UmlClassInstance>,
 
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
     type_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    slots_buffer: String,
     #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 
@@ -1570,13 +1576,13 @@ pub struct UmlClassObjectView {
     background_color: MGlobalColor,
 }
 
-impl Entity for UmlClassObjectView {
+impl Entity for UmlClassInstanceView {
     fn tagged_uuid(&self) -> EntityUuid {
         EntityUuid::View(*self.uuid)
     }
 }
 
-impl View for UmlClassObjectView {
+impl View for UmlClassInstanceView {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -1585,7 +1591,7 @@ impl View for UmlClassObjectView {
     }
 }
 
-impl ElementController<UmlClassElement> for UmlClassObjectView {
+impl ElementController<UmlClassElement> for UmlClassInstanceView {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -1601,9 +1607,9 @@ impl ElementController<UmlClassElement> for UmlClassObjectView {
     }
 }
 
-impl ContainerGen2<UmlClassDomain> for UmlClassObjectView {}
+impl ContainerGen2<UmlClassDomain> for UmlClassInstanceView {}
 
-impl ElementControllerGen2<UmlClassDomain> for UmlClassObjectView {
+impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
     fn show_properties(
         &mut self,
         drawing_context: &DrawingContext,
@@ -1626,7 +1632,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassObjectView {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::ObjectName(Arc::new(self.name_buffer.clone())),
+                UmlClassPropChange::InstanceName(Arc::new(self.name_buffer.clone())),
             ]));
         }
 
@@ -1639,7 +1645,20 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassObjectView {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::ObjectType(Arc::new(self.type_buffer.clone())),
+                UmlClassPropChange::InstanceType(Arc::new(self.type_buffer.clone())),
+            ]));
+        }
+
+        ui.label("Slots:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.slots_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::InstanceSlots(Arc::new(self.slots_buffer.clone())),
             ]));
         }
 
@@ -1698,12 +1717,23 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassObjectView {
             format!("{}: {}", read.instance_name, read.instance_type)
         };
 
-        self.bounds_rect = canvas.measure_text(
+        let mut min = canvas.measure_text(
             self.position,
             egui::Align2::CENTER_CENTER,
             &text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-        ).expand(5.0);
+        );
+        let slots_start = min.center_bottom();
+        if !self.slots_buffer.is_empty() {
+            min = min.union(canvas.measure_text(
+                slots_start,
+                egui::Align2::CENTER_TOP,
+                &self.slots_buffer,
+                canvas::CLASS_ITEM_FONT_SIZE,
+            ));
+        }
+        self.bounds_rect = min.expand(5.0);
+
         canvas.draw_rectangle(
             self.bounds_rect,
             egui::CornerRadius::ZERO,
@@ -1716,6 +1746,21 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassObjectView {
             egui::Align2::CENTER_CENTER,
             &text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+        if !self.slots_buffer.is_empty() {
+            canvas.draw_line(
+                [self.bounds_rect.left(), self.bounds_rect.right()]
+                    .map(|e| egui::Pos2::new(e, slots_start.y)),
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                self.highlight,
+            );
+        }
+        canvas.draw_text(
+            slots_start,
+            egui::Align2::CENTER_TOP,
+            &self.slots_buffer,
+            canvas::CLASS_ITEM_FONT_SIZE,
             egui::Color32::BLACK,
         );
 
@@ -1872,19 +1917,26 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassObjectView {
                     let mut model = self.model.write();
                     for property in properties {
                         match property {
-                            UmlClassPropChange::ObjectName(name) => {
+                            UmlClassPropChange::InstanceName(name) => {
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::ObjectName(model.instance_name.clone())],
+                                    vec![UmlClassPropChange::InstanceName(model.instance_name.clone())],
                                 ));
                                 model.instance_name = name.clone();
                             }
-                            UmlClassPropChange::ObjectType(t) => {
+                            UmlClassPropChange::InstanceType(t) => {
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::ObjectType(model.instance_type.clone())],
+                                    vec![UmlClassPropChange::InstanceType(model.instance_type.clone())],
                                 ));
                                 model.instance_type = t.clone();
+                            }
+                            UmlClassPropChange::InstanceSlots(s) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::InstanceSlots(model.instance_slots.clone())],
+                                ));
+                                model.instance_slots = s.clone();
                             }
                             UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -1911,6 +1963,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassObjectView {
         let model = self.model.read();
         self.name_buffer = (*model.instance_name).clone();
         self.type_buffer = (*model.instance_type).clone();
+        self.slots_buffer = (*model.instance_slots).clone();
         self.comment_buffer = (*model.comment).clone();
     }
 
@@ -1942,7 +1995,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassObjectView {
         let modelish = if let Some(UmlClassElement::UmlClassObject(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(UmlClassObject::new(model_uuid, (*old_model.instance_name).clone(), (*old_model.instance_type).clone()));
+            let modelish = old_model.clone_with(model_uuid);
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -1952,6 +2005,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassObjectView {
             model: modelish,
             name_buffer: self.name_buffer.clone(),
             type_buffer: self.type_buffer.clone(),
+            slots_buffer: self.slots_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,

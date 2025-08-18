@@ -40,7 +40,7 @@ impl UmlClassCollector {
             self.plantuml_data.push_str("}\n");
         }
     }
-    fn visit_object(&mut self, object: &UmlClassObject) {
+    fn visit_object(&mut self, object: &UmlClassInstance) {
         if self.collecting_absolute_paths {
             self.absolute_paths.insert(
                 (*object.uuid).clone(),
@@ -117,7 +117,7 @@ impl UmlClassCollector {
 pub enum UmlClassElement {
     #[container_model(passthrough = "eref")]
     UmlClassPackage(ERef<UmlClassPackage>),
-    UmlClassObject(ERef<UmlClassObject>),
+    UmlClassObject(ERef<UmlClassInstance>),
     UmlClass(ERef<UmlClass>),
     UmlClassLink(ERef<UmlClassLink>),
     UmlClassComment(ERef<UmlClassComment>),
@@ -128,7 +128,7 @@ pub enum UmlClassElement {
 #[model(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlClassClassifier {
-    UmlClassObject(ERef<UmlClassObject>),
+    UmlClassObject(ERef<UmlClassInstance>),
     UmlClass(ERef<UmlClass>),
 }
 
@@ -190,33 +190,13 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 UmlClassElement::UmlClassPackage(ERef::new(new_model))
             },
             UmlClassElement::UmlClassObject(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlClassObject {
-                    uuid: new_uuid,
-                    instance_name: model.instance_name.clone(),
-                    instance_type: model.instance_type.clone(),
-                    comment: model.comment.clone()
-                };
-                UmlClassElement::UmlClassObject(ERef::new(new_model))
+                UmlClassElement::UmlClassObject(inner.read().clone_with(*new_uuid))
             }
             UmlClassElement::UmlClass(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlClass {
-                    uuid: new_uuid,
-                    name: model.name.clone(),
-                    stereotype: model.stereotype.clone(),
-                    functions: model.functions.clone(),
-                    properties: model.properties.clone(),
-                    comment: model.comment.clone()
-                };
-                UmlClassElement::UmlClass(ERef::new(new_model))
+                UmlClassElement::UmlClass(inner.read().clone_with(*new_uuid))
             },
             UmlClassElement::UmlClassLink(inner) => {
-                let model = inner.read();
-
-                UmlClassElement::UmlClassLink(model.clone_with(*new_uuid))
+                UmlClassElement::UmlClassLink(inner.read().clone_with(*new_uuid))
             },
             UmlClassElement::UmlClassComment(inner) => {
                 let model = inner.read();
@@ -480,36 +460,48 @@ impl ContainerModel for UmlClassPackage {
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-pub struct UmlClassObject {
+pub struct UmlClassInstance {
     pub uuid: Arc<ModelUuid>,
     pub instance_name: Arc<String>,
     pub instance_type: Arc<String>,
+    pub instance_slots: Arc<String>,
 
     pub comment: Arc<String>,
 }
 
-impl UmlClassObject {
+impl UmlClassInstance {
     pub fn new(
         uuid: ModelUuid,
         instance_name: String,
         instance_type: String,
+        instance_slots: String,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             instance_name: Arc::new(instance_name),
             instance_type: Arc::new(instance_type),
+            instance_slots: Arc::new(instance_slots),
             comment: Arc::new("".to_owned()),
         }
     }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            instance_name: self.instance_name.clone(),
+            instance_type: self.instance_type.clone(),
+            instance_slots: self.instance_slots.clone(),
+            comment: self.comment.clone(),
+        })
+    }
 }
 
-impl Entity for UmlClassObject {
+impl Entity for UmlClassInstance {
     fn tagged_uuid(&self) -> EntityUuid {
         EntityUuid::Model(*self.uuid)
     }
 }
 
-impl Model for UmlClassObject {
+impl Model for UmlClassInstance {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
@@ -563,6 +555,16 @@ impl UmlClass {
             functions: Arc::new(functions),
             comment: Arc::new("".to_owned()),
         }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            stereotype: self.stereotype.clone(),
+            name: self.name.clone(),
+            properties: self.properties.clone(),
+            functions: self.functions.clone(),
+            comment: self.comment.clone(),
+        })
     }
 
     pub fn parse_properties(&self) -> Vec<(&str, &str)> {

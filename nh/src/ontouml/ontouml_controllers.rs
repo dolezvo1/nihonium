@@ -58,9 +58,6 @@ impl<'a> Queryable<'a, UmlClassDomain> for UmlClassQueryable<'a> {
 pub enum UmlClassPropChange {
     StereotypeChange(Arc<String>),
 
-    ObjectName(Arc<String>),
-    ObjectType(Arc<String>),
-
     NameChange(Arc<String>),
     PropertiesChange(Arc<String>),
     FunctionsChange(Arc<String>),
@@ -69,10 +66,10 @@ pub enum UmlClassPropChange {
     MultiplicityChange(/*target?*/ bool, Arc<String>),
     RoleChange(/*target?*/ bool, Arc<String>),
     ReadingChange(/*target?*/ bool, Arc<String>),
+    FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
-    FlipMulticonnection(FlipMulticonnection),
 }
 
 impl Debug for UmlClassPropChange {
