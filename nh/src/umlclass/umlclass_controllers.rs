@@ -6,7 +6,7 @@ use crate::common::controller::{
     ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ModelsLabelAcquirer, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
-use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
+use crate::common::views::multiconnection_view::{ArrowData, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
@@ -66,8 +66,9 @@ pub enum UmlClassPropChange {
     FunctionsChange(Arc<String>),
 
     LinkTypeChange(UmlClassLinkType),
-    SourceArrowheadLabelChange(Arc<String>),
-    DestinationArrowheadLabelChange(Arc<String>),
+    MultiplicityChange(/*target?*/ bool, Arc<String>),
+    RoleChange(/*target?*/ bool, Arc<String>),
+    ReadingChange(/*target?*/ bool, Arc<String>),
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
@@ -2475,9 +2476,17 @@ pub struct UmlClassLinkAdapter {
     #[nh_context_serde(skip_and_default)]
     stereotype_buffer: String,
     #[nh_context_serde(skip_and_default)]
-    sal_buffer: String,
+    source_multiplicity_buffer: String,
     #[nh_context_serde(skip_and_default)]
-    dal_buffer: String,
+    source_role_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    source_reading_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    target_multiplicity_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    target_role_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    target_reading_buffer: String,
     #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 }
@@ -2504,30 +2513,50 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
         }
     }
 
-    fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
+    fn source_arrow(&self) -> ArrowData {
         let model = self.model.read();
-        (
-            model.link_type.line_type(),
-            model.link_type.source_arrowhead_type(),
-            if !model.source_arrowhead_label.is_empty() {
-                Some(model.source_arrowhead_label.clone())
+        ArrowData {
+            line_type: model.link_type.line_type(),
+            arrowhead_type: model.link_type.source_arrowhead_type(),
+            multiplicity: if !model.source_label_multiplicity.is_empty() {
+                Some(model.source_label_multiplicity.clone())
             } else {
                 None
-            }
-        )
+            },
+            role: if !model.source_label_role.is_empty() {
+                Some(model.source_label_role.clone())
+            } else {
+                None
+            },
+            reading: if !model.source_label_reading.is_empty() {
+                Some(model.source_label_reading.clone())
+            } else {
+                None
+            },
+        }
     }
 
-    fn destination_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
+    fn destination_arrow(&self) -> ArrowData {
         let model = self.model.read();
-        (
-            model.link_type.line_type(),
-            model.link_type.destination_arrowhead_type(),
-            if !model.target_arrowhead_label.is_empty() {
-                Some(model.target_arrowhead_label.clone())
+        ArrowData {
+            line_type: model.link_type.line_type(),
+            arrowhead_type: model.link_type.destination_arrowhead_type(),
+            multiplicity: if !model.target_label_multiplicity.is_empty() {
+                Some(model.target_label_multiplicity.clone())
             } else {
                 None
-            }
-        )
+            },
+            role: if !model.target_label_role.is_empty() {
+                Some(model.target_label_role.clone())
+            } else {
+                None
+            },
+            reading: if !model.target_label_reading.is_empty() {
+                Some(model.target_label_reading.clone())
+            } else {
+                None
+            },
+        }
     }
 
     fn show_properties(
@@ -2574,33 +2603,89 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
         }
         ui.separator();
 
-        ui.label("Source:");
+        ui.label("Source multiplicity:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.sal_buffer),
+                egui::TextEdit::singleline(&mut self.source_multiplicity_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::SourceArrowheadLabelChange(Arc::new(
-                    self.sal_buffer.clone(),
+                UmlClassPropChange::MultiplicityChange(false, Arc::new(
+                    self.source_multiplicity_buffer.clone(),
+                )),
+            ]));
+        }
+        ui.label("Source role:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::singleline(&mut self.source_role_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::RoleChange(false, Arc::new(
+                    self.source_role_buffer.clone(),
+                )),
+            ]));
+        }
+        ui.label("Source reading:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::singleline(&mut self.source_reading_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::ReadingChange(false, Arc::new(
+                    self.source_reading_buffer.clone(),
                 )),
             ]));
         }
         ui.separator();
 
-        ui.label("Destination:");
+        ui.label("Target multiplicity:");
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.dal_buffer),
+                egui::TextEdit::singleline(&mut self.target_multiplicity_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::DestinationArrowheadLabelChange(Arc::new(
-                    self.dal_buffer.clone(),
+                UmlClassPropChange::MultiplicityChange(true, Arc::new(
+                    self.target_multiplicity_buffer.clone(),
+                )),
+            ]));
+        }
+        ui.label("Target role:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::singleline(&mut self.target_role_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::RoleChange(true, Arc::new(
+                    self.target_role_buffer.clone(),
+                )),
+            ]));
+        }
+        ui.label("Target reading:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::singleline(&mut self.target_reading_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::ReadingChange(true, Arc::new(
+                    self.target_reading_buffer.clone(),
                 )),
             ]));
         }
@@ -2646,31 +2731,65 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
                     UmlClassPropChange::StereotypeChange(stereotype) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::CommentChange(
+                            vec![UmlClassPropChange::StereotypeChange(
                                 model.stereotype.clone(),
                             )],
                         ));
                         model.stereotype = stereotype.clone();
                     }
-                    UmlClassPropChange::SourceArrowheadLabelChange(source_arrowhead_label) => {
+                    UmlClassPropChange::MultiplicityChange(t, multiplicity) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::CommentChange(
-                                model.source_arrowhead_label.clone(),
+                            vec![UmlClassPropChange::MultiplicityChange(
+                                *t,
+                                if !t {
+                                    model.source_label_multiplicity.clone()
+                                } else {
+                                    model.target_label_multiplicity.clone()
+                                }
                             )],
                         ));
-                        model.source_arrowhead_label = source_arrowhead_label.clone();
+                        if !t {
+                            model.source_label_multiplicity = multiplicity.clone();
+                        } else {
+                            model.target_label_multiplicity = multiplicity.clone();
+                        }
                     }
-                    UmlClassPropChange::DestinationArrowheadLabelChange(
-                        destination_arrowhead_label,
-                    ) => {
+                    UmlClassPropChange::RoleChange(t, role) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::CommentChange(
-                                model.target_arrowhead_label.clone(),
+                            vec![UmlClassPropChange::RoleChange(
+                                *t,
+                                if !t {
+                                    model.source_label_role.clone()
+                                } else {
+                                    model.target_label_role.clone()
+                                }
                             )],
                         ));
-                        model.target_arrowhead_label = destination_arrowhead_label.clone();
+                        if !t {
+                            model.source_label_role = role.clone();
+                        } else {
+                            model.target_label_role = role.clone();
+                        }
+                    }
+                    UmlClassPropChange::ReadingChange(t, reading) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![UmlClassPropChange::RoleChange(
+                                *t,
+                                if !t {
+                                    model.source_label_reading.clone()
+                                } else {
+                                    model.target_label_reading.clone()
+                                }
+                            )],
+                        ));
+                        if !t {
+                            model.source_label_reading = reading.clone();
+                        } else {
+                            model.target_label_reading = reading.clone();
+                        }
                     }
                     UmlClassPropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -2693,8 +2812,12 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
         let model = self.model.read();
         self.link_type_buffer = model.link_type;
         self.stereotype_buffer = (*model.stereotype).clone();
-        self.sal_buffer = (*model.source_arrowhead_label).clone();
-        self.dal_buffer = (*model.target_arrowhead_label).clone();
+        self.source_multiplicity_buffer = (*model.source_label_multiplicity).clone();
+        self.source_role_buffer = (*model.source_label_role).clone();
+        self.source_reading_buffer = (*model.source_label_reading).clone();
+        self.target_multiplicity_buffer = (*model.target_label_multiplicity).clone();
+        self.target_role_buffer = (*model.target_label_role).clone();
+        self.target_reading_buffer = (*model.target_label_reading).clone();
         self.comment_buffer = (*model.comment).clone();
     }
 
@@ -2708,7 +2831,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
         let model = if let Some(UmlClassElement::UmlClassLink(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(UmlClassLink::new(new_uuid, old_model.link_type, (*old_model.stereotype).clone(), old_model.source.clone(), old_model.target.clone()));
+            let modelish = old_model.clone_with(new_uuid);
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -2717,8 +2840,12 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassLinkAdapter {
             model,
             link_type_buffer: self.link_type_buffer.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
-            sal_buffer: self.sal_buffer.clone(),
-            dal_buffer: self.dal_buffer.clone(),
+            source_multiplicity_buffer: self.source_multiplicity_buffer.clone(),
+            source_role_buffer: self.source_role_buffer.clone(),
+            source_reading_buffer: self.source_reading_buffer.clone(),
+            target_multiplicity_buffer: self.target_multiplicity_buffer.clone(),
+            target_role_buffer: self.target_role_buffer.clone(),
+            target_reading_buffer: self.target_reading_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
         }
     }
@@ -2797,8 +2924,12 @@ fn new_umlclass_link_view(
             model: model.clone(),
             link_type_buffer: m.link_type,
             stereotype_buffer: (*m.stereotype).clone(),
-            sal_buffer: (*m.source_arrowhead_label).clone(),
-            dal_buffer: (*m.target_arrowhead_label).clone(),
+            source_multiplicity_buffer: (*m.source_label_multiplicity).clone(),
+            source_role_buffer: (*m.source_label_role).clone(),
+            source_reading_buffer: (*m.source_label_reading).clone(),
+            target_multiplicity_buffer: (*m.target_label_multiplicity).clone(),
+            target_role_buffer: (*m.target_label_role).clone(),
+            target_reading_buffer: (*m.target_label_reading).clone(),
             comment_buffer: (*m.comment).clone(),
         },
         source,
@@ -3286,20 +3417,17 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
         None
     }
 
-    fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
-        let model = self.model.read();
-        (
+    fn source_arrow(&self) -> ArrowData {
+        ArrowData::new_labelless(
             canvas::LineType::Dashed,
             canvas::ArrowheadType::None,
-            None
         )
     }
 
-    fn destination_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
-        (
+    fn destination_arrow(&self) -> ArrowData {
+        ArrowData::new_labelless(
             canvas::LineType::Dashed,
             canvas::ArrowheadType::None,
-            None
         )
     }
 

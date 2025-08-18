@@ -261,32 +261,71 @@ impl NHShape {
         }
     }
 
-    pub fn place_labels(&self, around: egui::Pos2, sizes: [egui::Vec2; 2]) -> [egui::Pos2; 2] {
-        const PADDING: f32 = 5.0;
-        let center = self.center();
-        // TODO: doesn't actually work for both labels, but close enough
-        let [x0, x1] = if around.x < center.x {
-            [
-                around.x - sizes[0].x / 2.0 - PADDING,
-                around.x - sizes[1].x / 2.0 - PADDING,
-            ]
-        } else {
-            [
-                around.x + sizes[0].x / 2.0 + PADDING,
-                around.x + sizes[1].x / 2.0 + PADDING,
-            ]
+    pub fn place_labels(&self, around: egui::Pos2, sizes: [egui::Vec2; 2], padding: f32) -> [egui::Pos2; 2] {
+        let [x0, x1, y0, y1] = match self {
+            NHShape::Rect { inner } => {
+                let [x0, x1] = if around.x <= inner.left() {
+                    [
+                        around.x - sizes[0].x / 2.0 - padding,
+                        around.x - sizes[1].x / 2.0 - padding,
+                    ]
+                } else if around.x >= inner.right() {
+                    [
+                        around.x + sizes[0].x / 2.0 + padding,
+                        around.x + sizes[1].x / 2.0 + padding,
+                    ]
+                } else {
+                    [
+                        around.x - sizes[0].x / 2.0 - padding,
+                        around.x + sizes[1].x / 2.0 + padding,
+                    ]
+                };
+                let [y0, y1] = if around.y <= inner.top() {
+                    [
+                        around.y - sizes[0].y / 2.0 - padding,
+                        around.y - sizes[1].y / 2.0 - padding,
+                    ]
+                } else if around.y >= inner.bottom() {
+                    [
+                        around.y + sizes[0].y / 2.0 + padding,
+                        around.y + sizes[1].y / 2.0 + padding,
+                    ]
+                } else {
+                    [
+                        around.y - sizes[0].y / 2.0 - padding,
+                        around.y + sizes[1].y / 2.0 + padding,
+                    ]
+                };
+                [x0, x1, y0, y1]
+            },
+            NHShape::Ellipse { position, bounds_radius } => {
+                // TODO: doesn't actually generate two unique positions, but close enough
+                let [x0, x1] = if around.x < position.x {
+                    [
+                        around.x - sizes[0].x / 2.0 - padding,
+                        around.x - sizes[1].x / 2.0 - padding,
+                    ]
+                } else {
+                    [
+                        around.x + sizes[0].x / 2.0 + padding,
+                        around.x + sizes[1].x / 2.0 + padding,
+                    ]
+                };
+                let [y0, y1] = if around.y < position.y {
+                    [
+                        around.y - sizes[0].y / 2.0 - padding,
+                        around.y - sizes[1].y / 2.0 - padding,
+                    ]
+                } else {
+                    [
+                        around.y + sizes[0].y / 2.0 + padding,
+                        around.y + sizes[1].y / 2.0 + padding,
+                    ]
+                };
+                [x0, x1, y0, y1]
+            },
         };
-        let [y0, y1] = if around.y < center.y {
-            [
-                around.y - sizes[0].y / 2.0 - PADDING,
-                around.y - sizes[1].y / 2.0 - PADDING,
-            ]
-        } else {
-            [
-                around.y + sizes[0].y / 2.0 + PADDING,
-                around.y + sizes[1].y / 2.0 + PADDING,
-            ]
-        };
+
         [egui::Pos2::new(x0, y0), egui::Pos2::new(x1, y1)]
     }
 }
@@ -484,6 +523,12 @@ pub const CLASS_TOP_FONT_SIZE: f32 = 12.0;
 pub const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
 pub const CLASS_BOTTOM_FONT_SIZE: f32 = 12.0;
 pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
+
+pub struct ArrowDataPos<'a> {
+    pub points: &'a Vec<(ViewUuid, egui::Pos2)>,
+    pub stroke: Stroke,
+    pub arrowhead_type: ArrowheadType,
+}
 
 pub trait NHCanvas {
     // These functions are must haves
@@ -729,51 +774,35 @@ pub trait NHCanvas {
     fn draw_multiconnection<'a>(
         &mut self,
         selected_vertices: &HashSet<ViewUuid>,
-        sources: &[(
-            ArrowheadType,
-            Stroke,
-            &Vec<(ViewUuid, egui::Pos2)>,
-            Option<(egui::Pos2, &'a str)>,
-        )],
-        destinations: &[(
-            ArrowheadType,
-            Stroke,
-            &Vec<(ViewUuid, egui::Pos2)>,
-            Option<(egui::Pos2, &'a str)>,
-        )],
+        sources: Vec<ArrowDataPos<'a>>,
+        destinations: Vec<ArrowDataPos<'a>>,
         central_point: (ViewUuid, egui::Pos2),
         mid_label: Option<&str>,
         highlight: Highlight,
     ) {
         fn a<'a>(
             central_point: (ViewUuid, egui::Pos2),
-            e: &'a (
-                ArrowheadType,
-                Stroke,
-                &'a Vec<(ViewUuid, egui::Pos2)>,
-                Option<(egui::Pos2, &'a str)>,
-            ),
+            e: ArrowDataPos<'a>,
         ) -> (
             ArrowheadType,
             Stroke,
             egui::Pos2,
             impl Iterator<Item = (ViewUuid, egui::Pos2)> + 'a,
-            Option<(egui::Pos2, &'a str)>,
         ) {
-            let focal_point = e.2.first().unwrap();
+            let focal_point = e.points.first().unwrap();
             let path = std::iter::once((
                 uuid::Uuid::nil().into(),
-                e.0.get_intersect(focal_point.1, e.2.get(1).unwrap_or(&central_point).1),
+                e.arrowhead_type.get_intersect(focal_point.1, e.points.get(1).unwrap_or(&central_point).1),
             ))
-            .chain(e.2.iter().skip(1).map(|e| *e))
+            .chain(e.points.iter().skip(1).map(|e| *e))
             .chain(std::iter::once(central_point));
-            (e.0, e.1, focal_point.1, path, e.3)
+            (e.arrowhead_type, e.stroke, focal_point.1, path)
         }
 
-        for (ah, ls, fp, iter, label) in sources
-            .iter()
+        for (ah, ls, fp, iter) in sources
+            .into_iter()
             .map(|e| a(central_point, e))
-            .chain(destinations.iter().map(|e| a(central_point, e)))
+            .chain(destinations.into_iter().map(|e| a(central_point, e)))
         {
             let mut iter_peekable = iter.peekable();
             let mut first = true;
@@ -825,16 +854,6 @@ pub trait NHCanvas {
                 }
 
                 first = false;
-            }
-
-            if let Some(label) = label {
-                self.draw_text(
-                    label.0,
-                    egui::Align2::CENTER_CENTER,
-                    label.1,
-                    CLASS_MIDDLE_FONT_SIZE,
-                    egui::Color32::BLACK,
-                );
             }
         }
 

@@ -2,8 +2,24 @@
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 use eframe::egui;
 
-use crate::{common::{canvas, controller::{ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, CustomModal};
+use crate::{common::{canvas::{self, ArrowDataPos}, controller::{ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, CustomModal};
 
+pub struct ArrowData {
+    pub line_type: canvas::LineType,
+    pub arrowhead_type: canvas::ArrowheadType,
+    pub multiplicity: Option<Arc<String>>,
+    pub role: Option<Arc<String>>,
+    pub reading: Option<Arc<String>>,
+}
+
+impl ArrowData {
+    pub fn new_labelless(
+        line_type: canvas::LineType,
+        arrowhead_type: canvas::ArrowheadType,
+    ) -> Self {
+        Self { line_type, arrowhead_type, multiplicity: None, role: None, reading: None }
+    }
+}
 
 pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync {
     fn model(&self) -> DomainT::CommonElementT;
@@ -17,8 +33,8 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
         egui::Color32::BLACK
     }
     fn midpoint_label(&self) -> Option<Arc<String>> { None }
-    fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
-    fn destination_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>);
+    fn source_arrow(&self) -> ArrowData;
+    fn destination_arrow(&self) -> ArrowData;
 
     fn show_properties(
         &mut self,
@@ -250,38 +266,34 @@ where
 
         //canvas.draw_ellipse((self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0, egui::Vec2::splat(5.0), egui::Color32::BROWN, canvas::Stroke::new_solid(1.0, egui::Color32::BROWN), canvas::Highlight::NONE);
 
-        fn s_to_p(canvas: &mut dyn canvas::NHCanvas, bounds: canvas::NHShape, pos: egui::Pos2, s: &str) -> egui::Pos2 {
-            let size = canvas.measure_text(pos, egui::Align2::CENTER_CENTER, s, canvas::CLASS_MIDDLE_FONT_SIZE).size();
-            bounds.place_labels(pos, [size, egui::Vec2::ZERO])[0]
-        }
-        let (source_line_type, source_arrow_type, source_label) = self.adapter.source_arrow();
-        let (dest_line_type, dest_arrow_type, dest_label) = self.adapter.destination_arrow();
-        let l1 = source_label.as_ref().map(|e| (s_to_p(canvas, source_bounds, source_intersect, &*e), e.as_str()));
-        let l2 = dest_label.as_ref().map(|e| (s_to_p(canvas, dest_bounds, dest_intersect, &*e), e.as_str()));
+        let source_data = self.adapter.source_arrow();
+        let target_data = self.adapter.destination_arrow();
         let midpoint_label = self.adapter.midpoint_label();
 
         canvas.draw_multiconnection(
             &self.selected_vertices,
-            &[(
-                source_arrow_type,
-                crate::common::canvas::Stroke {
-                    width: 1.0,
-                    color: self.adapter.foreground_color(),
-                    line_type: source_line_type,
-                },
-                &self.source_points[0],
-                l1,
-            )],
-            &[(
-                dest_arrow_type,
-                crate::common::canvas::Stroke {
-                    width: 1.0,
-                    color: self.adapter.foreground_color(),
-                    line_type: dest_line_type,
-                },
-                &self.dest_points[0],
-                l2,
-            )],
+            vec![
+                ArrowDataPos {
+                    points: &self.source_points[0],
+                    stroke: crate::common::canvas::Stroke {
+                        width: 1.0,
+                        color: self.adapter.foreground_color(),
+                        line_type: source_data.line_type,
+                    },
+                    arrowhead_type: source_data.arrowhead_type,
+                }
+            ],
+            vec![
+                ArrowDataPos {
+                    points: &self.dest_points[0],
+                    stroke: crate::common::canvas::Stroke {
+                        width: 1.0,
+                        color: self.adapter.foreground_color(),
+                        line_type: target_data.line_type,
+                    },
+                    arrowhead_type: target_data.arrowhead_type,
+                }
+            ],
             match &self.center_point {
                 UFOption::Some(point) => *point,
                 UFOption::None => (
@@ -292,6 +304,84 @@ where
             midpoint_label.as_ref().map(|e| e.as_str()),
             self.highlight,
         );
+
+        fn draw_small_labels(canvas: &mut dyn canvas::NHCanvas, bounds: canvas::NHShape, pos: egui::Pos2, labels: [Option<&str>; 2]) {
+            let mut m = |e| canvas.measure_text(pos, egui::Align2::CENTER_CENTER, e, canvas::CLASS_TOP_FONT_SIZE).size();
+            let sizes = [
+                labels[0].map(&mut m).unwrap_or(egui::Vec2::ZERO),
+                labels[1].map(&mut m).unwrap_or(egui::Vec2::ZERO),
+            ];
+            for p in bounds.place_labels(pos, sizes, 10.0).iter().zip(labels.iter()) {
+                if let Some(l) = p.1 {
+                    canvas.draw_text(
+                        *p.0,
+                        egui::Align2::CENTER_CENTER,
+                        *l,
+                        canvas::CLASS_TOP_FONT_SIZE,
+                        egui::Color32::BLACK,
+                    );
+                }
+            }
+        }
+        draw_small_labels(canvas, source_bounds, source_intersect, [source_data.multiplicity.as_ref().map(|e| e.as_str()), source_data.role.as_ref().map(|e| e.as_str())]);
+        draw_small_labels(canvas, dest_bounds, dest_intersect, [target_data.multiplicity.as_ref().map(|e| e.as_str()), target_data.role.as_ref().map(|e| e.as_str())]);
+
+        fn draw_reading(canvas: &mut dyn canvas::NHCanvas, intersect: egui::Pos2, next: egui::Pos2, reading_text: &str) {
+            const PADDING: f32 = 10.0;
+            const TRIANGLE_LONGEST_SIDE: f32 = 10.0;
+            const TRIANGLE_PERPENDICULAR: f32 = 7.0;
+            let size = canvas.measure_text(intersect, egui::Align2::CENTER_CENTER, reading_text, canvas::CLASS_TOP_FONT_SIZE).size();
+            let mid = (intersect + next.to_vec2()) / 2.0;
+            let (dx, dy) = (next.x - intersect.x, next.y - intersect.y);
+            let angle = f32::atan2(dx, dy);
+            let pos = mid + egui::Vec2::new(
+                f32::cos(angle) * (size.x / 2.0 + PADDING),
+                -f32::sin(angle) * (size.y / 2.0 + PADDING),
+            );
+            canvas.draw_text(
+                pos,
+                egui::Align2::CENTER_CENTER,
+                reading_text,
+                canvas::CLASS_TOP_FONT_SIZE,
+                egui::Color32::BLACK,
+            );
+
+            let points = if dx.abs() > dy.abs() {
+                let sign = if intersect.x < next.x {
+                    -1.0 // "◀",
+                } else {
+                    1.0 // "▶"
+                };
+                vec![
+                    egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * 2.0, pos.y - TRIANGLE_LONGEST_SIDE / 2.0),
+                    egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * (TRIANGLE_PERPENDICULAR + 2.0), pos.y),
+                    egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * 2.0, pos.y + TRIANGLE_LONGEST_SIDE / 2.0),
+                ]
+            } else {
+                let sign = if intersect.y < next.y {
+                    -1.0 // "⏶"
+                } else {
+                    1.0 // "⏷"
+                };
+                vec![
+                    egui::Pos2::new(pos.x - TRIANGLE_LONGEST_SIDE / 2.0, pos.y + sign * size.y / 2.0),
+                    egui::Pos2::new(pos.x, pos.y + sign * size.y / 2.0 + sign * TRIANGLE_PERPENDICULAR),
+                    egui::Pos2::new(pos.x + TRIANGLE_LONGEST_SIDE / 2.0, pos.y + sign * size.y / 2.0),
+                ]
+            };
+            canvas.draw_polygon(
+                points,
+                egui::Color32::BLACK,
+                canvas::Stroke::NONE,
+                canvas::Highlight::NONE,
+            );
+        }
+        if let Some(reading) = source_data.reading {
+            draw_reading(canvas, source_intersect, self.source_points[0].get(1).map(|e| e.1).unwrap_or_else(|| self.position()), &reading);
+        }
+        if let Some(reading) = target_data.reading {
+            draw_reading(canvas, dest_intersect, self.dest_points[0].get(1).map(|e| e.1).unwrap_or_else(|| self.position()), &reading);
+        }
 
         TargettingStatus::NotDrawn
     }

@@ -3,7 +3,7 @@ use crate::common::controller::{
     ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ModelsLabelAcquirer, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
-use crate::common::views::multiconnection_view::{FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
+use crate::common::views::multiconnection_view::{ArrowData, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
@@ -2569,17 +2569,23 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         Arc::new("TODO".to_owned())
     }
 
-    fn source_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
-        (self.line_type(), match self.model.read().link_type {
-            DemoCsdLinkType::Initiation | DemoCsdLinkType::Interstriction => {
-                canvas::ArrowheadType::None
-            }
-            DemoCsdLinkType::Interimpediment => canvas::ArrowheadType::FullTriangle,
-        }, None)
+    fn source_arrow(&self) -> ArrowData {
+        ArrowData::new_labelless(
+            self.line_type(),
+            match self.model.read().link_type {
+                DemoCsdLinkType::Initiation | DemoCsdLinkType::Interstriction => {
+                    canvas::ArrowheadType::None
+                }
+                DemoCsdLinkType::Interimpediment => canvas::ArrowheadType::FullTriangle,
+            },
+        )
     }
 
-    fn destination_arrow(&self) -> (canvas::LineType, canvas::ArrowheadType, Option<Arc<String>>) {
-        (self.line_type(), canvas::ArrowheadType::None, None)
+    fn destination_arrow(&self) -> ArrowData {
+        ArrowData::new_labelless(
+            self.line_type(),
+            canvas::ArrowheadType::None,
+        )
     }
 
     fn show_properties(

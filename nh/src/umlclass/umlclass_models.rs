@@ -85,9 +85,9 @@ impl UmlClassCollector {
             let target_name = self.absolute_paths.get(&link.target.uuid()).unwrap();
 
             self.plantuml_data.push_str(source_name);
-            if !link.source_arrowhead_label.is_empty() {
+            if !link.source_label_multiplicity.is_empty() {
                 self.plantuml_data
-                    .push_str(&format!(" {:?}", link.source_arrowhead_label));
+                    .push_str(&format!(" {:?}", link.source_label_multiplicity));
             }
             self.plantuml_data.push_str(match link.link_type {
                 UmlClassLinkType::Association => " -- ",
@@ -97,9 +97,9 @@ impl UmlClassCollector {
                 UmlClassLinkType::InterfaceRealization => " ..|> ",
                 UmlClassLinkType::Usage => " ..> ",
             });
-            if !link.target_arrowhead_label.is_empty() {
+            if !link.target_label_multiplicity.is_empty() {
                 self.plantuml_data
-                    .push_str(&format!("{:?} ", link.target_arrowhead_label));
+                    .push_str(&format!("{:?} ", link.target_label_multiplicity));
             }
             self.plantuml_data.push_str(target_name);
             if !link.stereotype.is_empty() {
@@ -216,17 +216,7 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
             UmlClassElement::UmlClassLink(inner) => {
                 let model = inner.read();
 
-                let new_model = UmlClassLink {
-                    uuid: new_uuid,
-                    link_type: model.link_type,
-                    stereotype: model.stereotype.clone(),
-                    source: model.source.clone(),
-                    source_arrowhead_label: model.source_arrowhead_label.clone(),
-                    target: model.target.clone(),
-                    target_arrowhead_label: model.target_arrowhead_label.clone(),
-                    comment: model.comment.clone(),
-                };
-                UmlClassElement::UmlClassLink(ERef::new(new_model))
+                UmlClassElement::UmlClassLink(model.clone_with(*new_uuid))
             },
             UmlClassElement::UmlClassComment(inner) => {
                 let model = inner.read();
@@ -691,10 +681,14 @@ pub struct UmlClassLink {
     pub stereotype: Arc<String>,
     #[nh_context_serde(entity)]
     pub source: UmlClassClassifier,
-    pub source_arrowhead_label: Arc<String>,
+    pub source_label_multiplicity: Arc<String>,
+    pub source_label_role: Arc<String>,
+    pub source_label_reading: Arc<String>,
     #[nh_context_serde(entity)]
     pub target: UmlClassClassifier,
-    pub target_arrowhead_label: Arc<String>,
+    pub target_label_multiplicity: Arc<String>,
+    pub target_label_role: Arc<String>,
+    pub target_label_reading: Arc<String>,
 
     pub comment: Arc<String>,
 }
@@ -712,11 +706,31 @@ impl UmlClassLink {
             link_type,
             stereotype: Arc::new(stereotype),
             source,
-            source_arrowhead_label: Arc::new("".to_owned()),
+            source_label_multiplicity: Arc::new("".to_owned()),
+            source_label_role: Arc::new("".to_owned()),
+            source_label_reading: Arc::new("".to_owned()),
             target,
-            target_arrowhead_label: Arc::new("".to_owned()),
+            target_label_multiplicity: Arc::new("".to_owned()),
+            target_label_role: Arc::new("".to_owned()),
+            target_label_reading: Arc::new("".to_owned()),
             comment: Arc::new("".to_owned()),
         }
+    }
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            link_type: self.link_type,
+            stereotype: self.stereotype.clone(),
+            source: self.source.clone(),
+            source_label_multiplicity: self.source_label_multiplicity.clone(),
+            source_label_role: self.source_label_role.clone(),
+            source_label_reading: self.source_label_reading.clone(),
+            target: self.target.clone(),
+            target_label_multiplicity: self.target_label_multiplicity.clone(),
+            target_label_role: self.target_label_role.clone(),
+            target_label_reading: self.target_label_reading.clone(),
+            comment: self.comment.clone(),
+        })
     }
 }
 
