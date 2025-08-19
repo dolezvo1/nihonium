@@ -4,6 +4,7 @@ use proc_macro::TokenStream;
 mod unwrap;
 mod model;
 mod container_model;
+mod view;
 mod nh_context_serialize;
 mod nh_context_deserialize;
 mod nh_context_serde_tag;
@@ -21,6 +22,11 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(ContainerModel, attributes(container_model))]
 pub fn derive_container_model(input: TokenStream) -> TokenStream {
     container_model::derive_container_model(input)
+}
+
+#[proc_macro_derive(View, attributes(view))]
+pub fn derive_view(input: TokenStream) -> TokenStream {
+    view::derive_view(input)
 }
 
 #[proc_macro_derive(NHContextSerialize, attributes(nh_context_serde))]
