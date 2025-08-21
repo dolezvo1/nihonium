@@ -2326,6 +2326,48 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     }
 }
 
+
+fn new_democsd_link(
+    link_type: DemoCsdLinkType,
+    source: (
+        ERef<DemoCsdTransactor>,
+        DemoCsdElementView,
+    ),
+    target: (
+        ERef<DemoCsdTransaction>,
+        DemoCsdElementView,
+    ),
+) -> (ERef<DemoCsdLink>, ERef<LinkViewT>) {
+    let link_model = ERef::new(DemoCsdLink::new(
+        uuid::Uuid::now_v7().into(),
+        link_type,
+        source.0,
+        target.0,
+    ));
+    let link_view = new_democsd_link_view(link_model.clone(), source.1, target.1);
+    (link_model, link_view)
+}
+fn new_democsd_link_view(
+    model: ERef<DemoCsdLink>,
+    source: DemoCsdElementView,
+    target: DemoCsdElementView,
+) -> ERef<LinkViewT> {
+    let m = model.read();
+    MulticonnectionView::new(
+        Arc::new(uuid::Uuid::now_v7().into()),
+        DemoCsdLinkAdapter {
+            model: model.clone(),
+            link_type_buffer: m.link_type,
+            comment_buffer: (*m.comment).clone(),
+        },
+        source,
+        target,
+        None,
+        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
+        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
+    )
+}
+
 #[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 pub struct DemoCsdLinkAdapter {
     #[nh_context_serde(entity)]
@@ -2354,10 +2396,6 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
 
     fn model_uuid(&self) -> Arc<ModelUuid> {
         self.model.read().uuid.clone()
-    }
-
-    fn model_name(&self) -> Arc<String> {
-        Arc::new("TODO".to_owned())
     }
 
     fn source_arrow(&self) -> ArrowData {
@@ -2484,45 +2522,4 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
             model.target = new_target.clone();
         }
     }
-}
-
-fn new_democsd_link(
-    link_type: DemoCsdLinkType,
-    source: (
-        ERef<DemoCsdTransactor>,
-        DemoCsdElementView,
-    ),
-    target: (
-        ERef<DemoCsdTransaction>,
-        DemoCsdElementView,
-    ),
-) -> (ERef<DemoCsdLink>, ERef<LinkViewT>) {
-    let link_model = ERef::new(DemoCsdLink::new(
-        uuid::Uuid::now_v7().into(),
-        link_type,
-        source.0,
-        target.0,
-    ));
-    let link_view = new_democsd_link_view(link_model.clone(), source.1, target.1);
-    (link_model, link_view)
-}
-fn new_democsd_link_view(
-    model: ERef<DemoCsdLink>,
-    source: DemoCsdElementView,
-    target: DemoCsdElementView,
-) -> ERef<LinkViewT> {
-    let m = model.read();
-    MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
-        DemoCsdLinkAdapter {
-            model: model.clone(),
-            link_type_buffer: m.link_type,
-            comment_buffer: (*m.comment).clone(),
-        },
-        source,
-        target,
-        None,
-        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
-        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
-    )
 }

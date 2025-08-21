@@ -4,7 +4,7 @@ use crate::common::controller::{
     ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ModelsLabelAcquirer, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
-use crate::common::views::multiconnection_view::{ArrowData, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
+use crate::common::views::multiconnection_view::{self, ArrowData, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
@@ -2056,6 +2056,50 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     }
 }
 
+
+fn new_rdf_predicate(
+    iri: &str,
+    source: (ERef<RdfNode>, RdfElementView),
+    target: (RdfTargettableElement, RdfElementView),
+) -> (ERef<RdfPredicate>, ERef<LinkViewT>) {
+    let predicate_model = ERef::new(RdfPredicate::new(
+        uuid::Uuid::now_v7().into(),
+        iri.to_owned(),
+        source.0,
+        target.0,
+    ));
+    let predicate_view = new_rdf_predicate_view(
+        predicate_model.clone(),
+        source.1,
+        target.1
+    );
+
+    (predicate_model, predicate_view)
+}
+fn new_rdf_predicate_view(
+    model: ERef<RdfPredicate>,
+    source: RdfElementView,
+    target: RdfElementView,
+) -> ERef<LinkViewT> {
+    let m = model.read();
+
+    let (sp, mp, tp) = multiconnection_view::init_points(*m.source.read().uuid, *m.target.uuid(), target.min_shape(), None);
+
+    MulticonnectionView::new(
+        Arc::new(uuid::Uuid::now_v7().into()),
+        RdfPredicateAdapter {
+            model: model.clone(),
+            iri_buffer: (*m.iri).clone(),
+            comment_buffer: (*m.comment).clone(),
+        },
+        source,
+        target,
+        mp,
+        sp,
+        tp,
+    )
+}
+
 #[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 pub struct RdfPredicateAdapter {
     #[nh_context_serde(entity)]
@@ -2075,12 +2119,8 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn model_name(&self) -> Arc<String> {
-        self.model.read().iri.clone()
-    }
-
     fn midpoint_label(&self) -> Option<Arc<String>> {
-        Some(self.model_name())
+        Some(self.model.read().iri.clone())
     }
 
     fn source_arrow(&self) -> ArrowData {
@@ -2211,71 +2251,4 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
             model.target = new_target;
         }
     }
-}
-
-fn new_rdf_predicate(
-    iri: &str,
-    source: (ERef<RdfNode>, RdfElementView),
-    target: (RdfTargettableElement, RdfElementView),
-) -> (ERef<RdfPredicate>, ERef<LinkViewT>) {
-    let predicate_model = ERef::new(RdfPredicate::new(
-        uuid::Uuid::now_v7().into(),
-        iri.to_owned(),
-        source.0,
-        target.0,
-    ));
-    let predicate_view = new_rdf_predicate_view(
-        predicate_model.clone(),
-        source.1,
-        target.1
-    );
-
-    (predicate_model, predicate_view)
-}
-fn new_rdf_predicate_view(
-    model: ERef<RdfPredicate>,
-    source: RdfElementView,
-    target: RdfElementView,
-) -> ERef<LinkViewT> {
-    let m = model.read();
-
-    let (sp, mp, tp) = if source.model_uuid() == target.model_uuid() {
-        let s = source.min_shape();
-        let (min, quarter_size) = match s {
-            NHShape::Rect { inner } => (inner.min, inner.size() / 4.0),
-            NHShape::Ellipse { position, bounds_radius } => (position - bounds_radius, bounds_radius / 2.0),
-        };
-
-        (
-            vec![vec![
-                (uuid::Uuid::now_v7().into(), egui::Pos2::ZERO),
-                (uuid::Uuid::now_v7().into(), min + egui::Vec2::new(quarter_size.x, -quarter_size.y)),
-            ]],
-            Some((uuid::Uuid::now_v7().into(), min - quarter_size)),
-            vec![vec![
-                (uuid::Uuid::now_v7().into(), egui::Pos2::ZERO),
-                (uuid::Uuid::now_v7().into(), min + egui::Vec2::new(-quarter_size.x, quarter_size.y)),
-            ]],
-        )
-    } else {
-        (
-            vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
-            None,
-            vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
-        )
-    };
-
-    MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
-        RdfPredicateAdapter {
-            model: model.clone(),
-            iri_buffer: (*m.iri).clone(),
-            comment_buffer: (*m.comment).clone(),
-        },
-        source,
-        target,
-        mp,
-        sp,
-        tp,
-    )
 }

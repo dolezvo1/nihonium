@@ -21,10 +21,41 @@ impl ArrowData {
     }
 }
 
+pub fn init_points(
+    source_uuid: ModelUuid,
+    target_uuid: ModelUuid,
+    source_shape: canvas::NHShape,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+) -> (Vec<Vec<(ViewUuid, egui::Pos2)>>, Option<(ViewUuid, egui::Pos2)>, Vec<Vec<(ViewUuid, egui::Pos2)>>) {
+    if source_uuid == target_uuid {
+        let (min, quarter_size) = match source_shape {
+            canvas::NHShape::Rect { inner } => (inner.min, inner.size() / 4.0),
+            canvas::NHShape::Ellipse { position, bounds_radius } => (position - bounds_radius, bounds_radius / 2.0),
+        };
+
+        (
+            vec![vec![
+                (uuid::Uuid::now_v7().into(), egui::Pos2::ZERO),
+                (uuid::Uuid::now_v7().into(), min + egui::Vec2::new(quarter_size.x, -quarter_size.y)),
+            ]],
+            Some((uuid::Uuid::now_v7().into(), min - quarter_size)),
+            vec![vec![
+                (uuid::Uuid::now_v7().into(), egui::Pos2::ZERO),
+                (uuid::Uuid::now_v7().into(), min + egui::Vec2::new(-quarter_size.x, quarter_size.y)),
+            ]],
+        )
+    } else {
+        (
+            vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
+            center_point,
+            vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
+        )
+    }
+}
+
 pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync {
     fn model(&self) -> DomainT::CommonElementT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
-    fn model_name(&self) -> Arc<String>;
 
     fn background_color(&self) -> egui::Color32 {
         egui::Color32::WHITE
