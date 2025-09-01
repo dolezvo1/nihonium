@@ -22,8 +22,8 @@ use egui_ltreeview::{NodeBuilder, TreeView, TreeViewState};
 mod common;
 mod democsd;
 mod rdf;
-mod umlclass;
 mod ontouml;
+mod umlclass;
 
 use crate::common::eref::ERef;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};

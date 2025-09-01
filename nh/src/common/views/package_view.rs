@@ -154,7 +154,7 @@ where
         parent: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
-    ) -> PropertiesStatus {
+    ) -> PropertiesStatus<DomainT> {
         let child = self
             .owned_views
             .event_order_find_mut(|v| v.show_properties(drawing_context, parent, ui, commands).to_non_default());
@@ -368,7 +368,7 @@ where
                         tool.add_position(*event.mouse_position());
                         tool.add_element(self.adapter.model());
 
-                        if let Some((new_e, esm)) = tool.try_construct(self) {
+                        if let Some((new_e, esm)) = tool.try_construct_view(self) {
                             commands.push(InsensitiveCommand::AddElement(*self.uuid, new_e.into(), true).into());
                             if !ehc.modifiers.alt {
                                 *element_setup_modal = esm;
@@ -618,6 +618,10 @@ where
 
                 recurse!(self);
             },
+            InsensitiveCommand::AddDependency(..)
+            | InsensitiveCommand::RemoveDependency(..) => {
+                recurse!(self);
+            }
             InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {
                 self.owned_views.apply_arrangement(uuids, *arr);
             },

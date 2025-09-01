@@ -638,7 +638,7 @@ pub enum EventHandlingStatus {
 
 /// Selection sensitive command - not inherently repeatable
 #[derive(Clone, PartialEq, Debug)]
-pub enum SensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
+pub enum SensitiveCommand<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     MoveSelectedElements(egui::Vec2),
     ResizeSelectedElementsBy(egui::Align2, egui::Vec2),
     ResizeSelectedElementsTo(egui::Align2, egui::Vec2),
@@ -647,19 +647,19 @@ pub enum SensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     PasteClipboardElements,
     ArrangeSelected(Arrangement),
     PropertyChangeSelected(Vec<PropChangeT>),
-    Insensitive(InsensitiveCommand<ElementT, PropChangeT>)
+    Insensitive(InsensitiveCommand<AddElementT, PropChangeT>)
 }
 
-impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<ElementT, PropChangeT> {
+impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<AddElementT, PropChangeT> {
     // TODO: I'm not sure whether this isn't actually the responsibility of the diagram itself
     fn to_selection_insensitive<F, G>(
         self,
         selected_elements: F,
         clipboard_elements: G,
-    ) -> InsensitiveCommand<ElementT, PropChangeT>
+    ) -> InsensitiveCommand<AddElementT, PropChangeT>
     where
         F: Fn() -> HashSet<ViewUuid>,
-        G: Fn() -> Vec<ElementT>
+        G: Fn() -> Vec<AddElementT>
     {
         use SensitiveCommand as SC;
         use InsensitiveCommand as IC;
@@ -684,15 +684,15 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Eleme
     }
 }
 
-impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug> From<InsensitiveCommand<ElementT, PropChangeT>> for SensitiveCommand<ElementT, PropChangeT> {
-    fn from(value: InsensitiveCommand<ElementT, PropChangeT>) -> Self {
+impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> From<InsensitiveCommand<AddElementT, PropChangeT>> for SensitiveCommand<AddElementT, PropChangeT> {
+    fn from(value: InsensitiveCommand<AddElementT, PropChangeT>) -> Self {
         Self::Insensitive(value)
     }
 }
 
 /// Selection insensitive command - inherently repeatable
 #[derive(Clone, PartialEq, Debug)]
-pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug> {
+pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     SelectAll(bool),
     SelectSpecific(HashSet<ViewUuid>, bool),
     SelectByDrag(egui::Rect),
@@ -702,14 +702,16 @@ pub enum InsensitiveCommand<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
     ResizeSpecificElementsTo(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     DeleteSpecificElements(HashSet<ViewUuid>, /*including_models:*/ bool),
     CutSpecificElements(HashSet<ViewUuid>),
-    PasteSpecificElements(ViewUuid, Vec<ElementT>),
+    PasteSpecificElements(ViewUuid, Vec<AddElementT>),
     ArrangeSpecificElements(HashSet<ViewUuid>, Arrangement),
-    AddElement(ViewUuid, ElementT, /*into_model:*/ bool),
+    AddElement(ViewUuid, AddElementT, /*into_model:*/ bool),
+    AddDependency(ViewUuid, u8, AddElementT, /*into_model:*/ bool),
+    RemoveDependency(ViewUuid, u8, ViewUuid, /*including_model:*/ bool),
     PropertyChange(HashSet<ViewUuid>, Vec<PropChangeT>),
 }
 
-impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
-    InsensitiveCommand<ElementT, PropChangeT>
+impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug>
+    InsensitiveCommand<AddElementT, PropChangeT>
 {
     fn info_text(&self) -> Arc<String> {
         match self {
@@ -732,6 +734,8 @@ impl<ElementT: Clone + Debug, PropChangeT: Clone + Debug>
             InsensitiveCommand::PasteSpecificElements(_, uuids) => Arc::new(format!("Paste {} elements", uuids.len())),
             InsensitiveCommand::ArrangeSpecificElements(uuids, _) => Arc::new(format!("Arranged {} elements", uuids.len())),
             InsensitiveCommand::AddElement(..) => Arc::new(format!("Add 1 element")),
+            InsensitiveCommand::AddDependency(..)
+            | InsensitiveCommand::RemoveDependency(..) => Arc::new(format!("Modify 1 element")),
             InsensitiveCommand::PropertyChange(uuids, ..) => {
                 Arc::new(format!("Modify {} elements", uuids.len()))
             }
@@ -852,10 +856,13 @@ pub trait Tool<DomainT: Domain> {
 
     fn add_position(&mut self, pos: egui::Pos2);
     fn add_element(&mut self, element: DomainT::CommonElementT);
-    fn try_construct(
+
+    fn try_additional_dependency(&mut self) -> Option<(u8, ModelUuid, ModelUuid)>;
+    fn try_construct_view(
         &mut self,
         into: &dyn ContainerGen2<DomainT>,
     ) -> Option<(DomainT::CommonElementViewT, Option<Box<dyn CustomModal>>)>;
+
     fn reset_event_lock(&mut self);
 }
 
@@ -902,13 +909,14 @@ pub enum RequestType {
     ChangeColor(u8, MGlobalColor),
 }
 
-pub enum PropertiesStatus {
+pub enum PropertiesStatus<DomainT: Domain> {
     NotShown,
     Shown,
     PromptRequest(RequestType),
+    ToolRequest(Option<DomainT::ToolT>),
 }
 
-impl PropertiesStatus {
+impl<DomainT: Domain> PropertiesStatus<DomainT> {
     pub fn to_non_default(self) -> Option<Self> {
         match self {
             Self::NotShown => None,
@@ -924,7 +932,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         _: &DomainT::QueryableT<'_>,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
-    ) -> PropertiesStatus {
+    ) -> PropertiesStatus<DomainT> {
         PropertiesStatus::NotShown
     }
     fn draw_in(
@@ -1019,7 +1027,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         &mut self,
         drawing_context: &DrawingContext,
         ui: &mut egui::Ui,
-    ) -> PropertiesStatus;
+    ) -> PropertiesStatus<DomainT>;
     fn show_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
@@ -1244,7 +1252,16 @@ impl<
                 }
 
                 let mut tool = self.temporaries.current_tool.take();
-                if let Some((new_e, esm)) = tool.as_mut().and_then(|e| e.try_construct(self)) {
+                if let Some((t, target_id, dependency_id)) = tool.as_mut().and_then(|e| e.try_additional_dependency()) {
+                    if let (Some(target_view_id), Some(dependency_view))
+                        = (self.temporaries.flattened_represented_models.get(&target_id),
+                            self.temporaries.flattened_represented_models.get(&dependency_id)
+                            .and_then(|e| self.temporaries.flattened_views.get(e))) {
+                        commands.push(InsensitiveCommand::AddDependency(*target_view_id, t, dependency_view.clone().into(), true).into());
+                        handled = true;
+                    };
+                }
+                if let Some((new_e, esm)) = tool.as_mut().and_then(|e| e.try_construct_view(self)) {
                     commands.push(InsensitiveCommand::AddElement(
                         *self.uuid(),
                         DomainT::AddCommandElementT::from(new_e),
@@ -1372,7 +1389,9 @@ impl<
                 | InsensitiveCommand::MoveSpecificElements(..)
                 | InsensitiveCommand::MoveAllElements(..)
                 | InsensitiveCommand::ResizeSpecificElementsBy(..)
-                | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
+                | InsensitiveCommand::ResizeSpecificElementsTo(..)
+                | InsensitiveCommand::AddDependency(..)
+                | InsensitiveCommand::RemoveDependency(..) => {}
                 InsensitiveCommand::DeleteSpecificElements(uuids, _)
                 | InsensitiveCommand::CutSpecificElements(uuids) => {
                     let from_model = matches!(
@@ -1458,6 +1477,8 @@ impl<
                 | InsensitiveCommand::ResizeSpecificElementsBy(..)
                 | InsensitiveCommand::ResizeSpecificElementsTo(..)
                 | InsensitiveCommand::ArrangeSpecificElements(..)
+                | InsensitiveCommand::AddDependency(..)
+                | InsensitiveCommand::RemoveDependency(..)
                 | InsensitiveCommand::PropertyChange(..) => false,
             };
 
@@ -1793,9 +1814,7 @@ impl<
                 }
                 match self.adapter.show_view_props_fun(context, ui) {
                     PropertiesStatus::NotShown | PropertiesStatus::Shown => {},
-                    PropertiesStatus::PromptRequest(request_type) => {
-                        break 'req PropertiesStatus::PromptRequest(request_type);
-                    },
+                    a => break 'req a,
                 }
 
                 ui.add_space(super::views::VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
@@ -1811,6 +1830,10 @@ impl<
 
         match req {
             PropertiesStatus::NotShown | PropertiesStatus::Shown => None,
+            PropertiesStatus::ToolRequest(t) => {
+                self.temporaries.current_tool = t;
+                None
+            }
             PropertiesStatus::PromptRequest(RequestType::ChangeColor(t, c)) => {
                 #[derive(PartialEq)]
                 enum MGlobalColorType {

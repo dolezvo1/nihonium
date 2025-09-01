@@ -4,6 +4,7 @@ use eframe::egui;
 
 use crate::{common::{canvas::{self, ArrowDataPos}, controller::{ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, CustomModal};
 
+#[derive(Clone)]
 pub struct ArrowData {
     pub line_type: canvas::LineType,
     pub arrowhead_type: canvas::ArrowheadType,
@@ -22,13 +23,13 @@ impl ArrowData {
 }
 
 pub fn init_points(
-    source_uuid: ModelUuid,
+    mut source_uuid: impl Iterator<Item = ModelUuid>,
     target_uuid: ModelUuid,
-    source_shape: canvas::NHShape,
+    target_shape: canvas::NHShape,
     center_point: Option<(ViewUuid, egui::Pos2)>,
 ) -> (Vec<Vec<(ViewUuid, egui::Pos2)>>, Option<(ViewUuid, egui::Pos2)>, Vec<Vec<(ViewUuid, egui::Pos2)>>) {
-    if source_uuid == target_uuid {
-        let (min, quarter_size) = match source_shape {
+    if source_uuid.any(|e| e == target_uuid) {
+        let (min, quarter_size) = match target_shape {
             canvas::NHShape::Rect { inner } => (inner.min, inner.size() / 4.0),
             canvas::NHShape::Ellipse { position, bounds_radius } => (position - bounds_radius, bounds_radius / 2.0),
         };
@@ -64,14 +65,22 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
         egui::Color32::BLACK
     }
     fn midpoint_label(&self) -> Option<Arc<String>> { None }
-    fn source_arrow(&self) -> ArrowData;
-    fn destination_arrow(&self) -> ArrowData;
+    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData>;
+    fn push_source(&self, _e: DomainT::CommonElementT) -> Result<(), ()> {
+        Err(())
+    }
+    fn remove_source(&self, _uuid: &ModelUuid) -> Result<(), ()> {
+        Err(())
+    }
+    fn push_target(&self, _e: DomainT::CommonElementT) -> Result<(), ()> {
+        Err(())
+    }
 
     fn show_properties(
         &mut self,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>
-    );
+    ) -> PropertiesStatus<DomainT>;
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
@@ -100,6 +109,24 @@ pub struct VertexInformation {
 #[derive(Clone, Copy, Debug)]
 pub struct FlipMulticonnection {}
 
+
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct Ending<T> where T: serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone {
+    #[nh_context_serde(entity)]
+    element: T,
+    points: Vec<(ViewUuid, egui::Pos2)>,
+}
+
+impl<T> Ending<T> where T: serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone {
+    pub fn new(e: T) -> Self {
+        Self::new_p(e, vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)])
+    }
+
+    pub fn new_p(e: T, p: Vec<(ViewUuid, egui::Pos2)>,) -> Self {
+        Self { element: e, points: p, }
+    }
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct MulticonnectionView<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> {
@@ -108,9 +135,9 @@ pub struct MulticonnectionView<DomainT: Domain, AdapterT: MulticonnectionAdapter
     adapter: AdapterT,
 
     #[nh_context_serde(entity)]
-    pub source: DomainT::CommonElementViewT,
+    sources: Vec<Ending<DomainT::CommonElementViewT>>,
     #[nh_context_serde(entity)]
-    pub target: DomainT::CommonElementViewT,
+    targets: Vec<Ending<DomainT::CommonElementViewT>>,
 
     #[nh_context_serde(skip_and_default)]
     dragged_node: Option<(ViewUuid, egui::Pos2)>,
@@ -119,8 +146,6 @@ pub struct MulticonnectionView<DomainT: Domain, AdapterT: MulticonnectionAdapter
     #[nh_context_serde(skip_and_default)]
     selected_vertices: HashSet<ViewUuid>,
     center_point: UFOption<(ViewUuid, egui::Pos2)>,
-    source_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
-    dest_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
     #[nh_context_serde(skip_and_default)]
     point_to_origin: HashMap<ViewUuid, (bool, usize)>,
 }
@@ -132,39 +157,35 @@ where
 {
     pub fn new(
         uuid: Arc<ViewUuid>,
-        adapter: AdapterT,
-        source: DomainT::CommonElementViewT,
-        destination: DomainT::CommonElementViewT,
-
+        mut adapter: AdapterT,
+        sources: Vec<Ending<DomainT::CommonElementViewT>>,
+        targets: Vec<Ending<DomainT::CommonElementViewT>>,
         center_point: Option<(ViewUuid, egui::Pos2)>,
-        source_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
-        dest_points: Vec<Vec<(ViewUuid, egui::Pos2)>>,
     ) -> ERef<Self> {
         let mut point_to_origin = HashMap::new();
-        for (idx, path) in source_points.iter().enumerate() {
-            for p in path {
+        for (idx, e) in sources.iter().enumerate() {
+            for p in &e.points {
                 point_to_origin.insert(p.0, (false, idx));
             }
         }
-        for (idx, path) in dest_points.iter().enumerate() {
-            for p in path {
+        for (idx, e) in targets.iter().enumerate() {
+            for p in &e.points {
                 point_to_origin.insert(p.0, (true, idx));
             }
         }
+        adapter.refresh_buffers();
 
         ERef::new(
             Self {
                 uuid,
                 adapter,
-                source,
-                target: destination,
+                sources,
+                targets,
                 dragged_node: None,
                 highlight: canvas::Highlight::NONE,
                 selected_vertices: HashSet::new(),
 
                 center_point: center_point.into(),
-                source_points,
-                dest_points,
                 point_to_origin,
             }
         )
@@ -173,8 +194,8 @@ where
     const VERTEX_RADIUS: f32 = 5.0;
     fn all_vertices(&self) -> impl Iterator<Item = &(ViewUuid, egui::Pos2)> {
         self.center_point.as_ref().into_iter()
-            .chain(self.source_points.iter().flat_map(|e| e.iter()))
-            .chain(self.dest_points.iter().flat_map(|e| e.iter()))
+            .chain(self.sources.iter().flat_map(|e| e.points.iter()))
+            .chain(self.targets.iter().flat_map(|e| e.points.iter()))
     }
 }
 
@@ -218,7 +239,7 @@ where
     fn position(&self) -> egui::Pos2 {
         match &self.center_point {
             UFOption::Some(point) => point.1,
-            UFOption::None => (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
+            UFOption::None => (self.sources[0].points[0].1 + self.targets[0].points[0].1.to_vec2()) / 2.0,
         }
     }
 }
@@ -237,14 +258,27 @@ where
         _parent: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
-    ) -> PropertiesStatus {
+    ) -> PropertiesStatus<DomainT> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
         }
 
-        self.adapter.show_properties(ui, commands);
+        for (b, (e, label)) in [self.sources.iter(), self.targets.iter()].iter_mut().zip(["Sources:", "Targets:"]).enumerate() {
+            ui.label(label);
+            for e in e {
+                ui.horizontal(|ui| {
+                    ui.label(&e.element.model_uuid().to_string());
+                    if ui.button("Remove from view").clicked() {
+                        commands.push(InsensitiveCommand::RemoveDependency(*self.uuid, b as u8, *e.element.uuid(), false).into());
+                    }
+                    if ui.button("Remove from model").clicked() {
+                        commands.push(InsensitiveCommand::RemoveDependency(*self.uuid, b as u8, *e.element.uuid(), true).into());
+                    }
+                });
+            }
+        }
 
-        PropertiesStatus::Shown
+        return self.adapter.show_properties(ui, commands);
     }
 
     fn draw_in(
@@ -254,164 +288,149 @@ where
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus {
-        let source_bounds = self.source.min_shape();
-        let dest_bounds = self.target.min_shape();
-
-        let (source_next_point, dest_next_point) = match (
-            self.source_points[0].iter().skip(1)
-                .map(|e| *e)
-                .chain(self.center_point.as_ref().cloned())
-                .find(|p| !source_bounds.contains(p.1))
-                .map(|e| e.1),
-            self.dest_points[0].iter().skip(1)
-                .map(|e| *e)
-                .chain(self.center_point.as_ref().cloned())
-                .find(|p| !dest_bounds.contains(p.1))
-                .map(|e| e.1),
-        ) {
-            (None, None) => {
-                let point = source_bounds.nice_midpoint(&dest_bounds);
-                (point, point)
-            }
-            (source_next_point, dest_next_point) => (
-                source_next_point.unwrap_or(dest_bounds.center()),
-                dest_next_point.unwrap_or(source_bounds.center()),
-            ),
+        let center_point = if let UFOption::Some(center_point) = &self.center_point {
+            center_point.1
+        } else {
+            self.sources[0].element.min_shape().nice_midpoint(&self.targets[0].element.min_shape())
         };
+
+        for e in self.sources.iter_mut().chain(self.targets.iter_mut()) {
+            let shape = e.element.min_shape();
+            let next_natural_point = e.points.iter().skip(1).next().map(|p| p.1);
+            let intersect = if let Some(point) = next_natural_point {
+                shape.orthogonal_intersect(point)
+                    .unwrap_or_else(|| shape.center_intersect(point))
+            } else {
+                shape.center_intersect(center_point)
+            };
+            e.points[0].1 = intersect;
+        }
 
         //canvas.draw_ellipse(source_next_point, egui::Vec2::splat(5.0), egui::Color32::RED, canvas::Stroke::new_solid(1.0, egui::Color32::RED), canvas::Highlight::NONE);
         //canvas.draw_ellipse(dest_next_point, egui::Vec2::splat(5.0), egui::Color32::GREEN, canvas::Stroke::new_solid(1.0, egui::Color32::GREEN), canvas::Highlight::NONE);
 
-        // The bounds may use different intersection method only if the target points are not the same or it's the real midpoint
-        let (source_intersect, dest_intersect) =
-            match (source_bounds.orthogonal_intersect(source_next_point), dest_bounds.orthogonal_intersect(dest_next_point)) {
-                (Some(a), Some(b)) => (a, b),
-                (a, b) if source_next_point != dest_next_point || self.center_point.is_some() =>
-                    (a.unwrap_or_else(|| source_bounds.center_intersect(source_next_point)),
-                     b.unwrap_or_else(|| dest_bounds.center_intersect(dest_next_point))),
-                _ => (source_bounds.center_intersect(source_next_point), dest_bounds.center_intersect(dest_next_point))
-            };
-
-        self.source_points[0][0].1 = source_intersect;
-        self.dest_points[0][0].1 = dest_intersect;
-
         //canvas.draw_ellipse((self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0, egui::Vec2::splat(5.0), egui::Color32::BROWN, canvas::Stroke::new_solid(1.0, egui::Color32::BROWN), canvas::Highlight::NONE);
 
-        let source_data = self.adapter.source_arrow();
-        let target_data = self.adapter.destination_arrow();
+        let ad = self.adapter.arrow_data();
         let midpoint_label = self.adapter.midpoint_label();
 
         canvas.draw_multiconnection(
             &self.selected_vertices,
-            vec![
+            self.sources.iter().map(|e| {
+                let d = ad.get(&e.element.model_uuid()).unwrap();
                 ArrowDataPos {
-                    points: &self.source_points[0],
+                    points: &e.points,
                     stroke: crate::common::canvas::Stroke {
                         width: 1.0,
                         color: self.adapter.foreground_color(),
-                        line_type: source_data.line_type,
+                        line_type: d.line_type,
                     },
-                    arrowhead_type: source_data.arrowhead_type,
+                    arrowhead_type: d.arrowhead_type,
                 }
-            ],
-            vec![
+            }).collect(),
+            self.targets.iter().map(|e| {
+                let d = ad.get(&e.element.model_uuid()).unwrap();
                 ArrowDataPos {
-                    points: &self.dest_points[0],
+                    points: &e.points,
                     stroke: crate::common::canvas::Stroke {
                         width: 1.0,
                         color: self.adapter.foreground_color(),
-                        line_type: target_data.line_type,
+                        line_type: d.line_type,
                     },
-                    arrowhead_type: target_data.arrowhead_type,
+                    arrowhead_type: d.arrowhead_type,
                 }
-            ],
+            }).collect(),
             match &self.center_point {
                 UFOption::Some(point) => *point,
                 UFOption::None => (
                     uuid::Uuid::nil().into(),
-                    (self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0,
+                    (self.sources[0].points[0].1 + self.sources[0].points[0].1.to_vec2()) / 2.0,
                 ),
             },
             midpoint_label.as_ref().map(|e| e.as_str()),
             self.highlight,
         );
 
-        fn draw_small_labels(canvas: &mut dyn canvas::NHCanvas, bounds: canvas::NHShape, pos: egui::Pos2, labels: [Option<&str>; 2]) {
-            let mut m = |e| canvas.measure_text(pos, egui::Align2::CENTER_CENTER, e, canvas::CLASS_TOP_FONT_SIZE).size();
-            let sizes = [
-                labels[0].map(&mut m).unwrap_or(egui::Vec2::ZERO),
-                labels[1].map(&mut m).unwrap_or(egui::Vec2::ZERO),
-            ];
-            for p in bounds.place_labels(pos, sizes, 10.0).iter().zip(labels.iter()) {
-                if let Some(l) = p.1 {
-                    canvas.draw_text(
-                        *p.0,
-                        egui::Align2::CENTER_CENTER,
-                        *l,
-                        canvas::CLASS_TOP_FONT_SIZE,
-                        egui::Color32::BLACK,
-                    );
+        fn draw_arrow_data(canvas: &mut dyn canvas::NHCanvas, shape: canvas::NHShape, shape_intersect: egui::Pos2, next_point: egui::Pos2, data: &ArrowData) {
+            fn draw_small_labels(canvas: &mut dyn canvas::NHCanvas, bounds: canvas::NHShape, pos: egui::Pos2, labels: [Option<&str>; 2]) {
+                let mut m = |e| canvas.measure_text(pos, egui::Align2::CENTER_CENTER, e, canvas::CLASS_TOP_FONT_SIZE).size();
+                let sizes = [
+                    labels[0].map(&mut m).unwrap_or(egui::Vec2::ZERO),
+                    labels[1].map(&mut m).unwrap_or(egui::Vec2::ZERO),
+                ];
+                for p in bounds.place_labels(pos, sizes, 10.0).iter().zip(labels.iter()) {
+                    if let Some(l) = p.1 {
+                        canvas.draw_text(
+                            *p.0,
+                            egui::Align2::CENTER_CENTER,
+                            *l,
+                            canvas::CLASS_TOP_FONT_SIZE,
+                            egui::Color32::BLACK,
+                        );
+                    }
                 }
             }
+            draw_small_labels(canvas, shape, shape_intersect, [data.multiplicity.as_ref().map(|e| e.as_str()), data.role.as_ref().map(|e| e.as_str())]);
+
+            fn draw_reading(canvas: &mut dyn canvas::NHCanvas, intersect: egui::Pos2, next: egui::Pos2, reading_text: &str) {
+                const PADDING: f32 = 10.0;
+                const TRIANGLE_LONGEST_SIDE: f32 = 10.0;
+                const TRIANGLE_PERPENDICULAR: f32 = 7.0;
+                let size = canvas.measure_text(intersect, egui::Align2::CENTER_CENTER, reading_text, canvas::CLASS_TOP_FONT_SIZE).size();
+                let mid = (intersect + next.to_vec2()) / 2.0;
+                let (dx, dy) = (next.x - intersect.x, next.y - intersect.y);
+                let angle = f32::atan2(dx, dy);
+                let pos = mid + egui::Vec2::new(
+                    f32::cos(angle) * (size.x / 2.0 + PADDING),
+                    -f32::sin(angle) * (size.y / 2.0 + PADDING),
+                );
+                canvas.draw_text(
+                    pos,
+                    egui::Align2::CENTER_CENTER,
+                    reading_text,
+                    canvas::CLASS_TOP_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
+
+                let points = if dx.abs() > dy.abs() {
+                    let sign = if intersect.x < next.x {
+                        -1.0 // "◀",
+                    } else {
+                        1.0 // "▶"
+                    };
+                    vec![
+                        egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * 2.0, pos.y - TRIANGLE_LONGEST_SIDE / 2.0),
+                        egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * (TRIANGLE_PERPENDICULAR + 2.0), pos.y),
+                        egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * 2.0, pos.y + TRIANGLE_LONGEST_SIDE / 2.0),
+                    ]
+                } else {
+                    let sign = if intersect.y < next.y {
+                        -1.0 // "⏶"
+                    } else {
+                        1.0 // "⏷"
+                    };
+                    vec![
+                        egui::Pos2::new(pos.x - TRIANGLE_LONGEST_SIDE / 2.0, pos.y + sign * size.y / 2.0),
+                        egui::Pos2::new(pos.x, pos.y + sign * size.y / 2.0 + sign * TRIANGLE_PERPENDICULAR),
+                        egui::Pos2::new(pos.x + TRIANGLE_LONGEST_SIDE / 2.0, pos.y + sign * size.y / 2.0),
+                    ]
+                };
+                canvas.draw_polygon(
+                    points,
+                    egui::Color32::BLACK,
+                    canvas::Stroke::NONE,
+                    canvas::Highlight::NONE,
+                );
+            }
+            if let Some(reading) = &data.reading {
+                draw_reading(canvas, shape_intersect, next_point, &reading);
+            }
         }
-        draw_small_labels(canvas, source_bounds, source_intersect, [source_data.multiplicity.as_ref().map(|e| e.as_str()), source_data.role.as_ref().map(|e| e.as_str())]);
-        draw_small_labels(canvas, dest_bounds, dest_intersect, [target_data.multiplicity.as_ref().map(|e| e.as_str()), target_data.role.as_ref().map(|e| e.as_str())]);
-
-        fn draw_reading(canvas: &mut dyn canvas::NHCanvas, intersect: egui::Pos2, next: egui::Pos2, reading_text: &str) {
-            const PADDING: f32 = 10.0;
-            const TRIANGLE_LONGEST_SIDE: f32 = 10.0;
-            const TRIANGLE_PERPENDICULAR: f32 = 7.0;
-            let size = canvas.measure_text(intersect, egui::Align2::CENTER_CENTER, reading_text, canvas::CLASS_TOP_FONT_SIZE).size();
-            let mid = (intersect + next.to_vec2()) / 2.0;
-            let (dx, dy) = (next.x - intersect.x, next.y - intersect.y);
-            let angle = f32::atan2(dx, dy);
-            let pos = mid + egui::Vec2::new(
-                f32::cos(angle) * (size.x / 2.0 + PADDING),
-                -f32::sin(angle) * (size.y / 2.0 + PADDING),
-            );
-            canvas.draw_text(
-                pos,
-                egui::Align2::CENTER_CENTER,
-                reading_text,
-                canvas::CLASS_TOP_FONT_SIZE,
-                egui::Color32::BLACK,
-            );
-
-            let points = if dx.abs() > dy.abs() {
-                let sign = if intersect.x < next.x {
-                    -1.0 // "◀",
-                } else {
-                    1.0 // "▶"
-                };
-                vec![
-                    egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * 2.0, pos.y - TRIANGLE_LONGEST_SIDE / 2.0),
-                    egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * (TRIANGLE_PERPENDICULAR + 2.0), pos.y),
-                    egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * 2.0, pos.y + TRIANGLE_LONGEST_SIDE / 2.0),
-                ]
-            } else {
-                let sign = if intersect.y < next.y {
-                    -1.0 // "⏶"
-                } else {
-                    1.0 // "⏷"
-                };
-                vec![
-                    egui::Pos2::new(pos.x - TRIANGLE_LONGEST_SIDE / 2.0, pos.y + sign * size.y / 2.0),
-                    egui::Pos2::new(pos.x, pos.y + sign * size.y / 2.0 + sign * TRIANGLE_PERPENDICULAR),
-                    egui::Pos2::new(pos.x + TRIANGLE_LONGEST_SIDE / 2.0, pos.y + sign * size.y / 2.0),
-                ]
+        for e in self.sources.iter().chain(self.targets.iter()) {
+            let Some(data) = ad.get(&e.element.model_uuid()) else {
+                continue;
             };
-            canvas.draw_polygon(
-                points,
-                egui::Color32::BLACK,
-                canvas::Stroke::NONE,
-                canvas::Highlight::NONE,
-            );
-        }
-        if let Some(reading) = source_data.reading {
-            draw_reading(canvas, source_intersect, self.source_points[0].get(1).map(|e| e.1).unwrap_or_else(|| self.position()), &reading);
-        }
-        if let Some(reading) = target_data.reading {
-            draw_reading(canvas, dest_intersect, self.dest_points[0].get(1).map(|e| e.1).unwrap_or_else(|| self.position()), &reading);
+            draw_arrow_data(canvas, e.element.min_shape(), e.points[0].1, e.points.get(1).map(|e| e.1).unwrap_or_else(|| self.position()), data);
         }
 
         TargettingStatus::NotDrawn
@@ -419,8 +438,8 @@ where
 
     fn collect_allignment(&mut self, am: &mut SnapManager) {
         for p in self.center_point.as_ref().into_iter()
-            .chain(self.source_points.iter().flat_map(|e| e.iter().skip(1)))
-            .chain(self.dest_points.iter().flat_map(|e| e.iter().skip(1)))
+            .chain(self.sources.iter().flat_map(|e| e.points.iter().skip(1)))
+            .chain(self.targets.iter().flat_map(|e| e.points.iter().skip(1)))
         {
             am.add_shape(*self.uuid, canvas::NHShape::Rect { inner: egui::Rect::from_min_size(p.1, egui::Vec2::ZERO) });
         }
@@ -488,9 +507,10 @@ where
                 // Check whether over midpoint, if so add a new joint
                 macro_rules! check_midpoints {
                     ($v:ident) => {
-                        for path in &mut self.$v {
+                        for e in &mut self.$v {
                             // Iterates over 2-windows
-                            let mut iter = path
+                            let mut iter = e
+                            .points
                             .iter()
                             .map(|e| *e)
                             .chain(self.center_point.as_ref().cloned())
@@ -522,15 +542,15 @@ where
                         }
                     };
                 }
-                check_midpoints!(source_points);
-                check_midpoints!(dest_points);
+                check_midpoints!(sources);
+                check_midpoints!(targets);
 
                 // Check whether over a joint, if so drag it
                 macro_rules! check_joints {
                     ($v:ident) => {
-                        for path in &mut self.$v {
-                            let stop_idx = path.len();
-                            for joint in &mut path[1..stop_idx] {
+                        for e in &mut self.$v {
+                            let stop_idx = e.points.len();
+                            for joint in &mut e.points[1..stop_idx] {
                                 if is_over(pos, joint.1) {
                                     self.dragged_node = Some((joint.0, pos));
 
@@ -540,8 +560,8 @@ where
                         }
                     };
                 }
-                check_joints!(source_points);
-                check_joints!(dest_points);
+                check_joints!(sources);
+                check_joints!(targets);
 
                 EventHandlingStatus::NotHandled
             },
@@ -577,9 +597,9 @@ where
 
                 macro_rules! check_joints_click {
                     ($pos:expr, $v:ident) => {
-                        for path in &self.$v {
-                            let stop_idx = path.len();
-                            for joint in &path[1..stop_idx] {
+                        for e in &self.$v {
+                            let stop_idx = e.points.len();
+                            for joint in &e.points[1..stop_idx] {
                                 if is_over($pos, joint.1) {
                                     handle_vertex_click!(&joint.0);
                                 }
@@ -588,17 +608,16 @@ where
                     };
                 }
 
-                check_joints_click!(pos, source_points);
-                check_joints_click!(pos, dest_points);
+                check_joints_click!(pos, sources);
+                check_joints_click!(pos, targets);
 
                 // Check segments on paths
                 macro_rules! check_path_segments {
                     ($v:ident) => {
-                        //let center_point = self.center_point.clone();
-                        for path in &self.$v {
+                        let p = self.position();
+                        for e in &self.$v {
                             // Iterates over 2-windows
-                            let mut iter = path.iter().map(|e| *e)
-                                .chain(self.center_point.as_ref().cloned()).peekable();
+                            let mut iter = e.points.iter().map(|e| e.1).chain(std::iter::once(p)).peekable();
                             while let Some(u) = iter.next() {
                                 let v = if let Some(v) = iter.peek() {
                                     *v
@@ -606,26 +625,16 @@ where
                                     break;
                                 };
 
-                                if dist_to_line_segment(pos, u.1, v.1) <= SEGMENT_DISTANCE_THRESHOLD {
+                                if dist_to_line_segment(pos, u, v) <= SEGMENT_DISTANCE_THRESHOLD {
                                     return EventHandlingStatus::HandledByElement;
                                 }
                             }
                         }
                     };
                 }
-                check_path_segments!(source_points);
-                check_path_segments!(dest_points);
+                check_path_segments!(sources);
+                check_path_segments!(targets);
 
-                // In case there is no center_point, also check all-to-all of last points
-                if self.center_point == UFOption::None {
-                    for u in self.source_points.iter().flat_map(|e| e.last()) {
-                        for v in self.dest_points.iter().flat_map(|e| e.last()) {
-                            if dist_to_line_segment(pos, u.1, v.1) <= SEGMENT_DISTANCE_THRESHOLD {
-                                return EventHandlingStatus::HandledByElement;
-                            }
-                        }
-                    }
-                }
                 EventHandlingStatus::NotHandled
             },
             InputEvent::Drag { delta, .. } => {
@@ -670,8 +679,8 @@ where
                     .center_point
                     .as_mut()
                     .into_iter()
-                    .chain($self.source_points.iter_mut().flatten())
-                    .chain($self.dest_points.iter_mut().flatten())
+                    .chain($self.sources.iter_mut().map(|e| e.points.iter_mut()).flatten())
+                    .chain($self.targets.iter_mut().map(|e| e.points.iter_mut()).flatten())
             };
         }
         match command {
@@ -742,11 +751,11 @@ where
 
                     // Move any last point to the center
                     self.center_point = 'a: {
-                        if let Some(path) = self.source_points.iter_mut().filter(|p| p.len() > 1).next() {
-                            break 'a path.pop().into();
+                        if let Some(e) = self.sources.iter_mut().filter(|p| p.points.len() > 1).next() {
+                            break 'a e.points.pop().into();
                         }
-                        if let Some(path) = self.dest_points.iter_mut().filter(|p| p.len() > 1).next() {
-                            break 'a path.pop().into();
+                        if let Some(e) = self.targets.iter_mut().filter(|p| p.points.len() > 1).next() {
+                            break 'a e.points.pop().into();
                         }
                         None.into()
                     };
@@ -754,9 +763,9 @@ where
 
                 macro_rules! delete_vertices {
                     ($self:ident, $v:ident) => {
-                        for path in $self.$v.iter_mut() {
+                        for e in $self.$v.iter_mut() {
                             // 2-windows over vertices
-                            let mut iter = path.iter().peekable();
+                            let mut iter = e.points.iter().peekable();
                             while let Some(a) = iter.next() {
                                 let Some(b) = iter.peek() else {
                                     break;
@@ -774,12 +783,20 @@ where
                                 }
                             }
 
-                            path.retain(|e| !uuids.contains(&e.0));
+                            e.points.retain(|e| !uuids.contains(&e.0));
                         }
                     };
                 }
-                delete_vertices!(self, source_points);
-                delete_vertices!(self, dest_points);
+                delete_vertices!(self, sources);
+                delete_vertices!(self, targets);
+
+                // Handle dependencies being deleted
+                let mut rtin = |e: &Ending<DomainT::CommonElementViewT>| if uuids.contains(&e.element.uuid()) {
+                    undo_accumulator.push(InsensitiveCommand::AddDependency(self_uuid, 0, e.element.clone().into(), false));
+                    false
+                } else { true };
+                self.sources.retain(&mut rtin);
+                self.targets.retain(&mut rtin);
             }
             InsensitiveCommand::AddElement(target, element, _) => {
                 if *target == *self.uuid {
@@ -793,9 +810,9 @@ where
                             // Push popped center point point back to its original path
                             if let Some(o) = self.center_point.as_ref().and_then(|e| self.point_to_origin.get(&e.0)) {
                                 if !o.0 {
-                                    self.source_points[o.1].push(self.center_point.unwrap());
+                                    self.sources[o.1].points.push(self.center_point.unwrap());
                                 } else {
-                                    self.dest_points[o.1].push(self.center_point.unwrap());
+                                    self.targets[o.1].points.push(self.center_point.unwrap());
                                 }
                             }
 
@@ -808,11 +825,11 @@ where
                         } else {
                             macro_rules! insert_vertex {
                                 ($self:ident, $v:ident, $b:expr) => {
-                                    for (idx1, path) in $self.$v.iter_mut().enumerate() {
-                                        for (idx2, p) in path.iter().enumerate() {
+                                    for (idx1, e) in $self.$v.iter_mut().enumerate() {
+                                        for (idx2, p) in e.points.iter().enumerate() {
                                             if p.0 == after {
                                                 $self.point_to_origin.insert(id, ($b, idx1));
-                                                path.insert(idx2 + 1, (id, position));
+                                                e.points.insert(idx2 + 1, (id, position));
                                                 undo_accumulator.push(
                                                     InsensitiveCommand::DeleteSpecificElements(
                                                         std::iter::once(id).collect(),
@@ -825,18 +842,42 @@ where
                                     }
                                 };
                             }
-                            insert_vertex!(self, source_points, false);
-                            insert_vertex!(self, dest_points, true);
+                            insert_vertex!(self, sources, false);
+                            insert_vertex!(self, targets, true);
                         }
                     }
+                }
+            }
+            InsensitiveCommand::AddDependency(uuid, t, delm, into_model) => {
+                if *uuid == *self.uuid && *t == 0
+                    && let Ok(e) = TryInto::<DomainT::CommonElementViewT>::try_into(delm.clone())
+                    && (!into_model || self.adapter.push_source(e.model()).is_ok()) {
+                    undo_accumulator.push(InsensitiveCommand::RemoveDependency(*self.uuid, *t, *e.uuid(), *into_model));
+
+                    self.sources.push(Ending {
+                        element: e,
+                        points: vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)],
+                    });
+
+                    affected_models.insert(*self.adapter.model_uuid());
+                }
+            }
+            InsensitiveCommand::RemoveDependency(uuid, t, duuid, including_model) => {
+                if *uuid == *self.uuid && *t == 0 {
+                    self.sources.retain(|e| if *duuid == *e.element.uuid()
+                        && (!including_model || self.adapter.remove_source(&*e.element.model_uuid()).is_ok()) {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid, *t, e.element.clone().into(), *including_model));
+                        false
+                    } else { true });
+
+                    affected_models.insert(*self.adapter.model_uuid());
                 }
             }
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
                     for property in properties {
                         if let Ok(FlipMulticonnection {}) = property.try_into() {
-                            std::mem::swap(&mut self.source, &mut self.target);
-                            std::mem::swap(&mut self.source_points, &mut self.dest_points);
+                            std::mem::swap(&mut self.sources, &mut self.targets);
                         }
                     }
                     self.adapter.apply_change(&self.uuid, command, undo_accumulator);
@@ -867,7 +908,8 @@ where
         }
     }
     fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
-        deleting.contains(&self.source.uuid()) || deleting.contains(&self.target.uuid())
+        self.sources.iter().all(|e| deleting.contains(&e.element.uuid()))
+        || self.targets.iter().all(|e| deleting.contains(&e.element.uuid()))
     }
 
     fn deep_copy_clone(
@@ -886,14 +928,12 @@ where
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             adapter: self.adapter.deep_copy_init(model_uuid, m),
-            source: self.source.clone(),
-            target: self.target.clone(),
+            sources: self.sources.clone(),
+            targets: self.targets.clone(),
             dragged_node: None,
             highlight: self.highlight,
             selected_vertices: self.selected_vertices.clone(),
             center_point: self.center_point.clone(),
-            source_points: self.source_points.clone(),
-            dest_points: self.dest_points.clone(),
             point_to_origin: self.point_to_origin.clone(),
         });
         tlc.insert(view_uuid, cloneish.clone().into());
@@ -907,11 +947,15 @@ where
     ) {
         self.adapter.deep_copy_finish(m);
 
-        if let Some(s) = c.get(&self.source.uuid()) {
-            self.source = s.clone();
+        for e in self.sources.iter_mut() {
+            if let Some(s) = c.get(&e.element.uuid()) {
+                e.element = s.clone();
+            }
         }
-        if let Some(d) = c.get(&self.target.uuid()) {
-            self.target = d.clone();
+        for e in self.targets.iter_mut() {
+            if let Some(t) = c.get(&e.element.uuid()) {
+                e.element = t.clone();
+            }
         }
     }
 }

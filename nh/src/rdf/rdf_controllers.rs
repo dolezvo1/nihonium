@@ -4,7 +4,7 @@ use crate::common::controller::{
     ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ModelsLabelAcquirer, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
-use crate::common::views::multiconnection_view::{self, ArrowData, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
+use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
@@ -288,7 +288,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         &mut self,
         drawing_context: &DrawingContext,
         ui: &mut egui::Ui,
-    ) -> PropertiesStatus {
+    ) -> PropertiesStatus<RdfDomain> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
             &drawing_context.global_colors,
@@ -951,7 +951,11 @@ impl Tool<RdfDomain> for NaiveRdfTool {
         }
     }
 
-    fn try_construct(
+    fn try_additional_dependency(&mut self) -> Option<(u8, ModelUuid, ModelUuid)> {
+        None
+    }
+
+    fn try_construct_view(
         &mut self,
         into: &dyn ContainerGen2<RdfDomain>,
     ) -> Option<(RdfElementView, Option<Box<dyn CustomModal>>)> {
@@ -1308,7 +1312,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         _: &RdfQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
-    ) -> PropertiesStatus {
+    ) -> PropertiesStatus<RdfDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
         }
@@ -1506,6 +1510,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
+            | InsensitiveCommand::AddDependency(..)
+            | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
@@ -1744,7 +1750,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         _: &RdfQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
-    ) -> PropertiesStatus {
+    ) -> PropertiesStatus<RdfDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
         }
@@ -1956,6 +1962,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
+            | InsensitiveCommand::AddDependency(..)
+            | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
@@ -2083,20 +2091,19 @@ fn new_rdf_predicate_view(
 ) -> ERef<LinkViewT> {
     let m = model.read();
 
-    let (sp, mp, tp) = multiconnection_view::init_points(*m.source.read().uuid, *m.target.uuid(), target.min_shape(), None);
+    let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.source.read().uuid), *m.target.uuid(), target.min_shape(), None);
 
     MulticonnectionView::new(
         Arc::new(uuid::Uuid::now_v7().into()),
         RdfPredicateAdapter {
             model: model.clone(),
+            arrow_data: HashMap::new(),
             iri_buffer: (*m.iri).clone(),
             comment_buffer: (*m.comment).clone(),
         },
-        source,
-        target,
+        vec![Ending::new_p(source, sp[0].clone())],
+        vec![Ending::new_p(target, tp[0].clone())],
         mp,
-        sp,
-        tp,
     )
 }
 
@@ -2104,6 +2111,9 @@ fn new_rdf_predicate_view(
 pub struct RdfPredicateAdapter {
     #[nh_context_serde(entity)]
     model: ERef<RdfPredicate>,
+    #[serde(skip_serializing)]
+    #[nh_context_serde(skip_and_default)]
+    arrow_data: HashMap<ModelUuid, ArrowData>,
     #[nh_context_serde(skip_and_default)]
     iri_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2123,25 +2133,15 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         Some(self.model.read().iri.clone())
     }
 
-    fn source_arrow(&self) -> ArrowData {
-        ArrowData::new_labelless(
-            canvas::LineType::Solid,
-            canvas::ArrowheadType::None,
-        )
-    }
-
-    fn destination_arrow(&self) -> ArrowData {
-        ArrowData::new_labelless(
-            canvas::LineType::Solid,
-            canvas::ArrowheadType::OpenTriangle,
-        )
+    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+        &self.arrow_data
     }
 
     fn show_properties(
         &mut self,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>
-    ) {
+    ) ->PropertiesStatus<RdfDomain> {
         ui.label("IRI:");
         if ui
             .add_sized(
@@ -2174,6 +2174,8 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
                 RdfPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ]));
         }
+
+        PropertiesStatus::Shown
     }
     fn apply_change(
         &self,
@@ -2213,6 +2215,17 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
+
+        self.arrow_data.clear();
+        self.arrow_data.insert(*model.source.read().uuid, ArrowData::new_labelless(
+            canvas::LineType::Solid,
+            canvas::ArrowheadType::None,
+        ));
+        self.arrow_data.insert(*model.target.uuid(), ArrowData::new_labelless(
+            canvas::LineType::Solid,
+            canvas::ArrowheadType::OpenTriangle,
+        ));
+
         self.iri_buffer = (*model.iri).clone();
         self.comment_buffer = (*model.comment).clone();
     }
@@ -2232,7 +2245,12 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
             modelish
         };
 
-        Self { model, iri_buffer: self.iri_buffer.clone(), comment_buffer: self.comment_buffer.clone() }
+        Self {
+            model,
+            arrow_data: self.arrow_data.clone(),
+            iri_buffer: self.iri_buffer.clone(),
+            comment_buffer: self.comment_buffer.clone(),
+        }
     }
 
     fn deep_copy_finish(

@@ -3,7 +3,7 @@ use crate::common::controller::{
     ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ModelsLabelAcquirer, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
-use crate::common::views::multiconnection_view::{ArrowData, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
+use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
@@ -294,7 +294,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         &mut self,
         drawing_context: &DrawingContext,
         ui: &mut egui::Ui,
-    ) -> PropertiesStatus {
+    ) -> PropertiesStatus<DemoCsdDomain> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
             &drawing_context.global_colors,
@@ -833,7 +833,11 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         }
     }
 
-    fn try_construct(
+    fn try_additional_dependency(&mut self) -> Option<(u8, ModelUuid, ModelUuid)> {
+        None
+    }
+
+    fn try_construct_view(
         &mut self,
         into: &dyn ContainerGen2<DemoCsdDomain>,
     ) -> Option<(DemoCsdElementView, Option<Box<dyn CustomModal>>)> {
@@ -1221,7 +1225,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         queryable: &DemoCsdQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-    ) -> PropertiesStatus {
+    ) -> PropertiesStatus<DemoCsdDomain> {
         if let Some(child) = self.transaction_view.as_mut()
                 .and_then(|t| t.write().show_properties(drawing_context, queryable, ui, commands).to_non_default()) {
             return child;
@@ -1625,6 +1629,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
+            | InsensitiveCommand::AddDependency(..)
+            | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
@@ -1985,7 +1991,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         _parent: &DemoCsdQueryable,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
-    ) -> PropertiesStatus {
+    ) -> PropertiesStatus<DemoCsdDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
         }
@@ -2223,6 +2229,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
+            | InsensitiveCommand::AddDependency(..)
+            | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
@@ -2357,14 +2365,13 @@ fn new_democsd_link_view(
         Arc::new(uuid::Uuid::now_v7().into()),
         DemoCsdLinkAdapter {
             model: model.clone(),
+            arrow_data: HashMap::new(),
             link_type_buffer: m.link_type,
             comment_buffer: (*m.comment).clone(),
         },
-        source,
-        target,
+        vec![Ending::new(source)],
+        vec![Ending::new(target)],
         None,
-        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
-        vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
     )
 }
 
@@ -2372,6 +2379,9 @@ fn new_democsd_link_view(
 pub struct DemoCsdLinkAdapter {
     #[nh_context_serde(entity)]
     model: ERef<DemoCsdLink>,
+    #[serde(skip_serializing)]
+    #[nh_context_serde(skip_and_default)]
+    arrow_data: HashMap<ModelUuid, ArrowData>,
     #[nh_context_serde(skip_and_default)]
     link_type_buffer: DemoCsdLinkType,
     #[nh_context_serde(skip_and_default)]
@@ -2398,30 +2408,15 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn source_arrow(&self) -> ArrowData {
-        ArrowData::new_labelless(
-            self.line_type(),
-            match self.model.read().link_type {
-                DemoCsdLinkType::Initiation | DemoCsdLinkType::Interstriction => {
-                    canvas::ArrowheadType::None
-                }
-                DemoCsdLinkType::Interimpediment => canvas::ArrowheadType::FullTriangle,
-            },
-        )
-    }
-
-    fn destination_arrow(&self) -> ArrowData {
-        ArrowData::new_labelless(
-            self.line_type(),
-            canvas::ArrowheadType::None,
-        )
+    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+        &self.arrow_data
     }
 
     fn show_properties(
         &mut self,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>
-    ) {
+    ) -> PropertiesStatus<DemoCsdDomain> {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("Type:")
             .selected_text(self.link_type_buffer.char())
@@ -2454,6 +2449,8 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
                 DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ]));
         }
+
+        PropertiesStatus::Shown
     }
     fn apply_change(
         &self,
@@ -2486,6 +2483,22 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
+
+        self.arrow_data.clear();
+        self.arrow_data.insert(*model.source.read().uuid, ArrowData::new_labelless(
+            self.line_type(),
+            match self.model.read().link_type {
+                DemoCsdLinkType::Initiation | DemoCsdLinkType::Interstriction => {
+                    canvas::ArrowheadType::None
+                }
+                DemoCsdLinkType::Interimpediment => canvas::ArrowheadType::FullTriangle,
+            },
+        ));
+        self.arrow_data.insert(*model.target.read().uuid, ArrowData::new_labelless(
+            self.line_type(),
+            canvas::ArrowheadType::None,
+        ));
+
         self.link_type_buffer = model.link_type;
         self.comment_buffer = (*model.comment).clone();
     }
@@ -2503,7 +2516,12 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
             m.insert(*model.uuid, modelish.clone().into());
             modelish
         };
-        Self { model, link_type_buffer: self.link_type_buffer, comment_buffer: self.comment_buffer.clone() }
+        Self {
+            model,
+            arrow_data: self.arrow_data.clone(),
+            link_type_buffer: self.link_type_buffer,
+            comment_buffer: self.comment_buffer.clone(),
+        }
     }
 
     fn deep_copy_finish(

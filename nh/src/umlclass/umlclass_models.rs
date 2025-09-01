@@ -81,13 +81,13 @@ impl UmlClassCollector {
     }
     fn visit_generalization(&mut self, link: &UmlClassGeneralization) {
         if !self.collecting_absolute_paths {
-            let source_name = self.absolute_paths.get(&link.source.read().uuid).unwrap();
             let target_name = self.absolute_paths.get(&link.target.read().uuid).unwrap();
-
-            self.plantuml_data.push_str(source_name);
-            self.plantuml_data.push_str(" --|> ");
-            self.plantuml_data.push_str(target_name);
-            self.plantuml_data.push_str("\n");
+            for source_name in link.sources.iter().flat_map(|e| self.absolute_paths.get(&e.read().uuid)) {
+                self.plantuml_data.push_str(source_name);
+                self.plantuml_data.push_str(" --|> ");
+                self.plantuml_data.push_str(target_name);
+                self.plantuml_data.push_str("\n");
+            }
         }
     }
     fn visit_association(&mut self, link: &UmlClassAssociation) {
@@ -163,7 +163,9 @@ impl UmlClassElement {
             UmlClassElement::UmlClass(inner) => visitor.visit_class(&inner.read()),
             UmlClassElement::UmlClassGeneralization(inner) => visitor.visit_generalization(&inner.read()),
             UmlClassElement::UmlClassAssociation(inner) => visitor.visit_association(&inner.read()),
-            UmlClassElement::UmlClassComment(..) | UmlClassElement::UmlClassCommentLink(..) => {},
+            UmlClassElement::UmlClassComment(..) | UmlClassElement::UmlClassCommentLink(..) => {
+                // TODO: comments
+            },
         }
     }
 }
@@ -249,10 +251,13 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
             UmlClassElement::UmlClassGeneralization(inner) => {
                 let mut model = inner.write();
 
-                let source_uuid = *model.source.read().uuid;
-                if let Some(UmlClassElement::UmlClass(s)) = all_models.get(&source_uuid) {
-                    model.source = s.clone();
+                for e in model.sources.iter_mut() {
+                    let sid = *e.read().uuid;
+                    if let Some(UmlClassElement::UmlClass(s)) = all_models.get(&sid) {
+                        *e = s.clone();
+                    }
                 }
+
                 let target_uuid = *model.target.read().uuid;
                 if let Some(UmlClassElement::UmlClass(t)) = all_models.get(&target_uuid) {
                     model.target = t.clone();
@@ -422,6 +427,7 @@ impl ContainerModel for UmlClassDiagram {
         Ok(())
     }
 }
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -644,9 +650,13 @@ impl Model for UmlClass {
 pub struct UmlClassGeneralization {
     pub uuid: Arc<ModelUuid>,
     #[nh_context_serde(entity)]
-    pub source: ERef<UmlClass>,
+    pub sources: Vec<ERef<UmlClass>>,
     #[nh_context_serde(entity)]
     pub target: ERef<UmlClass>,
+
+    pub set_name: Arc<String>,
+    pub set_is_covering: bool,
+    pub set_is_disjoint: bool,
 
     pub comment: Arc<String>,
 }
@@ -654,21 +664,31 @@ pub struct UmlClassGeneralization {
 impl UmlClassGeneralization {
     pub fn new(
         uuid: ModelUuid,
-        source: ERef<UmlClass>,
+        sources: Vec<ERef<UmlClass>>,
         target: ERef<UmlClass>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            source,
+            sources,
             target,
+
+            set_name: Arc::new("".to_owned()),
+            set_is_covering: false,
+            set_is_disjoint: false,
+
             comment: Arc::new("".to_owned()),
         }
     }
     pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
         ERef::new(Self {
             uuid: Arc::new(uuid),
-            source: self.source.clone(),
+            sources: self.sources.clone(),
             target: self.target.clone(),
+
+            set_name: self.set_name.clone(),
+            set_is_covering: self.set_is_covering,
+            set_is_disjoint: self.set_is_disjoint,
+
             comment: self.comment.clone(),
         })
     }

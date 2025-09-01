@@ -144,7 +144,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
                 q: &<#domain as crate::common::controller::Domain> :: QueryableT<'_>,
                 ui: &mut egui::Ui,
                 commands: &mut Vec<SensitiveCommand<<#domain as crate::common::controller::Domain> :: AddCommandElementT, <#domain as crate::common::controller::Domain> :: PropChangeT>>,
-            ) -> PropertiesStatus {
+            ) -> PropertiesStatus<#domain> {
                 match self {
                     #(#arms_show_properties),*
                 }
