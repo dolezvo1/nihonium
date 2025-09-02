@@ -2365,9 +2365,7 @@ fn new_democsd_link_view(
         Arc::new(uuid::Uuid::now_v7().into()),
         DemoCsdLinkAdapter {
             model: model.clone(),
-            arrow_data: HashMap::new(),
-            link_type_buffer: m.link_type,
-            comment_buffer: (*m.comment).clone(),
+            temporaries: Default::default(),
         },
         vec![Ending::new(source)],
         vec![Ending::new(target)],
@@ -2381,10 +2379,15 @@ pub struct DemoCsdLinkAdapter {
     model: ERef<DemoCsdLink>,
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
+    temporaries: DemoCsdLinkTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct DemoCsdLinkTemporaries {
     arrow_data: HashMap<ModelUuid, ArrowData>,
-    #[nh_context_serde(skip_and_default)]
+    source_uuids: Vec<ModelUuid>,
+    target_uuids: Vec<ModelUuid>,
     link_type_buffer: DemoCsdLinkType,
-    #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 }
 
@@ -2409,7 +2412,15 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
     }
 
     fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
-        &self.arrow_data
+        &self.temporaries.arrow_data
+    }
+
+    fn source_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.source_uuids
+    }
+
+    fn target_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.target_uuids
     }
 
     fn show_properties(
@@ -2419,7 +2430,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
     ) -> PropertiesStatus<DemoCsdDomain> {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("Type:")
-            .selected_text(self.link_type_buffer.char())
+            .selected_text(self.temporaries.link_type_buffer.char())
             .show_ui(ui, |ui| {
                 for value in [
                     DemoCsdLinkType::Initiation,
@@ -2427,11 +2438,11 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
                     DemoCsdLinkType::Interimpediment,
                 ] {
                     if ui
-                        .selectable_value(&mut self.link_type_buffer, value, value.char())
+                        .selectable_value(&mut self.temporaries.link_type_buffer, value, value.char())
                         .clicked()
                     {
                         commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                            DemoCsdPropChange::LinkTypeChange(self.link_type_buffer),
+                            DemoCsdPropChange::LinkTypeChange(self.temporaries.link_type_buffer),
                         ]));
                     }
                 }
@@ -2441,12 +2452,12 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
+                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                DemoCsdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ]));
         }
 
@@ -2484,8 +2495,8 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.arrow_data.clear();
-        self.arrow_data.insert(*model.source.read().uuid, ArrowData::new_labelless(
+        self.temporaries.arrow_data.clear();
+        self.temporaries.arrow_data.insert(*model.source.read().uuid, ArrowData::new_labelless(
             self.line_type(),
             match self.model.read().link_type {
                 DemoCsdLinkType::Initiation | DemoCsdLinkType::Interstriction => {
@@ -2494,13 +2505,18 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
                 DemoCsdLinkType::Interimpediment => canvas::ArrowheadType::FullTriangle,
             },
         ));
-        self.arrow_data.insert(*model.target.read().uuid, ArrowData::new_labelless(
+        self.temporaries.arrow_data.insert(*model.target.read().uuid, ArrowData::new_labelless(
             self.line_type(),
             canvas::ArrowheadType::None,
         ));
 
-        self.link_type_buffer = model.link_type;
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.source_uuids.clear();
+        self.temporaries.source_uuids.push(*model.source.read().uuid);
+        self.temporaries.target_uuids.clear();
+        self.temporaries.target_uuids.push(*model.target.read().uuid);
+
+        self.temporaries.link_type_buffer = model.link_type;
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn deep_copy_init(
@@ -2518,9 +2534,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         };
         Self {
             model,
-            arrow_data: self.arrow_data.clone(),
-            link_type_buffer: self.link_type_buffer,
-            comment_buffer: self.comment_buffer.clone(),
+            temporaries: self.temporaries.clone(),
         }
     }
 

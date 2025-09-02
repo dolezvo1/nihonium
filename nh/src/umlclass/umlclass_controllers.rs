@@ -2401,11 +2401,7 @@ fn new_umlclass_generalization_view(
         Arc::new(uuid::Uuid::now_v7().into()),
         UmlClassGeneralizationAdapter {
             model: model.clone(),
-            arrow_data: HashMap::new(),
-            set_name_buffer: (*m.set_name).clone(),
-            set_is_covering_buffer: m.set_is_covering,
-            set_is_disjoint_buffer: m.set_is_disjoint,
-            comment_buffer: (*m.comment).clone(),
+            temporaries: Default::default(),
         },
         sources.into_iter().zip(sp.into_iter()).map(|e| Ending::new_p(e.0, e.1)).collect(),
         vec![Ending::new_p(target, tp[0].clone())],
@@ -2417,18 +2413,19 @@ fn new_umlclass_generalization_view(
 pub struct UmlClassGeneralizationAdapter {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassGeneralization>,
-
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    temporaries: UmlClassGeneralizationTemporaries,
+}
 
-    #[nh_context_serde(skip_and_default)]
+#[derive(Clone, Default)]
+struct UmlClassGeneralizationTemporaries {
+    arrow_data: HashMap<ModelUuid, ArrowData>,
+    source_uuids: Vec<ModelUuid>,
+    target_uuids: Vec<ModelUuid>,
     set_name_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     set_is_covering_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
     set_is_disjoint_buffer: bool,
-    #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 }
 
@@ -2451,7 +2448,15 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
     }
 
     fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
-        &self.arrow_data
+        &self.temporaries.arrow_data
+    }
+
+    fn source_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.source_uuids
+    }
+
+    fn target_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.target_uuids
     }
 
     fn push_source(&self, e: <UmlClassDomain as Domain>::CommonElementT) -> Result<(), ()> {
@@ -2499,19 +2504,19 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
         }
 
         ui.label("Generalization set name:");
-        if ui.text_edit_singleline(&mut self.set_name_buffer).changed() {
+        if ui.text_edit_singleline(&mut self.temporaries.set_name_buffer).changed() {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::SetNameChange(Arc::new(self.set_name_buffer.clone())),
+                UmlClassPropChange::SetNameChange(Arc::new(self.temporaries.set_name_buffer.clone())),
             ]));
         }
-        if ui.checkbox(&mut self.set_is_covering_buffer, "isCovering").changed() {
+        if ui.checkbox(&mut self.temporaries.set_is_covering_buffer, "isCovering").changed() {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::SetCoveringChange(self.set_is_covering_buffer),
+                UmlClassPropChange::SetCoveringChange(self.temporaries.set_is_covering_buffer),
             ]));
         }
-        if ui.checkbox(&mut self.set_is_disjoint_buffer, "isDisjoint").changed() {
+        if ui.checkbox(&mut self.temporaries.set_is_disjoint_buffer, "isDisjoint").changed() {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::SetDisjointChange(self.set_is_disjoint_buffer),
+                UmlClassPropChange::SetDisjointChange(self.temporaries.set_is_disjoint_buffer),
             ]));
         }
         ui.separator();
@@ -2520,12 +2525,12 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
+                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ]));
         }
 
@@ -2583,11 +2588,11 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.arrow_data.clear();
+        self.temporaries.arrow_data.clear();
         for e in &model.sources {
-            self.arrow_data.insert(*e.read().uuid, ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::None));
+            self.temporaries.arrow_data.insert(*e.read().uuid, ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::None));
         }
-        self.arrow_data.insert(*model.target.read().uuid, ArrowData {
+        self.temporaries.arrow_data.insert(*model.target.read().uuid, ArrowData {
             line_type: canvas::LineType::Solid,
             arrowhead_type: canvas::ArrowheadType::EmptyTriangle,
             multiplicity: None,
@@ -2601,10 +2606,17 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
             reading: None,
         });
 
-        self.set_name_buffer = (*model.set_name).clone();
-        self.set_is_covering_buffer = model.set_is_covering;
-        self.set_is_disjoint_buffer = model.set_is_disjoint;
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.source_uuids.clear();
+        for e in &model.sources {
+            self.temporaries.source_uuids.push(*e.read().uuid);
+        }
+        self.temporaries.target_uuids.clear();
+        self.temporaries.target_uuids.push(*model.target.read().uuid);
+
+        self.temporaries.set_name_buffer = (*model.set_name).clone();
+        self.temporaries.set_is_covering_buffer = model.set_is_covering;
+        self.temporaries.set_is_disjoint_buffer = model.set_is_disjoint;
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn deep_copy_init(
@@ -2624,11 +2636,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
 
         Self {
             model,
-            arrow_data: self.arrow_data.clone(),
-            set_name_buffer: self.set_name_buffer.clone(),
-            set_is_covering_buffer: self.set_is_covering_buffer,
-            set_is_disjoint_buffer: self.set_is_disjoint_buffer,
-            comment_buffer: self.comment_buffer.clone(),
+            temporaries: self.temporaries.clone(),
         }
     }
 
@@ -2684,16 +2692,7 @@ fn new_umlclass_association_view(
         Arc::new(uuid::Uuid::now_v7().into()),
         UmlClassAssocationAdapter {
             model: model.clone(),
-            arrow_data: HashMap::new(),
-            link_type_buffer: m.link_type,
-            stereotype_buffer: (*m.stereotype).clone(),
-            source_multiplicity_buffer: (*m.source_label_multiplicity).clone(),
-            source_role_buffer: (*m.source_label_role).clone(),
-            source_reading_buffer: (*m.source_label_reading).clone(),
-            target_multiplicity_buffer: (*m.target_label_multiplicity).clone(),
-            target_role_buffer: (*m.target_label_role).clone(),
-            target_reading_buffer: (*m.target_label_reading).clone(),
-            comment_buffer: (*m.comment).clone(),
+            temporaries: Default::default(),
         },
         vec![Ending::new_p(source, sp[0].clone())],
         vec![Ending::new_p(target, tp[0].clone())],
@@ -2705,28 +2704,24 @@ fn new_umlclass_association_view(
 pub struct UmlClassAssocationAdapter {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassAssociation>,
-
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    temporaries: UmlClassAssociationTemporaries,
+}
 
-    #[nh_context_serde(skip_and_default)]
+#[derive(Clone, Default)]
+struct UmlClassAssociationTemporaries {
+    arrow_data: HashMap<ModelUuid, ArrowData>,
+    source_uuids: Vec<ModelUuid>,
+    target_uuids: Vec<ModelUuid>,
     link_type_buffer: UmlClassAssociationType,
-    #[nh_context_serde(skip_and_default)]
     stereotype_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     source_multiplicity_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     source_role_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     source_reading_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     target_multiplicity_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     target_role_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     target_reading_buffer: String,
-    #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 }
 
@@ -2749,7 +2744,15 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
     }
 
     fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
-        &self.arrow_data
+        &self.temporaries.arrow_data
+    }
+
+    fn source_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.source_uuids
+    }
+
+    fn target_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.target_uuids
     }
 
     fn show_properties(
@@ -2759,7 +2762,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
     ) -> PropertiesStatus<UmlClassDomain> {
         ui.label("Link type:");
         egui::ComboBox::from_id_salt("link type")
-            .selected_text(&*self.link_type_buffer.name())
+            .selected_text(&*self.temporaries.link_type_buffer.name())
             .show_ui(ui, |ui| {
                 for sv in [
                     UmlClassAssociationType::Association,
@@ -2769,11 +2772,11 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
                     UmlClassAssociationType::Usage,
                 ] {
                     if ui
-                        .selectable_value(&mut self.link_type_buffer, sv, &*sv.name())
+                        .selectable_value(&mut self.temporaries.link_type_buffer, sv, &*sv.name())
                         .changed()
                     {
                         commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                            UmlClassPropChange::LinkTypeChange(self.link_type_buffer),
+                            UmlClassPropChange::LinkTypeChange(self.temporaries.link_type_buffer),
                         ]));
                     }
                 }
@@ -2783,13 +2786,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.stereotype_buffer),
+                egui::TextEdit::singleline(&mut self.temporaries.stereotype_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
                 UmlClassPropChange::StereotypeChange(Arc::new(
-                    self.stereotype_buffer.clone(),
+                    self.temporaries.stereotype_buffer.clone(),
                 )),
             ]));
         }
@@ -2799,13 +2802,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.source_multiplicity_buffer),
+                egui::TextEdit::singleline(&mut self.temporaries.source_multiplicity_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
                 UmlClassPropChange::MultiplicityChange(false, Arc::new(
-                    self.source_multiplicity_buffer.clone(),
+                    self.temporaries.source_multiplicity_buffer.clone(),
                 )),
             ]));
         }
@@ -2813,13 +2816,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.source_role_buffer),
+                egui::TextEdit::singleline(&mut self.temporaries.source_role_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
                 UmlClassPropChange::RoleChange(false, Arc::new(
-                    self.source_role_buffer.clone(),
+                    self.temporaries.source_role_buffer.clone(),
                 )),
             ]));
         }
@@ -2827,13 +2830,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.source_reading_buffer),
+                egui::TextEdit::singleline(&mut self.temporaries.source_reading_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
                 UmlClassPropChange::ReadingChange(false, Arc::new(
-                    self.source_reading_buffer.clone(),
+                    self.temporaries.source_reading_buffer.clone(),
                 )),
             ]));
         }
@@ -2843,13 +2846,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.target_multiplicity_buffer),
+                egui::TextEdit::singleline(&mut self.temporaries.target_multiplicity_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
                 UmlClassPropChange::MultiplicityChange(true, Arc::new(
-                    self.target_multiplicity_buffer.clone(),
+                    self.temporaries.target_multiplicity_buffer.clone(),
                 )),
             ]));
         }
@@ -2857,13 +2860,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.target_role_buffer),
+                egui::TextEdit::singleline(&mut self.temporaries.target_role_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
                 UmlClassPropChange::RoleChange(true, Arc::new(
-                    self.target_role_buffer.clone(),
+                    self.temporaries.target_role_buffer.clone(),
                 )),
             ]));
         }
@@ -2871,13 +2874,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.target_reading_buffer),
+                egui::TextEdit::singleline(&mut self.temporaries.target_reading_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
                 UmlClassPropChange::ReadingChange(true, Arc::new(
-                    self.target_reading_buffer.clone(),
+                    self.temporaries.target_reading_buffer.clone(),
                 )),
             ]));
         }
@@ -2894,12 +2897,12 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
+                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
             )
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+                UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ]));
         }
 
@@ -3005,8 +3008,8 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        self.arrow_data.clear();
-        self.arrow_data.insert(*model.source.uuid(), ArrowData {
+        self.temporaries.arrow_data.clear();
+        self.temporaries.arrow_data.insert(*model.source.uuid(), ArrowData {
             line_type: model.link_type.line_type(),
             arrowhead_type: model.link_type.source_arrowhead_type(),
             multiplicity: if !model.source_label_multiplicity.is_empty() {
@@ -3025,8 +3028,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
                 None
             },
         });
-
-        self.arrow_data.insert(*model.target.uuid(), ArrowData {
+        self.temporaries.arrow_data.insert(*model.target.uuid(), ArrowData {
             line_type: model.link_type.line_type(),
             arrowhead_type: model.link_type.destination_arrowhead_type(),
             multiplicity: if !model.target_label_multiplicity.is_empty() {
@@ -3046,15 +3048,20 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
             },
         });
 
-        self.link_type_buffer = model.link_type;
-        self.stereotype_buffer = (*model.stereotype).clone();
-        self.source_multiplicity_buffer = (*model.source_label_multiplicity).clone();
-        self.source_role_buffer = (*model.source_label_role).clone();
-        self.source_reading_buffer = (*model.source_label_reading).clone();
-        self.target_multiplicity_buffer = (*model.target_label_multiplicity).clone();
-        self.target_role_buffer = (*model.target_label_role).clone();
-        self.target_reading_buffer = (*model.target_label_reading).clone();
-        self.comment_buffer = (*model.comment).clone();
+        self.temporaries.source_uuids.clear();
+        self.temporaries.source_uuids.push(*model.source.uuid());
+        self.temporaries.target_uuids.clear();
+        self.temporaries.target_uuids.push(*model.target.uuid());
+
+        self.temporaries.link_type_buffer = model.link_type;
+        self.temporaries.stereotype_buffer = (*model.stereotype).clone();
+        self.temporaries.source_multiplicity_buffer = (*model.source_label_multiplicity).clone();
+        self.temporaries.source_role_buffer = (*model.source_label_role).clone();
+        self.temporaries.source_reading_buffer = (*model.source_label_reading).clone();
+        self.temporaries.target_multiplicity_buffer = (*model.target_label_multiplicity).clone();
+        self.temporaries.target_role_buffer = (*model.target_label_role).clone();
+        self.temporaries.target_reading_buffer = (*model.target_label_reading).clone();
+        self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
     fn deep_copy_init(
@@ -3074,16 +3081,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
 
         Self {
             model,
-            arrow_data: self.arrow_data.clone(),
-            link_type_buffer: self.link_type_buffer.clone(),
-            stereotype_buffer: self.stereotype_buffer.clone(),
-            source_multiplicity_buffer: self.source_multiplicity_buffer.clone(),
-            source_role_buffer: self.source_role_buffer.clone(),
-            source_reading_buffer: self.source_reading_buffer.clone(),
-            target_multiplicity_buffer: self.target_multiplicity_buffer.clone(),
-            target_role_buffer: self.target_role_buffer.clone(),
-            target_reading_buffer: self.target_reading_buffer.clone(),
-            comment_buffer: self.comment_buffer.clone(),
+            temporaries: self.temporaries.clone(),
         }
     }
 
@@ -3548,8 +3546,7 @@ fn new_umlclass_commentlink_view(
         Arc::new(uuid::Uuid::now_v7().into()),
         UmlClassCommentLinkAdapter {
             model: model.clone(),
-            arrow_data: HashMap::new(),
-            model_display_name: Arc::new("Comment link".to_owned()),
+            temporaries: Default::default(),
         },
         vec![Ending::new(source)],
         vec![Ending::new(target)],
@@ -3561,13 +3558,16 @@ fn new_umlclass_commentlink_view(
 pub struct UmlClassCommentLinkAdapter {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassCommentLink>,
-
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    temporaries: UmlClassCommentLinkTemporaries,
+}
 
-    #[nh_context_serde(skip_and_default)]
-    model_display_name: Arc<String>,
+#[derive(Clone, Default)]
+struct UmlClassCommentLinkTemporaries {
+    arrow_data: HashMap<ModelUuid, ArrowData>,
+    source_uuids: Vec<ModelUuid>,
+    target_uuids: Vec<ModelUuid>,
 }
 
 impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
@@ -3584,7 +3584,15 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
     }
 
     fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
-        &self.arrow_data
+        &self.temporaries.arrow_data
+    }
+
+    fn source_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.source_uuids
+    }
+
+    fn target_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.target_uuids
     }
 
     fn show_properties(
@@ -3602,15 +3610,21 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
     ) {}
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
-        self.arrow_data.clear();
-        self.arrow_data.insert(*model.source.read().uuid, ArrowData::new_labelless(
+
+        self.temporaries.arrow_data.clear();
+        self.temporaries.arrow_data.insert(*model.source.read().uuid, ArrowData::new_labelless(
             canvas::LineType::Dashed,
             canvas::ArrowheadType::None,
         ));
-        self.arrow_data.insert(*model.target.uuid(), ArrowData::new_labelless(
+        self.temporaries.arrow_data.insert(*model.target.uuid(), ArrowData::new_labelless(
             canvas::LineType::Dashed,
             canvas::ArrowheadType::None,
         ));
+
+        self.temporaries.source_uuids.clear();
+        self.temporaries.source_uuids.push(*model.source.read().uuid);
+        self.temporaries.target_uuids.clear();
+        self.temporaries.target_uuids.push(*model.target.uuid());
     }
 
     fn deep_copy_init(
@@ -3630,8 +3644,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
 
         Self {
             model,
-            arrow_data: self.arrow_data.clone(),
-            model_display_name: self.model_display_name.clone(),
+            temporaries: self.temporaries.clone(),
         }
     }
 

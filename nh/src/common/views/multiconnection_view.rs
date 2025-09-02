@@ -2,7 +2,7 @@
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 use eframe::egui;
 
-use crate::{common::{canvas::{self, ArrowDataPos}, controller::{ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, CustomModal};
+use crate::{common::{canvas::{self, ArrowDataPos}, controller::{ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, PropertiesStatus, Queryable, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, CustomModal};
 
 #[derive(Clone)]
 pub struct ArrowData {
@@ -66,6 +66,8 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
     }
     fn midpoint_label(&self) -> Option<Arc<String>> { None }
     fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData>;
+    fn source_uuids(&self) -> &[ModelUuid];
+    fn target_uuids(&self) -> &[ModelUuid];
     fn push_source(&self, _e: DomainT::CommonElementT) -> Result<(), ()> {
         Err(())
     }
@@ -255,7 +257,7 @@ where
     fn show_properties(
         &mut self,
         _drawing_context: &DrawingContext,
-        _parent: &DomainT::QueryableT<'_>,
+        q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
@@ -263,20 +265,45 @@ where
             return PropertiesStatus::NotShown;
         }
 
-        for (b, (e, label)) in [self.sources.iter(), self.targets.iter()].iter_mut().zip(["Sources:", "Targets:"]).enumerate() {
-            ui.label(label);
-            for e in e {
+        fn display_endings<'a, DomainT: Domain>(
+            q: &'a DomainT::QueryableT<'_>,
+            ui: &mut egui::Ui,
+            commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+            models: &'a [ModelUuid],
+            views: &'a [Ending<DomainT::CommonElementViewT>],
+            self_uuid: ViewUuid,
+            b: u8,
+        ) {
+            for model_uuid in models {
+                let e = views.iter().find(|e| *e.element.model_uuid() == *model_uuid);
+
                 ui.horizontal(|ui| {
-                    ui.label(&e.element.model_uuid().to_string());
-                    if ui.button("Remove from view").clicked() {
-                        commands.push(InsensitiveCommand::RemoveDependency(*self.uuid, b as u8, *e.element.uuid(), false).into());
-                    }
-                    if ui.button("Remove from model").clicked() {
-                        commands.push(InsensitiveCommand::RemoveDependency(*self.uuid, b as u8, *e.element.uuid(), true).into());
+                    ui.label(&model_uuid.to_string());
+                    if let Some(e) = e {
+                        if ui.button("Remove from view").clicked() {
+                            commands.push(InsensitiveCommand::RemoveDependency(self_uuid, b, *e.element.uuid(), false).into());
+                        }
+                        if ui.button("Remove from model").clicked() {
+                            commands.push(InsensitiveCommand::RemoveDependency(self_uuid, b, *e.element.uuid(), true).into());
+                        }
+                    } else {
+                        if ui.button("Add to view").clicked() {
+                            if let Some(v) = q.get_view(model_uuid) {
+                                commands.push(InsensitiveCommand::AddDependency(self_uuid, b, v.into(), false).into());
+                            }
+                        }
+                        if ui.button("Remove from model").clicked() {
+
+                        }
                     }
                 });
             }
         }
+        ui.label("Sources:");
+        display_endings::<DomainT>(q, ui, commands, self.adapter.source_uuids(), &self.sources, *self.uuid, 0);
+
+        ui.label("Targets:");
+        display_endings::<DomainT>(q, ui, commands, self.adapter.target_uuids(), &self.targets, *self.uuid, 1);
 
         return self.adapter.show_properties(ui, commands);
     }
@@ -344,7 +371,7 @@ where
                 UFOption::Some(point) => *point,
                 UFOption::None => (
                     uuid::Uuid::nil().into(),
-                    (self.sources[0].points[0].1 + self.sources[0].points[0].1.to_vec2()) / 2.0,
+                    (self.sources[0].points[0].1 + self.targets[0].points[0].1.to_vec2()) / 2.0,
                 ),
             },
             midpoint_label.as_ref().map(|e| e.as_str()),
