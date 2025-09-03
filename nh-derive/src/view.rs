@@ -68,7 +68,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
 
     let arms_controller_for = arms_immutable.iter().map(|e| quote! { #e.controller_for(uuid) }).collect::<Vec<_>>();
 
-    let arms_show_properties = arms_mutable.iter().map(|e| quote! { #e.show_properties(drawing_context, q, ui, commands) }).collect::<Vec<_>>();
+    let arms_show_properties = arms_mutable.iter().map(|e| quote! { #e.show_properties(drawing_context, q, lp, ui, commands) }).collect::<Vec<_>>();
     let arms_draw_in = arms_mutable.iter().map(|e| quote! { #e.draw_in(q, context, canvas, tool) }).collect::<Vec<_>>();
     let arms_collect_alignment = arms_mutable.iter().map(|e| quote! { #e.collect_allignment(am) }).collect::<Vec<_>>();
     let arms_handle_event = arms_mutable.iter().map(|e| quote! { #e.handle_event(event, ehc, tool, element_setup_modal, commands) }).collect::<Vec<_>>();
@@ -140,8 +140,9 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
         impl ElementControllerGen2<#domain> for #ident {
             fn show_properties(
                 &mut self,
-                drawing_context: &DrawingContext,
+                drawing_context: &GlobalDrawingContext,
                 q: &<#domain as crate::common::controller::Domain> :: QueryableT<'_>,
+                lp: &<#domain as crate::common::controller::Domain> :: LabelProviderT,
                 ui: &mut egui::Ui,
                 commands: &mut Vec<SensitiveCommand<<#domain as crate::common::controller::Domain> :: AddCommandElementT, <#domain as crate::common::controller::Domain> :: PropChangeT>>,
             ) -> PropertiesStatus<#domain> {
@@ -152,7 +153,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
             fn draw_in(
                 &mut self,
                 q: &<#domain as crate::common::controller::Domain> :: QueryableT<'_>,
-                context: &DrawingContext,
+                context: &GlobalDrawingContext,
                 canvas: &mut dyn canvas::NHCanvas,
                 tool: &Option<(egui::Pos2, &<#domain as crate::common::controller::Domain> :: ToolT)>,
             ) -> TargettingStatus {

@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ModelsLabelAcquirer, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -28,6 +28,7 @@ impl Domain for RdfDomain {
     type DiagramModelT = RdfDiagram;
     type CommonElementViewT = RdfElementView;
     type QueryableT<'a> = RdfQueryable<'a>;
+    type LabelProviderT = RdfLabelProvider;
     type ToolT = NaiveRdfTool;
     type AddCommandElementT = RdfElementOrVertex;
     type PropChangeT = RdfPropChange;
@@ -51,6 +52,44 @@ impl<'a> Queryable<'a, RdfDomain> for RdfQueryable<'a> {
 
     fn get_view(&self, m: &ModelUuid) -> Option<RdfElementView> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
+    }
+}
+
+#[derive(Default)]
+pub struct RdfLabelProvider {
+    cache: HashMap<ModelUuid, Arc<String>>,
+}
+
+impl LabelProvider for RdfLabelProvider {
+    fn get(&self, uuid: &ModelUuid) -> Arc<String> {
+        self.cache.get(uuid).unwrap().clone()
+    }
+}
+
+impl CachingLabelDeriver<RdfElement> for RdfLabelProvider {
+    fn update(&mut self, e: &RdfElement) {
+        match e {
+            RdfElement::RdfGraph(inner) => {
+                let r = inner.read();
+                self.cache.insert(*r.uuid, r.iri.clone());
+            },
+            RdfElement::RdfLiteral(inner) => {
+                let r = inner.read();
+                self.cache.insert(*r.uuid, r.content.clone());
+            },
+            RdfElement::RdfNode(inner) => {
+                let r = inner.read();
+                self.cache.insert(*r.uuid, r.iri.clone());
+            },
+            RdfElement::RdfPredicate(inner) => {
+                let r = inner.read();
+                self.cache.insert(*r.uuid, r.iri.clone());
+            },
+        }
+    }
+
+    fn insert(&mut self, k: ModelUuid, v: Arc<String>) {
+        self.cache.insert(k, v);
     }
 }
 
@@ -184,24 +223,6 @@ impl Default for RdfPlaceholderViews {
     }
 }
 
-struct RdfLabelAcquirer;
-impl ModelsLabelAcquirer for RdfLabelAcquirer {
-    type ModelT = RdfDiagram;
-
-    fn model_label(&self, m: &Self::ModelT) -> String {
-        format!("{} ({} children)", m.name, m.contained_elements.len())
-    }
-
-    fn element_label(&self, e: &<Self::ModelT as ContainerModel>::ElementT) -> String {
-        match e {
-            RdfElement::RdfGraph(inner) => (*inner.read().iri).clone(),
-            RdfElement::RdfLiteral(inner) => (*inner.read().content).clone(),
-            RdfElement::RdfNode(inner) => (*inner.read().iri).clone(),
-            RdfElement::RdfPredicate(inner) => (*inner.read().iri).clone(),
-        }
-    }
-}
-
 impl RdfDiagramAdapter {
     fn new(model: ERef<RdfDiagram>) -> Self {
         let m = model.read();
@@ -229,9 +250,6 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     }
     fn view_type(&self) -> &'static str {
         "rdf-diagram-view"
-    }
-    fn new_hierarchy_view(&self) -> SimpleModelHierarchyView<impl ModelsLabelAcquirer<ModelT = RdfDiagram> + 'static> {
-        SimpleModelHierarchyView::new(self.model(), RdfLabelAcquirer {})
     }
 
     fn create_new_view_for(
@@ -286,7 +304,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     }
     fn show_view_props_fun(
         &mut self,
-        drawing_context: &DrawingContext,
+        drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) -> PropertiesStatus<RdfDomain> {
         ui.label("Background color:");
@@ -388,7 +406,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     fn show_tool_palette(
         &mut self,
         tool: &mut Option<NaiveRdfTool>,
-        drawing_context: &DrawingContext,
+        drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) {
         let button_height = 60.0;
@@ -1044,7 +1062,7 @@ impl From<RdfElement> for RdfIriBasedSetupModal {
 impl CustomModal for RdfIriBasedSetupModal {
     fn show(
         &mut self,
-        d: &mut DrawingContext,
+        d: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -1308,8 +1326,9 @@ impl ContainerGen2<RdfDomain> for RdfNodeView {}
 impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     fn show_properties(
         &mut self,
-        drawing_context: &DrawingContext,
-        _: &RdfQueryable,
+        drawing_context: &GlobalDrawingContext,
+        _q: &RdfQueryable,
+        _lp: &RdfLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> PropertiesStatus<RdfDomain> {
@@ -1365,7 +1384,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     fn draw_in(
         &mut self,
         _: &RdfQueryable,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {
@@ -1656,7 +1675,7 @@ impl From<&ERef<RdfLiteral>> for RdfLiteralSetupModal {
 impl CustomModal for RdfLiteralSetupModal {
     fn show(
         &mut self,
-        d: &mut DrawingContext,
+        d: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -1746,8 +1765,9 @@ impl ContainerGen2<RdfDomain> for RdfLiteralView {}
 impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     fn show_properties(
         &mut self,
-        drawing_context: &DrawingContext,
-        _: &RdfQueryable,
+        drawing_context: &GlobalDrawingContext,
+        _q: &RdfQueryable,
+        _lp: &RdfLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> PropertiesStatus<RdfDomain> {
@@ -1829,7 +1849,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     fn draw_in(
         &mut self,
         _: &RdfQueryable,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {

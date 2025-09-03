@@ -5,6 +5,7 @@ use egui_ltreeview::DirPosition;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::sync::{Arc, RwLock};
 use super::project_serde::{NHContextDeserialize, NHContextSerialize};
 use super::uuid::{ModelUuid, ViewUuid};
@@ -267,88 +268,104 @@ pub trait ModelHierarchyView {
     fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Option<DiagramCommand>;
 }
 
-pub trait ModelsLabelAcquirer where <Self::ModelT as ContainerModel>::ElementT: VisitableElement {
-    type ModelT: VisitableDiagram;
-
-    fn model_label(&self, m: &Self::ModelT) -> String;
-    fn element_label(&self, e: &<Self::ModelT as ContainerModel>::ElementT) -> String;
+pub struct SimpleModelHierarchyView<ModelT>
+    where ModelT: VisitableDiagram,
+        <ModelT as ContainerModel>::ElementT: VisitableElement,
+{
+    model: ERef<ModelT>,
+    label_provider: ERef<dyn LabelProvider>,
 }
 
-pub struct SimpleModelHierarchyView<AcqT: ModelsLabelAcquirer> {
-    model: ERef<AcqT::ModelT>,
-    models_label_acquirer: AcqT,
-}
-
-impl<AcqT: ModelsLabelAcquirer> SimpleModelHierarchyView<AcqT> {
+impl<ModelT> SimpleModelHierarchyView<ModelT>
+    where ModelT: VisitableDiagram,
+        <ModelT as ContainerModel>::ElementT: VisitableElement,
+{
     pub fn new(
-        model: ERef<AcqT::ModelT>,
-        models_label_acquirer: AcqT,
+        model: ERef<ModelT>,
+        label_provider: ERef<dyn LabelProvider>,
     ) -> Self {
-        Self { model, models_label_acquirer }
+        Self { model, label_provider }
     }
 }
 
-impl<AcqT: ModelsLabelAcquirer> ModelHierarchyView for SimpleModelHierarchyView<AcqT> {
+impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
+    where ModelT: VisitableDiagram,
+        <ModelT as ContainerModel>::ElementT: VisitableElement,
+{
     fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Option<DiagramCommand> {
-        struct HierarchyViewVisitor<'data, 'ui, AcqT: ModelsLabelAcquirer> {
+        struct HierarchyViewVisitor<'data, 'ui, ModelT>
+            where ModelT: VisitableDiagram,
+                <ModelT as ContainerModel>::ElementT: VisitableElement,
+        {
             command: Option<DiagramCommand>,
             is_represented: &'data dyn Fn(&ModelUuid) -> bool,
-            models_label_acquirer: &'data AcqT,
+            label_provider: &'data dyn LabelProvider,
             builder: &'data mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
+            model: PhantomData<ModelT>
         }
-        impl<'data, 'ui, AcqT: ModelsLabelAcquirer> HierarchyViewVisitor<'data, 'ui, AcqT> {
+        impl<'data, 'ui, ModelT> HierarchyViewVisitor<'data, 'ui, ModelT>
+            where ModelT: VisitableDiagram,
+                <ModelT as ContainerModel>::ElementT: VisitableElement,
+        {
             fn repr_glyph(&self, m: &ModelUuid) -> &'static str {
                 if (self.is_represented)(m) {"[x]"} else {"[ ]"}
             }
-            fn show_element(&mut self, is_dir: bool, e: &<AcqT::ModelT as ContainerModel>::ElementT) {
-                let model_uuid = *e.uuid();
+            fn show_element(&mut self, is_dir: bool, model_uuid: &ModelUuid) {
                 self.builder.node(
                     if is_dir {
-                        egui_ltreeview::NodeBuilder::dir(model_uuid)
+                        egui_ltreeview::NodeBuilder::dir(*model_uuid)
                     } else {
-                        egui_ltreeview::NodeBuilder::leaf(model_uuid)
-                    }.label(format!("{} {}", self.repr_glyph(&model_uuid), self.models_label_acquirer.element_label(e)))
+                        egui_ltreeview::NodeBuilder::leaf(*model_uuid)
+                    }.label(format!("{} {}", self.repr_glyph(model_uuid), self.label_provider.get(model_uuid)))
                         .context_menu(|ui| {
-                            if !(self.is_represented)(&model_uuid) && ui.button("Create view").clicked() {
-                                self.command = Some(DiagramCommand::CreateViewFor(model_uuid));
+                            let is_represented = (self.is_represented)(model_uuid);
+                            if !is_represented && ui.button("Create view").clicked() {
+                                self.command = Some(DiagramCommand::CreateViewFor(*model_uuid));
                                 ui.close();
                             }
 
-                            if (self.is_represented)(&model_uuid) && ui.button("Delete view").clicked() {
-                                self.command = Some(DiagramCommand::DeleteViewFor(model_uuid, false));
+                            if is_represented && ui.button("Delete view").clicked() {
+                                self.command = Some(DiagramCommand::DeleteViewFor(*model_uuid, false));
                                 ui.close();
                             }
 
                             if ui.button("Delete model").clicked() {
-                                self.command = Some(DiagramCommand::DeleteViewFor(model_uuid, true));
+                                self.command = Some(DiagramCommand::DeleteViewFor(*model_uuid, true));
                                 ui.close();
                             }
                         })
                 );
             }
         }
-        impl<'data, 'ui, AcqT: ModelsLabelAcquirer> ElementVisitor<<AcqT::ModelT as ContainerModel>::ElementT> for HierarchyViewVisitor<'data, 'ui, AcqT> {
-            fn open_complex(&mut self, e: &<AcqT::ModelT as ContainerModel>::ElementT) {
-                self.show_element(true, e);
+        impl<'data, 'ui, ModelT> ElementVisitor<<ModelT as ContainerModel>::ElementT> for HierarchyViewVisitor<'data, 'ui, ModelT>
+            where ModelT: VisitableDiagram,
+                <ModelT as ContainerModel>::ElementT: VisitableElement,
+        {
+            fn open_complex(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
+                self.show_element(true, &*e.uuid());
             }
 
-            fn close_complex(&mut self, _e: &<AcqT::ModelT as ContainerModel>::ElementT) {
+            fn close_complex(&mut self, _e: &<ModelT as ContainerModel>::ElementT) {
                 self.builder.close_dir();
             }
 
-            fn visit_simple(&mut self, e: &<AcqT::ModelT as ContainerModel>::ElementT) {
-                self.show_element(false, e);
+            fn visit_simple(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
+                self.show_element(false, &*e.uuid());
             }
         }
-        impl<'data, 'ui, AcqT: ModelsLabelAcquirer> DiagramVisitor<AcqT::ModelT> for HierarchyViewVisitor<'data, 'ui, AcqT> {
-            fn open_diagram(&mut self, e: &AcqT::ModelT) {
+        impl<'data, 'ui, ModelT> DiagramVisitor<ModelT> for HierarchyViewVisitor<'data, 'ui, ModelT>
+            where ModelT: VisitableDiagram,
+                <ModelT as ContainerModel>::ElementT: VisitableElement,
+        {
+            fn open_diagram(&mut self, e: &ModelT) {
                 let model_uuid = *e.uuid();
                 self.builder.node(
-                    egui_ltreeview::NodeBuilder::dir(model_uuid).label(self.models_label_acquirer.model_label(e))
+                    egui_ltreeview::NodeBuilder::dir(model_uuid)
+                        .label(&*self.label_provider.get(&model_uuid))
                 );
             }
 
-            fn close_diagram(&mut self, _e: &AcqT::ModelT) {
+            fn close_diagram(&mut self, _e: &ModelT) {
                 self.builder.close_dir();
             }
         }
@@ -358,7 +375,8 @@ impl<AcqT: ModelsLabelAcquirer> ModelHierarchyView for SimpleModelHierarchyView<
             let mut hvv = HierarchyViewVisitor {
                 command: None,
                 is_represented, builder,
-                models_label_acquirer: &self.models_label_acquirer,
+                label_provider: &*self.label_provider.read(),
+                model: PhantomData,
             };
 
             self.model.read().accept(&mut hvv);
@@ -368,6 +386,27 @@ impl<AcqT: ModelsLabelAcquirer> ModelHierarchyView for SimpleModelHierarchyView<
 
         c
     }
+}
+
+pub trait LabelProvider {
+    fn get(&self, uuid: &ModelUuid) -> Arc<String>;
+}
+
+pub trait CachingLabelDeriver<ModelT: Model>: LabelProvider + Default {
+    fn filter_and_elipsis(src: &str) -> String {
+        const CUTOFF: usize = 40;
+        let mut s: String = src.chars()
+            .map(|c| if c.is_whitespace() { ' ' } else { c } )
+            .take(CUTOFF)
+            .collect();
+        if src.len() > CUTOFF {
+            s.push_str("...");
+        }
+        s
+    }
+
+    fn update(&mut self, e: &ModelT);
+    fn insert(&mut self, k: ModelUuid, v: Arc<String>);
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, derive_more::From, serde::Serialize, serde::Deserialize)]
@@ -472,7 +511,7 @@ impl ColorBundle {
     }
 }
 
-pub struct DrawingContext {
+pub struct GlobalDrawingContext {
     pub global_colors: ColorBundle,
     pub fluent_bundle: fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
     pub shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
@@ -506,32 +545,32 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
 
     fn new_ui_canvas(
         &mut self,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
 
     fn draw_in(
         &mut self,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>,
     );
 
     fn context_menu(
         &mut self,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     );
 
     fn show_toolbar(
         &mut self,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     );
     fn show_properties(
         &mut self,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
@@ -795,6 +834,7 @@ pub trait Domain: Sized + 'static {
     type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT> + VisitableDiagram;
     type CommonElementViewT: ElementControllerGen2<Self> + serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone;
     type QueryableT<'a>: Queryable<'a, Self>;
+    type LabelProviderT: CachingLabelDeriver<Self::CommonElementT>;
     type ToolT: Tool<Self>;
     type AddCommandElementT: From<Self::CommonElementViewT> + TryInto<Self::CommonElementViewT> + Clone + Debug;
     type PropChangeT: From<ColorChangeData> + TryInto<ColorChangeData> + Clone + Debug;
@@ -928,8 +968,9 @@ impl<DomainT: Domain> PropertiesStatus<DomainT> {
 pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::CommonElementT> + NHContextSerialize + ContainerGen2<DomainT> + Send + Sync {
     fn show_properties(
         &mut self,
-        _drawing_context: &DrawingContext,
-        _: &DomainT::QueryableT<'_>,
+        _drawing_context: &GlobalDrawingContext,
+        _q: &DomainT::QueryableT<'_>,
+        _lp: &DomainT::LabelProviderT,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
@@ -938,7 +979,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
     fn draw_in(
         &mut self,
         _: &DomainT::QueryableT<'_>,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus;
@@ -1004,7 +1045,6 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn model_name(&self) -> Arc<String>;
 
     fn view_type(&self) -> &'static str;
-    fn new_hierarchy_view(&self) -> SimpleModelHierarchyView<impl ModelsLabelAcquirer<ModelT = DomainT::DiagramModelT> + 'static>;
 
     fn find_element(&self, model_uuid: &ModelUuid) -> Option<(DomainT::CommonElementT, ModelUuid)> {
         self.model().read().find_element(model_uuid)
@@ -1025,7 +1065,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn gridlines_color(&self, global_colors: &ColorBundle) -> egui::Color32;
     fn show_view_props_fun(
         &mut self,
-        drawing_context: &DrawingContext,
+        drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) -> PropertiesStatus<DomainT>;
     fn show_props_fun(
@@ -1044,7 +1084,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn show_tool_palette(
         &mut self,
         tool: &mut Option<DomainT::ToolT>,
-        drawing_context: &DrawingContext,
+        drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     );
     fn menubar_options_fun(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
@@ -1078,7 +1118,7 @@ struct DiagramControllerGen2Temporaries<DomainT: Domain> {
     flattened_views_status: HashMap<ViewUuid, SelectionStatus>,
     flattened_represented_models: HashMap<ModelUuid, ViewUuid>,
     clipboard_elements: HashMap<ViewUuid, DomainT::CommonElementViewT>,
-
+    label_provider: ERef<DomainT::LabelProviderT>,
     _layers: Vec<bool>,
 
     camera_offset: egui::Pos2,
@@ -1105,6 +1145,7 @@ impl<DomainT: Domain> Default for DiagramControllerGen2Temporaries<DomainT> {
             flattened_views_status: Default::default(),
             flattened_represented_models: Default::default(),
             clipboard_elements: Default::default(),
+            label_provider: ERef::new(Default::default()),
             _layers: Default::default(),
             camera_offset: Default::default(),
             camera_scale: 1.0,
@@ -1150,9 +1191,12 @@ impl<
     }
 
     fn refresh_all_buffers(&mut self) {
+        let mut lp = self.temporaries.label_provider.write();
         for v in self.temporaries.flattened_views.values_mut() {
             v.refresh_buffers();
+            lp.update(&v.model());
         }
+        lp.insert(*self.adapter.model_uuid(), self.adapter.model_name());
 
         self.temporaries.name_buffer = (*self.name).clone();
         self.adapter.refresh_buffers();
@@ -1424,7 +1468,9 @@ impl<
 
                             if *into_model {
                                 self.adapter.add_element(view.model());
+                                affected_models.insert(*self.adapter.model_uuid());
                             }
+                            affected_models.insert(*view.model_uuid());
 
                             self.owned_views.push(uuid, view);
                         }
@@ -1595,7 +1641,7 @@ impl<
     DiagramAdapterT: DiagramAdapter<DomainT>
 > DiagramController for DiagramControllerGen2<DomainT, DiagramAdapterT> {
     fn new_hierarchy_view(&self) -> Arc<dyn ModelHierarchyView> {
-        Arc::new(self.adapter.new_hierarchy_view())
+        Arc::new(SimpleModelHierarchyView::new(self.adapter.model(), self.temporaries.label_provider.clone()))
     }
 
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid> {
@@ -1603,21 +1649,24 @@ impl<
     }
 
     fn refresh_buffers(&mut self, affected_models: &HashSet<ModelUuid>) {
+        let mut lp = self.temporaries.label_provider.write();
         if affected_models.contains(&self.adapter.model_uuid()) {
             self.adapter.refresh_buffers();
+            lp.insert(*self.adapter.model_uuid(), self.adapter.model_name());
         }
 
         for mk in affected_models.iter() {
             if let Some(vk) = self.temporaries.flattened_represented_models.get(mk)
                 && let Some(v) = self.temporaries.flattened_views.get_mut(vk) {
                 v.refresh_buffers();
+                lp.update(&v.model());
             }
         }
     }
 
     fn new_ui_canvas(
         &mut self,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
         let canvas_pos = ui.next_widget_position();
@@ -1737,7 +1786,7 @@ impl<
     }
     fn context_menu(
         &mut self,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
@@ -1785,14 +1834,14 @@ impl<
 
     fn show_toolbar(
         &mut self,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) {
         self.adapter.show_tool_palette(&mut self.temporaries.current_tool, context, ui);
     }
     fn show_properties(
         &mut self,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
@@ -1800,10 +1849,11 @@ impl<
         let mut commands = Vec::new();
         let req = 'req: {
             let queryable = DomainT::QueryableT::new(&self.temporaries.flattened_represented_models, &self.temporaries.flattened_views);
+            let lp = self.temporaries.label_provider.read();
 
             let child = self
                 .owned_views
-                .event_order_find_mut(|v| v.show_properties(context, &queryable, ui, &mut commands).to_non_default());
+                .event_order_find_mut(|v| v.show_properties(context, &queryable, &lp, ui, &mut commands).to_non_default());
             if let Some(child) = child {
                 child
             } else {
@@ -1852,7 +1902,7 @@ impl<
                 impl CustomModal for ColorChangeModal {
                     fn show(
                         &mut self,
-                        d: &mut DrawingContext,
+                        d: &mut GlobalDrawingContext,
                         ui: &mut egui::Ui,
                         commands: &mut Vec<ProjectCommand>,
                     ) -> CustomModalResult {
@@ -2106,7 +2156,7 @@ impl<
 
     fn draw_in(
         &mut self,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>
     ) {

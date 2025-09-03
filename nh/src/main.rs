@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use common::canvas::{NHCanvas, UiCanvas};
-use common::controller::{Arrangement, DrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleProjectCommand};
+use common::controller::{Arrangement, GlobalDrawingContext, HierarchyNode, ModelHierarchyView, ProjectCommand, SimpleProjectCommand};
 use common::project_serde::{NHSerializeError, NHDeserializer, NHDeserializeError};
 use common::uuid::{ModelUuid, ViewUuid};
 use eframe::egui::{
@@ -129,7 +129,7 @@ pub enum CustomModalResult {
 pub trait CustomModal {
     fn show(
         &mut self,
-        d: &mut DrawingContext,
+        d: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult;
@@ -157,7 +157,7 @@ struct NHContext {
     selected_language: usize,
     languages_order: Vec<unic_langid::LanguageIdentifier>,
     shortcut_top_order: Vec<(SimpleProjectCommand, egui::KeyboardShortcut)>,
-    drawing_context: DrawingContext,
+    drawing_context: GlobalDrawingContext,
 
     undo_stack: Vec<(Arc<String>, ViewUuid)>,
     redo_stack: Vec<(Arc<String>, ViewUuid)>,
@@ -1286,7 +1286,7 @@ impl Default for NHApp {
             selected_diagram_shades,
             selected_language: 0,
             languages_order,
-            drawing_context: DrawingContext {
+            drawing_context: GlobalDrawingContext {
                 global_colors: ColorBundle::new(),
                 fluent_bundle,
                 shortcuts: HashMap::new(),

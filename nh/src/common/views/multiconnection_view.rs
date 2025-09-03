@@ -2,7 +2,7 @@
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 use eframe::egui;
 
-use crate::{common::{canvas::{self, ArrowDataPos}, controller::{ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, PropertiesStatus, Queryable, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, CustomModal};
+use crate::{common::{canvas::{self, ArrowDataPos}, controller::{ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PropertiesStatus, Queryable, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, CustomModal};
 
 #[derive(Clone)]
 pub struct ArrowData {
@@ -256,8 +256,9 @@ where
 {
     fn show_properties(
         &mut self,
-        _drawing_context: &DrawingContext,
+        _drawing_context: &GlobalDrawingContext,
         q: &DomainT::QueryableT<'_>,
+        lp: &DomainT::LabelProviderT,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
@@ -267,6 +268,7 @@ where
 
         fn display_endings<'a, DomainT: Domain>(
             q: &'a DomainT::QueryableT<'_>,
+            lp: &'a DomainT::LabelProviderT,
             ui: &mut egui::Ui,
             commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
             models: &'a [ModelUuid],
@@ -278,7 +280,7 @@ where
                 let e = views.iter().find(|e| *e.element.model_uuid() == *model_uuid);
 
                 ui.horizontal(|ui| {
-                    ui.label(&model_uuid.to_string());
+                    ui.label(&*lp.get(model_uuid));
                     if let Some(e) = e {
                         if ui.button("Remove from view").clicked() {
                             commands.push(InsensitiveCommand::RemoveDependency(self_uuid, b, *e.element.uuid(), false).into());
@@ -300,10 +302,9 @@ where
             }
         }
         ui.label("Sources:");
-        display_endings::<DomainT>(q, ui, commands, self.adapter.source_uuids(), &self.sources, *self.uuid, 0);
-
+        display_endings::<DomainT>(q, lp, ui, commands, self.adapter.source_uuids(), &self.sources, *self.uuid, 0);
         ui.label("Targets:");
-        display_endings::<DomainT>(q, ui, commands, self.adapter.target_uuids(), &self.targets, *self.uuid, 1);
+        display_endings::<DomainT>(q, lp, ui, commands, self.adapter.target_uuids(), &self.targets, *self.uuid, 1);
 
         return self.adapter.show_properties(ui, commands);
     }
@@ -311,7 +312,7 @@ where
     fn draw_in(
         &mut self,
         _: &DomainT::QueryableT<'_>,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus {

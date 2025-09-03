@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ModelsLabelAcquirer, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -27,6 +27,7 @@ impl Domain for DemoCsdDomain {
     type DiagramModelT = DemoCsdDiagram;
     type CommonElementViewT = DemoCsdElementView;
     type QueryableT<'a> = DemoCsdQueryable<'a>;
+    type LabelProviderT = DemoCsdLabelProvider;
     type ToolT = NaiveDemoCsdTool;
     type AddCommandElementT = DemoCsdElementOrVertex;
     type PropChangeT = DemoCsdPropChange;
@@ -50,6 +51,44 @@ impl<'a> Queryable<'a, DemoCsdDomain> for DemoCsdQueryable<'a> {
 
     fn get_view(&self, m: &ModelUuid) -> Option<DemoCsdElementView> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
+    }
+}
+
+#[derive(Default)]
+pub struct DemoCsdLabelProvider {
+    cache: HashMap<ModelUuid, Arc<String>>,
+}
+
+impl LabelProvider for DemoCsdLabelProvider {
+    fn get(&self, uuid: &ModelUuid) -> Arc<String> {
+        self.cache.get(uuid).unwrap().clone()
+    }
+}
+
+impl CachingLabelDeriver<DemoCsdElement> for DemoCsdLabelProvider {
+    fn update(&mut self, e: &DemoCsdElement) {
+        match e {
+            DemoCsdElement::DemoCsdPackage(inner) => {
+                let r = inner.read();
+                self.cache.insert(*r.uuid, r.name.clone());
+            },
+            DemoCsdElement::DemoCsdTransactor(inner) => {
+                let r = inner.read();
+                self.cache.insert(*r.uuid, r.name.clone());
+            },
+            DemoCsdElement::DemoCsdTransaction(inner) => {
+                let r = inner.read();
+                self.cache.insert(*r.uuid, r.name.clone());
+            },
+            DemoCsdElement::DemoCsdLink(inner) => {
+                let r = inner.read();
+                self.cache.insert(*r.uuid, Arc::new(r.link_type.char().to_owned()));
+            },
+        }
+    }
+
+    fn insert(&mut self, k: ModelUuid, v: Arc<String>) {
+        self.cache.insert(k, v);
     }
 }
 
@@ -188,24 +227,6 @@ impl Default for DemoCsdPlaceholderViews {
     }
 }
 
-struct DemoCsdLabelAcquirer;
-impl ModelsLabelAcquirer for DemoCsdLabelAcquirer {
-    type ModelT = DemoCsdDiagram;
-
-    fn model_label(&self, m: &Self::ModelT) -> String {
-        format!("{} ({} children)", m.name, m.contained_elements.len())
-    }
-
-    fn element_label(&self, e: &<Self::ModelT as ContainerModel>::ElementT) -> String {
-        match e {
-            DemoCsdElement::DemoCsdPackage(inner) => (*inner.read().name).clone(),
-            DemoCsdElement::DemoCsdTransactor(inner) => (*inner.read().name).clone(),
-            DemoCsdElement::DemoCsdTransaction(inner) => (*inner.read().name).clone(),
-            DemoCsdElement::DemoCsdLink(inner) => inner.read().link_type.char().to_owned(),
-        }
-    }
-}
-
 impl DemoCsdDiagramAdapter {
     fn new(model: ERef<DemoCsdDiagram>) -> Self {
         let m = model.read();
@@ -233,9 +254,6 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     }
     fn view_type(&self) -> &'static str {
         "democsd-diagram-view"
-    }
-    fn new_hierarchy_view(&self) -> SimpleModelHierarchyView<impl ModelsLabelAcquirer<ModelT = DemoCsdDiagram> + 'static> {
-        SimpleModelHierarchyView::new(self.model(), DemoCsdLabelAcquirer {})
     }
 
     fn create_new_view_for(
@@ -292,7 +310,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     }
     fn show_view_props_fun(
         &mut self,
-        drawing_context: &DrawingContext,
+        drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) -> PropertiesStatus<DemoCsdDomain> {
         ui.label("Background color:");
@@ -394,7 +412,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     fn show_tool_palette(
         &mut self,
         tool: &mut Option<NaiveDemoCsdTool>,
-        drawing_context: &DrawingContext,
+        drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) {
         let button_height = 60.0;
@@ -1124,7 +1142,7 @@ impl From<&ERef<DemoCsdTransactor>> for DemoCsdTransactorSetupModal {
 impl CustomModal for DemoCsdTransactorSetupModal {
     fn show(
         &mut self,
-        d: &mut DrawingContext,
+        d: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -1221,13 +1239,14 @@ impl ContainerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
     fn show_properties(
         &mut self,
-        drawing_context: &DrawingContext,
+        drawing_context: &GlobalDrawingContext,
         queryable: &DemoCsdQueryable,
+        lp: &DemoCsdLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> PropertiesStatus<DemoCsdDomain> {
         if let Some(child) = self.transaction_view.as_mut()
-                .and_then(|t| t.write().show_properties(drawing_context, queryable, ui, commands).to_non_default()) {
+                .and_then(|t| t.write().show_properties(drawing_context, queryable, lp, ui, commands).to_non_default()) {
             return child;
         }
 
@@ -1325,7 +1344,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
     fn draw_in(
         &mut self,
         queryable: &DemoCsdQueryable,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoCsdTool)>,
     ) -> TargettingStatus {
@@ -1854,7 +1873,7 @@ impl From<&ERef<DemoCsdTransaction>> for DemoCsdTransactionSetupModal {
 impl CustomModal for DemoCsdTransactionSetupModal {
     fn show(
         &mut self,
-        d: &mut DrawingContext,
+        d: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -1987,8 +2006,9 @@ fn draw_tx_mark(
 impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     fn show_properties(
         &mut self,
-        _drawing_context: &DrawingContext,
+        _drawing_context: &GlobalDrawingContext,
         _parent: &DemoCsdQueryable,
+        _lp: &DemoCsdLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> PropertiesStatus<DemoCsdDomain> {
@@ -2077,7 +2097,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     fn draw_in(
         &mut self,
         _: &DemoCsdQueryable,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoCsdTool)>,
     ) -> TargettingStatus {

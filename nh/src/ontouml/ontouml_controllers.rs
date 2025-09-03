@@ -1,9 +1,10 @@
+use crate::umlclass::umlclass_controllers::UmlClassLabelProvider;
 use crate::umlclass::umlclass_models::{
     UmlClass, UmlClassAssociation, UmlClassAssociationType, UmlClassComment, UmlClassCommentLink, UmlClassDiagram, UmlClassElement, UmlClassGeneralization, UmlClassPackage
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ModelsLabelAcquirer, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SimpleModelHierarchyView, SnapManager, TargettingStatus, Tool, View
+    ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, GlobalDrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -26,6 +27,7 @@ impl Domain for UmlClassDomain {
     type DiagramModelT = UmlClassDiagram;
     type CommonElementViewT = UmlClassElementView;
     type QueryableT<'a> = UmlClassQueryable<'a>;
+    type LabelProviderT = UmlClassLabelProvider;
     type ToolT = NaiveUmlClassTool;
     type AddCommandElementT = UmlClassElementOrVertex;
     type PropChangeT = UmlClassPropChange;
@@ -222,45 +224,6 @@ impl Default for UmlClassPlaceholderViews {
     }
 }
 
-struct UmlClassLabelAcquirer;
-impl ModelsLabelAcquirer for UmlClassLabelAcquirer {
-    type ModelT = UmlClassDiagram;
-
-    fn model_label(&self, m: &Self::ModelT) -> String {
-        format!("{} ({} children)", m.name, m.contained_elements.len())
-    }
-
-    fn element_label(&self, e: &<Self::ModelT as ContainerModel>::ElementT) -> String {
-        match e {
-            UmlClassElement::UmlClassPackage(inner) => (*inner.read().name).clone(),
-            UmlClassElement::UmlClassInstance(inner) => {
-                let m = inner.read();
-                if m.instance_name.is_empty() {
-                    format!(":{}", m.instance_type)
-                } else {
-                    format!("{}: {}", m.instance_name, m.instance_type)
-                }
-            }
-            UmlClassElement::UmlClass(inner) => (*inner.read().name).clone(),
-            UmlClassElement::UmlClassGeneralization(inner) => "Generalization".to_owned(),
-            UmlClassElement::UmlClassAssociation(inner) => (*inner.read().link_type.name()).clone(),
-            UmlClassElement::UmlClassComment(inner) => {
-                const CUTOFF: usize = 40;
-                let r = inner.read();
-                let mut s: String = r.text.chars()
-                .map(|c| if c.is_whitespace() { ' ' } else { c } )
-                .take(CUTOFF).collect();
-                if r.text.len() > CUTOFF {
-                    s.push_str("...");
-                }
-                s
-            },
-            UmlClassElement::UmlClassCommentLink(inner) => "Comment link".to_owned(),
-        }
-    }
-}
-
-
 impl UmlClassDiagramAdapter {
     fn new(model: ERef<UmlClassDiagram>) -> Self {
         let m = model.read();
@@ -288,9 +251,6 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
     }
     fn view_type(&self) -> &'static str {
         "ontouml-diagram-view"
-    }
-    fn new_hierarchy_view(&self) -> SimpleModelHierarchyView<impl ModelsLabelAcquirer<ModelT = UmlClassDiagram> + 'static> {
-        SimpleModelHierarchyView::new(self.model(), UmlClassLabelAcquirer {})
     }
 
     fn create_new_view_for(
@@ -365,7 +325,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
     }
     fn show_view_props_fun(
         &mut self,
-        drawing_context: &DrawingContext,
+        drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) -> PropertiesStatus<UmlClassDomain> {
         ui.label("Background color:");
@@ -469,7 +429,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
     fn show_tool_palette(
         &mut self,
         tool: &mut Option<NaiveUmlClassTool>,
-        drawing_context: &DrawingContext,
+        drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) {
         let button_height = 60.0;
@@ -1312,8 +1272,9 @@ impl ContainerGen2<UmlClassDomain> for UmlClassView {}
 impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
     fn show_properties(
         &mut self,
-        drawing_context: &DrawingContext,
-        _parent: &UmlClassQueryable,
+        drawing_context: &GlobalDrawingContext,
+        _q: &UmlClassQueryable,
+        _lp: &UmlClassLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain> {
@@ -1426,7 +1387,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
     fn draw_in(
         &mut self,
         _: &UmlClassQueryable,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>,
     ) -> TargettingStatus {
@@ -2532,8 +2493,9 @@ impl ContainerGen2<UmlClassDomain> for UmlClassCommentView {}
 impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
     fn show_properties(
         &mut self,
-        drawing_context: &DrawingContext,
-        _parent: &UmlClassQueryable,
+        drawing_context: &GlobalDrawingContext,
+        _q: &UmlClassQueryable,
+        _lp: &UmlClassLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain> {
@@ -2577,7 +2539,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
     fn draw_in(
         &mut self,
         _: &UmlClassQueryable,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>,
     ) -> TargettingStatus {

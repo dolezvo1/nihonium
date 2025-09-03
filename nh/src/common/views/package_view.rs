@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use eframe::{egui, epaint};
 
-use crate::{common::{canvas, controller::{ColorBundle, ContainerGen2, Domain, DrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}, CustomModal};
+use crate::{common::{canvas, controller::{ColorBundle, ContainerGen2, Domain, GlobalDrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}, CustomModal};
 
 
 pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
@@ -150,14 +150,15 @@ where
 {
     fn show_properties(
         &mut self,
-        drawing_context: &DrawingContext,
+        drawing_context: &GlobalDrawingContext,
         parent: &DomainT::QueryableT<'_>,
+        lp: &DomainT::LabelProviderT,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
         let child = self
             .owned_views
-            .event_order_find_mut(|v| v.show_properties(drawing_context, parent, ui, commands).to_non_default());
+            .event_order_find_mut(|v| v.show_properties(drawing_context, parent, lp, ui, commands).to_non_default());
 
         if let Some(child) = child {
             child
@@ -207,7 +208,7 @@ where
     fn draw_in(
         &mut self,
         q: &DomainT::QueryableT<'_>,
-        context: &DrawingContext,
+        context: &GlobalDrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus {
@@ -603,7 +604,9 @@ where
 
                         if *into_model {
                             self.adapter.add_element(view.model());
+                            affected_models.insert(*self.adapter.model_uuid());
                         }
+                        affected_models.insert(*view.model_uuid());
 
                         self.owned_views.push(uuid, view);
                     }
