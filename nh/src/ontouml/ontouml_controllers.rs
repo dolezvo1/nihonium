@@ -12,7 +12,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::{CustomTab, CustomModal};
+use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
 use std::collections::HashSet;
 use std::{
@@ -917,8 +917,12 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
         match &self.result {
             PartialUmlClassElement::Some(x) => {
                 let x = x.clone();
+                let esm: Option<Box<dyn CustomModal>> = match &x {
+                    UmlClassElementView::Class(inner) => Some(Box::new(UmlClassSetupModal::from(&inner.read().model))),
+                    _ => None,
+                };
                 self.result = PartialUmlClassElement::None;
-                Some((x, None))
+                Some((x, esm))
             }
             PartialUmlClassElement::Link {
                 association_type: link_type,
@@ -1210,6 +1214,78 @@ fn ontouml_class_stereotype_literal(e: &str) -> &'static str {
     }
 }
 
+struct UmlClassSetupModal {
+    model: ERef<UmlClass>,
+
+    stereotype_buffer: &'static str,
+    name_buffer: String,
+}
+
+impl From<&ERef<UmlClass>> for UmlClassSetupModal {
+    fn from(model: &ERef<UmlClass>) -> Self {
+        let m = model.read();
+        Self {
+            model: model.clone(),
+            stereotype_buffer: ontouml_class_stereotype_literal(&*m.stereotype),
+            name_buffer: (*m.name).clone(),
+        }
+    }
+}
+
+impl CustomModal for UmlClassSetupModal {
+    fn show(
+        &mut self,
+        d: &mut GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) -> CustomModalResult {
+        ui.label("Stereotype:");
+        egui::ComboBox::from_id_salt("Stereotype:")
+            .selected_text(format!("«{}»", self.stereotype_buffer))
+            .show_ui(ui, |ui| {
+                for e in [
+                    // Sortals
+                    ("kind", "Kind"),
+                    ("subkind", "Subkind"),
+                    ("phase", "Phase"),
+                    ("role", "Role"),
+                    ("collective", "Collective"),
+                    ("quantity", "Quantity"),
+                    ("relator", "Relator"),
+                    // Nonsortals
+                    ("category", "Category"),
+                    ("phaseMixin", "PhaseMixin"),
+                    ("roleMixin", "RoleMixin"),
+                    ("mixin", "Mixin"),
+                    // Aspects
+                    ("mode", "Mode"),
+                    ("quality", "Quality"),
+                ] {
+                    ui.selectable_value(&mut self.stereotype_buffer, e.0, e.1);
+                }
+            }
+        );
+        ui.label("Name:");
+        ui.text_edit_singleline(&mut self.name_buffer);
+        ui.separator();
+
+        let mut result = CustomModalResult::KeepOpen;
+        ui.horizontal(|ui| {
+            if ui.button("Ok").clicked() {
+                let mut m = self.model.write();
+                m.stereotype = Arc::new(self.stereotype_buffer.to_owned());
+                m.name = Arc::new(self.name_buffer.clone());
+                result = CustomModalResult::CloseModified(*m.uuid);
+            }
+            if ui.button("Cancel").clicked() {
+                result = CustomModalResult::CloseUnmodified;
+            }
+        });
+
+        result
+    }
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassView {
@@ -1284,7 +1360,8 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
 
         ui.label("Model properties");
 
-        egui::ComboBox::from_label("Stereotype:")
+        ui.label("Stereotype:");
+        egui::ComboBox::from_id_salt("Stereotype:")
             .selected_text(format!("«{}»", self.stereotype_buffer))
             .show_ui(ui, |ui| {
                 for e in [
@@ -2076,7 +2153,8 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssociationAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
     ) ->PropertiesStatus<UmlClassDomain> {
-        egui::ComboBox::from_label("Association type:")
+        ui.label("Association type:");
+        egui::ComboBox::from_id_salt("Association type:")
             .selected_text(format!("«{}»", self.temporaries.stereotype_buffer))
             .show_ui(ui, |ui| {
                 for sv in [

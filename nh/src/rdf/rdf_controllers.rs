@@ -576,15 +576,17 @@ impl CustomTab for SparqlQueriesTab {
     fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui) {
         let mut model = self.diagram.write();
 
-        egui::ComboBox::from_label("Select diagram")
+        ui.label("Select diagram");
+        egui::ComboBox::from_id_salt("Select diagram")
             .selected_text(format!("{}", model.name))
             .show_ui(ui, |_ui| {
                 // TODO: if ui.selectable_value(&mut self.diagram, e.clone(), format!("{:?}", e.name)).clicked() {}
                 // TODO: zero out selected query?
             });
 
+        ui.label("Select query");
         ui.horizontal(|ui| {
-            egui::ComboBox::from_label("Select query")
+            egui::ComboBox::from_id_salt("Select query")
                 .selected_text(if let Some(uuid) = &self.selected_query {
                     model.stored_queries.get(uuid).unwrap().0.clone()
                 } else {
@@ -982,11 +984,11 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 let x = x.clone();
                 self.result = PartialRdfElement::None;
                 let esm: Option<Box<dyn CustomModal>> = match &x {
-                    RdfElementView::Literal(eref) => {
-                        Some(Box::new(RdfLiteralSetupModal::from(&eref.read().model)))
+                    RdfElementView::Literal(inner) => {
+                        Some(Box::new(RdfLiteralSetupModal::from(&inner.read().model)))
                     },
-                    RdfElementView::Node(eref) => {
-                        Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(eref.read().model.clone()))))
+                    RdfElementView::Node(inner) => {
+                        Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(inner.read().model.clone()))))
                     },
                     RdfElementView::Predicate(..)
                     | RdfElementView::Graph(..) => unreachable!(),

@@ -12,7 +12,7 @@ use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::umlclass::umlclass_models::{UmlClassAssociation, UmlClassClassifier, UmlClassComment, UmlClassInstance};
-use crate::{CustomTab, CustomModal};
+use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
 use std::collections::HashSet;
 use std::{
@@ -1165,8 +1165,13 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
         match &self.result {
             PartialUmlClassElement::Some(x) => {
                 let x = x.clone();
+                let esm: Option<Box<dyn CustomModal>> = match &x {
+                    UmlClassElementView::Instance(inner) => Some(Box::new(UmlClassInstanceSetupModal::from(&inner.read().model))),
+                    UmlClassElementView::Class(inner) => Some(Box::new(UmlClassSetupModal::from(&inner.read().model))),
+                    _ => None,
+                };
                 self.result = PartialUmlClassElement::None;
-                Some((x, None))
+                Some((x, esm))
             }
             PartialUmlClassElement::Link {
                 association_type: link_type,
@@ -1431,6 +1436,54 @@ fn new_umlclass_instance_view(
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color: MGlobalColor::None,
     })
+}
+
+struct UmlClassInstanceSetupModal {
+    model: ERef<UmlClassInstance>,
+
+    name_buffer: String,
+    type_buffer: String,
+}
+
+impl From<&ERef<UmlClassInstance>> for UmlClassInstanceSetupModal {
+    fn from(model: &ERef<UmlClassInstance>) -> Self {
+        let m = model.read();
+        Self {
+            model: model.clone(),
+            name_buffer: (*m.instance_name).clone(),
+            type_buffer: (*m.instance_type).clone(),
+        }
+    }
+}
+
+impl CustomModal for UmlClassInstanceSetupModal {
+    fn show(
+        &mut self,
+        d: &mut GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) -> CustomModalResult {
+        ui.label("Name:");
+        ui.text_edit_singleline(&mut self.name_buffer);
+        ui.label("Type:");
+        ui.text_edit_singleline(&mut self.type_buffer);
+        ui.separator();
+
+        let mut result = CustomModalResult::KeepOpen;
+        ui.horizontal(|ui| {
+            if ui.button("Ok").clicked() {
+                let mut m = self.model.write();
+                m.instance_name = Arc::new(self.name_buffer.clone());
+                m.instance_type = Arc::new(self.type_buffer.clone());
+                result = CustomModalResult::CloseModified(*m.uuid);
+            }
+            if ui.button("Cancel").clicked() {
+                result = CustomModalResult::CloseUnmodified;
+            }
+        });
+
+        result
+    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -1943,6 +1996,54 @@ fn new_umlclass_class_view(
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color: MGlobalColor::None,
     })
+}
+
+struct UmlClassSetupModal {
+    model: ERef<UmlClass>,
+
+    stereotype_buffer: String,
+    name_buffer: String,
+}
+
+impl From<&ERef<UmlClass>> for UmlClassSetupModal {
+    fn from(model: &ERef<UmlClass>) -> Self {
+        let m = model.read();
+        Self {
+            model: model.clone(),
+            stereotype_buffer: (*m.stereotype).clone(),
+            name_buffer: (*m.name).clone(),
+        }
+    }
+}
+
+impl CustomModal for UmlClassSetupModal {
+    fn show(
+        &mut self,
+        d: &mut GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) -> CustomModalResult {
+        ui.label("Stereotype:");
+        ui.text_edit_singleline(&mut self.stereotype_buffer);
+        ui.label("Name:");
+        ui.text_edit_singleline(&mut self.name_buffer);
+        ui.separator();
+
+        let mut result = CustomModalResult::KeepOpen;
+        ui.horizontal(|ui| {
+            if ui.button("Ok").clicked() {
+                let mut m = self.model.write();
+                m.stereotype = Arc::new(self.stereotype_buffer.clone());
+                m.name = Arc::new(self.name_buffer.clone());
+                result = CustomModalResult::CloseModified(*m.uuid);
+            }
+            if ui.button("Cancel").clicked() {
+                result = CustomModalResult::CloseUnmodified;
+            }
+        });
+
+        result
+    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
