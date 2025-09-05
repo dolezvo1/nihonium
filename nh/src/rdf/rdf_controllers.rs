@@ -1291,6 +1291,17 @@ pub struct RdfNodeView {
     pub bounds_radius: egui::Vec2,
 }
 
+impl RdfNodeView {
+    fn predicate_button_rect(&self, ui_scale: f32) -> egui::Rect {
+        let b_radius = 8.0;
+        let b_center = self.position + egui::Vec2::new(self.bounds_radius.x + b_radius / ui_scale, -self.bounds_radius.y + b_radius / ui_scale);
+        egui::Rect::from_center_size(
+            b_center,
+            egui::Vec2::splat(2.0 * b_radius / ui_scale),
+        )
+    }
+}
+
 impl Entity for RdfNodeView {
     fn tagged_uuid(&self) -> EntityUuid {
         EntityUuid::View(*self.uuid)
@@ -1415,6 +1426,19 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             egui::Color32::BLACK,
         );
 
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            let b_rect = self.predicate_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(b_rect.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
+        }
+
         // Draw targetting ellipse
         if let Some(t) = tool
             .as_ref()
@@ -1457,6 +1481,16 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos) if self.highlight.selected && self.predicate_button_rect(ehc.ui_scale).contains(pos) => {
+                *tool = Some(NaiveRdfTool {
+                    initial_stage: RdfToolStage::PredicateStart,
+                    current_stage: RdfToolStage::PredicateEnd,
+                    result: PartialRdfElement::Predicate { source: self.model.clone(), dest: None },
+                    event_lock: true,
+                });
+
+                EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {

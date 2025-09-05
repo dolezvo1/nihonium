@@ -330,18 +330,20 @@ where
             }
             InputEvent::MouseDown(pos) => {
                 let handle_size = self.handle_size(1.0);
-                for (a,h) in [(egui::Align2::RIGHT_BOTTOM, self.bounds_rect.left_top()),
-                              (egui::Align2::CENTER_BOTTOM, self.bounds_rect.center_top()),
-                              (egui::Align2::LEFT_BOTTOM, self.bounds_rect.right_top()),
-                              (egui::Align2::RIGHT_CENTER, self.bounds_rect.left_center()),
-                              (egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),
-                              (egui::Align2::RIGHT_TOP, self.bounds_rect.left_bottom()),
-                              (egui::Align2::CENTER_TOP, self.bounds_rect.center_bottom()),
-                              (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom())]
-                {
-                    if egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
-                        self.dragged_type_and_shape = Some((PackageDragType::Resize(a), self.bounds_rect));
-                        return EventHandlingStatus::HandledByElement;
+                if self.highlight.selected {
+                    for (a,h) in [(egui::Align2::RIGHT_BOTTOM, self.bounds_rect.left_top()),
+                                (egui::Align2::CENTER_BOTTOM, self.bounds_rect.center_top()),
+                                (egui::Align2::LEFT_BOTTOM, self.bounds_rect.right_top()),
+                                (egui::Align2::RIGHT_CENTER, self.bounds_rect.left_center()),
+                                (egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),
+                                (egui::Align2::RIGHT_TOP, self.bounds_rect.left_bottom()),
+                                (egui::Align2::CENTER_TOP, self.bounds_rect.center_bottom()),
+                                (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom())]
+                    {
+                        if egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
+                            self.dragged_type_and_shape = Some((PackageDragType::Resize(a), self.bounds_rect));
+                            return EventHandlingStatus::HandledByElement;
+                        }
                     }
                 }
 
