@@ -541,6 +541,13 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
                 })),
             ));
         }
+        if ui.button("OntoUML Validations").clicked() {
+            let uuid = uuid::Uuid::now_v7();
+            commands.push(ProjectCommand::AddCustomTab(
+                uuid,
+                Arc::new(RwLock::new(super::ontouml_validations::OntoUMLValidationTab::new(self.model.clone()))),
+            ));
+        }
         ui.separator();
     }
 

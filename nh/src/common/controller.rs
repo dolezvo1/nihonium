@@ -2002,12 +2002,16 @@ impl<
     fn show_layers(&self, _ui: &mut egui::Ui) {
         // TODO: Layers???
     }
-    fn show_menubar_edit_options(&mut self, _ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {}
+    fn show_menubar_edit_options(&mut self, ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {
+        if ui.button("Clear highlights").clicked() {
+            println!("TODO");
+        }
+    }
     fn show_menubar_diagram_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
         self.adapter.menubar_options_fun(/*self,*/ ui, commands);
 
         if ui.button("Layout selected elements").clicked() {
-            todo!();
+            println!("TODO");
         }
         ui.separator();
     }
