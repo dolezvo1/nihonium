@@ -77,6 +77,9 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
     fn push_target(&self, _e: DomainT::CommonElementT) -> Result<(), ()> {
         Err(())
     }
+    fn remove_target(&self, _uuid: &ModelUuid) -> Result<(), ()> {
+        Err(())
+    }
 
     fn show_properties(
         &mut self,
@@ -877,28 +880,50 @@ where
                 }
             }
             InsensitiveCommand::AddDependency(uuid, t, delm, into_model) => {
-                if *uuid == *self.uuid && *t == 0
-                    && let Ok(e) = TryInto::<DomainT::CommonElementViewT>::try_into(delm.clone())
-                    && (!into_model || self.adapter.push_source(e.model()).is_ok()) {
-                    undo_accumulator.push(InsensitiveCommand::RemoveDependency(*self.uuid, *t, *e.uuid(), *into_model));
+                if *uuid == *self.uuid
+                    && let Ok(e) = TryInto::<DomainT::CommonElementViewT>::try_into(delm.clone()) {
+                    if *t == 0
+                        && (!into_model || self.adapter.push_source(e.model()).is_ok()) {
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency(*self.uuid, *t, *e.uuid(), *into_model));
 
-                    self.sources.push(Ending {
-                        element: e,
-                        points: vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)],
-                    });
+                        self.sources.push(Ending {
+                            element: e,
+                            points: vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)],
+                        });
 
-                    affected_models.insert(*self.adapter.model_uuid());
+                        affected_models.insert(*self.adapter.model_uuid());
+                    } else if *t == 1
+                        && (!into_model || self.adapter.push_target(e.model()).is_ok()) {
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency(*self.uuid, *t, *e.uuid(), *into_model));
+
+                        self.targets.push(Ending {
+                            element: e,
+                            points: vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)],
+                        });
+
+                        affected_models.insert(*self.adapter.model_uuid());
+                    }
                 }
             }
             InsensitiveCommand::RemoveDependency(uuid, t, duuid, including_model) => {
-                if *uuid == *self.uuid && *t == 0 {
-                    self.sources.retain(|e| if *duuid == *e.element.uuid()
-                        && (!including_model || self.adapter.remove_source(&*e.element.model_uuid()).is_ok()) {
-                        undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid, *t, e.element.clone().into(), *including_model));
-                        false
-                    } else { true });
+                if *uuid == *self.uuid {
+                    if *t == 0 && self.sources.len() > 1 {
+                        self.sources.retain(|e| if *duuid == *e.element.uuid()
+                            && (!including_model || self.adapter.remove_source(&*e.element.model_uuid()).is_ok()) {
+                            undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid, *t, e.element.clone().into(), *including_model));
+                            false
+                        } else { true });
 
-                    affected_models.insert(*self.adapter.model_uuid());
+                        affected_models.insert(*self.adapter.model_uuid());
+                    } else if *t == 1 && self.targets.len() > 1 {
+                        self.targets.retain(|e| if *duuid == *e.element.uuid()
+                            && (!including_model || self.adapter.remove_target(&*e.element.model_uuid()).is_ok()) {
+                            undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid, *t, e.element.clone().into(), *including_model));
+                            false
+                        } else { true });
+
+                        affected_models.insert(*self.adapter.model_uuid());
+                    }
                 }
             }
             InsensitiveCommand::PropertyChange(uuids, properties) => {

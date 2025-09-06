@@ -354,9 +354,10 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
             },
             UmlClassElement::UmlClassGeneralization(inner) => {
                 let m = inner.read();
-                let (Some(sv), Some(tv)) = (m.sources.iter().map(|e| q.get_view(&e.read().uuid)).collect(), q.get_view(&m.target.read().uuid)) else {
+                let (Some(sv), Some(tv)) = (m.sources.iter().map(|e| q.get_view(&e.read().uuid)).collect(),
+                                            m.targets.iter().map(|e| q.get_view(&e.read().uuid)).collect()) else {
                     return Err(m.sources.iter().map(|e| *e.read().uuid)
-                        .chain(std::iter::once(*m.target.read().uuid)).collect())
+                        .chain(m.targets.iter().map(|e| *e.read().uuid)).collect())
                 };
                 UmlClassElementView::from(
                     new_umlclass_generalization_view(inner.clone(), None, sv, tv)
@@ -815,7 +816,7 @@ pub enum UmlClassToolStage {
     Class,
     LinkStart { association_type: Option<UmlClassAssociationType> },
     LinkEnd,
-    LinkAddSource,
+    LinkAddEnding { source: bool },
     PackageStart,
     PackageEnd,
     Comment,
@@ -831,7 +832,8 @@ enum PartialUmlClassElement {
         source: UmlClassClassifier,
         dest: Option<UmlClassClassifier>,
     },
-    LinkSource {
+    LinkEnding {
+        source: bool,
         gen_model: ERef<UmlClassGeneralization>,
         new_model: Option<ModelUuid>,
     },
@@ -884,7 +886,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 | UmlClassToolStage::PackageEnd => TARGETTABLE_COLOR,
                 UmlClassToolStage::LinkStart { .. }
                 | UmlClassToolStage::LinkEnd
-                | UmlClassToolStage::LinkAddSource
+                | UmlClassToolStage::LinkAddEnding { .. }
                 | UmlClassToolStage::CommentLinkStart | UmlClassToolStage::CommentLinkEnd => {
                     NON_TARGETTABLE_COLOR
                 }
@@ -899,7 +901,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
 
                 UmlClassToolStage::LinkStart { .. }
                 | UmlClassToolStage::LinkEnd
-                | UmlClassToolStage::LinkAddSource
+                | UmlClassToolStage::LinkAddEnding { .. }
                 | UmlClassToolStage::CommentLinkStart => {
                     NON_TARGETTABLE_COLOR
                 }
@@ -912,7 +914,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 | UmlClassToolStage::Comment
                 | UmlClassToolStage::CommentLinkStart
                 | UmlClassToolStage::LinkStart { association_type: None }
-                | UmlClassToolStage::LinkAddSource => NON_TARGETTABLE_COLOR,
+                | UmlClassToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
 
                 UmlClassToolStage::LinkStart { .. }
                 | UmlClassToolStage::LinkEnd
@@ -921,7 +923,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             Some(UmlClassElement::UmlClass(..)) => match self.current_stage {
                 UmlClassToolStage::LinkStart { .. }
                 | UmlClassToolStage::LinkEnd
-                | UmlClassToolStage::LinkAddSource
+                | UmlClassToolStage::LinkAddEnding { .. }
                 | UmlClassToolStage::CommentLinkEnd => {
                     TARGETTABLE_COLOR
                 }
@@ -938,7 +940,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 }
                 UmlClassToolStage::LinkStart { .. }
                 | UmlClassToolStage::LinkEnd
-                | UmlClassToolStage::LinkAddSource
+                | UmlClassToolStage::LinkAddEnding { .. }
                 | UmlClassToolStage::Instance
                 | UmlClassToolStage::Class
                 | UmlClassToolStage::PackageStart
@@ -969,7 +971,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                     );
                 }
             }
-            PartialUmlClassElement::LinkSource { gen_model, .. } => {
+            PartialUmlClassElement::LinkEnding { gen_model, .. } => {
                 if let Some(view) = q.get_view(&gen_model.read().uuid) {
                     canvas.draw_line(
                         [pos, view.position()],
@@ -1107,11 +1109,12 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                         *dest = Some(inner.into());
                         self.event_lock = true;
                     }
-                    (UmlClassToolStage::LinkAddSource, &mut PartialUmlClassElement::LinkSource { ref gen_model, ref mut new_model }) => {
+                    (UmlClassToolStage::LinkAddEnding { source }, &mut PartialUmlClassElement::LinkEnding { ref gen_model, ref mut new_model, .. }) => {
                         let inner_uuid = *inner.read().uuid;
-                        let mut gen_model = gen_model.write();
+                        let gen_model = gen_model.read();
 
-                        if !gen_model.sources.iter().any(|e| *e.read().uuid == inner_uuid) {
+                        if (source && !gen_model.sources.iter().any(|e| *e.read().uuid == inner_uuid))
+                            || (!source && !gen_model.targets.iter().any(|e| *e.read().uuid == inner_uuid)) {
                             *new_model = Some(inner_uuid);
                         }
                         self.event_lock = true;
@@ -1147,8 +1150,8 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
 
     fn try_additional_dependency(&mut self) -> Option<(u8, ModelUuid, ModelUuid)> {
         match &mut self.result {
-            PartialUmlClassElement::LinkSource { gen_model, new_model } if new_model.is_some() => {
-                let r = Some((0, *gen_model.read().uuid, new_model.unwrap()));
+            PartialUmlClassElement::LinkEnding { source, gen_model, new_model } if new_model.is_some() => {
+                let r = Some((if *source { 0 } else { 1 }, *gen_model.read().uuid, new_model.unwrap()));
                 *new_model = None;
                 r
             }
@@ -2595,20 +2598,20 @@ fn new_umlclass_generalization(
     let link_model = ERef::new(UmlClassGeneralization::new(
         uuid::Uuid::now_v7().into(),
         vec![source.0],
-        target.0,
+        vec![target.0],
     ));
-    let link_view = new_umlclass_generalization_view(link_model.clone(), center_point, vec![source.1], target.1);
+    let link_view = new_umlclass_generalization_view(link_model.clone(), center_point, vec![source.1], vec![target.1]);
     (link_model, link_view)
 }
 fn new_umlclass_generalization_view(
     model: ERef<UmlClassGeneralization>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     sources: Vec<UmlClassElementView>,
-    target: UmlClassElementView,
+    targets: Vec<UmlClassElementView>,
 ) -> ERef<GeneralizationViewT> {
     let m = model.read();
 
-    let (sp, mp, tp) = multiconnection_view::init_points(m.sources.iter().map(|e| *e.read().uuid), *m.target.read().uuid, target.min_shape(), center_point);
+    let (sp, mp, tp) = multiconnection_view::init_points(m.sources.iter().map(|e| *e.read().uuid), *m.targets[0].read().uuid, targets[0].min_shape(), center_point);
 
     MulticonnectionView::new(
         Arc::new(uuid::Uuid::now_v7().into()),
@@ -2617,7 +2620,7 @@ fn new_umlclass_generalization_view(
             temporaries: Default::default(),
         },
         sources.into_iter().zip(sp.into_iter()).map(|e| Ending::new_p(e.0, e.1)).collect(),
-        vec![Ending::new_p(target, tp[0].clone())],
+        targets.into_iter().zip(tp.into_iter()).map(|e| Ending::new_p(e.0, e.1)).collect(),
         mp,
     )
 }
@@ -2633,6 +2636,7 @@ pub struct UmlClassGeneralizationAdapter {
 
 #[derive(Clone, Default)]
 struct UmlClassGeneralizationTemporaries {
+    midpoint_label: Option<Arc<String>>,
     arrow_data: HashMap<ModelUuid, ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
@@ -2652,12 +2656,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
     }
 
     fn midpoint_label(&self) -> Option<Arc<String>> {
-        let r = self.model.read();
-        if !r.set_name.is_empty() {
-            Some(r.set_name.clone())
-        } else {
-            None
-        }
+        self.temporaries.midpoint_label.clone()
     }
 
     fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
@@ -2682,9 +2681,33 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
     }
     fn remove_source(&self, uuid: &ModelUuid) -> Result<(), ()> {
         let mut w = self.model.write();
+        if w.sources.len() == 1 {
+            return Err(())
+        }
         let original_count = w.sources.len();
         w.sources.retain(|e| *uuid != *e.read().uuid);
         if w.sources.len() != original_count {
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+    fn push_target(&self, e: <UmlClassDomain as Domain>::CommonElementT) -> Result<(), ()> {
+        if let UmlClassElement::UmlClass(c) = e {
+            self.model.write().targets.push(c);
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+    fn remove_target(&self, uuid: &ModelUuid) -> Result<(), ()> {
+        let mut w = self.model.write();
+        if w.targets.len() == 1 {
+            return Err(())
+        }
+        let original_count = w.targets.len();
+        w.targets.retain(|e| *uuid != *e.read().uuid);
+        if w.targets.len() != original_count {
             Ok(())
         } else {
             Err(())
@@ -2696,12 +2719,27 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain> {
-        if ui.button("Add source").clicked() {
+        if ui.add_enabled(self.model.read().targets.len() <= 1, egui::Button::new("Add source")).clicked() {
             return PropertiesStatus::ToolRequest(
                 Some(NaiveUmlClassTool {
-                    initial_stage: UmlClassToolStage::LinkAddSource,
-                    current_stage: UmlClassToolStage::LinkAddSource,
-                    result: PartialUmlClassElement::LinkSource {
+                    initial_stage: UmlClassToolStage::LinkAddEnding { source: true },
+                    current_stage: UmlClassToolStage::LinkAddEnding { source: true },
+                    result: PartialUmlClassElement::LinkEnding {
+                        source: true,
+                        gen_model: self.model.clone(),
+                        new_model: None,
+                    },
+                    event_lock: false,
+                })
+            );
+        }
+        if ui.add_enabled(self.model.read().sources.len() <= 1, egui::Button::new("Add target")).clicked() {
+            return PropertiesStatus::ToolRequest(
+                Some(NaiveUmlClassTool {
+                    initial_stage: UmlClassToolStage::LinkAddEnding { source: false },
+                    current_stage: UmlClassToolStage::LinkAddEnding { source: false },
+                    result: PartialUmlClassElement::LinkEnding {
+                        source: false,
                         gen_model: self.model.clone(),
                         new_model: None,
                     },
@@ -2801,30 +2839,36 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
+        let set_props_label = if model.sources.len() > 1 || model.targets.len() > 1 {
+            Some(format!("{{{}, {}}}",
+                if model.set_is_covering {"complete"} else {"incomplete"},
+                if model.set_is_disjoint {"disjoint"} else {"overlapping"},
+            ))
+        } else { None };
+        self.temporaries.midpoint_label = if let Some(spl) = set_props_label {
+            Some(Arc::new(format!("{}\n{}", model.set_name, spl)))
+        } else if !model.set_name.is_empty() {
+            Some(model.set_name.clone())
+        } else {
+            None
+        };
+
         self.temporaries.arrow_data.clear();
         for e in &model.sources {
             self.temporaries.arrow_data.insert(*e.read().uuid, ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::None));
         }
-        self.temporaries.arrow_data.insert(*model.target.read().uuid, ArrowData {
-            line_type: canvas::LineType::Solid,
-            arrowhead_type: canvas::ArrowheadType::EmptyTriangle,
-            multiplicity: None,
-            role: if model.sources.len() > 1 {
-                Some(Arc::new(format!(
-                    "{{{}, {}}}",
-                    if model.set_is_covering {"complete"} else {"incomplete"},
-                    if model.set_is_disjoint {"disjoint"} else {"overlapping"},
-                )))
-            } else { None },
-            reading: None,
-        });
+        for e in &model.targets {
+            self.temporaries.arrow_data.insert(*e.read().uuid, ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::EmptyTriangle));
+        }
 
         self.temporaries.source_uuids.clear();
         for e in &model.sources {
             self.temporaries.source_uuids.push(*e.read().uuid);
         }
         self.temporaries.target_uuids.clear();
-        self.temporaries.target_uuids.push(*model.target.read().uuid);
+        for e in &model.targets {
+            self.temporaries.target_uuids.push(*e.read().uuid);
+        }
 
         self.temporaries.set_name_buffer = (*model.set_name).clone();
         self.temporaries.set_is_covering_buffer = model.set_is_covering;
@@ -2865,10 +2909,11 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
                 *e = new_source.clone();
             }
         }
-
-        let target_uuid = *model.target.read().uuid;
-        if let Some(UmlClassElement::UmlClass(new_target)) = m.get(&target_uuid) {
-            model.target = new_target.clone();
+        for e in model.targets.iter_mut() {
+            let tid = *e.read().uuid;
+            if let Some(UmlClassElement::UmlClass(new_target)) = m.get(&tid) {
+                *e = new_target.clone();
+            }
         }
     }
 }

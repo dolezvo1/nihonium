@@ -81,12 +81,13 @@ impl UmlClassCollector {
     }
     fn visit_generalization(&mut self, link: &UmlClassGeneralization) {
         if !self.collecting_absolute_paths {
-            let target_name = self.absolute_paths.get(&link.target.read().uuid).unwrap();
             for source_name in link.sources.iter().flat_map(|e| self.absolute_paths.get(&e.read().uuid)) {
-                self.plantuml_data.push_str(source_name);
-                self.plantuml_data.push_str(" --|> ");
-                self.plantuml_data.push_str(target_name);
-                self.plantuml_data.push_str("\n");
+                for target_name in link.targets.iter().flat_map(|e| self.absolute_paths.get(&e.read().uuid)) {
+                    self.plantuml_data.push_str(source_name);
+                    self.plantuml_data.push_str(" --|> ");
+                    self.plantuml_data.push_str(target_name);
+                    self.plantuml_data.push_str("\n");
+                }
             }
         }
     }
@@ -257,10 +258,11 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                         *e = s.clone();
                     }
                 }
-
-                let target_uuid = *model.target.read().uuid;
-                if let Some(UmlClassElement::UmlClass(t)) = all_models.get(&target_uuid) {
-                    model.target = t.clone();
+                for e in model.targets.iter_mut() {
+                    let tid = *e.read().uuid;
+                    if let Some(UmlClassElement::UmlClass(t)) = all_models.get(&tid) {
+                        *e = t.clone();
+                    }
                 }
             },
             UmlClassElement::UmlClassAssociation(inner) => {
@@ -652,7 +654,7 @@ pub struct UmlClassGeneralization {
     #[nh_context_serde(entity)]
     pub sources: Vec<ERef<UmlClass>>,
     #[nh_context_serde(entity)]
-    pub target: ERef<UmlClass>,
+    pub targets: Vec<ERef<UmlClass>>,
 
     pub set_name: Arc<String>,
     pub set_is_covering: bool,
@@ -665,12 +667,12 @@ impl UmlClassGeneralization {
     pub fn new(
         uuid: ModelUuid,
         sources: Vec<ERef<UmlClass>>,
-        target: ERef<UmlClass>,
+        targets: Vec<ERef<UmlClass>>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             sources,
-            target,
+            targets,
 
             set_name: Arc::new("".to_owned()),
             set_is_covering: false,
@@ -683,7 +685,7 @@ impl UmlClassGeneralization {
         ERef::new(Self {
             uuid: Arc::new(uuid),
             sources: self.sources.clone(),
-            target: self.target.clone(),
+            targets: self.targets.clone(),
 
             set_name: self.set_name.clone(),
             set_is_covering: self.set_is_covering,
