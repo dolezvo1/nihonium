@@ -1894,7 +1894,11 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
         &self.temporaries.target_uuids
     }
 
-    fn push_source(&self, e: <UmlClassDomain as Domain>::CommonElementT) -> Result<(), ()> {
+    fn flip_multiconnection(&mut self) -> Result<(), ()> {
+        self.model.write().flip_multiconnection();
+        Ok(())
+    }
+    fn push_source(&mut self, e: <UmlClassDomain as Domain>::CommonElementT) -> Result<(), ()> {
         if let UmlClassElement::UmlClass(c) = e {
             self.model.write().sources.push(c);
             Ok(())
@@ -1902,7 +1906,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
             Err(())
         }
     }
-    fn remove_source(&self, uuid: &ModelUuid) -> Result<(), ()> {
+    fn remove_source(&mut self, uuid: &ModelUuid) -> Result<(), ()> {
         let mut w = self.model.write();
         if w.sources.len() == 1 {
             return Err(())
@@ -1915,8 +1919,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
             Err(())
         }
     }
-
-    fn push_target(&self, e: <UmlClassDomain as Domain>::CommonElementT) -> Result<(), ()> {
+    fn push_target(&mut self, e: <UmlClassDomain as Domain>::CommonElementT) -> Result<(), ()> {
         if let UmlClassElement::UmlClass(c) = e {
             self.model.write().targets.push(c);
             Ok(())
@@ -1924,7 +1927,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
             Err(())
         }
     }
-    fn remove_target(&self, uuid: &ModelUuid) -> Result<(), ()> {
+    fn remove_target(&mut self, uuid: &ModelUuid) -> Result<(), ()> {
         let mut w = self.model.write();
         if w.targets.len() == 1 {
             return Err(())
@@ -2021,12 +2024,6 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
             let mut model = self.model.write();
             for property in properties {
                 match property {
-                    UmlClassPropChange::FlipMulticonnection(_) => {
-                        todo!("who knows")
-                        //let tmp = model.source.clone();
-                        //model.source = model.target.clone();
-                        //model.target = tmp.into();
-                    }
                     UmlClassPropChange::SetNameChange(name) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*view_uuid).collect(),
@@ -2235,6 +2232,11 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssociationAdapter {
 
     fn target_uuids(&self) -> &[ModelUuid] {
         &self.temporaries.target_uuids
+    }
+
+    fn flip_multiconnection(&mut self) -> Result<(), ()> {
+        self.model.write().flip_multiconnection();
+        Ok(())
     }
 
     fn show_properties(
@@ -2467,11 +2469,6 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssociationAdapter {
                             vec![UmlClassPropChange::CommentChange(model.comment.clone())],
                         ));
                         model.comment = comment.clone();
-                    }
-                    UmlClassPropChange::FlipMulticonnection(_) => {
-                        let tmp = model.source.clone();
-                        model.source = model.target.clone();
-                        model.target = tmp.into();
                     }
                     _ => {}
                 }

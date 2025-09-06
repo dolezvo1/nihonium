@@ -68,16 +68,19 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
     fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData>;
     fn source_uuids(&self) -> &[ModelUuid];
     fn target_uuids(&self) -> &[ModelUuid];
-    fn push_source(&self, _e: DomainT::CommonElementT) -> Result<(), ()> {
+    fn flip_multiconnection(&mut self) -> Result<(), ()> {
         Err(())
     }
-    fn remove_source(&self, _uuid: &ModelUuid) -> Result<(), ()> {
+    fn push_source(&mut self, _e: DomainT::CommonElementT) -> Result<(), ()> {
         Err(())
     }
-    fn push_target(&self, _e: DomainT::CommonElementT) -> Result<(), ()> {
+    fn remove_source(&mut self, _uuid: &ModelUuid) -> Result<(), ()> {
         Err(())
     }
-    fn remove_target(&self, _uuid: &ModelUuid) -> Result<(), ()> {
+    fn push_target(&mut self, _e: DomainT::CommonElementT) -> Result<(), ()> {
+        Err(())
+    }
+    fn remove_target(&mut self, _uuid: &ModelUuid) -> Result<(), ()> {
         Err(())
     }
 
@@ -929,7 +932,12 @@ where
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
                     for property in properties {
-                        if let Ok(FlipMulticonnection {}) = property.try_into() {
+                        if let Ok(FlipMulticonnection {}) = property.try_into()
+                            && self.adapter.flip_multiconnection().is_ok() {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                vec![property.clone()],
+                            ));
                             std::mem::swap(&mut self.sources, &mut self.targets);
                         }
                     }

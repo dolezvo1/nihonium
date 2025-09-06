@@ -2204,6 +2204,18 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         &self.temporaries.target_uuids
     }
 
+    fn flip_multiconnection(&mut self) -> Result<(), ()> {
+        let mut w = self.model.write();
+        if let RdfTargettableElement::RdfNode(t) = &w.target {
+            let tmp = w.source.clone();
+            w.source = t.clone();
+            w.target = tmp.into();
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
     fn show_properties(
         &mut self,
         ui: &mut egui::Ui,
@@ -2267,13 +2279,6 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
                             vec![RdfPropChange::CommentChange(model.comment.clone())],
                         ));
                         model.comment = comment.clone();
-                    }
-                    RdfPropChange::FlipMulticonnection(_) => {
-                        if let RdfTargettableElement::RdfNode(t) = &model.target {
-                            let tmp = model.source.clone();
-                            model.source = t.clone();
-                            model.target = tmp.into();
-                        }
                     }
                     _ => {}
                 }

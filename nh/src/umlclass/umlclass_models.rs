@@ -694,6 +694,9 @@ impl UmlClassGeneralization {
             comment: self.comment.clone(),
         })
     }
+    pub fn flip_multiconnection(&mut self) {
+        std::mem::swap(&mut self.sources, &mut self.targets);
+    }
 }
 
 impl Entity for UmlClassGeneralization {
@@ -826,6 +829,9 @@ impl UmlClassAssociation {
             target_label_reading: self.target_label_reading.clone(),
             comment: self.comment.clone(),
         })
+    }
+    pub fn flip_multiconnection(&mut self) {
+        std::mem::swap(&mut self.source, &mut self.target);
     }
 }
 
