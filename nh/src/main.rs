@@ -20,10 +20,7 @@ use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceInd
 use egui_ltreeview::{NodeBuilder, TreeView, TreeViewState};
 
 mod common;
-mod democsd;
-mod rdf;
-mod ontouml;
-mod umlclass;
+mod domains;
 
 use crate::common::eref::ERef;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
@@ -1211,9 +1208,9 @@ impl Default for NHApp {
         };
 
         for (diagram_type, view) in [
-            (0, crate::rdf::rdf_controllers::demo(1)),
-            (1, crate::umlclass::umlclass_controllers::demo(2)),
-            (2, crate::democsd::democsd_controllers::demo(3)),
+            (0, crate::domains::rdf::rdf_controllers::demo(1)),
+            (1, crate::domains::umlclass::umlclass_controllers::demo(2)),
+            (2, crate::domains::democsd::democsd_controllers::demo(3)),
         ] {
             let r = view.read();
             let mhview = r.new_hierarchy_view();
@@ -1227,10 +1224,10 @@ impl Default for NHApp {
         }
 
         let mut diagram_deserializers = HashMap::new();
-        diagram_deserializers.insert("rdf-diagram-view".to_string(), (0, &crate::rdf::rdf_controllers::deserializer as &DDes));
-        diagram_deserializers.insert("umlclass-diagram-view".to_string(), (1, &crate::umlclass::umlclass_controllers::deserializer as &DDes));
-        diagram_deserializers.insert("democsd-diagram-view".to_string(), (2, &crate::democsd::democsd_controllers::deserializer as &DDes));
-        diagram_deserializers.insert("ontouml-diagram-view".to_string(), (3, &crate::ontouml::ontouml_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("rdf-diagram-view".to_string(), (0, &crate::domains::rdf::rdf_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("umlclass-diagram-view".to_string(), (1, &crate::domains::umlclass::umlclass_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("democsd-diagram-view".to_string(), (2, &crate::domains::democsd::democsd_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("ontouml-diagram-view".to_string(), (3, &crate::domains::ontouml::ontouml_controllers::deserializer as &DDes));
 
         let mut dock_state = DockState::new(tabs);
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
@@ -1695,19 +1692,19 @@ impl eframe::App for NHApp {
                             (
                                 "UML Class diagram",
                                 1,
-                                crate::umlclass::umlclass_controllers::new as NDC,
+                                crate::domains::umlclass::umlclass_controllers::new as NDC,
                             ),
                             (
                                 "OntoUML diagram",
                                 3,
-                                crate::ontouml::ontouml_controllers::new as NDC,
+                                crate::domains::ontouml::ontouml_controllers::new as NDC,
                             ),
                             (
                                 "DEMO CSD diagram",
                                 2,
-                                crate::democsd::democsd_controllers::new as NDC,
+                                crate::domains::democsd::democsd_controllers::new as NDC,
                             ),
-                            ("RDF diagram", 0, crate::rdf::rdf_controllers::new as NDC),
+                            ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::new as NDC),
                         ] {
                             if ui.button(label).clicked() {
                                 let diagram_controller = fun(self.context.new_diagram_no);

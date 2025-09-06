@@ -1,6 +1,8 @@
-use crate::umlclass::umlclass_controllers::UmlClassLabelProvider;
-use crate::umlclass::umlclass_models::{
-    UmlClass, UmlClassAssociation, UmlClassAssociationType, UmlClassComment, UmlClassCommentLink, UmlClassDiagram, UmlClassElement, UmlClassGeneralization, UmlClassPackage
+use super::super::{
+    umlclass::umlclass_controllers::UmlClassLabelProvider,
+    umlclass::umlclass_models::{
+        UmlClass, UmlClassAssociation, UmlClassAssociationType, UmlClassComment, UmlClassCommentLink, UmlClassDiagram, UmlClassElement, UmlClassGeneralization, UmlClassPackage
+    },
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
@@ -552,7 +554,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
     }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, UmlClassElement>) {
-        let (new_model, models) = crate::umlclass::umlclass_models::deep_copy_diagram(&self.model.read());
+        let (new_model, models) = super::super::umlclass::umlclass_models::deep_copy_diagram(&self.model.read());
         (
             Self {
                 model: new_model,
@@ -563,7 +565,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
     }
 
     fn fake_copy(&self) -> (Self, HashMap<ModelUuid, UmlClassElement>) {
-        let models = crate::umlclass::umlclass_models::fake_copy_diagram(&self.model.read());
+        let models = super::super::umlclass::umlclass_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
     }
 }

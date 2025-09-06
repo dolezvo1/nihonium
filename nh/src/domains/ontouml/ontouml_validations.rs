@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::{common::{eref::ERef, uuid::ModelUuid}, umlclass::umlclass_models::{UmlClassDiagram, UmlClassElement}, CustomTab};
-
+use crate::{common::{eref::ERef, uuid::ModelUuid}, CustomTab};
+use super::super::umlclass::umlclass_models::{UmlClassDiagram, UmlClassElement};
 
 pub struct OntoUMLValidationTab {
     model: ERef<UmlClassDiagram>,

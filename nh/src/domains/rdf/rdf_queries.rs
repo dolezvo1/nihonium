@@ -5,7 +5,8 @@ use egui_extras::{Column, TableBuilder};
 use sophia::api::{prelude::SparqlDataset, sparql::Query};
 use sophia_sparql::{ResultTerm, SparqlQuery, SparqlWrapper};
 
-use crate::{common::eref::ERef, rdf::rdf_models::RdfDiagram, CustomTab};
+use crate::{common::eref::ERef, CustomTab};
+use super::rdf_models::RdfDiagram;
 
 pub struct SparqlQueriesTab {
     model: ERef<RdfDiagram>,
