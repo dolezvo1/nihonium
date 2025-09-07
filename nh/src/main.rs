@@ -239,6 +239,53 @@ impl TabViewer for NHContext {
     }
 }
 
+
+fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui: &mut Ui, commands: &mut Vec<ProjectCommand>) {
+    macro_rules! translate {
+        ($msg_name:expr) => {
+            gdc.fluent_bundle.format_pattern(
+                gdc.fluent_bundle.get_message($msg_name).unwrap().value().unwrap(),
+                None,
+                &mut vec![],
+            )
+        };
+    }
+
+    ui.menu_button(translate!("nh-project-addnewdiagram"), |ui| {
+        type NDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
+        for (label, diagram_type, fun) in [
+            (
+                "UML Class diagram",
+                1,
+                crate::domains::umlclass::umlclass_controllers::new as NDC,
+            ),
+            (
+                "OntoUML diagram",
+                3,
+                crate::domains::ontouml::ontouml_controllers::new as NDC,
+            ),
+            (
+                "DEMO CSD diagram",
+                2,
+                crate::domains::democsd::democsd_controllers::new as NDC,
+            ),
+            ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::new as NDC),
+        ] {
+            if ui.button(label).clicked() {
+                let diagram_controller = fun(new_diagram_no);
+                commands.push(ProjectCommand::SetNewDiagramNumber(new_diagram_no + 1));
+                commands.push(ProjectCommand::AddNewDiagram(diagram_type, diagram_controller));
+                ui.close();
+            }
+        }
+    });
+    if ui.button(translate!("nh-project-addnewdocument")).clicked() {
+        commands.push(ProjectCommand::AddNewDocument(uuid::Uuid::now_v7().into(), "New Document".to_owned()));
+    }
+    ui.separator();
+}
+
+
 macro_rules! supported_extensions {
     ($got:expr) => {
         format!("Expected a path with a known extension (.nhp, .nhpz), got {:?}", $got)
@@ -368,15 +415,6 @@ impl NHContext {
             NewFolder(ViewUuid),
             RecCollapseAt(bool, ViewUuid),
             DeleteFolder(ViewUuid),
-
-            OpenDiagram(ViewUuid),
-            DuplicateDeep(ViewUuid),
-            DuplicateShallow(ViewUuid),
-            DeleteDiagram(ViewUuid),
-
-            OpenDocument(ViewUuid),
-            DuplicateDocument(ViewUuid),
-            DeleteDocument(ViewUuid),
         }
 
         let mut context_menu_action = None;
@@ -395,9 +433,12 @@ impl NHContext {
 
         fn hierarchy(
             builder: &mut egui_ltreeview::TreeViewBuilder<ViewUuid>,
+            gdc: &GlobalDrawingContext,
+            new_diagram_no: u32,
             hn: &HierarchyNode,
             docs: &HashMap<ViewUuid, (String, String)>,
             cma: &mut Option<ContextMenuAction>,
+            commands: &mut Vec<ProjectCommand>,
         ) {
             match hn {
                 HierarchyNode::Folder(uuid, name, children) => {
@@ -405,10 +446,15 @@ impl NHContext {
                         NodeBuilder::dir(*uuid)
                             .label(&**name)
                             .context_menu(|ui| {
+                                if ui.button("Rename").clicked() {
+                                    // TODO: rename
+                                }
+                                ui.separator();
                                 if ui.button("New Folder").clicked() {
                                     *cma = Some(ContextMenuAction::NewFolder(*uuid));
                                     ui.close();
                                 }
+                                add_project_element_block(gdc, new_diagram_no, ui, commands);
                                 ui.separator();
                                 if ui.button("Collapse children").clicked() {
                                     *cma = Some(ContextMenuAction::RecCollapseAt(true, *uuid));
@@ -427,7 +473,7 @@ impl NHContext {
                     );
 
                     for c in children {
-                        hierarchy(builder, c, docs, cma);
+                        hierarchy(builder, gdc, new_diagram_no, c, docs, cma, commands);
                     }
 
                     builder.close_dir();
@@ -439,21 +485,27 @@ impl NHContext {
                             .label(&*hm.view_name())
                             .context_menu(|ui| {
                                 if ui.button("Open").clicked() {
-                                    *cma = Some(ContextMenuAction::OpenDiagram(*hm.uuid()));
+                                    commands.push(ProjectCommand::OpenAndFocusDiagram(*hm.uuid(), None));
                                     ui.close();
                                 }
                                 ui.separator();
+                                if ui.button("New Folder").clicked() {
+                                    *cma = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
+                                    ui.close();
+                                }
+                                add_project_element_block(gdc, new_diagram_no, ui, commands);
+                                ui.separator();
                                 if ui.button("Duplicate (deep)").clicked() {
-                                    *cma = Some(ContextMenuAction::DuplicateDeep(*hm.uuid()));
+                                    commands.push(ProjectCommand::CopyDiagram(*hm.uuid(), true));
                                     ui.close();
                                 }
                                 if ui.button("Duplicate (shallow)").clicked() {
-                                    *cma = Some(ContextMenuAction::DuplicateShallow(*hm.uuid()));
+                                    commands.push(ProjectCommand::CopyDiagram(*hm.uuid(), false));
                                     ui.close();
                                 }
                                 ui.separator();
                                 if ui.button("Delete").clicked() {
-                                    *cma = Some(ContextMenuAction::DeleteDiagram(*hm.uuid()));
+                                    commands.push(ProjectCommand::DeleteDiagram(*hm.uuid()));
                                     ui.close();
                                 }
                             })
@@ -465,17 +517,23 @@ impl NHContext {
                             .label(&docs.get(uuid).unwrap().0)
                             .context_menu(|ui| {
                                 if ui.button("Open").clicked() {
-                                    *cma = Some(ContextMenuAction::OpenDocument(*uuid));
+                                    commands.push(ProjectCommand::OpenAndFocusDocument(*uuid, None));
                                     ui.close();
                                 }
                                 ui.separator();
+                                if ui.button("New Folder").clicked() {
+                                    *cma = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
+                                    ui.close();
+                                }
+                                add_project_element_block(gdc, new_diagram_no, ui, commands);
+                                ui.separator();
                                 if ui.button("Duplicate").clicked() {
-                                    *cma = Some(ContextMenuAction::DuplicateDocument(*uuid));
+                                    commands.push(ProjectCommand::DuplicateDocument(*uuid));
                                     ui.close();
                                 }
                                 ui.separator();
                                 if ui.button("Delete").clicked() {
-                                    *cma = Some(ContextMenuAction::DeleteDocument(*uuid));
+                                    commands.push(ProjectCommand::DeleteDocument(*uuid));
                                     ui.close();
                                 }
                             })
@@ -494,7 +552,7 @@ impl NHContext {
                     ui,
                     &mut self.tree_view_state,
                     |builder| {
-                        hierarchy(builder, &self.project_hierarchy, &self.documents, &mut context_menu_action);
+                        hierarchy(builder, &self.drawing_context, self.new_diagram_no, &self.project_hierarchy, &self.documents, &mut context_menu_action, &mut commands);
                     }
                 );
 
@@ -554,15 +612,6 @@ impl NHContext {
                 ContextMenuAction::DeleteFolder(view_uuid) => {
                     self.project_hierarchy.remove(&view_uuid);
                 },
-
-                ContextMenuAction::OpenDiagram(view_uuid) => commands.push(ProjectCommand::OpenAndFocusDiagram(view_uuid, None)),
-                ContextMenuAction::DuplicateDeep(view_uuid) => commands.push(ProjectCommand::CopyDiagram(view_uuid, true)),
-                ContextMenuAction::DuplicateShallow(view_uuid) => commands.push(ProjectCommand::CopyDiagram(view_uuid, false)),
-                ContextMenuAction::DeleteDiagram(view_uuid) => commands.push(ProjectCommand::DeleteDiagram(view_uuid)),
-
-                ContextMenuAction::OpenDocument(uuid) => commands.push(ProjectCommand::OpenAndFocusDocument(uuid, None)),
-                ContextMenuAction::DuplicateDocument(uuid) => commands.push(ProjectCommand::DuplicateDocument(uuid)),
-                ContextMenuAction::DeleteDocument(uuid) => commands.push(ProjectCommand::DeleteDocument(uuid))
             }
         }
 
@@ -1671,7 +1720,12 @@ impl eframe::App for NHApp {
             
             // Menubar UI
             egui::MenuBar::new().ui(ui, |ui| {
+                // TODO: remove when egui/#5138 is fixed
+                const MIN_MENU_WIDTH: f32 = 250.0;
+
                 ui.menu_button(translate!("nh-project"), |ui| {
+                    ui.set_min_width(MIN_MENU_WIDTH);
+
                     if ui.button(translate!("nh-project-newproject")).clicked() {
                         let _ = new_project();
                     }
@@ -1686,38 +1740,7 @@ impl eframe::App for NHApp {
                     });
                     ui.separator();
 
-                    ui.menu_button(translate!("nh-project-addnewdiagram"), |ui| {
-                        type NDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
-                        for (label, diagram_type, fun) in [
-                            (
-                                "UML Class diagram",
-                                1,
-                                crate::domains::umlclass::umlclass_controllers::new as NDC,
-                            ),
-                            (
-                                "OntoUML diagram",
-                                3,
-                                crate::domains::ontouml::ontouml_controllers::new as NDC,
-                            ),
-                            (
-                                "DEMO CSD diagram",
-                                2,
-                                crate::domains::democsd::democsd_controllers::new as NDC,
-                            ),
-                            ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::new as NDC),
-                        ] {
-                            if ui.button(label).clicked() {
-                                let diagram_controller = fun(self.context.new_diagram_no);
-                                commands.push(ProjectCommand::SetNewDiagramNumber(self.context.new_diagram_no + 1));
-                                commands.push(ProjectCommand::AddNewDiagram(diagram_type, diagram_controller));
-                                ui.close();
-                            }
-                        }
-                    });
-                    if ui.button(translate!("nh-project-addnewdocument")).clicked() {
-                        commands.push(ProjectCommand::AddNewDocument(uuid::Uuid::now_v7().into(), "New Document".to_owned()));
-                    }
-                    ui.separator();
+                    add_project_element_block(&self.context.drawing_context, self.context.new_diagram_no, ui, &mut commands);
 
                     button!(ui, "nh-project-save", SimpleProjectCommand::SaveProject);
                     button!(ui, "nh-project-saveas", SimpleProjectCommand::SaveProjectAs);
@@ -1728,7 +1751,11 @@ impl eframe::App for NHApp {
                 });
 
                 ui.menu_button(translate!("nh-edit"), |ui| {
+                    ui.set_min_width(MIN_MENU_WIDTH);
+
                     ui.menu_button(translate!("nh-edit-undo"), |ui| {
+                        ui.set_min_width(MIN_MENU_WIDTH);
+
                         let shortcut_text = shortcut_text!(ui, DiagramCommand::UndoImmediate.into());
                         
                         if self.context.undo_stack.is_empty() {
@@ -1759,6 +1786,8 @@ impl eframe::App for NHApp {
                     });
                     
                     ui.menu_button(translate!("nh-edit-redo"), |ui| {
+                        ui.set_min_width(MIN_MENU_WIDTH);
+
                         let shortcut_text = shortcut_text!(ui, DiagramCommand::RedoImmediate.into());
                         
                         if self.context.redo_stack.is_empty() {
@@ -1805,7 +1834,8 @@ impl eframe::App for NHApp {
                     });
                 });
 
-                ui.menu_button(translate!("nh-view"), |_ui| {
+                ui.menu_button(translate!("nh-view"), |ui| {
+                    ui.set_min_width(MIN_MENU_WIDTH);
                     /*
                     if ui.button("Reset").clicked() {
                         println!("no");
@@ -1814,6 +1844,8 @@ impl eframe::App for NHApp {
                 });
 
                 ui.menu_button(translate!("nh-diagram"), |ui| {
+                    ui.set_min_width(MIN_MENU_WIDTH);
+
                     let Some((t, v)) = self.context.last_focused_diagram() else { return; };
                     let mut view = v.write();
 
@@ -1822,6 +1854,8 @@ impl eframe::App for NHApp {
                     ui.menu_button(
                         format!("Export Diagram `{}` to", view.view_name()),
                         |ui| {
+                            ui.set_min_width(MIN_MENU_WIDTH);
+
                             if ui.button("SVG").clicked() {
                                 // NOTE: This does not work on WASM, and in its current state it never will.
                                 //       This will be possible to fix once this is fixed on rfd side (#128).
@@ -1848,6 +1882,8 @@ impl eframe::App for NHApp {
                 });
 
                 ui.menu_button(translate!("nh-windows"), |ui| {
+                    ui.set_min_width(MIN_MENU_WIDTH);
+
                     // allow certain tabs to be toggled
                     for tab in &[
                         NHTab::RecentlyUsed,
