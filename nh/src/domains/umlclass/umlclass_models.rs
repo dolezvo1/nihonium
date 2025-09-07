@@ -568,6 +568,7 @@ impl UMLClassAccessModifier {
 pub struct UmlClass {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
+    pub is_abstract: bool,
     pub stereotype: Arc<String>,
     pub properties: Arc<String>,
     pub functions: Arc<String>,
@@ -580,6 +581,7 @@ impl UmlClass {
         uuid: ModelUuid,
         stereotype: String,
         name: String,
+        is_abstract: bool,
         properties: String,
         functions: String,
     ) -> Self {
@@ -587,6 +589,7 @@ impl UmlClass {
             uuid: Arc::new(uuid),
             stereotype: Arc::new(stereotype),
             name: Arc::new(name),
+            is_abstract,
             properties: Arc::new(properties),
             functions: Arc::new(functions),
             comment: Arc::new("".to_owned()),
@@ -597,6 +600,7 @@ impl UmlClass {
             uuid: Arc::new(new_uuid),
             stereotype: self.stereotype.clone(),
             name: self.name.clone(),
+            is_abstract: self.is_abstract,
             properties: self.properties.clone(),
             functions: self.functions.clone(),
             comment: self.comment.clone(),

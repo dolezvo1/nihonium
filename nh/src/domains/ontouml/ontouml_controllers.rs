@@ -63,8 +63,9 @@ pub enum UmlClassPropChange {
     StereotypeChange(Arc<String>),
 
     NameChange(Arc<String>),
-    PropertiesChange(Arc<String>),
-    FunctionsChange(Arc<String>),
+    ClassAbstractChange(bool),
+    ClassPropertiesChange(Arc<String>),
+    ClassFunctionsChange(Arc<String>),
 
     SetNameChange(Arc<String>),
     SetCoveringChange(bool),
@@ -187,13 +188,13 @@ struct UmlClassPlaceholderViews {
 
 impl Default for UmlClassPlaceholderViews {
     fn default() -> Self {
-        let (kind, kind_view) = new_umlclass_class("kind", "Animal", "", "", egui::Pos2::ZERO);
+        let (kind, kind_view) = new_umlclass_class("kind", "Animal", false, "", "", egui::Pos2::ZERO);
         let kind = (kind, kind_view.into());
-        let (subkind, subkind_view) = new_umlclass_class("subkind", "Human", "", "", egui::Pos2::new(100.0, 75.0));
+        let (subkind, subkind_view) = new_umlclass_class("subkind", "Human", false, "", "", egui::Pos2::new(100.0, 75.0));
         let subkind = (subkind, subkind_view.into());
-        let (phase, phase_view) = new_umlclass_class("phase", "Adult", "", "", egui::Pos2::ZERO);
+        let (phase, phase_view) = new_umlclass_class("phase", "Adult", false, "", "", egui::Pos2::ZERO);
         let phase = (phase, phase_view.into());
-        let (role, role_view) = new_umlclass_class("role", "Customer", "", "", egui::Pos2::ZERO);
+        let (role, role_view) = new_umlclass_class("role", "Customer", false, "", "", egui::Pos2::ZERO);
         let role = (role, role_view.into());
 
         let (_gen, gen_view) = new_umlclass_generalization(None, kind.clone(), subkind.clone());
@@ -806,7 +807,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 };
 
                 let (_class_model, class_view) =
-                    new_umlclass_class(class_type, name, "", "", pos);
+                    new_umlclass_class(class_type, name, false, "", "", pos);
                 self.result = PartialUmlClassElement::Some(class_view.into());
                 self.event_lock = true;
             }
@@ -1168,6 +1169,7 @@ fn new_umlclass_package_view(
 fn new_umlclass_class(
     stereotype: &str,
     name: &str,
+    is_abstract: bool,
     properties: &str,
     functions: &str,
     position: egui::Pos2,
@@ -1176,6 +1178,7 @@ fn new_umlclass_class(
         uuid::Uuid::now_v7().into(),
         stereotype.to_owned(),
         name.to_owned(),
+        is_abstract,
         properties.to_owned(),
         functions.to_owned(),
     ));
@@ -1194,6 +1197,7 @@ fn new_umlclass_class_view(
 
         stereotype_buffer: ontouml_class_stereotype_literal(&*m.stereotype),
         name_buffer: (*m.name).clone(),
+        is_abstract_buffer: m.is_abstract,
         properties_buffer: (*m.properties).clone(),
         functions_buffer: (*m.functions).clone(),
         comment_buffer: (*m.comment).clone(),
@@ -1309,6 +1313,8 @@ pub struct UmlClassView {
     stereotype_buffer: &'static str,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    is_abstract_buffer: bool,
     #[nh_context_serde(skip_and_default)]
     properties_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -1427,6 +1433,12 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             ]));
         }
 
+        if ui.checkbox(&mut self.is_abstract_buffer, "isAbstract").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::ClassAbstractChange(self.is_abstract_buffer),
+            ]));
+        }
+
         ui.label("Properties:");
         if ui
             .add_sized(
@@ -1436,7 +1448,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::PropertiesChange(Arc::new(self.properties_buffer.clone())),
+                UmlClassPropChange::ClassPropertiesChange(Arc::new(self.properties_buffer.clone())),
             ]));
         }
 
@@ -1449,7 +1461,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::FunctionsChange(Arc::new(self.functions_buffer.clone())),
+                UmlClassPropChange::ClassFunctionsChange(Arc::new(self.functions_buffer.clone())),
             ]));
         }
 
@@ -1712,19 +1724,28 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
                                 ));
                                 model.name = name.clone();
                             }
-                            UmlClassPropChange::PropertiesChange(properties) => {
+                            UmlClassPropChange::ClassAbstractChange(is_abstract) => {
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::PropertiesChange(
+                                    vec![UmlClassPropChange::ClassAbstractChange(
+                                        model.is_abstract,
+                                    )],
+                                ));
+                                model.is_abstract = *is_abstract;
+                            }
+                            UmlClassPropChange::ClassPropertiesChange(properties) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::ClassPropertiesChange(
                                         model.properties.clone(),
                                     )],
                                 ));
                                 model.properties = properties.clone();
                             }
-                            UmlClassPropChange::FunctionsChange(functions) => {
+                            UmlClassPropChange::ClassFunctionsChange(functions) => {
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::FunctionsChange(
+                                    vec![UmlClassPropChange::ClassFunctionsChange(
                                         model.functions.clone(),
                                     )],
                                 ));
@@ -1748,6 +1769,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         let model = self.model.read();
         self.stereotype_buffer = ontouml_class_stereotype_literal(&*model.stereotype);
         self.name_buffer = (*model.name).clone();
+        self.is_abstract_buffer = model.is_abstract;
         self.properties_buffer = (*model.properties).clone();
         self.functions_buffer = (*model.functions).clone();
         self.comment_buffer = (*model.comment).clone();
@@ -1781,7 +1803,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         let modelish = if let Some(UmlClassElement::UmlClass(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(UmlClass::new(model_uuid, (*old_model.stereotype).clone(), (*old_model.name).clone(), (*old_model.properties).clone(), (*old_model.functions).clone()));
+            let modelish = old_model.clone_with(model_uuid);
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -1791,6 +1813,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             model: modelish,
             stereotype_buffer: self.stereotype_buffer,
             name_buffer: self.name_buffer.clone(),
+            is_abstract_buffer: self.is_abstract_buffer,
             properties_buffer: self.properties_buffer.clone(),
             functions_buffer: self.functions_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),

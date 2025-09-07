@@ -140,8 +140,9 @@ pub enum UmlClassPropChange {
     InstanceSlots(Arc<String>),
 
     NameChange(Arc<String>),
-    PropertiesChange(Arc<String>),
-    FunctionsChange(Arc<String>),
+    ClassAbstractChange(bool),
+    ClassPropertiesChange(Arc<String>),
+    ClassFunctionsChange(Arc<String>),
 
     SetNameChange(Arc<String>),
     SetCoveringChange(bool),
@@ -266,10 +267,10 @@ struct UmlClassPlaceholderViews {
 impl Default for UmlClassPlaceholderViews {
     fn default() -> Self {
         let (_instance, instance_view) = new_umlclass_instance("o", "Type", "", egui::Pos2::ZERO);
-        let (class_m, class_view) = new_umlclass_class("class", "ClassName", "", "", egui::Pos2::ZERO);
+        let (class_m, class_view) = new_umlclass_class("class", "ClassName", false, "", "", egui::Pos2::ZERO);
         let class_1 = (class_m.clone(), class_view.clone().into());
         let class_2 = (class_m.clone().into(), class_view.into());
-        let (d, dv) = new_umlclass_class("class", "dummy", "", "", egui::Pos2::new(100.0, 75.0));
+        let (d, dv) = new_umlclass_class("class", "dummy", false, "", "", egui::Pos2::new(100.0, 75.0));
         let dummy_1 = (d.clone(), dv.clone().into());
         let dummy_2 = (d.clone().into(), dv.into());
         let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
@@ -678,6 +679,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (class_af, class_af_view) = new_umlclass_class(
         "interface",
         "AbstractFactory",
+        false,
         "",
         "+createProductA(): ProductA\n+createProductB(): ProductB\n",
         egui::Pos2::new(200.0, 150.0),
@@ -686,6 +688,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (class_cfx, class_cfx_view) = new_umlclass_class(
         "class",
         "ConcreteFactoryX",
+        false,
         "",
         "+createProductA(): ProductA\n+createProductB(): ProductB\n",
         egui::Pos2::new(100.0, 250.0),
@@ -694,6 +697,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (class_cfy, class_cfy_view) = new_umlclass_class(
         "class",
         "ConcreteFactoryY",
+        false,
         "",
         "+createProductA(): ProductA\n+createProductB(): ProductB\n",
         egui::Pos2::new(300.0, 250.0),
@@ -718,6 +722,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (class_client, class_client_view) = new_umlclass_class(
         "class",
         "Client",
+        false,
         "",
         "",
         egui::Pos2::new(300.0, 50.0),
@@ -734,6 +739,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (class_producta, class_producta_view) = new_umlclass_class(
         "interface",
         "ProductA",
+        false,
         "",
         "",
         egui::Pos2::new(450.0, 150.0),
@@ -751,6 +757,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (class_productb, class_productb_view) = new_umlclass_class(
         "interface",
         "ProductB",
+        false,
         "",
         "",
         egui::Pos2::new(650.0, 150.0),
@@ -1019,7 +1026,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             }
             (UmlClassToolStage::Class, _) => {
                 let (_class_model, class_view) =
-                    new_umlclass_class("class", "ClassName", "", "", pos);
+                    new_umlclass_class("class", "ClassName", false, "", "", pos);
                 self.result = PartialUmlClassElement::Some(class_view.into());
                 self.event_lock = true;
             }
@@ -2001,6 +2008,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
 fn new_umlclass_class(
     stereotype: &str,
     name: &str,
+    is_abstract: bool,
     properties: &str,
     functions: &str,
     position: egui::Pos2,
@@ -2009,6 +2017,7 @@ fn new_umlclass_class(
         uuid::Uuid::now_v7().into(),
         stereotype.to_owned(),
         name.to_owned(),
+        is_abstract,
         properties.to_owned(),
         functions.to_owned(),
     ));
@@ -2027,6 +2036,7 @@ fn new_umlclass_class_view(
 
         stereotype_buffer: (*m.stereotype).clone(),
         name_buffer: (*m.name).clone(),
+        is_abstract_buffer: m.is_abstract,
         properties_buffer: (*m.properties).clone(),
         functions_buffer: (*m.functions).clone(),
         comment_buffer: (*m.comment).clone(),
@@ -2098,6 +2108,8 @@ pub struct UmlClassView {
     stereotype_buffer: String,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    is_abstract_buffer: bool,
     #[nh_context_serde(skip_and_default)]
     properties_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2199,6 +2211,12 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             ]));
         }
 
+        if ui.checkbox(&mut self.is_abstract_buffer, "isAbstract").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::ClassAbstractChange(self.is_abstract_buffer),
+            ]));
+        }
+
         ui.label("Properties:");
         if ui
             .add_sized(
@@ -2208,7 +2226,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::PropertiesChange(Arc::new(self.properties_buffer.clone())),
+                UmlClassPropChange::ClassPropertiesChange(Arc::new(self.properties_buffer.clone())),
             ]));
         }
 
@@ -2221,7 +2239,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::FunctionsChange(Arc::new(self.functions_buffer.clone())),
+                UmlClassPropChange::ClassFunctionsChange(Arc::new(self.functions_buffer.clone())),
             ]));
         }
 
@@ -2489,19 +2507,28 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
                                 ));
                                 model.name = name.clone();
                             }
-                            UmlClassPropChange::PropertiesChange(properties) => {
+                            UmlClassPropChange::ClassAbstractChange(is_abstract) => {
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::PropertiesChange(
+                                    vec![UmlClassPropChange::ClassAbstractChange(
+                                        model.is_abstract,
+                                    )],
+                                ));
+                                model.is_abstract = *is_abstract;
+                            }
+                            UmlClassPropChange::ClassPropertiesChange(properties) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::ClassPropertiesChange(
                                         model.properties.clone(),
                                     )],
                                 ));
                                 model.properties = properties.clone();
                             }
-                            UmlClassPropChange::FunctionsChange(functions) => {
+                            UmlClassPropChange::ClassFunctionsChange(functions) => {
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::FunctionsChange(
+                                    vec![UmlClassPropChange::ClassFunctionsChange(
                                         model.functions.clone(),
                                     )],
                                 ));
@@ -2532,6 +2559,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         let model = self.model.read();
         self.stereotype_buffer = (*model.stereotype).clone();
         self.name_buffer = (*model.name).clone();
+        self.is_abstract_buffer = model.is_abstract;
         self.properties_buffer = (*model.properties).clone();
         self.functions_buffer = (*model.functions).clone();
         self.comment_buffer = (*model.comment).clone();
@@ -2565,7 +2593,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         let modelish = if let Some(UmlClassElement::UmlClass(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(UmlClass::new(model_uuid, (*old_model.stereotype).clone(), (*old_model.name).clone(), (*old_model.properties).clone(), (*old_model.functions).clone()));
+            let modelish = old_model.clone_with(model_uuid);
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -2575,6 +2603,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             model: modelish,
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
+            is_abstract_buffer: self.is_abstract_buffer,
             properties_buffer: self.properties_buffer.clone(),
             functions_buffer: self.functions_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),

@@ -1,6 +1,5 @@
 
 use eframe::egui;
-use egui_extras::{Column, TableBuilder};
 
 use sophia::api::{prelude::SparqlDataset, sparql::Query};
 use sophia_sparql::{ResultTerm, SparqlQuery, SparqlWrapper};
@@ -173,11 +172,11 @@ impl CustomTab for SparqlQueriesTab {
         if let Some(results) = &self.query_results {
             ui.label("Results:");
 
-            let mut tb = TableBuilder::new(ui);
+            let mut tb = egui_extras::TableBuilder::new(ui);
 
             if let Some(max_cols) = results.iter().map(|e| e.len()).max() {
                 for _ in 0..max_cols {
-                    tb = tb.column(Column::auto().resizable(true));
+                    tb = tb.column(egui_extras::Column::auto().resizable(true));
                 }
 
                 tb.body(|mut body| {
