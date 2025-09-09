@@ -125,7 +125,7 @@ impl From<SimpleProjectCommand> for ProjectCommand {
     }
 }
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum SimpleProjectCommand {
     FocusedDiagramCommand(DiagramCommand),
     SpecificDiagramCommand(ViewUuid, DiagramCommand),
@@ -143,13 +143,12 @@ impl From<DiagramCommand> for SimpleProjectCommand {
     }
 }
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum DiagramCommand {
     DropRedoStackAndLastChangeFlag,
     SetLastChangeFlag,
     UndoImmediate,
     RedoImmediate,
-    SelectAllElements(bool),
     InvertSelection,
     DeleteSelectedElements,
     CutSelectedElements,
@@ -157,11 +156,13 @@ pub enum DiagramCommand {
     PasteClipboardElements,
     ArrangeSelected(Arrangement),
     ColorSelected(u8, MGlobalColor),
+    HighlightAllElements(/*set: */bool, Highlight),
+    HighlightElement(EntityUuid, /*set: */bool, Highlight),
     CreateViewFor(ModelUuid),
     DeleteViewFor(ModelUuid, /*including_model:*/ bool),
 }
 
-#[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Arrangement {
     BringToFront,
     ForwardOne,
@@ -732,8 +733,8 @@ impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> From<InsensitiveCom
 /// Selection insensitive command - inherently repeatable
 #[derive(Clone, PartialEq, Debug)]
 pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> {
-    SelectAll(bool),
-    SelectSpecific(HashSet<ViewUuid>, bool),
+    HighlightAll(bool, Highlight),
+    HighlightSpecific(HashSet<ViewUuid>, bool, Highlight),
     SelectByDrag(egui::Rect),
     MoveAllElements(egui::Vec2),
     MoveSpecificElements(HashSet<ViewUuid>, egui::Vec2),
@@ -754,7 +755,7 @@ impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug>
 {
     fn info_text(&self) -> Arc<String> {
         match self {
-            InsensitiveCommand::SelectAll(..) | InsensitiveCommand::SelectSpecific(..) | InsensitiveCommand::SelectByDrag(..) => {
+            InsensitiveCommand::HighlightAll(..) | InsensitiveCommand::HighlightSpecific(..) | InsensitiveCommand::SelectByDrag(..) => {
                 Arc::new("Sorry, your undo stack is broken now :/".to_owned())
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, false) => Arc::new(format!("Delete {} elements from view", uuids.len())),
@@ -1087,7 +1088,13 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     );
-    fn menubar_options_fun(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
+    fn menubar_options_fun(
+        &self,
+        view_uuid: &ViewUuid,
+        label_provider: &ERef<dyn LabelProvider>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
     fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
@@ -1244,15 +1251,17 @@ impl<
                 Some((*k, match r {
                     EventHandlingStatus::HandledByElement if matches!(event, InputEvent::Click(_)) => {
                         if !modifiers.command {
-                            commands.push(InsensitiveCommand::SelectAll(false).into());
-                            commands.push(InsensitiveCommand::SelectSpecific(
+                            commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                            commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(*k).collect(),
                                 true,
+                                Highlight::SELECTED,
                             ).into());
                         } else {
-                            commands.push(InsensitiveCommand::SelectSpecific(
+                            commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(*k).collect(),
                                 !self.temporaries.flattened_views_status.get(&k).is_some_and(|e| e.selected()),
+                                Highlight::SELECTED,
                             ).into());
                         }
                         EventHandlingStatus::HandledByContainer
@@ -1285,7 +1294,7 @@ impl<
             InputEvent::Click(pos) => {
                 let mut handled = child
                     .ok_or_else(|| {
-                        commands.push(InsensitiveCommand::SelectAll(false).into());
+                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
                     })
                     .is_ok();
 
@@ -1427,8 +1436,8 @@ impl<
             let mut undo_accumulator = vec![];
 
             match &command {
-                InsensitiveCommand::SelectAll(..)
-                | InsensitiveCommand::SelectSpecific(..)
+                InsensitiveCommand::HighlightAll(..)
+                | InsensitiveCommand::HighlightSpecific(..)
                 | InsensitiveCommand::SelectByDrag(..)
                 | InsensitiveCommand::MoveSpecificElements(..)
                 | InsensitiveCommand::MoveAllElements(..)
@@ -1511,8 +1520,8 @@ impl<
             );
 
             let modifies_selection = match command {
-                InsensitiveCommand::SelectAll(..)
-                | InsensitiveCommand::SelectSpecific(..)
+                InsensitiveCommand::HighlightAll(..)
+                | InsensitiveCommand::HighlightSpecific(..)
                 | InsensitiveCommand::SelectByDrag(..)
                 | InsensitiveCommand::DeleteSpecificElements(..)
                 | InsensitiveCommand::AddElement(..)
@@ -2002,13 +2011,21 @@ impl<
     fn show_layers(&self, _ui: &mut egui::Ui) {
         // TODO: Layers???
     }
-    fn show_menubar_edit_options(&mut self, ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {
+    fn show_menubar_edit_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
         if ui.button("Clear highlights").clicked() {
-            println!("TODO");
+            commands.push(SimpleProjectCommand::SpecificDiagramCommand(
+                *self.uuid,
+                DiagramCommand::HighlightAllElements(false, Highlight::ALL),
+            ).into());
         }
     }
     fn show_menubar_diagram_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
-        self.adapter.menubar_options_fun(/*self,*/ ui, commands);
+        self.adapter.menubar_options_fun(
+            &*self.uuid,
+            &(self.temporaries.label_provider.clone() as ERef<dyn LabelProvider>),
+            ui,
+            commands,
+        );
 
         if ui.button("Layout selected elements").clicked() {
             println!("TODO");
@@ -2052,13 +2069,14 @@ impl<
                 };
                 self.apply_commands(vec![redo_command.into()], &mut vec![], true, false, affected_models);
             }
-            DiagramCommand::SelectAllElements(select) => {
-                self.apply_commands(vec![InsensitiveCommand::SelectAll(select).into()], &mut vec![], true, false, affected_models);
-            }
             DiagramCommand::InvertSelection => {
                 self.apply_commands(vec![
-                    InsensitiveCommand::SelectAll(true).into(),
-                    InsensitiveCommand::SelectSpecific(self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(), false).into()
+                    InsensitiveCommand::HighlightAll(true, Highlight::SELECTED).into(),
+                    InsensitiveCommand::HighlightSpecific(
+                        self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
+                        false,
+                        Highlight::SELECTED,
+                    ).into()
                 ], &mut vec![], true, false, affected_models);
             }
             DiagramCommand::DeleteSelectedElements
@@ -2096,6 +2114,21 @@ impl<
             }
             DiagramCommand::CopySelectedElements => {
                 self.set_clipboard_from_selected();
+            },
+            DiagramCommand::HighlightAllElements(set, h) => {
+                self.apply_commands(vec![InsensitiveCommand::HighlightAll(set, h).into()], &mut vec![], true, false, affected_models);
+            },
+            DiagramCommand::HighlightElement(e, set, h) => {
+                let view_uuid = match e {
+                    EntityUuid::Model(model_uuid) => self.temporaries.flattened_represented_models.get(&model_uuid).cloned(),
+                    EntityUuid::View(view_uuid) => Some(view_uuid),
+                };
+                if let Some(view_uuid) = view_uuid {
+                    self.apply_commands(
+                        vec![InsensitiveCommand::HighlightSpecific(std::iter::once(view_uuid).collect(), set, h).into()],
+                        &mut vec![], true, false, affected_models
+                    );
+                }
             },
             DiagramCommand::CreateViewFor(model_uuid) => {
                 if let Some((model, parent_uuid)) = self.adapter.find_element(&model_uuid) {

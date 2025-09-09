@@ -281,7 +281,7 @@ impl RdfDiagram {
 
 impl Entity for RdfDiagram {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -353,7 +353,7 @@ impl RdfGraph {
 
 impl Entity for RdfGraph {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -432,7 +432,7 @@ impl RdfLiteral {
 
 impl Entity for RdfLiteral {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -467,7 +467,7 @@ impl RdfNode {
 
 impl Entity for RdfNode {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -509,7 +509,7 @@ impl RdfPredicate {
 
 impl Entity for RdfPredicate {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 

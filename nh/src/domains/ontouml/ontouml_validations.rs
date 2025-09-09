@@ -1,19 +1,29 @@
 use std::collections::HashMap;
 
-use crate::{common::{eref::ERef, uuid::ModelUuid}, CustomTab};
+use eframe::egui;
+
+use crate::{common::{canvas::Highlight, controller::{DiagramCommand, LabelProvider, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, CustomTab};
 use super::super::umlclass::umlclass_models::{UmlClassDiagram, UmlClassElement};
 
 pub struct OntoUMLValidationTab {
     model: ERef<UmlClassDiagram>,
+    label_provider: ERef<dyn LabelProvider>,
+    view_uuid: ViewUuid,
     check_errors: bool,
     check_antipatterns: bool,
     results: Option<Vec<ValidationProblem>>,
 }
 
 impl OntoUMLValidationTab {
-    pub fn new(model: ERef<UmlClassDiagram>) -> Self {
+    pub fn new(
+        model: ERef<UmlClassDiagram>,
+        label_provider: ERef<dyn LabelProvider>,
+        view_uuid: ViewUuid,
+    ) -> Self {
         Self {
             model,
+            label_provider,
+            view_uuid,
             check_errors: true,
             check_antipatterns: false,
             results: None,
@@ -162,17 +172,52 @@ impl CustomTab for OntoUMLValidationTab {
         "OntoUML Validations".to_owned()
     }
 
-    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut eframe::egui::Ui) {
+    fn show(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
         ui.horizontal(|ui| {
             if ui.button("Clear highlighting").clicked() {
-                // TODO: clear highlighting
+                commands.push(
+                    SimpleProjectCommand::SpecificDiagramCommand(
+                        self.view_uuid,
+                        DiagramCommand::HighlightAllElements(false, Highlight::ALL),
+                    ).into()
+                );
             }
 
             ui.checkbox(&mut self.check_errors, "Check errors");
             ui.checkbox(&mut self.check_antipatterns, "Check antipatterns");
 
             if ui.button("Validate").clicked() {
-                self.results = Some(self.validate(self.check_errors, self.check_antipatterns));
+                let results = self.validate(self.check_errors, self.check_antipatterns);
+
+                commands.push(
+                    SimpleProjectCommand::SpecificDiagramCommand(
+                        self.view_uuid,
+                        DiagramCommand::HighlightAllElements(false, Highlight::ALL),
+                    ).into()
+                );
+
+                for rr in &results {
+                    match rr {
+                        ValidationProblem::Error { uuid, .. } => {
+                            commands.push(
+                                SimpleProjectCommand::SpecificDiagramCommand(
+                                    self.view_uuid,
+                                    DiagramCommand::HighlightElement((*uuid).into(), true, Highlight::INVALID),
+                                ).into()
+                            );
+                        },
+                        ValidationProblem::AntiPattern { uuid, .. } => {
+                            commands.push(
+                                SimpleProjectCommand::SpecificDiagramCommand(
+                                    self.view_uuid,
+                                    DiagramCommand::HighlightElement((*uuid).into(), true, Highlight::WARNING),
+                                ).into()
+                            );
+                        },
+                    }
+                }
+
+                self.results = Some(results);
             }
         });
 
@@ -184,24 +229,48 @@ impl CustomTab for OntoUMLValidationTab {
 
                 let mut tb = egui_extras::TableBuilder::new(ui)
                     .column(egui_extras::Column::auto().resizable(true))
+                    .column(egui_extras::Column::auto().resizable(true))
                     .column(egui_extras::Column::remainder().resizable(true));
 
                 tb.body(|mut body| {
                     for rr in results {
                         body.row(30.0, |mut row| {
+                            let uuid = match rr {
+                                ValidationProblem::Error { uuid, .. } => *uuid,
+                                ValidationProblem::AntiPattern { uuid, .. } => *uuid,
+                            };
+
+                            row.col(|ui| {
+                                ui.label(match rr {
+                                    ValidationProblem::Error { .. } => "Error",
+                                    ValidationProblem::AntiPattern { .. } => "Anti-Pattern",
+                                });
+                            });
+
+                            row.col(|ui| {
+                                if ui.label(&*self.label_provider.read().get(&uuid)).clicked() {
+                                    commands.push(
+                                        SimpleProjectCommand::SpecificDiagramCommand(
+                                            self.view_uuid,
+                                            DiagramCommand::HighlightAllElements(false, Highlight::SELECTED),
+                                        ).into()
+                                    );
+                                    commands.push(
+                                        SimpleProjectCommand::SpecificDiagramCommand(
+                                            self.view_uuid,
+                                            DiagramCommand::HighlightElement(uuid.into(), true, Highlight::SELECTED),
+                                        ).into()
+                                    );
+                                }
+                            });
+
                             match rr {
                                 ValidationProblem::Error { uuid, text } => {
-                                    row.col(|ui| {
-                                        ui.label("Error");
-                                    });
                                     row.col(|ui| {
                                         ui.label(text);
                                     });
                                 },
                                 ValidationProblem::AntiPattern { uuid, antipattern_type } => {
-                                    row.col(|ui| {
-                                        ui.label("Anti-Pattern");
-                                    });
                                     row.col(|ui| {
                                         ui.label(format!("{:?}", antipattern_type));
                                     });

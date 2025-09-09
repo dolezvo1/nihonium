@@ -497,7 +497,13 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         }
     }
 
-    fn menubar_options_fun(&self, _ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {}
+    fn menubar_options_fun(
+        &self,
+        _view_uuid: &ViewUuid,
+        _label_provider: &ERef<dyn LabelProvider>,
+        _ui: &mut egui::Ui,
+        _commands: &mut Vec<ProjectCommand>,
+    ) {}
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DemoCsdElement>) {
         let (new_model, models) = super::democsd_models::deep_copy_diagram(&self.model.read());
@@ -1209,7 +1215,7 @@ impl DemoCsdTransactorView {
 
 impl Entity for DemoCsdTransactorView {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::View(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -1552,19 +1558,21 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                     match child {
                         Some(EventHandlingStatus::HandledByElement) => {
                             if !ehc.modifiers.command {
-                                commands.push(InsensitiveCommand::SelectAll(false).into());
+                                commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
                                 commands.push(
-                                    InsensitiveCommand::SelectSpecific(
+                                    InsensitiveCommand::HighlightSpecific(
                                         std::iter::once(*t.uuid()).collect(),
                                         true,
+                                        Highlight::SELECTED,
                                     )
                                     .into(),
                                 );
                             } else {
                                 commands.push(
-                                    InsensitiveCommand::SelectSpecific(
+                                    InsensitiveCommand::HighlightSpecific(
                                         std::iter::once(*t.uuid()).collect(),
                                         !t.highlight.selected,
+                                        Highlight::SELECTED,
                                     )
                                     .into(),
                                 );
@@ -1650,13 +1658,13 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             };
         }
         match command {
-            InsensitiveCommand::SelectAll(select) => {
-                self.highlight.selected = *select;
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
                 recurse!(self);
             }
-            InsensitiveCommand::SelectSpecific(uuids, select) => {
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid()) {
-                    self.highlight.selected = *select;
+                    self.highlight = self.highlight.combine(*set, *h);
                 }
                 recurse!(self);
             }
@@ -1964,7 +1972,7 @@ pub struct DemoCsdTransactionView {
 
 impl Entity for DemoCsdTransactionView {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::View(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -2214,19 +2222,21 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                     tool.add_element(self.model());
                 } else {
                     if !ehc.modifiers.command {
-                        commands.push(InsensitiveCommand::SelectAll(false).into());
+                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
                         commands.push(
-                            InsensitiveCommand::SelectSpecific(
+                            InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(*self.uuid).collect(),
                                 true,
+                                Highlight::SELECTED,
                             )
                             .into(),
                         );
                     } else {
                         commands.push(
-                            InsensitiveCommand::SelectSpecific(
+                            InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(*self.uuid).collect(),
                                 !self.highlight.selected,
+                                Highlight::SELECTED,
                             )
                             .into(),
                         );
@@ -2261,12 +2271,12 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
-            InsensitiveCommand::SelectAll(select) => {
-                self.highlight.selected = *select;
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
             }
-            InsensitiveCommand::SelectSpecific(uuids, select) => {
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight.selected = *select;
+                    self.highlight = self.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect) => {

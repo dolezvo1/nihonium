@@ -467,7 +467,13 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         }
     }
 
-    fn menubar_options_fun(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
+    fn menubar_options_fun(
+        &self,
+        _view_uuid: &ViewUuid,
+        _label_provider: &ERef<dyn LabelProvider>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
         if ui.button("Import RDF data").clicked() {
             // TODO: import stuff
         }
@@ -1110,7 +1116,7 @@ impl RdfNodeView {
 
 impl Entity for RdfNodeView {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::View(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -1344,12 +1350,12 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
-            InsensitiveCommand::SelectAll(select) => {
-                self.highlight.selected = *select;
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
             }
-            InsensitiveCommand::SelectSpecific(uuids, select) => {
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight.selected = *select;
+                    self.highlight = self.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect) => {
@@ -1573,7 +1579,7 @@ pub struct RdfLiteralView {
 
 impl Entity for RdfLiteralView {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::View(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -1797,12 +1803,12 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
-            InsensitiveCommand::SelectAll(select) => {
-                self.highlight.selected = *select;
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
             }
-            InsensitiveCommand::SelectSpecific(uuids, select) => {
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight.selected = *select;
+                    self.highlight = self.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect) => {

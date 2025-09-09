@@ -7,7 +7,7 @@ edition = "2024"
 [dependencies]
 nh-derive = { path = "../nh-derive" }
 
-derive_more = { version = "2.0", features = [ "from", "try_into" ] }
+derive_more = { version = "2.0", features = [ "from", "try_into", "not" ] }
 eframe = "0.32"
 egui_extras = { version = "0.32", features = [ "serde" ] }
 egui_dock = "0.17"

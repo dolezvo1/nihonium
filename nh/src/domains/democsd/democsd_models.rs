@@ -228,7 +228,7 @@ impl DemoCsdDiagram {
 
 impl Entity for DemoCsdDiagram {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -302,7 +302,7 @@ impl DemoCsdPackage {
 
 impl Entity for DemoCsdPackage {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -378,7 +378,7 @@ impl DemoCsdTransactor {
 
 impl Entity for DemoCsdTransactor {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -453,7 +453,7 @@ impl DemoCsdTransaction {
 
 impl Entity for DemoCsdTransaction {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -529,7 +529,7 @@ impl DemoCsdLink {
 
 impl Entity for DemoCsdLink {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 

@@ -2,7 +2,7 @@
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 use eframe::egui;
 
-use crate::{common::{canvas::{self, ArrowDataPos}, controller::{ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PropertiesStatus, Queryable, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, CustomModal};
+use crate::{common::{canvas::{self, ArrowDataPos, Highlight}, controller::{ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PropertiesStatus, Queryable, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, CustomModal};
 
 #[derive(Clone)]
 pub struct ArrowData {
@@ -209,7 +209,7 @@ where
 
 impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> Entity for MulticonnectionView<DomainT, AdapterT> {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::View(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -610,16 +610,18 @@ where
                 macro_rules! handle_vertex_click {
                     ($uuid:expr) => {
                         if !ehc.modifiers.command {
-                            commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::SelectAll(false)));
-                            commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::SelectSpecific(
+                            commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                            commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(*$uuid).collect(),
                                 true,
-                            )));
+                                Highlight::SELECTED,
+                            ).into());
                         } else {
-                            commands.push(SensitiveCommand::Insensitive(InsensitiveCommand::SelectSpecific(
+                            commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(*$uuid).collect(),
                                 !self.selected_vertices.contains($uuid),
-                            )));
+                                Highlight::SELECTED,
+                            ).into());
                         }
                         return EventHandlingStatus::HandledByContainer;
                     };
@@ -718,26 +720,30 @@ where
             };
         }
         match command {
-            InsensitiveCommand::SelectAll(select) => {
-                self.highlight.selected = *select;
-                match select {
-                    false => self.selected_vertices.clear(),
-                    true => {
-                        for p in all_pts_mut!(self) {
-                            self.selected_vertices.insert(p.0);
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
+                if h.selected {
+                    match set {
+                        false => self.selected_vertices.clear(),
+                        true => {
+                            for p in all_pts_mut!(self) {
+                                self.selected_vertices.insert(p.0);
+                            }
                         }
                     }
                 }
             }
-            InsensitiveCommand::SelectSpecific(uuids, select) => {
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight.selected = *select;
+                    self.highlight = self.highlight.combine(*set, *h);
                 }
-                match select {
-                    false => self.selected_vertices.retain(|e| !uuids.contains(e)),
-                    true => {
-                        for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {
-                            self.selected_vertices.insert(p.0);
+                if h.selected {
+                    match set {
+                        false => self.selected_vertices.retain(|e| !uuids.contains(e)),
+                        true => {
+                            for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {
+                                self.selected_vertices.insert(p.0);
+                            }
                         }
                     }
                 }

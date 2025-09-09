@@ -4,7 +4,7 @@ use super::super::{
         UmlClass, UmlClassAssociation, UmlClassAssociationType, UmlClassComment, UmlClassCommentLink, UmlClassDiagram, UmlClassElement, UmlClassGeneralization, UmlClassPackage
     },
 };
-use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
+use crate::common::{canvas::{self, Highlight, NHCanvas, NHShape}, controller::LabelProvider};
 use crate::common::controller::{
     ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, GlobalDrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
@@ -533,7 +533,13 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
         }
     }
 
-    fn menubar_options_fun(&self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
+    fn menubar_options_fun(
+        &self,
+        view_uuid: &ViewUuid,
+        label_provider: &ERef<dyn LabelProvider>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
         if ui.button("PlantUML description").clicked() {
             let uuid = uuid::Uuid::now_v7();
             commands.push(ProjectCommand::AddCustomTab(
@@ -548,7 +554,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
             let uuid = uuid::Uuid::now_v7();
             commands.push(ProjectCommand::AddCustomTab(
                 uuid,
-                Arc::new(RwLock::new(super::ontouml_validations::OntoUMLValidationTab::new(self.model.clone()))),
+                Arc::new(RwLock::new(super::ontouml_validations::OntoUMLValidationTab::new(self.model.clone(), label_provider.clone(), *view_uuid))),
             ));
         }
         ui.separator();
@@ -581,7 +587,7 @@ impl CustomTab for PlantUmlTab {
         "PlantUML description".to_owned()
     }
 
-    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui) {
+    fn show(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
         if ui.button("Refresh").clicked() {
             self.plantuml_description = self.diagram.read().plantuml();
         }
@@ -1343,7 +1349,7 @@ impl UmlClassView {
 
 impl Entity for UmlClassView {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::View(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -1672,12 +1678,12 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
-            InsensitiveCommand::SelectAll(select) => {
-                self.highlight.selected = *select;
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
             }
-            InsensitiveCommand::SelectSpecific(uuids, select) => {
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight.selected = *select;
+                    self.highlight = self.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect) => {
@@ -2655,7 +2661,7 @@ pub struct UmlClassCommentView {
 
 impl Entity for UmlClassCommentView {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::View(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -2903,12 +2909,12 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
-            InsensitiveCommand::SelectAll(select) => {
-                self.highlight.selected = *select;
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
             }
-            InsensitiveCommand::SelectSpecific(uuids, select) => {
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight.selected = *select;
+                    self.highlight = self.highlight.combine(*set, *h);
                 }
             }
             InsensitiveCommand::SelectByDrag(rect) => {

@@ -386,7 +386,7 @@ impl UmlClassDiagram {
 
 impl Entity for UmlClassDiagram {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -459,7 +459,7 @@ impl UmlClassPackage {
 
 impl Entity for UmlClassPackage {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -533,7 +533,7 @@ impl UmlClassInstance {
 
 impl Entity for UmlClassInstance {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -640,7 +640,7 @@ impl UmlClass {
 
 impl Entity for UmlClass {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -705,7 +705,7 @@ impl UmlClassGeneralization {
 
 impl Entity for UmlClassGeneralization {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -841,7 +841,7 @@ impl UmlClassAssociation {
 
 impl Entity for UmlClassAssociation {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -872,7 +872,7 @@ impl UmlClassComment {
 
 impl Entity for UmlClassComment {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -909,7 +909,7 @@ impl UmlClassCommentLink {
 
 impl Entity for UmlClassCommentLink {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::Model(*self.uuid)
+        (*self.uuid).into()
     }
 }
 

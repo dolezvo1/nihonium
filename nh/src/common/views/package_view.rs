@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use eframe::{egui, epaint};
 
-use crate::{common::{canvas, controller::{ColorBundle, ContainerGen2, Domain, GlobalDrawingContext, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, InputEvent, InsensitiveCommand, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}, CustomModal};
+use crate::{common::{canvas::{self, Highlight}, controller::{ColorBundle, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}, CustomModal};
 
 
 pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
@@ -107,7 +107,7 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
 
 impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> Entity for PackageView<DomainT, AdapterT> {
     fn tagged_uuid(&self) -> EntityUuid {
-        EntityUuid::View(*self.uuid)
+        (*self.uuid).into()
     }
 }
 
@@ -382,15 +382,17 @@ where
                     } else if let Some((k, status)) = k_status {
                         if status == EventHandlingStatus::HandledByElement {
                             if !ehc.modifiers.command {
-                                commands.push(InsensitiveCommand::SelectAll(false).into());
-                                commands.push(InsensitiveCommand::SelectSpecific(
+                                commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                                commands.push(InsensitiveCommand::HighlightSpecific(
                                     std::iter::once(k).collect(),
                                     true,
+                                    Highlight::SELECTED,
                                 ).into());
                             } else {
-                                commands.push(InsensitiveCommand::SelectSpecific(
+                                commands.push(InsensitiveCommand::HighlightSpecific(
                                     std::iter::once(k).collect(),
                                     !self.selected_direct_elements.contains(&k),
+                                    Highlight::SELECTED,
                                 ).into());
                             }
                         }
@@ -499,27 +501,31 @@ where
         }
 
         match command {
-            InsensitiveCommand::SelectAll(select) => {
-                self.highlight.selected = *select;
-                match select {
-                    true => {
-                        self.selected_direct_elements =
-                            self.owned_views.iter_event_order_keys().collect()
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
+                if h.selected {
+                    match set {
+                        true => {
+                            self.selected_direct_elements =
+                                self.owned_views.iter_event_order_keys().collect()
+                        }
+                        false => self.selected_direct_elements.clear(),
                     }
-                    false => self.selected_direct_elements.clear(),
                 }
                 recurse!(self);
             }
-            InsensitiveCommand::SelectSpecific(uuids, select) => {
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
-                    self.highlight.selected = *select;
+                    self.highlight = self.highlight.combine(*set, *h);
                 }
 
-                for k in self.owned_views.iter_event_order_keys().filter(|k| uuids.contains(k)) {
-                    match select {
-                        true => self.selected_direct_elements.insert(k),
-                        false => self.selected_direct_elements.remove(&k),
-                    };
+                if h.selected {
+                    for k in self.owned_views.iter_event_order_keys().filter(|k| uuids.contains(k)) {
+                        match set {
+                            true => self.selected_direct_elements.insert(k),
+                            false => self.selected_direct_elements.remove(&k),
+                        };
+                    }
                 }
 
                 recurse!(self);

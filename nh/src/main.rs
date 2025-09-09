@@ -113,7 +113,7 @@ impl NHTab {
 
 pub trait CustomTab {
     fn title(&self) -> String;
-    fn show(&mut self, /*context: &mut NHApp,*/ ui: &mut egui::Ui);
+    fn show(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
     //fn on_close(&mut self, context: &mut NHApp);
 }
 
@@ -1220,7 +1220,7 @@ impl NHContext {
     fn custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
         let x = self.custom_tabs.get(tab_uuid).map(|e| e.clone()).unwrap();
         let mut custom_tab = x.write().unwrap();
-        custom_tab.show(/*self,*/ ui);
+        custom_tab.show(ui, &mut self.unprocessed_commands);
     }
 
     fn last_focused_diagram(&self) -> Option<(usize, ERef<dyn DiagramController>)> {
@@ -1369,8 +1369,8 @@ impl Default for NHApp {
             egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
             egui::Key::Z,
         ));
-        context.drawing_context.shortcuts.insert(DiagramCommand::SelectAllElements(true).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A));
-        context.drawing_context.shortcuts.insert(DiagramCommand::SelectAllElements(false).into(), egui::KeyboardShortcut::new(
+        context.drawing_context.shortcuts.insert(DiagramCommand::HighlightAllElements(true, Highlight::SELECTED).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A));
+        context.drawing_context.shortcuts.insert(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED).into(), egui::KeyboardShortcut::new(
             egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
             egui::Key::A,
         ));

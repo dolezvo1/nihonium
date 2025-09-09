@@ -2,6 +2,7 @@ use eframe::egui;
 
 use std::collections::HashSet;
 use std::io::Write;
+use std::ops::{BitAnd, BitOr};
 
 use super::uuid::ViewUuid;
 
@@ -490,7 +491,7 @@ impl From<Stroke> for egui::Stroke {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug, Default)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Debug, derive_more::Not)]
 pub struct Highlight {
     pub selected: bool, // "blue"
     pub valid: bool,    // "green"
@@ -505,19 +506,66 @@ impl Highlight {
         invalid: false,
         warning: false,
     };
-    pub const SELECTED: Self = Self {
-        selected: true,
-        valid: false,
-        invalid: false,
-        warning: false,
-    };
     pub const ALL: Self = Self {
         selected: true,
         valid: true,
         invalid: true,
         warning: true,
     };
+    pub const SELECTED: Self = Self {
+        selected: true,
+        ..Highlight::NONE
+    };
+    pub const INVALID: Self = Self {
+        invalid: true,
+        ..Highlight::NONE
+    };
+    pub const WARNING: Self = Self {
+        warning: true,
+        ..Highlight::NONE
+    };
+
+    pub fn count(&self) -> u8 {
+        (if self.selected { 1 } else { 0 })
+        + (if self.valid { 1 } else { 0 })
+        + (if self.invalid { 1 } else { 0 })
+        + (if self.warning { 1 } else { 0 })
+    }
+    pub fn combine(&self, set: bool, other: Self) -> Self {
+        if set {
+            self | other
+        } else {
+            self & !other
+        }
+    }
 }
+
+impl<'a> BitOr<Highlight> for &'a Highlight {
+    type Output = Highlight;
+
+    fn bitor(self, rhs: Highlight) -> Self::Output {
+        Highlight {
+            selected: self.selected | rhs.selected,
+            valid: self.valid | rhs.valid,
+            invalid: self.invalid | rhs.invalid,
+            warning: self.warning | rhs.warning,
+        }
+    }
+}
+
+impl<'a> BitAnd<Highlight> for &'a Highlight {
+    type Output = Highlight;
+
+    fn bitand(self, rhs: Highlight) -> Self::Output {
+        Highlight {
+            selected: self.selected & rhs.selected,
+            valid: self.valid & rhs.valid,
+            invalid: self.invalid & rhs.invalid,
+            warning: self.warning & rhs.warning,
+        }
+    }
+}
+
 
 pub const CLASS_TOP_FONT_SIZE: f32 = 12.0;
 pub const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
@@ -898,7 +946,7 @@ impl UiCanvas {
                 egui::Color32::BLUE,
                 egui::Color32::GREEN,
                 egui::Color32::RED,
-                egui::Color32::YELLOW,
+                egui::Color32::ORANGE,
             ],
             painter,
             canvas,
@@ -954,12 +1002,19 @@ impl UiCanvas {
     }
 
     fn filtered_stroke(&self, stroke: Stroke, h: Highlight) -> Stroke {
-        if !h.selected || !self.highlight_filter.selected {
+        let h = &h & self.highlight_filter;
+        if h.count() == 0 {
             stroke
         } else {
             Stroke::new_solid(
                 2.0 * stroke.width,
-                self.highlight_colors[0],
+                match h {
+                    Highlight { selected, .. } if selected => self.highlight_colors[0],
+                    Highlight { valid, .. } if valid => self.highlight_colors[1],
+                    Highlight { invalid, .. } if invalid => self.highlight_colors[2],
+                    Highlight { warning, .. } if warning => self.highlight_colors[3],
+                    _ => unreachable!(),
+                },
             )
         }
     }
