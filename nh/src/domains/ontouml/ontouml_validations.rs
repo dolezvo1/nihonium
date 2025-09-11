@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use eframe::egui;
 
-use crate::{common::{canvas::Highlight, controller::{DiagramCommand, LabelProvider, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, CustomTab};
+use crate::{common::{canvas::Highlight, controller::{DiagramCommand, LabelProvider, Model, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, domains::umlclass::umlclass_models::{UmlClassClassifier, UmlClassGeneralization}, CustomTab};
 use super::super::umlclass::umlclass_models::{UmlClassDiagram, UmlClassElement};
 
 pub struct OntoUMLValidationTab {
@@ -49,11 +49,11 @@ impl OntoUMLValidationTab {
         let m = self.model.read();
 
         // Subtyping and identity providers validation
-        fn valid_subtyping(s: &str, t: &str) -> bool {
+        fn valid_direct_subtyping(s: &str, t: &str) -> bool {
             match (s, t) {
                 ("kind" | "collective" | "quantity" | "relator" | "quality" | "mode" | "category" | "mixin", "category" | "mixin") => true,
-                ("subkind" | "phase" | "role", "kind" | "subkind" | "collective" | "quantity" | "relator" | "category" | "mixin" | "mode" | "quality") => true,
-                ("phase", "phase" | "phaseMixin") => true,
+                ("subkind" | "role", "kind" | "subkind" | "collective" | "quantity" | "relator" | "category" | "mixin" | "mode" | "quality") => true,
+                ("phase", "kind" | "subkind" | "collective" | "quantity" | "relator" | "mixin" | "mode" | "quality" | "phase" | "phaseMixin") => true,
                 ("role", "role" | "roleMixin") => true,
                 ("phaseMixin", "mixin" | "phaseMixin" | "category") => true,
                 ("roleMixin", "mixin" | "roleMixin" | "category" | "phaseMixin") => true,
@@ -68,8 +68,13 @@ impl OntoUMLValidationTab {
         }
         #[derive(Default)]
         struct ElementInfo {
-            requires_identity: bool,
+            stereotype: Arc<String>,
             identity_providers_no: usize,
+            is_abstract: bool,
+            in_disjoint_complete_set: bool,
+            direct_mediations_opposing_lower_bounds: usize,
+            direct_characterizations_toward: usize,
+            supertype_generalizations: Vec<ERef<UmlClassGeneralization>>,
         }
         fn r_validate_subtyping(
             problems: &mut Vec<ValidationProblem>,
@@ -85,10 +90,13 @@ impl OntoUMLValidationTab {
                 },
                 UmlClassElement::UmlClass(inner) => {
                     let m = inner.read();
-                    let mut e = element_infos.entry(*m.uuid).or_default();
-                    e.requires_identity = requires_identity(&*m.stereotype);
+                    let e = element_infos.entry(*m.uuid).or_default();
+                    e.stereotype = m.stereotype.clone();
                     if is_identity_provider(&*m.stereotype) {
                         e.identity_providers_no += 1;
+                    }
+                    if m.is_abstract {
+                        e.is_abstract = true;
                     }
                 }
                 UmlClassElement::UmlClassGeneralization(inner) => {
@@ -98,10 +106,15 @@ impl OntoUMLValidationTab {
                     let weight = if m.set_is_disjoint { identity_providers_no.clamp(0, 1) } else { identity_providers_no };
 
                     for s in &m.sources {
-                        element_infos.entry(*s.read().uuid).or_default().identity_providers_no += weight;
+                        let mut e = element_infos.entry(*s.read().uuid).or_default();
+                        e.identity_providers_no += weight;
+                        e.supertype_generalizations.push(inner.clone());
+                        if m.set_is_disjoint && m.set_is_covering {
+                            e.in_disjoint_complete_set = true;
+                        }
 
                         for t in &m.targets {
-                            if !valid_subtyping(&*s.read().stereotype, &*t.read().stereotype) {
+                            if !valid_direct_subtyping(&*s.read().stereotype, &*t.read().stereotype) {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
                                     text: format!("«{}» cannot be subtype of «{}»", s.read().stereotype, t.read().stereotype),
@@ -110,6 +123,165 @@ impl OntoUMLValidationTab {
                         }
                     }
                 },
+                UmlClassElement::UmlClassAssociation(inner) => {
+                    fn parse_multiplicity(m: &str) -> Option<(usize, usize)> {
+                        if m.is_empty() {
+                            None
+                        } else if let Ok(n) = str::parse::<usize>(m) {
+                            Some((n, n))
+                        } else {
+                            let (lower, upper) = m.split_once("..")?;
+                            str::parse(lower).and_then(|l| str::parse(upper).map(|u| (l, u))).ok()
+                        }
+                    }
+                    let m = inner.read();
+                    let source_multiplicity = parse_multiplicity(&*m.source_label_multiplicity);
+                    let target_multiplicity = parse_multiplicity(&*m.target_label_multiplicity);
+
+                    if source_multiplicity.zip(target_multiplicity).is_none() {
+                        problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("invalid multiplicities") });
+                    }
+                    if let Some((lm1, um1)) = source_multiplicity && lm1 > um1 {
+                        problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("invalid multiplicities") });
+                    }
+                    if let Some((lm2, um2)) = target_multiplicity && lm2 > um2 {
+                        problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("invalid multiplicities") });
+                    }
+
+                    match m.stereotype.as_str() {
+                        "mediation" => {
+                            if let Some(((lm1, _), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
+                                && (lm1 < 1 || lm2 < 1) {
+                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«mediation» must have multiplicities of at least 1..*") });
+                            }
+                            if let Some((lm, um)) = &target_multiplicity {
+                                let mut e = element_infos.entry(*m.source.uuid()).or_default();
+                                e.direct_mediations_opposing_lower_bounds += lm;
+                            }
+                            if let Some((lm, um)) = &source_multiplicity {
+                                let mut e = element_infos.entry(*m.target.uuid()).or_default();
+                                e.direct_mediations_opposing_lower_bounds += lm;
+                            }
+                        }
+                        "characterization" => {
+                            if let Some(((lm1, um1), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
+                                && (lm1 != 1 || um1 != 1 || lm2 < 1) {
+                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«characterization» must have multiplicities of 1..1 and at least 1..*") });
+                            }
+                            if let UmlClassClassifier::UmlClass(t) = &m.target {
+                                let t = t.read();
+                                let mut e = element_infos.entry(*t.uuid).or_default();
+
+                                if t.stereotype.as_str() != "quality" && t.stereotype.as_str() != "mode" {
+                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«characterization» must have «quality» or «mode» on the target end") });
+                                }
+
+                                e.direct_characterizations_toward += 1;
+                            }
+                        },
+                        "derivation" => {
+                            if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
+                                && (lm1 != 1 || um1 != 1 || lm2 != 1 || um2 != 1) {
+                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«derivation» must have multiplicities of 1..1") });
+                            }
+                            // source: Relator
+                            // target: material
+                        },
+                        "structuration" => {
+                            if let Some(((_, _), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
+                                && (lm2 != 1 || um2 != 1) {
+                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«structuration» must have multiplicities of 1..1 on the target end") });
+                            }
+
+                            if let UmlClassClassifier::UmlClass(s) = &m.source {
+                                let s = s.read();
+                                if s.stereotype.as_str() != "quality" {
+                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«structuration» must have «quality» on the source end") });
+                                }
+                            }
+
+                            if let UmlClassClassifier::UmlClass(t) = &m.target {
+                                let t = t.read();
+                                if t.stereotype.as_str() != "quality" && t.stereotype.as_str() != "mode" {
+                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«structuration» must have «quality» or «mode» on the target end") });
+                                }
+                            }
+                        }
+                        "componentOf" => {
+                            if let Some(((lm1, _), (_, _))) = source_multiplicity.zip(target_multiplicity)
+                                && lm1 < 1 {
+                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«componentOf» must have multiplicities of at least 1..* on the source end") });
+                            }
+                        }
+                        "subcollectionOf" => {
+                            if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
+                                && (lm1 != 1 || um1 != 1 || lm2 != 1 || um2 != 1) {
+                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subcollectionOf» must have multiplicities of 1..1") });
+                            }
+
+                            if let UmlClassClassifier::UmlClass(s) = &m.source {
+                                let s = s.read();
+                                if s.stereotype.as_str() != "collective" {
+                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subcollectionOf» must have «collective» on the source end") });
+                                }
+                            }
+
+                            if let UmlClassClassifier::UmlClass(t) = &m.target {
+                                let t = t.read();
+                                if t.stereotype.as_str() != "collective" {
+                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subcollectionOf» must have «collective» on the target end") });
+                                }
+                            }
+                        }
+                        "memberOf" => {
+                            if let Some(((lm1, _), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
+                                && (lm1 < 1 || lm2 < 1) {
+                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«memberOf» must have multiplicities of at least 1..*") });
+                            }
+
+                            if let UmlClassClassifier::UmlClass(s) = &m.source {
+                                let s = s.read();
+                                if s.stereotype.as_str() != "collective" {
+                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«memberOf» must have «collective» on the source end") });
+                                }
+                            }
+                        }
+                        "containment" => {
+                            if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
+                                && (lm1 != 1 || um1 != 1 || lm2 != 1 || um2 != 1) {
+                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«containment» must have multiplicities of 1..1") });
+                            }
+
+                            if let UmlClassClassifier::UmlClass(t) = &m.target {
+                                let t = t.read();
+                                if t.stereotype.as_str() != "quantity" {
+                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«containment» must have «quantity» on the target end") });
+                                }
+                            }
+                        }
+                        "subquantityOf" => {
+                            if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
+                                && (lm1 != 1 || um1 != 1 || lm2 != 1 || um2 != 1) {
+                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subquantityOf» must have multiplicities of 1..1") });
+                            }
+
+                            if let UmlClassClassifier::UmlClass(s) = &m.source {
+                                let s = s.read();
+                                if s.stereotype.as_str() != "quantity" {
+                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subquantityOf» must have «quantity» on the source end") });
+                                }
+                            }
+
+                            if let UmlClassClassifier::UmlClass(t) = &m.target {
+                                let t = t.read();
+                                if t.stereotype.as_str() != "quantity" {
+                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subquantityOf» must have «quantity» on the target end") });
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 _ => {},
             }
         }
@@ -117,9 +289,46 @@ impl OntoUMLValidationTab {
         for e in &m.contained_elements {
             r_validate_subtyping(&mut problems, &mut element_infos, e);
         }
-        for (k, info) in element_infos {
-            if info.requires_identity && info.identity_providers_no != 1 {
-                problems.push(ValidationProblem::Error { uuid: k, text: format!("element does not have exactly one identity provider (found {})", info.identity_providers_no) });
+        for (k, info) in &element_infos {
+            if requires_identity(&*info.stereotype) && info.identity_providers_no != 1 {
+                problems.push(ValidationProblem::Error { uuid: *k, text: format!("element does not have exactly one identity provider (found {})", info.identity_providers_no) });
+            }
+            fn r_lowerbounds(infos: &HashMap<ModelUuid, ElementInfo>, uuid: &ModelUuid) -> usize {
+                if let Some(e) = infos.get(uuid) {
+                    let mut r = e.direct_mediations_opposing_lower_bounds;
+
+                    for e in &e.supertype_generalizations {
+                        let g = e.read();
+                        r += if g.set_is_disjoint {
+                            g.targets.iter().map(|e| r_lowerbounds(infos, &*e.read().uuid)).min().unwrap_or(0)
+                        } else {
+                            g.targets.iter().map(|e| r_lowerbounds(infos, &*e.read().uuid)).sum()
+                        };
+                    }
+
+                    r
+                } else {
+                    0
+                }
+            }
+            if info.stereotype.as_str() == "role" && r_lowerbounds(&element_infos, &k) == 0 {
+                problems.push(ValidationProblem::Error { uuid: *k, text: format!("«role» must be connected to a «mediation»") });
+            }
+            if info.stereotype.as_str() == "relator" && r_lowerbounds(&element_infos, &k) < 2 {
+                problems.push(ValidationProblem::Error { uuid: *k, text: format!("«relator» must have sum of lower bounds on the opposite sides of «mediation»s of at least 2") });
+            }
+            if info.stereotype.as_str() == "phase" && !info.in_disjoint_complete_set {
+                problems.push(ValidationProblem::Error { uuid: *k, text: format!("«phase» must always be part of a generalization set which is disjoint and complete") });
+            }
+            if (info.stereotype.as_str() == "category"
+                || info.stereotype.as_str() == "mixin"
+                || info.stereotype.as_str() == "phaseMixin"
+                || info.stereotype.as_str() == "roleMixin") && !info.is_abstract {
+                problems.push(ValidationProblem::Error { uuid: *k, text: format!("«{}» must always be abstract", info.stereotype) });
+            }
+            if (info.stereotype.as_str() == "quality" || info.stereotype.as_str() == "mode")
+                && info.direct_characterizations_toward < 1 {
+                problems.push(ValidationProblem::Error { uuid: *k, text: format!("«{}» must be at the target end of at least one «characterization»", info.stereotype) });
             }
         }
 
