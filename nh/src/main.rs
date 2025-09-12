@@ -265,7 +265,7 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
                 crate::domains::ontouml::ontouml_controllers::new as NDC,
             ),
             (
-                "DEMO CSD diagram",
+                "DEMO Coordination Structure Diagram",
                 2,
                 crate::domains::democsd::democsd_controllers::new as NDC,
             ),

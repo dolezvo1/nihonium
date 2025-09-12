@@ -77,40 +77,15 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<M
                         None
                     }
                 } else { None };
-                let new_model = DemoCsdTransactor {
-                    uuid: new_uuid,
-                    identifier: model.identifier.clone(),
-                    name: model.name.clone(),
-                    internal: model.internal,
-                    transaction: new_tx.map(|e| e.into()).into(),
-                    transaction_selfactivating: model.transaction_selfactivating,
-                    comment: model.comment.clone()
-                };
-                DemoCsdElement::DemoCsdTransactor(ERef::new(new_model))
+                let new_model = model.clone_with(*new_uuid);
+                new_model.write().transaction = new_tx.into();
+                DemoCsdElement::DemoCsdTransactor(new_model)
             },
             DemoCsdElement::DemoCsdTransaction(inner) => {
-                let model = inner.read();
-
-                let new_model = DemoCsdTransaction {
-                    uuid: new_uuid,
-                    kind: model.kind,
-                    identifier: model.identifier.clone(),
-                    name: model.name.clone(),
-                    comment: model.comment.clone(),
-                };
-                DemoCsdElement::DemoCsdTransaction(ERef::new(new_model))
+                DemoCsdElement::DemoCsdTransaction(inner.read().clone_with(*new_uuid))
             },
             DemoCsdElement::DemoCsdLink(inner) => {
-                let model = inner.read();
-
-                let new_model = DemoCsdLink {
-                    uuid: new_uuid,
-                    link_type: model.link_type,
-                    source: model.source.clone(),
-                    target: model.target.clone(),
-                    comment: model.comment.clone(),
-                };
-                DemoCsdElement::DemoCsdLink(ERef::new(new_model))
+                DemoCsdElement::DemoCsdLink(inner.read().clone_with(*new_uuid))
             },
         }
     }
@@ -346,6 +321,7 @@ pub struct DemoCsdTransactor {
     pub identifier: Arc<String>,
     pub name: Arc<String>,
     pub internal: bool,
+    pub composite: bool,
     #[nh_context_serde(entity)]
     pub transaction: UFOption<ERef<DemoCsdTransaction>>,
     pub transaction_selfactivating: bool,
@@ -359,6 +335,7 @@ impl DemoCsdTransactor {
         identifier: String,
         name: String,
         internal: bool,
+        composite: bool,
         transaction: Option<ERef<DemoCsdTransaction>>,
         transaction_selfactivating: bool,
     ) -> Self {
@@ -368,11 +345,24 @@ impl DemoCsdTransactor {
             identifier: Arc::new(identifier),
             name: Arc::new(name),
             internal,
+            composite,
             transaction: transaction.into(),
             transaction_selfactivating,
 
             comment: Arc::new("".to_owned()),
         }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            identifier: self.identifier.clone(),
+            name: self.name.clone(),
+            internal: self.internal,
+            composite: self.composite,
+            transaction: self.transaction.clone(),
+            transaction_selfactivating: self.transaction_selfactivating,
+            comment: self.comment.clone(),
+        })
     }
 }
 
@@ -430,24 +420,38 @@ impl Default for DemoCsdTransactionKind {
 pub struct DemoCsdTransaction {
     pub uuid: Arc<ModelUuid>,
 
-    pub(super) kind: DemoCsdTransactionKind,
+    pub kind: DemoCsdTransactionKind,
     pub identifier: Arc<String>,
     pub name: Arc<String>,
+    pub multiple: bool,
 
     pub comment: Arc<String>,
 }
 
 impl DemoCsdTransaction {
-    pub fn new(uuid: ModelUuid, kind: DemoCsdTransactionKind, identifier: String, name: String) -> Self {
+    pub fn new(uuid: ModelUuid, kind: DemoCsdTransactionKind, identifier: String, name: String, multiple: bool) -> Self {
         Self {
             uuid: Arc::new(uuid),
 
             kind,
             identifier: Arc::new(identifier),
             name: Arc::new(name),
+            multiple,
 
             comment: Arc::new("".to_owned()),
         }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+
+            kind: self.kind.clone(),
+            identifier: self.identifier.clone(),
+            name: self.name.clone(),
+            multiple: self.multiple,
+
+            comment: self.comment.clone(),
+        })
     }
 }
 
@@ -467,32 +471,32 @@ impl Model for DemoCsdTransaction {
 
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DemoCsdLinkType {
-    Initiation,
-    Interstriction,
-    Interimpediment,
+    InitiatorLink,
+    AccessLink,
+    WaitLink,
 }
 
 impl DemoCsdLinkType {
     pub fn char(&self) -> &str {
         match self {
-            Self::Initiation => "Initiation",
-            Self::Interstriction => "Interstriction",
-            Self::Interimpediment => "Interimpediment",
+            Self::InitiatorLink => "Initiator Link",
+            Self::AccessLink => "Access Link",
+            Self::WaitLink => "Wait Link",
         }
     }
 
     pub fn line_type(&self) -> canvas::LineType {
         match self {
-            Self::Initiation => canvas::LineType::Solid,
-            Self::Interstriction => canvas::LineType::Dashed,
-            Self::Interimpediment => canvas::LineType::Dashed,
+            Self::InitiatorLink => canvas::LineType::Solid,
+            Self::AccessLink => canvas::LineType::Dashed,
+            Self::WaitLink => canvas::LineType::Dashed,
         }
     }
 }
 
 impl Default for DemoCsdLinkType {
     fn default() -> Self {
-        Self::Initiation
+        Self::InitiatorLink
     }
 }
 
@@ -501,7 +505,8 @@ impl Default for DemoCsdLinkType {
 pub struct DemoCsdLink {
     pub uuid: Arc<ModelUuid>,
 
-    pub(super) link_type: DemoCsdLinkType,
+    pub link_type: DemoCsdLinkType,
+    pub multiplicity: Arc<String>,
     #[nh_context_serde(entity)]
     pub source: ERef<DemoCsdTransactor>,
     #[nh_context_serde(entity)]
@@ -514,16 +519,28 @@ impl DemoCsdLink {
     pub fn new(
         uuid: ModelUuid,
         link_type: DemoCsdLinkType,
+        multiplicity: Arc<String>,
         source: ERef<DemoCsdTransactor>,
         target: ERef<DemoCsdTransaction>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             link_type,
+            multiplicity,
             source,
             target,
             comment: Arc::new("".to_owned()),
         }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            link_type: self.link_type,
+            multiplicity: self.multiplicity.clone(),
+            source: self.source.clone(),
+            target: self.target.clone(),
+            comment: self.comment.clone(),
+        })
     }
 }
 
