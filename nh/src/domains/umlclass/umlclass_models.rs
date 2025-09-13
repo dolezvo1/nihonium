@@ -1,11 +1,10 @@
-use crate::common::canvas::{ArrowheadType, LineType};
 use crate::common::controller::{ContainerModel, DiagramVisitor, Model, ElementVisitor, VisitableDiagram, VisitableElement};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, LazyLock},
+    sync::Arc,
 };
 
 pub struct UmlClassCollector {
@@ -101,13 +100,28 @@ impl UmlClassCollector {
                 self.plantuml_data
                     .push_str(&format!(" {:?}", link.source_label_multiplicity));
             }
-            self.plantuml_data.push_str(match link.link_type {
-                UmlClassAssociationType::Association => " -- ",
-                UmlClassAssociationType::Aggregation => " --o ",
-                UmlClassAssociationType::Composition => " --* ",
-                UmlClassAssociationType::InterfaceRealization => " ..|> ",
-                UmlClassAssociationType::Usage => " ..> ",
-            });
+            fn ah(
+                target: bool,
+                n: UmlClassAssociationNavigability,
+                a: UmlClassAssociationAggregation,
+            ) -> &'static str {
+                match a {
+                    UmlClassAssociationAggregation::None => match n {
+                        UmlClassAssociationNavigability::Unspecified => "",
+                        UmlClassAssociationNavigability::NonNavigable => "x",
+                        UmlClassAssociationNavigability::Navigable => if !target { "<" } else { ">" },
+                    }
+                    UmlClassAssociationAggregation::Shared => "o",
+                    UmlClassAssociationAggregation::Composite => "*",
+                }
+            }
+            self.plantuml_data.push_str(
+                &format!(
+                    " {}-{} ",
+                    ah(false, link.source_navigability, link.source_aggregation),
+                    ah(true, link.target_navigability, link.target_aggregation),
+                )
+            );
             if !link.target_label_multiplicity.is_empty() {
                 self.plantuml_data
                     .push_str(&format!("{:?} ", link.target_label_multiplicity));
@@ -716,81 +730,63 @@ impl Model for UmlClassGeneralization {
 }
 
 
-#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum UmlClassAssociationType {
-    Association,
-    Aggregation,
-    Composition,
-    InterfaceRealization,
-    Usage,
+#[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub enum UmlClassAssociationNavigability {
+    #[default]
+    Unspecified,
+    Navigable,
+    NonNavigable,
 }
 
-impl Default for UmlClassAssociationType {
-    fn default() -> Self {
-        Self::Association
-    }
-}
-
-// I hate this so much
-static ASSOCIATION_TEXT: LazyLock<Arc<String>> =
-    LazyLock::new(|| Arc::new("Assocation".to_owned()));
-static AGGREGATION_TEXT: LazyLock<Arc<String>> =
-    LazyLock::new(|| Arc::new("Aggregation".to_owned()));
-static COMPOSITION_TEXT: LazyLock<Arc<String>> =
-    LazyLock::new(|| Arc::new("Composition".to_owned()));
-static INTERFACE_REALIZATION_TEXT: LazyLock<Arc<String>> =
-    LazyLock::new(|| Arc::new("Interface Realization".to_owned()));
-static USAGE_TEXT: LazyLock<Arc<String>> = LazyLock::new(|| Arc::new("Usage".to_owned()));
-
-impl UmlClassAssociationType {
-    pub fn name(&self) -> Arc<String> {
+impl UmlClassAssociationNavigability {
+    pub fn name(&self) -> &'static str {
         match self {
-            UmlClassAssociationType::Association => ASSOCIATION_TEXT.clone(),
-            UmlClassAssociationType::Aggregation => AGGREGATION_TEXT.clone(),
-            UmlClassAssociationType::Composition => COMPOSITION_TEXT.clone(),
-            UmlClassAssociationType::InterfaceRealization => INTERFACE_REALIZATION_TEXT.clone(),
-            UmlClassAssociationType::Usage => USAGE_TEXT.clone(),
-        }
-    }
-
-    pub fn line_type(&self) -> LineType {
-        match self {
-            UmlClassAssociationType::InterfaceRealization | UmlClassAssociationType::Usage => LineType::Dashed,
-            _ => LineType::Solid,
-        }
-    }
-
-    pub fn source_arrowhead_type(&self) -> ArrowheadType {
-        ArrowheadType::None
-    }
-
-    pub fn destination_arrowhead_type(&self) -> ArrowheadType {
-        match self {
-            UmlClassAssociationType::Association => ArrowheadType::None,
-            UmlClassAssociationType::Usage => ArrowheadType::OpenTriangle,
-            UmlClassAssociationType::InterfaceRealization => ArrowheadType::EmptyTriangle,
-            UmlClassAssociationType::Aggregation => ArrowheadType::EmptyRhombus,
-            UmlClassAssociationType::Composition => ArrowheadType::FullRhombus,
+            UmlClassAssociationNavigability::Unspecified => "Unspecified",
+            UmlClassAssociationNavigability::Navigable => "Navigable",
+            UmlClassAssociationNavigability::NonNavigable => "Non-navigable",
         }
     }
 }
+
+#[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub enum UmlClassAssociationAggregation {
+    #[default]
+    None,
+    Shared,
+    Composite,
+}
+
+impl UmlClassAssociationAggregation {
+    pub fn name(&self) -> &'static str {
+        match self {
+            UmlClassAssociationAggregation::None => "None",
+            UmlClassAssociationAggregation::Shared => "Shared",
+            UmlClassAssociationAggregation::Composite => "Composite",
+        }
+    }
+}
+
+// TODO: InterfaceRealization (ArrowheadType::EmptyTriangle) and Usage (ArrowheadType::OpenTriangle) are dependency, not association
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassAssociation {
     pub uuid: Arc<ModelUuid>,
-    pub link_type: UmlClassAssociationType,
     pub stereotype: Arc<String>,
     #[nh_context_serde(entity)]
     pub source: UmlClassClassifier,
     pub source_label_multiplicity: Arc<String>,
     pub source_label_role: Arc<String>,
     pub source_label_reading: Arc<String>,
+    pub source_navigability: UmlClassAssociationNavigability,
+    pub source_aggregation: UmlClassAssociationAggregation,
     #[nh_context_serde(entity)]
     pub target: UmlClassClassifier,
     pub target_label_multiplicity: Arc<String>,
     pub target_label_role: Arc<String>,
     pub target_label_reading: Arc<String>,
+    pub target_navigability: UmlClassAssociationNavigability,
+    pub target_aggregation: UmlClassAssociationAggregation,
 
     pub comment: Arc<String>,
 }
@@ -798,39 +794,44 @@ pub struct UmlClassAssociation {
 impl UmlClassAssociation {
     pub fn new(
         uuid: ModelUuid,
-        link_type: UmlClassAssociationType,
         stereotype: String,
         source: UmlClassClassifier,
         target: UmlClassClassifier,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            link_type,
             stereotype: Arc::new(stereotype),
             source,
             source_label_multiplicity: Arc::new("".to_owned()),
             source_label_role: Arc::new("".to_owned()),
             source_label_reading: Arc::new("".to_owned()),
+            source_navigability: UmlClassAssociationNavigability::Unspecified,
+            source_aggregation: UmlClassAssociationAggregation::None,
             target,
             target_label_multiplicity: Arc::new("".to_owned()),
             target_label_role: Arc::new("".to_owned()),
             target_label_reading: Arc::new("".to_owned()),
+            target_navigability: UmlClassAssociationNavigability::Unspecified,
+            target_aggregation: UmlClassAssociationAggregation::None,
             comment: Arc::new("".to_owned()),
         }
     }
     pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
         ERef::new(Self {
             uuid: Arc::new(uuid),
-            link_type: self.link_type,
             stereotype: self.stereotype.clone(),
             source: self.source.clone(),
             source_label_multiplicity: self.source_label_multiplicity.clone(),
             source_label_role: self.source_label_role.clone(),
             source_label_reading: self.source_label_reading.clone(),
+            source_navigability: self.source_navigability,
+            source_aggregation: self.source_aggregation,
             target: self.target.clone(),
             target_label_multiplicity: self.target_label_multiplicity.clone(),
             target_label_role: self.target_label_role.clone(),
             target_label_reading: self.target_label_reading.clone(),
+            target_navigability: self.target_navigability,
+            target_aggregation: self.target_aggregation,
             comment: self.comment.clone(),
         })
     }

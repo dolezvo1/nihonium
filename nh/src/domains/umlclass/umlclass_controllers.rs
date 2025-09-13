@@ -1,5 +1,5 @@
 use super::umlclass_models::{
-    UmlClass, UmlClassDiagram, UmlClassElement, UmlClassGeneralization, UmlClassAssociationType, UmlClassPackage, UmlClassCommentLink,
+    UmlClass, UmlClassDiagram, UmlClassElement, UmlClassGeneralization, UmlClassPackage, UmlClassCommentLink,
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
@@ -11,6 +11,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
+use crate::domains::umlclass::umlclass_models::{UmlClassAssociationAggregation, UmlClassAssociationNavigability};
 use super::umlclass_models::{UmlClassAssociation, UmlClassClassifier, UmlClassComment, UmlClassInstance};
 use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
@@ -148,10 +149,11 @@ pub enum UmlClassPropChange {
     SetCoveringChange(bool),
     SetDisjointChange(bool),
 
-    LinkTypeChange(UmlClassAssociationType),
-    MultiplicityChange(/*target?*/ bool, Arc<String>),
-    RoleChange(/*target?*/ bool, Arc<String>),
-    ReadingChange(/*target?*/ bool, Arc<String>),
+    LinkNavigabilityChange(/*target?*/ bool, UmlClassAssociationNavigability),
+    LinkAggregationChange(/*target?*/ bool, UmlClassAssociationAggregation),
+    LinkMultiplicityChange(/*target?*/ bool, Arc<String>),
+    LinkRoleChange(/*target?*/ bool, Arc<String>),
+    LinkReadingChange(/*target?*/ bool, Arc<String>),
     FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
@@ -276,9 +278,9 @@ impl Default for UmlClassPlaceholderViews {
         let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
 
         let (_gen, gen_view) = new_umlclass_generalization(None, class_1, dummy_1);
-        let (_assoc, assoc_view) = new_umlclass_association(UmlClassAssociationType::Association, "", None, class_2.clone(), dummy_2.clone());
-        let (_intreal, intreal_view) = new_umlclass_association(UmlClassAssociationType::InterfaceRealization, "", None, class_2.clone(), dummy_2.clone());
-        let (_usage, usage_view) = new_umlclass_association(UmlClassAssociationType::Usage, "use", None, class_2.clone(), dummy_2.clone());
+        let (_assoc, assoc_view) = new_umlclass_association("", None, class_2.clone(), dummy_2.clone());
+        let (_intreal, intreal_view) = new_umlclass_association("", None, class_2.clone(), dummy_2.clone());
+        let (_usage, usage_view) = new_umlclass_association("use", None, class_2.clone(), dummy_2.clone());
 
         let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
         let comment = (comment, comment_view.into());
@@ -550,25 +552,25 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
             &[
                 (
                     UmlClassToolStage::LinkStart {
-                        association_type: None,
+                        link_stereotype: None,
                     },
                     "Generalization (Set)",
                 ),
                 (
                     UmlClassToolStage::LinkStart {
-                        association_type: Some(UmlClassAssociationType::Association),
+                        link_stereotype: Some(""),
                     },
                     "Association",
                 ),
                 (
                     UmlClassToolStage::LinkStart {
-                        association_type: Some(UmlClassAssociationType::InterfaceRealization),
+                        link_stereotype: Some(""),
                     },
                     "IntReal",
                 ),
                 (
                     UmlClassToolStage::LinkStart {
-                        association_type: Some(UmlClassAssociationType::Usage),
+                        link_stereotype: Some("use"),
                     },
                     "Usage",
                 ),
@@ -710,7 +712,6 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     );
 
     let (realization_cfx, realization_cfx_view) = new_umlclass_association(
-        UmlClassAssociationType::InterfaceRealization,
         "",
         None,
         (class_cfx.clone().into(), class_cfx_view.clone().into()),
@@ -718,7 +719,6 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     );
 
     let (realization_cfy, realization_cfy_view) = new_umlclass_association(
-        UmlClassAssociationType::InterfaceRealization,
         "",
         None,
         (class_cfy.clone().into(), class_cfy_view.clone().into()),
@@ -735,7 +735,6 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     );
 
     let (usage_client_af, usage_client_af_view) = new_umlclass_association(
-        UmlClassAssociationType::Usage,
         "use",
         Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(200.0, 50.0))),
         (class_client.clone().into(), class_client_view.clone().into()),
@@ -753,7 +752,6 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
 
     let (usage_client_producta, usage_client_producta_view) =
         new_umlclass_association(
-            UmlClassAssociationType::Usage,
             "use",
             Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(450.0, 52.0))),
             (class_client.clone().into(), class_client_view.clone().into()),
@@ -771,7 +769,6 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
 
     let (usage_client_productb, usage_client_productb_view) =
         new_umlclass_association(
-            UmlClassAssociationType::Usage,
             "use",
             Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(650.0, 48.0))),
             (class_client.clone().into(), class_client_view.clone().into()),
@@ -827,7 +824,7 @@ pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn D
 pub enum UmlClassToolStage {
     Instance,
     Class,
-    LinkStart { association_type: Option<UmlClassAssociationType> },
+    LinkStart { link_stereotype: Option<&'static str> },
     LinkEnd,
     LinkAddEnding { source: bool },
     PackageStart,
@@ -841,7 +838,7 @@ enum PartialUmlClassElement {
     None,
     Some(UmlClassElementView),
     Link {
-        association_type: Option<UmlClassAssociationType>,
+        link_stereotype: Option<&'static str>,
         source: UmlClassClassifier,
         dest: Option<UmlClassClassifier>,
     },
@@ -926,7 +923,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
                 | UmlClassToolStage::CommentLinkStart
-                | UmlClassToolStage::LinkStart { association_type: None }
+                | UmlClassToolStage::LinkStart { link_stereotype: None }
                 | UmlClassToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
 
                 UmlClassToolStage::LinkStart { .. }
@@ -970,16 +967,12 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
         match &self.result {
             PartialUmlClassElement::Link {
                 source,
-                association_type: link_type,
                 ..
             } => {
                 if let Some(source_view) = q.get_view(&source.uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
-                        match link_type.is_none_or(|l| l.line_type() == canvas::LineType::Dashed) {
-                            true => canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                            false => canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
-                        },
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
                 }
@@ -1078,9 +1071,9 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             }
             UmlClassElement::UmlClassInstance(inner) => {
                 match (self.current_stage, &mut self.result) {
-                    (UmlClassToolStage::LinkStart { association_type: link_type }, PartialUmlClassElement::None) => {
+                    (UmlClassToolStage::LinkStart { link_stereotype }, PartialUmlClassElement::None) => {
                         self.result = PartialUmlClassElement::Link {
-                            association_type: link_type,
+                            link_stereotype,
                             source: inner.into(),
                             dest: None,
                         };
@@ -1106,9 +1099,9 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             }
             UmlClassElement::UmlClass(inner) => {
                 match (self.current_stage, &mut self.result) {
-                    (UmlClassToolStage::LinkStart { association_type: link_type }, PartialUmlClassElement::None) => {
+                    (UmlClassToolStage::LinkStart { link_stereotype }, PartialUmlClassElement::None) => {
                         self.result = PartialUmlClassElement::Link {
-                            association_type: link_type,
+                            link_stereotype,
                             source: inner.into(),
                             dest: None,
                         };
@@ -1190,7 +1183,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 Some((x, esm))
             }
             PartialUmlClassElement::Link {
-                association_type: link_type,
+                link_stereotype,
                 source,
                 dest: Some(dest),
                 ..
@@ -1201,13 +1194,12 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                     into.controller_for(&target_uuid),
                 ) {
                     self.current_stage = UmlClassToolStage::LinkStart {
-                        association_type: *link_type,
+                        link_stereotype: *link_stereotype,
                     };
 
-                    let link_view = if let Some(link_type) = link_type {
+                    let link_view = if let Some(link_stereotype) = link_stereotype {
                         new_umlclass_association(
-                            *link_type,
-                            if *link_type == UmlClassAssociationType::Usage { "use" } else { "" },
+                            *link_stereotype,
                             None,
                             (source.clone(), source_controller),
                             (dest.clone(), dest_controller),
@@ -1808,10 +1800,10 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
             }
             InputEvent::Click(pos) if self.highlight.selected && self.association_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlClassTool {
-                    initial_stage: UmlClassToolStage::LinkStart { association_type: Some(UmlClassAssociationType::Association) },
+                    initial_stage: UmlClassToolStage::LinkStart { link_stereotype: Some("") },
                     current_stage: UmlClassToolStage::LinkEnd,
                     result: PartialUmlClassElement::Link {
-                        association_type: Some(UmlClassAssociationType::Association),
+                        link_stereotype: Some(""),
                         source: self.model.clone().into(),
                         dest: None,
                     },
@@ -2396,10 +2388,10 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             }
             InputEvent::Click(pos) if self.highlight.selected && self.association_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlClassTool {
-                    initial_stage: UmlClassToolStage::LinkStart { association_type: Some(UmlClassAssociationType::Association) },
+                    initial_stage: UmlClassToolStage::LinkStart { link_stereotype: Some("") },
                     current_stage: UmlClassToolStage::LinkEnd,
                     result: PartialUmlClassElement::Link {
-                        association_type: Some(UmlClassAssociationType::Association),
+                        link_stereotype: Some(""),
                         source: self.model.clone().into(),
                         dest: None,
                     },
@@ -2953,7 +2945,6 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
 
 
 fn new_umlclass_association(
-    link_type: UmlClassAssociationType,
     stereotype: &str,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: (UmlClassClassifier, UmlClassElementView),
@@ -2961,7 +2952,6 @@ fn new_umlclass_association(
 ) -> (ERef<UmlClassAssociation>, ERef<AssociationViewT>) {
     let link_model = ERef::new(UmlClassAssociation::new(
         uuid::Uuid::now_v7().into(),
-        link_type,
         stereotype.to_owned(),
         source.0,
         target.0,
@@ -3005,14 +2995,17 @@ struct UmlClassAssociationTemporaries {
     arrow_data: HashMap<ModelUuid, ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
-    link_type_buffer: UmlClassAssociationType,
     stereotype_buffer: String,
     source_multiplicity_buffer: String,
     source_role_buffer: String,
     source_reading_buffer: String,
+    source_navigability_buffer: UmlClassAssociationNavigability,
+    source_aggregation_buffer: UmlClassAssociationAggregation,
     target_multiplicity_buffer: String,
     target_role_buffer: String,
     target_reading_buffer: String,
+    target_navigability_buffer: UmlClassAssociationNavigability,
+    target_aggregation_buffer: UmlClassAssociationAggregation,
     comment_buffer: String,
 }
 
@@ -3056,28 +3049,6 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain> {
-        ui.label("Link type:");
-        egui::ComboBox::from_id_salt("link type")
-            .selected_text(&*self.temporaries.link_type_buffer.name())
-            .show_ui(ui, |ui| {
-                for sv in [
-                    UmlClassAssociationType::Association,
-                    UmlClassAssociationType::Aggregation,
-                    UmlClassAssociationType::Composition,
-                    UmlClassAssociationType::InterfaceRealization,
-                    UmlClassAssociationType::Usage,
-                ] {
-                    if ui
-                        .selectable_value(&mut self.temporaries.link_type_buffer, sv, &*sv.name())
-                        .changed()
-                    {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                            UmlClassPropChange::LinkTypeChange(self.temporaries.link_type_buffer),
-                        ]));
-                    }
-                }
-            });
-
         ui.label("Stereotype:");
         if ui
             .add_sized(
@@ -3103,7 +3074,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::MultiplicityChange(false, Arc::new(
+                UmlClassPropChange::LinkMultiplicityChange(false, Arc::new(
                     self.temporaries.source_multiplicity_buffer.clone(),
                 )),
             ]));
@@ -3117,7 +3088,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::RoleChange(false, Arc::new(
+                UmlClassPropChange::LinkRoleChange(false, Arc::new(
                     self.temporaries.source_role_buffer.clone(),
                 )),
             ]));
@@ -3131,11 +3102,49 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::ReadingChange(false, Arc::new(
+                UmlClassPropChange::LinkReadingChange(false, Arc::new(
                     self.temporaries.source_reading_buffer.clone(),
                 )),
             ]));
         }
+        ui.label("Source navigability:");
+        egui::ComboBox::from_id_salt("source navigability")
+            .selected_text(&*self.temporaries.source_navigability_buffer.name())
+            .show_ui(ui, |ui| {
+                for sv in [
+                    UmlClassAssociationNavigability::Unspecified,
+                    UmlClassAssociationNavigability::NonNavigable,
+                    UmlClassAssociationNavigability::Navigable,
+                ] {
+                    if ui
+                        .selectable_value(&mut self.temporaries.source_navigability_buffer, sv, &*sv.name())
+                        .changed()
+                    {
+                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                            UmlClassPropChange::LinkNavigabilityChange(false, self.temporaries.source_navigability_buffer),
+                        ]));
+                    }
+                }
+            });
+        ui.label("Source aggregation:");
+        egui::ComboBox::from_id_salt("source aggregation")
+            .selected_text(&*self.temporaries.source_aggregation_buffer.name())
+            .show_ui(ui, |ui| {
+                for sv in [
+                    UmlClassAssociationAggregation::None,
+                    UmlClassAssociationAggregation::Shared,
+                    UmlClassAssociationAggregation::Composite,
+                ] {
+                    if ui
+                        .selectable_value(&mut self.temporaries.source_aggregation_buffer, sv, &*sv.name())
+                        .changed()
+                    {
+                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                            UmlClassPropChange::LinkAggregationChange(false, self.temporaries.source_aggregation_buffer),
+                        ]));
+                    }
+                }
+            });
         ui.separator();
 
         ui.label("Target multiplicity:");
@@ -3147,7 +3156,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::MultiplicityChange(true, Arc::new(
+                UmlClassPropChange::LinkMultiplicityChange(true, Arc::new(
                     self.temporaries.target_multiplicity_buffer.clone(),
                 )),
             ]));
@@ -3161,7 +3170,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::RoleChange(true, Arc::new(
+                UmlClassPropChange::LinkRoleChange(true, Arc::new(
                     self.temporaries.target_role_buffer.clone(),
                 )),
             ]));
@@ -3175,11 +3184,49 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
             .changed()
         {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::ReadingChange(true, Arc::new(
+                UmlClassPropChange::LinkReadingChange(true, Arc::new(
                     self.temporaries.target_reading_buffer.clone(),
                 )),
             ]));
         }
+        ui.label("Target navigability:");
+        egui::ComboBox::from_id_salt("target navigability")
+            .selected_text(&*self.temporaries.target_navigability_buffer.name())
+            .show_ui(ui, |ui| {
+                for sv in [
+                    UmlClassAssociationNavigability::Unspecified,
+                    UmlClassAssociationNavigability::NonNavigable,
+                    UmlClassAssociationNavigability::Navigable,
+                ] {
+                    if ui
+                        .selectable_value(&mut self.temporaries.target_navigability_buffer, sv, &*sv.name())
+                        .changed()
+                    {
+                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                            UmlClassPropChange::LinkNavigabilityChange(true, self.temporaries.target_navigability_buffer),
+                        ]));
+                    }
+                }
+            });
+        ui.label("Target aggregation:");
+        egui::ComboBox::from_id_salt("target aggregation")
+            .selected_text(&*self.temporaries.target_aggregation_buffer.name())
+            .show_ui(ui, |ui| {
+                for sv in [
+                    UmlClassAssociationAggregation::None,
+                    UmlClassAssociationAggregation::Shared,
+                    UmlClassAssociationAggregation::Composite,
+                ] {
+                    if ui
+                        .selectable_value(&mut self.temporaries.target_aggregation_buffer, sv, &*sv.name())
+                        .changed()
+                    {
+                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                            UmlClassPropChange::LinkAggregationChange(true, self.temporaries.target_aggregation_buffer),
+                        ]));
+                    }
+                }
+            });
         ui.separator();
 
         if ui.button("Switch source and destination").clicked() {
@@ -3214,13 +3261,6 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
             let mut model = self.model.write();
             for property in properties {
                 match property {
-                    UmlClassPropChange::LinkTypeChange(link_type) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::LinkTypeChange(model.link_type.clone())],
-                        ));
-                        model.link_type = link_type.clone();
-                    }
                     UmlClassPropChange::StereotypeChange(stereotype) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*view_uuid).collect(),
@@ -3230,10 +3270,10 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
                         ));
                         model.stereotype = stereotype.clone();
                     }
-                    UmlClassPropChange::MultiplicityChange(t, multiplicity) => {
+                    UmlClassPropChange::LinkMultiplicityChange(t, multiplicity) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::MultiplicityChange(
+                            vec![UmlClassPropChange::LinkMultiplicityChange(
                                 *t,
                                 if !t {
                                     model.source_label_multiplicity.clone()
@@ -3248,10 +3288,10 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
                             model.target_label_multiplicity = multiplicity.clone();
                         }
                     }
-                    UmlClassPropChange::RoleChange(t, role) => {
+                    UmlClassPropChange::LinkRoleChange(t, role) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::RoleChange(
+                            vec![UmlClassPropChange::LinkRoleChange(
                                 *t,
                                 if !t {
                                     model.source_label_role.clone()
@@ -3266,10 +3306,10 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
                             model.target_label_role = role.clone();
                         }
                     }
-                    UmlClassPropChange::ReadingChange(t, reading) => {
+                    UmlClassPropChange::LinkReadingChange(t, reading) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::RoleChange(
+                            vec![UmlClassPropChange::LinkRoleChange(
                                 *t,
                                 if !t {
                                     model.source_label_reading.clone()
@@ -3282,6 +3322,40 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
                             model.source_label_reading = reading.clone();
                         } else {
                             model.target_label_reading = reading.clone();
+                        }
+                    }
+                    UmlClassPropChange::LinkNavigabilityChange(t, navigability) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![UmlClassPropChange::LinkNavigabilityChange(
+                                *t,
+                                if !*t {
+                                    model.source_navigability
+                                } else {
+                                    model.target_navigability
+                                })],
+                        ));
+                        if !*t {
+                            model.source_navigability = *navigability;
+                        } else {
+                            model.target_navigability = *navigability;
+                        }
+                    }
+                    UmlClassPropChange::LinkAggregationChange(t, aggregation) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![UmlClassPropChange::LinkAggregationChange(
+                                *t,
+                                if !*t {
+                                    model.source_aggregation
+                                } else {
+                                    model.target_aggregation
+                                })],
+                        ));
+                        if !*t {
+                            model.source_aggregation = *aggregation;
+                        } else {
+                            model.target_aggregation = *aggregation;
                         }
                     }
                     UmlClassPropChange::CommentChange(comment) => {
@@ -3299,10 +3373,24 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
+        fn ah(
+            n: UmlClassAssociationNavigability,
+            a: UmlClassAssociationAggregation,
+        ) -> canvas::ArrowheadType {
+            match a {
+                UmlClassAssociationAggregation::None => match n {
+                    UmlClassAssociationNavigability::Unspecified => canvas::ArrowheadType::None,
+                    UmlClassAssociationNavigability::NonNavigable => canvas::ArrowheadType::None,
+                    UmlClassAssociationNavigability::Navigable => canvas::ArrowheadType::OpenTriangle,
+                }
+                UmlClassAssociationAggregation::Shared => canvas::ArrowheadType::EmptyRhombus,
+                UmlClassAssociationAggregation::Composite => canvas::ArrowheadType::FullRhombus,
+            }
+        }
         self.temporaries.arrow_data.clear();
         self.temporaries.arrow_data.insert(*model.source.uuid(), ArrowData {
-            line_type: model.link_type.line_type(),
-            arrowhead_type: model.link_type.source_arrowhead_type(),
+            line_type: canvas::LineType::Solid,
+            arrowhead_type: ah(model.source_navigability, model.source_aggregation),
             multiplicity: if !model.source_label_multiplicity.is_empty() {
                 Some(model.source_label_multiplicity.clone())
             } else {
@@ -3320,8 +3408,8 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
             },
         });
         self.temporaries.arrow_data.insert(*model.target.uuid(), ArrowData {
-            line_type: model.link_type.line_type(),
-            arrowhead_type: model.link_type.destination_arrowhead_type(),
+            line_type: canvas::LineType::Solid,
+            arrowhead_type: ah(model.target_navigability, model.target_aggregation),
             multiplicity: if !model.target_label_multiplicity.is_empty() {
                 Some(model.target_label_multiplicity.clone())
             } else {
@@ -3344,14 +3432,17 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
         self.temporaries.target_uuids.clear();
         self.temporaries.target_uuids.push(*model.target.uuid());
 
-        self.temporaries.link_type_buffer = model.link_type;
         self.temporaries.stereotype_buffer = (*model.stereotype).clone();
         self.temporaries.source_multiplicity_buffer = (*model.source_label_multiplicity).clone();
         self.temporaries.source_role_buffer = (*model.source_label_role).clone();
         self.temporaries.source_reading_buffer = (*model.source_label_reading).clone();
+        self.temporaries.source_navigability_buffer = model.source_navigability;
+        self.temporaries.source_aggregation_buffer = model.source_aggregation;
         self.temporaries.target_multiplicity_buffer = (*model.target_label_multiplicity).clone();
         self.temporaries.target_role_buffer = (*model.target_label_role).clone();
         self.temporaries.target_reading_buffer = (*model.target_label_reading).clone();
+        self.temporaries.target_navigability_buffer = model.target_navigability;
+        self.temporaries.target_aggregation_buffer = model.target_aggregation;
         self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
