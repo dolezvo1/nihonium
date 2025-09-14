@@ -1260,6 +1260,7 @@ impl Default for NHApp {
             (0, crate::domains::rdf::rdf_controllers::demo(1)),
             (1, crate::domains::umlclass::umlclass_controllers::demo(2)),
             (2, crate::domains::democsd::democsd_controllers::demo(3)),
+            (3, crate::domains::ontouml::ontouml_controllers::demo(4)),
         ] {
             let r = view.read();
             let mhview = r.new_hierarchy_view();
@@ -1320,7 +1321,7 @@ impl Default for NHApp {
             tree_view_state: TreeViewState::default(),
             model_hierarchy_views,
             diagram_deserializers,
-            new_diagram_no: 4,
+            new_diagram_no: 5,
             documents,
             custom_tabs: HashMap::new(),
             custom_modal: None,

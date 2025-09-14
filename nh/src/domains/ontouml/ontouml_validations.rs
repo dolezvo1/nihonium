@@ -124,14 +124,20 @@ impl OntoUMLValidationTab {
                     }
                 },
                 UmlClassElement::UmlClassAssociation(inner) => {
-                    fn parse_multiplicity(m: &str) -> Option<(usize, usize)> {
+                    fn parse_multiplicity(m: &str) -> Option<(usize, Option<usize>)> {
                         if m.is_empty() {
                             None
+                        } else if m == "*" {
+                            Some((0, None))
                         } else if let Ok(n) = str::parse::<usize>(m) {
-                            Some((n, n))
+                            Some((n, Some(n)))
                         } else {
                             let (lower, upper) = m.split_once("..")?;
-                            str::parse(lower).and_then(|l| str::parse(upper).map(|u| (l, u))).ok()
+                            if upper == "*" {
+                                str::parse(lower).map(|l| (l, None)).ok()
+                            } else {
+                                str::parse(lower).and_then(|l| str::parse(upper).map(|u| (l, Some(u)))).ok()
+                            }
                         }
                     }
                     let m = inner.read();
@@ -141,10 +147,10 @@ impl OntoUMLValidationTab {
                     if source_multiplicity.zip(target_multiplicity).is_none() {
                         problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("invalid multiplicities") });
                     }
-                    if let Some((lm1, um1)) = source_multiplicity && lm1 > um1 {
+                    if let Some((lm1, um1)) = source_multiplicity && um1.is_some_and(|um| lm1 > um) {
                         problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("invalid multiplicities") });
                     }
-                    if let Some((lm2, um2)) = target_multiplicity && lm2 > um2 {
+                    if let Some((lm2, um2)) = target_multiplicity && um2.is_some_and(|um| lm2 > um) {
                         problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("invalid multiplicities") });
                     }
 
@@ -165,7 +171,7 @@ impl OntoUMLValidationTab {
                         }
                         "characterization" => {
                             if let Some(((lm1, um1), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 != 1 || um1 != 1 || lm2 < 1) {
+                                && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 < 1) {
                                 problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«characterization» must have multiplicities of 1..1 and at least 1..*") });
                             }
                             if let UmlClassClassifier::UmlClass(t) = &m.target {
@@ -181,7 +187,7 @@ impl OntoUMLValidationTab {
                         },
                         "derivation" => {
                             if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 != 1 || um1 != 1 || lm2 != 1 || um2 != 1) {
+                                && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
                                 problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«derivation» must have multiplicities of 1..1") });
                             }
                             // source: Relator
@@ -189,7 +195,7 @@ impl OntoUMLValidationTab {
                         },
                         "structuration" => {
                             if let Some(((_, _), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm2 != 1 || um2 != 1) {
+                                && (lm2 != 1 || um2.is_none_or(|um| um != 1)) {
                                 problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«structuration» must have multiplicities of 1..1 on the target end") });
                             }
 
@@ -215,7 +221,7 @@ impl OntoUMLValidationTab {
                         }
                         "subcollectionOf" => {
                             if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 != 1 || um1 != 1 || lm2 != 1 || um2 != 1) {
+                                && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
                                 problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subcollectionOf» must have multiplicities of 1..1") });
                             }
 
@@ -248,7 +254,7 @@ impl OntoUMLValidationTab {
                         }
                         "containment" => {
                             if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 != 1 || um1 != 1 || lm2 != 1 || um2 != 1) {
+                                && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
                                 problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«containment» must have multiplicities of 1..1") });
                             }
 
@@ -261,7 +267,7 @@ impl OntoUMLValidationTab {
                         }
                         "subquantityOf" => {
                             if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 != 1 || um1 != 1 || lm2 != 1 || um2 != 1) {
+                                && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
                                 problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subquantityOf» must have multiplicities of 1..1") });
                             }
 

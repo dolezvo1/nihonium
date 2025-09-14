@@ -624,6 +624,75 @@ pub fn new(no: u32) -> ERef<dyn DiagramController> {
     )
 }
 
+pub fn demo(no: u32) -> ERef<dyn DiagramController> {
+    let (animal_model, animal_view) = new_umlclass_class("kind", "Animal", false, "", "", egui::Pos2::new(150.0, 200.0));
+    let (human_model, human_view) = new_umlclass_class("subkind", "Human", false, "", "", egui::Pos2::new(150.0, 350.0));
+    let (alive_model, alive_view) = new_umlclass_class("phase", "Alive", false, "", "", egui::Pos2::new(350.0, 160.0));
+    let (dead_model, dead_view) = new_umlclass_class("phase", "Dead", false, "", "", egui::Pos2::new(350.0, 250.0));
+    let (marriage_model, marriage_view) = new_umlclass_class("relator", "Marriage", false, "", "", egui::Pos2::new(350.0, 350.0));
+
+    let (gen_phase_model, gen_phase_view) = new_umlclass_generalization(
+        Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(280.0, 200.0))),
+        (alive_model.clone(), alive_view.clone().into()),
+        (animal_model.clone(), animal_view.clone().into()),
+    );
+    gen_phase_model.write().set_is_covering = true;
+    gen_phase_model.write().set_is_disjoint = true;
+    let gen_uuid = *gen_phase_view.read().uuid();
+    gen_phase_view.write().apply_command(
+        &InsensitiveCommand::AddDependency(gen_uuid, 0, UmlClassElementOrVertex::Element(dead_view.clone().into()), true),
+        &mut Vec::new(),
+        &mut HashSet::new(),
+    );
+
+    let (gen_human_model, gen_human_view) = new_umlclass_generalization(
+        None,
+        (human_model.clone(), human_view.clone().into()),
+        (animal_model.clone(), animal_view.clone().into()),
+    );
+
+    let (mediation_model, mediation_view) = new_umlclass_association(
+        "mediation", None,
+        (human_model.clone(), human_view.clone().into()),
+        (marriage_model.clone(), marriage_view.clone().into()),
+    );
+    mediation_model.write().source_label_multiplicity = Arc::new("2..*".to_owned());
+    mediation_model.write().target_label_multiplicity = Arc::new("1..1".to_owned());
+
+    let view_uuid = uuid::Uuid::now_v7().into();
+    let model_uuid = uuid::Uuid::now_v7().into();
+    let name = format!("Demo OntoUML diagram {}", no);
+    let diagram = ERef::new(UmlClassDiagram::new(
+        model_uuid,
+        name.clone(),
+        vec![
+            animal_model.into(),
+            human_model.into(),
+            alive_model.into(),
+            dead_model.into(),
+            marriage_model.into(),
+            gen_phase_model.into(),
+            gen_human_model.into(),
+            mediation_model.into(),
+        ],
+    ));
+    DiagramControllerGen2::new(
+        Arc::new(view_uuid),
+        name.clone().into(),
+        UmlClassDiagramAdapter::new(diagram.clone()),
+        vec![
+            animal_view.into(),
+            human_view.into(),
+            alive_view.into(),
+            dead_view.into(),
+            marriage_view.into(),
+            gen_phase_view.into(),
+            gen_human_view.into(),
+            mediation_view.into(),
+        ],
+    )
+}
+
 pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
     Ok(d.get_entity::<DiagramControllerGen2<UmlClassDomain, UmlClassDiagramAdapter>>(&uuid)?)
 }

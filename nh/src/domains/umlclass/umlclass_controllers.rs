@@ -818,7 +818,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (gen_model, gen_view) = new_umlclass_generalization(
         Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(200.0, 490.0))),
         (polygon_model.clone(), polygon_view.clone().into()),
-        (shape_model, shape_view.clone().into())
+        (shape_model.clone(), shape_view.clone().into())
     );
     gen_model.write().set_is_covering = true;
     gen_model.write().set_is_disjoint = true;
@@ -831,31 +831,12 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (point_model, point_view) = new_umlclass_class("struct", "Point", false, "-x: float\n-y: float", "", egui::Pos2::new(100.0, 700.0));
     let (point_assoc_model, point_assoc_view) = new_umlclass_association(
         "", None,
-        (polygon_model.into(), polygon_view.clone().into()),
-        (point_model.into(), point_view.clone().into())
+        (polygon_model.clone().into(), polygon_view.clone().into()),
+        (point_model.clone().into(), point_view.clone().into())
     );
     point_assoc_model.write().source_label_multiplicity = Arc::new("0..*".to_owned());
     point_assoc_model.write().target_label_multiplicity = Arc::new("3..*".to_owned());
     point_assoc_model.write().target_navigability = UmlClassAssociationNavigability::Navigable;
-
-    let mut owned_controllers = Vec::<UmlClassElementView>::new();
-    owned_controllers.push(class_af_view.into());
-    owned_controllers.push(class_cfx_view.into());
-    owned_controllers.push(class_cfy_view.into());
-    owned_controllers.push(realization_cfx_view.into());
-    owned_controllers.push(realization_cfy_view.into());
-    owned_controllers.push(class_client_view.into());
-    owned_controllers.push(usage_client_af_view.into());
-    owned_controllers.push(class_producta_view.into());
-    owned_controllers.push(usage_client_producta_view.into());
-    owned_controllers.push(class_productb_view.into());
-    owned_controllers.push(usage_client_productb_view.into());
-    owned_controllers.push(shape_view.into());
-    owned_controllers.push(polygon_view.into());
-    owned_controllers.push(circle_view.into());
-    owned_controllers.push(gen_view.into());
-    owned_controllers.push(point_view.into());
-    owned_controllers.push(point_assoc_view.into());
 
     let diagram_view_uuid = uuid::Uuid::now_v7().into();
     let diagram_model_uuid = uuid::Uuid::now_v7().into();
@@ -875,13 +856,37 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
             usage_client_producta.into(),
             class_productb.into(),
             usage_client_productb.into(),
+            shape_model.into(),
+            polygon_model.into(),
+            circle_model.into(),
+            gen_model.into(),
+            point_model.into(),
+            point_assoc_model.into(),
         ],
     ));
     DiagramControllerGen2::new(
         Arc::new(diagram_view_uuid),
         name.clone().into(),
         UmlClassDiagramAdapter::new(diagram2.clone()),
-        owned_controllers,
+        vec![
+            class_af_view.into(),
+            class_cfx_view.into(),
+            class_cfy_view.into(),
+            realization_cfx_view.into(),
+            realization_cfy_view.into(),
+            class_client_view.into(),
+            usage_client_af_view.into(),
+            class_producta_view.into(),
+            usage_client_producta_view.into(),
+            class_productb_view.into(),
+            usage_client_productb_view.into(),
+            shape_view.into(),
+            polygon_view.into(),
+            circle_view.into(),
+            gen_view.into(),
+            point_view.into(),
+            point_assoc_view.into(),
+        ],
     )
 }
 
