@@ -292,6 +292,9 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
                     new_umlclass_generalization_view(inner.clone(), None, sv, tv)
                 )
             },
+            UmlClassElement::UmlClassDependency(inner) => {
+                unreachable!("not sure yet")
+            }
             UmlClassElement::UmlClassAssociation(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.uuid(), m.target.uuid());
@@ -745,6 +748,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 | UmlClassToolStage::CommentLinkEnd => NON_TARGETTABLE_COLOR,
             },
             Some(UmlClassElement::UmlClassGeneralization(..)
+                | UmlClassElement::UmlClassDependency(..)
                 | UmlClassElement::UmlClassAssociation(..)
                 | UmlClassElement::UmlClassCommentLink(..)) => todo!(),
         }
@@ -896,8 +900,6 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                     _ => {}
                 }
             }
-            UmlClassElement::UmlClassGeneralization(..) => {}
-            UmlClassElement::UmlClassAssociation(..) => {}
             UmlClassElement::UmlClassComment(inner) => {
                 match (self.current_stage, &mut self.result) {
                     (UmlClassToolStage::CommentLinkStart, PartialUmlClassElement::None) => {
@@ -911,7 +913,10 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                     _ => {}
                 }
             }
-            UmlClassElement::UmlClassCommentLink(..) => {}
+            UmlClassElement::UmlClassGeneralization(..)
+            | UmlClassElement::UmlClassDependency(..)
+            | UmlClassElement::UmlClassAssociation(..)
+            | UmlClassElement::UmlClassCommentLink(..) => {}
         }
     }
 

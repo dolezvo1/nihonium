@@ -11,7 +11,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::domains::umlclass::umlclass_models::{UmlClassAssociationAggregation, UmlClassAssociationNavigability};
+use crate::domains::umlclass::umlclass_models::{UmlClassAssociationAggregation, UmlClassAssociationNavigability, UmlClassDependency};
 use super::umlclass_models::{UmlClassAssociation, UmlClassClassifier, UmlClassComment, UmlClassInstance};
 use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
@@ -36,6 +36,7 @@ impl Domain for UmlClassDomain {
 
 type PackageViewT = PackageView<UmlClassDomain, UmlClassPackageAdapter>;
 type GeneralizationViewT = MulticonnectionView<UmlClassDomain, UmlClassGeneralizationAdapter>;
+type DependencyViewT = MulticonnectionView<UmlClassDomain, UmlClassDependencyAdapter>;
 type AssociationViewT = MulticonnectionView<UmlClassDomain, UmlClassAssocationAdapter>;
 type CommentLinkViewT = MulticonnectionView<UmlClassDomain, UmlClassCommentLinkAdapter>;
 
@@ -102,6 +103,15 @@ impl CachingLabelDeriver<UmlClassElement> for UmlClassLabelProvider {
                 };
                 self.cache.insert(*r.uuid, Arc::new(s));
             },
+            UmlClassElement::UmlClassDependency(inner) => {
+                let r = inner.read();
+                let s = if r.stereotype.is_empty() {
+                    "Dependency".to_owned()
+                } else {
+                    format!("Dependency ({})", r.stereotype)
+                };
+                self.cache.insert(*r.uuid, Arc::new(s));
+            }
             UmlClassElement::UmlClassAssociation(inner) => {
                 let r = inner.read();
                 let s = if r.stereotype.is_empty() {
@@ -148,6 +158,8 @@ pub enum UmlClassPropChange {
     SetNameChange(Arc<String>),
     SetCoveringChange(bool),
     SetDisjointChange(bool),
+
+    DependencyArrowOpenChange(bool),
 
     LinkNavigabilityChange(/*target?*/ bool, UmlClassAssociationNavigability),
     LinkAggregationChange(/*target?*/ bool, UmlClassAssociationAggregation),
@@ -236,6 +248,7 @@ pub enum UmlClassElementView {
     Instance(ERef<UmlClassInstanceView>),
     Class(ERef<UmlClassView>),
     Generalization(ERef<GeneralizationViewT>),
+    Dependency(ERef<DependencyViewT>),
     Association(ERef<AssociationViewT>),
     Comment(ERef<UmlClassCommentView>),
     CommentLink(ERef<CommentLinkViewT>),
@@ -279,8 +292,8 @@ impl Default for UmlClassPlaceholderViews {
 
         let (_gen, gen_view) = new_umlclass_generalization(None, class_1, dummy_1);
         let (_assoc, assoc_view) = new_umlclass_association("", None, class_2.clone(), dummy_2.clone());
-        let (_intreal, intreal_view) = new_umlclass_association("", None, class_2.clone(), dummy_2.clone());
-        let (_usage, usage_view) = new_umlclass_association("use", None, class_2.clone(), dummy_2.clone());
+        let (_intreal, intreal_view) = new_umlclass_dependency("", false, None, class_2.clone(), dummy_2.clone());
+        let (_usage, usage_view) = new_umlclass_dependency("use", true, None, class_2.clone(), dummy_2.clone());
 
         let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
         let comment = (comment, comment_view.into());
@@ -366,6 +379,17 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
                     new_umlclass_generalization_view(inner.clone(), None, sv, tv)
                 )
             },
+            UmlClassElement::UmlClassDependency(inner) => {
+                let m = inner.read();
+                let (sid, tid) = (m.source.uuid(), m.target.uuid());
+                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                    (Some(sv), Some(tv)) => (sv, tv),
+                    _ => return Err(HashSet::from([*sid, *tid])),
+                };
+                UmlClassElementView::from(
+                    new_umlclass_dependency_view(inner.clone(), None, source_view, target_view)
+                )
+            }
             UmlClassElement::UmlClassAssociation(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.uuid(), m.target.uuid());
@@ -552,25 +576,33 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
             &[
                 (
                     UmlClassToolStage::LinkStart {
-                        link_stereotype: None,
+                        link_type: LinkType::Generalization,
                     },
                     "Generalization (Set)",
                 ),
                 (
                     UmlClassToolStage::LinkStart {
-                        link_stereotype: Some(""),
+                        link_type: LinkType::Association {
+                            stereotype: "",
+                        },
                     },
                     "Association",
                 ),
                 (
                     UmlClassToolStage::LinkStart {
-                        link_stereotype: Some(""),
+                        link_type: LinkType::Dependency {
+                            target_arrow_open: false,
+                            stereotype: "",
+                        },
                     },
                     "IntReal",
                 ),
                 (
                     UmlClassToolStage::LinkStart {
-                        link_stereotype: Some("use"),
+                        link_type: LinkType::Dependency {
+                            target_arrow_open: true,
+                            stereotype: "use",
+                        },
                     },
                     "Usage",
                 ),
@@ -711,15 +743,17 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         egui::Pos2::new(300.0, 250.0),
     );
 
-    let (realization_cfx, realization_cfx_view) = new_umlclass_association(
+    let (realization_cfx, realization_cfx_view) = new_umlclass_dependency(
         "",
+        false,
         None,
         (class_cfx.clone().into(), class_cfx_view.clone().into()),
         (class_af.clone().into(), class_af_view.clone().into()),
     );
 
-    let (realization_cfy, realization_cfy_view) = new_umlclass_association(
+    let (realization_cfy, realization_cfy_view) = new_umlclass_dependency(
         "",
+        false,
         None,
         (class_cfy.clone().into(), class_cfy_view.clone().into()),
         (class_af.clone().into(), class_af_view.clone().into()),
@@ -734,8 +768,9 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         egui::Pos2::new(300.0, 50.0),
     );
 
-    let (usage_client_af, usage_client_af_view) = new_umlclass_association(
+    let (usage_client_af, usage_client_af_view) = new_umlclass_dependency(
         "use",
+        true,
         Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(200.0, 50.0))),
         (class_client.clone().into(), class_client_view.clone().into()),
         (class_af.clone().into(), class_af_view.clone().into()),
@@ -751,8 +786,9 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     );
 
     let (usage_client_producta, usage_client_producta_view) =
-        new_umlclass_association(
+        new_umlclass_dependency(
             "use",
+            true,
             Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(450.0, 52.0))),
             (class_client.clone().into(), class_client_view.clone().into()),
             (class_producta.clone().into(), class_producta_view.clone().into()),
@@ -768,12 +804,39 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     );
 
     let (usage_client_productb, usage_client_productb_view) =
-        new_umlclass_association(
+        new_umlclass_dependency(
             "use",
+            true,
             Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(650.0, 48.0))),
             (class_client.clone().into(), class_client_view.clone().into()),
             (class_productb.clone().into(), class_productb_view.clone().into()),
         );
+
+    let (shape_model, shape_view) = new_umlclass_class("entity", "Shape", true, "", "+draw()\n+move()", egui::Pos2::new(200.0, 400.0));
+    let (polygon_model, polygon_view) = new_umlclass_class("entity", "Polygon", false, "", "", egui::Pos2::new(100.0, 550.0));
+    let (circle_model, circle_view) = new_umlclass_class("entity", "Circle", false, "-radius: float\n-center: Point", "", egui::Pos2::new(300.0, 550.0));
+    let (gen_model, gen_view) = new_umlclass_generalization(
+        Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(200.0, 490.0))),
+        (polygon_model.clone(), polygon_view.clone().into()),
+        (shape_model, shape_view.clone().into())
+    );
+    gen_model.write().set_is_covering = true;
+    gen_model.write().set_is_disjoint = true;
+    let gen_uuid = *gen_view.read().uuid();
+    gen_view.write().apply_command(
+        &InsensitiveCommand::AddDependency(gen_uuid, 0, UmlClassElementOrVertex::Element(circle_view.clone().into()), true),
+        &mut Vec::new(),
+        &mut HashSet::new(),
+    );
+    let (point_model, point_view) = new_umlclass_class("struct", "Point", false, "-x: float\n-y: float", "", egui::Pos2::new(100.0, 700.0));
+    let (point_assoc_model, point_assoc_view) = new_umlclass_association(
+        "", None,
+        (polygon_model.into(), polygon_view.clone().into()),
+        (point_model.into(), point_view.clone().into())
+    );
+    point_assoc_model.write().source_label_multiplicity = Arc::new("0..*".to_owned());
+    point_assoc_model.write().target_label_multiplicity = Arc::new("3..*".to_owned());
+    point_assoc_model.write().target_navigability = UmlClassAssociationNavigability::Navigable;
 
     let mut owned_controllers = Vec::<UmlClassElementView>::new();
     owned_controllers.push(class_af_view.into());
@@ -787,6 +850,12 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     owned_controllers.push(usage_client_producta_view.into());
     owned_controllers.push(class_productb_view.into());
     owned_controllers.push(usage_client_productb_view.into());
+    owned_controllers.push(shape_view.into());
+    owned_controllers.push(polygon_view.into());
+    owned_controllers.push(circle_view.into());
+    owned_controllers.push(gen_view.into());
+    owned_controllers.push(point_view.into());
+    owned_controllers.push(point_assoc_view.into());
 
     let diagram_view_uuid = uuid::Uuid::now_v7().into();
     let diagram_model_uuid = uuid::Uuid::now_v7().into();
@@ -821,10 +890,22 @@ pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn D
 }
 
 #[derive(Clone, Copy, PartialEq)]
+pub enum LinkType {
+    Generalization,
+    Dependency {
+        target_arrow_open: bool,
+        stereotype: &'static str,
+    },
+    Association {
+        stereotype: &'static str,
+    },
+}
+
+#[derive(Clone, Copy, PartialEq)]
 pub enum UmlClassToolStage {
     Instance,
     Class,
-    LinkStart { link_stereotype: Option<&'static str> },
+    LinkStart { link_type: LinkType },
     LinkEnd,
     LinkAddEnding { source: bool },
     PackageStart,
@@ -838,7 +919,7 @@ enum PartialUmlClassElement {
     None,
     Some(UmlClassElementView),
     Link {
-        link_stereotype: Option<&'static str>,
+        link_type: LinkType,
         source: UmlClassClassifier,
         dest: Option<UmlClassClassifier>,
     },
@@ -923,7 +1004,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
                 | UmlClassToolStage::CommentLinkStart
-                | UmlClassToolStage::LinkStart { link_stereotype: None }
+                | UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }
                 | UmlClassToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
 
                 UmlClassToolStage::LinkStart { .. }
@@ -959,6 +1040,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 | UmlClassToolStage::CommentLinkEnd => NON_TARGETTABLE_COLOR,
             },
             Some(UmlClassElement::UmlClassGeneralization(..)
+                | UmlClassElement::UmlClassDependency(..)
                 | UmlClassElement::UmlClassAssociation(..)
                 | UmlClassElement::UmlClassCommentLink(..)) => todo!(),
         }
@@ -1071,9 +1153,9 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             }
             UmlClassElement::UmlClassInstance(inner) => {
                 match (self.current_stage, &mut self.result) {
-                    (UmlClassToolStage::LinkStart { link_stereotype }, PartialUmlClassElement::None) => {
+                    (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None) => {
                         self.result = PartialUmlClassElement::Link {
-                            link_stereotype,
+                            link_type,
                             source: inner.into(),
                             dest: None,
                         };
@@ -1099,9 +1181,9 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             }
             UmlClassElement::UmlClass(inner) => {
                 match (self.current_stage, &mut self.result) {
-                    (UmlClassToolStage::LinkStart { link_stereotype }, PartialUmlClassElement::None) => {
+                    (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None) => {
                         self.result = PartialUmlClassElement::Link {
-                            link_stereotype,
+                            link_type,
                             source: inner.into(),
                             dest: None,
                         };
@@ -1135,8 +1217,6 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                     _ => {}
                 }
             }
-            UmlClassElement::UmlClassGeneralization(..)
-            | UmlClassElement::UmlClassAssociation(..)=> {}
             UmlClassElement::UmlClassComment(inner) => {
                 match (self.current_stage, &mut self.result) {
                     (UmlClassToolStage::CommentLinkStart, PartialUmlClassElement::None) => {
@@ -1150,7 +1230,10 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                     _ => {}
                 }
             }
-            UmlClassElement::UmlClassCommentLink(..) => {}
+            UmlClassElement::UmlClassGeneralization(..)
+            | UmlClassElement::UmlClassDependency(..)
+            | UmlClassElement::UmlClassAssociation(..)
+            | UmlClassElement::UmlClassCommentLink(..) => {}
         }
     }
 
@@ -1183,7 +1266,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 Some((x, esm))
             }
             PartialUmlClassElement::Link {
-                link_stereotype,
+                link_type,
                 source,
                 dest: Some(dest),
                 ..
@@ -1194,24 +1277,38 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                     into.controller_for(&target_uuid),
                 ) {
                     self.current_stage = UmlClassToolStage::LinkStart {
-                        link_stereotype: *link_stereotype,
+                        link_type: *link_type,
                     };
 
-                    let link_view = if let Some(link_stereotype) = link_stereotype {
-                        new_umlclass_association(
-                            *link_stereotype,
-                            None,
-                            (source.clone(), source_controller),
-                            (dest.clone(), dest_controller),
-                        ).1.into()
-                    } else if let (UmlClassClassifier::UmlClass(source), UmlClassClassifier::UmlClass(dest)) = (source, dest) {
-                        new_umlclass_generalization(
-                            None,
-                            (source.clone(), source_controller),
-                            (dest.clone(), dest_controller),
-                        ).1.into()
-                    } else {
-                        return None;
+                    let link_view = match link_type {
+                        LinkType::Generalization => {
+                            if let (UmlClassClassifier::UmlClass(source), UmlClassClassifier::UmlClass(dest)) = (source, dest) {
+                                new_umlclass_generalization(
+                                    None,
+                                    (source.clone(), source_controller),
+                                    (dest.clone(), dest_controller),
+                                ).1.into()
+                            } else {
+                                return None;
+                            }
+                        },
+                        LinkType::Dependency { target_arrow_open, stereotype } => {
+                            new_umlclass_dependency(
+                                *stereotype,
+                                *target_arrow_open,
+                                None,
+                                (source.clone(), source_controller),
+                                (dest.clone(), dest_controller),
+                            ).1.into()
+                        },
+                        LinkType::Association { stereotype } => {
+                            new_umlclass_association(
+                                *stereotype,
+                                None,
+                                (source.clone(), source_controller),
+                                (dest.clone(), dest_controller),
+                            ).1.into()
+                        },
                     };
 
                     self.result = PartialUmlClassElement::None;
@@ -1800,10 +1897,10 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
             }
             InputEvent::Click(pos) if self.highlight.selected && self.association_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlClassTool {
-                    initial_stage: UmlClassToolStage::LinkStart { link_stereotype: Some("") },
+                    initial_stage: UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } },
                     current_stage: UmlClassToolStage::LinkEnd,
                     result: PartialUmlClassElement::Link {
-                        link_stereotype: Some(""),
+                        link_type: LinkType::Association { stereotype: "" },
                         source: self.model.clone().into(),
                         dest: None,
                     },
@@ -2388,10 +2485,10 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             }
             InputEvent::Click(pos) if self.highlight.selected && self.association_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlClassTool {
-                    initial_stage: UmlClassToolStage::LinkStart { link_stereotype: Some("") },
+                    initial_stage: UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } },
                     current_stage: UmlClassToolStage::LinkEnd,
                     result: PartialUmlClassElement::Link {
-                        link_stereotype: Some(""),
+                        link_type: LinkType::Association { stereotype: "" },
                         source: self.model.clone().into(),
                         dest: None,
                     },
@@ -2939,6 +3036,275 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
             if let Some(UmlClassElement::UmlClass(new_target)) = m.get(&tid) {
                 *e = new_target.clone();
             }
+        }
+    }
+}
+
+
+fn new_umlclass_dependency(
+    stereotype: &str,
+    target_arrow_open: bool,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: (UmlClassClassifier, UmlClassElementView),
+    target: (UmlClassClassifier, UmlClassElementView),
+) -> (ERef<UmlClassDependency>, ERef<DependencyViewT>) {
+    let link_model = ERef::new(UmlClassDependency::new(
+        uuid::Uuid::now_v7().into(),
+        stereotype.to_owned(),
+        source.0,
+        target.0,
+        target_arrow_open,
+    ));
+    let link_view = new_umlclass_dependency_view(link_model.clone(), center_point, source.1, target.1);
+    (link_model, link_view)
+}
+fn new_umlclass_dependency_view(
+    model: ERef<UmlClassDependency>,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: UmlClassElementView,
+    target: UmlClassElementView,
+) -> ERef<DependencyViewT> {
+    let m = model.read();
+
+    let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.source.uuid()), *m.target.uuid(), target.min_shape(), center_point);
+
+    MulticonnectionView::new(
+        Arc::new(uuid::Uuid::now_v7().into()),
+        UmlClassDependencyAdapter {
+            model: model.clone(),
+            temporaries: Default::default(),
+        },
+        vec![Ending::new_p(source, sp[0].clone())],
+        vec![Ending::new_p(target, tp[0].clone())],
+        mp,
+    )
+}
+
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct UmlClassDependencyAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<UmlClassDependency>,
+    #[serde(skip_serializing)]
+    #[nh_context_serde(skip_and_default)]
+    temporaries: UmlClassDependencyTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct UmlClassDependencyTemporaries {
+    arrow_data: HashMap<ModelUuid, ArrowData>,
+    source_uuids: Vec<ModelUuid>,
+    target_uuids: Vec<ModelUuid>,
+    stereotype_buffer: String,
+    target_arrow_open_buffer: bool,
+    comment_buffer: String,
+}
+
+impl MulticonnectionAdapter<UmlClassDomain> for UmlClassDependencyAdapter {
+    fn model(&self) -> UmlClassElement {
+        self.model.clone().into()
+    }
+
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+
+    fn midpoint_label(&self) -> Option<Arc<String>> {
+        let r = self.model.read();
+        if r.stereotype.is_empty() {
+            None
+        } else {
+            Some(format!("«{}»", r.stereotype).into())
+        }
+    }
+
+    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+        &self.temporaries.arrow_data
+    }
+
+    fn source_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.source_uuids
+    }
+
+    fn target_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.target_uuids
+    }
+
+    fn flip_multiconnection(&mut self) -> Result<(), ()> {
+        self.model.write().flip_multiconnection();
+        Ok(())
+    }
+
+    fn show_properties(
+        &mut self,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
+    ) -> PropertiesStatus<UmlClassDomain> {
+        ui.label("Stereotype:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::singleline(&mut self.temporaries.stereotype_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::StereotypeChange(Arc::new(
+                    self.temporaries.stereotype_buffer.clone(),
+                )),
+            ]));
+        }
+        ui.separator();
+
+        ui.label("Target arrow open:");
+        if ui.checkbox(&mut self.temporaries.target_arrow_open_buffer, "").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::DependencyArrowOpenChange(
+                    self.temporaries.target_arrow_open_buffer,
+                ),
+            ]));
+        }
+        ui.separator();
+
+        if ui.button("Switch source and destination").clicked() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::FlipMulticonnection(FlipMulticonnection {}),
+            ]));
+        }
+        ui.separator();
+
+        ui.label("Comment:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+            ]));
+        }
+
+        PropertiesStatus::Shown
+    }
+    fn apply_change(
+        &self,
+        view_uuid: &ViewUuid,
+        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            let mut model = self.model.write();
+            for property in properties {
+                match property {
+                    UmlClassPropChange::StereotypeChange(stereotype) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![UmlClassPropChange::StereotypeChange(
+                                model.stereotype.clone(),
+                            )],
+                        ));
+                        model.stereotype = stereotype.clone();
+                    }
+                    UmlClassPropChange::DependencyArrowOpenChange(open) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![UmlClassPropChange::DependencyArrowOpenChange(
+                                model.target_arrow_open,
+                            )],
+                        ));
+                        model.target_arrow_open = *open;
+                    }
+                    UmlClassPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![UmlClassPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        model.comment = comment.clone();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+
+        fn ah(
+            n: UmlClassAssociationNavigability,
+            a: UmlClassAssociationAggregation,
+        ) -> canvas::ArrowheadType {
+            match a {
+                UmlClassAssociationAggregation::None => match n {
+                    UmlClassAssociationNavigability::Unspecified => canvas::ArrowheadType::None,
+                    UmlClassAssociationNavigability::NonNavigable => canvas::ArrowheadType::None,
+                    UmlClassAssociationNavigability::Navigable => canvas::ArrowheadType::OpenTriangle,
+                }
+                UmlClassAssociationAggregation::Shared => canvas::ArrowheadType::EmptyRhombus,
+                UmlClassAssociationAggregation::Composite => canvas::ArrowheadType::FullRhombus,
+            }
+        }
+        self.temporaries.arrow_data.clear();
+        self.temporaries.arrow_data.insert(
+            *model.source.uuid(),
+            ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::None)
+        );
+        self.temporaries.arrow_data.insert(
+            *model.target.uuid(),
+            ArrowData::new_labelless(
+                canvas::LineType::Dashed,
+                if model.target_arrow_open {
+                    canvas::ArrowheadType::OpenTriangle
+                } else {
+                    canvas::ArrowheadType::EmptyTriangle
+                }
+            )
+        );
+
+        self.temporaries.source_uuids.clear();
+        self.temporaries.source_uuids.push(*model.source.uuid());
+        self.temporaries.target_uuids.clear();
+        self.temporaries.target_uuids.push(*model.target.uuid());
+
+        self.temporaries.stereotype_buffer = (*model.stereotype).clone();
+        self.temporaries.target_arrow_open_buffer = model.target_arrow_open;
+        self.temporaries.comment_buffer = (*model.comment).clone();
+    }
+
+    fn deep_copy_init(
+        &self,
+        new_uuid: ModelUuid,
+        m: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> Self where Self: Sized {
+        let old_model = self.model.read();
+
+        let model = if let Some(UmlClassElement::UmlClassDependency(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(new_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        Self {
+            model,
+            temporaries: self.temporaries.clone(),
+        }
+    }
+
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<ModelUuid, UmlClassElement>,
+    ) {
+        let mut model = self.model.write();
+
+        let source_uuid = *model.source.uuid();
+        if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.as_classifier()) {
+            model.source = new_source;
+        }
+        let target_uuid = *model.target.uuid();
+        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.as_classifier()) {
+            model.target = new_target;
         }
     }
 }
