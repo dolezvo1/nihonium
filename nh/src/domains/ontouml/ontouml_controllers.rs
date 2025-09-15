@@ -1697,7 +1697,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
                 if let Some(tool) = tool {
                     tool.add_element(self.model());
                 } else {
-                    if !ehc.modifiers.command {
+                    if !ehc.modifiers.is_superset_of(ehc.modifier_settings.hold_selection) {
                         self.highlight.selected = true;
                     } else {
                         self.highlight.selected = !self.highlight.selected;
@@ -3048,7 +3048,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
                 if let Some(tool) = tool {
                     tool.add_element(self.model());
                 } else {
-                    if !ehc.modifiers.command {
+                    if !ehc.modifiers.is_superset_of(ehc.modifier_settings.hold_selection) {
                         self.highlight.selected = true;
                     } else {
                         self.highlight.selected = !self.highlight.selected;

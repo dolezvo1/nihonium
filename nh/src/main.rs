@@ -24,7 +24,7 @@ mod domains;
 
 use crate::common::eref::ERef;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
-use crate::common::controller::{ColorBundle, DiagramCommand, DiagramController};
+use crate::common::controller::{ColorBundle, DiagramCommand, DiagramController, ModifierKeys, ModifierSettings};
 use crate::common::project_serde::{FSRawReader, FSRawWriter, FSReadAbstraction, FSWriteAbstraction, ZipFSReader, ZipFSWriter};
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
@@ -154,6 +154,7 @@ struct NHContext {
     selected_language: usize,
     languages_order: Vec<unic_langid::LanguageIdentifier>,
     shortcut_top_order: Vec<(SimpleProjectCommand, egui::KeyboardShortcut)>,
+    modifier_settings: ModifierSettings,
     drawing_context: GlobalDrawingContext,
 
     undo_stack: Vec<(Arc<String>, ViewUuid)>,
@@ -1131,7 +1132,31 @@ impl NHContext {
             }
         });
 
-        ui.collapsing("Keyboard shortcuts", |ui| {
+        ui.collapsing("Keys and Shortcuts", |ui| {
+            ui.label("Modifiers");
+            let mut modifier_settings = self.modifier_settings;
+            egui::Grid::new("modifiers grid").show(ui, |ui| {
+                ui.label("Modifiers");
+                ui.label("Alt");
+                ui.label("Ctrl");
+                ui.label("Shift");
+                ui.end_row();
+
+                fn row(ui: &mut Ui, name: &str, m: &mut ModifierKeys) {
+                    ui.label(name);
+                    ui.checkbox(&mut m.alt, "");
+                    ui.checkbox(&mut m.command, "");
+                    ui.checkbox(&mut m.shift, "");
+                    ui.end_row();
+                }
+
+                row(ui, "Hold selection", &mut modifier_settings.hold_selection);
+                row(ui, "Alternative Tool Mode", &mut modifier_settings.alternative_tool_mode);
+            });
+            self.modifier_settings = modifier_settings;
+            ui.separator();
+
+            ui.label("Shortcuts");
             egui::Grid::new("shortcut editor grid").show(ui, |ui| {
                 for (l, c) in &[("Swap top languages:", SimpleProjectCommand::SwapTopLanguages),
                                 ("Save project:", SimpleProjectCommand::SaveProject),
@@ -1186,7 +1211,7 @@ impl NHContext {
         let mut undo_accumulator = Vec::<Arc<String>>::new();
         let mut affected_models = HashSet::new();
         diagram_controller.handle_input(
-            ui, &response,
+            ui, &response, self.modifier_settings,
             &mut self.custom_modal, &mut undo_accumulator, &mut affected_models,
         );
 
@@ -1333,6 +1358,10 @@ impl Default for NHApp {
             selected_diagram_shades,
             selected_language: 0,
             languages_order,
+            modifier_settings: ModifierSettings {
+                hold_selection: ModifierKeys::COMMAND,
+                alternative_tool_mode: ModifierKeys::ALT,
+            },
             drawing_context: GlobalDrawingContext {
                 global_colors: ColorBundle::new(),
                 fluent_bundle,

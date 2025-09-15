@@ -373,7 +373,7 @@ where
 
                         if let Some((new_e, esm)) = tool.try_construct_view(self) {
                             commands.push(InsensitiveCommand::AddElement(*self.uuid, new_e.into(), true).into());
-                            if !ehc.modifiers.alt {
+                            if !ehc.modifiers.is_superset_of(ehc.modifier_settings.alternative_tool_mode) {
                                 *element_setup_modal = esm;
                             }
                         }
@@ -381,7 +381,7 @@ where
                         EventHandlingStatus::HandledByContainer
                     } else if let Some((k, status)) = k_status {
                         if status == EventHandlingStatus::HandledByElement {
-                            if !ehc.modifiers.command {
+                            if !ehc.modifiers.is_superset_of(ehc.modifier_settings.hold_selection) {
                                 commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
                                 commands.push(InsensitiveCommand::HighlightSpecific(
                                     std::iter::once(k).collect(),

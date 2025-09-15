@@ -538,6 +538,7 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
+        modifier_settings: ModifierSettings,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
@@ -612,6 +613,12 @@ pub enum TargettingStatus {
     Drawn,
 }
 
+#[derive(Clone, Copy)]
+pub struct ModifierSettings {
+    pub hold_selection: ModifierKeys,
+    pub alternative_tool_mode: ModifierKeys,
+}
+
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct ModifierKeys {
     pub alt: bool,
@@ -627,18 +634,15 @@ impl ModifierKeys {
     };
     pub const ALT: Self = Self {
         alt: true,
-        command: false,
-        shift: false,
+        ..Self::NONE
     };
     pub const COMMAND: Self = Self {
-        alt: false,
         command: true,
-        shift: false,
+        ..Self::NONE
     };
     pub const SHIFT: Self = Self {
-        alt: false,
-        command: false,
         shift: true,
+        ..Self::NONE
     };
 
     pub fn from_egui(source: &egui::Modifiers) -> Self {
@@ -647,6 +651,12 @@ impl ModifierKeys {
             command: source.command,
             shift: source.shift,
         }
+    }
+
+    pub fn is_superset_of(&self, other: Self) -> bool {
+        (self.alt || !other.alt)
+        && (self.command || !other.command)
+        && (self.shift || !other.shift)
     }
 }
 
@@ -940,6 +950,7 @@ impl From<bool> for SelectionStatus {
 }
 
 pub struct EventHandlingContext<'a> {
+    pub modifier_settings: ModifierSettings,
     pub modifiers: ModifierKeys,
     pub ui_scale: f32,
     pub all_elements: &'a HashMap<ViewUuid, SelectionStatus>,
@@ -1220,6 +1231,7 @@ impl<
     fn handle_event(
         &mut self,
         event: InputEvent,
+        modifier_settings: ModifierSettings,
         modifiers: ModifierKeys,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         undo_accumulator: &mut Vec<Arc<String>>,
@@ -1238,6 +1250,7 @@ impl<
         }
 
         let ehc = EventHandlingContext {
+            modifier_settings,
             modifiers,
             ui_scale: self.temporaries.camera_scale,
             all_elements: &self.temporaries.flattened_views_status,
@@ -1250,7 +1263,7 @@ impl<
                 let k = v.uuid();
                 Some((*k, match r {
                     EventHandlingStatus::HandledByElement if matches!(event, InputEvent::Click(_)) => {
-                        if !modifiers.command {
+                        if !ehc.modifiers.is_superset_of(ehc.modifier_settings.hold_selection) {
                             commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
                             commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(*k).collect(),
@@ -1320,7 +1333,7 @@ impl<
                         DomainT::AddCommandElementT::from(new_e),
                         true,
                     ).into());
-                    if !modifiers.alt {
+                    if !ehc.modifiers.is_superset_of(ehc.modifier_settings.alternative_tool_mode) {
                         *element_setup_modal = esm;
                     }
                     handled = true;
@@ -1718,6 +1731,7 @@ impl<
         &mut self,
         ui: &mut egui::Ui,
         response: &egui::Response,
+        modifier_settings: ModifierSettings,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
@@ -1734,7 +1748,7 @@ impl<
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if *pressed && *button == egui::PointerButton::Primary => {
                     self.temporaries.last_unhandled_mouse_pos = Some(pos_to_abs!(*pos));
-                    self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifiers, element_setup_modal, undo_accumulator, affected_models);
+                    self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifier_settings, modifiers, element_setup_modal, undo_accumulator, affected_models);
                 },
                 _ => {}
             })
@@ -1742,19 +1756,19 @@ impl<
         if response.dragged_by(egui::PointerButton::Primary) {
             if let Some(old_pos) = self.temporaries.last_unhandled_mouse_pos {
                 let delta = response.drag_delta() / self.temporaries.camera_scale;
-                self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifiers, element_setup_modal, undo_accumulator, affected_models);
+                self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifier_settings, modifiers, element_setup_modal, undo_accumulator, affected_models);
                 self.temporaries.last_unhandled_mouse_pos = Some(old_pos + delta);
             }
         }
         if response.clicked_by(egui::PointerButton::Primary) {
             if let Some(pos) = ui.ctx().pointer_interact_pos() {
-                self.handle_event(InputEvent::Click(pos_to_abs!(pos)), modifiers, element_setup_modal, undo_accumulator, affected_models);
+                self.handle_event(InputEvent::Click(pos_to_abs!(pos)), modifier_settings, modifiers, element_setup_modal, undo_accumulator, affected_models);
             }
         }
         ui.input(|is| is.events.iter()
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if !*pressed && *button == egui::PointerButton::Primary => {
-                    self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifiers, element_setup_modal, undo_accumulator, affected_models);
+                    self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifier_settings, modifiers, element_setup_modal, undo_accumulator, affected_models);
                     self.temporaries.last_unhandled_mouse_pos = None;
                 },
                 _ => {}
