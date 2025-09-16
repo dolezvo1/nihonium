@@ -129,6 +129,7 @@ impl From<SimpleProjectCommand> for ProjectCommand {
 pub enum SimpleProjectCommand {
     FocusedDiagramCommand(DiagramCommand),
     SpecificDiagramCommand(ViewUuid, DiagramCommand),
+    DeleteSelectedElements(Option<DeleteKind>),
     OpenProject(bool),
     SaveProject,
     SaveProjectAs,
@@ -150,7 +151,7 @@ pub enum DiagramCommand {
     UndoImmediate,
     RedoImmediate,
     InvertSelection,
-    DeleteSelectedElements,
+    DeleteSelectedElements(/*including_models:*/ bool),
     CutSelectedElements,
     CopySelectedElements,
     PasteClipboardElements,
@@ -613,11 +614,59 @@ pub enum TargettingStatus {
     Drawn,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum DeleteKind {
+    DeleteView,
+    DeleteModelIfOnlyView,
+    DeleteAll,
+}
+
 #[derive(Clone, Copy)]
 pub struct ModifierSettings {
-    pub hold_selection: ModifierKeys,
-    pub alternative_tool_mode: ModifierKeys,
+    pub default_delete_kind: Option<DeleteKind>,
+    pub delete_view_modifier: Option<ModifierKeys>,
+    pub delete_model_if_modifier: Option<ModifierKeys>,
+    pub delete_all_modifier: Option<ModifierKeys>,
+    sorted_delete_kinds: [(Option<ModifierKeys>, DeleteKind); 3],
+
+    pub hold_selection: Option<ModifierKeys>,
+    pub alternative_tool_mode: Option<ModifierKeys>,
 }
+
+impl ModifierSettings {
+    pub fn sort_delete_kinds(&mut self) {
+        self.sorted_delete_kinds[0] = (self.delete_view_modifier, DeleteKind::DeleteView);
+        self.sorted_delete_kinds[1] = (self.delete_model_if_modifier, DeleteKind::DeleteModelIfOnlyView);
+        self.sorted_delete_kinds[2] = (self.delete_all_modifier, DeleteKind::DeleteAll);
+        self.sorted_delete_kinds.sort_by_key(|e| e.0.map(|e| e.set_bits()).unwrap_or(0));
+    }
+    pub fn get_delete_kind(&self, modifiers: ModifierKeys) -> Option<DeleteKind> {
+        self.sorted_delete_kinds.iter()
+            .find(|e| e.0.is_some_and(|e| modifiers.is_superset_of(e)))
+            .map(|e| e.1)
+            .or(self.default_delete_kind)
+    }
+}
+
+impl Default for ModifierSettings {
+    fn default() -> Self {
+        Self {
+            default_delete_kind: None,
+            delete_view_modifier: None,
+            delete_model_if_modifier: None,
+            delete_all_modifier: Some(ModifierKeys::SHIFT),
+            sorted_delete_kinds: [
+                (Some(ModifierKeys::SHIFT), DeleteKind::DeleteAll),
+                (None, DeleteKind::DeleteView),
+                (None, DeleteKind::DeleteModelIfOnlyView),
+            ],
+
+            hold_selection: Some(ModifierKeys::COMMAND),
+            alternative_tool_mode: Some(ModifierKeys::ALT),
+        }
+    }
+}
+
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct ModifierKeys {
@@ -651,6 +700,12 @@ impl ModifierKeys {
             command: source.command,
             shift: source.shift,
         }
+    }
+
+    pub fn set_bits(&self) -> u8 {
+        (if self.alt { 1 } else { 0 })
+        + (if self.command { 1 } else { 0 })
+        + (if self.shift { 1 } else { 0 })
     }
 
     pub fn is_superset_of(&self, other: Self) -> bool {
@@ -1263,7 +1318,7 @@ impl<
                 let k = v.uuid();
                 Some((*k, match r {
                     EventHandlingStatus::HandledByElement if matches!(event, InputEvent::Click(_)) => {
-                        if !ehc.modifiers.is_superset_of(ehc.modifier_settings.hold_selection) {
+                        if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
                             commands.push(InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(*k).collect(),
@@ -1333,7 +1388,7 @@ impl<
                         DomainT::AddCommandElementT::from(new_e),
                         true,
                     ).into());
-                    if !ehc.modifiers.is_superset_of(ehc.modifier_settings.alternative_tool_mode) {
+                    if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         *element_setup_modal = esm;
                     }
                     handled = true;
@@ -2093,7 +2148,7 @@ impl<
                     ).into()
                 ], &mut vec![], true, false, affected_models);
             }
-            DiagramCommand::DeleteSelectedElements
+            DiagramCommand::DeleteSelectedElements(_)
             | DiagramCommand::CutSelectedElements
             | DiagramCommand::PasteClipboardElements
             | DiagramCommand::ArrangeSelected(_) => {
@@ -2104,7 +2159,7 @@ impl<
                 let mut undo = vec![];
                 self.apply_commands(vec![
                     match command {
-                        DiagramCommand::DeleteSelectedElements => SensitiveCommand::DeleteSelectedElements(true),
+                        DiagramCommand::DeleteSelectedElements(b) => SensitiveCommand::DeleteSelectedElements(b),
                         DiagramCommand::CutSelectedElements => SensitiveCommand::CutSelectedElements,
                         DiagramCommand::PasteClipboardElements => SensitiveCommand::PasteClipboardElements,
                         DiagramCommand::ArrangeSelected(arr) => SensitiveCommand::ArrangeSelected(arr),

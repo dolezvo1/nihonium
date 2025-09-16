@@ -2,8 +2,13 @@
 nh-generic-yes = Ano
 nh-generic-no = Ne
 nh-generic-cancel = Zrušit
+nh-generic-dontaskagain = Znovu se neptej
 nh-generic-unsavedchanges-warning = Současný projekt má neuložené změny.
 nh-generic-unsavedchanges-saveandproceed = Uložit a potvrdit
+nh-generic-deletemodel-title = Chcete odstranit pohled, nebo model?
+nh-generic-deletemodel-view = Odstranit pohled
+nh-generic-deletemodel-modelif = Odstranit model pokud je pohled jediný
+nh-generic-deletemodel-all = Odstranit vše
 
 nh-project = Projekt
 nh-project-newproject = Nový Projekt

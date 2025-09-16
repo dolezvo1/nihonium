@@ -2,8 +2,13 @@
 nh-generic-yes = Yes
 nh-generic-no = No
 nh-generic-cancel = Cancel
+nh-generic-dontaskagain = Don't ask again
 nh-generic-unsavedchanges-warning = The current project has unsaved changes.
 nh-generic-unsavedchanges-saveandproceed = Save and proceed
+nh-generic-deletemodel-title = Do you want to delete view or model?
+nh-generic-deletemodel-view = Delete View
+nh-generic-deletemodel-modelif = Delete Model If Only View
+nh-generic-deletemodel-all = Delete All
 
 nh-project = Project
 nh-project-newproject = New Project

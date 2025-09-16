@@ -24,7 +24,7 @@ mod domains;
 
 use crate::common::eref::ERef;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
-use crate::common::controller::{ColorBundle, DiagramCommand, DiagramController, ModifierKeys, ModifierSettings};
+use crate::common::controller::{ColorBundle, DeleteKind, DiagramCommand, DiagramController, ModifierKeys, ModifierSettings};
 use crate::common::project_serde::{FSRawReader, FSRawWriter, FSReadAbstraction, FSWriteAbstraction, ZipFSReader, ZipFSWriter};
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
@@ -1134,26 +1134,68 @@ impl NHContext {
 
         ui.collapsing("Keys and Shortcuts", |ui| {
             ui.label("Modifiers");
+
+
             let mut modifier_settings = self.modifier_settings;
+            fn delete_kind_name(e: &Option<DeleteKind>) -> &str {
+                match e {
+                    None => "Ask",
+                    Some(DeleteKind::DeleteView) => "Delete View",
+                    Some(DeleteKind::DeleteModelIfOnlyView) => "Delete Model If Only View",
+                    Some(DeleteKind::DeleteAll) => "Delete All",
+                }
+            }
+            ui.label("Default delete action:");
+            egui::ComboBox::from_id_source("Default delete action")
+                .selected_text(delete_kind_name(&modifier_settings.default_delete_kind))
+                .show_ui(ui, |ui| {
+                    for e in [
+                        None, Some(DeleteKind::DeleteView),
+                        Some(DeleteKind::DeleteModelIfOnlyView), Some(DeleteKind::DeleteAll),
+                    ] {
+                        ui.selectable_value(&mut modifier_settings.default_delete_kind, e, delete_kind_name(&e));
+                    }
+                });
             egui::Grid::new("modifiers grid").show(ui, |ui| {
+                ui.label("Enable");
                 ui.label("Modifiers");
                 ui.label("Alt");
                 ui.label("Ctrl");
                 ui.label("Shift");
                 ui.end_row();
 
-                fn row(ui: &mut Ui, name: &str, m: &mut ModifierKeys) {
+                fn row(ui: &mut Ui, name: &str, m: &mut Option<ModifierKeys>) {
+                    let mut b = m.is_some();
+                    if ui.checkbox(&mut b, "").changed() {
+                        *m = match b {
+                            true => Some(ModifierKeys::NONE),
+                            false => None,
+                        };
+                    }
                     ui.label(name);
-                    ui.checkbox(&mut m.alt, "");
-                    ui.checkbox(&mut m.command, "");
-                    ui.checkbox(&mut m.shift, "");
+
+                    if let Some(m) = m {
+                        ui.add_enabled(true, egui::Checkbox::without_text(&mut m.alt));
+                        ui.add_enabled(true, egui::Checkbox::without_text(&mut m.command));
+                        ui.add_enabled(true, egui::Checkbox::without_text(&mut m.shift));
+                    } else {
+                        ui.add_enabled(false, egui::Checkbox::without_text(&mut false));
+                        ui.add_enabled(false, egui::Checkbox::without_text(&mut false));
+                        ui.add_enabled(false, egui::Checkbox::without_text(&mut false));
+                    }
+
                     ui.end_row();
                 }
+
+                row(ui, "Delete View", &mut modifier_settings.delete_view_modifier);
+                row(ui, "Delete Model If Only View", &mut modifier_settings.delete_model_if_modifier);
+                row(ui, "Delete All", &mut modifier_settings.delete_all_modifier);
 
                 row(ui, "Hold selection", &mut modifier_settings.hold_selection);
                 row(ui, "Alternative Tool Mode", &mut modifier_settings.alternative_tool_mode);
             });
             self.modifier_settings = modifier_settings;
+            self.modifier_settings.sort_delete_kinds();
             ui.separator();
 
             ui.label("Shortcuts");
@@ -1358,10 +1400,7 @@ impl Default for NHApp {
             selected_diagram_shades,
             selected_language: 0,
             languages_order,
-            modifier_settings: ModifierSettings {
-                hold_selection: ModifierKeys::COMMAND,
-                alternative_tool_mode: ModifierKeys::ALT,
-            },
+            modifier_settings: Default::default(),
             drawing_context: GlobalDrawingContext {
                 global_colors: ColorBundle::new(),
                 fluent_bundle,
@@ -1411,7 +1450,7 @@ impl Default for NHApp {
         context.drawing_context.shortcuts.insert(DiagramCommand::CutSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X));
         context.drawing_context.shortcuts.insert(DiagramCommand::CopySelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C));
         context.drawing_context.shortcuts.insert(DiagramCommand::PasteClipboardElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
-        context.drawing_context.shortcuts.insert(DiagramCommand::DeleteSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
+        context.drawing_context.shortcuts.insert(SimpleProjectCommand::DeleteSelectedElements(None), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
 
         context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Plus));
         context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Plus));
@@ -2109,57 +2148,98 @@ impl eframe::App for NHApp {
             egui::Modal::new("Confirm Modal Window".into())
                 .show(ctx, |ui| {
 
-                    ui.label(translate!("nh-generic-unsavedchanges-warning"));
+                    if let SimpleProjectCommand::DeleteSelectedElements(k) = confirm_reason {
+                        ui.label(translate!("nh-generic-deletemodel-title"));
 
-                    match confirm_reason {
-                        SimpleProjectCommand::OpenProject(_) => {
-                            ui.label(translate!("nh-project-openproject-confirm"));
-                        },
-                        SimpleProjectCommand::CloseProject(_) => {
-                            ui.label(translate!("nh-project-closeproject-confirm"));
-                        },
-                        SimpleProjectCommand::Exit(_) => {
-                            ui.label(translate!("nh-project-exit-confirm"));
-                        },
-                        _ => unreachable!("Unexpected confirm modal reason"),
+                        let mut b = k.is_some();
+                        if ui.checkbox(&mut b, translate!("nh-generic-dontaskagain")).changed() {
+                            self.context.confirm_modal_reason = Some(SimpleProjectCommand::DeleteSelectedElements(
+                                match b {
+                                    true => Some(DeleteKind::DeleteView),
+                                    false => None,
+                                }
+                            ));
+                        }
+
+                        ui.horizontal(|ui| {
+                            if ui.button(translate!("nh-generic-deletemodel-view")).clicked() {
+                                commands.push(SimpleProjectCommand::DeleteSelectedElements(Some(DeleteKind::DeleteView)).into());
+                                if k.is_some() {
+                                    self.context.modifier_settings.default_delete_kind = Some(DeleteKind::DeleteView);
+                                }
+                                self.context.confirm_modal_reason = None;
+                            }
+                            if ui.button(translate!("nh-generic-deletemodel-modelif")).clicked() {
+                                commands.push(SimpleProjectCommand::DeleteSelectedElements(Some(DeleteKind::DeleteModelIfOnlyView)).into());
+                                if k.is_some() {
+                                    self.context.modifier_settings.default_delete_kind = Some(DeleteKind::DeleteModelIfOnlyView);
+                                }
+                                self.context.confirm_modal_reason = None;
+                            }
+                            if ui.button(translate!("nh-generic-deletemodel-all")).clicked() {
+                                commands.push(SimpleProjectCommand::DeleteSelectedElements(Some(DeleteKind::DeleteAll)).into());
+                                if k.is_some() {
+                                    self.context.modifier_settings.default_delete_kind = Some(DeleteKind::DeleteAll);
+                                }
+                                self.context.confirm_modal_reason = None;
+                            }
+                            if ui.button(translate!("nh-generic-cancel")).clicked() {
+                                self.context.confirm_modal_reason = None;
+                            }
+                        });
+                    } else {
+                        ui.label(translate!("nh-generic-unsavedchanges-warning"));
+
+                        match confirm_reason {
+                            SimpleProjectCommand::OpenProject(_) => {
+                                ui.label(translate!("nh-project-openproject-confirm"));
+                            },
+                            SimpleProjectCommand::CloseProject(_) => {
+                                ui.label(translate!("nh-project-closeproject-confirm"));
+                            },
+                            SimpleProjectCommand::Exit(_) => {
+                                ui.label(translate!("nh-project-exit-confirm"));
+                            },
+                            _ => unreachable!("Unexpected confirm modal reason"),
+                        }
+
+                        ui.horizontal(|ui| {
+                            if ui.button(translate!("nh-generic-yes")).clicked() {
+                                match confirm_reason {
+                                    SimpleProjectCommand::OpenProject(_) => {
+                                        commands.push(SimpleProjectCommand::OpenProject(true).into());
+                                    },
+                                    SimpleProjectCommand::CloseProject(_) => {
+                                        commands.push(SimpleProjectCommand::CloseProject(true).into());
+                                    },
+                                    SimpleProjectCommand::Exit(_) => {
+                                        commands.push(SimpleProjectCommand::Exit(true).into());
+                                    },
+                                    _ => unreachable!("Unexpected confirm modal reason"),
+                                }
+                                self.context.confirm_modal_reason = None;
+                            }
+                            if ui.button(translate!("nh-generic-unsavedchanges-saveandproceed")).clicked() {
+                                commands.push(SimpleProjectCommand::SaveProject.into());
+                                match confirm_reason {
+                                    SimpleProjectCommand::OpenProject(_) => {
+                                        commands.push(SimpleProjectCommand::OpenProject(false).into());
+                                    },
+                                    SimpleProjectCommand::CloseProject(_) => {
+                                        commands.push(SimpleProjectCommand::CloseProject(false).into());
+                                    },
+                                    SimpleProjectCommand::Exit(_) => {
+                                        commands.push(SimpleProjectCommand::Exit(false).into());
+                                    },
+                                    _ => unreachable!("Unexpected confirm modal reason"),
+                                }
+                                self.context.confirm_modal_reason = None;
+                            }
+                            if ui.button(translate!("nh-generic-cancel")).clicked() {
+                                self.context.confirm_modal_reason = None;
+                            }
+                        });
                     }
-
-                    ui.horizontal(|ui| {
-                        if ui.button(translate!("nh-generic-yes")).clicked() {
-                            match confirm_reason {
-                                SimpleProjectCommand::OpenProject(_) => {
-                                    commands.push(SimpleProjectCommand::OpenProject(true).into());
-                                },
-                                SimpleProjectCommand::CloseProject(_) => {
-                                    commands.push(SimpleProjectCommand::CloseProject(true).into());
-                                },
-                                SimpleProjectCommand::Exit(_) => {
-                                    commands.push(SimpleProjectCommand::Exit(true).into());
-                                },
-                                _ => unreachable!("Unexpected confirm modal reason"),
-                            }
-                            self.context.confirm_modal_reason = None;
-                        }
-                        if ui.button(translate!("nh-generic-unsavedchanges-saveandproceed")).clicked() {
-                            commands.push(SimpleProjectCommand::SaveProject.into());
-                            match confirm_reason {
-                                SimpleProjectCommand::OpenProject(_) => {
-                                    commands.push(SimpleProjectCommand::OpenProject(false).into());
-                                },
-                                SimpleProjectCommand::CloseProject(_) => {
-                                    commands.push(SimpleProjectCommand::CloseProject(false).into());
-                                },
-                                SimpleProjectCommand::Exit(_) => {
-                                    commands.push(SimpleProjectCommand::Exit(false).into());
-                                },
-                                _ => unreachable!("Unexpected confirm modal reason"),
-                            }
-                            self.context.confirm_modal_reason = None;
-                        }
-                        if ui.button(translate!("nh-generic-cancel")).clicked() {
-                            self.context.confirm_modal_reason = None;
-                        }
-                    });
                 });
         }
 
@@ -2173,6 +2253,21 @@ impl eframe::App for NHApp {
                     },
                     SimpleProjectCommand::SpecificDiagramCommand(v, dc) => {
                         send_to_diagram!(&v, dc);
+                    }
+                    SimpleProjectCommand::DeleteSelectedElements(k) => match k.or(self.context.modifier_settings.default_delete_kind) {
+                        None => {
+                            self.context.confirm_modal_reason = Some(SimpleProjectCommand::DeleteSelectedElements(None));
+                        },
+                        Some(k) => match k {
+                            DeleteKind::DeleteView => {
+                                send_to_focused_diagram!(DiagramCommand::DeleteSelectedElements(false))
+                            },
+                            // TODO: implement delete model if only view
+                            DeleteKind::DeleteModelIfOnlyView
+                            | DeleteKind::DeleteAll => {
+                                send_to_focused_diagram!(DiagramCommand::DeleteSelectedElements(true))
+                            },
+                        },
                     }
                     SimpleProjectCommand::SwapTopLanguages => {
                         if self.context.languages_order.len() > 1 {
