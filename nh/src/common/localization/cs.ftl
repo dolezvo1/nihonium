@@ -48,3 +48,6 @@ nh-windows-projecthierarchy = Hierarchie Projektu
 nh-windows-toolbar = Nástroje
 nh-windows-properties = Vlastnosti
 nh-windows-layers = Vrstvy
+
+nh-about = O Programu
+nh-about-mainpage = Hlavní stránka Nihonium

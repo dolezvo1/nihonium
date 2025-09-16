@@ -279,7 +279,7 @@ impl NHProjectSerialization {
             })).collect();
 
         let project_serialization = Self {
-            format_version: "0.2.0".into(),
+            format_version: env!("COMMIT_IDENTIFIER").to_owned(),
             project_name: project_name.to_owned(),
             sources_root: sources_root.to_owned(),
             new_diagram_no_counter,
