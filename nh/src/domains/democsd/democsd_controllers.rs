@@ -709,8 +709,10 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     NON_TARGETTABLE_COLOR
                 }
             },
-            Some(DemoCsdElement::DemoCsdTransactor(..)) => match self.current_stage {
+            Some(DemoCsdElement::DemoCsdTransactor(inner)) => match self.current_stage {
                 DemoCsdToolStage::LinkStart { .. } => TARGETTABLE_COLOR,
+                DemoCsdToolStage::Bank if inner.read().transaction.as_ref().is_none()
+                    => TARGETTABLE_COLOR,
                 DemoCsdToolStage::Client
                 | DemoCsdToolStage::Transactor
                 | DemoCsdToolStage::Bank
@@ -818,12 +820,12 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             _ => {}
         }
     }
-    fn add_element<'a>(&mut self, controller: DemoCsdElement) {
+    fn add_element<'a>(&mut self, element: DemoCsdElement) {
         if self.event_lock {
             return;
         }
 
-        match controller {
+        match element {
             DemoCsdElement::DemoCsdPackage(..) => {}
             DemoCsdElement::DemoCsdTransactor(inner) => {
                 match (self.current_stage, &mut self.result) {
@@ -835,6 +837,11 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                         };
                         self.current_stage = DemoCsdToolStage::LinkEnd;
                         self.event_lock = true;
+                    }
+                    (DemoCsdToolStage::Bank, PartialDemoCsdElement::None) => {
+                        if inner.read().transaction.is_some() {
+                            self.event_lock = true;
+                        }
                     }
                     _ => {}
                 }
@@ -1620,6 +1627,23 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
                 if let Some(tool) = tool {
                     tool.add_element(self.model());
+
+                    if self.transaction_view.as_ref().is_none() {
+                        tool.add_position(*event.mouse_position());
+                        if let Some((new_e, esm)) = tool.try_construct_view(self)
+                            && let DemoCsdElementView::Transaction(ref tx) = new_e {
+                            tx.write().position = egui::Pos2::new(
+                                self.position.x,
+                                self.position.y - 3.84 * canvas::CLASS_MIDDLE_FONT_SIZE,
+                            );
+
+                            commands.push(InsensitiveCommand::AddElement(*self.uuid, new_e.into(), true).into());
+                            if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                                *element_setup_modal = esm;
+                            }
+                        }
+                    }
+                    return EventHandlingStatus::HandledByContainer;
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         self.highlight.selected = true;
@@ -1704,13 +1728,37 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
-            | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            InsensitiveCommand::DeleteSpecificElements(uuids, into_model) => {
+                if *into_model
+                    && let Some(e) = self.transaction_view.as_ref()
+                    && uuids.contains(&*e.read().uuid) {
+                    undo_accumulator.push(InsensitiveCommand::AddElement(
+                        *self.uuid,
+                        DemoCsdElementOrVertex::Element(e.clone().into()),
+                        true,
+                    ));
+                    self.model.write().transaction = UFOption::None;
+                    self.transaction_view = UFOption::None;
+                }
+            }
+            InsensitiveCommand::AddElement(v, e, into_model) => {
+                if *v == *self.uuid && *into_model
+                    && self.transaction_view.as_ref().is_none()
+                    && let DemoCsdElementOrVertex::Element(DemoCsdElementView::Transaction(e)) = e
+                    {
+                    undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
+                        std::iter::once(*e.read().uuid).collect(),
+                        true,
+                    ));
+                    self.model.write().transaction = UFOption::Some(e.read().model.clone());
+                    self.transaction_view = UFOption::Some(e.clone());
+                }
+            }
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid()) {
                     affected_models.insert(*self.model.read().uuid);
