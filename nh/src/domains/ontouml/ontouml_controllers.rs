@@ -1282,6 +1282,7 @@ fn new_umlclass_class_view(
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
+        background_color: MGlobalColor::None,
     })
 }
 fn ontouml_class_stereotype_literal(e: &str) -> &'static str {
@@ -1404,6 +1405,7 @@ pub struct UmlClassView {
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
+    background_color: MGlobalColor,
 }
 
 impl UmlClassView {
@@ -1569,6 +1571,15 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             }
         });
 
+        ui.label("Background color:");
+        if crate::common::controller::mglobalcolor_edit_button(
+            &drawing_context.global_colors,
+            ui,
+            &mut self.background_color,
+        ) {
+            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+        }
+
         PropertiesStatus::Shown
     }
 
@@ -1593,7 +1604,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             &read.name,
             None,
             &[&read.parse_properties(), &read.parse_functions()],
-            egui::Color32::WHITE,
+            context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
@@ -1832,6 +1843,13 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
                                 ));
                                 model.comment = comment.clone();
                             }
+                            UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
+                                ));
+                                self.background_color = *color;
+                            }
                             _ => {}
                         }
                     }
@@ -1895,6 +1913,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             highlight: self.highlight,
             position: self.position,
             bounds_rect: self.bounds_rect,
+            background_color: self.background_color,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -2826,6 +2845,7 @@ fn new_umlclass_comment_view(
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
+        background_color: MGlobalColor::None,
     })
 }
 
@@ -2845,6 +2865,7 @@ pub struct UmlClassCommentView {
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
+    background_color: MGlobalColor,
 }
 
 impl Entity for UmlClassCommentView {
@@ -2923,6 +2944,15 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
             }
         });
 
+        ui.label("Background color:");
+        if crate::common::controller::mglobalcolor_edit_button(
+            &drawing_context.global_colors,
+            ui,
+            &mut self.background_color,
+        ) {
+            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+        }
+
         PropertiesStatus::Shown
     }
 
@@ -2951,7 +2981,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
                 egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
                 egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
             ].into_iter().collect(),
-            egui::Color32::WHITE,
+            context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
@@ -2961,7 +2991,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
                 egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y + corner_size),
                 egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
             ].into_iter().collect(),
-            egui::Color32::WHITE,
+            context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
@@ -3140,6 +3170,13 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
                                 ));
                                 model.text = text.clone();
                             }
+                            UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
+                                ));
+                                self.background_color = *color;
+                            }
                             _ => {}
                         }
                     }
@@ -3193,6 +3230,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
             highlight: self.highlight,
             position: self.position,
             bounds_rect: self.bounds_rect,
+            background_color: self.background_color,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
