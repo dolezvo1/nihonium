@@ -51,3 +51,4 @@ nh-windows-layers = Layers
 
 nh-about = About
 nh-about-mainpage = Nihonium Main Page
+nh-about-bugtracker = Bug reporting/Feature requests

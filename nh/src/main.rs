@@ -1985,7 +1985,8 @@ impl eframe::App for NHApp {
 
                 ui.menu_button(translate!("nh-about"), |ui| {
                     ui.hyperlink_to(translate!("nh-about-mainpage"), "https://github.com/dolezvo1/nihonium");
-                    ui.label(env!("COMMIT_IDENTIFIER"));
+                    ui.hyperlink_to(translate!("nh-about-bugtracker"), "https://github.com/dolezvo1/nihonium/issues");
+                    ui.label(format!("Code version: {}", env!("COMMIT_IDENTIFIER")));
                 });
             })
         });

@@ -51,3 +51,4 @@ nh-windows-layers = Vrstvy
 
 nh-about = O Programu
 nh-about-mainpage = Hlavní stránka Nihonium
+nh-about-bugtracker = Hlášení chyb/Požadavky
