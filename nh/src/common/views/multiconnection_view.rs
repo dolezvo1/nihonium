@@ -272,7 +272,7 @@ where
             return PropertiesStatus::NotShown;
         }
 
-        fn display_endings<'a, DomainT: Domain>(
+        fn display_endings_info<'a, DomainT: Domain>(
             q: &'a DomainT::QueryableT<'_>,
             lp: &'a DomainT::LabelProviderT,
             ui: &mut egui::Ui,
@@ -282,16 +282,17 @@ where
             self_uuid: ViewUuid,
             b: u8,
         ) {
+
             for model_uuid in models {
                 let e = views.iter().find(|e| *e.element.model_uuid() == *model_uuid);
 
                 ui.horizontal(|ui| {
                     ui.label(&*lp.get(model_uuid));
                     if let Some(e) = e {
-                        if ui.button("Remove from view").clicked() {
+                        if ui.add_enabled(views.len() > 1, egui::Button::new("Remove from view")).clicked() {
                             commands.push(InsensitiveCommand::RemoveDependency(self_uuid, b, *e.element.uuid(), false).into());
                         }
-                        if ui.button("Remove from model").clicked() {
+                        if ui.add_enabled(models.len() > 1, egui::Button::new("Remove from model")).clicked() {
                             commands.push(InsensitiveCommand::RemoveDependency(self_uuid, b, *e.element.uuid(), true).into());
                         }
                     } else {
@@ -300,7 +301,7 @@ where
                                 commands.push(InsensitiveCommand::AddDependency(self_uuid, b, v.into(), false).into());
                             }
                         }
-                        if ui.button("Remove from model").clicked() {
+                        if ui.add_enabled(models.len() > 1, egui::Button::new("Remove from model")).clicked() {
 
                         }
                     }
@@ -308,9 +309,9 @@ where
             }
         }
         ui.label("Sources:");
-        display_endings::<DomainT>(q, lp, ui, commands, self.adapter.source_uuids(), &self.sources, *self.uuid, 0);
+        display_endings_info::<DomainT>(q, lp, ui, commands, self.adapter.source_uuids(), &self.sources, *self.uuid, 0);
         ui.label("Targets:");
-        display_endings::<DomainT>(q, lp, ui, commands, self.adapter.target_uuids(), &self.targets, *self.uuid, 1);
+        display_endings_info::<DomainT>(q, lp, ui, commands, self.adapter.target_uuids(), &self.targets, *self.uuid, 1);
 
         return self.adapter.show_properties(ui, commands);
     }
