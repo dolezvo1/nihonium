@@ -1583,6 +1583,9 @@ fn new_project() -> Result<(), &'static str> {
     Ok(())
 }
 
+// TODO: remove when egui/#5138 is fixed
+pub const MIN_MENU_WIDTH: f32 = 250.0;
+
 impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Set context state
@@ -1789,9 +1792,6 @@ impl eframe::App for NHApp {
             
             // Menubar UI
             egui::MenuBar::new().ui(ui, |ui| {
-                // TODO: remove when egui/#5138 is fixed
-                const MIN_MENU_WIDTH: f32 = 250.0;
-
                 ui.menu_button(translate!("nh-project"), |ui| {
                     ui.set_min_width(MIN_MENU_WIDTH);
 
@@ -1889,6 +1889,13 @@ impl eframe::App for NHApp {
                     button!(ui, "nh-edit-cut", SimpleProjectCommand::from(DiagramCommand::CutSelectedElements));
                     button!(ui, "nh-edit-copy", SimpleProjectCommand::from(DiagramCommand::CopySelectedElements));
                     button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements));
+                    ui.separator();
+
+                    ui.menu_button(translate!("nh-edit-delete"), |ui| {
+                        button!(ui, "nh-generic-deletemodel-view", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(false)));
+                        button!(ui, "nh-generic-deletemodel-modelif", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(false)));
+                        button!(ui, "nh-generic-deletemodel-all", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(true)));
+                    });
                     ui.separator();
 
                     if let Some((_t, d)) = self.context.last_focused_diagram() {
