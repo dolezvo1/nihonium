@@ -63,6 +63,7 @@ macro_rules! unit_slider {
     };
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result<()> {
     unsafe {
         std::env::set_var("RUST_BACKTRACE", "1");
@@ -72,6 +73,20 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native("113", options, Box::new(|_cc| Ok(Box::<NHApp>::default())))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn main() {
+    wasm_bindgen_futures::spawn_local(async {
+        eframe::WebRunner::new()
+        .start(
+            "the_canvas_id",
+            Default::default(),
+            Box::new(|_cc| { Box::<NHApp>::default() }),
+        )
+        .await
+        .expect("Failed to start eframe");
+    });
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
