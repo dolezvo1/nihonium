@@ -935,7 +935,6 @@ enum PartialUmlClassElement {
     },
     Package {
         a: egui::Pos2,
-        a_display: egui::Pos2,
         b: Option<egui::Pos2>,
     },
     CommentLink {
@@ -1085,9 +1084,9 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                     );
                 }
             }
-            PartialUmlClassElement::Package { a_display, .. } => {
+            PartialUmlClassElement::Package { a, .. } => {
                 canvas.draw_rectangle(
-                    egui::Rect::from_two_pos(*a_display, pos),
+                    egui::Rect::from_two_pos(*a, pos),
                     egui::CornerRadius::ZERO,
                     egui::Color32::TRANSPARENT,
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
@@ -1119,7 +1118,6 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             (UmlClassToolStage::PackageStart, _) => {
                 self.result = PartialUmlClassElement::Package {
                     a: pos,
-                    a_display: pos,
                     b: None,
                 };
                 self.current_stage = UmlClassToolStage::PackageEnd;
@@ -1138,7 +1136,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             _ => {}
         }
     }
-    fn add_element<'a>(&mut self, element: UmlClassElement) {
+    fn add_element(&mut self, element: UmlClassElement) {
         if self.event_lock {
             return;
         }

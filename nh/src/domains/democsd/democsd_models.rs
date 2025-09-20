@@ -4,6 +4,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
+use crate::domains::demo::DemoTransactionKind;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -143,24 +144,24 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<M
 pub fn fake_copy_diagram(d: &DemoCsdDiagram) -> HashMap<ModelUuid, DemoCsdElement> {
     fn walk(e: &DemoCsdElement, into: &mut HashMap<ModelUuid, DemoCsdElement>) {
         match e {
-            DemoCsdElement::DemoCsdPackage(rw_lock) => {
-                let model = rw_lock.read();
+            DemoCsdElement::DemoCsdPackage(inner) => {
+                let model = inner.read();
 
                 for e in &model.contained_elements {
                     walk(e, into);
                     into.insert(*e.uuid(), e.clone());
                 }
             },
-            DemoCsdElement::DemoCsdTransactor(rw_lock) => {
-                let model = rw_lock.read();
+            DemoCsdElement::DemoCsdTransactor(inner) => {
+                let model = inner.read();
 
                 if let UFOption::Some(tx) = &model.transaction {
                     walk(&DemoCsdElement::DemoCsdTransaction(tx.clone()), into);
                     into.insert(*tx.read().uuid(), DemoCsdElement::DemoCsdTransaction(tx.clone()));
                 }
             },
-            DemoCsdElement::DemoCsdTransaction(rw_lock) => {},
-            DemoCsdElement::DemoCsdLink(rw_lock) => {},
+            DemoCsdElement::DemoCsdTransaction(..) => {},
+            DemoCsdElement::DemoCsdLink(..) => {},
         }
     }
 
@@ -392,35 +393,12 @@ impl ContainerModel for DemoCsdTransactor {
 
 // ---
 
-#[derive(Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum DemoCsdTransactionKind {
-    Performa,
-    Informa,
-    Forma
-}
-
-impl DemoCsdTransactionKind {
-    pub fn char(&self) -> &str {
-        match self {
-            Self::Performa => "Performa",
-            Self::Informa => "Informa",
-            Self::Forma => "Forma",
-        }
-    }
-}
-
-impl Default for DemoCsdTransactionKind {
-    fn default() -> Self {
-        Self::Performa
-    }
-}
-
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoCsdTransaction {
     pub uuid: Arc<ModelUuid>,
 
-    pub kind: DemoCsdTransactionKind,
+    pub kind: DemoTransactionKind,
     pub identifier: Arc<String>,
     pub name: Arc<String>,
     pub multiple: bool,
@@ -429,7 +407,7 @@ pub struct DemoCsdTransaction {
 }
 
 impl DemoCsdTransaction {
-    pub fn new(uuid: ModelUuid, kind: DemoCsdTransactionKind, identifier: String, name: String, multiple: bool) -> Self {
+    pub fn new(uuid: ModelUuid, kind: DemoTransactionKind, identifier: String, name: String, multiple: bool) -> Self {
         Self {
             uuid: Arc::new(uuid),
 

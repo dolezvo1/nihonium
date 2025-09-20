@@ -751,7 +751,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             _ => {}
         }
     }
-    fn add_element<'a>(&mut self, controller: RdfElement) {
+    fn add_element(&mut self, controller: RdfElement) {
         if self.event_lock {
             return;
         }

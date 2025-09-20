@@ -270,6 +270,11 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
                 2,
                 crate::domains::democsd::democsd_controllers::new as NDC,
             ),
+            (
+                "DEMO Object Fact Diagram",
+                4,
+                crate::domains::demoofd::demoofd_controllers::new as NDC,
+            ),
             ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::new as NDC),
         ] {
             if ui.button(label).clicked() {
@@ -1328,6 +1333,7 @@ impl Default for NHApp {
             (1, crate::domains::umlclass::umlclass_controllers::demo(2)),
             (2, crate::domains::democsd::democsd_controllers::demo(3)),
             (3, crate::domains::ontouml::ontouml_controllers::demo(4)),
+            (4, crate::domains::demoofd::demoofd_controllers::demo(5)),
         ] {
             let r = view.read();
             let mhview = r.new_hierarchy_view();
@@ -1345,6 +1351,7 @@ impl Default for NHApp {
         diagram_deserializers.insert("umlclass-diagram-view".to_string(), (1, &crate::domains::umlclass::umlclass_controllers::deserializer as &DDes));
         diagram_deserializers.insert("democsd-diagram-view".to_string(), (2, &crate::domains::democsd::democsd_controllers::deserializer as &DDes));
         diagram_deserializers.insert("ontouml-diagram-view".to_string(), (3, &crate::domains::ontouml::ontouml_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("demoofd-diagram-view".to_string(), (4, &crate::domains::demoofd::demoofd_controllers::deserializer as &DDes));
 
         let mut dock_state = DockState::new(tabs);
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
@@ -1372,8 +1379,9 @@ impl Default for NHApp {
         let diagram_shades = vec![
             ("RDF".to_owned(), vec![egui::Color32::TRANSPARENT]),
             ("UML Class".to_owned(), vec![egui::Color32::TRANSPARENT]),
-            ("DEMO CSD".to_owned(), vec![egui::Color32::TRANSPARENT]),
+            ("DEMO Coordination Structure Diagram".to_owned(), vec![egui::Color32::TRANSPARENT]),
             ("OntoUML".to_owned(), vec![egui::Color32::TRANSPARENT]),
+            ("DEMO Object Fact Diagram".to_owned(), vec![egui::Color32::TRANSPARENT]),
         ];
         
         let selected_diagram_shades = diagram_shades.iter().map(|_| 0).collect();
@@ -1388,7 +1396,7 @@ impl Default for NHApp {
             tree_view_state: TreeViewState::default(),
             model_hierarchy_views,
             diagram_deserializers,
-            new_diagram_no: 5,
+            new_diagram_no: 6,
             documents,
             custom_tabs: HashMap::new(),
             custom_modal: None,

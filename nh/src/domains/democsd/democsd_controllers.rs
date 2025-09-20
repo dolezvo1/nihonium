@@ -9,7 +9,7 @@ use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use super::democsd_models::{
-    DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage, DemoCsdTransaction, DemoCsdTransactionKind, DemoCsdTransactor
+    DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage, DemoCsdTransaction, DemoCsdTransactor
 };
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::{CustomModal, CustomModalResult};
@@ -19,6 +19,11 @@ use std::{
     collections::HashMap,
     fmt::{Debug, Formatter},
     sync::{Arc},
+};
+use super::super::demo::{
+    INTERNAL_ROLE_BACKGROUND, EXTERNAL_ROLE_BACKGROUND,
+    PERFORMA_DETAIL, INFORMA_DETAIL, FORMA_DETAIL,
+    DemoTransactionKind,
 };
 
 pub struct DemoCsdDomain;
@@ -100,7 +105,7 @@ pub enum DemoCsdPropChange {
     TransactorInternalChange(bool),
     TransactorCompositeChange(bool),
 
-    TransactionKindChange(DemoCsdTransactionKind),
+    TransactionKindChange(DemoTransactionKind),
     TransactionMultipleChange(bool),
 
     LinkTypeChange(DemoCsdLinkType),
@@ -151,13 +156,6 @@ impl Debug for DemoCsdElementOrVertex {
         write!(f, "DemoCsdElementOrVertex::???")
     }
 }
-
-pub const EXTERNAL_ROLE_BACKGROUND: egui::Color32 = egui::Color32::LIGHT_GRAY;
-pub const INTERNAL_ROLE_BACKGROUND: egui::Color32 = egui::Color32::WHITE;
-
-pub const PERFORMA_DETAIL: egui::Color32 = egui::Color32::RED;
-pub const INFORMA_DETAIL: egui::Color32 = egui::Color32::from_rgb(0, 175, 0);
-pub const FORMA_DETAIL: egui::Color32 = egui::Color32::BLUE;
 
 
 #[derive(Clone, derive_more::From, nh_derive::View, nh_derive::NHContextSerDeTag)]
@@ -820,7 +818,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             _ => {}
         }
     }
-    fn add_element<'a>(&mut self, element: DemoCsdElement) {
+    fn add_element(&mut self, element: DemoCsdElement) {
         if self.event_lock {
             return;
         }
@@ -1930,7 +1928,7 @@ fn new_democsd_transaction(
 ) -> (ERef<DemoCsdTransaction>, ERef<DemoCsdTransactionView>) {
     let tx_model = ERef::new(DemoCsdTransaction::new(
         uuid::Uuid::now_v7().into(),
-        super::democsd_models::DemoCsdTransactionKind::Performa,
+        DemoTransactionKind::Performa,
         identifier.to_owned(),
         name.to_owned(),
         multiple,
@@ -2026,7 +2024,7 @@ pub struct DemoCsdTransactionView {
     model: ERef<DemoCsdTransaction>,
 
     #[nh_context_serde(skip_and_default)]
-    kind_buffer: DemoCsdTransactionKind,
+    kind_buffer: DemoTransactionKind,
     #[nh_context_serde(skip_and_default)]
     identifier_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2161,9 +2159,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             .selected_text(self.kind_buffer.char())
             .show_ui(ui, |ui| {
                 for value in [
-                    DemoCsdTransactionKind::Performa,
-                    DemoCsdTransactionKind::Informa,
-                    DemoCsdTransactionKind::Forma,
+                    DemoTransactionKind::Performa,
+                    DemoTransactionKind::Informa,
+                    DemoTransactionKind::Forma,
                 ] {
                     if ui
                         .selectable_value(&mut self.kind_buffer, value, value.char())
@@ -2258,9 +2256,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             egui::Color32::WHITE,
             egui::Color32::BLACK,
             match read.kind {
-                super::democsd_models::DemoCsdTransactionKind::Performa => PERFORMA_DETAIL,
-                super::democsd_models::DemoCsdTransactionKind::Informa => INFORMA_DETAIL,
-                super::democsd_models::DemoCsdTransactionKind::Forma => FORMA_DETAIL,
+                DemoTransactionKind::Performa => PERFORMA_DETAIL,
+                DemoTransactionKind::Informa => INFORMA_DETAIL,
+                DemoTransactionKind::Forma => FORMA_DETAIL,
             },
         );
 

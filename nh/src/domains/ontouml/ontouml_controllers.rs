@@ -912,7 +912,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             _ => {}
         }
     }
-    fn add_element<'a>(&mut self, element: UmlClassElement) {
+    fn add_element(&mut self, element: UmlClassElement) {
         if self.event_lock {
             return;
         }
