@@ -80,8 +80,6 @@ fn main() -> eframe::Result<()> {
 fn main() {
     use eframe::wasm_bindgen::JsCast as _;
 
-    std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-
     wasm_bindgen_futures::spawn_local(async {
         let document = web_sys::window()
             .expect("No window")
