@@ -1683,11 +1683,11 @@ impl eframe::App for NHApp {
         while let Ok(e) = self.context.file_io_channel.1.try_recv() {
             match e {
                 FileIOOperation::Open(fh) => {
-                    let path = fh.file_name();
+                    let file_name = fh.file_name();
                     match self.context.import_project(fh) {
                         Err(e) => println!("Error opening: {:?}", e),
                         Ok(_) => {
-                            self.context.project_path = Some(path);
+                            self.context.project_path = Some(file_name.into());
                             self.clear_nonstatic_tabs();
                         }
                     }
@@ -1700,11 +1700,11 @@ impl eframe::App for NHApp {
                     },
                 }
                 FileIOOperation::Save(fh) => {
-                    let path = fh.file_name();
+                    let file_name = fh.file_name();
                     match self.context.export_project(fh) {
                         Err(e) => println!("Error exporting: {:?}", e),
                         Ok(_) => {
-                            self.context.project_path = Some(path);
+                            self.context.project_path = Some(file_name.into());
                             self.context.has_unsaved_changes = false;
                         }
                     }
