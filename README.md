@@ -11,7 +11,15 @@ A small modelling platform written in Rust using [egui](https://github.com/emilk
 >
 > Pull Requests are currently not accepted, however feature requests and bug reports are very welcome.
 
+![](screenshot.png)
+
 ## How to run it?
+
+### In your browser
+
+You can visit https://dolezvo1.github.io/nihonium/, where it should be running.
+
+### As a native binary
 
 If you don't have `cargo` on your system, [install it first](https://rustup.rs/).
 
@@ -19,5 +27,5 @@ Assuming you have `cargo` installed, you only need to
 
 ```shell
 $ git clone git@github.com:dolezvo1/nihonium.git && cd nihonium
-$ cargo run
+$ cargo run --release
 ```

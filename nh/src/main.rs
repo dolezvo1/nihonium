@@ -73,7 +73,7 @@ fn main() -> eframe::Result<()> {
         viewport: ViewportBuilder::default().with_inner_size(vec2(1024.0, 1024.0)),
         ..Default::default()
     };
-    eframe::run_native("113", options, Box::new(|_cc| Ok(Box::<NHApp>::default())))
+    eframe::run_native("Nihonium", options, Box::new(|_cc| Ok(Box::<NHApp>::default())))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -1800,9 +1800,9 @@ impl eframe::App for NHApp {
         let modified = if self.context.has_unsaved_changes { "*" } else { "" };
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(
             if let Some(project_path) = &self.context.project_path {
-                format!("113{} - {}", modified, project_path.to_string_lossy())
+                format!("Nihonium{} - {}", modified, project_path.to_string_lossy())
             } else {
-                format!("113{}", modified)
+                format!("Nihonium{}", modified)
             }
         ));
 
