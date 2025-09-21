@@ -1312,13 +1312,10 @@ impl<'a> SVGCanvas<'a> {
         }
     }
 
-    pub fn save_to(&self, path: &std::path::PathBuf) -> Result<(), std::io::Error> {
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(path)?;
-        file.write_all(
+    pub fn into_bytes(&self) -> Result<Vec<u8>, std::io::Error> {
+        let mut buffer = Vec::new();
+
+        buffer.write_all(
             format!(
                 r#"<?xml version="1.0" encoding="UTF-8"?>
 <svg width="{}" height="{}" xmlns="http://www.w3.org/2000/svg">
@@ -1329,16 +1326,16 @@ impl<'a> SVGCanvas<'a> {
         )?;
 
         for line in &self.element_buffer {
-            file.write_all(line.as_bytes())?;
+            buffer.write_all(line.as_bytes())?;
         }
 
-        file.write_all(
+        buffer.write_all(
             r#"</svg>
 "#
             .as_bytes(),
         )?;
 
-        Ok(())
+        Ok(buffer)
     }
 }
 

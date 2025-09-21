@@ -79,14 +79,40 @@ fn main() -> eframe::Result<()> {
 #[cfg(target_arch = "wasm32")]
 fn main() {
     wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .expect("No window")
+            .document()
+            .expect("No document");
+
+        let canvas = document
+            .get_element_by_id("the_canvas_id")
+            .expect("Failed to find the_canvas_id")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("the_canvas_id was not a HtmlCanvasElement");
+
         eframe::WebRunner::new()
         .start(
-            "the_canvas_id",
+            canvas,
             Default::default(),
             Box::new(|_cc| { Ok(Box::<NHApp>::default()) }),
         )
         .await
         .expect("Failed to start eframe");
+
+        // Remove the loading text and spinner:
+        if let Some(loading_text) = document.get_element_by_id("loading_text") {
+            match start_result {
+                Ok(_) => {
+                    loading_text.remove();
+                }
+                Err(e) => {
+                    loading_text.set_inner_html(
+                        "<p> The app has crashed. See the developer console for details. </p>",
+                    );
+                    panic!("Failed to start eframe: {e:?}");
+                }
+            }
+        }
     });
 }
 
@@ -154,6 +180,7 @@ enum FileIOOperation {
     Open(FileHandle),
     OpenContent(Result<Box<dyn FSReadAbstraction + Send>, NHDeserializeError>),
     Save(FileHandle),
+    ImageExport(FileHandle, ERef<dyn DiagramController>),
 }
 
 struct NHContext {
@@ -187,7 +214,7 @@ struct NHContext {
 
     open_unique_tabs: HashSet<NHTab>,
     last_focused_diagram: Option<ViewUuid>,
-    svg_export_menu: Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, bool, bool, Highlight, f32, f32)>,
+    svg_export_menu: Option<(ERef<dyn DiagramController>, Option<FileHandle>, bool, bool, Highlight, f32, f32)>,
     confirm_modal_reason: Option<SimpleProjectCommand>,
     shortcut_being_set: Option<SimpleProjectCommand>,
 
@@ -333,13 +360,14 @@ fn execute<F: Future<Output = ()> + 'static>(f: F) {
 
 impl NHContext {
     fn export_project(&self, fh: FileHandle) -> Result<(), NHSerializeError> {
-        let project_file_path = fh.path().to_path_buf();
-        let extension = project_file_path.extension()
+        let project_file_name = PathBuf::from(fh.file_name());
+        let extension = project_file_name.extension()
             .and_then(|e| e.to_str())
-            .ok_or_else(|| supported_extensions!(project_file_path))?;
+            .ok_or_else(|| supported_extensions!(project_file_name))?;
         match extension {
             #[cfg(not(target_arch = "wasm32"))]
             "nhp" => {
+                let project_file_path = fh.path().to_path_buf();
                 let containing_folder = project_file_path.parent()
                     .ok_or_else(|| format!("Path {:?} does not have a valid parent", project_file_path))?;
                 let (sources_folder_name, sources_folder_name_str, file_name) =
@@ -359,7 +387,7 @@ impl NHContext {
                 });
                 Ok(())
             },
-            otherwise => Err(supported_extensions!(project_file_path).into())
+            otherwise => Err(supported_extensions!(project_file_name).into())
         }
     }
     fn export_project_nhp<WA: FSWriteAbstraction>(&self, wa: &mut WA, sources_folder_name: &str) -> Result<(), NHSerializeError> {
@@ -379,13 +407,14 @@ impl NHContext {
         )?)
     }
     fn import_project(&mut self, fh: FileHandle) -> Result<(), NHDeserializeError> {
-        let project_file_path = fh.path().to_path_buf();
-        let extension = project_file_path.extension()
+        let project_file_name = PathBuf::from(fh.file_name());
+        let extension = project_file_name.extension()
             .and_then(|e| e.to_str())
-            .ok_or_else(|| supported_extensions!(project_file_path))?;
+            .ok_or_else(|| supported_extensions!(project_file_name))?;
         match extension {
             #[cfg(not(target_arch = "wasm32"))]
             "nhp" => {
+                let project_file_path = fh.path().to_path_buf();
                 let containing_folder = project_file_path.parent()
                     .ok_or_else(|| format!("Path {:?} does not have a valid parent", project_file_path))?;
                 let file_name = project_file_path.file_name()
@@ -405,7 +434,7 @@ impl NHContext {
                 });
                 Ok(())
             },
-            otherwise => Err(supported_extensions!(project_file_path).into())
+            otherwise => Err(supported_extensions!(project_file_name).into())
         }
     }
     fn import_project_nhp(&mut self, ra: &mut dyn FSReadAbstraction) -> Result<(), NHDeserializeError> {
@@ -1679,6 +1708,14 @@ impl eframe::App for NHApp {
                         }
                     }
                 },
+                FileIOOperation::ImageExport(fh, v) => {
+                    self.context.svg_export_menu =
+                        Some((
+                            v, Some(fh),
+                            false, false, Highlight::NONE,
+                            10.0, 10.0,
+                        ));
+                }
             }
         }
 
@@ -2016,7 +2053,7 @@ impl eframe::App for NHApp {
                 ui.menu_button(translate!("nh-diagram"), |ui| {
                     ui.set_min_width(MIN_MENU_WIDTH);
 
-                    let Some((t, v)) = self.context.last_focused_diagram() else { return; };
+                    let Some((_t, v)) = self.context.last_focused_diagram() else { return; };
                     let mut view = v.write();
 
                     view.show_menubar_diagram_options(ui, &mut commands);
@@ -2027,24 +2064,18 @@ impl eframe::App for NHApp {
                             ui.set_min_width(MIN_MENU_WIDTH);
 
                             if ui.button("SVG").clicked() {
-                                // NOTE: This does not work on WASM, and in its current state it never will.
-                                //       This will be possible to fix once this is fixed on rfd side (#128).
-                                if let Some(path) = rfd::FileDialog::new()
-                                    .set_directory(std::env::current_dir().unwrap())
+                                let d = rfd::AsyncFileDialog::new()
                                     .add_filter("SVG files", &["svg"])
                                     .add_filter("All files", &["*"])
-                                    .save_file()
-                                {
-                                    commands.push(
-                                        ProjectCommand::SetSvgExportMenu(
-                                            Some((
-                                                t, v.clone(), path,
-                                                false, false, Highlight::NONE,
-                                                10.0, 10.0,
-                                            ))
-                                        )
-                                    );
-                                }
+                                    .save_file();
+                                let s = self.context.file_io_channel.0.clone();
+                                let v = v.clone();
+                                execute(async move {
+                                    if let Some(fh) = d.await {
+                                        let _ = s.send(FileIOOperation::ImageExport(fh, v));
+                                    }
+                                });
+
                                 ui.close();
                             }
                         },
@@ -2094,12 +2125,10 @@ impl eframe::App for NHApp {
 
         // SVG export options modal
         let mut hide_svg_export_modal = false;
-        if let Some((t, c, path, background, gridlines, highlight, padding_x, padding_y)) = self.context.svg_export_menu.as_mut() {
+        if let Some((c, fh, background, gridlines, highlight, padding_x, padding_y)) = self.context.svg_export_menu.as_mut() {
             let mut controller = c.write();
             
             egui::containers::Window::new("SVG export options").show(ctx, |ui| {
-                ui.label(format!("Location: `{}`", path.display()));
-                
                 // Change options
                 ui.checkbox(background, "Solid background");
                 ui.checkbox(gridlines, "Gridlines");
@@ -2218,8 +2247,15 @@ impl eframe::App for NHApp {
                             );
                         }
                         controller.draw_in(&self.context.drawing_context, &mut svg_canvas, None);
-                        let _ = svg_canvas.save_to(&path);
-                        
+
+                        let fh = fh.take().unwrap();
+                        match svg_canvas.into_bytes() {
+                            Err(_) => todo!(),
+                            Ok(bytes) => execute(async move {
+                                let _ = fh.write(&bytes).await;
+                            })
+                        }
+
                         hide_svg_export_modal = true;
                     }
                 });
@@ -2441,7 +2477,6 @@ impl eframe::App for NHApp {
                 ProjectCommand::OpenAndFocusDiagram(..)
                 | ProjectCommand::OpenAndFocusDocument(..) => unreachable!("this really should not happen"),
                 ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
-                ProjectCommand::SetSvgExportMenu(sem) => self.context.svg_export_menu = sem,
                 ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
                 ProjectCommand::AddNewDiagram(diagram_type, diagram) => {
                     self.add_diagram(diagram_type, diagram);

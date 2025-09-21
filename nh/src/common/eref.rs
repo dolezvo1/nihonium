@@ -5,6 +5,8 @@ use crate::common::entity::Entity;
 /// Entity Reference - newtype to express entity boundaries
 pub struct ERef<T: ?Sized>(Arc<RwLock<T>>);
 
+unsafe impl<T: ?Sized> Send for ERef<T> {}
+
 impl<T: ?Sized> Clone for ERef<T> {
     fn clone(&self) -> Self {
         ERef(self.0.clone())

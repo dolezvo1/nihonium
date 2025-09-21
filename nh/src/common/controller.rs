@@ -107,7 +107,6 @@ pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
     OpenAndFocusDiagram(ViewUuid, Option<egui::Pos2>),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
-    SetSvgExportMenu(Option<(usize, ERef<dyn DiagramController>, std::path::PathBuf, bool, bool, Highlight, f32, f32)>),
     SetNewDiagramNumber(u32),
     AddNewDiagram(usize, ERef<dyn DiagramController>),
     CopyDiagram(ViewUuid, /*deep:*/ bool),
