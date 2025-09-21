@@ -175,6 +175,33 @@ pub trait CustomModal {
     ) -> CustomModalResult;
 }
 
+pub struct ErrorModal {
+    message: String
+}
+
+impl ErrorModal {
+    pub fn new_box(message: String) -> Box<dyn CustomModal> {
+        Box::new(Self { message })
+    }
+}
+
+impl CustomModal for ErrorModal {
+    fn show(
+        &mut self,
+        d: &mut GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) -> CustomModalResult {
+        ui.label(&self.message);
+
+        if ui.button("Ok").clicked() {
+            CustomModalResult::CloseUnmodified
+        } else {
+            CustomModalResult::KeepOpen
+        }
+    }
+}
+
 type DDes = dyn Fn(ViewUuid, &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError>;
 
 enum FileIOOperation {
@@ -182,6 +209,7 @@ enum FileIOOperation {
     OpenContent(Result<Box<dyn FSReadAbstraction + Send>, NHDeserializeError>),
     Save(FileHandle),
     ImageExport(FileHandle, ERef<dyn DiagramController>),
+    Error(String),
 }
 
 struct NHContext {
@@ -379,13 +407,19 @@ impl NHContext {
                 self.export_project_nhp(&mut wa, sources_folder_name_str)
             },
             "nhpz" => {
+                let s = self.file_io_channel.0.clone();
                 let mut wa = ZipFSWriter::new("project.nhp", "project");
-                self.export_project_nhp(&mut wa, "project")?;
+                if let Err(e) = self.export_project_nhp(&mut wa, "project") {
+                    s.send(FileIOOperation::Error(format!("Error exporting: {:?}", e)));
+                    return Err(e);
+                };
                 execute(async move {
                     match ZipFSWriter::into_bytes(wa) {
-                        Err(e) => println!("{:?}", e),
+                        Err(e) => {
+                            s.send(FileIOOperation::Error(format!("Error exporting: {:?}", e)));
+                        },
                         Ok(bytes) => if let Err(e) = fh.write(&bytes).await {
-                            println!("{:?}", e);
+                            s.send(FileIOOperation::Error(format!("Error saving: {:?}", e)));
                         },
                     }
                 });
@@ -1688,7 +1722,7 @@ impl eframe::App for NHApp {
                 FileIOOperation::Open(fh) => {
                     let file_name = fh.file_name();
                     match self.context.import_project(fh) {
-                        Err(e) => println!("Error opening: {:?}", e),
+                        Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error opening: {:?}", e))),
                         Ok(_) => {
                             self.context.project_path = Some(file_name.into());
                             self.clear_nonstatic_tabs();
@@ -1696,16 +1730,16 @@ impl eframe::App for NHApp {
                     }
                 },
                 FileIOOperation::OpenContent(r) => match r {
-                    Err(e) => println!("Error opening: {:?}", e),
+                    Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error opening: {:?}", e))),
                     Ok(mut r) => match self.context.import_project_nhp(&mut *r) {
-                        Err(e) => println!("Error opening: {:?}", e),
+                        Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error opening: {:?}", e))),
                         Ok(_) => {}
                     },
                 }
                 FileIOOperation::Save(fh) => {
                     let file_name = fh.file_name();
                     match self.context.export_project(fh) {
-                        Err(e) => println!("Error exporting: {:?}", e),
+                        Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error exporting: {:?}", e))),
                         Ok(_) => {
                             self.context.project_path = Some(file_name.into());
                             self.context.has_unsaved_changes = false;
@@ -1719,6 +1753,9 @@ impl eframe::App for NHApp {
                             false, false, Highlight::NONE,
                             10.0, 10.0,
                         ));
+                }
+                FileIOOperation::Error(e) => {
+                    self.context.custom_modal = Some(ErrorModal::new_box(format!("Error opening: {:?}", e)));
                 }
             }
         }
