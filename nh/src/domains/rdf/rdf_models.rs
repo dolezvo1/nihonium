@@ -7,16 +7,19 @@ use std::{
     sync::{Arc},
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 use sophia::api::{
     term::{GraphName, IriRef, LanguageTag, SimpleTerm},
     MownStr,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
 pub struct RdfCollector<'a> {
     data: Vec<([SimpleTerm<'a>; 3], GraphName<SimpleTerm<'a>>)>,
     current_graph: GraphName<SimpleTerm<'a>>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl<'a> RdfCollector<'a> {
     fn add_triple(&mut self, triple: [SimpleTerm<'a>; 3]) {
         self.data.push((triple, self.current_graph.clone()));
@@ -52,6 +55,7 @@ impl RdfElement {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn accept_collector(&self, collector: &mut RdfCollector<'static>) {
         match self {
             RdfElement::RdfGraph(inner) => {
@@ -83,6 +87,7 @@ impl RdfElement {
 }
 
 impl RdfTargettableElement {
+    #[cfg(not(target_arch = "wasm32"))]
     fn term_repr(&self) -> SimpleTerm<'static> {
         match self {
             RdfTargettableElement::RdfLiteral(inner) => inner.read().term_repr(),
@@ -265,6 +270,7 @@ impl RdfDiagram {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn graph(&self) -> Vec<([SimpleTerm<'_>; 3], GraphName<SimpleTerm<'_>>)> {
         let mut collector = RdfCollector {
             data: Vec::new(),
@@ -409,6 +415,7 @@ impl RdfLiteral {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn term_repr(&self) -> SimpleTerm<'static> {
         if !self.langtag.is_empty() {
             SimpleTerm::LiteralLanguage(
@@ -460,6 +467,7 @@ impl RdfNode {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn term_repr(&self) -> SimpleTerm<'static> {
         SimpleTerm::Iri(IriRef::new(MownStr::from((*self.iri).clone())).unwrap())
     }

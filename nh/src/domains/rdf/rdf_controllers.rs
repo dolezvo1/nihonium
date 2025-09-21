@@ -474,17 +474,21 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
-        if ui.button("Import RDF data").clicked() {
-            // TODO: import stuff
+        // TODO: re-enable when sophia's getrandom dependency gets updated
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if ui.button("Import RDF data").clicked() {
+                // TODO: import stuff
+            }
+            if ui.button("SPARQL Queries").clicked() {
+                let uuid = uuid::Uuid::now_v7();
+                commands.push(ProjectCommand::AddCustomTab(
+                    uuid,
+                    Arc::new(RwLock::new(super::rdf_queries::SparqlQueriesTab::new(self.model.clone()))),
+                ));
+            }
+            ui.separator();
         }
-        if ui.button("SPARQL Queries").clicked() {
-            let uuid = uuid::Uuid::now_v7();
-            commands.push(ProjectCommand::AddCustomTab(
-                uuid,
-                Arc::new(RwLock::new(super::rdf_queries::SparqlQueriesTab::new(self.model.clone()))),
-            ));
-        }
-        ui.separator();
     }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, RdfElement>) {

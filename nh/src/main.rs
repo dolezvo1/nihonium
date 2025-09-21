@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, RwLock};
 
 use common::canvas::{NHCanvas, UiCanvas};
@@ -13,11 +14,11 @@ use common::uuid::{ModelUuid, ViewUuid};
 use eframe::egui::{
     self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
 };
-use eframe::NativeOptions;
 
 use egui_dock::tab_viewer::OnCloseResponse;
 use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
 use egui_ltreeview::{NodeBuilder, TreeView, TreeViewState};
+use rfd::FileHandle;
 
 mod common;
 mod domains;
@@ -68,7 +69,7 @@ fn main() -> eframe::Result<()> {
     unsafe {
         std::env::set_var("RUST_BACKTRACE", "1");
     }
-    let options = NativeOptions {
+    let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default().with_inner_size(vec2(1024.0, 1024.0)),
         ..Default::default()
     };
@@ -82,7 +83,7 @@ fn main() {
         .start(
             "the_canvas_id",
             Default::default(),
-            Box::new(|_cc| { Box::<NHApp>::default() }),
+            Box::new(|_cc| { Ok(Box::<NHApp>::default()) }),
         )
         .await
         .expect("Failed to start eframe");
@@ -149,7 +150,14 @@ pub trait CustomModal {
 
 type DDes = dyn Fn(ViewUuid, &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError>;
 
+enum FileIOOperation {
+    Open(FileHandle),
+    OpenContent(Result<Box<dyn FSReadAbstraction + Send>, NHDeserializeError>),
+    Save(FileHandle),
+}
+
 struct NHContext {
+    file_io_channel: (Sender<FileIOOperation>, Receiver<FileIOOperation>),
     project_path: Option<std::path::PathBuf>,
     pub diagram_controllers: HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
     project_hierarchy: HierarchyNode,
@@ -313,12 +321,24 @@ macro_rules! supported_extensions {
     };
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn execute<F: Future<Output = ()> + Send + 'static>(f: F) {
+    // this is stupid... use any executor of your choice instead
+    std::thread::spawn(move || futures::executor::block_on(f));
+}
+#[cfg(target_arch = "wasm32")]
+fn execute<F: Future<Output = ()> + 'static>(f: F) {
+    wasm_bindgen_futures::spawn_local(f);
+}
+
 impl NHContext {
-    fn export_project(&self, project_file_path: &PathBuf) -> Result<(), NHSerializeError> {
+    fn export_project(&self, fh: FileHandle) -> Result<(), NHSerializeError> {
+        let project_file_path = fh.path().to_path_buf();
         let extension = project_file_path.extension()
             .and_then(|e| e.to_str())
             .ok_or_else(|| supported_extensions!(project_file_path))?;
         match extension {
+            #[cfg(not(target_arch = "wasm32"))]
             "nhp" => {
                 let containing_folder = project_file_path.parent()
                     .ok_or_else(|| format!("Path {:?} does not have a valid parent", project_file_path))?;
@@ -332,7 +352,12 @@ impl NHContext {
             "nhpz" => {
                 let mut wa = ZipFSWriter::new("project.nhp", "project");
                 self.export_project_nhp(&mut wa, "project")?;
-                Ok(ZipFSWriter::write_to(wa, project_file_path)?)
+                execute(async move {
+                    if let Ok(bytes) = ZipFSWriter::into_bytes(wa) {
+                        let _ = fh.write(&bytes).await;
+                    }
+                });
+                Ok(())
             },
             otherwise => Err(supported_extensions!(project_file_path).into())
         }
@@ -353,27 +378,37 @@ impl NHContext {
             &self.documents,
         )?)
     }
-    fn import_project(&mut self, project_file_path: &PathBuf) -> Result<(), NHDeserializeError> {
+    fn import_project(&mut self, fh: FileHandle) -> Result<(), NHDeserializeError> {
+        let project_file_path = fh.path().to_path_buf();
         let extension = project_file_path.extension()
             .and_then(|e| e.to_str())
             .ok_or_else(|| supported_extensions!(project_file_path))?;
         match extension {
+            #[cfg(not(target_arch = "wasm32"))]
             "nhp" => {
                 let containing_folder = project_file_path.parent()
                     .ok_or_else(|| format!("Path {:?} does not have a valid parent", project_file_path))?;
                 let file_name = project_file_path.file_name()
                     .ok_or_else(|| supported_extensions!(project_file_path))?;
-                let mut ra = FSRawReader::new(containing_folder, file_name)?;
-                self.import_project_nhp(&mut ra)
+                let rr = FSRawReader::new(containing_folder.to_path_buf(), file_name.to_os_string())
+                    .map(|e| Box::new(e) as Box<dyn FSReadAbstraction + Send>).map_err(|e| e.into());
+                self.file_io_channel.0.send(FileIOOperation::OpenContent(rr));
+                Ok(())
             },
             "nhpz" => {
-                let mut ra = ZipFSReader::new(project_file_path, "project.nhp", "project")?;
-                self.import_project_nhp(&mut ra)
+                let s = self.file_io_channel.0.clone();
+                execute(async move {
+                    let file_contents = fh.read().await;
+                    let zfsr = ZipFSReader::new(file_contents, "project.nhp", "project")
+                        .map(|e| Box::new(e) as Box<dyn FSReadAbstraction + Send>).map_err(|e| e.into());
+                    s.send(FileIOOperation::OpenContent(zfsr));
+                });
+                Ok(())
             },
             otherwise => Err(supported_extensions!(project_file_path).into())
         }
     }
-    fn import_project_nhp<RA: FSReadAbstraction>(&mut self, ra: &mut RA) -> Result<(), NHDeserializeError> {
+    fn import_project_nhp(&mut self, ra: &mut dyn FSReadAbstraction) -> Result<(), NHDeserializeError> {
         let project_file_bytes = ra.read_manifest_file()?;
         let project_file_str = str::from_utf8(&project_file_bytes)?;
         let pdto: common::project_serde::NHProjectSerialization = toml::from_str(&project_file_str)?;
@@ -1408,6 +1443,7 @@ impl Default for NHApp {
             .expect("Could not establish base FluentBundle");
         
         let mut context = NHContext {
+            file_io_channel: std::sync::mpsc::channel(),
             project_path: None,
             diagram_controllers,
             project_hierarchy: HierarchyNode::Folder(uuid::Uuid::nil().into(), Arc::new("New Project".to_owned()), hierarchy),
@@ -1614,6 +1650,38 @@ pub const MIN_MENU_WIDTH: f32 = 250.0;
 
 impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        while let Ok(e) = self.context.file_io_channel.1.try_recv() {
+            match e {
+                FileIOOperation::Open(fh) => {
+                    let path = fh.path().to_path_buf();
+                    match self.context.import_project(fh) {
+                        Err(e) => println!("Error opening: {:?}", e),
+                        Ok(_) => {
+                            self.context.project_path = Some(path);
+                            self.clear_nonstatic_tabs();
+                        }
+                    }
+                },
+                FileIOOperation::OpenContent(r) => match r {
+                    Err(e) => println!("Error opening: {:?}", e),
+                    Ok(mut r) => match self.context.import_project_nhp(&mut *r) {
+                        Err(e) => println!("Error opening: {:?}", e),
+                        Ok(_) => {}
+                    },
+                }
+                FileIOOperation::Save(fh) => {
+                    let path = fh.path().to_path_buf();
+                    match self.context.export_project(fh) {
+                        Err(e) => println!("Error exporting: {:?}", e),
+                        Ok(_) => {
+                            self.context.project_path = Some(path);
+                            self.context.has_unsaved_changes = false;
+                        }
+                    }
+                },
+            }
+        }
+
         // Set context state
         ctx.options_mut(|op| {
             op.zoom_factor = self.context.zoom_factor;
@@ -2315,56 +2383,48 @@ impl eframe::App for NHApp {
                         self.context.drawing_context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
                     }
                     SimpleProjectCommand::OpenProject(b) => if !self.context.has_unsaved_changes || b {
-                        if let Some(project_file_path) = self.context.project_path.clone()
-                            .or_else(|| rfd::FileDialog::new()
-                            .add_filter("Nihonium Project files", &["nhp"])
+                        let mut dialog = rfd::AsyncFileDialog::new();
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            dialog = dialog.add_filter("Nihonium Project files", &["nhp"]);
+                        }
+                        dialog = dialog
                             .add_filter("Nihonium Project Zip files", &["nhpz"])
-                            .add_filter("All files", &["*"])
-                            .pick_file()) {
-                                match self.context.import_project(&project_file_path) {
-                                    Err(e) => println!("Error opening: {:?}", e),
-                                    Ok(_) => {
-                                        self.context.project_path = Some(project_file_path);
-                                        self.clear_nonstatic_tabs();
-                                    }
-                                }
+                            .add_filter("All files", &["*"]);
+
+                        let s = self.context.file_io_channel.0.clone();
+
+                        execute(async move {
+                            let file = dialog.pick_file().await;
+                            if let Some(file) = file {
+                                s.send(FileIOOperation::Open(file));
                             }
+                        });
                     } else {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::OpenProject(b));
                     }
-                    SimpleProjectCommand::SaveProject => {
-                        if let Some(project_file_path) = self.context.project_path.clone()
-                            .or_else(|| rfd::FileDialog::new()
-                                .add_filter("Nihonium Project files", &["nhp"])
-                                .add_filter("Nihonium Project Zip files", &["nhpz"])
-                                .add_filter("All files", &["*"])
-                                .save_file()) {
-                            match self.context.export_project(&project_file_path) {
-                                Err(e) => println!("Error exporting: {:?}", e),
-                                Ok(_) => {
-                                    self.context.project_path = Some(project_file_path);
-                                    self.context.has_unsaved_changes = false;
-                                }
-                            }
-                        }
-                    }
-                    SimpleProjectCommand::SaveProjectAs => {
-                        // NOTE: This does not work on WASM, and in its current state it never will.
-                        //       This will be possible to fix once this is fixed on rfd side (#128).
-                        if let Some(project_file_path) = rfd::FileDialog::new()
-                            .add_filter("Nihonium Project files", &["nhp"])
-                            .add_filter("Nihonium Project Zip files", &["nhpz"])
-                            .add_filter("All files", &["*"])
-                            .save_file()
+                    SimpleProjectCommand::SaveProject
+                    | SimpleProjectCommand::SaveProjectAs => {
+                        let mut dialog = rfd::AsyncFileDialog::new();
+                        #[cfg(not(target_arch = "wasm32"))]
                         {
-                            match self.context.export_project(&project_file_path) {
-                                Err(e) => println!("Error exporting: {:?}", e),
-                                Ok(_) => {
-                                    self.context.project_path = Some(project_file_path);
-                                    self.context.has_unsaved_changes = false;
-                                }
-                            }
+                            dialog = dialog.add_filter("Nihonium Project files", &["nhp"]);
                         }
+                        dialog = dialog
+                            .add_filter("Nihonium Project Zip files", &["nhpz"])
+                            .add_filter("All files", &["*"]);
+
+                        let current_path = self.context.project_path.clone()
+                            .filter(|_| spc == SimpleProjectCommand::SaveProject)
+                            .filter(|_| cfg!(not(target_arch = "wasm32")));
+                        let s = self.context.file_io_channel.0.clone();
+
+                        execute(async move {
+                            let file = dialog.save_file().await;
+                            if let Some(file) = file {
+                                s.send(FileIOOperation::Save(file));
+                            }
+                        });
                     }
                     SimpleProjectCommand::CloseProject(b) => if !self.context.has_unsaved_changes || b {
                         self.context.clear_project_data();

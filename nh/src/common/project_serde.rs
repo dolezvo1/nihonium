@@ -1,6 +1,6 @@
 
 use std::collections::{HashSet, VecDeque};
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::Arc;
@@ -88,14 +88,8 @@ impl<'a> ZipFSWriter<'a> {
         }
     }
 
-    pub fn write_to(self, path: &PathBuf) -> Result<(), std::io::Error> {
-        let buffer = self.zip.finish()?.into_inner();
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&path)?;
-        file.write_all(&buffer)
+    pub fn into_bytes(self) -> Result<Vec<u8>, std::io::Error> {
+        Ok(self.zip.finish()?.into_inner())
     }
 }
 
@@ -118,16 +112,17 @@ pub trait FSReadAbstraction {
     fn read_source_file(&mut self, path: &str) -> Result<Vec<u8>, std::io::Error>;
 }
 
-pub struct FSRawReader<'a> {
-    root: &'a Path,
-    project_file_name: &'a OsStr,
+
+pub struct FSRawReader {
+    root: PathBuf,
+    project_file_name: OsString,
     sources_folder: String,
 }
 
-impl<'a> FSRawReader<'a> {
+impl<'a> FSRawReader {
     pub fn new(
-        root: &'a Path,
-        project_file_name: &'a OsStr,
+        root: PathBuf,
+        project_file_name: OsString,
     ) -> Result<Self, std::io::Error> {
         Ok(Self {
             root,
@@ -137,9 +132,9 @@ impl<'a> FSRawReader<'a> {
     }
 }
 
-impl FSReadAbstraction for FSRawReader<'_> {
+impl FSReadAbstraction for FSRawReader {
     fn read_manifest_file(&mut self) -> Result<Vec<u8>, std::io::Error> {
-        let path = self.root.join(self.project_file_name);
+        let path = self.root.join(&self.project_file_name);
         let mut file = std::fs::File::open(path)?;
         let mut data = Vec::new();
         file.read_to_end(&mut data)?;
@@ -165,14 +160,11 @@ pub struct ZipFSReader<'a> {
 
 impl<'a> ZipFSReader<'a> {
     pub fn new(
-        project_path: &PathBuf,
+        bytes: Vec<u8>,
         project_file_name: &'a str,
         sources_folder: &'a str,
     ) -> Result<Self, std::io::Error> {
-        let mut file = std::fs::File::open(project_path)?;
-        let mut data = Vec::new();
-        file.read_to_end(&mut data)?;
-        let zip = zip::ZipArchive::new(std::io::Cursor::new(data))?;
+        let zip = zip::ZipArchive::new(std::io::Cursor::new(bytes))?;
 
         Ok(Self {
             zip,
@@ -303,9 +295,9 @@ impl NHProjectSerialization {
         ColorBundle { colors_order: o, colors: c }
     }
 
-    pub fn deserialize_all<RA: FSReadAbstraction>(
+    pub fn deserialize_all(
         &self,
-        ra: &mut RA,
+        ra: &mut dyn FSReadAbstraction,
         diagram_deserializers: &HashMap<String, (usize, &'static DDes)>,
     ) -> Result<(
             Vec<HierarchyNode>,

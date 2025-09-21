@@ -25,6 +25,7 @@ unic-langid-macros = "0.9"
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+futures = "0.3"
 # RDF
 sophia = { version = "0.9", features = [ "jsonld", "xml" ] }
 sophia_sparql = "0.9"
