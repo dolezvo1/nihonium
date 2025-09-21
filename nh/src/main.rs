@@ -382,8 +382,11 @@ impl NHContext {
                 let mut wa = ZipFSWriter::new("project.nhp", "project");
                 self.export_project_nhp(&mut wa, "project")?;
                 execute(async move {
-                    if let Ok(bytes) = ZipFSWriter::into_bytes(wa) {
-                        let _ = fh.write(&bytes).await;
+                    match ZipFSWriter::into_bytes(wa) {
+                        Err(e) => println!("{:?}", e),
+                        Ok(bytes) => if let Err(e) = fh.write(&bytes).await {
+                            println!("{:?}", e);
+                        },
                     }
                 });
                 Ok(())
