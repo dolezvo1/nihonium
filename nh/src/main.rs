@@ -78,6 +78,8 @@ fn main() -> eframe::Result<()> {
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
+    use eframe::wasm_bindgen::JsCast as _;
+
     wasm_bindgen_futures::spawn_local(async {
         let document = web_sys::window()
             .expect("No window")
@@ -90,14 +92,13 @@ fn main() {
             .dyn_into::<web_sys::HtmlCanvasElement>()
             .expect("the_canvas_id was not a HtmlCanvasElement");
 
-        eframe::WebRunner::new()
-        .start(
-            canvas,
-            Default::default(),
-            Box::new(|_cc| { Ok(Box::<NHApp>::default()) }),
-        )
-        .await
-        .expect("Failed to start eframe");
+        let start_result = eframe::WebRunner::new()
+            .start(
+                canvas,
+                Default::default(),
+                Box::new(|_cc| { Ok(Box::<NHApp>::default()) }),
+            )
+            .await;
 
         // Remove the loading text and spinner:
         if let Some(loading_text) = document.get_element_by_id("loading_text") {
@@ -1682,7 +1683,7 @@ impl eframe::App for NHApp {
         while let Ok(e) = self.context.file_io_channel.1.try_recv() {
             match e {
                 FileIOOperation::Open(fh) => {
-                    let path = fh.path().to_path_buf();
+                    let path = fh.file_name();
                     match self.context.import_project(fh) {
                         Err(e) => println!("Error opening: {:?}", e),
                         Ok(_) => {
@@ -1699,7 +1700,7 @@ impl eframe::App for NHApp {
                     },
                 }
                 FileIOOperation::Save(fh) => {
-                    let path = fh.path().to_path_buf();
+                    let path = fh.file_name();
                     match self.context.export_project(fh) {
                         Err(e) => println!("Error exporting: {:?}", e),
                         Ok(_) => {
