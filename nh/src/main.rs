@@ -390,9 +390,13 @@ fn execute<F: Future<Output = ()> + 'static>(f: F) {
 impl NHContext {
     fn export_project(&self, fh: FileHandle) -> Result<(), NHSerializeError> {
         let project_file_name = PathBuf::from(fh.file_name());
-        let extension = project_file_name.extension()
-            .and_then(|e| e.to_str())
-            .ok_or_else(|| supported_extensions!(project_file_name))?;
+        let extension = if cfg!(target_arch = "wasm32") {
+            "nhpz"
+        } else {
+            project_file_name.extension()
+                .and_then(|e| e.to_str())
+                .ok_or_else(|| supported_extensions!(project_file_name))?
+        };
         match extension {
             #[cfg(not(target_arch = "wasm32"))]
             "nhp" => {
@@ -446,9 +450,13 @@ impl NHContext {
     }
     fn import_project(&mut self, fh: FileHandle) -> Result<(), NHDeserializeError> {
         let project_file_name = PathBuf::from(fh.file_name());
-        let extension = project_file_name.extension()
-            .and_then(|e| e.to_str())
-            .ok_or_else(|| supported_extensions!(project_file_name))?;
+        let extension = if cfg!(target_arch = "wasm32") {
+            "nhpz"
+        } else {
+            project_file_name.extension()
+                .and_then(|e| e.to_str())
+                .ok_or_else(|| supported_extensions!(project_file_name))?
+        };
         match extension {
             #[cfg(not(target_arch = "wasm32"))]
             "nhp" => {
