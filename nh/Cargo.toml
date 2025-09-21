@@ -16,7 +16,7 @@ rfd = "0.15"
 serde = { version = "1.0", features = [ "derive", "rc" ] }
 toml = "0.9"
 uuid = { version = "1.18", features = [ "std", "v7", "serde" ] }
-zip = "5.1"
+zip = { version = "5.1" }
 
 # Fluent
 fluent-bundle = "0.16"
@@ -32,9 +32,9 @@ sophia_sparql = "0.9"
 
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-chrono = { version = "0.4", features = ["wasmbind"] }
 getrandom = { version = "0.3", features = ["wasm_js"] }
 uuid = { version = "1.18", features = [ "std", "v7", "serde", "js" ] }
+zip = { version = "5.1", default-features = false }
 
 wasm-bindgen-futures = "0.4.50"
 web-sys = "0.3.70"
