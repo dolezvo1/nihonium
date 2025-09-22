@@ -1847,6 +1847,12 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             flattened_views.insert(*tx_l.uuid(), tx.clone().into());
         }
     }
+    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
+        into.insert(*self.model_uuid());
+        if let UFOption::Some(e) = &self.transaction_view {
+            e.read().collect_model_uuids(into);
+        }
+    }
     
     fn deep_copy_walk(
         &self,

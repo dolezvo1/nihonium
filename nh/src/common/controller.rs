@@ -1073,6 +1073,9 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     );
+    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
+        into.insert(*self.model_uuid());
+    }
     /// Must return true when a view cannot exist without these views, e.g. a link cannot exist without it's target
     fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
         false
