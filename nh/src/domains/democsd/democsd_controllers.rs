@@ -80,6 +80,9 @@ impl CachingLabelDeriver<DemoCsdElement> for DemoCsdLabelProvider {
             DemoCsdElement::DemoCsdTransactor(inner) => {
                 let r = inner.read();
                 self.cache.insert(*r.uuid, r.name.clone());
+                if let UFOption::Some(tx) = &r.transaction {
+                    self.update(&tx.clone().into());
+                }
             },
             DemoCsdElement::DemoCsdTransaction(inner) => {
                 let r = inner.read();
@@ -1845,12 +1848,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             }
 
             flattened_views.insert(*tx_l.uuid(), tx.clone().into());
-        }
-    }
-    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
-        into.insert(*self.model_uuid());
-        if let UFOption::Some(e) = &self.transaction_view {
-            e.read().collect_model_uuids(into);
         }
     }
     
