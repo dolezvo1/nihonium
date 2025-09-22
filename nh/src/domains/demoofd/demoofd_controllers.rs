@@ -12,6 +12,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
+use crate::domains::demoofd::demoofd_models::DemoOfdSpecialization;
 use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
 use std::collections::HashSet;
@@ -40,6 +41,7 @@ impl Domain for DemoOfdDomain {
 
 type PackageViewT = PackageView<DemoOfdDomain, DemoOfdPackageAdapter>;
 type PropertyTypeViewT = MulticonnectionView<DemoOfdDomain, DemoOfdPropertyTypeAdapter>;
+type SpecializationViewT = MulticonnectionView<DemoOfdDomain, DemoOfdSpecializationAdapter>;
 
 pub struct DemoOfdQueryable<'a> {
     models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
@@ -87,6 +89,15 @@ impl CachingLabelDeriver<DemoOfdElement> for DemoOfdLabelProvider {
             DemoOfdElement::DemoOfdPropertyType(inner) => {
                 self.cache.insert(*inner.read().uuid, Arc::new("Property".to_owned()));
             },
+            DemoOfdElement::DemoOfdPrecedence(inner) => {
+                self.cache.insert(*inner.read().uuid, Arc::new("Precedence".to_owned()));
+            },
+            DemoOfdElement::DemoOfdSpecialization(inner) => {
+                self.cache.insert(*inner.read().uuid, Arc::new("Specialization".to_owned()));
+            },
+            DemoOfdElement::DemoOfdExclusion(inner) => {
+                self.cache.insert(*inner.read().uuid, Arc::new("Exclusion".to_owned()));
+            },
         }
     }
 
@@ -103,6 +114,7 @@ pub enum DemoOfdPropChange {
     EntityInternalChange(bool),
 
     EventKindChange(DemoTransactionKind),
+    EventIdentifierChange(Arc<String>),
 
     LinkMultiplicityChange(/*target?*/ bool, Arc<String>),
     FlipMulticonnection(FlipMulticonnection),
@@ -184,9 +196,10 @@ impl TryFrom<DemoOfdElementOrVertex> for DemoOfdElementView {
 #[nh_context_serde(uuid_type = ViewUuid)]
 pub enum DemoOfdElementView {
     Package(ERef<PackageViewT>),
-    Entity(ERef<DemoOfdEntityView>),
-    Event(ERef<DemoOfdEventView>),
-    Association(ERef<PropertyTypeViewT>),
+    EntityType(ERef<DemoOfdEntityView>),
+    EventType(ERef<DemoOfdEventView>),
+    PropertyType(ERef<PropertyTypeViewT>),
+    Specialization(ERef<SpecializationViewT>),
 }
 
 
@@ -211,7 +224,7 @@ struct DemoOfdDiagramBuffer {
 
 #[derive(Clone)]
 struct UmlClassPlaceholderViews {
-    views: [DemoOfdElementView; 4],
+    views: [DemoOfdElementView; 5],
 }
 
 impl Default for UmlClassPlaceholderViews {
@@ -225,7 +238,8 @@ impl Default for UmlClassPlaceholderViews {
         let entity_2 = (entity_m.clone().into(), entity_view.into());
         let (d, dv) = new_demoofd_entitytype("dummy", "", false, egui::Pos2::new(100.0, 75.0));
 
-        let (_assoc, assoc_view) = new_demoofd_propertytype("", None, entity_2.clone(), (d, dv.into()));
+        let (_prop, prop_view) = new_demoofd_propertytype("", None, entity_2.clone(), (d.clone(), dv.clone().into()));
+        let (_spec, spec_view) = new_demoofd_specialization(None, entity_2.clone(), (d.clone(), dv.clone().into()));
 
         let (_package, package_view) = new_demoofd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
 
@@ -233,7 +247,8 @@ impl Default for UmlClassPlaceholderViews {
             views: [
                 entity_2.1.into(),
                 event_view.into(),
-                assoc_view.into(),
+                prop_view.into(),
+                spec_view.into(),
                 package_view.into(),
             ]
         }
@@ -308,6 +323,23 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                 DemoOfdElementView::from(
                     new_demoofd_propertytype_view(inner.clone(), None, source_view, target_view)
                 )
+            },
+            DemoOfdElement::DemoOfdPrecedence(inner) => {
+                todo!()
+            },
+            DemoOfdElement::DemoOfdSpecialization(inner) => {
+                let m = inner.read();
+                let (sid, tid) = (*m.domain_element.read().uuid, *m.range_element.read().uuid);
+                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                    (Some(sv), Some(tv)) => (sv, tv),
+                    _ => return Err(HashSet::from([sid, tid])),
+                };
+                DemoOfdElementView::from(
+                    new_demoofd_specialization_view(inner.clone(), None, source_view, target_view)
+                )
+            },
+            DemoOfdElement::DemoOfdExclusion(inner) => {
+                todo!()
             },
         };
 
@@ -471,6 +503,13 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     },
                     "Property Type",
                 ),
+
+                (
+                    DemoOfdToolStage::LinkStart {
+                        link_type: LinkType::Specialization,
+                    },
+                    "Specialization",
+                ),
             ][..],
             &[(DemoOfdToolStage::PackageStart, "Package")][..],
         ] {
@@ -602,6 +641,7 @@ pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn D
 #[derive(Clone, Copy, PartialEq)]
 pub enum LinkType {
     PropertyType,
+    Specialization,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -691,7 +731,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             },
             Some(DemoOfdElement::DemoOfdEntityType(..)) => match self.current_stage {
                 DemoOfdToolStage::EventStart
-                | DemoOfdToolStage::LinkStart { .. }
+                | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType | LinkType::Specialization }
                 | DemoOfdToolStage::LinkEnd
                 | DemoOfdToolStage::LinkAddEnding { .. } => {
                     TARGETTABLE_COLOR
@@ -701,19 +741,28 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 | DemoOfdToolStage::PackageStart
                 | DemoOfdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(DemoOfdElement::DemoOfdEventType(..)) => match self.current_stage {
+            Some(DemoOfdElement::DemoOfdEventType(inner)) => match self.current_stage {
+                DemoOfdToolStage::Entity => {
+                    if inner.read().specialization_entity_type.is_some() {
+                        NON_TARGETTABLE_COLOR
+                    } else {
+                        TARGETTABLE_COLOR
+                    }
+                }
                 DemoOfdToolStage::EventStart
                 | DemoOfdToolStage::EventEnd
-                | DemoOfdToolStage::Entity
                 | DemoOfdToolStage::PackageStart
                 | DemoOfdToolStage::PackageEnd
-                | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType }
+                | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType | LinkType::Specialization }
                 | DemoOfdToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
 
                 DemoOfdToolStage::LinkStart { .. }
                 | DemoOfdToolStage::LinkEnd => TARGETTABLE_COLOR
             },
-            Some(DemoOfdElement::DemoOfdPropertyType(..)) => todo!(),
+            Some(DemoOfdElement::DemoOfdPropertyType(..)
+                | DemoOfdElement::DemoOfdPrecedence(..)
+                | DemoOfdElement::DemoOfdSpecialization(..)
+                | DemoOfdElement::DemoOfdExclusion(..)) => todo!(),
         }
     }
     fn draw_status_hint(&self, q: &DemoOfdQueryable, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
@@ -810,7 +859,10 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             }
             DemoOfdElement::DemoOfdEventType(..)
             | DemoOfdElement::DemoOfdPackage(..)
-            | DemoOfdElement::DemoOfdPropertyType(..) => {}
+            | DemoOfdElement::DemoOfdPropertyType(..)
+            | DemoOfdElement::DemoOfdPrecedence(..)
+            | DemoOfdElement::DemoOfdSpecialization(..)
+            | DemoOfdElement::DemoOfdExclusion(..) => {}
         }
     }
 
@@ -826,8 +878,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             PartialDemoOfdElement::Some(x) => {
                 let x = x.clone();
                 let esm: Option<Box<dyn CustomModal>> = match &x {
-                    DemoOfdElementView::Entity(inner) => Some(Box::new(DemoOfdEntityTypeSetupModal::from(&inner.read().model))),
-                    DemoOfdElementView::Event(inner) => Some(Box::new(DemoOfdEventTypeSetupModal::from(&inner.read().model))),
+                    DemoOfdElementView::EntityType(inner) => Some(Box::new(DemoOfdEntityTypeSetupModal::from(&inner.read().model))),
+                    DemoOfdElementView::EventType(inner) => Some(Box::new(DemoOfdEventTypeSetupModal::from(&inner.read().model))),
                     _ => None,
                 };
                 self.result = PartialDemoOfdElement::None;
@@ -866,6 +918,13 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         LinkType::PropertyType => {
                             new_demoofd_propertytype(
                                 "",
+                                None,
+                                (source.clone(), source_controller),
+                                (dest.clone(), dest_controller),
+                            ).1.into()
+                        },
+                        LinkType::Specialization => {
+                            new_demoofd_specialization(
                                 None,
                                 (source.clone(), source_controller),
                                 (dest.clone(), dest_controller),
@@ -1157,12 +1216,21 @@ pub struct DemoOfdEntityView {
 }
 
 impl DemoOfdEntityView {
-    fn association_button_rect(&self, ui_scale: f32) -> egui::Rect {
-        let b_radius = 8.0;
-        let b_center = self.bounds_rect.right_top() + egui::Vec2::splat(b_radius / ui_scale);
+    const BUTTON_RADIUS: f32 = 8.0;
+    fn event_button_rect(&self, ui_scale: f32) ->  egui::Rect {
+        let b_center = self.bounds_rect.right_top()
+            + egui::Vec2::splat(Self::BUTTON_RADIUS / ui_scale);
         egui::Rect::from_center_size(
             b_center,
-            egui::Vec2::splat(2.0 * b_radius / ui_scale),
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
+        )
+    }
+    fn property_button_rect(&self, ui_scale: f32) -> egui::Rect {
+        let b_center = self.bounds_rect.right_top()
+            + egui::Vec2::new(Self::BUTTON_RADIUS / ui_scale, 3.0 * Self::BUTTON_RADIUS / ui_scale);
+        egui::Rect::from_center_size(
+            b_center,
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
         )
     }
 }
@@ -1306,15 +1374,25 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
 
         // Draw buttons
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            let b_rect = self.association_button_rect(ui_scale);
+            let b1_rect = self.event_button_rect(ui_scale);
             canvas.draw_rectangle(
-                b_rect,
+                b1_rect,
                 egui::CornerRadius::ZERO,
                 egui::Color32::WHITE,
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
-            canvas.draw_text(b_rect.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
+            canvas.draw_text(b1_rect.center(), egui::Align2::CENTER_CENTER, "◊", 14.0 / ui_scale, egui::Color32::BLACK);
+
+            let b2_rect = self.property_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b2_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(b2_rect.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
         }
 
         if canvas.ui_scale().is_some() {
@@ -1383,7 +1461,20 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                     EventHandlingStatus::NotHandled
                 }
             }
-            InputEvent::Click(pos) if self.highlight.selected && self.association_button_rect(ehc.ui_scale).contains(pos) => {
+            InputEvent::Click(pos) if self.highlight.selected && self.event_button_rect(ehc.ui_scale).contains(pos) => {
+                *tool = Some(NaiveDemoOfdTool {
+                    initial_stage: DemoOfdToolStage::EventStart,
+                    current_stage: DemoOfdToolStage::EventEnd,
+                    result: PartialDemoOfdElement::Event {
+                        source: self.model.clone(),
+                        pos: None,
+                    },
+                    event_lock: true,
+                });
+
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::Click(pos) if self.highlight.selected && self.property_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveDemoOfdTool {
                     initial_stage: DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType },
                     current_stage: DemoOfdToolStage::LinkEnd,
@@ -1620,6 +1711,7 @@ fn new_demoofd_eventtype_view(
         base_entity_type,
         specialization_entity_type: UFOption::from(specialization_entity_type),
         kind_buffer: m.kind,
+        identifier_buffer: (*m.identifier).clone(),
         name_buffer: (*m.name).clone(),
         comment_buffer: (*m.comment).clone(),
         dragged_shape: None,
@@ -1686,6 +1778,8 @@ pub struct DemoOfdEventView {
     #[nh_context_serde(skip_and_default)]
     kind_buffer: DemoTransactionKind,
     #[nh_context_serde(skip_and_default)]
+    identifier_buffer: String,
+    #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
@@ -1696,6 +1790,14 @@ pub struct DemoOfdEventView {
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
+}
+
+impl DemoOfdEventView {
+    const RADIUS: f32 = 2.0 * canvas::CLASS_MIDDLE_FONT_SIZE;
+
+    fn contains(&self, p: egui::Pos2) -> bool {
+        ((self.position.x - p.x).abs() + (self.position.y - p.y).abs()) <= Self::RADIUS
+    }
 }
 
 impl Entity for DemoOfdEventView {
@@ -1765,6 +1867,19 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 }
             });
 
+        ui.label("Identifier:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::singleline(&mut self.identifier_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoOfdPropChange::EventIdentifierChange(Arc::new(self.identifier_buffer.clone())),
+            ]));
+        }
+
         ui.label("Name:");
         if ui
             .add_sized(
@@ -1818,6 +1933,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     ) -> TargettingStatus {
         let read = self.model.read();
 
+        self.bounds_rect = egui::Rect::from_min_max(self.position, self.position);
+
         // Draw link to base entity
         let p = self.base_entity_type.min_shape().center_intersect(self.position);
         canvas.draw_line([p, self.position], canvas::Stroke::new_solid(1.0, egui::Color32::BLACK), canvas::Highlight::NONE);
@@ -1825,14 +1942,12 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         // Draw diamond
         {
             let pos = self.position;
-            let radius = 2.0 * canvas::CLASS_MIDDLE_FONT_SIZE;
             canvas.draw_polygon(
                 [
-                    pos - egui::Vec2::new(0.0, radius),
-                    pos + egui::Vec2::new(radius, 0.0),
-                    pos + egui::Vec2::new(0.0, radius),
-                    pos - egui::Vec2::new(radius, 0.0),
-                    // pos - egui::Vec2::new(0.0, radius),
+                    pos - egui::Vec2::new(0.0, Self::RADIUS),
+                    pos + egui::Vec2::new(Self::RADIUS, 0.0),
+                    pos + egui::Vec2::new(0.0, Self::RADIUS),
+                    pos - egui::Vec2::new(Self::RADIUS, 0.0),
                 ].to_vec(),
                 egui::Color32::WHITE,
                 canvas::Stroke::new_solid(1.0, match read.kind {
@@ -1860,7 +1975,36 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             egui::Color32::BLACK,
         );
 
-        TargettingStatus::NotDrawn
+        if canvas.ui_scale().is_some() {
+            // Draw targetting rectangle
+            if let Some(t) = tool
+                .as_ref()
+                .filter(|e| self.contains(e.0))
+                .map(|e| e.1)
+            {
+                let pos = self.position;
+                canvas.draw_polygon(
+                    [
+                        pos - egui::Vec2::new(0.0, Self::RADIUS),
+                        pos + egui::Vec2::new(Self::RADIUS, 0.0),
+                        pos + egui::Vec2::new(0.0, Self::RADIUS),
+                        pos - egui::Vec2::new(Self::RADIUS, 0.0),
+                    ].to_vec(),
+                    t.targetting_for_element(Some(self.model())),
+                    canvas::Stroke::new_solid(1.0, match read.kind {
+                        DemoTransactionKind::Performa => PERFORMA_DETAIL,
+                        DemoTransactionKind::Informa => INFORMA_DETAIL,
+                        DemoTransactionKind::Forma => FORMA_DETAIL,
+                    }),
+                    canvas::Highlight::NONE,
+                );
+                TargettingStatus::Drawn
+            } else {
+                TargettingStatus::NotDrawn
+            }
+        } else {
+            TargettingStatus::NotDrawn
+        }
     }
 
     fn handle_event(
@@ -1873,7 +2017,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
-                if !self.min_shape().contains(pos) {
+                if !self.contains(pos) {
                     return EventHandlingStatus::NotHandled
                 }
                 self.dragged_shape = Some(self.min_shape());
@@ -1887,7 +2031,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     EventHandlingStatus::NotHandled
                 }
             }
-            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
+            InputEvent::Click(pos) if self.contains(pos) => {
                 if let Some(tool) = tool {
                     tool.add_element(self.model());
                 } else {
@@ -1985,6 +2129,15 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                                 ));
                                 model.kind = *kind;
                             }
+                            DemoOfdPropChange::EventIdentifierChange(identifier) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![DemoOfdPropChange::EventIdentifierChange(
+                                        model.identifier.clone(),
+                                    )],
+                                ));
+                                model.identifier = identifier.clone();
+                            }
                             DemoOfdPropChange::NameChange(name) => {
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
@@ -2009,6 +2162,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
         self.kind_buffer = model.kind;
+        self.identifier_buffer = (*model.identifier).clone();
         self.name_buffer = (*model.name).clone();
         self.comment_buffer = (*model.comment).clone();
     }
@@ -2021,6 +2175,9 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     ) {
         flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+    }
+    fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
+        deleting.contains(&self.base_entity_type.uuid())
     }
 
     fn deep_copy_clone(
@@ -2052,6 +2209,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             base_entity_type: self.base_entity_type.clone(),
             specialization_entity_type: self.specialization_entity_type.clone(),
             kind_buffer: self.kind_buffer,
+            identifier_buffer: self.identifier_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
             dragged_shape: None,
@@ -2066,14 +2224,14 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
 
 fn new_demoofd_propertytype(
-    stereotype: &str,
+    name: &str,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: (ERef<DemoOfdEntityType>, DemoOfdElementView),
     target: (ERef<DemoOfdEntityType>, DemoOfdElementView),
 ) -> (ERef<DemoOfdPropertyType>, ERef<PropertyTypeViewT>) {
     let link_model = ERef::new(DemoOfdPropertyType::new(
         uuid::Uuid::now_v7().into(),
-        stereotype.to_owned(),
+        name.to_owned(),
         source.0,
         target.0,
     ));
@@ -2329,6 +2487,198 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         let old_model = self.model.read();
 
         let model = if let Some(DemoOfdElement::DemoOfdPropertyType(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(new_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        Self {
+            model,
+            temporaries: self.temporaries.clone(),
+        }
+    }
+
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<ModelUuid, DemoOfdElement>,
+    ) {
+        let mut model = self.model.write();
+
+        let source_uuid = *model.domain_element.read().uuid;
+        if let Some(DemoOfdElement::DemoOfdEntityType(new_source)) = m.get(&source_uuid) {
+            model.domain_element = new_source.clone();
+        }
+        let target_uuid = *model.range_element.read().uuid;
+        if let Some(DemoOfdElement::DemoOfdEntityType(new_target)) = m.get(&target_uuid) {
+            model.range_element = new_target.clone();
+        }
+    }
+}
+
+
+fn new_demoofd_specialization(
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: (ERef<DemoOfdEntityType>, DemoOfdElementView),
+    target: (ERef<DemoOfdEntityType>, DemoOfdElementView),
+) -> (ERef<DemoOfdSpecialization>, ERef<SpecializationViewT>) {
+    let link_model = ERef::new(DemoOfdSpecialization::new(
+        uuid::Uuid::now_v7().into(),
+        source.0,
+        target.0,
+    ));
+    let link_view = new_demoofd_specialization_view(link_model.clone(), center_point, source.1, target.1);
+    (link_model, link_view)
+}
+fn new_demoofd_specialization_view(
+    model: ERef<DemoOfdSpecialization>,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: DemoOfdElementView,
+    target: DemoOfdElementView,
+) -> ERef<SpecializationViewT> {
+    let m = model.read();
+
+    let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.domain_element.read().uuid), *m.range_element.read().uuid, target.min_shape(), center_point);
+
+    MulticonnectionView::new(
+        Arc::new(uuid::Uuid::now_v7().into()),
+        DemoOfdSpecializationAdapter {
+            model: model.clone(),
+            temporaries: Default::default(),
+        },
+        vec![Ending::new_p(source, sp[0].clone())],
+        vec![Ending::new_p(target, tp[0].clone())],
+        mp,
+    )
+}
+
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct DemoOfdSpecializationAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<DemoOfdSpecialization>,
+    #[serde(skip_serializing)]
+    #[nh_context_serde(skip_and_default)]
+    temporaries: DemoOfdSpecializationTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct DemoOfdSpecializationTemporaries {
+    arrow_data: HashMap<ModelUuid, ArrowData>,
+    source_uuids: Vec<ModelUuid>,
+    target_uuids: Vec<ModelUuid>,
+
+    comment_buffer: String,
+}
+
+impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
+    fn model(&self) -> DemoOfdElement {
+        self.model.clone().into()
+    }
+
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+
+    fn midpoint_label(&self) -> Option<Arc<String>> {
+        None
+    }
+
+    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+        &self.temporaries.arrow_data
+    }
+
+    fn source_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.source_uuids
+    }
+
+    fn target_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.target_uuids
+    }
+
+    fn flip_multiconnection(&mut self) -> Result<(), ()> {
+        self.model.write().flip_multiconnection();
+        Ok(())
+    }
+
+    fn show_properties(
+        &mut self,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+    ) -> PropertiesStatus<DemoOfdDomain> {
+        if ui.button("Switch source and destination").clicked() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
+            ]));
+        }
+        ui.separator();
+
+        ui.label("Comment:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+            ]));
+        }
+
+        PropertiesStatus::Shown
+    }
+    fn apply_change(
+        &self,
+        view_uuid: &ViewUuid,
+        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            let mut model = self.model.write();
+            for property in properties {
+                match property {
+                    DemoOfdPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        model.comment = comment.clone();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+
+        self.temporaries.arrow_data.clear();
+        self.temporaries.arrow_data.insert(
+            *model.domain_element.read().uuid,
+            ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::None),
+        );
+        self.temporaries.arrow_data.insert(
+            *model.range_element.read().uuid,
+            ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::FullTriangle),
+        );
+
+        self.temporaries.source_uuids.clear();
+        self.temporaries.source_uuids.push(*model.domain_element.read().uuid);
+        self.temporaries.target_uuids.clear();
+        self.temporaries.target_uuids.push(*model.range_element.read().uuid);
+
+        self.temporaries.comment_buffer = (*model.comment).clone();
+    }
+
+    fn deep_copy_init(
+        &self,
+        new_uuid: ModelUuid,
+        m: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> Self where Self: Sized {
+        let old_model = self.model.read();
+
+        let model = if let Some(DemoOfdElement::DemoOfdSpecialization(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);

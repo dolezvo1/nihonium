@@ -25,6 +25,23 @@ pub enum DemoOfdElement {
     #[container_model(passthrough = "eref")]
     DemoOfdEventType(ERef<DemoOfdEventType>),
     DemoOfdPropertyType(ERef<DemoOfdPropertyType>),
+    DemoOfdPrecedence(ERef<DemoOfdPrecedence>),
+    DemoOfdSpecialization(ERef<DemoOfdSpecialization>),
+    DemoOfdExclusion(ERef<DemoOfdExclusion>),
+}
+
+impl DemoOfdElement {
+    pub fn as_type(self) -> Option<DemoOfdType> {
+        match self {
+            DemoOfdElement::DemoOfdEntityType(inner) => Some(inner.into()),
+            DemoOfdElement::DemoOfdEventType(inner) => Some(inner.into()),
+            DemoOfdElement::DemoOfdPropertyType(inner) => Some(inner.into()),
+            DemoOfdElement::DemoOfdPackage(..)
+            | DemoOfdElement::DemoOfdPrecedence(..)
+            | DemoOfdElement::DemoOfdSpecialization(..)
+            | DemoOfdElement::DemoOfdExclusion(..) => None,
+        }
+    }
 }
 
 impl VisitableElement for DemoOfdElement {
@@ -32,6 +49,16 @@ impl VisitableElement for DemoOfdElement {
         v.visit_simple(self);
     }
 }
+
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
+#[model(default_passthrough = "eref")]
+#[nh_context_serde(uuid_type = ModelUuid)]
+pub enum DemoOfdType {
+    DemoOfdEntityType(ERef<DemoOfdEntityType>),
+    DemoOfdEventType(ERef<DemoOfdEventType>),
+    DemoOfdPropertyType(ERef<DemoOfdPropertyType>),
+}
+
 
 pub fn deep_copy_diagram(d: &DemoOfdDiagram) -> (ERef<DemoOfdDiagram>, HashMap<ModelUuid, DemoOfdElement>) {
     fn walk(e: &DemoOfdElement, into: &mut HashMap<ModelUuid, DemoOfdElement>) -> DemoOfdElement {
@@ -50,16 +77,25 @@ pub fn deep_copy_diagram(d: &DemoOfdDiagram) -> (ERef<DemoOfdDiagram>, HashMap<M
                     }).collect(),
                     comment: model.comment.clone()
                 };
-                DemoOfdElement::DemoOfdPackage(ERef::new(new_model))
+                ERef::new(new_model).into()
             },
             DemoOfdElement::DemoOfdEntityType(inner) => {
-                DemoOfdElement::DemoOfdEntityType(inner.read().clone_with(*new_uuid))
+                inner.read().clone_with(*new_uuid).into()
             }
             DemoOfdElement::DemoOfdEventType(inner) => {
-                DemoOfdElement::DemoOfdEventType(inner.read().clone_with(*new_uuid))
+                inner.read().clone_with(*new_uuid).into()
             },
             DemoOfdElement::DemoOfdPropertyType(inner) => {
-                DemoOfdElement::DemoOfdPropertyType(inner.read().clone_with(*new_uuid))
+                inner.read().clone_with(*new_uuid).into()
+            },
+            DemoOfdElement::DemoOfdPrecedence(inner) => {
+                inner.read().clone_with(*new_uuid).into()
+            },
+            DemoOfdElement::DemoOfdSpecialization(inner) => {
+                inner.read().clone_with(*new_uuid).into()
+            },
+            DemoOfdElement::DemoOfdExclusion(inner) => {
+                inner.read().clone_with(*new_uuid).into()
             },
         }
     }
@@ -96,6 +132,42 @@ pub fn deep_copy_diagram(d: &DemoOfdDiagram) -> (ERef<DemoOfdDiagram>, HashMap<M
                 }
                 let target_uuid = *model.range_element.read().uuid;
                 if let Some(DemoOfdElement::DemoOfdEntityType(re)) = all_models.get(&target_uuid) {
+                    model.range_element = re.clone();
+                }
+            },
+            DemoOfdElement::DemoOfdPrecedence(inner) => {
+                let mut model = inner.write();
+
+                let source_uuid = *model.domain_element.read().uuid;
+                if let Some(DemoOfdElement::DemoOfdEventType(de)) = all_models.get(&source_uuid) {
+                    model.domain_element = de.clone();
+                }
+                let target_uuid = *model.range_element.read().uuid;
+                if let Some(DemoOfdElement::DemoOfdEventType(re)) = all_models.get(&target_uuid) {
+                    model.range_element = re.clone();
+                }
+            },
+            DemoOfdElement::DemoOfdSpecialization(inner) => {
+                let mut model = inner.write();
+
+                let source_uuid = *model.domain_element.read().uuid;
+                if let Some(DemoOfdElement::DemoOfdEntityType(de)) = all_models.get(&source_uuid) {
+                    model.domain_element = de.clone();
+                }
+                let target_uuid = *model.range_element.read().uuid;
+                if let Some(DemoOfdElement::DemoOfdEntityType(re)) = all_models.get(&target_uuid) {
+                    model.range_element = re.clone();
+                }
+            },
+            DemoOfdElement::DemoOfdExclusion(inner) => {
+                let mut model = inner.write();
+
+                let source_uuid = *model.domain_element.uuid();
+                if let Some(de) = all_models.get(&source_uuid).and_then(|e| e.clone().as_type()) {
+                    model.domain_element = de.clone();
+                }
+                let target_uuid = *model.range_element.uuid();
+                if let Some(re) = all_models.get(&target_uuid).and_then(|e| e.clone().as_type()) {
                     model.range_element = re.clone();
                 }
             },
@@ -406,13 +478,30 @@ impl ContainerModel for DemoOfdEventType {
     type ElementT = DemoOfdElement;
 
     fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoOfdElement, ModelUuid)> {
-        todo!()
+        if let UFOption::Some(e) = &self.specialization_entity_type
+            && *uuid == *e.read().uuid {
+            Some((e.clone().into(), *self.uuid))
+        } else {
+            None
+        }
     }
     fn add_element(&mut self, element: DemoOfdElement) -> Result<(), DemoOfdElement> {
-        todo!()
+        if !self.specialization_entity_type.is_some()
+            && let DemoOfdElement::DemoOfdEntityType(e) = element {
+            self.specialization_entity_type = UFOption::Some(e);
+            Ok(())
+        } else {
+            Err(element)
+        }
     }
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
-        todo!()
+        if let UFOption::Some(e) = &self.specialization_entity_type
+            && uuids.contains(&*e.read().uuid) {
+            self.specialization_entity_type = UFOption::None;
+            Ok(())
+        } else {
+            Err(())
+        }
     }
 }
 
@@ -471,6 +560,161 @@ impl Entity for DemoOfdPropertyType {
 }
 
 impl Model for DemoOfdPropertyType {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+
+// TODO Precedence between two events (dashed open triangle)
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct DemoOfdPrecedence {
+    pub uuid: Arc<ModelUuid>,
+    #[nh_context_serde(entity)]
+    pub domain_element: ERef<DemoOfdEventType>,
+    #[nh_context_serde(entity)]
+    pub range_element: ERef<DemoOfdEventType>,
+
+    pub comment: Arc<String>,
+}
+
+impl DemoOfdPrecedence {
+    pub fn new(
+        uuid: ModelUuid,
+        domain_element: ERef<DemoOfdEventType>,
+        range_element: ERef<DemoOfdEventType>,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            domain_element,
+            range_element,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            domain_element: self.domain_element.clone(),
+            range_element: self.domain_element.clone(),
+            comment: self.comment.clone(),
+        })
+    }
+    pub fn flip_multiconnection(&mut self) {
+        std::mem::swap(&mut self.domain_element, &mut self.range_element);
+    }
+}
+
+impl Entity for DemoOfdPrecedence {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoOfdPrecedence {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct DemoOfdSpecialization {
+    pub uuid: Arc<ModelUuid>,
+    #[nh_context_serde(entity)]
+    pub domain_element: ERef<DemoOfdEntityType>,
+    #[nh_context_serde(entity)]
+    pub range_element: ERef<DemoOfdEntityType>,
+
+    pub comment: Arc<String>,
+}
+
+impl DemoOfdSpecialization {
+    pub fn new(
+        uuid: ModelUuid,
+        domain_element: ERef<DemoOfdEntityType>,
+        range_element: ERef<DemoOfdEntityType>,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            domain_element,
+            range_element,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            domain_element: self.domain_element.clone(),
+            range_element: self.domain_element.clone(),
+            comment: self.comment.clone(),
+        })
+    }
+    pub fn flip_multiconnection(&mut self) {
+        std::mem::swap(&mut self.domain_element, &mut self.range_element);
+    }
+}
+
+impl Entity for DemoOfdSpecialization {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoOfdSpecialization {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+
+// TODO: Exclusion between two types (dashed with X in the middle)
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct DemoOfdExclusion {
+    pub uuid: Arc<ModelUuid>,
+    #[nh_context_serde(entity)]
+    pub domain_element: DemoOfdType,
+    #[nh_context_serde(entity)]
+    pub range_element: DemoOfdType,
+
+    pub comment: Arc<String>,
+}
+
+impl DemoOfdExclusion {
+    pub fn new(
+        uuid: ModelUuid,
+        domain_element: DemoOfdType,
+        range_element: DemoOfdType,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            domain_element,
+            range_element,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            domain_element: self.domain_element.clone(),
+            range_element: self.domain_element.clone(),
+            comment: self.comment.clone(),
+        })
+    }
+    pub fn flip_multiconnection(&mut self) {
+        std::mem::swap(&mut self.domain_element, &mut self.range_element);
+    }
+}
+
+impl Entity for DemoOfdExclusion {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoOfdExclusion {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
