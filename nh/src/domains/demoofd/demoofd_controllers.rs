@@ -12,7 +12,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::domains::demoofd::demoofd_models::DemoOfdSpecialization;
+use crate::domains::demoofd::demoofd_models::{DemoOfdExclusion, DemoOfdPrecedence, DemoOfdSpecialization, DemoOfdType};
 use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
 use std::collections::HashSet;
@@ -42,6 +42,8 @@ impl Domain for DemoOfdDomain {
 type PackageViewT = PackageView<DemoOfdDomain, DemoOfdPackageAdapter>;
 type PropertyTypeViewT = MulticonnectionView<DemoOfdDomain, DemoOfdPropertyTypeAdapter>;
 type SpecializationViewT = MulticonnectionView<DemoOfdDomain, DemoOfdSpecializationAdapter>;
+type PrecedenceViewT = MulticonnectionView<DemoOfdDomain, DemoOfdPrecedenceAdapter>;
+type ExclusionViewT = MulticonnectionView<DemoOfdDomain, DemoOfdExclusionAdapter>;
 
 pub struct DemoOfdQueryable<'a> {
     models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
@@ -200,6 +202,8 @@ pub enum DemoOfdElementView {
     EventType(ERef<DemoOfdEventView>),
     PropertyType(ERef<PropertyTypeViewT>),
     Specialization(ERef<SpecializationViewT>),
+    Precedence(ERef<PrecedenceViewT>),
+    Exclusion(ERef<ExclusionViewT>),
 }
 
 
@@ -224,22 +228,29 @@ struct DemoOfdDiagramBuffer {
 
 #[derive(Clone)]
 struct UmlClassPlaceholderViews {
-    views: [DemoOfdElementView; 5],
+    views: [DemoOfdElementView; 7],
 }
 
 impl Default for UmlClassPlaceholderViews {
     fn default() -> Self {
         let (entity_m, entity_view) = new_demoofd_entitytype("Membership", "", true, egui::Pos2::ZERO);
-        let (_event, event_view) = new_demoofd_eventtype(
+        let (event, event_view) = new_demoofd_eventtype(
             "01", "is started",
             (entity_m.clone(), entity_view.clone().into()),
             None, egui::Pos2::new(100.0, 0.0),
         );
         let entity_2 = (entity_m.clone().into(), entity_view.into());
         let (d, dv) = new_demoofd_entitytype("dummy", "", false, egui::Pos2::new(100.0, 75.0));
+        let (dummy_event, dummy_event_view) = new_demoofd_eventtype(
+            "01", "is started",
+            entity_2.clone(),
+            None, egui::Pos2::new(200.0, 50.0),
+        );
 
         let (_prop, prop_view) = new_demoofd_propertytype("", None, entity_2.clone(), (d.clone(), dv.clone().into()));
         let (_spec, spec_view) = new_demoofd_specialization(None, entity_2.clone(), (d.clone(), dv.clone().into()));
+        let (_prec, prec_view) = new_demoofd_precedence(None, (event.clone(), event_view.clone().into()), (dummy_event.clone(), dummy_event_view.clone().into()));
+        let (_excl, excl_view) = new_demoofd_exclusion(None, (event.clone().into(), event_view.clone().into()), (dummy_event.clone().into(), dummy_event_view.clone().into()));
 
         let (_package, package_view) = new_demoofd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
 
@@ -249,6 +260,8 @@ impl Default for UmlClassPlaceholderViews {
                 event_view.into(),
                 prop_view.into(),
                 spec_view.into(),
+                prec_view.into(),
+                excl_view.into(),
                 package_view.into(),
             ]
         }
@@ -324,9 +337,6 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     new_demoofd_propertytype_view(inner.clone(), None, source_view, target_view)
                 )
             },
-            DemoOfdElement::DemoOfdPrecedence(inner) => {
-                todo!()
-            },
             DemoOfdElement::DemoOfdSpecialization(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.domain_element.read().uuid, *m.range_element.read().uuid);
@@ -336,6 +346,17 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                 };
                 DemoOfdElementView::from(
                     new_demoofd_specialization_view(inner.clone(), None, source_view, target_view)
+                )
+            },
+            DemoOfdElement::DemoOfdPrecedence(inner) => {
+                let m = inner.read();
+                let (sid, tid) = (*m.domain_element.read().uuid, *m.range_element.read().uuid);
+                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                    (Some(sv), Some(tv)) => (sv, tv),
+                    _ => return Err(HashSet::from([sid, tid])),
+                };
+                DemoOfdElementView::from(
+                    new_demoofd_precedence_view(inner.clone(), None, source_view, target_view)
                 )
             },
             DemoOfdElement::DemoOfdExclusion(inner) => {
@@ -503,12 +524,23 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     },
                     "Property Type",
                 ),
-
                 (
                     DemoOfdToolStage::LinkStart {
                         link_type: LinkType::Specialization,
                     },
                     "Specialization",
+                ),
+                (
+                    DemoOfdToolStage::LinkStart {
+                        link_type: LinkType::Precedence,
+                    },
+                    "Precedence",
+                ),
+                (
+                    DemoOfdToolStage::LinkStart {
+                        link_type: LinkType::Exclusion,
+                    },
+                    "Exclusion",
                 ),
             ][..],
             &[(DemoOfdToolStage::PackageStart, "Package")][..],
@@ -642,6 +674,8 @@ pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn D
 pub enum LinkType {
     PropertyType,
     Specialization,
+    Precedence,
+    Exclusion,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -663,10 +697,20 @@ enum PartialDemoOfdElement {
         source: ERef<DemoOfdEntityType>,
         pos: Option<egui::Pos2>,
     },
-    Link {
+    EntityLink {
         link_type: LinkType,
         source: ERef<DemoOfdEntityType>,
         dest: Option<ERef<DemoOfdEntityType>>,
+    },
+    EventLink {
+        link_type: LinkType,
+        source: ERef<DemoOfdEventType>,
+        dest: Option<ERef<DemoOfdEventType>>,
+    },
+    TypeLink {
+        link_type: LinkType,
+        source: DemoOfdType,
+        dest: Option<DemoOfdType>,
     },
     Package {
         a: egui::Pos2,
@@ -729,15 +773,33 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     NON_TARGETTABLE_COLOR
                 }
             },
-            Some(DemoOfdElement::DemoOfdEntityType(..)) => match self.current_stage {
+            Some(DemoOfdElement::DemoOfdEntityType(inner)) => match self.current_stage {
+                DemoOfdToolStage::LinkEnd => match &self.result {
+                    PartialDemoOfdElement::EntityLink { link_type, source, .. } => {
+                        if *link_type == LinkType::PropertyType
+                            || (*link_type == LinkType::Specialization && *source.read().uuid != *inner.read().uuid) {
+                            TARGETTABLE_COLOR
+                        } else {
+                            NON_TARGETTABLE_COLOR
+                        }
+                    },
+                    PartialDemoOfdElement::TypeLink { link_type, source, .. } => {
+                        if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid {
+                            TARGETTABLE_COLOR
+                        } else {
+                            NON_TARGETTABLE_COLOR
+                        }
+                    },
+                    _ => NON_TARGETTABLE_COLOR
+                }
                 DemoOfdToolStage::EventStart
-                | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType | LinkType::Specialization }
-                | DemoOfdToolStage::LinkEnd
+                | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType | LinkType::Specialization | LinkType::Exclusion }
                 | DemoOfdToolStage::LinkAddEnding { .. } => {
                     TARGETTABLE_COLOR
                 }
                 DemoOfdToolStage::EventEnd
                 | DemoOfdToolStage::Entity
+                | DemoOfdToolStage::LinkStart { link_type: LinkType::Precedence }
                 | DemoOfdToolStage::PackageStart
                 | DemoOfdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             },
@@ -756,8 +818,21 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType | LinkType::Specialization }
                 | DemoOfdToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
 
-                DemoOfdToolStage::LinkStart { .. }
-                | DemoOfdToolStage::LinkEnd => TARGETTABLE_COLOR
+                DemoOfdToolStage::LinkStart { link_type: LinkType::Precedence | LinkType::Exclusion } => TARGETTABLE_COLOR,
+                DemoOfdToolStage::LinkEnd => match &self.result {
+                    PartialDemoOfdElement::EventLink { link_type, source, dest }
+                        if *source.read().uuid != *inner.read().uuid => {
+                        TARGETTABLE_COLOR
+                    },
+                    PartialDemoOfdElement::TypeLink { link_type, source, .. } => {
+                        if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid {
+                            TARGETTABLE_COLOR
+                        } else {
+                            NON_TARGETTABLE_COLOR
+                        }
+                    },
+                    _ => NON_TARGETTABLE_COLOR
+                }
             },
             Some(DemoOfdElement::DemoOfdPropertyType(..)
                 | DemoOfdElement::DemoOfdPrecedence(..)
@@ -776,8 +851,26 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     );
                 }
             }
-            PartialDemoOfdElement::Link { source, .. } => {
+            PartialDemoOfdElement::EntityLink { source, .. } => {
                 if let Some(source_view) = q.get_view(&*source.read().uuid) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            PartialDemoOfdElement::EventLink { source, .. } => {
+                if let Some(source_view) = q.get_view(&*source.read().uuid) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            PartialDemoOfdElement::TypeLink { source, .. } => {
+                if let Some(source_view) = q.get_view(&*source.uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -838,8 +931,17 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         self.current_stage = DemoOfdToolStage::EventEnd;
                         self.event_lock = true;
                     }
-                    (DemoOfdToolStage::LinkStart { link_type }, PartialDemoOfdElement::None) => {
-                        self.result = PartialDemoOfdElement::Link {
+                    (DemoOfdToolStage::LinkStart { link_type: link_type @ (LinkType::PropertyType | LinkType::Specialization) }, PartialDemoOfdElement::None) => {
+                        self.result = PartialDemoOfdElement::EntityLink {
+                            link_type,
+                            source: inner.into(),
+                            dest: None,
+                        };
+                        self.current_stage = DemoOfdToolStage::LinkEnd;
+                        self.event_lock = true;
+                    }
+                    (DemoOfdToolStage::LinkStart { link_type: link_type @ LinkType::Exclusion }, PartialDemoOfdElement::None) => {
+                        self.result = PartialDemoOfdElement::TypeLink {
                             link_type,
                             source: inner.into(),
                             dest: None,
@@ -849,16 +951,69 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     }
                     (
                         DemoOfdToolStage::LinkEnd,
-                        PartialDemoOfdElement::Link { dest, .. },
+                        PartialDemoOfdElement::EntityLink { link_type, source, dest },
                     ) => {
-                        *dest = Some(inner.into());
+                        if (*link_type == LinkType::PropertyType)
+                            || (*link_type == LinkType::Specialization && *source.read().uuid != *inner.read().uuid) {
+                            *dest = Some(inner.into());
+                        }
+                        self.event_lock = true;
+                    }
+                    (
+                        DemoOfdToolStage::LinkEnd,
+                        PartialDemoOfdElement::TypeLink { link_type, source, dest },
+                    ) => {
+                        if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid {
+                            *dest = Some(inner.into());
+                        }
                         self.event_lock = true;
                     }
                     _ => {}
                 }
             }
-            DemoOfdElement::DemoOfdEventType(..)
-            | DemoOfdElement::DemoOfdPackage(..)
+            DemoOfdElement::DemoOfdEventType(inner) => {
+                match (self.current_stage, &mut self.result) {
+                    (DemoOfdToolStage::LinkStart { link_type: link_type @ LinkType::Precedence }, PartialDemoOfdElement::None) => {
+                        self.result = PartialDemoOfdElement::EventLink {
+                            link_type,
+                            source: inner.into(),
+                            dest: None,
+                        };
+                        self.current_stage = DemoOfdToolStage::LinkEnd;
+                        self.event_lock = true;
+                    }
+                    (DemoOfdToolStage::LinkStart { link_type: link_type @ LinkType::Exclusion }, PartialDemoOfdElement::None) => {
+                        self.result = PartialDemoOfdElement::TypeLink {
+                            link_type,
+                            source: inner.into(),
+                            dest: None,
+                        };
+                        self.current_stage = DemoOfdToolStage::LinkEnd;
+                        self.event_lock = true;
+                    }
+                    (
+                        DemoOfdToolStage::LinkEnd,
+                        PartialDemoOfdElement::EventLink { link_type, source, dest },
+                    ) => {
+                        if *link_type == LinkType::Precedence && *source.read().uuid != *inner.read().uuid {
+                            *dest = Some(inner.into());
+                        }
+                        self.event_lock = true;
+                    }
+                    (
+                        DemoOfdToolStage::LinkEnd,
+                        PartialDemoOfdElement::TypeLink { link_type, source, dest },
+                    ) => {
+                        if *link_type == LinkType::Exclusion && *source.uuid() != *inner.read().uuid {
+                            *dest = Some(inner.into());
+                        }
+                        self.event_lock = true;
+                    }
+                    _ => {}
+                }
+            }
+
+            DemoOfdElement::DemoOfdPackage(..)
             | DemoOfdElement::DemoOfdPropertyType(..)
             | DemoOfdElement::DemoOfdPrecedence(..)
             | DemoOfdElement::DemoOfdSpecialization(..)
@@ -899,7 +1054,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     None
                 }
             }
-            PartialDemoOfdElement::Link {
+            PartialDemoOfdElement::EntityLink {
                 link_type,
                 source,
                 dest: Some(dest),
@@ -930,6 +1085,78 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                                 (dest.clone(), dest_controller),
                             ).1.into()
                         },
+                        LinkType::Precedence
+                        | LinkType::Exclusion => unreachable!()
+                    };
+
+                    self.result = PartialDemoOfdElement::None;
+
+                    Some((link_view, None))
+                } else {
+                    None
+                }
+            }
+            PartialDemoOfdElement::EventLink {
+                link_type,
+                source,
+                dest: Some(dest),
+                ..
+            } => {
+                let (source_uuid, target_uuid) = (*source.read().uuid, *dest.read().uuid);
+                if let (Some(source_controller), Some(dest_controller)) = (
+                    into.controller_for(&source_uuid),
+                    into.controller_for(&target_uuid),
+                ) {
+                    self.current_stage = DemoOfdToolStage::LinkStart {
+                        link_type: *link_type,
+                    };
+
+                    let link_view = match link_type {
+                        LinkType::PropertyType
+                        | LinkType::Specialization => unreachable!(),
+                        LinkType::Precedence => {
+                            new_demoofd_precedence(
+                                None,
+                                (source.clone(), source_controller),
+                                (dest.clone(), dest_controller),
+                            ).1.into()
+                        }
+                        LinkType::Exclusion => unreachable!()
+                    };
+
+                    self.result = PartialDemoOfdElement::None;
+
+                    Some((link_view, None))
+                } else {
+                    None
+                }
+            }
+            PartialDemoOfdElement::TypeLink {
+                link_type,
+                source,
+                dest: Some(dest),
+                ..
+            } => {
+                let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
+                if let (Some(source_controller), Some(dest_controller)) = (
+                    into.controller_for(&source_uuid),
+                    into.controller_for(&target_uuid),
+                ) {
+                    self.current_stage = DemoOfdToolStage::LinkStart {
+                        link_type: *link_type,
+                    };
+
+                    let link_view = match link_type {
+                        LinkType::PropertyType
+                        | LinkType::Specialization
+                        | LinkType::Precedence => unreachable!(),
+                        LinkType::Exclusion => {
+                            new_demoofd_exclusion(
+                                None,
+                                (source.clone(), source_controller),
+                                (dest.clone(), dest_controller),
+                            ).1.into()
+                        }
                     };
 
                     self.result = PartialDemoOfdElement::None;
@@ -1478,7 +1705,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                 *tool = Some(NaiveDemoOfdTool {
                     initial_stage: DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType },
                     current_stage: DemoOfdToolStage::LinkEnd,
-                    result: PartialDemoOfdElement::Link {
+                    result: PartialDemoOfdElement::EntityLink {
                         link_type: LinkType::PropertyType,
                         source: self.model.clone().into(),
                         dest: None,
@@ -1794,10 +2021,6 @@ pub struct DemoOfdEventView {
 
 impl DemoOfdEventView {
     const RADIUS: f32 = 2.0 * canvas::CLASS_MIDDLE_FONT_SIZE;
-
-    fn contains(&self, p: egui::Pos2) -> bool {
-        ((self.position.x - p.x).abs() + (self.position.y - p.y).abs()) <= Self::RADIUS
-    }
 }
 
 impl Entity for DemoOfdEventView {
@@ -1821,8 +2044,9 @@ impl ElementController<DemoOfdElement> for DemoOfdEventView {
     }
 
     fn min_shape(&self) -> NHShape {
-        NHShape::Rect {
-            inner: self.bounds_rect,
+        NHShape::Rhombus {
+            position: self.position,
+            bounds_radius: egui::Vec2::splat(Self::RADIUS),
         }
     }
 
@@ -1979,7 +2203,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             // Draw targetting rectangle
             if let Some(t) = tool
                 .as_ref()
-                .filter(|e| self.contains(e.0))
+                .filter(|e| self.min_shape().contains(e.0))
                 .map(|e| e.1)
             {
                 let pos = self.position;
@@ -2017,7 +2241,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
-                if !self.contains(pos) {
+                if !self.min_shape().contains(pos) {
                     return EventHandlingStatus::NotHandled
                 }
                 self.dragged_shape = Some(self.min_shape());
@@ -2031,7 +2255,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     EventHandlingStatus::NotHandled
                 }
             }
-            InputEvent::Click(pos) if self.contains(pos) => {
+            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
                     tool.add_element(self.model());
                 } else {
@@ -2704,6 +2928,393 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
         }
         let target_uuid = *model.range_element.read().uuid;
         if let Some(DemoOfdElement::DemoOfdEntityType(new_target)) = m.get(&target_uuid) {
+            model.range_element = new_target.clone();
+        }
+    }
+}
+
+
+fn new_demoofd_precedence(
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: (ERef<DemoOfdEventType>, DemoOfdElementView),
+    target: (ERef<DemoOfdEventType>, DemoOfdElementView),
+) -> (ERef<DemoOfdPrecedence>, ERef<PrecedenceViewT>) {
+    let link_model = ERef::new(DemoOfdPrecedence::new(
+        uuid::Uuid::now_v7().into(),
+        source.0,
+        target.0,
+    ));
+    let link_view = new_demoofd_precedence_view(link_model.clone(), center_point, source.1, target.1);
+    (link_model, link_view)
+}
+fn new_demoofd_precedence_view(
+    model: ERef<DemoOfdPrecedence>,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: DemoOfdElementView,
+    target: DemoOfdElementView,
+) -> ERef<PrecedenceViewT> {
+    let m = model.read();
+
+    let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.domain_element.read().uuid), *m.range_element.read().uuid, target.min_shape(), center_point);
+
+    MulticonnectionView::new(
+        Arc::new(uuid::Uuid::now_v7().into()),
+        DemoOfdPrecedenceAdapter {
+            model: model.clone(),
+            temporaries: Default::default(),
+        },
+        vec![Ending::new_p(source, sp[0].clone())],
+        vec![Ending::new_p(target, tp[0].clone())],
+        mp,
+    )
+}
+
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct DemoOfdPrecedenceAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<DemoOfdPrecedence>,
+    #[serde(skip_serializing)]
+    #[nh_context_serde(skip_and_default)]
+    temporaries: DemoOfdPrecedenceTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct DemoOfdPrecedenceTemporaries {
+    arrow_data: HashMap<ModelUuid, ArrowData>,
+    source_uuids: Vec<ModelUuid>,
+    target_uuids: Vec<ModelUuid>,
+
+    comment_buffer: String,
+}
+
+impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
+    fn model(&self) -> DemoOfdElement {
+        self.model.clone().into()
+    }
+
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+
+    fn midpoint_label(&self) -> Option<Arc<String>> {
+        None
+    }
+
+    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+        &self.temporaries.arrow_data
+    }
+
+    fn source_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.source_uuids
+    }
+
+    fn target_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.target_uuids
+    }
+
+    fn flip_multiconnection(&mut self) -> Result<(), ()> {
+        self.model.write().flip_multiconnection();
+        Ok(())
+    }
+
+    fn show_properties(
+        &mut self,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+    ) -> PropertiesStatus<DemoOfdDomain> {
+        if ui.button("Switch source and destination").clicked() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
+            ]));
+        }
+        ui.separator();
+
+        ui.label("Comment:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+            ]));
+        }
+
+        PropertiesStatus::Shown
+    }
+    fn apply_change(
+        &self,
+        view_uuid: &ViewUuid,
+        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            let mut model = self.model.write();
+            for property in properties {
+                match property {
+                    DemoOfdPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        model.comment = comment.clone();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+
+        self.temporaries.arrow_data.clear();
+        self.temporaries.arrow_data.insert(
+            *model.domain_element.read().uuid,
+            ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::None),
+        );
+        self.temporaries.arrow_data.insert(
+            *model.range_element.read().uuid,
+            ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::OpenTriangle),
+        );
+
+        self.temporaries.source_uuids.clear();
+        self.temporaries.source_uuids.push(*model.domain_element.read().uuid);
+        self.temporaries.target_uuids.clear();
+        self.temporaries.target_uuids.push(*model.range_element.read().uuid);
+
+        self.temporaries.comment_buffer = (*model.comment).clone();
+    }
+
+    fn deep_copy_init(
+        &self,
+        new_uuid: ModelUuid,
+        m: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> Self where Self: Sized {
+        let old_model = self.model.read();
+
+        let model = if let Some(DemoOfdElement::DemoOfdPrecedence(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(new_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        Self {
+            model,
+            temporaries: self.temporaries.clone(),
+        }
+    }
+
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<ModelUuid, DemoOfdElement>,
+    ) {
+        let mut model = self.model.write();
+
+        let source_uuid = *model.domain_element.read().uuid;
+        if let Some(DemoOfdElement::DemoOfdEventType(new_source)) = m.get(&source_uuid) {
+            model.domain_element = new_source.clone();
+        }
+        let target_uuid = *model.range_element.read().uuid;
+        if let Some(DemoOfdElement::DemoOfdEventType(new_target)) = m.get(&target_uuid) {
+            model.range_element = new_target.clone();
+        }
+    }
+}
+
+
+fn new_demoofd_exclusion(
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: (DemoOfdType, DemoOfdElementView),
+    target: (DemoOfdType, DemoOfdElementView),
+) -> (ERef<DemoOfdExclusion>, ERef<ExclusionViewT>) {
+    let link_model = ERef::new(DemoOfdExclusion::new(
+        uuid::Uuid::now_v7().into(),
+        source.0,
+        target.0,
+    ));
+    let link_view = new_demoofd_exclusion_view(link_model.clone(), center_point, source.1, target.1);
+    (link_model, link_view)
+}
+fn new_demoofd_exclusion_view(
+    model: ERef<DemoOfdExclusion>,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: DemoOfdElementView,
+    target: DemoOfdElementView,
+) -> ERef<ExclusionViewT> {
+    let m = model.read();
+
+    let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.domain_element.uuid()), *m.range_element.uuid(), target.min_shape(), center_point);
+
+    MulticonnectionView::new(
+        Arc::new(uuid::Uuid::now_v7().into()),
+        DemoOfdExclusionAdapter {
+            model: model.clone(),
+            temporaries: Default::default(),
+        },
+        vec![Ending::new_p(source, sp[0].clone())],
+        vec![Ending::new_p(target, tp[0].clone())],
+        mp,
+    )
+}
+
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct DemoOfdExclusionAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<DemoOfdExclusion>,
+    #[serde(skip_serializing)]
+    #[nh_context_serde(skip_and_default)]
+    temporaries: DemoOfdExclusionTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct DemoOfdExclusionTemporaries {
+    arrow_data: HashMap<ModelUuid, ArrowData>,
+    source_uuids: Vec<ModelUuid>,
+    target_uuids: Vec<ModelUuid>,
+
+    midpoint_label: Arc<String>,
+
+    comment_buffer: String,
+}
+
+impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
+    fn model(&self) -> DemoOfdElement {
+        self.model.clone().into()
+    }
+
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+
+    fn midpoint_label(&self) -> Option<Arc<String>> {
+        Some(self.temporaries.midpoint_label.clone())
+    }
+
+    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+        &self.temporaries.arrow_data
+    }
+
+    fn source_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.source_uuids
+    }
+
+    fn target_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.target_uuids
+    }
+
+    fn flip_multiconnection(&mut self) -> Result<(), ()> {
+        self.model.write().flip_multiconnection();
+        Ok(())
+    }
+
+    fn show_properties(
+        &mut self,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+    ) -> PropertiesStatus<DemoOfdDomain> {
+        if ui.button("Switch source and destination").clicked() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
+            ]));
+        }
+        ui.separator();
+
+        ui.label("Comment:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
+            )
+            .changed()
+        {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
+            ]));
+        }
+
+        PropertiesStatus::Shown
+    }
+    fn apply_change(
+        &self,
+        view_uuid: &ViewUuid,
+        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+            let mut model = self.model.write();
+            for property in properties {
+                match property {
+                    DemoOfdPropChange::CommentChange(comment) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*view_uuid).collect(),
+                            vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
+                        ));
+                        model.comment = comment.clone();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+
+        self.temporaries.arrow_data.clear();
+        self.temporaries.arrow_data.insert(
+            *model.domain_element.uuid(),
+            ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::None),
+        );
+        self.temporaries.arrow_data.insert(
+            *model.range_element.uuid(),
+            ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::None),
+        );
+
+        self.temporaries.source_uuids.clear();
+        self.temporaries.source_uuids.push(*model.domain_element.uuid());
+        self.temporaries.target_uuids.clear();
+        self.temporaries.target_uuids.push(*model.range_element.uuid());
+
+        self.temporaries.midpoint_label = Arc::new("X".to_owned());
+        self.temporaries.comment_buffer = (*model.comment).clone();
+    }
+
+    fn deep_copy_init(
+        &self,
+        new_uuid: ModelUuid,
+        m: &mut HashMap<ModelUuid, DemoOfdElement>,
+    ) -> Self where Self: Sized {
+        let old_model = self.model.read();
+
+        let model = if let Some(DemoOfdElement::DemoOfdExclusion(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(new_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        Self {
+            model,
+            temporaries: self.temporaries.clone(),
+        }
+    }
+
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<ModelUuid, DemoOfdElement>,
+    ) {
+        let mut model = self.model.write();
+
+        let source_uuid = *model.domain_element.uuid();
+        if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.clone().as_type()) {
+            model.domain_element = new_source.clone();
+        }
+        let target_uuid = *model.range_element.uuid();
+        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.clone().as_type()) {
             model.range_element = new_target.clone();
         }
     }

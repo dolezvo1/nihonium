@@ -6,9 +6,27 @@ use std::ops::{BitAnd, BitOr};
 
 use super::uuid::ViewUuid;
 
+// find unique intersection between segments (s1a, s1b) and (s2a, s2b)
+// based on https://stackoverflow.com/a/1968345
+fn unique_segments_intersection(
+    s1a: egui::Pos2, s1b: egui::Pos2,
+    s2a: egui::Pos2, s2b: egui::Pos2,
+) -> Option<egui::Pos2> {
+    let (s1, s2) = (s1b - s1a, s2b - s2a);
+
+    let s = (-s1.y * (s1a.x - s2a.x) + s1.x * (s1a.y - s2a.y)) / (-s2.x * s1.y + s1.x * s2.y);
+    let t = ( s2.x * (s1a.y - s2a.y) - s2.y * (s1a.x - s2a.x)) / (-s2.x * s1.y + s1.x * s2.y);
+
+    if s >= 0.0 && s <= 1.0 && t >= 0.0 && t <= 1.0 {
+        Some(s1a + t * egui::Vec2::new(s1.x, s1.y))
+    } else {
+        None
+    }
+}
+
 // rect intersection between segment from p to the center of rect
 // based on https://stackoverflow.com/a/31254199 by TWiStErRob
-fn segment_rect_point(p: egui::Pos2, rect: &egui::Rect) -> Option<egui::Pos2> {
+fn segment_rect_point(p: egui::Pos2, rect: egui::Rect) -> Option<egui::Pos2> {
     if rect.contains(p) {
         return None;
     }
@@ -63,7 +81,7 @@ fn segment_rect_point(p: egui::Pos2, rect: &egui::Rect) -> Option<egui::Pos2> {
 // based on https://stackoverflow.com/a/25704033 by Danial Esmaeili
 fn segment_ellipse_point(
     p: egui::Pos2,
-    (center, radius): (&egui::Pos2, &egui::Vec2),
+    (center, radius): (egui::Pos2, egui::Vec2),
 ) -> Option<egui::Pos2> {
     let theta = (center.y - p.y).atan2(center.x - p.x);
     let r = ((center.y - p.y).powf(2.0) + (center.x - p.x).powf(2.0)).sqrt()
@@ -75,9 +93,34 @@ fn segment_ellipse_point(
     ));
 }
 
+fn segment_rhombus_point(
+    p: egui::Pos2,
+    (center, radius): (egui::Pos2, egui::Vec2),
+) -> Option<egui::Pos2> {
+    if p.x <= center.x {
+        let s1a = center - egui::Vec2::new(radius.x, 0.0);
+        if p.y <= center.y {
+            let s1b = center - egui::Vec2::new(0.0, radius.y);
+            unique_segments_intersection(s1a, s1b, center, p)
+        } else {
+            let s1b = center + egui::Vec2::new(0.0, radius.y);
+            unique_segments_intersection(s1a, s1b, center, p)
+        }
+    } else {
+        let s1a = center + egui::Vec2::new(radius.x, 0.0);
+        if p.y <= center.y {
+            let s1b = center - egui::Vec2::new(0.0, radius.y);
+            unique_segments_intersection(s1a, s1b, center, p)
+        } else {
+            let s1b = center + egui::Vec2::new(0.0, radius.y);
+            unique_segments_intersection(s1a, s1b, center, p)
+        }
+    }
+}
+
 fn ellipse_orthogonal_intersection(
     point: egui::Pos2,
-    (center, radius): (&egui::Pos2, &egui::Vec2),
+    (center, radius): (egui::Pos2, egui::Vec2),
 ) -> Option<egui::Pos2> {
     fn slv_px(px: f32, py: f32, cx: f32, cy: f32, rx: f32, ry: f32) -> f32 {
         let sqrt = ((1.0 - (py - cy).powf(2.0) / ry.powf(2.0)) * rx.powf(2.0)).sqrt();
@@ -108,6 +151,10 @@ pub enum NHShape {
         position: egui::Pos2,
         bounds_radius: egui::Vec2,
     },
+    Rhombus {
+        position: egui::Pos2,
+        bounds_radius: egui::Vec2,
+    },
 }
 
 impl NHShape {
@@ -128,23 +175,35 @@ impl NHShape {
                 position: *position + delta,
                 bounds_radius: *bounds_radius,
             },
+            NHShape::Rhombus {
+                position,
+                bounds_radius,
+            } => NHShape::Rhombus {
+                position: *position + delta,
+                bounds_radius: *bounds_radius,
+            },
         }
     }
 
     pub fn center(&self) -> egui::Pos2 {
         match &self {
             NHShape::Rect { inner } => inner.center(),
-            NHShape::Ellipse { position, .. } => *position,
+            NHShape::Ellipse { position, .. }
+            | NHShape::Rhombus { position, .. } => *position,
         }
     }
 
     pub fn center_intersect(&self, point: egui::Pos2) -> egui::Pos2 {
         match &self {
-            NHShape::Rect { inner } => segment_rect_point(point, inner).unwrap_or(point),
+            NHShape::Rect { inner } => segment_rect_point(point, *inner).unwrap_or(point),
             NHShape::Ellipse {
                 position,
                 bounds_radius,
-            } => segment_ellipse_point(point, (position, bounds_radius)).unwrap_or(point),
+            } => segment_ellipse_point(point, (*position, *bounds_radius)).unwrap_or(point),
+            NHShape::Rhombus {
+                position,
+                bounds_radius,
+            } => segment_rhombus_point(point, (*position, *bounds_radius)).unwrap_or(point),
         }
     }
     /// returns None iff point is not orthogonally aligned
@@ -164,16 +223,19 @@ impl NHShape {
             NHShape::Ellipse {
                 position,
                 bounds_radius,
-            } => ellipse_orthogonal_intersection(point, (position, bounds_radius)),
+            } => ellipse_orthogonal_intersection(point, (*position, *bounds_radius)),
+            NHShape::Rhombus {
+                position,
+                bounds_radius,
+            } => None
         }
     }
     pub fn bounding_box(&self) -> egui::Rect {
         match self {
             NHShape::Rect { inner } => *inner,
-            NHShape::Ellipse {
-                position,
-                bounds_radius,
-            } => egui::Rect::from_center_size(*position, 2.0 * *bounds_radius),
+            NHShape::Ellipse { position, bounds_radius }
+            | NHShape::Rhombus { position, bounds_radius }
+                => egui::Rect::from_center_size(*position, 2.0 * *bounds_radius),
         }
     }
     pub fn nice_midpoint(&self, other: &NHShape) -> egui::Pos2 {
@@ -216,6 +278,10 @@ impl NHShape {
                 // TODO: This is actually hard to do.
                 todo!()
             }
+            NHShape::Rhombus { .. } => {
+                // TODO: I'm not sure if this is needed for anything
+                todo!()
+            }
         }
     }
     pub fn contains(&self, point: egui::Pos2) -> bool {
@@ -229,15 +295,22 @@ impl NHShape {
                     + (point.y - position.y).powf(2.0) / (bounds_radius.y).powf(2.0);
                 d <= 1.0
             }
+            NHShape::Rhombus {
+                position,
+                bounds_radius,
+            } => {
+                let d = (point.x - position.x).abs() / bounds_radius.x
+                    + (point.y - position.y).abs() / bounds_radius.y;
+                d <= 1.0
+            }
         }
     }
     pub fn contained_within(&self, rect: egui::Rect) -> bool {
         match &self {
             NHShape::Rect { inner } => rect.contains_rect(*inner),
-            NHShape::Ellipse {
-                position,
-                bounds_radius,
-            } => rect.contains_rect(egui::Rect::from_center_size(
+            NHShape::Ellipse { position, bounds_radius }
+            | NHShape::Rhombus { position, bounds_radius } =>
+            rect.contains_rect(egui::Rect::from_center_size(
                 *position,
                 2.0 * *bounds_radius,
             )),
@@ -251,10 +324,8 @@ impl NHShape {
                 (inner.center(), egui::Align::Center),
                 (inner.max, egui::Align::Max),
             ],
-            NHShape::Ellipse {
-                position,
-                bounds_radius,
-            } => vec![
+            NHShape::Ellipse { position, bounds_radius }
+            | NHShape::Rhombus { position, bounds_radius } => vec![
                 (*position - *bounds_radius, egui::Align::Min),
                 (*position, egui::Align::Center),
                 (*position + *bounds_radius, egui::Align::Max),
@@ -299,7 +370,8 @@ impl NHShape {
                 };
                 [x0, x1, y0, y1]
             },
-            NHShape::Ellipse { position, bounds_radius } => {
+            NHShape::Ellipse { position, bounds_radius }
+            | NHShape::Rhombus { position, bounds_radius } => {
                 // TODO: doesn't actually generate two unique positions, but close enough
                 let [x0, x1] = if around.x < position.x {
                     [

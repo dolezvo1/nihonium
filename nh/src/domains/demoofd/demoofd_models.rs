@@ -25,8 +25,8 @@ pub enum DemoOfdElement {
     #[container_model(passthrough = "eref")]
     DemoOfdEventType(ERef<DemoOfdEventType>),
     DemoOfdPropertyType(ERef<DemoOfdPropertyType>),
-    DemoOfdPrecedence(ERef<DemoOfdPrecedence>),
     DemoOfdSpecialization(ERef<DemoOfdSpecialization>),
+    DemoOfdPrecedence(ERef<DemoOfdPrecedence>),
     DemoOfdExclusion(ERef<DemoOfdExclusion>),
 }
 
@@ -566,57 +566,6 @@ impl Model for DemoOfdPropertyType {
 }
 
 
-// TODO Precedence between two events (dashed open triangle)
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-#[nh_context_serde(is_entity)]
-pub struct DemoOfdPrecedence {
-    pub uuid: Arc<ModelUuid>,
-    #[nh_context_serde(entity)]
-    pub domain_element: ERef<DemoOfdEventType>,
-    #[nh_context_serde(entity)]
-    pub range_element: ERef<DemoOfdEventType>,
-
-    pub comment: Arc<String>,
-}
-
-impl DemoOfdPrecedence {
-    pub fn new(
-        uuid: ModelUuid,
-        domain_element: ERef<DemoOfdEventType>,
-        range_element: ERef<DemoOfdEventType>,
-    ) -> Self {
-        Self {
-            uuid: Arc::new(uuid),
-            domain_element,
-            range_element,
-            comment: Arc::new("".to_owned()),
-        }
-    }
-    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(Self {
-            uuid: Arc::new(new_uuid),
-            domain_element: self.domain_element.clone(),
-            range_element: self.domain_element.clone(),
-            comment: self.comment.clone(),
-        })
-    }
-    pub fn flip_multiconnection(&mut self) {
-        std::mem::swap(&mut self.domain_element, &mut self.range_element);
-    }
-}
-
-impl Entity for DemoOfdPrecedence {
-    fn tagged_uuid(&self) -> EntityUuid {
-        (*self.uuid).into()
-    }
-}
-
-impl Model for DemoOfdPrecedence {
-    fn uuid(&self) -> Arc<ModelUuid> {
-        self.uuid.clone()
-    }
-}
-
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -669,7 +618,57 @@ impl Model for DemoOfdSpecialization {
 }
 
 
-// TODO: Exclusion between two types (dashed with X in the middle)
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct DemoOfdPrecedence {
+    pub uuid: Arc<ModelUuid>,
+    #[nh_context_serde(entity)]
+    pub domain_element: ERef<DemoOfdEventType>,
+    #[nh_context_serde(entity)]
+    pub range_element: ERef<DemoOfdEventType>,
+
+    pub comment: Arc<String>,
+}
+
+impl DemoOfdPrecedence {
+    pub fn new(
+        uuid: ModelUuid,
+        domain_element: ERef<DemoOfdEventType>,
+        range_element: ERef<DemoOfdEventType>,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            domain_element,
+            range_element,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            domain_element: self.domain_element.clone(),
+            range_element: self.domain_element.clone(),
+            comment: self.comment.clone(),
+        })
+    }
+    pub fn flip_multiconnection(&mut self) {
+        std::mem::swap(&mut self.domain_element, &mut self.range_element);
+    }
+}
+
+impl Entity for DemoOfdPrecedence {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoOfdPrecedence {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoOfdExclusion {

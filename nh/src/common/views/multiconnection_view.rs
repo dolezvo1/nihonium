@@ -31,7 +31,9 @@ pub fn init_points(
     if source_uuid.any(|e| e == target_uuid) {
         let (min, quarter_size) = match target_shape {
             canvas::NHShape::Rect { inner } => (inner.min, inner.size() / 4.0),
-            canvas::NHShape::Ellipse { position, bounds_radius } => (position - bounds_radius, bounds_radius / 2.0),
+            canvas::NHShape::Ellipse { position, bounds_radius }
+            | canvas::NHShape::Rhombus { position, bounds_radius }
+                => (position - bounds_radius, bounds_radius / 2.0),
         };
 
         (
