@@ -2568,7 +2568,7 @@ pub struct DemoCsdLinkAdapter {
 
 #[derive(Clone, Default)]
 struct DemoCsdLinkTemporaries {
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
     link_type_buffer: DemoCsdLinkType,
@@ -2596,7 +2596,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
 
@@ -2701,7 +2701,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();
-        self.temporaries.arrow_data.insert(*model.source.read().uuid, ArrowData::new_labelless(
+        self.temporaries.arrow_data.insert((false, *model.source.read().uuid), ArrowData::new_labelless(
             self.line_type(),
             match self.model.read().link_type {
                 DemoCsdLinkType::InitiatorLink | DemoCsdLinkType::AccessLink => {
@@ -2710,7 +2710,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
                 DemoCsdLinkType::WaitLink => canvas::ArrowheadType::FullTriangle,
             },
         ));
-        self.temporaries.arrow_data.insert(*model.target.read().uuid, ArrowData {
+        self.temporaries.arrow_data.insert((true, *model.target.read().uuid), ArrowData {
             line_type: self.line_type(),
             arrowhead_type: canvas::ArrowheadType::None,
             multiplicity: Some(model.multiplicity.clone()),

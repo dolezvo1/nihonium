@@ -1988,7 +1988,7 @@ pub struct RdfPredicateAdapter {
 
 #[derive(Clone, Default)]
 struct RdfPredicateTemporaries {
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
     iri_buffer: String,
@@ -2008,7 +2008,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         Some(self.model.read().iri.clone())
     }
 
-    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
 
@@ -2105,11 +2105,11 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();
-        self.temporaries.arrow_data.insert(*model.source.read().uuid, ArrowData::new_labelless(
+        self.temporaries.arrow_data.insert((false, *model.source.read().uuid), ArrowData::new_labelless(
             canvas::LineType::Solid,
             canvas::ArrowheadType::None,
         ));
-        self.temporaries.arrow_data.insert(*model.target.uuid(), ArrowData::new_labelless(
+        self.temporaries.arrow_data.insert((true, *model.target.uuid()), ArrowData::new_labelless(
             canvas::LineType::Solid,
             canvas::ArrowheadType::OpenTriangle,
         ));

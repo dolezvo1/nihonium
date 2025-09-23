@@ -67,7 +67,7 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
         egui::Color32::BLACK
     }
     fn midpoint_label(&self) -> Option<Arc<String>> { None }
-    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData>;
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData>;
     fn source_uuids(&self) -> &[ModelUuid];
     fn target_uuids(&self) -> &[ModelUuid];
     fn flip_multiconnection(&mut self) -> Result<(), ()> {
@@ -354,7 +354,7 @@ where
         canvas.draw_multiconnection(
             &self.selected_vertices,
             self.sources.iter().map(|e| {
-                let d = ad.get(&e.element.model_uuid()).unwrap();
+                let d = ad.get(&(false, *e.element.model_uuid())).unwrap();
                 ArrowDataPos {
                     points: &e.points,
                     stroke: crate::common::canvas::Stroke {
@@ -366,7 +366,7 @@ where
                 }
             }).collect(),
             self.targets.iter().map(|e| {
-                let d = ad.get(&e.element.model_uuid()).unwrap();
+                let d = ad.get(&(true, *e.element.model_uuid())).unwrap();
                 ArrowDataPos {
                     points: &e.points,
                     stroke: crate::common::canvas::Stroke {
@@ -463,8 +463,8 @@ where
                 draw_reading(canvas, shape_intersect, next_point, &reading);
             }
         }
-        for e in self.sources.iter().chain(self.targets.iter()) {
-            let Some(data) = ad.get(&e.element.model_uuid()) else {
+        for (target, e) in self.sources.iter().map(|e| (false, e)).chain(self.targets.iter().map(|e| (true, e))) {
+            let Some(data) = ad.get(&(target, *e.element.model_uuid())) else {
                 continue;
             };
             draw_arrow_data(canvas, e.element.min_shape(), e.points[0].1, e.points.get(1).map(|e| e.1).unwrap_or_else(|| self.position()), data);

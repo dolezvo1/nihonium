@@ -2495,7 +2495,7 @@ pub struct DemoOfdPropertyTypeAdapter {
 
 #[derive(Clone, Default)]
 struct DemoOfdPropertyTypeTemporaries {
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
 
@@ -2524,7 +2524,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         }
     }
 
-    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
 
@@ -2669,7 +2669,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();
-        self.temporaries.arrow_data.insert(*model.domain_element.read().uuid, ArrowData {
+        self.temporaries.arrow_data.insert((false, *model.domain_element.read().uuid), ArrowData {
             line_type: canvas::LineType::Solid,
             arrowhead_type: canvas::ArrowheadType::None,
             multiplicity: if !model.domain_multiplicity.is_empty() {
@@ -2680,7 +2680,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
             role: None,
             reading: None,
         });
-        self.temporaries.arrow_data.insert(*model.range_element.read().uuid, ArrowData {
+        self.temporaries.arrow_data.insert((true, *model.range_element.read().uuid), ArrowData {
             line_type: canvas::LineType::Solid,
             arrowhead_type: canvas::ArrowheadType::OpenTriangle,
             multiplicity: if !model.range_multiplicity.is_empty() {
@@ -2788,7 +2788,7 @@ pub struct DemoOfdSpecializationAdapter {
 
 #[derive(Clone, Default)]
 struct DemoOfdSpecializationTemporaries {
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
 
@@ -2808,7 +2808,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
         None
     }
 
-    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
 
@@ -2879,11 +2879,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
 
         self.temporaries.arrow_data.clear();
         self.temporaries.arrow_data.insert(
-            *model.domain_element.read().uuid,
+            (false, *model.domain_element.read().uuid),
             ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::None),
         );
         self.temporaries.arrow_data.insert(
-            *model.range_element.read().uuid,
+            (true, *model.range_element.read().uuid),
             ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::FullTriangle),
         );
 
@@ -2980,7 +2980,7 @@ pub struct DemoOfdPrecedenceAdapter {
 
 #[derive(Clone, Default)]
 struct DemoOfdPrecedenceTemporaries {
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
 
@@ -3000,7 +3000,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
         None
     }
 
-    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
 
@@ -3071,11 +3071,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
 
         self.temporaries.arrow_data.clear();
         self.temporaries.arrow_data.insert(
-            *model.domain_element.read().uuid,
+            (false, *model.domain_element.read().uuid),
             ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::None),
         );
         self.temporaries.arrow_data.insert(
-            *model.range_element.read().uuid,
+            (true, *model.range_element.read().uuid),
             ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::OpenTriangle),
         );
 
@@ -3172,7 +3172,7 @@ pub struct DemoOfdExclusionAdapter {
 
 #[derive(Clone, Default)]
 struct DemoOfdExclusionTemporaries {
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
 
@@ -3194,7 +3194,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
         Some(self.temporaries.midpoint_label.clone())
     }
 
-    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
 
@@ -3265,11 +3265,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
 
         self.temporaries.arrow_data.clear();
         self.temporaries.arrow_data.insert(
-            *model.domain_element.uuid(),
+            (false, *model.domain_element.uuid()),
             ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::None),
         );
         self.temporaries.arrow_data.insert(
-            *model.range_element.uuid(),
+            (true, *model.range_element.uuid()),
             ArrowData::new_labelless(canvas::LineType::Dashed, canvas::ArrowheadType::None),
         );
 

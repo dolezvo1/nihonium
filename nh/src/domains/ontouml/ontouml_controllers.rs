@@ -1985,7 +1985,7 @@ pub struct UmlClassGeneralizationAdapter {
 #[derive(Clone, Default)]
 struct UmlClassGeneralizationTemporaries {
     midpoint_label: Option<Arc<String>>,
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
     set_name_buffer: String,
@@ -2007,7 +2007,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
         self.temporaries.midpoint_label.clone()
     }
 
-    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
 
@@ -2201,10 +2201,16 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
 
         self.temporaries.arrow_data.clear();
         for e in &model.sources {
-            self.temporaries.arrow_data.insert(*e.read().uuid, ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::None));
+            self.temporaries.arrow_data.insert(
+                (false, *e.read().uuid),
+                ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::None),
+            );
         }
         for e in &model.targets {
-            self.temporaries.arrow_data.insert(*e.read().uuid, ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::EmptyTriangle));
+            self.temporaries.arrow_data.insert(
+                (true, *e.read().uuid),
+                ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::EmptyTriangle),
+            );
         }
 
         self.temporaries.source_uuids.clear();
@@ -2313,7 +2319,7 @@ pub struct UmlClassAssociationAdapter {
 
 #[derive(Clone, Default)]
 struct UmlClassAssociationTemporaries {
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
     stereotype_buffer: &'static str,
@@ -2348,7 +2354,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssociationAdapter {
         }
     }
 
-    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
 
@@ -2721,7 +2727,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssociationAdapter {
             }
         }
         self.temporaries.arrow_data.clear();
-        self.temporaries.arrow_data.insert(*model.source.uuid(), ArrowData {
+        self.temporaries.arrow_data.insert((false, *model.source.uuid()), ArrowData {
             line_type: canvas::LineType::Solid,
             arrowhead_type: ah(model.source_navigability, model.source_aggregation),
             multiplicity: if !model.source_label_multiplicity.is_empty() {
@@ -2740,7 +2746,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssociationAdapter {
                 None
             },
         });
-        self.temporaries.arrow_data.insert(*model.target.uuid(), ArrowData {
+        self.temporaries.arrow_data.insert((true, *model.target.uuid()), ArrowData {
             line_type: canvas::LineType::Solid,
             arrowhead_type: ah(model.target_navigability, model.target_aggregation),
             multiplicity: if !model.target_label_multiplicity.is_empty() {
@@ -3281,7 +3287,7 @@ pub struct UmlClassCommentLinkAdapter {
 
 #[derive(Clone, Default)]
 struct UmlClassCommentLinkTemporaries {
-    arrow_data: HashMap<ModelUuid, ArrowData>,
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
 }
@@ -3299,7 +3305,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
         None
     }
 
-    fn arrow_data(&self) -> &HashMap<ModelUuid, ArrowData> {
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
         &self.temporaries.arrow_data
     }
 
@@ -3328,11 +3334,11 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
         let model = self.model.read();
 
         self.temporaries.arrow_data.clear();
-        self.temporaries.arrow_data.insert(*model.source.read().uuid, ArrowData::new_labelless(
+        self.temporaries.arrow_data.insert((false, *model.source.read().uuid), ArrowData::new_labelless(
             canvas::LineType::Dashed,
             canvas::ArrowheadType::None,
         ));
-        self.temporaries.arrow_data.insert(*model.target.uuid(), ArrowData::new_labelless(
+        self.temporaries.arrow_data.insert((true, *model.target.uuid()), ArrowData::new_labelless(
             canvas::LineType::Dashed,
             canvas::ArrowheadType::None,
         ));
