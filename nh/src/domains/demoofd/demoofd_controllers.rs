@@ -613,8 +613,15 @@ pub fn new(no: u32) -> ERef<dyn DiagramController> {
 
 pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (entity_membership, entity_membership_view) = new_demoofd_entitytype(
-        "Membership",
-        &"\n".repeat(20),
+        "MEMBERSHIP",
+        &"\n".repeat(21),
+        true,
+        egui::Pos2::new(120.0, 50.0),
+    );
+
+    let (entity_started_membership, entity_started_membership_view) = new_demoofd_entitytype(
+        "STARTED MEMBERSHIP",
+        "starting day [DAY]",
         true,
         egui::Pos2::new(120.0, 160.0),
     );
@@ -622,22 +629,28 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (event_started, event_started_view) = new_demoofd_eventtype(
         "01", "is started",
         (entity_membership.clone(), entity_membership_view.clone().into()),
-        None,
-        egui::Pos2::new(300.0, 50.0),
+        Some((entity_started_membership.clone(), entity_started_membership_view.clone())),
+        egui::Pos2::new(325.0, 80.0),
     );
 
     let (entity_person, entity_person_view) = new_demoofd_entitytype(
-        "Person",
+        "PERSON",
         "day of birth [DAY]",
         false,
-        egui::Pos2::new(480.0, 50.0),
+        egui::Pos2::new(500.0, 50.0),
+    );
+
+    let (prop_member, prop_member_view) = new_demoofd_propertytype(
+        "", None,
+        (entity_started_membership.clone(), entity_started_membership_view.clone().into()),
+        (entity_person.clone(), entity_person_view.clone().into()),
     );
 
     let (entity_year, entity_year_view) = new_demoofd_entitytype(
         "[YEAR]",
         "minimal age [NUMBER]\nannual fee [MONEY]\nmax members [NUMBER]",
         false,
-        egui::Pos2::new(480.0, 250.0),
+        egui::Pos2::new(500.0, 250.0),
     );
 
     let diagram_view_uuid = uuid::Uuid::now_v7().into();
@@ -649,7 +662,9 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         vec![
             entity_membership.into(),
             event_started.into(),
+            entity_started_membership.into(),
             entity_person.into(),
+            prop_member.into(),
             entity_year.into(),
         ],
     ));
@@ -661,6 +676,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
             entity_membership_view.into(),
             event_started_view.into(),
             entity_person_view.into(),
+            prop_member_view.into(),
             entity_year_view.into(),
         ],
     )
@@ -1460,6 +1476,137 @@ impl DemoOfdEntityView {
             egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
         )
     }
+
+    fn draw_inner(
+        &mut self,
+        q: &DemoOfdQueryable,
+        context: &GlobalDrawingContext,
+        canvas: &mut dyn NHCanvas,
+        tool: &Option<(egui::Pos2, &NaiveDemoOfdTool)>,
+        event: Option<(NHShape, egui::Rect)>,
+    ) -> TargettingStatus {
+        let read = self.model.read();
+
+        let event_size = if let Some(e) = event {
+            e.0.bounding_box().union(e.1)
+        } else {
+            egui::Rect::from_center_size(self.position, egui::Vec2::ZERO)
+        };
+        let name_size = canvas.measure_text(
+            event_size.center_top(),
+            egui::Align2::CENTER_BOTTOM,
+            &read.name,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+        );
+        let props_size = canvas.measure_text(
+            event_size.center_bottom(),
+            egui::Align2::CENTER_TOP,
+            &read.properties,
+            canvas::CLASS_ITEM_FONT_SIZE,
+        );
+        self.bounds_rect = name_size.union(event_size).union(props_size).expand(5.0);
+
+        canvas.draw_rectangle(
+            self.bounds_rect,
+            egui::CornerRadius::same(10),
+            if read.internal {
+                INTERNAL_ROLE_BACKGROUND
+            } else {
+                EXTERNAL_ROLE_BACKGROUND
+            },
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.highlight,
+        );
+
+        canvas.draw_line(
+            [
+                egui::Pos2::new(self.bounds_rect.left(), event_size.bottom()),
+                egui::Pos2::new(self.bounds_rect.right(), event_size.bottom()),
+            ],
+            canvas::Stroke::new_dotted(1.0, egui::Color32::BLACK),
+            canvas::Highlight::NONE,
+        );
+
+        canvas.draw_text(
+            event_size.center_top(),
+            egui::Align2::CENTER_BOTTOM,
+            &read.name,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+
+        canvas.draw_text(
+            event_size.center_bottom(),
+            egui::Align2::CENTER_TOP,
+            &read.properties,
+            canvas::CLASS_ITEM_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            let b1_rect = self.event_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b1_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(b1_rect.center(), egui::Align2::CENTER_CENTER, "◊", 14.0 / ui_scale, egui::Color32::BLACK);
+
+            let b2_rect = self.property_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b2_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(b2_rect.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
+        }
+
+        if canvas.ui_scale().is_some() {
+            if self.dragged_shape.is_some() {
+                canvas.draw_line(
+                    [
+                        egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
+                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.center().y),
+                    ],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_line(
+                    [
+                        egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.min.y),
+                        egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.max.y),
+                    ],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
+                    canvas::Highlight::NONE,
+                );
+            }
+
+            // Draw targetting rectangle
+            if let Some(t) = tool
+                .as_ref()
+                .filter(|e| self.min_shape().contains(e.0))
+                .map(|e| e.1)
+            {
+                canvas.draw_rectangle(
+                    self.bounds_rect,
+                    egui::CornerRadius::ZERO,
+                    t.targetting_for_element(Some(self.model())),
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                TargettingStatus::Drawn
+            } else {
+                TargettingStatus::NotDrawn
+            }
+        } else {
+            TargettingStatus::NotDrawn
+        }
+    }
 }
 
 impl Entity for DemoOfdEntityView {
@@ -1575,93 +1722,12 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
 
     fn draw_in(
         &mut self,
-        _: &DemoOfdQueryable,
+        q: &DemoOfdQueryable,
         context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoOfdTool)>,
     ) -> TargettingStatus {
-        let read = self.model.read();
-
-        // TODO: rounding
-        let attrs: Vec<_> = read.properties.split('\n').map(|e| ("", e)).collect();
-        self.bounds_rect = canvas.draw_class(
-            self.position,
-            None,
-            &read.name,
-            None,
-            &[&attrs],
-            if read.internal {
-                INTERNAL_ROLE_BACKGROUND
-            } else {
-                EXTERNAL_ROLE_BACKGROUND
-            },
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
-        );
-
-        // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            let b1_rect = self.event_button_rect(ui_scale);
-            canvas.draw_rectangle(
-                b1_rect,
-                egui::CornerRadius::ZERO,
-                egui::Color32::WHITE,
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
-            canvas.draw_text(b1_rect.center(), egui::Align2::CENTER_CENTER, "◊", 14.0 / ui_scale, egui::Color32::BLACK);
-
-            let b2_rect = self.property_button_rect(ui_scale);
-            canvas.draw_rectangle(
-                b2_rect,
-                egui::CornerRadius::ZERO,
-                egui::Color32::WHITE,
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
-            canvas.draw_text(b2_rect.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
-        }
-
-        if canvas.ui_scale().is_some() {
-            if self.dragged_shape.is_some() {
-                canvas.draw_line(
-                    [
-                        egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
-                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.center().y),
-                    ],
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
-                    canvas::Highlight::NONE,
-                );
-                canvas.draw_line(
-                    [
-                        egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.min.y),
-                        egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.max.y),
-                    ],
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
-                    canvas::Highlight::NONE,
-                );
-            }
-
-            // Draw targetting rectangle
-            if let Some(t) = tool
-                .as_ref()
-                .filter(|e| self.min_shape().contains(e.0))
-                .map(|e| e.1)
-            {
-                canvas.draw_rectangle(
-                    self.bounds_rect,
-                    egui::CornerRadius::ZERO,
-                    t.targetting_for_element(Some(self.model())),
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
-                TargettingStatus::Drawn
-            } else {
-                TargettingStatus::NotDrawn
-            }
-        } else {
-            TargettingStatus::NotDrawn
-        }
+        self.draw_inner(q, context, canvas, tool, None)
     }
 
     fn handle_event(
@@ -1741,7 +1807,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                     ehc.snap_manager
                         .coerce(translated_real_shape, |e| *e != *self.uuid)
                 };
-                let coerced_delta = coerced_pos - self.position;
+                let coerced_delta = coerced_pos - self.min_shape().center();
 
                 if self.highlight.selected {
                     commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
@@ -1906,7 +1972,7 @@ fn new_demoofd_eventtype(
     identifier: &str,
     name: &str,
     base_entity_type: (ERef<DemoOfdEntityType>, DemoOfdElementView),
-    specialization_entity_type: Option<(ERef<DemoOfdEntityType>, DemoOfdElementView)>,
+    specialization_entity_type: Option<(ERef<DemoOfdEntityType>, ERef<DemoOfdEntityView>)>,
     position: egui::Pos2,
 ) -> (ERef<DemoOfdEventType>, ERef<DemoOfdEventView>) {
     let (spec_model, spec_view) = specialization_entity_type
@@ -1928,7 +1994,7 @@ fn new_demoofd_eventtype(
 fn new_demoofd_eventtype_view(
     model: ERef<DemoOfdEventType>,
     base_entity_type: DemoOfdElementView,
-    specialization_entity_type: Option<DemoOfdElementView>,
+    specialization_entity_type: Option<ERef<DemoOfdEntityView>>,
     position: egui::Pos2,
 ) -> ERef<DemoOfdEventView> {
     let m = model.read();
@@ -1936,7 +2002,7 @@ fn new_demoofd_eventtype_view(
         uuid: Arc::new(uuid::Uuid::now_v7().into()),
         model: model.clone(),
         base_entity_type,
-        specialization_entity_type: UFOption::from(specialization_entity_type),
+        specialization_view: UFOption::from(specialization_entity_type),
         kind_buffer: m.kind,
         identifier_buffer: (*m.identifier).clone(),
         name_buffer: (*m.name).clone(),
@@ -2000,7 +2066,7 @@ pub struct DemoOfdEventView {
     #[nh_context_serde(entity)]
     base_entity_type: DemoOfdElementView,
     #[nh_context_serde(entity)]
-    specialization_entity_type: UFOption<DemoOfdElementView>,
+    specialization_view: UFOption<ERef<DemoOfdEntityView>>,
 
     #[nh_context_serde(skip_and_default)]
     kind_buffer: DemoTransactionKind,
@@ -2061,11 +2127,16 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     fn show_properties(
         &mut self,
         drawing_context: &GlobalDrawingContext,
-        _q: &DemoOfdQueryable,
-        _lp: &DemoOfdLabelProvider,
+        q: &DemoOfdQueryable,
+        lp: &DemoOfdLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> PropertiesStatus<DemoOfdDomain> {
+        if let Some(child) = self.specialization_view.as_mut()
+                .and_then(|t| t.write().show_properties(drawing_context, q, lp, ui, commands).to_non_default()) {
+            return child;
+        }
+
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
         }
@@ -2150,12 +2221,23 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
     fn draw_in(
         &mut self,
-        _: &DemoOfdQueryable,
+        q: &DemoOfdQueryable,
         context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoOfdTool)>,
     ) -> TargettingStatus {
         let read = self.model.read();
+
+        let name_pos = canvas.measure_text(
+            self.position + egui::Vec2::new(0.0, 2.0 * canvas::CLASS_MIDDLE_FONT_SIZE),
+            egui::Align2::CENTER_TOP,
+            &read.name,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+        );
+
+        if let UFOption::Some(s) = &self.specialization_view {
+            s.write().draw_inner(q, context, canvas, tool, Some((self.min_shape(), name_pos)));
+        }
 
         self.bounds_rect = egui::Rect::from_min_max(self.position, self.position);
 
@@ -2240,33 +2322,71 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
-            InputEvent::MouseDown(pos) => {
-                if !self.min_shape().contains(pos) {
-                    return EventHandlingStatus::NotHandled
-                }
+            InputEvent::MouseDown(pos) if self.min_shape().contains(pos) => {
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
-                    EventHandlingStatus::HandledByElement
-                } else {
-                    EventHandlingStatus::NotHandled
-                }
+            InputEvent::MouseUp(_) if self.dragged_shape.is_some() => {
+                self.dragged_shape = None;
+                EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
+                    tool.add_position(*event.mouse_position());
                     tool.add_element(self.model());
+
+                    if !self.specialization_view.is_some()
+                        && let Some((DemoOfdElementView::EntityType(new_e), esm)) = tool.try_construct_view(self) {
+                        commands.push(InsensitiveCommand::AddElement(*self.uuid, DemoOfdElementView::from(new_e).into(), true).into());
+                        if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                            *element_setup_modal = esm;
+                        }
+                    }
+
+                    EventHandlingStatus::HandledByContainer
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         self.highlight.selected = true;
                     } else {
                         self.highlight.selected = !self.highlight.selected;
                     }
-                }
 
-                EventHandlingStatus::HandledByElement
+                    EventHandlingStatus::HandledByElement
+                }
+            }
+            InputEvent::Click(pos) if !self.min_shape().contains(pos) => {
+                if let UFOption::Some(s) = &self.specialization_view {
+                    let r = s.write().handle_event(event, ehc, tool, element_setup_modal, commands);
+                    match r {
+                        EventHandlingStatus::HandledByElement => {
+                            let s = s.read();
+                            if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                                commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                                commands.push(
+                                    InsensitiveCommand::HighlightSpecific(
+                                        std::iter::once(*s.uuid()).collect(),
+                                        true,
+                                        Highlight::SELECTED,
+                                    )
+                                    .into(),
+                                );
+                            } else {
+                                commands.push(
+                                    InsensitiveCommand::HighlightSpecific(
+                                        std::iter::once(*s.uuid()).collect(),
+                                        !s.highlight.selected,
+                                        Highlight::SELECTED,
+                                    )
+                                    .into(),
+                                );
+                            }
+                            EventHandlingStatus::HandledByContainer
+                        },
+                        a => a,
+                    }
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
             }
             InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
                 let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
@@ -2297,7 +2417,11 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
                 EventHandlingStatus::HandledByElement
             }
-            _ => EventHandlingStatus::NotHandled,
+            _ => self
+                .specialization_view
+                .as_ref()
+                .map(|t| t.write().handle_event(event, ehc, tool, element_setup_modal, commands))
+                .unwrap_or(EventHandlingStatus::NotHandled)
         }
     }
 
@@ -2307,37 +2431,83 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
+        macro_rules! recurse {
+            ($self:ident) => {
+                if let UFOption::Some(s) = &$self.specialization_view {
+                    s.write().apply_command(command, undo_accumulator, affected_models);
+                }
+            };
+        }
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
                 self.highlight = self.highlight.combine(*set, *h);
+                recurse!(self);
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
                     self.highlight = self.highlight.combine(*set, *h);
                 }
+                recurse!(self);
             }
             InsensitiveCommand::SelectByDrag(rect) => {
                 self.highlight.selected = self.min_shape().contained_within(*rect);
+                recurse!(self);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _)
-                if !uuids.contains(&*self.uuid) => {}
+            InsensitiveCommand::MoveSpecificElements(uuids, delta)
+                if !uuids.contains(&*self.uuid())
+                    && !self
+                        .specialization_view
+                        .as_ref()
+                        .is_some_and(|e| uuids.contains(&e.read().uuid())) => {}
             InsensitiveCommand::MoveSpecificElements(_, delta)
             | InsensitiveCommand::MoveAllElements(delta) => {
                 self.position += *delta;
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
-                    std::iter::once(*self.uuid).collect(),
+                    std::iter::once(*self.uuid()).collect(),
                     -*delta,
                 ));
+                if let UFOption::Some(s) = &self.specialization_view {
+                    s.write().apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![], affected_models);
+                }
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
-            | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            InsensitiveCommand::DeleteSpecificElements(uuids, into_model) => {
+                if let Some(e) = self.specialization_view.as_ref()
+                    && uuids.contains(&*e.read().uuid) {
+                    undo_accumulator.push(InsensitiveCommand::AddElement(
+                        *self.uuid,
+                        DemoOfdElementOrVertex::Element(e.clone().into()),
+                        *into_model,
+                    ));
+                    if *into_model {
+                        self.model.write().specialization_entity_type = UFOption::None;
+                    }
+                    self.specialization_view = UFOption::None;
+                }
+                recurse!(self);
+            }
+            InsensitiveCommand::AddElement(v, e, into_model) => {
+                if *v == *self.uuid
+                    && self.specialization_view.as_ref().is_none()
+                    && let DemoOfdElementOrVertex::Element(DemoOfdElementView::EntityType(e)) = e
+                    {
+                    undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
+                        std::iter::once(*e.read().uuid).collect(),
+                        *into_model,
+                    ));
+                    if *into_model {
+                        self.model.write().specialization_entity_type = UFOption::Some(e.read().model.clone());
+                    }
+                    self.specialization_view = UFOption::Some(e.clone());
+                }
+                recurse!(self);
+            }
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -2380,6 +2550,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                         }
                     }
                 }
+                recurse!(self);
             }
         }
     }
@@ -2399,6 +2570,21 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     ) {
         flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+
+        if let UFOption::Some(s) = &self.specialization_view {
+            let mut views_s = HashMap::new();
+            let mut sl = s.write();
+            sl.head_count(flattened_views, &mut views_s, flattened_represented_models);
+
+            for e in views_s {
+                flattened_views_status.insert(e.0, match e.1 {
+                    SelectionStatus::NotSelected if self.highlight.selected => SelectionStatus::TransitivelySelected,
+                    e => e,
+                });
+            }
+
+            flattened_views.insert(*sl.uuid(), s.clone().into());
+        }
     }
     fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
         deleting.contains(&self.base_entity_type.uuid())
@@ -2431,7 +2617,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             uuid: view_uuid.into(),
             model: modelish,
             base_entity_type: self.base_entity_type.clone(),
-            specialization_entity_type: self.specialization_entity_type.clone(),
+            specialization_view: self.specialization_view.clone(),
             kind_buffer: self.kind_buffer,
             identifier_buffer: self.identifier_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -2550,7 +2736,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         if ui
             .add_sized(
                 (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.name_buffer),
+                egui::TextEdit::multiline(&mut self.temporaries.name_buffer),
             )
             .changed()
         {

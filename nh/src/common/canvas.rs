@@ -516,11 +516,12 @@ impl ArrowheadType {
     }
 }
 
-// TODO: dotted, double, squiggly
+// TODO: double, squiggly
 #[derive(Clone, Copy, PartialEq)]
 pub enum LineType {
     Solid,
     Dashed,
+    Dotted,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -550,6 +551,14 @@ impl Stroke {
             width,
             color,
             line_type: LineType::Dashed,
+        }
+    }
+
+    pub fn new_dotted(width: f32, color: egui::Color32) -> Self {
+        Self {
+            width,
+            color,
+            line_type: LineType::Dotted,
         }
     }
 }
@@ -1119,6 +1128,14 @@ impl NHCanvas for UiCanvas {
                     10.0,
                 ));
             }
+            LineType::Dotted => {
+                self.painter.add(eframe::epaint::Shape::dotted_line(
+                    &[p1, p2],
+                    stroke.color,
+                    4.0,
+                    1.0,
+                ));
+            }
         }
     }
 
@@ -1420,6 +1437,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         let stroke_dasharray = match stroke.line_type {
             LineType::Solid => "none",
             LineType::Dashed => "10,5",
+            LineType::Dotted => "5,5",
         };
 
         self.element_buffer.push(format!(

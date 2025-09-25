@@ -752,13 +752,10 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 if let Some(source_view) = q.get_view(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
-                        match link_type.line_type() {
-                            canvas::LineType::Solid => {
-                                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
-                            }
-                            canvas::LineType::Dashed => {
-                                canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK)
-                            }
+                        canvas::Stroke {
+                            line_type: link_type.line_type(),
+                            width: 1.0,
+                            color: egui::Color32::BLACK,
                         },
                         canvas::Highlight::NONE,
                     );
