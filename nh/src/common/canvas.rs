@@ -648,6 +648,17 @@ impl<'a> BitAnd<Highlight> for &'a Highlight {
 }
 
 
+pub const COMMENT_INDICATOR: &[egui::Pos2] = &[
+    egui::Pos2::new(0.0, 0.0),
+    egui::Pos2::new(8.0, 0.0),
+    egui::Pos2::new(8.0, 4.0),
+    egui::Pos2::new(5.0, 4.0),
+    egui::Pos2::new(7.0, 6.0),
+    egui::Pos2::new(3.0, 4.0),
+    egui::Pos2::new(0.0, 4.0),
+];
+
+
 pub const CLASS_TOP_FONT_SIZE: f32 = 12.0;
 pub const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
 pub const CLASS_BOTTOM_FONT_SIZE: f32 = 12.0;
