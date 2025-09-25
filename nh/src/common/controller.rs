@@ -158,6 +158,7 @@ pub enum DiagramCommand {
     ColorSelected(u8, MGlobalColor),
     HighlightAllElements(/*set: */bool, Highlight),
     HighlightElement(EntityUuid, /*set: */bool, Highlight),
+    PanToElement(EntityUuid),
     CreateViewFor(ModelUuid),
     DeleteViewFor(ModelUuid, /*including_model:*/ bool),
 }
@@ -2212,6 +2213,19 @@ impl<
                     );
                 }
             },
+            DiagramCommand::PanToElement(e) => {
+                let view_uuid = match e {
+                    EntityUuid::Model(model_uuid) => self.temporaries.flattened_represented_models.get(&model_uuid).cloned(),
+                    EntityUuid::View(view_uuid) => Some(view_uuid),
+                };
+                if let Some(v) = view_uuid.and_then(|e| self.temporaries.flattened_views.get(&e)) {
+                    let bb = v.min_shape().bounding_box();
+                    if !self.temporaries.last_interactive_canvas_rect.contains_rect(bb) {
+                        self.temporaries.camera_scale = 1.0;
+                        self.temporaries.camera_offset = egui::Pos2::new(10.0, 10.0) - bb.left_top().to_vec2();
+                    }
+                }
+            }
             DiagramCommand::CreateViewFor(model_uuid) => {
                 if let Some((model, parent_uuid)) = self.adapter.find_element(&model_uuid) {
                     let mut cmds = vec![];

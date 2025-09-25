@@ -476,6 +476,12 @@ impl CustomTab for OntoUMLValidationTab {
                                             DiagramCommand::HighlightElement(uuid.into(), true, Highlight::SELECTED),
                                         ).into()
                                     );
+                                    commands.push(
+                                        SimpleProjectCommand::SpecificDiagramCommand(
+                                            self.view_uuid,
+                                            DiagramCommand::PanToElement(uuid.into()),
+                                        ).into()
+                                    );
                                 }
                             });
 
