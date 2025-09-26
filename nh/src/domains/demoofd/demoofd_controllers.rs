@@ -253,7 +253,10 @@ impl Default for UmlClassPlaceholderViews {
             None, egui::Pos2::new(200.0, 50.0),
         );
 
-        let (_prop, prop_view) = new_demoofd_propertytype("", None, entity_2.clone(), (d.clone(), dv.clone().into()));
+        let (prop, prop_view) = new_demoofd_propertytype("", None, entity_2.clone(), (d.clone(), dv.clone().into()));
+        prop.write().domain_multiplicity = Arc::new("".to_owned());
+        prop.write().range_multiplicity = Arc::new("".to_owned());
+        prop_view.write().refresh_buffers();
         let (_spec, spec_view) = new_demoofd_specialization(None, entity_2.clone(), (d.clone(), dv.clone().into()));
         let (_aggr, aggr_view) = new_demoofd_aggregation(None, entity_2.clone(), (d.clone(), dv.clone().into()));
         let (_prec, prec_view) = new_demoofd_precedence(None, (event.clone(), event_view.clone().into()), (dummy_event.clone(), dummy_event_view.clone().into()));

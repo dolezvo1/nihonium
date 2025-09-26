@@ -193,16 +193,28 @@ impl Default for UmlClassPlaceholderViews {
         let kind = (kind, kind_view.into());
         let (subkind, subkind_view) = new_umlclass_class("subkind", "Human", false, "", "", egui::Pos2::new(100.0, 75.0));
         let subkind = (subkind, subkind_view.into());
-        let (phase, phase_view) = new_umlclass_class("phase", "Adult", false, "", "", egui::Pos2::ZERO);
+        let (phase, phase_view) = new_umlclass_class("phase", "Adult", false, "", "", egui::Pos2::new(200.0, 150.0));
         let phase = (phase, phase_view.into());
         let (role, role_view) = new_umlclass_class("role", "Customer", false, "", "", egui::Pos2::ZERO);
         let role = (role, role_view.into());
 
         let (_gen, gen_view) = new_umlclass_generalization(None, kind.clone(), subkind.clone());
-        let (_assoc, assoc_view) = new_umlclass_association("", None, kind.clone(), subkind.clone());
-        let (_mediation, mediation_view) = new_umlclass_association("mediation", None, kind.clone(), subkind.clone());
-        let (_char, char_view) = new_umlclass_association("characterization", None, kind.clone(), subkind.clone());
-        let (_comp, comp_view) = new_umlclass_association("componentOf", None, kind.clone(), subkind.clone());
+        let (assoc, assoc_view) = new_umlclass_association("", None, kind.clone(), phase.clone());
+        assoc.write().source_label_multiplicity = Arc::new("".to_owned());
+        assoc.write().target_label_multiplicity = Arc::new("".to_owned());
+        assoc_view.write().refresh_buffers();
+        let (mediation, mediation_view) = new_umlclass_association("mediation", None, kind.clone(), phase.clone());
+        mediation.write().source_label_multiplicity = Arc::new("".to_owned());
+        mediation.write().target_label_multiplicity = Arc::new("".to_owned());
+        mediation_view.write().refresh_buffers();
+        let (chara, char_view) = new_umlclass_association("characterization", None, kind.clone(), phase.clone());
+        chara.write().source_label_multiplicity = Arc::new("".to_owned());
+        chara.write().target_label_multiplicity = Arc::new("".to_owned());
+        char_view.write().refresh_buffers();
+        let (comp, comp_view) = new_umlclass_association("componentOf", None, kind.clone(), phase.clone());
+        comp.write().source_label_multiplicity = Arc::new("".to_owned());
+        comp.write().target_label_multiplicity = Arc::new("".to_owned());
+        comp_view.write().refresh_buffers();
 
         let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
         let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));

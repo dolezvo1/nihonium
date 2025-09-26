@@ -291,7 +291,10 @@ impl Default for UmlClassPlaceholderViews {
         let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
 
         let (_gen, gen_view) = new_umlclass_generalization(None, class_1, dummy_1);
-        let (_assoc, assoc_view) = new_umlclass_association("", None, class_2.clone(), dummy_2.clone());
+        let (assoc, assoc_view) = new_umlclass_association("", None, class_2.clone(), dummy_2.clone());
+        assoc.write().source_label_multiplicity = Arc::new("".to_owned());
+        assoc.write().target_label_multiplicity = Arc::new("".to_owned());
+        assoc_view.write().refresh_buffers();
         let (_intreal, intreal_view) = new_umlclass_dependency("", false, None, class_2.clone(), dummy_2.clone());
         let (_usage, usage_view) = new_umlclass_dependency("use", true, None, class_2.clone(), dummy_2.clone());
 
