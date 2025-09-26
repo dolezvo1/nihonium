@@ -48,7 +48,25 @@ impl DemoOfdElement {
 
 impl VisitableElement for DemoOfdElement {
     fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
-        v.visit_simple(self);
+        match self {
+            DemoOfdElement::DemoOfdPackage(inner) => {
+                v.open_complex(self);
+                for e in &inner.read().contained_elements {
+                    e.accept(v);
+                }
+                v.close_complex(self);
+            },
+            DemoOfdElement::DemoOfdEventType(inner) => {
+                if let UFOption::Some(t) = &inner.read().specialization_entity_type {
+                    v.open_complex(self);
+                    DemoOfdElement::from(t.clone()).accept(v);
+                    v.close_complex(self);
+                } else {
+                    v.visit_simple(self);
+                }
+            }
+            _ => v.visit_simple(self),
+        }
     }
 }
 

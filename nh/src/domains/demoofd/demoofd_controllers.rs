@@ -695,7 +695,6 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         vec![
             entity_membership.into(),
             event_started.into(),
-            entity_started_membership.into(),
             entity_person.into(),
             prop_member.into(),
             entity_year.into(),
@@ -2588,9 +2587,13 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                         std::iter::once(*e.read().uuid).collect(),
                         *into_model,
                     ));
+
                     if *into_model {
                         self.model.write().specialization_entity_type = UFOption::Some(e.read().model.clone());
+                        affected_models.insert(*self.model_uuid());
                     }
+                    affected_models.insert(*e.read().model_uuid());
+
                     self.specialization_view = UFOption::Some(e.clone());
                 }
                 recurse!(self);
