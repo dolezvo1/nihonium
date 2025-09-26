@@ -26,6 +26,7 @@ pub enum DemoOfdElement {
     DemoOfdEventType(ERef<DemoOfdEventType>),
     DemoOfdPropertyType(ERef<DemoOfdPropertyType>),
     DemoOfdSpecialization(ERef<DemoOfdSpecialization>),
+    DemoOfdAggregation(ERef<DemoOfdAggregation>),
     DemoOfdPrecedence(ERef<DemoOfdPrecedence>),
     DemoOfdExclusion(ERef<DemoOfdExclusion>),
 }
@@ -39,6 +40,7 @@ impl DemoOfdElement {
             DemoOfdElement::DemoOfdPackage(..)
             | DemoOfdElement::DemoOfdPrecedence(..)
             | DemoOfdElement::DemoOfdSpecialization(..)
+            | DemoOfdElement::DemoOfdAggregation(..)
             | DemoOfdElement::DemoOfdExclusion(..) => None,
         }
     }
@@ -88,10 +90,13 @@ pub fn deep_copy_diagram(d: &DemoOfdDiagram) -> (ERef<DemoOfdDiagram>, HashMap<M
             DemoOfdElement::DemoOfdPropertyType(inner) => {
                 inner.read().clone_with(*new_uuid).into()
             },
-            DemoOfdElement::DemoOfdPrecedence(inner) => {
+            DemoOfdElement::DemoOfdSpecialization(inner) => {
                 inner.read().clone_with(*new_uuid).into()
             },
-            DemoOfdElement::DemoOfdSpecialization(inner) => {
+            DemoOfdElement::DemoOfdAggregation(inner) => {
+                inner.read().clone_with(*new_uuid).into()
+            },
+            DemoOfdElement::DemoOfdPrecedence(inner) => {
                 inner.read().clone_with(*new_uuid).into()
             },
             DemoOfdElement::DemoOfdExclusion(inner) => {
@@ -129,6 +134,20 @@ pub fn deep_copy_diagram(d: &DemoOfdDiagram) -> (ERef<DemoOfdDiagram>, HashMap<M
                 let source_uuid = *model.domain_element.read().uuid;
                 if let Some(DemoOfdElement::DemoOfdEntityType(de)) = all_models.get(&source_uuid) {
                     model.domain_element = de.clone();
+                }
+                let target_uuid = *model.range_element.read().uuid;
+                if let Some(DemoOfdElement::DemoOfdEntityType(re)) = all_models.get(&target_uuid) {
+                    model.range_element = re.clone();
+                }
+            },
+            DemoOfdElement::DemoOfdAggregation(inner) => {
+                let mut model = inner.write();
+
+                for e in model.domain_elements.iter_mut() {
+                    let source_uuid = *e.read().uuid;
+                    if let Some(DemoOfdElement::DemoOfdEntityType(de)) = all_models.get(&source_uuid) {
+                        *e = de.clone();
+                    }
                 }
                 let target_uuid = *model.range_element.read().uuid;
                 if let Some(DemoOfdElement::DemoOfdEntityType(re)) = all_models.get(&target_uuid) {
@@ -543,8 +562,8 @@ impl DemoOfdPropertyType {
             name: self.name.clone(),
             domain_element: self.domain_element.clone(),
             domain_multiplicity: self.domain_multiplicity.clone(),
-            range_element: self.domain_element.clone(),
-            range_multiplicity: self.domain_multiplicity.clone(),
+            range_element: self.range_element.clone(),
+            range_multiplicity: self.range_multiplicity.clone(),
             comment: self.comment.clone(),
         })
     }
@@ -564,7 +583,6 @@ impl Model for DemoOfdPropertyType {
         self.uuid.clone()
     }
 }
-
 
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -596,7 +614,7 @@ impl DemoOfdSpecialization {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
             domain_element: self.domain_element.clone(),
-            range_element: self.domain_element.clone(),
+            range_element: self.range_element.clone(),
             comment: self.comment.clone(),
         })
     }
@@ -612,6 +630,68 @@ impl Entity for DemoOfdSpecialization {
 }
 
 impl Model for DemoOfdSpecialization {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct DemoOfdAggregation {
+    pub uuid: Arc<ModelUuid>,
+    #[nh_context_serde(entity)]
+    pub domain_elements: Vec<ERef<DemoOfdEntityType>>,
+    #[nh_context_serde(entity)]
+    pub range_element: ERef<DemoOfdEntityType>,
+    pub is_generalization: bool,
+
+    pub comment: Arc<String>,
+}
+
+impl DemoOfdAggregation {
+    pub fn new(
+        uuid: ModelUuid,
+        domain_elements: Vec<ERef<DemoOfdEntityType>>,
+        range_element: ERef<DemoOfdEntityType>,
+        is_generalization: bool,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            domain_elements,
+            range_element,
+            is_generalization,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            domain_elements: self.domain_elements.clone(),
+            range_element: self.range_element.clone(),
+            is_generalization: self.is_generalization,
+            comment: self.comment.clone(),
+        })
+    }
+    pub fn flip_multiconnection(&mut self) -> Result<(), ()> {
+        if self.domain_elements.len() == 1 {
+            let tmp = self.range_element.clone();
+            self.range_element = self.domain_elements[0].clone();
+            self.domain_elements = vec![tmp];
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl Entity for DemoOfdAggregation {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoOfdAggregation {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }
@@ -647,7 +727,7 @@ impl DemoOfdPrecedence {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
             domain_element: self.domain_element.clone(),
-            range_element: self.domain_element.clone(),
+            range_element: self.range_element.clone(),
             comment: self.comment.clone(),
         })
     }
@@ -698,7 +778,7 @@ impl DemoOfdExclusion {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
             domain_element: self.domain_element.clone(),
-            range_element: self.domain_element.clone(),
+            range_element: self.range_element.clone(),
             comment: self.comment.clone(),
         })
     }

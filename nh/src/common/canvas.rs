@@ -409,6 +409,7 @@ pub enum ArrowheadType {
     None,
     OpenTriangle,
     EmptyTriangle,
+    EmptyTriangleWith(char),
     FullTriangle,
     EmptyRhombus,
     FullRhombus,
@@ -424,12 +425,13 @@ const ARROWHEAD_INNER_ANGLE: f32 = 35.0;
 impl ArrowheadType {
     pub fn _name(&self) -> &str {
         match self {
-            ArrowheadType::None => "None",
-            ArrowheadType::OpenTriangle => "Open Triangle",
-            ArrowheadType::EmptyTriangle => "Empty Triangle",
-            ArrowheadType::FullTriangle => "Full Triangle",
-            ArrowheadType::EmptyRhombus => "Empty Rhombus",
-            ArrowheadType::FullRhombus => "Full Rhombus",
+            Self::None => "None",
+            Self::OpenTriangle => "Open Triangle",
+            Self::EmptyTriangle => "Empty Triangle",
+            Self::EmptyTriangleWith(..) => "Empty Triangle With Char",
+            Self::FullTriangle => "Full Triangle",
+            Self::EmptyRhombus => "Empty Rhombus",
+            Self::FullRhombus => "Full Rhombus",
         }
     }
 
@@ -439,6 +441,7 @@ impl ArrowheadType {
         match self {
             ArrowheadType::None | ArrowheadType::OpenTriangle => focal_point,
             ArrowheadType::EmptyTriangle
+            | ArrowheadType::EmptyTriangleWith(..)
             | ArrowheadType::FullTriangle
             | ArrowheadType::EmptyRhombus
             | ArrowheadType::FullRhombus => {
@@ -487,17 +490,30 @@ impl ArrowheadType {
                     highlight,
                 );
             }
-            ArrowheadType::EmptyTriangle | ArrowheadType::FullTriangle => {
+            ArrowheadType::EmptyTriangle
+            | ArrowheadType::EmptyTriangleWith(..)
+            | ArrowheadType::FullTriangle => {
                 canvas.draw_polygon(
                     vec![focal_point, p1, p2],
-                    if *self == ArrowheadType::EmptyTriangle {
-                        egui::Color32::WHITE
-                    } else {
-                        egui::Color32::BLACK
+                    match self {
+                        ArrowheadType::EmptyTriangle
+                        | ArrowheadType::EmptyTriangleWith(..) => egui::Color32::WHITE,
+                        ArrowheadType::FullTriangle => egui::Color32::BLACK,
+                        _ => unreachable!(),
                     },
                     Stroke::new_solid(1.0, egui::Color32::BLACK),
                     highlight,
                 );
+                if let ArrowheadType::EmptyTriangleWith(c) = self {
+                    let char_pos = focal_point + egui::Vec2::new(outward_angle.cos(), outward_angle.sin()) * ARROWHEAD_SIDE_LENGTH / 2.0;
+                    canvas.draw_text(
+                        char_pos,
+                        egui::Align2::CENTER_CENTER,
+                        &c.to_string(),
+                        10.0,
+                        egui::Color32::BLACK,
+                    );
+                }
             }
             ArrowheadType::EmptyRhombus | ArrowheadType::FullRhombus => {
                 let p3 = p2 + (p1 - focal_point);
