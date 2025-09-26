@@ -2222,7 +2222,7 @@ impl<
                     let bb = v.min_shape().bounding_box();
                     if !self.temporaries.last_interactive_canvas_rect.contains_rect(bb) {
                         self.temporaries.camera_scale = 1.0;
-                        self.temporaries.camera_offset = egui::Pos2::new(10.0, 10.0) - bb.left_top().to_vec2();
+                        self.temporaries.camera_offset = (self.temporaries.last_interactive_canvas_rect.size() / 2.0 - bb.center().to_vec2()).to_pos2();
                     }
                 }
             }
