@@ -242,8 +242,29 @@ where
             inner: egui::Rect::NOTHING,
         }
     }
-    fn max_shape(&self) -> canvas::NHShape {
-        todo!()
+    fn bounding_box(&self) -> egui::Rect {
+        let mut r = egui::Rect::NOTHING;
+
+        for e in self.all_vertices() {
+            let p = e.1;
+            if r == egui::Rect::NOTHING {
+                r = egui::Rect::from_min_max(p, p);
+            }
+            if !r.contains(p) {
+                if p.x < r.min.x {
+                    r.min.x = p.x;
+                } else if p.x > r.max.x {
+                    r.max.x = p.x;
+                }
+                if p.y < r.min.y {
+                    r.min.y = p.y;
+                } else if p.y > r.max.y {
+                    r.max.y = p.y;
+                }
+            }
+        }
+
+        r
     }
 
     fn position(&self) -> egui::Pos2 {

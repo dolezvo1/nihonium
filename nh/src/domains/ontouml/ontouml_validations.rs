@@ -479,7 +479,7 @@ impl CustomTab for OntoUMLValidationTab {
                                     commands.push(
                                         SimpleProjectCommand::SpecificDiagramCommand(
                                             self.view_uuid,
-                                            DiagramCommand::PanToElement(uuid.into()),
+                                            DiagramCommand::PanToElement(uuid.into(), false),
                                         ).into()
                                     );
                                 }

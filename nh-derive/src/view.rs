@@ -63,7 +63,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
 
     let arms_model = arms_immutable.iter().map(|e| quote! { #e.model() }).collect::<Vec<_>>();
     let arms_min_shape = arms_immutable.iter().map(|e| quote! { #e.min_shape() }).collect::<Vec<_>>();
-    let arms_max_shape = arms_immutable.iter().map(|e| quote! { #e.max_shape() }).collect::<Vec<_>>();
+    let arms_bounding_box = arms_immutable.iter().map(|e| quote! { #e.bounding_box() }).collect::<Vec<_>>();
     let arms_position = arms_immutable.iter().map(|e| quote! { #e.position() }).collect::<Vec<_>>();
 
     let arms_controller_for = arms_immutable.iter().map(|e| quote! { #e.controller_for(uuid) }).collect::<Vec<_>>();
@@ -117,9 +117,9 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
                     #(#arms_min_shape),*
                 }
             }
-            fn max_shape(&self) -> NHShape {
+            fn bounding_box(&self) -> egui::Rect {
                 match self {
-                    #(#arms_max_shape),*
+                    #(#arms_bounding_box),*
                 }
             }
             fn position(&self) -> egui::Pos2 {

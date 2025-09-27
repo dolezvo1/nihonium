@@ -783,17 +783,19 @@ impl NHContext {
         let model_uuid = lfc.read().model_uuid();
         let Some(model_hierarchy_view) = self.model_hierarchy_views.get(&model_uuid) else { return; };
 
-        let cmd = {
+        let cmds = {
             let lock = lfc.read();
             let rm = lock.represented_models();
             let rf = |uuid: &ModelUuid| rm.contains_key(uuid);
             model_hierarchy_view.show_model_hierarchy(ui, &rf)
         };
 
-        if let Some(cmd) = cmd {
+        if !cmds.is_empty() {
             let mut undo_accumulator = Vec::new();
             let mut affected_models = HashSet::new();
-            lfc.write().apply_command(cmd, &mut undo_accumulator, &mut affected_models);
+            for c in cmds {
+                lfc.write().apply_command(c, &mut undo_accumulator, &mut affected_models);
+            }
             self.set_modified_state(*last_focused_diagram, undo_accumulator);
             self.refresh_buffers(&affected_models);
         }

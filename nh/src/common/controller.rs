@@ -158,7 +158,7 @@ pub enum DiagramCommand {
     ColorSelected(u8, MGlobalColor),
     HighlightAllElements(/*set: */bool, Highlight),
     HighlightElement(EntityUuid, /*set: */bool, Highlight),
-    PanToElement(EntityUuid),
+    PanToElement(EntityUuid, /*force:*/bool),
     CreateViewFor(ModelUuid),
     DeleteViewFor(ModelUuid, /*including_model:*/ bool),
 }
@@ -267,7 +267,7 @@ impl HierarchyNode {
 }
 
 pub trait ModelHierarchyView {
-    fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Option<DiagramCommand>;
+    fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Vec<DiagramCommand>;
 }
 
 pub struct SimpleModelHierarchyView<ModelT>
@@ -294,12 +294,12 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
     where ModelT: VisitableDiagram,
         <ModelT as ContainerModel>::ElementT: VisitableElement,
 {
-    fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Option<DiagramCommand> {
+    fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Vec<DiagramCommand> {
         struct HierarchyViewVisitor<'data, 'ui, ModelT>
             where ModelT: VisitableDiagram,
                 <ModelT as ContainerModel>::ElementT: VisitableElement,
         {
-            command: Option<DiagramCommand>,
+            commands: Vec<DiagramCommand>,
             is_represented: &'data dyn Fn(&ModelUuid) -> bool,
             label_provider: &'data dyn LabelProvider,
             builder: &'data mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
@@ -322,17 +322,17 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
                         .context_menu(|ui| {
                             let is_represented = (self.is_represented)(model_uuid);
                             if !is_represented && ui.button("Create view").clicked() {
-                                self.command = Some(DiagramCommand::CreateViewFor(*model_uuid));
+                                self.commands.push(DiagramCommand::CreateViewFor(*model_uuid));
                                 ui.close();
                             }
 
                             if is_represented && ui.button("Delete view").clicked() {
-                                self.command = Some(DiagramCommand::DeleteViewFor(*model_uuid, false));
+                                self.commands.push(DiagramCommand::DeleteViewFor(*model_uuid, false));
                                 ui.close();
                             }
 
                             if ui.button("Delete model").clicked() {
-                                self.command = Some(DiagramCommand::DeleteViewFor(*model_uuid, true));
+                                self.commands.push(DiagramCommand::DeleteViewFor(*model_uuid, true));
                                 ui.close();
                             }
                         })
@@ -372,10 +372,10 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
             }
         }
 
-        let mut c = None;
-        egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show(ui, |builder| {
+        let mut c = vec![];
+        let (r, a) = egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show(ui, |builder| {
             let mut hvv = HierarchyViewVisitor {
-                command: None,
+                commands: vec![],
                 is_represented, builder,
                 label_provider: &*self.label_provider.read(),
                 model: PhantomData,
@@ -383,8 +383,17 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
 
             self.model.read().accept(&mut hvv);
 
-            c = hvv.command;
+            c = hvv.commands;
         });
+
+        for e in a {
+            if let egui_ltreeview::Action::Activate(activate) = e {
+                let e = activate.selected[0].into();
+                c.push(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED));
+                c.push(DiagramCommand::HighlightElement(e, true, Highlight::SELECTED));
+                c.push(DiagramCommand::PanToElement(e, true));
+            }
+        }
 
         c
     }
@@ -599,8 +608,8 @@ pub trait ElementController<CommonElementT>: View {
     fn model(&self) -> CommonElementT;
 
     fn min_shape(&self) -> NHShape;
-    fn max_shape(&self) -> NHShape {
-        self.min_shape()
+    fn bounding_box(&self) -> egui::Rect {
+        self.min_shape().bounding_box()
     }
 
     // Position makes sense even for elements such as connections,
@@ -2213,16 +2222,18 @@ impl<
                     );
                 }
             },
-            DiagramCommand::PanToElement(e) => {
+            DiagramCommand::PanToElement(e, force) => {
                 let view_uuid = match e {
                     EntityUuid::Model(model_uuid) => self.temporaries.flattened_represented_models.get(&model_uuid).cloned(),
                     EntityUuid::View(view_uuid) => Some(view_uuid),
                 };
                 if let Some(v) = view_uuid.and_then(|e| self.temporaries.flattened_views.get(&e)) {
-                    let bb = v.min_shape().bounding_box();
-                    if !self.temporaries.last_interactive_canvas_rect.contains_rect(bb) {
+                    let bb = v.bounding_box();
+                    if force || !self.temporaries.last_interactive_canvas_rect.contains_rect(bb) {
                         self.temporaries.camera_scale = 1.0;
-                        self.temporaries.camera_offset = (self.temporaries.last_interactive_canvas_rect.size() / 2.0 - bb.center().to_vec2()).to_pos2();
+                        let lir = self.temporaries.last_interactive_canvas_rect.size() / 2.0;
+                        let lir = egui::Pos2::new(lir.x.max(10.0), lir.y.max(10.0));
+                        self.temporaries.camera_offset = lir - bb.center().to_vec2();
                     }
                 }
             }
