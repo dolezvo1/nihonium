@@ -1186,15 +1186,17 @@ impl NHCanvas for UiCanvas {
                 self.draw_line([p1, p2], stroke, highlight);
             }
         } else {
-            self.painter.rect(
-                (rect * self.camera_scale)
-                    .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2())
-                    .intersect(self.canvas),
-                corner_radius,
-                color,
-                egui::Stroke::from(stroke),
-                egui::StrokeKind::Middle,
-            );
+            let translated_rect = (rect * self.camera_scale)
+                    .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2());
+            if self.canvas.intersects(translated_rect) {
+                self.painter.rect(
+                    translated_rect,
+                    corner_radius,
+                    color,
+                    egui::Stroke::from(stroke),
+                    egui::StrokeKind::Middle,
+                );
+            }
         }
     }
 
