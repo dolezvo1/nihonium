@@ -2285,9 +2285,10 @@ impl eframe::App for NHApp {
                                 2.0 * *padding_y,
                             );
                         let mut svg_canvas = SVGCanvas::new(
-                            ui.painter(),
                             canvas_offset,
                             canvas_size,
+                            *highlight,
+                            ui.painter(),
                         );
                         if *background {
                             svg_canvas.draw_rectangle(

@@ -1354,7 +1354,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         _corner_radius: egui::CornerRadius,
         _color: egui::Color32,
         _stroke: Stroke,
-        highlight: Highlight,
+        _highlight: Highlight,
     ) {
         self.bounds = self.bounds.union(rect);
     }
@@ -1365,7 +1365,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         radius: egui::Vec2,
         _color: egui::Color32,
         _stroke: Stroke,
-        highlight: Highlight,
+        _highlight: Highlight,
     ) {
         let rect = egui::Rect::from_center_size(position, 2.0 * radius);
         self.bounds = self.bounds.union(rect);
@@ -1376,7 +1376,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         vertices: Vec<egui::Pos2>,
         _color: egui::Color32,
         _stroke: Stroke,
-        highlight: Highlight,
+        _highlight: Highlight,
     ) {
         for p in vertices {
             self.bounds.extend_with(p);
@@ -1414,17 +1414,49 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
 pub struct SVGCanvas<'a> {
     camera_offset: egui::Pos2,
     export_size: egui::Vec2,
+    highlight_filter: Highlight,
+    highlight_colors: [egui::Color32; 4],
     painter: &'a egui::Painter,
     element_buffer: Vec<String>,
 }
 
 impl<'a> SVGCanvas<'a> {
-    pub fn new(painter: &'a egui::Painter, offset: egui::Pos2, size: egui::Vec2) -> Self {
+    pub fn new(
+        camera_offset: egui::Pos2,
+        export_size: egui::Vec2,
+        highlight_filter: Highlight,
+        painter: &'a egui::Painter,
+    ) -> Self {
         Self {
-            camera_offset: offset,
-            export_size: size,
+            camera_offset,
+            export_size,
+            highlight_filter,
+            highlight_colors: [
+                egui::Color32::BLUE,
+                egui::Color32::GREEN,
+                egui::Color32::RED,
+                egui::Color32::ORANGE,
+            ],
             painter,
             element_buffer: Vec::new(),
+        }
+    }
+
+    fn filtered_stroke(&self, stroke: Stroke, h: Highlight) -> Stroke {
+        let h = &h & self.highlight_filter;
+        if h.count() == 0 {
+            stroke
+        } else {
+            Stroke::new_solid(
+                2.0 * stroke.width,
+                match h {
+                    Highlight { selected, .. } if selected => self.highlight_colors[0],
+                    Highlight { valid, .. } if valid => self.highlight_colors[1],
+                    Highlight { invalid, .. } if invalid => self.highlight_colors[2],
+                    Highlight { warning, .. } if warning => self.highlight_colors[3],
+                    _ => unreachable!(),
+                },
+            )
         }
     }
 
@@ -1461,10 +1493,11 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
     }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {
+        let stroke = self.filtered_stroke(stroke, highlight);
         let stroke_dasharray = match stroke.line_type {
             LineType::Solid => "none",
             LineType::Dashed => "10,5",
-            LineType::Dotted => "5,5",
+            LineType::Dotted => "2,2",
         };
 
         self.element_buffer.push(format!(
@@ -1475,27 +1508,45 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
             points[1].x + self.camera_offset.x,
             points[1].y + self.camera_offset.y,
             stroke.color.to_hex(),
-            stroke_dasharray
+            stroke_dasharray,
         ));
     }
 
     fn draw_rectangle(
         &mut self,
         rect: egui::Rect,
-        _corner_radius: egui::CornerRadius,
+        corner_radius: egui::CornerRadius,
         color: egui::Color32,
         stroke: Stroke,
         highlight: Highlight,
     ) {
-        // TODO: implement rounding (not directly supported by SVG, potentially hard)
-        let top_left = rect.left_top();
+        let stroke = self.filtered_stroke(stroke, highlight);
+
+        let egui::CornerRadius { nw, ne, sw, se } = corner_radius;
+        let (nw, ne, sw, se) = (nw as f32, ne as f32, sw as f32, se as f32);
+        let top_edge_start = rect.left_top() + egui::Vec2::new(nw, 0.0);
+
+        let top_edge = rect.width() - nw - ne;
+        let right_edge = rect.height() - ne - se;
+        let bottom_edge = rect.width() - se - sw;
+        let left_edge = rect.height() - sw - nw;
+
         self.element_buffer.push(format!(
-            r#"<rect x="{}" y="{}" width="{}" height="{}" fill="{}" stroke="{}"/>
+            r#"<path d="
+                M{},{}
+                h{top_edge}
+                a{ne},{ne} 0 0 1 {ne},{ne}
+                v{right_edge}
+                a{se},{se} 0 0 1 -{se},{se}
+                h-{bottom_edge}
+                a{sw},{sw} 0 0 1 -{sw},-{sw}
+                v-{left_edge}
+                a{nw},{nw} 0 0 1 {nw},-{nw}
+                z
+                " fill="{}" stroke="{}"/>
 "#,
-            top_left.x + self.camera_offset.x,
-            top_left.y + self.camera_offset.y,
-            rect.width(),
-            rect.height(),
+            top_edge_start.x + self.camera_offset.x,
+            top_edge_start.y + self.camera_offset.y,
             color.to_hex(),
             stroke.color.to_hex()
         ));
@@ -1509,6 +1560,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         stroke: Stroke,
         highlight: Highlight,
     ) {
+        let stroke = self.filtered_stroke(stroke, highlight);
         self.element_buffer.push(format!(
             r#"<ellipse cx="{}" cy="{}" rx="{}" ry="{}" fill="{}" stroke="{}"/>
 "#,
@@ -1528,6 +1580,7 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         stroke: Stroke,
         highlight: Highlight,
     ) {
+        let stroke = self.filtered_stroke(stroke, highlight);
         let polygon_points = vertices
             .iter()
             .map(|&p| {
