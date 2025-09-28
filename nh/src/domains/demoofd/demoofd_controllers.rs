@@ -88,6 +88,10 @@ impl CachingLabelDeriver<DemoOfdElement> for DemoOfdLabelProvider {
             DemoOfdElement::DemoOfdEventType(inner) => {
                 let r = inner.read();
                 self.cache.insert(*r.uuid, r.name.clone());
+                // TODO: rework
+                if let UFOption::Some(s) = &r.specialization_entity_type {
+                    self.update(&s.clone().into());
+                }
             },
             DemoOfdElement::DemoOfdPropertyType(inner) => {
                 self.cache.insert(*inner.read().uuid, Arc::new("Property".to_owned()));
@@ -545,7 +549,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         for cat in [
             &[
                 (DemoOfdToolStage::Entity, "Entity Type"),
-                (DemoOfdToolStage::EventStart, "Event Type"),
+                (DemoOfdToolStage::EventStart { with_specialization: false }, "Event Type"),
             ][..],
             &[
                 (
@@ -733,7 +737,7 @@ pub enum LinkType {
 #[derive(Clone, Copy, PartialEq)]
 pub enum DemoOfdToolStage {
     Entity,
-    EventStart,
+    EventStart { with_specialization: bool },
     EventEnd,
     LinkStart { link_type: LinkType },
     LinkEnd,
@@ -746,6 +750,7 @@ enum PartialDemoOfdElement {
     None,
     Some(DemoOfdElementView),
     Event {
+        with_specialization: bool,
         source: ERef<DemoOfdEntityType>,
         pos: Option<egui::Pos2>,
     },
@@ -809,7 +814,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 | DemoOfdToolStage::EventEnd
                 | DemoOfdToolStage::PackageStart
                 | DemoOfdToolStage::PackageEnd => TARGETTABLE_COLOR,
-                DemoOfdToolStage::EventStart
+                DemoOfdToolStage::EventStart { .. }
                 | DemoOfdToolStage::LinkStart { .. }
                 | DemoOfdToolStage::LinkEnd
                 | DemoOfdToolStage::LinkAddEnding { .. } => {
@@ -822,7 +827,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 | DemoOfdToolStage::PackageStart
                 | DemoOfdToolStage::PackageEnd => TARGETTABLE_COLOR,
 
-                DemoOfdToolStage::EventStart
+                DemoOfdToolStage::EventStart { .. }
                 | DemoOfdToolStage::LinkStart { .. }
                 | DemoOfdToolStage::LinkEnd
                 | DemoOfdToolStage::LinkAddEnding { .. } => {
@@ -849,7 +854,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     },
                     _ => NON_TARGETTABLE_COLOR
                 }
-                DemoOfdToolStage::EventStart
+                DemoOfdToolStage::EventStart { .. }
                 | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType | LinkType::Specialization | LinkType::Aggregation | LinkType::Exclusion }
                 | DemoOfdToolStage::LinkAddEnding { .. } => {
                     TARGETTABLE_COLOR
@@ -868,7 +873,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         TARGETTABLE_COLOR
                     }
                 }
-                DemoOfdToolStage::EventStart
+                DemoOfdToolStage::EventStart { .. }
                 | DemoOfdToolStage::EventEnd
                 | DemoOfdToolStage::PackageStart
                 | DemoOfdToolStage::PackageEnd
@@ -970,7 +975,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 self.result = PartialDemoOfdElement::Some(class_view.into());
                 self.event_lock = true;
             }
-            (DemoOfdToolStage::EventEnd, PartialDemoOfdElement::Event { source, pos: p }) => {
+            (DemoOfdToolStage::EventEnd, PartialDemoOfdElement::Event { pos: p, .. }) => {
                 *p = Some(pos);
                 self.event_lock = true;
             }
@@ -993,8 +998,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
         match element {
             DemoOfdElement::DemoOfdEntityType(inner) => {
                 match (self.current_stage, &mut self.result) {
-                    (DemoOfdToolStage::EventStart, PartialDemoOfdElement::None) => {
-                        self.result = PartialDemoOfdElement::Event { source: inner, pos: None };
+                    (DemoOfdToolStage::EventStart { with_specialization }, PartialDemoOfdElement::None) => {
+                        self.result = PartialDemoOfdElement::Event { with_specialization, source: inner, pos: None };
                         self.current_stage = DemoOfdToolStage::EventEnd;
                         self.event_lock = true;
                     }
@@ -1051,6 +1056,14 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             }
             DemoOfdElement::DemoOfdEventType(inner) => {
                 match (self.current_stage, &mut self.result) {
+                    (DemoOfdToolStage::Entity, _) => {
+                        if !inner.read().specialization_entity_type.is_some() {
+                            let (_class_model, class_view) =
+                                new_demoofd_entitytype("Membership", "", true, egui::Pos2::ZERO);
+                            self.result = PartialDemoOfdElement::Some(class_view.into());
+                        }
+                        self.event_lock = true;
+                    }
                     (DemoOfdToolStage::LinkStart { link_type: link_type @ LinkType::Precedence }, PartialDemoOfdElement::None) => {
                         self.result = PartialDemoOfdElement::EventLink {
                             link_type,
@@ -1128,13 +1141,18 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 self.result = PartialDemoOfdElement::None;
                 Some((x, esm))
             }
-            PartialDemoOfdElement::Event { source, pos: Some(p) } => {
+            PartialDemoOfdElement::Event { with_specialization, source, pos: Some(p) } => {
                 let base_uuid = *source.read().uuid;
                 if let Some(base_view) = into.controller_for(&base_uuid) {
-                    self.current_stage = DemoOfdToolStage::EventStart;
+                    self.current_stage = DemoOfdToolStage::EventStart { with_specialization: *with_specialization };
 
+                    let spec = if *with_specialization {
+                        Some(new_demoofd_entitytype("STARTED MEMBERSHIP", "starting day [DAY]", true, *p))
+                    } else {
+                        None
+                    };
                     let (_event_model, event_view) =
-                        new_demoofd_eventtype("01", "is started", (source.clone(), base_view), None, *p);
+                        new_demoofd_eventtype("01", "is started", (source.clone(), base_view), spec, *p);
 
                     self.result = PartialDemoOfdElement::None;
                     Some((event_view.into(), None))
@@ -1433,14 +1451,14 @@ fn new_demoofd_package_view(
 fn new_demoofd_entitytype(
     name: &str,
     properties: &str,
-    is_abstract: bool,
+    is_internal: bool,
     position: egui::Pos2,
 ) -> (ERef<DemoOfdEntityType>, ERef<DemoOfdEntityView>) {
     let class_model = ERef::new(DemoOfdEntityType::new(
         uuid::Uuid::now_v7().into(),
         name.to_owned(),
         properties.to_owned(),
-        is_abstract,
+        is_internal,
     ));
     let class_view = new_demoofd_entitytype_view(class_model.clone(), position);
 
@@ -1549,9 +1567,17 @@ impl DemoOfdEntityView {
             egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
         )
     }
-    fn property_button_rect(&self, ui_scale: f32) -> egui::Rect {
+    fn event_spec_button_rect(&self, ui_scale: f32) ->  egui::Rect {
         let b_center = self.bounds_rect.right_top()
             + egui::Vec2::new(Self::BUTTON_RADIUS / ui_scale, 3.0 * Self::BUTTON_RADIUS / ui_scale);
+        egui::Rect::from_center_size(
+            b_center,
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
+        )
+    }
+    fn property_button_rect(&self, ui_scale: f32) -> egui::Rect {
+        let b_center = self.bounds_rect.right_top()
+            + egui::Vec2::new(Self::BUTTON_RADIUS / ui_scale, 5.0 * Self::BUTTON_RADIUS / ui_scale);
         egui::Rect::from_center_size(
             b_center,
             egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
@@ -1637,7 +1663,7 @@ impl DemoOfdEntityView {
             );
             canvas.draw_text(b1_rect.center(), egui::Align2::CENTER_CENTER, "◊", 14.0 / ui_scale, egui::Color32::BLACK);
 
-            let b2_rect = self.property_button_rect(ui_scale);
+            let b2_rect = self.event_spec_button_rect(ui_scale);
             canvas.draw_rectangle(
                 b2_rect,
                 egui::CornerRadius::ZERO,
@@ -1645,7 +1671,17 @@ impl DemoOfdEntityView {
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
-            canvas.draw_text(b2_rect.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
+            canvas.draw_text(b2_rect.center(), egui::Align2::CENTER_CENTER, "▣", 14.0 / ui_scale, egui::Color32::BLACK);
+
+            let b3_rect = self.property_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b3_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(b3_rect.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
         }
 
         if canvas.ui_scale().is_some() {
@@ -1671,8 +1707,9 @@ impl DemoOfdEntityView {
             // Draw targetting rectangle
             if let Some(t) = tool
                 .as_ref()
-                .filter(|e| self.min_shape().contains(e.0))
-                .map(|e| e.1)
+                .filter(|t| self.min_shape().contains(t.0))
+                .filter(|t| event.is_none_or(|e| !e.0.contains(t.0)))
+                .map(|t| t.1)
             {
                 canvas.draw_rectangle(
                     self.bounds_rect,
@@ -1718,7 +1755,7 @@ impl ElementController<DemoOfdElement> for DemoOfdEntityView {
     }
 
     fn position(&self) -> egui::Pos2 {
-        self.position
+        self.bounds_rect.center()
     }
 }
 
@@ -1838,9 +1875,24 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             }
             InputEvent::Click(pos) if self.highlight.selected && self.event_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveDemoOfdTool {
-                    initial_stage: DemoOfdToolStage::EventStart,
+                    initial_stage: DemoOfdToolStage::EventStart { with_specialization: false },
                     current_stage: DemoOfdToolStage::EventEnd,
                     result: PartialDemoOfdElement::Event {
+                        with_specialization: false,
+                        source: self.model.clone(),
+                        pos: None,
+                    },
+                    event_lock: true,
+                });
+
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::Click(pos) if self.highlight.selected && self.event_spec_button_rect(ehc.ui_scale).contains(pos) => {
+                *tool = Some(NaiveDemoOfdTool {
+                    initial_stage: DemoOfdToolStage::EventStart { with_specialization: true },
+                    current_stage: DemoOfdToolStage::EventEnd,
+                    result: PartialDemoOfdElement::Event {
+                        with_specialization: true,
                         source: self.model.clone(),
                         pos: None,
                     },
@@ -2317,9 +2369,11 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             canvas::CLASS_MIDDLE_FONT_SIZE,
         );
 
-        if let UFOption::Some(s) = &self.specialization_view {
-            s.write().draw_inner(q, context, canvas, tool, Some((self.min_shape(), name_pos)));
-        }
+        let child_status = if let UFOption::Some(s) = &self.specialization_view {
+            s.write().draw_inner(q, context, canvas, tool, Some((self.min_shape(), name_pos)))
+        } else {
+            TargettingStatus::NotDrawn
+        };
 
         self.bounds_rect = egui::Rect::from_min_max(self.position, self.position);
 
@@ -2386,13 +2440,11 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     }),
                     canvas::Highlight::NONE,
                 );
-                TargettingStatus::Drawn
-            } else {
-                TargettingStatus::NotDrawn
+                return TargettingStatus::Drawn;
             }
-        } else {
-            TargettingStatus::NotDrawn
         }
+
+        child_status
     }
     fn collect_allignment(&mut self, am: &mut SnapManager) {
         am.add_shape(*self.uuid(), self.min_shape());
@@ -2421,11 +2473,11 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_position(*event.mouse_position());
                     tool.add_element(self.model());
 
                     if !self.specialization_view.is_some()
                         && let Some((DemoOfdElementView::EntityType(new_e), esm)) = tool.try_construct_view(self) {
+                        new_e.write().position = self.position;
                         commands.push(InsensitiveCommand::AddElement(*self.uuid, DemoOfdElementView::from(new_e).into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
