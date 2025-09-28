@@ -753,6 +753,10 @@ impl NHContext {
     }
 
     fn refresh_buffers(&mut self, affected_models: &HashSet<ModelUuid>) {
+        if affected_models.is_empty() {
+            return;
+        }
+
         for (_, e) in self.diagram_controllers.values_mut() {
             e.write().refresh_buffers(affected_models);
         }

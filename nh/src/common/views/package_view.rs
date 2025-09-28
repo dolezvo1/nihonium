@@ -614,7 +614,7 @@ where
                             self.adapter.add_element(view.model());
                             affected_models.insert(*self.adapter.model_uuid());
                         }
-                        affected_models.insert(*view.model_uuid());
+                        view.collect_model_uuids(affected_models);
 
                         self.owned_views.push(uuid, view);
                     }
@@ -677,6 +677,10 @@ where
         self.owned_views.event_order_foreach_mut(|v| {
             flattened_views.insert(*v.uuid(), v.clone());
         });
+    }
+    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
+        into.insert(*self.model_uuid());
+        self.owned_views.event_order_foreach(|e| e.collect_model_uuids(into));
     }
 
     fn deep_copy_walk(

@@ -88,10 +88,6 @@ impl CachingLabelDeriver<DemoOfdElement> for DemoOfdLabelProvider {
             DemoOfdElement::DemoOfdEventType(inner) => {
                 let r = inner.read();
                 self.cache.insert(*r.uuid, r.name.clone());
-                // TODO: rework
-                if let UFOption::Some(s) = &r.specialization_entity_type {
-                    self.update(&s.clone().into());
-                }
             },
             DemoOfdElement::DemoOfdPropertyType(inner) => {
                 self.cache.insert(*inner.read().uuid, Arc::new("Property".to_owned()));
@@ -2729,6 +2725,12 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             }
 
             flattened_views.insert(*sl.uuid(), s.clone().into());
+        }
+    }
+    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
+        into.insert(*self.model_uuid());
+        if let UFOption::Some(s) = &self.specialization_view {
+            s.read().collect_model_uuids(into);
         }
     }
     fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {

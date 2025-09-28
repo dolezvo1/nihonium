@@ -1083,6 +1083,9 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     );
+    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
+        into.insert(*self.model_uuid());
+    }
     /// Must return true when a view cannot exist without these views, e.g. a link cannot exist without it's target
     fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
         false
@@ -1556,7 +1559,7 @@ impl<
                                 self.adapter.add_element(view.model());
                                 affected_models.insert(*self.adapter.model_uuid());
                             }
-                            affected_models.insert(*view.model_uuid());
+                            view.collect_model_uuids(affected_models);
 
                             self.owned_views.push(uuid, view);
                         }
@@ -1735,6 +1738,9 @@ impl<
     }
 
     fn refresh_buffers(&mut self, affected_models: &HashSet<ModelUuid>) {
+        // TODO: only do head_count when new model was added
+        self.head_count();
+
         let mut lp = self.temporaries.label_provider.write();
         if affected_models.contains(&self.adapter.model_uuid()) {
             self.adapter.refresh_buffers();
