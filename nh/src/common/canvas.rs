@@ -1186,8 +1186,13 @@ impl NHCanvas for UiCanvas {
                 self.draw_line([p1, p2], stroke, highlight);
             }
         } else {
-            let translated_rect = (rect * self.camera_scale)
-                    .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2());
+            let translated_rect = if rect == egui::Rect::EVERYTHING {
+                egui::Rect::EVERYTHING
+            } else {
+                (rect * self.camera_scale)
+                    .translate(self.canvas.min.to_vec2() + self.camera_offset.to_vec2())
+            };
+
             if self.canvas.intersects(translated_rect) {
                 self.painter.rect(
                     translated_rect,
