@@ -73,7 +73,10 @@ fn main() -> eframe::Result<()> {
         viewport: ViewportBuilder::default().with_inner_size(vec2(1024.0, 1024.0)),
         ..Default::default()
     };
-    eframe::run_native("Nihonium", options, Box::new(|_cc| Ok(Box::<NHApp>::default())))
+    eframe::run_native("Nihonium", options, Box::new(|cc| {
+        cc.egui_ctx.set_theme(egui::Theme::Dark);
+        Ok(Box::<NHApp>::default())
+    }))
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -96,7 +99,10 @@ fn main() {
             .start(
                 canvas,
                 Default::default(),
-                Box::new(|_cc| { Ok(Box::<NHApp>::default()) }),
+                Box::new(|cc| {
+                    cc.egui_ctx.set_theme(egui::Theme::Dark);
+                    Ok(Box::<NHApp>::default())
+                }),
             )
             .await;
 
