@@ -354,13 +354,9 @@ where
 
         for e in self.sources.iter_mut().chain(self.targets.iter_mut()) {
             let shape = e.element.min_shape();
-            let next_natural_point = e.points.iter().skip(1).next().map(|p| p.1);
-            let intersect = if let Some(point) = next_natural_point {
-                shape.orthogonal_intersect(point)
-                    .unwrap_or_else(|| shape.center_intersect(point))
-            } else {
-                shape.center_intersect(center_point)
-            };
+            let next_point = e.points.iter().skip(1).next().map(|p| p.1).unwrap_or(center_point);
+            let intersect = shape.orthogonal_intersect(next_point)
+                    .unwrap_or_else(|| shape.center_intersect(next_point));
             e.points[0].1 = intersect;
         }
 
@@ -510,7 +506,7 @@ where
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
-        const SEGMENT_DISTANCE_THRESHOLD: f32 = 2.0;
+        let segment_distance_threshold = 3.0 / ehc.ui_scale;
         let is_over = |a: egui::Pos2, b: egui::Pos2| -> bool {
             a.distance(b) <= Self::VERTEX_RADIUS / ehc.ui_scale
         };
@@ -543,7 +539,6 @@ where
                         self.dragged_node = Some((uuid, pos));
                         return EventHandlingStatus::HandledByContainer;
                     }
-                    // TODO: this is generally wrong (why??)
                     UFOption::None if is_over(pos, self.position()) => {
                         self.dragged_node = Some((uuid::Uuid::now_v7().into(), pos));
                         commands.push(InsensitiveCommand::AddElement(
@@ -685,7 +680,7 @@ where
                                     break;
                                 };
 
-                                if dist_to_line_segment(pos, u, v) <= SEGMENT_DISTANCE_THRESHOLD {
+                                if dist_to_line_segment(pos, u, v) <= segment_distance_threshold {
                                     return EventHandlingStatus::HandledByElement;
                                 }
                             }
