@@ -407,13 +407,19 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     ) {
         let button_height = 60.0;
         let width = ui.available_width();
+        let selected_background_color = if ui.style().visuals.dark_mode {
+            egui::Color32::BLUE
+        } else {
+            egui::Color32::LIGHT_BLUE
+        };
+        let button_background_color = ui.style().visuals.extreme_bg_color;
 
         let stage = tool.as_ref().map(|e| e.initial_stage());
         let c = |s: RdfToolStage| -> egui::Color32 {
             if stage.is_some_and(|e| e == s) {
-                egui::Color32::BLUE
+                selected_background_color
             } else {
-                egui::Color32::BLACK
+                button_background_color
             }
         };
 
@@ -421,9 +427,9 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
             .add_sized(
                 [width, button_height],
                 egui::Button::new("Select/Move").fill(if stage == None {
-                    egui::Color32::BLUE
+                    selected_background_color
                 } else {
-                    egui::Color32::BLACK
+                    button_background_color
                 }),
             )
             .clicked()
@@ -459,7 +465,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                 self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
                 let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
                 let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
-                c.clear(egui::Color32::WHITE.gamma_multiply(0.75));
+                c.clear(egui::Color32::GRAY);
                 self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
                 icon_counter += 1;
             }

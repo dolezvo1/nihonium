@@ -74,7 +74,6 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native("Nihonium", options, Box::new(|cc| {
-        cc.egui_ctx.set_theme(egui::Theme::Dark);
         Ok(Box::<NHApp>::default())
     }))
 }
@@ -100,7 +99,6 @@ fn main() {
                 canvas,
                 Default::default(),
                 Box::new(|cc| {
-                    cc.egui_ctx.set_theme(egui::Theme::Dark);
                     Ok(Box::<NHApp>::default())
                 }),
             )
@@ -842,6 +840,16 @@ impl NHContext {
 
     fn style_editor_tab(&mut self, ui: &mut Ui) {
         ui.heading("Style Editor");
+
+        if ui.button("Switch light/dark theme").clicked() {
+            let (new_theme, new_visuals) = match ui.ctx().theme() {
+                egui::Theme::Light => (egui::Theme::Dark, egui::Visuals::dark()),
+                egui::Theme::Dark => (egui::Theme::Light, egui::Visuals::light()),
+            };
+            ui.ctx().set_theme(new_theme);
+            ui.ctx().set_visuals(new_visuals);
+            self.style = Some(Style::from_egui(&ui.ctx().style()));
+        }
 
         ui.collapsing("DockArea Options", |ui| {
             ui.checkbox(&mut self.show_close_buttons, "Show close buttons");
