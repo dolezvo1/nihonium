@@ -2186,8 +2186,18 @@ impl eframe::App for NHApp {
                 });
 
                 ui.menu_button(translate!("nh-about"), |ui| {
-                    ui.hyperlink_to(translate!("nh-about-mainpage"), "https://github.com/dolezvo1/nihonium");
-                    ui.hyperlink_to(translate!("nh-about-bugtracker"), "https://github.com/dolezvo1/nihonium/issues");
+                    ui.add(
+                        egui::Hyperlink::from_label_and_url(
+                            translate!("nh-about-mainpage"),
+                            "https://github.com/dolezvo1/nihonium"
+                        ).open_in_new_tab(true)
+                    );
+                    ui.add(
+                        egui::Hyperlink::from_label_and_url(
+                            translate!("nh-about-bugtracker"),
+                            "https://github.com/dolezvo1/nihonium/issues"
+                        ).open_in_new_tab(true)
+                    );
                     ui.label(format!("Code version: {}", env!("COMMIT_IDENTIFIER")));
                 });
             })
