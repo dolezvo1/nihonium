@@ -2011,6 +2011,7 @@ impl eframe::App for NHApp {
 
                     add_project_element_block(&self.context.drawing_context, self.context.new_diagram_no, ui, &mut commands);
 
+                    #[cfg(not(target_arch = "wasm32"))]
                     button!(ui, "nh-project-save", SimpleProjectCommand::SaveProject);
                     button!(ui, "nh-project-saveas", SimpleProjectCommand::SaveProjectAs);
                     ui.separator();
