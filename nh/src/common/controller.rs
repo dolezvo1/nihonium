@@ -1575,6 +1575,7 @@ impl<
                             ));
 
                             self.adapter.add_element(view.model());
+                            view.collect_model_uuids(affected_models);
 
                             self.owned_views.push(uuid, view);
                         }
