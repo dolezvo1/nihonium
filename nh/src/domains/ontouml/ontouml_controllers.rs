@@ -1957,7 +1957,7 @@ fn ontouml_link_stereotype_literal(e: &str) -> &'static str {
         "formal" => "formal",
         "mediation" => "mediation",
         "characterization" => "characterization",
-        "structuration" => "Structuration",
+        "structuration" => "structuration",
 
         "componentOf" => "componentOf",
         "containment" => "containment",
