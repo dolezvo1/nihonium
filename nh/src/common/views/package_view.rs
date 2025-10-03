@@ -232,10 +232,17 @@ where
         // Draw resize/drag handles
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
             let handle_size = self.handle_size(ui_scale);
-            for h in [self.bounds_rect.left_top(), self.bounds_rect.center_top(), self.bounds_rect.right_top(),
-                      self.bounds_rect.left_center(), self.bounds_rect.right_center(),
-                      self.bounds_rect.left_bottom(), self.bounds_rect.center_bottom(), self.bounds_rect.right_bottom()]
-            {
+            //compile_error!("icons")
+            for (h, c) in [
+                (self.bounds_rect.left_top(), "↖"),
+                (self.bounds_rect.center_top(), "^"),
+                (self.bounds_rect.right_top(), "↗"),
+                (self.bounds_rect.left_center(), "<"),
+                (self.bounds_rect.right_center(), ">"),
+                (self.bounds_rect.left_bottom(), "↙"),
+                (self.bounds_rect.center_bottom(), "v"),
+                (self.bounds_rect.right_bottom(), "↘"),
+            ] {
                 canvas.draw_rectangle(
                     egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size / ui_scale)),
                     egui::CornerRadius::ZERO,
@@ -243,15 +250,41 @@ where
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
+                canvas.draw_text(
+                    h,
+                    egui::Align2::CENTER_CENTER,
+                    c,
+                    10.0 / ui_scale,
+                    egui::Color32::BLACK,
+                );
             }
 
+            let dc = self.drag_handle_position(ui_scale);
             canvas.draw_rectangle(
                 egui::Rect::from_center_size(
-                    self.drag_handle_position(ui_scale),
+                    dc,
                     egui::Vec2::splat(handle_size / ui_scale),
                 ),
                 egui::CornerRadius::ZERO,
                 egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+
+            let da_radius = (handle_size / 2.0 - 1.0) / ui_scale;
+            canvas.draw_line(
+                [
+                    dc - egui::Vec2::new(0.0, da_radius),
+                    dc + egui::Vec2::new(0.0, da_radius),
+                ],
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_line(
+                [
+                    dc - egui::Vec2::new(da_radius, 0.0),
+                    dc + egui::Vec2::new(da_radius, 0.0),
+                ],
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
