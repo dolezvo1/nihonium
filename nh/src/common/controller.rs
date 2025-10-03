@@ -1176,7 +1176,6 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
     fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
-    fn new_label_provider(&self) -> ERef<DomainT::LabelProviderT>;
 }
 
 /// This is a generic DiagramController implementation.
@@ -1274,19 +1273,42 @@ impl<
         self.head_count();
         // Refresh all buffers to reflect model state
         self.refresh_all_buffers();
-        // Get new LabelProvider that contains even the models which are not in view
-        self.temporaries.label_provider = self.adapter.new_label_provider();
     }
 
     fn refresh_all_buffers(&mut self) {
-        let mut lp = self.temporaries.label_provider.write();
+        // Full label_provider update
+        struct V<DomainT: Domain> {
+            label_provider: DomainT::LabelProviderT,
+        }
+
+        impl<DomainT: Domain> ElementVisitor<<DomainT as Domain>::CommonElementT> for V<DomainT> {
+            fn open_complex(&mut self, e: &<DomainT as Domain>::CommonElementT) {
+                self.label_provider.update(e);
+            }
+            fn close_complex(&mut self, e: &<DomainT as Domain>::CommonElementT) {}
+            fn visit_simple(&mut self, e: &<DomainT as Domain>::CommonElementT) {
+                self.label_provider.update(e);
+            }
+        }
+
+        impl<DomainT: Domain> DiagramVisitor<<DomainT as Domain>::DiagramModelT> for V<DomainT> {
+            fn open_diagram(&mut self, e: &<DomainT as Domain>::DiagramModelT) {}
+            fn close_diagram(&mut self, e: &<DomainT as Domain>::DiagramModelT) {}
+        }
+
+        let mut v: V<DomainT> = V { label_provider: Default::default() };
+        self.model().read().accept(&mut v);
+
+        let mut label_provider = v.label_provider;
+        label_provider.insert(*self.adapter.model_uuid(), self.adapter.model_name());
+        self.temporaries.label_provider = ERef::new(label_provider);
+
+        // Refresh buffers
+        self.temporaries.name_buffer = (*self.name).clone();
+
         for v in self.temporaries.flattened_views.values_mut() {
             v.refresh_buffers();
-            lp.update(&v.model());
         }
-        lp.insert(*self.adapter.model_uuid(), self.adapter.model_name());
-
-        self.temporaries.name_buffer = (*self.name).clone();
         self.adapter.refresh_buffers();
     }
 

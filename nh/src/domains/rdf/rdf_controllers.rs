@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, ElementVisitor, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View, VisitableElement
+    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View,
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -514,34 +514,6 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     fn fake_copy(&self) -> (Self, HashMap<ModelUuid, RdfElement>) {
         let models = super::rdf_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
-    }
-
-    fn new_label_provider(&self) -> ERef<<RdfDomain as Domain>::LabelProviderT> {
-        struct V {
-            label_provider: <RdfDomain as Domain>::LabelProviderT,
-        }
-
-        impl ElementVisitor<RdfElement> for V {
-            fn open_complex(&mut self, e: &RdfElement) {
-                self.label_provider.update(e);
-            }
-            fn close_complex(&mut self, e: &RdfElement) {}
-            fn visit_simple(&mut self, e: &RdfElement) {
-                self.label_provider.update(e);
-            }
-        }
-
-        let mut v = V { label_provider: Default::default() };
-
-        let r = self.model.read();
-        for e in &r.contained_elements {
-            e.accept(&mut v);
-        }
-
-        let mut label_provider = v.label_provider;
-        label_provider.insert(*self.model_uuid(), self.model_name());
-
-        ERef::new(label_provider)
     }
 }
 

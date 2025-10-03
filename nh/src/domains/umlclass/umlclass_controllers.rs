@@ -1,9 +1,9 @@
 use super::umlclass_models::{
-    UmlClass, UmlClassDiagram, UmlClassElement, UmlClassGeneralization, UmlClassPackage, UmlClassCommentLink,
+    UmlClass, UmlClassDiagram, UmlClassElement, UmlClassGeneralization, UmlClassPackage, UmlClassCommentLink, UmlClassAssociation, UmlClassClassifier, UmlClassComment, UmlClassInstance, UmlClassAssociationAggregation, UmlClassAssociationNavigability, UmlClassDependency,
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, ElementVisitor, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View, VisitableElement
+    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View,
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -11,8 +11,6 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::domains::umlclass::umlclass_models::{UmlClassAssociationAggregation, UmlClassAssociationNavigability, UmlClassDependency};
-use super::umlclass_models::{UmlClassAssociation, UmlClassClassifier, UmlClassComment, UmlClassInstance};
 use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
 use std::collections::HashSet;
@@ -682,34 +680,6 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
     fn fake_copy(&self) -> (Self, HashMap<ModelUuid, UmlClassElement>) {
         let models = super::umlclass_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
-    }
-
-    fn new_label_provider(&self) -> ERef<<UmlClassDomain as Domain>::LabelProviderT> {
-        struct V {
-            label_provider: <UmlClassDomain as Domain>::LabelProviderT,
-        }
-
-        impl ElementVisitor<UmlClassElement> for V {
-            fn open_complex(&mut self, e: &UmlClassElement) {
-                self.label_provider.update(e);
-            }
-            fn close_complex(&mut self, e: &UmlClassElement) {}
-            fn visit_simple(&mut self, e: &UmlClassElement) {
-                self.label_provider.update(e);
-            }
-        }
-
-        let mut v = V { label_provider: Default::default() };
-
-        let r = self.model.read();
-        for e in &r.contained_elements {
-            e.accept(&mut v);
-        }
-
-        let mut label_provider = v.label_provider;
-        label_provider.insert(*self.model_uuid(), self.model_name());
-
-        ERef::new(label_provider)
     }
 }
 

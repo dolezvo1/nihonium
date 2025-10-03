@@ -3,7 +3,7 @@ use super::demoofd_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, ElementVisitor, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View, VisitableDiagram, VisitableElement
+    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View,
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -13,13 +13,13 @@ use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::domains::demoofd::demoofd_models::{DemoOfdAggregation, DemoOfdExclusion, DemoOfdPrecedence, DemoOfdSpecialization, DemoOfdType};
-use crate::{CustomModal, CustomModalResult, CustomTab};
+use crate::{CustomModal, CustomModalResult};
 use eframe::egui;
 use std::collections::HashSet;
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter},
-    sync::{Arc, RwLock},
+    sync::Arc,
 };
 use super::super::demo::{
     INTERNAL_ROLE_BACKGROUND, EXTERNAL_ROLE_BACKGROUND,
@@ -636,34 +636,6 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
     fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DemoOfdElement>) {
         let models = super::demoofd_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
-    }
-
-    fn new_label_provider(&self) -> ERef<<DemoOfdDomain as Domain>::LabelProviderT> {
-        struct V {
-            label_provider: <DemoOfdDomain as Domain>::LabelProviderT,
-        }
-
-        impl ElementVisitor<DemoOfdElement> for V {
-            fn open_complex(&mut self, e: &DemoOfdElement) {
-                self.label_provider.update(e);
-            }
-            fn close_complex(&mut self, e: &DemoOfdElement) {}
-            fn visit_simple(&mut self, e: &DemoOfdElement) {
-                self.label_provider.update(e);
-            }
-        }
-
-        let mut v = V { label_provider: Default::default() };
-
-        let r = self.model.read();
-        for e in &r.contained_elements {
-            e.accept(&mut v);
-        }
-
-        let mut label_provider = v.label_provider;
-        label_provider.insert(*self.model_uuid(), self.model_name());
-
-        ERef::new(label_provider)
     }
 }
 

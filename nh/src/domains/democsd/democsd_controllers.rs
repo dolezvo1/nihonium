@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, ElementVisitor, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View, VisitableElement
+    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View,
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -530,34 +530,6 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DemoCsdElement>) {
         let models = super::democsd_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
-    }
-
-    fn new_label_provider(&self) -> ERef<<DemoCsdDomain as Domain>::LabelProviderT> {
-        struct V {
-            label_provider: <DemoCsdDomain as Domain>::LabelProviderT,
-        }
-
-        impl ElementVisitor<DemoCsdElement> for V {
-            fn open_complex(&mut self, e: &DemoCsdElement) {
-                self.label_provider.update(e);
-            }
-            fn close_complex(&mut self, e: &DemoCsdElement) {}
-            fn visit_simple(&mut self, e: &DemoCsdElement) {
-                self.label_provider.update(e);
-            }
-        }
-
-        let mut v = V { label_provider: Default::default() };
-
-        let r = self.model.read();
-        for e in &r.contained_elements {
-            e.accept(&mut v);
-        }
-
-        let mut label_provider = v.label_provider;
-        label_provider.insert(*self.model_uuid(), self.model_name());
-
-        ERef::new(label_provider)
     }
 }
 

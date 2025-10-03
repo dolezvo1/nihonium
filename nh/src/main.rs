@@ -1299,7 +1299,7 @@ impl NHContext {
                 }
             }
             ui.label("Default delete action:");
-            egui::ComboBox::from_id_source("Default delete action")
+            egui::ComboBox::from_id_salt("Default delete action")
                 .selected_text(delete_kind_name(&modifier_settings.default_delete_kind))
                 .show_ui(ui, |ui| {
                     for e in [
