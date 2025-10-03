@@ -1176,6 +1176,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
     fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
+    fn new_label_provider(&self) -> ERef<DomainT::LabelProviderT>;
 }
 
 /// This is a generic DiagramController implementation.
@@ -1273,6 +1274,8 @@ impl<
         self.head_count();
         // Refresh all buffers to reflect model state
         self.refresh_all_buffers();
+        // Get new LabelProvider that contains even the models which are not in view
+        self.temporaries.label_provider = self.adapter.new_label_provider();
     }
 
     fn refresh_all_buffers(&mut self) {
