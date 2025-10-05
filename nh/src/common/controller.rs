@@ -320,6 +320,8 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
                         egui_ltreeview::NodeBuilder::leaf(*model_uuid)
                     }.label(format!("{} {}", self.repr_glyph(model_uuid), self.label_provider.get(model_uuid)))
                         .context_menu(|ui| {
+                            ui.set_min_width(crate::MIN_MENU_WIDTH);
+
                             let is_represented = (self.is_represented)(model_uuid);
                             if !is_represented && ui.button("Create view").clicked() {
                                 self.commands.push(DiagramCommand::CreateViewFor(*model_uuid));

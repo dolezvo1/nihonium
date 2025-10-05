@@ -339,6 +339,8 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
         commands.push(ProjectCommand::AddNewDocument(uuid::Uuid::now_v7().into(), "New Document".to_owned()));
     }
     ui.menu_button(translate!("nh-project-addnewdiagram"), |ui| {
+        ui.set_min_width(MIN_MENU_WIDTH);
+
         type NDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
         for (label, diagram_type, fun) in [
             (
@@ -372,6 +374,8 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
         }
     });
     ui.menu_button(translate!("nh-project-adddemodiagram"), |ui| {
+        ui.set_min_width(MIN_MENU_WIDTH);
+
         type DDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
         for (label, diagram_type, fun) in [
             (
@@ -614,6 +618,8 @@ impl NHContext {
                         NodeBuilder::dir(*uuid)
                             .label(&**name)
                             .context_menu(|ui| {
+                                ui.set_min_width(MIN_MENU_WIDTH);
+
                                 if ui.button("Rename").clicked() {
                                     // TODO: rename
                                 }
@@ -653,6 +659,8 @@ impl NHContext {
                         NodeBuilder::leaf(*hm.uuid())
                             .label(&*hm.view_name())
                             .context_menu(|ui| {
+                                ui.set_min_width(MIN_MENU_WIDTH);
+
                                 if ui.button("Open").clicked() {
                                     commands.push(ProjectCommand::OpenAndFocusDiagram(*hm.uuid(), None));
                                     ui.close();
@@ -686,6 +694,8 @@ impl NHContext {
                         NodeBuilder::leaf(*uuid)
                             .label(&docs.get(uuid).unwrap().0)
                             .context_menu(|ui| {
+                                ui.set_min_width(MIN_MENU_WIDTH);
+
                                 if ui.button("Open").clicked() {
                                     commands.push(ProjectCommand::OpenAndFocusDocument(*uuid, None));
                                     ui.close();
@@ -2128,6 +2138,7 @@ impl eframe::App for NHApp {
                     ui.separator();
 
                     ui.menu_button(translate!("nh-edit-delete"), |ui| {
+                        ui.set_min_width(MIN_MENU_WIDTH);
                         button!(ui, "nh-generic-deletemodel-view", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(false)));
                         button!(ui, "nh-generic-deletemodel-modelif", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(false)));
                         button!(ui, "nh-generic-deletemodel-all", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(true)));
@@ -2139,10 +2150,11 @@ impl eframe::App for NHApp {
                     }
 
                     ui.menu_button(translate!("nh-edit-arrange"), |ui| {
-                         button!(ui, "nh-edit-arrange-bringtofront", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::BringToFront)));
-                         button!(ui, "nh-edit-arrange-forwardone", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne)));
-                         button!(ui, "nh-edit-arrange-backwardone", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::BackwardOne)));
-                         button!(ui, "nh-edit-arrange-sendtoback", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::SendToBack)));
+                        ui.set_min_width(MIN_MENU_WIDTH);
+                        button!(ui, "nh-edit-arrange-bringtofront", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::BringToFront)));
+                        button!(ui, "nh-edit-arrange-forwardone", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne)));
+                        button!(ui, "nh-edit-arrange-backwardone", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::BackwardOne)));
+                        button!(ui, "nh-edit-arrange-sendtoback", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::SendToBack)));
                     });
                 });
 
