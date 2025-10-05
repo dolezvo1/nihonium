@@ -227,7 +227,27 @@ impl NHShape {
             NHShape::Rhombus {
                 position,
                 bounds_radius,
-            } => None
+            } => {
+                let (left, right) = (position.x - bounds_radius.x, position.x + bounds_radius.x);
+                let (top, bottom) = (position.y - bounds_radius.y, position.y + bounds_radius.y);
+                match point {
+                    egui::Pos2 { x, y } if left < x && x < right => {
+                        let change_y = (position.x - x).abs() / bounds_radius.x * bounds_radius.y;
+                        Some(egui::Pos2 {
+                            x,
+                            y: y.clamp(top + change_y, bottom - change_y),
+                        })
+                    },
+                    egui::Pos2 { x, y } if top < y && y < bottom => {
+                        let change_x = (position.y - y).abs() / bounds_radius.y * bounds_radius.x;
+                        Some(egui::Pos2 {
+                            x: x.clamp(left + change_x, right - change_x),
+                            y,
+                        })
+                    },
+                    _ => None,
+                }
+            },
         }
     }
     pub fn bounding_box(&self) -> egui::Rect {

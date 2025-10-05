@@ -2381,8 +2381,14 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         self.bounds_rect = egui::Rect::from_min_max(self.position, self.position);
 
         // Draw link to base entity
-        let p = self.base_entity_type.min_shape().center_intersect(self.position);
-        canvas.draw_line([p, self.position], canvas::Stroke::new_solid(1.0, egui::Color32::BLACK), canvas::Highlight::NONE);
+        let base_shape = self.base_entity_type.min_shape();
+        let self_shape = canvas::NHShape::Rhombus { position: self.position, bounds_radius: egui::Vec2::splat(Self::RADIUS) };
+        let mid = base_shape.nice_midpoint(&self_shape);
+        let (base_intersect, self_intersect) = match (base_shape.orthogonal_intersect(mid), self_shape.orthogonal_intersect(mid)) {
+            (Some(base_intersect), Some(self_intersect)) => (base_intersect, self_intersect),
+            (_, _) => (base_shape.center_intersect(mid), self_shape.center_intersect(mid)),
+        };
+        canvas.draw_line([base_intersect, self_intersect], canvas::Stroke::new_solid(1.0, egui::Color32::BLACK), canvas::Highlight::NONE);
 
         // Draw diamond
         {
