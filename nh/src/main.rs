@@ -335,6 +335,9 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
         };
     }
 
+    if ui.button(translate!("nh-project-addnewdocument")).clicked() {
+        commands.push(ProjectCommand::AddNewDocument(uuid::Uuid::now_v7().into(), "New Document".to_owned()));
+    }
     ui.menu_button(translate!("nh-project-addnewdiagram"), |ui| {
         type NDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
         for (label, diagram_type, fun) in [
@@ -368,9 +371,39 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
             }
         }
     });
-    if ui.button(translate!("nh-project-addnewdocument")).clicked() {
-        commands.push(ProjectCommand::AddNewDocument(uuid::Uuid::now_v7().into(), "New Document".to_owned()));
-    }
+    ui.menu_button(translate!("nh-project-adddemodiagram"), |ui| {
+        type DDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
+        for (label, diagram_type, fun) in [
+            (
+                "UML Class diagram",
+                1,
+                crate::domains::umlclass::umlclass_controllers::demo as DDC,
+            ),
+            (
+                "OntoUML diagram",
+                3,
+                crate::domains::ontouml::ontouml_controllers::demo as DDC,
+            ),
+            (
+                "DEMO Coordination Structure Diagram",
+                2,
+                crate::domains::democsd::democsd_controllers::demo as DDC,
+            ),
+            (
+                "DEMO Object Fact Diagram",
+                4,
+                crate::domains::demoofd::demoofd_controllers::demo as DDC,
+            ),
+            ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::demo as DDC),
+        ] {
+            if ui.button(label).clicked() {
+                let diagram_controller = fun(new_diagram_no);
+                commands.push(ProjectCommand::SetNewDiagramNumber(new_diagram_no + 1));
+                commands.push(ProjectCommand::AddNewDiagram(diagram_type, diagram_controller));
+                ui.close();
+            }
+        }
+    });
     ui.separator();
 }
 
@@ -589,8 +622,9 @@ impl NHContext {
                                     *cma = Some(ContextMenuAction::NewFolder(*uuid));
                                     ui.close();
                                 }
+
                                 add_project_element_block(gdc, new_diagram_no, ui, commands);
-                                ui.separator();
+
                                 if ui.button("Collapse children").clicked() {
                                     *cma = Some(ContextMenuAction::RecCollapseAt(true, *uuid));
                                     ui.close();
@@ -628,8 +662,9 @@ impl NHContext {
                                     *cma = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
                                     ui.close();
                                 }
+
                                 add_project_element_block(gdc, new_diagram_no, ui, commands);
-                                ui.separator();
+
                                 if ui.button("Duplicate (deep)").clicked() {
                                     commands.push(ProjectCommand::CopyDiagram(*hm.uuid(), true));
                                     ui.close();
@@ -660,8 +695,9 @@ impl NHContext {
                                     *cma = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
                                     ui.close();
                                 }
+
                                 add_project_element_block(gdc, new_diagram_no, ui, commands);
-                                ui.separator();
+
                                 if ui.button("Duplicate").clicked() {
                                     commands.push(ProjectCommand::DuplicateDocument(*uuid));
                                     ui.close();
@@ -1457,6 +1493,7 @@ struct NHApp {
 
 impl Default for NHApp {
     fn default() -> Self {
+        let mut new_diagram_no = 1;
         let mut diagram_controllers = HashMap::new();
         let mut hierarchy = vec![];
         let mut model_hierarchy_views = HashMap::<_, Arc<dyn ModelHierarchyView>>::new();
@@ -1466,22 +1503,19 @@ impl Default for NHApp {
             let mut d = HashMap::<ViewUuid, (String, String)>::new();
             let document_uuid = uuid::Uuid::now_v7().into();
             hierarchy.push(HierarchyNode::Document(document_uuid));
+            tabs.push(NHTab::Document { uuid: document_uuid });
             d.insert(
                 document_uuid,
                 (
                     "Example Document".to_owned(),
-                    "Example Document\n\nExample Text".to_owned(),
+                    "Example Document\n\nDocuments may store additional text descriptions.\n\nDocuments may span many, many lines, with the first one serving as the name.".to_owned(),
                 )
             );
             d
         };
 
         for (diagram_type, view) in [
-            (0, crate::domains::rdf::rdf_controllers::demo(1)),
-            (1, crate::domains::umlclass::umlclass_controllers::demo(2)),
-            (2, crate::domains::democsd::democsd_controllers::demo(3)),
-            (3, crate::domains::ontouml::ontouml_controllers::demo(4)),
-            (4, crate::domains::demoofd::demoofd_controllers::demo(5)),
+            (1, crate::domains::umlclass::umlclass_controllers::demo(1)),
         ] {
             let r = view.read();
             let mhview = r.new_hierarchy_view();
@@ -1492,6 +1526,7 @@ impl Default for NHApp {
             diagram_controllers.insert(view_uuid, (diagram_type, view));
             model_hierarchy_views.insert(model_uuid, mhview);
             tabs.push(NHTab::Diagram { uuid: view_uuid });
+            new_diagram_no += 1;
         }
 
         let mut diagram_deserializers = HashMap::new();
@@ -1545,7 +1580,7 @@ impl Default for NHApp {
             tree_view_state: TreeViewState::default(),
             model_hierarchy_views,
             diagram_deserializers,
-            new_diagram_no: 6,
+            new_diagram_no,
             documents,
             custom_tabs: HashMap::new(),
             custom_modal: None,

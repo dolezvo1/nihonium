@@ -620,7 +620,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     controllers.push(access_link.1.into());
 
     {
-        let name = format!("New DEMO CSD diagram {}", no);
+        let name = format!("Demo DEMO CSD diagram {}", no);
         let diagram = ERef::new(DemoCsdDiagram::new(
             uuid::Uuid::now_v7().into(),
             name.clone(),
