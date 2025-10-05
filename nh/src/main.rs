@@ -2146,7 +2146,7 @@ impl eframe::App for NHApp {
                     ui.separator();
 
                     if let Some((_t, d)) = self.context.last_focused_diagram() {
-                        d.write().show_menubar_edit_options(ui, &mut commands);
+                        d.write().show_menubar_edit_options(&self.context.drawing_context, ui, &mut commands);
                     }
 
                     ui.menu_button(translate!("nh-edit-arrange"), |ui| {
@@ -2160,11 +2160,11 @@ impl eframe::App for NHApp {
 
                 ui.menu_button(translate!("nh-view"), |ui| {
                     ui.set_min_width(MIN_MENU_WIDTH);
-                    /*
-                    if ui.button("Reset").clicked() {
-                        println!("no");
-                    }
-                    */
+
+                    let Some((_t, v)) = self.context.last_focused_diagram() else { return; };
+                    let mut view = v.write();
+
+                    view.show_menubar_view_options(&self.context.drawing_context, ui, &mut commands);
                 });
 
                 ui.menu_button(translate!("nh-diagram"), |ui| {
@@ -2173,7 +2173,7 @@ impl eframe::App for NHApp {
                     let Some((_t, v)) = self.context.last_focused_diagram() else { return; };
                     let mut view = v.write();
 
-                    view.show_menubar_diagram_options(ui, &mut commands);
+                    view.show_menubar_diagram_options(&self.context.drawing_context, ui, &mut commands);
 
                     ui.menu_button(
                         format!("Export Diagram `{}` to", view.view_name()),

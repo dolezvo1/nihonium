@@ -590,8 +590,24 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
         affected_models: &mut HashSet<ModelUuid>,
     ) -> Option<Box<dyn CustomModal>>;
     fn show_layers(&self, ui: &mut egui::Ui);
-    fn show_menubar_edit_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
-    fn show_menubar_diagram_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
+    fn show_menubar_edit_options(
+        &mut self,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
+    fn show_menubar_view_options(
+        &mut self,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
+    fn show_menubar_diagram_options(
+        &mut self,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
 
     fn apply_command(
         &mut self,
@@ -2137,7 +2153,12 @@ impl<
     fn show_layers(&self, _ui: &mut egui::Ui) {
         // TODO: Layers???
     }
-    fn show_menubar_edit_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
+    fn show_menubar_edit_options(
+        &mut self,
+        _context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
         if ui.button("Clear highlights").clicked() {
             commands.push(SimpleProjectCommand::SpecificDiagramCommand(
                 *self.uuid,
@@ -2145,7 +2166,37 @@ impl<
             ).into());
         }
     }
-    fn show_menubar_diagram_options(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
+    fn show_menubar_view_options(
+        &mut self,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
+        if ui.button("Reset position").clicked() {
+            self.temporaries.camera_offset = egui::Pos2::ZERO;
+        }
+        if ui.button("Reset scale").clicked() {
+            self.temporaries.camera_offset = self.temporaries.camera_offset / self.temporaries.camera_scale;
+            self.temporaries.camera_scale = 1.0;
+        }
+        if ui.button("Zoom to fit").clicked() {
+            const PADDING: egui::Vec2 = egui::Vec2::splat(10.0);
+
+            let mut mc = canvas::MeasuringCanvas::new(ui.painter());
+            self.draw_in(context, &mut mc, None);
+
+            let rect = mc.bounds();
+            let ratio = self.temporaries.last_interactive_canvas_rect.size() * self.temporaries.camera_scale / (rect.size() + PADDING);
+            self.temporaries.camera_scale = ratio.x.min(ratio.y);
+            self.temporaries.camera_offset = rect.min * -self.temporaries.camera_scale + PADDING / 2.0;
+        }
+    }
+    fn show_menubar_diagram_options(
+        &mut self,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
         self.adapter.menubar_options_fun(
             &*self.uuid,
             &(self.temporaries.label_provider.clone() as ERef<dyn LabelProvider>),
