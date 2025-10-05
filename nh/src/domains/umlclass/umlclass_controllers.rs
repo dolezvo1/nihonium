@@ -63,10 +63,8 @@ pub struct UmlClassLabelProvider {
 
 impl LabelProvider for UmlClassLabelProvider {
     fn get(&self, uuid: &ModelUuid) -> Arc<String> {
-        match self.cache.get(uuid) {
-            Some(e) => e.clone(),
-            None => panic!("Label for {:?} was not found", uuid),
-        }
+        self.cache.get(uuid).cloned()
+            .unwrap_or_else(|| Arc::new(format!("{:?}", uuid)))
     }
 }
 
