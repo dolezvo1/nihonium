@@ -2252,6 +2252,7 @@ impl eframe::App for NHApp {
 
                             if ui.button("SVG").clicked() {
                                 let d = rfd::AsyncFileDialog::new()
+                                    .set_file_name(format!("{}.svg", view.view_name()))
                                     .add_filter("SVG files", &["svg"])
                                     .add_filter("All files", &["*"])
                                     .save_file();
@@ -2640,6 +2641,13 @@ impl eframe::App for NHApp {
                     SimpleProjectCommand::SaveProject
                     | SimpleProjectCommand::SaveProjectAs => {
                         let mut dialog = rfd::AsyncFileDialog::new();
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            let HierarchyNode::Folder(_, name, _) = &self.context.project_hierarchy else {
+                                continue;
+                            };
+                            dialog = dialog.set_file_name(format!("{}.nhpz", name));
+                        }
                         #[cfg(not(target_arch = "wasm32"))]
                         {
                             dialog = dialog.add_filter("Nihonium Project files", &["nhp"]);
