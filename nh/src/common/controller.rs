@@ -105,6 +105,8 @@ impl Default for SnapManager {
 #[derive(Clone)]
 pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
+    RenameElement(ViewUuid, String),
+
     OpenAndFocusDiagram(ViewUuid, Option<egui::Pos2>),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetNewDiagramNumber(u32),
@@ -172,7 +174,7 @@ pub enum Arrangement {
 }
 
 pub enum HierarchyNode {
-    Folder(ViewUuid, Arc<String>, Vec<HierarchyNode>),
+    Folder(ViewUuid, /*name:*/ Arc<String>, /*children:*/ Vec<HierarchyNode>),
     Diagram(ERef<dyn TopLevelView>),
     Document(ViewUuid),
 }
@@ -538,6 +540,7 @@ pub trait View: Entity {
 
 pub trait TopLevelView: View {
     fn view_name(&self) -> Arc<String>;
+    fn set_view_name(&mut self, new_name: Arc<String>);
     fn view_type(&self) -> String;
 }
 
@@ -1764,6 +1767,11 @@ impl<
         self.name.clone()
     }
 
+    fn set_view_name(&mut self, new_name: Arc<String>) {
+        self.temporaries.name_buffer = (*new_name).clone();
+        self.name = new_name;
+    }
+
     fn view_type(&self) -> String {
         self.adapter.view_type().to_owned()
     }
@@ -2010,7 +2018,13 @@ impl<
             } else {
                 ui.label("View properties:");
                 ui.label("Name:");
-                if ui.text_edit_singleline(&mut self.temporaries.name_buffer).changed() {
+                if ui
+                    .add_sized(
+                        (ui.available_width(), 20.0),
+                        egui::TextEdit::singleline(&mut self.temporaries.name_buffer),
+                    )
+                    .changed()
+                {
                     self.name = Arc::new(self.temporaries.name_buffer.clone());
                 }
                 match self.adapter.show_view_props_fun(context, ui) {

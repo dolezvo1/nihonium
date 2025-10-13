@@ -585,7 +585,8 @@ impl NHContext {
     fn project_hierarchy(&mut self, ui: &mut Ui) {
         enum ContextMenuAction {
             NewFolder(ViewUuid),
-            RecCollapseAt(bool, ViewUuid),
+            CollapseAt(/*collapse:*/ Option<bool>, /*recurse:*/ bool, ViewUuid),
+            RenameElement(ViewUuid),
             DeleteFolder(ViewUuid),
         }
 
@@ -596,10 +597,10 @@ impl NHContext {
                 context_menu_action = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
             }
             if ui.button("Collapse all").clicked() {
-                context_menu_action = Some(ContextMenuAction::RecCollapseAt(true, uuid::Uuid::nil().into()));
+                context_menu_action = Some(ContextMenuAction::CollapseAt(Some(true), true, uuid::Uuid::nil().into()));
             }
             if ui.button("Uncollapse all").clicked() {
-                context_menu_action = Some(ContextMenuAction::RecCollapseAt(false, uuid::Uuid::nil().into()));
+                context_menu_action = Some(ContextMenuAction::CollapseAt(Some(false), true, uuid::Uuid::nil().into()));
             }
         });
 
@@ -620,8 +621,9 @@ impl NHContext {
                             .context_menu(|ui| {
                                 ui.set_min_width(MIN_MENU_WIDTH);
 
-                                if ui.button("Rename").clicked() {
-                                    // TODO: rename
+                                if ui.button("Toggle Collapse").clicked() {
+                                    *cma = Some(ContextMenuAction::CollapseAt(None, false, *uuid));
+                                    ui.close();
                                 }
                                 ui.separator();
                                 if ui.button("New Folder").clicked() {
@@ -632,11 +634,16 @@ impl NHContext {
                                 add_project_element_block(gdc, new_diagram_no, ui, commands);
 
                                 if ui.button("Collapse children").clicked() {
-                                    *cma = Some(ContextMenuAction::RecCollapseAt(true, *uuid));
+                                    *cma = Some(ContextMenuAction::CollapseAt(Some(true), true, *uuid));
                                     ui.close();
                                 }
                                 if ui.button("Uncollapse children").clicked() {
-                                    *cma = Some(ContextMenuAction::RecCollapseAt(false, *uuid));
+                                    *cma = Some(ContextMenuAction::CollapseAt(Some(false), true, *uuid));
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui.button("Rename").clicked() {
+                                    *cma = Some(ContextMenuAction::RenameElement(*uuid));
                                     ui.close();
                                 }
                                 ui.separator();
@@ -682,6 +689,11 @@ impl NHContext {
                                     ui.close();
                                 }
                                 ui.separator();
+                                if ui.button("Rename").clicked() {
+                                    *cma = Some(ContextMenuAction::RenameElement(*hm.uuid()));
+                                    ui.close();
+                                }
+                                ui.separator();
                                 if ui.button("Delete").clicked() {
                                     commands.push(ProjectCommand::DeleteDiagram(*hm.uuid()));
                                     ui.close();
@@ -710,6 +722,11 @@ impl NHContext {
 
                                 if ui.button("Duplicate").clicked() {
                                     commands.push(ProjectCommand::DuplicateDocument(*uuid));
+                                    ui.close();
+                                }
+                                ui.separator();
+                                if ui.button("Rename").clicked() {
+                                    *cma = Some(ContextMenuAction::RenameElement(*uuid));
                                     ui.close();
                                 }
                                 ui.separator();
@@ -788,11 +805,64 @@ impl NHContext {
                         HierarchyNode::Folder(uuid::Uuid::now_v7().into(), Arc::new("New folder".into()), vec![]),
                     );
                 },
-                ContextMenuAction::RecCollapseAt(b, view_uuid) => {
-                    if let Some(e) = self.project_hierarchy.get(&view_uuid) {
-                        e.0.for_each(|e| self.tree_view_state.set_openness(e.uuid(), !b));
+                ContextMenuAction::CollapseAt(collapse, recurse, view_uuid) => {
+                    let mut f = |e: &HierarchyNode| if recurse {
+                        e.for_each(|e| self.tree_view_state.set_openness(e.uuid(), !collapse.unwrap_or_else(|| self.tree_view_state.is_open(&e.uuid()).unwrap_or(true))))
+                    } else {
+                        self.tree_view_state.set_openness(e.uuid(), !collapse.unwrap_or_else(|| self.tree_view_state.is_open(&e.uuid()).unwrap_or(true)));
+                    };
+                    if view_uuid.is_nil() {
+                        f(&self.project_hierarchy);
+                    } else if let Some(e) = self.project_hierarchy.get(&view_uuid) {
+                        f(&e.0);
                     }
                 },
+                ContextMenuAction::RenameElement(view_uuid) => 'a: {
+                    let f = |e: &HierarchyNode| match e {
+                        HierarchyNode::Folder(_, name, _) => (**name).clone(),
+                        HierarchyNode::Diagram(eref) => (*eref.read().view_name()).clone(),
+                        HierarchyNode::Document(view_uuid) => self.documents.get(view_uuid).map(|e| e.0.clone()).unwrap(),
+                    };
+                    let original_name = if view_uuid.is_nil() {
+                        f(&self.project_hierarchy)
+                    } else if let Some(e) = self.project_hierarchy.get(&view_uuid) {
+                        f(&e.0)
+                    } else {
+                        break 'a;
+                    };
+
+                    struct ViewRenameModal {
+                        view_uuid: ViewUuid,
+                        name_buffer: String,
+                    }
+
+                    impl CustomModal for ViewRenameModal {
+                        fn show(
+                            &mut self,
+                            d: &mut GlobalDrawingContext,
+                            ui: &mut egui::Ui,
+                            commands: &mut Vec<ProjectCommand>,
+                        ) -> CustomModalResult {
+                            ui.label("Name:");
+                            ui.text_edit_singleline(&mut self.name_buffer);
+
+                            let mut result = CustomModalResult::KeepOpen;
+                            ui.horizontal(|ui| {
+                                if ui.button("Ok").clicked() {
+                                    commands.push(ProjectCommand::RenameElement(self.view_uuid, self.name_buffer.clone()));
+                                    result = CustomModalResult::CloseUnmodified;
+                                }
+                                if ui.button("Cancel").clicked() {
+                                    result = CustomModalResult::CloseUnmodified;
+                                }
+                            });
+
+                            result
+                        }
+                    }
+
+                    self.custom_modal = Some(Box::new(ViewRenameModal { view_uuid: view_uuid, name_buffer: original_name, }));
+                }
                 ContextMenuAction::DeleteFolder(view_uuid) => {
                     self.project_hierarchy.remove(&view_uuid);
                 },
@@ -2601,6 +2671,49 @@ impl eframe::App for NHApp {
                     } else {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::Exit(b));
                     }
+                }
+                ProjectCommand::RenameElement(view_uuid, new_name) => {
+                    fn h(
+                        e: &mut HierarchyNode,
+                        uuid: ViewUuid,
+                        new_name: &str,
+                        docs: &mut HashMap<ViewUuid, (String, String)>,
+                    ) {
+                        match e {
+                            HierarchyNode::Folder(view_uuid, name, children) => {
+                                if uuid == *view_uuid {
+                                    *name = new_name.to_owned().into();
+                                }
+
+                                for e in children.iter_mut() {
+                                    h(e, uuid, new_name, docs);
+                                }
+                            },
+                            HierarchyNode::Diagram(eref) => {
+                                eref.write().set_view_name(new_name.to_owned().into());
+                            },
+                            HierarchyNode::Document(view_uuid) => {
+                                if uuid == *view_uuid
+                                    && let Some(e) = docs.get_mut(&view_uuid) {
+                                    e.0 = new_name.to_owned();
+                                    let mut lines: Vec<&str> = e.1.lines().collect();
+                                    if !lines.is_empty() {
+                                        lines[0] = new_name;
+                                    } else {
+                                        lines.push(new_name);
+                                    }
+                                    e.1 = lines.join("\n");
+                                }
+                            },
+                        }
+                    }
+
+                    h(
+                        &mut self.context.project_hierarchy,
+                        view_uuid,
+                        &new_name,
+                        &mut self.context.documents,
+                    );
                 }
                 ProjectCommand::OpenAndFocusDiagram(..)
                 | ProjectCommand::OpenAndFocusDocument(..) => unreachable!("this really should not happen"),
