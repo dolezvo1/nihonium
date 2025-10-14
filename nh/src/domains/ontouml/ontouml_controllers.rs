@@ -1329,7 +1329,7 @@ fn ontouml_class_stereotype_literal(e: &str) -> &'static str {
 
 struct UmlClassSetupModal {
     model: ERef<UmlClass>,
-
+    first_frame: bool,
     stereotype_buffer: &'static str,
     name_buffer: String,
 }
@@ -1339,6 +1339,7 @@ impl From<&ERef<UmlClass>> for UmlClassSetupModal {
         let m = model.read();
         Self {
             model: model.clone(),
+            first_frame: true,
             stereotype_buffer: ontouml_class_stereotype_literal(&*m.stereotype),
             name_buffer: (*m.name).clone(),
         }
@@ -1379,8 +1380,13 @@ impl CustomModal for UmlClassSetupModal {
             }
         );
         ui.label("Name:");
-        ui.text_edit_singleline(&mut self.name_buffer);
+        let r = ui.text_edit_singleline(&mut self.name_buffer);
         ui.separator();
+
+        if self.first_frame {
+            r.request_focus();
+            self.first_frame = false;
+        }
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {

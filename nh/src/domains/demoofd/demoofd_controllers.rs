@@ -240,7 +240,7 @@ struct UmlClassPlaceholderViews {
 
 impl Default for UmlClassPlaceholderViews {
     fn default() -> Self {
-        let (entity_m, entity_view) = new_demoofd_entitytype("Membership", "", true, egui::Pos2::ZERO);
+        let (entity_m, entity_view) = new_demoofd_entitytype("MEMBERSHIP", "", true, egui::Pos2::ZERO);
         let (event, event_view) = new_demoofd_eventtype(
             "01", "is started",
             (entity_m.clone(), entity_view.clone().into()),
@@ -974,7 +974,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
         match (self.current_stage, &mut self.result) {
             (DemoOfdToolStage::Entity, _) => {
                 let (_class_model, class_view) =
-                    new_demoofd_entitytype("Membership", "", true, pos);
+                    new_demoofd_entitytype("MEMBERSHIP", "", true, pos);
                 self.result = PartialDemoOfdElement::Some(class_view.into());
                 self.event_lock = true;
             }
@@ -1062,7 +1062,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     (DemoOfdToolStage::Entity, _) => {
                         if !inner.read().specialization_entity_type.is_some() {
                             let (_class_model, class_view) =
-                                new_demoofd_entitytype("Membership", "", true, egui::Pos2::ZERO);
+                                new_demoofd_entitytype("MEMBERSHIP", "", true, egui::Pos2::ZERO);
                             self.result = PartialDemoOfdElement::Some(class_view.into());
                         }
                         self.event_lock = true;
@@ -1138,7 +1138,6 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 let x = x.clone();
                 let esm: Option<Box<dyn CustomModal>> = match &x {
                     DemoOfdElementView::EntityType(inner) => Some(Box::new(DemoOfdEntityTypeSetupModal::from(&inner.read().model))),
-                    DemoOfdElementView::EventType(inner) => Some(Box::new(DemoOfdEventTypeSetupModal::from(&inner.read().model))),
                     _ => None,
                 };
                 self.result = PartialDemoOfdElement::None;
@@ -1154,11 +1153,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     } else {
                         None
                     };
-                    let (_event_model, event_view) =
+                    let (event_model, event_view) =
                         new_demoofd_eventtype("01", "is started", (source.clone(), base_view), spec, *p);
 
+                    let esm: Option<Box<dyn CustomModal>> = Some(Box::new(DemoOfdEventTypeSetupModal::from(&event_model)));
                     self.result = PartialDemoOfdElement::None;
-                    Some((event_view.into(), None))
+                    Some((event_view.into(), esm))
                 } else {
                     None
                 }
@@ -1490,7 +1490,7 @@ fn new_demoofd_entitytype_view(
 
 struct DemoOfdEntityTypeSetupModal {
     model: ERef<DemoOfdEntityType>,
-
+    first_frame: bool,
     name_buffer: String,
     internal_buffer: bool,
 }
@@ -1500,6 +1500,7 @@ impl From<&ERef<DemoOfdEntityType>> for DemoOfdEntityTypeSetupModal {
         let m = model.read();
         Self {
             model: model.clone(),
+            first_frame: true,
             name_buffer: (*m.name).clone(),
             internal_buffer: m.internal,
         }
@@ -1514,10 +1515,15 @@ impl CustomModal for DemoOfdEntityTypeSetupModal {
         commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Name:");
-        ui.text_edit_singleline(&mut self.name_buffer);
+        let r = ui.text_edit_singleline(&mut self.name_buffer);
         ui.label("Internal:");
         ui.checkbox(&mut self.internal_buffer, "");
         ui.separator();
+
+        if self.first_frame {
+            r.request_focus();
+            self.first_frame = false;
+        }
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
@@ -2153,7 +2159,9 @@ fn new_demoofd_eventtype_view(
 
 struct DemoOfdEventTypeSetupModal {
     model: ERef<DemoOfdEventType>,
-
+    first_frame: bool,
+    kind_buffer: DemoTransactionKind,
+    identifier_buffer: String,
     name_buffer: String,
 }
 
@@ -2162,6 +2170,9 @@ impl From<&ERef<DemoOfdEventType>> for DemoOfdEventTypeSetupModal {
         let m = model.read();
         Self {
             model: model.clone(),
+            first_frame: true,
+            kind_buffer: m.kind,
+            identifier_buffer: (*m.identifier).clone(),
             name_buffer: (*m.name).clone(),
         }
     }
@@ -2174,14 +2185,35 @@ impl CustomModal for DemoOfdEventTypeSetupModal {
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
+        ui.label("Transaction Kind:");
+        egui::ComboBox::from_id_salt("Transaction Kind:")
+            .selected_text(self.kind_buffer.char())
+            .show_ui(ui, |ui| {
+                for value in [
+                    DemoTransactionKind::Performa,
+                    DemoTransactionKind::Informa,
+                    DemoTransactionKind::Forma,
+                ] {
+                    ui.selectable_value(&mut self.kind_buffer, value, value.char());
+                }
+            });
+        ui.label("Identifier:");
+        let r = ui.text_edit_singleline(&mut self.identifier_buffer);
         ui.label("Name:");
         ui.text_edit_singleline(&mut self.name_buffer);
         ui.separator();
+
+        if self.first_frame {
+            r.request_focus();
+            self.first_frame = false;
+        }
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
             if ui.button("Ok").clicked() {
                 let mut m = self.model.write();
+                m.kind = self.kind_buffer;
+                m.identifier = Arc::new(self.identifier_buffer.clone());
                 m.name = Arc::new(self.name_buffer.clone());
                 result = CustomModalResult::CloseModified(*m.uuid);
             }

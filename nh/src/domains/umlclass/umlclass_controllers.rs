@@ -1556,7 +1556,7 @@ fn new_umlclass_instance_view(
 
 struct UmlClassInstanceSetupModal {
     model: ERef<UmlClassInstance>,
-
+    first_frame: bool,
     name_buffer: String,
     type_buffer: String,
 }
@@ -1566,6 +1566,7 @@ impl From<&ERef<UmlClassInstance>> for UmlClassInstanceSetupModal {
         let m = model.read();
         Self {
             model: model.clone(),
+            first_frame: true,
             name_buffer: (*m.instance_name).clone(),
             type_buffer: (*m.instance_type).clone(),
         }
@@ -1580,10 +1581,15 @@ impl CustomModal for UmlClassInstanceSetupModal {
         commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Name:");
-        ui.text_edit_singleline(&mut self.name_buffer);
+        let r = ui.text_edit_singleline(&mut self.name_buffer);
         ui.label("Type:");
         ui.text_edit_singleline(&mut self.type_buffer);
         ui.separator();
+
+        if self.first_frame {
+            r.request_focus();
+            self.first_frame = false;
+        }
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
@@ -2157,7 +2163,7 @@ fn new_umlclass_class_view(
 
 struct UmlClassSetupModal {
     model: ERef<UmlClass>,
-
+    first_frame: bool,
     stereotype_buffer: String,
     name_buffer: String,
 }
@@ -2167,6 +2173,7 @@ impl From<&ERef<UmlClass>> for UmlClassSetupModal {
         let m = model.read();
         Self {
             model: model.clone(),
+            first_frame: true,
             stereotype_buffer: (*m.stereotype).clone(),
             name_buffer: (*m.name).clone(),
         }
@@ -2183,8 +2190,13 @@ impl CustomModal for UmlClassSetupModal {
         ui.label("Stereotype:");
         ui.text_edit_singleline(&mut self.stereotype_buffer);
         ui.label("Name:");
-        ui.text_edit_singleline(&mut self.name_buffer);
+        let r = ui.text_edit_singleline(&mut self.name_buffer);
         ui.separator();
+
+        if self.first_frame {
+            r.request_focus();
+            self.first_frame = false;
+        }
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
