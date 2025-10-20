@@ -243,6 +243,7 @@ struct NHContext {
     undo_stack: Vec<(Arc<String>, ViewUuid)>,
     redo_stack: Vec<(Arc<String>, ViewUuid)>,
     unprocessed_commands: Vec<ProjectCommand>,
+    should_change_title: bool,
     has_unsaved_changes: bool,
 
     open_unique_tabs: HashSet<NHTab>,
@@ -446,6 +447,15 @@ fn execute<F: Future<Output = ()> + 'static>(f: F) {
 }
 
 impl NHContext {
+    fn set_project_path(&mut self, project_path: Option<PathBuf>) {
+        self.project_path = project_path;
+        self.should_change_title = true;
+    }
+    fn set_has_unsaved_changes(&mut self, has_unsaved_changes: bool) {
+        self.has_unsaved_changes = has_unsaved_changes;
+        self.should_change_title = true;
+    }
+
     fn export_project(&self, fh: FileHandle) -> Result<(), NHSerializeError> {
         let project_file_name = PathBuf::from(fh.file_name());
         let extension = if cfg!(target_arch = "wasm32") {
@@ -582,6 +592,7 @@ impl NHContext {
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.unprocessed_commands.clear();
+        self.should_change_title = true;
         self.has_unsaved_changes = false;
 
         self.last_focused_diagram = None;
@@ -901,7 +912,7 @@ impl NHContext {
 
     fn set_modified_state(&mut self, view_uuid: ViewUuid, undo_accumulator: Vec<Arc<String>>) {
         if !undo_accumulator.is_empty() {
-            self.has_unsaved_changes = true;
+            self.set_has_unsaved_changes(true);
             let Some((_t, target_diagram)) = self.diagram_controllers.get(&view_uuid) else { return; };
 
             for (_uuid, (_t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| **uuid != view_uuid) {
@@ -1524,7 +1535,7 @@ impl NHContext {
     
     // In general it should draw first and handle input second, right?
     fn diagram_tab(&mut self, tab_uuid: &ViewUuid, ui: &mut Ui) {
-        let Some((t, v)) = self.diagram_controllers.get(tab_uuid) else { return; };
+        let Some((t, v)) = self.diagram_controllers.get(tab_uuid).cloned() else { return; };
         let mut diagram_controller = v.write();
 
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(&self.drawing_context, ui);
@@ -1533,7 +1544,7 @@ impl NHContext {
         });
 
         diagram_controller.draw_in(&self.drawing_context, ui_canvas.as_mut(), pos);
-        let shade_color = self.diagram_shades[*t].1[self.selected_diagram_shades[*t]];
+        let shade_color = self.diagram_shades[t].1[self.selected_diagram_shades[t]];
         ui_canvas.draw_rectangle(egui::Rect::EVERYTHING, egui::CornerRadius::ZERO, shade_color, common::canvas::Stroke::NONE, Highlight::NONE);
 
         let mut undo_accumulator = Vec::<Arc<String>>::new();
@@ -1544,7 +1555,7 @@ impl NHContext {
         );
 
         if !undo_accumulator.is_empty() {
-            self.has_unsaved_changes = true;
+            self.set_has_unsaved_changes(true);
             for (_uuid, (t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != tab_uuid) {
                 c.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![], &mut HashSet::new());
             }
@@ -1566,7 +1577,7 @@ impl NHContext {
         let c = self.documents.get_mut(uuid).unwrap();
         if ui.add_sized(ui.available_size(), egui::TextEdit::multiline(&mut c.1)).changed() {
             c.0 = c.1.lines().next().unwrap_or("empty document").to_owned();
-            self.has_unsaved_changes = true;
+            self.set_has_unsaved_changes(true);
         }
     }
 
@@ -1699,6 +1710,7 @@ impl Default for NHApp {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             unprocessed_commands: Vec::new(),
+            should_change_title: true,
             has_unsaved_changes: true,
             
             shortcut_top_order: vec![],
@@ -1802,7 +1814,7 @@ impl NHApp {
         }
         
         self.context.redo_stack.push(e);
-        self.context.has_unsaved_changes = true;
+        self.context.set_has_unsaved_changes(true);
     }
     fn redo_immediate(&mut self) {
         let Some(e) = self.context.redo_stack.pop() else { return; };
@@ -1817,7 +1829,7 @@ impl NHApp {
         }
         
         self.context.undo_stack.push(e);
-        self.context.has_unsaved_changes = true;
+        self.context.set_has_unsaved_changes(true);
     }
 
     fn add_diagram(
@@ -1884,7 +1896,7 @@ impl eframe::App for NHApp {
                     match self.context.import_project(fh) {
                         Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error opening: {:?}", e))),
                         Ok(_) => {
-                            self.context.project_path = Some(file_name.into());
+                            self.context.set_project_path(Some(file_name.into()));
                             self.clear_nonstatic_tabs();
                         }
                     }
@@ -1901,8 +1913,8 @@ impl eframe::App for NHApp {
                     match self.context.export_project(fh) {
                         Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error exporting: {:?}", e))),
                         Ok(_) => {
-                            self.context.project_path = Some(file_name.into());
-                            self.context.has_unsaved_changes = false;
+                            self.context.set_project_path(Some(file_name.into()));
+                            self.context.set_has_unsaved_changes(false);
                         }
                     }
                 },
@@ -1997,14 +2009,17 @@ impl eframe::App for NHApp {
         }
 
         // Set window title depending on the project path
-        let modified = if self.context.has_unsaved_changes { "*" } else { "" };
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(
-            if let Some(project_path) = &self.context.project_path {
-                format!("Nihonium{} - {}", modified, project_path.to_string_lossy())
-            } else {
-                format!("Nihonium{}", modified)
-            }
-        ));
+        if self.context.should_change_title {
+            let modified = if self.context.has_unsaved_changes { "*" } else { "" };
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+                if let Some(project_path) = &self.context.project_path {
+                    format!("Nihonium{} - {}", modified, project_path.to_string_lossy())
+                } else {
+                    format!("Nihonium{}", modified)
+                }
+            ));
+            self.context.should_change_title = false;
+        }
 
         macro_rules! translate {
             ($msg_name:expr) => {
