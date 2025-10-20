@@ -165,7 +165,7 @@ impl Debug for RdfElementOrVertex {
 }
 
 #[derive(Clone, derive_more::From, nh_derive::View, nh_derive::NHContextSerDeTag)]
-#[view(default_passthrough = "eref", domain = RdfDomain)]
+#[view(default_passthrough = "eref", domain = "RdfDomain")]
 #[nh_context_serde(uuid_type = ViewUuid)]
 pub enum RdfElementView {
     Graph(ERef<PackageViewT>),

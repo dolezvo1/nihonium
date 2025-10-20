@@ -1,4 +1,4 @@
-#![feature(unsize, coerce_unsized)]
+#![feature(unsize, coerce_unsized, associated_type_defaults)]
 // hide console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -335,6 +335,17 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
         };
     }
 
+    macro_rules! diagram_button {
+        ($ui:expr, $label:expr, $diagram_type:expr, $fun:expr) => {
+            if $ui.button($label).clicked() {
+                let diagram_controller = $fun(new_diagram_no);
+                commands.push(ProjectCommand::SetNewDiagramNumber(new_diagram_no + 1));
+                commands.push(ProjectCommand::AddNewDiagram($diagram_type, diagram_controller));
+                $ui.close();
+            }
+        }
+    }
+
     if ui.button(translate!("nh-project-addnewdocument")).clicked() {
         commands.push(ProjectCommand::AddNewDocument(uuid::Uuid::now_v7().into(), "New Document".to_owned()));
     }
@@ -342,17 +353,25 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
         ui.set_min_width(MIN_MENU_WIDTH);
 
         type NDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
+        ui.menu_button("UML Class", |ui| {
+            ui.set_min_width(MIN_MENU_WIDTH);
+            for (label, diagram_type, fun) in [
+                (
+                    "UML Class diagram",
+                    1,
+                    crate::domains::umlclass::umlclass_controllers::new as NDC,
+                ),
+                (
+                    "OntoUML diagram",
+                    3,
+                    crate::domains::ontouml::ontouml_controllers::new as NDC,
+                ),
+            ] {
+                diagram_button!(ui, label, diagram_type, fun);
+            }
+        });
+
         for (label, diagram_type, fun) in [
-            (
-                "UML Class diagram",
-                1,
-                crate::domains::umlclass::umlclass_controllers::new as NDC,
-            ),
-            (
-                "OntoUML diagram",
-                3,
-                crate::domains::ontouml::ontouml_controllers::new as NDC,
-            ),
             (
                 "DEMO Coordination Structure Diagram",
                 2,
@@ -365,29 +384,32 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
             ),
             ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::new as NDC),
         ] {
-            if ui.button(label).clicked() {
-                let diagram_controller = fun(new_diagram_no);
-                commands.push(ProjectCommand::SetNewDiagramNumber(new_diagram_no + 1));
-                commands.push(ProjectCommand::AddNewDiagram(diagram_type, diagram_controller));
-                ui.close();
-            }
+            diagram_button!(ui, label, diagram_type, fun);
         }
     });
     ui.menu_button(translate!("nh-project-adddemodiagram"), |ui| {
         ui.set_min_width(MIN_MENU_WIDTH);
 
         type DDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
+        ui.menu_button("UML Class", |ui| {
+            ui.set_min_width(MIN_MENU_WIDTH);
+            for (label, diagram_type, fun) in [
+                (
+                    "UML Class diagram",
+                    1,
+                    crate::domains::umlclass::umlclass_controllers::demo as DDC,
+                ),
+                (
+                    "OntoUML diagram",
+                    3,
+                    crate::domains::ontouml::ontouml_controllers::demo as DDC,
+                ),
+            ] {
+                diagram_button!(ui, label, diagram_type, fun);
+            }
+        });
+
         for (label, diagram_type, fun) in [
-            (
-                "UML Class diagram",
-                1,
-                crate::domains::umlclass::umlclass_controllers::demo as DDC,
-            ),
-            (
-                "OntoUML diagram",
-                3,
-                crate::domains::ontouml::ontouml_controllers::demo as DDC,
-            ),
             (
                 "DEMO Coordination Structure Diagram",
                 2,
@@ -400,12 +422,7 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
             ),
             ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::demo as DDC),
         ] {
-            if ui.button(label).clicked() {
-                let diagram_controller = fun(new_diagram_no);
-                commands.push(ProjectCommand::SetNewDiagramNumber(new_diagram_no + 1));
-                commands.push(ProjectCommand::AddNewDiagram(diagram_type, diagram_controller));
-                ui.close();
-            }
+            diagram_button!(ui, label, diagram_type, fun);
         }
     });
     ui.separator();
@@ -1613,7 +1630,7 @@ impl Default for NHApp {
         diagram_deserializers.insert("rdf-diagram-view".to_string(), (0, &crate::domains::rdf::rdf_controllers::deserializer as &DDes));
         diagram_deserializers.insert("umlclass-diagram-view".to_string(), (1, &crate::domains::umlclass::umlclass_controllers::deserializer as &DDes));
         diagram_deserializers.insert("democsd-diagram-view".to_string(), (2, &crate::domains::democsd::democsd_controllers::deserializer as &DDes));
-        diagram_deserializers.insert("ontouml-diagram-view".to_string(), (3, &crate::domains::ontouml::ontouml_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("umlclass-diagram-view-ontouml".to_string(), (3, &crate::domains::ontouml::ontouml_controllers::deserializer as &DDes));
         diagram_deserializers.insert("demoofd-diagram-view".to_string(), (4, &crate::domains::demoofd::demoofd_controllers::deserializer as &DDes));
 
         let mut dock_state = DockState::new(tabs);

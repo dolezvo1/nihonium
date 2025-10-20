@@ -16,44 +16,119 @@ use crate::domains::umlclass::umlclass_models::{UmlClassVisibilityKind, UmlClass
 use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
 use std::collections::HashSet;
+use std::marker::PhantomData;
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter},
     sync::{Arc, RwLock},
 };
 
-pub struct UmlClassDomain;
-impl Domain for UmlClassDomain {
+pub trait UmlClassPalette<P: UmlClassProfile>: Default + Clone {
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (UmlClassToolStage, &'static str, UmlClassElementView<P>)>;
+}
+
+pub trait StereotypeController: Default + Clone + Send + Sync + 'static {
+    fn show(&mut self, ui: &mut egui::Ui) -> bool;
+    fn get(&mut self) -> Arc<String>;
+    fn refresh(&mut self, new_value: &str);
+}
+
+pub trait UmlClassProfile: Default + Clone + Send + Sync + 'static {
+    type Palette: UmlClassPalette<Self>;
+    type InstanceStereotypeController: StereotypeController = UnrestrictedStereotypeController;
+    type ClassStereotypeController: StereotypeController = UnrestrictedStereotypeController;
+    type DependencyStereotypeController: StereotypeController = UnrestrictedStereotypeController;
+    type AssociationStereotypeController: StereotypeController = UnrestrictedStereotypeController;
+
+    fn view_type() -> &'static str;
+    fn menubar_options_fun(
+        model: &ERef<UmlClassDiagram>,
+        view_uuid: &ViewUuid,
+        label_provider: &ERef<dyn LabelProvider>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
+        if ui.button("PlantUML description").clicked() {
+            let uuid = uuid::Uuid::now_v7();
+            commands.push(ProjectCommand::AddCustomTab(
+                uuid,
+                Arc::new(RwLock::new(PlantUmlTab::new(model.clone()))),
+            ));
+        }
+        ui.separator();
+    }
+
+    fn allows_class_attributes() -> bool {
+        true
+    }
+    fn allows_class_operations() -> bool {
+        true
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct UnrestrictedStereotypeController {
+    buffer: String,
+}
+impl StereotypeController for UnrestrictedStereotypeController {
+    fn show(&mut self, ui: &mut egui::Ui) -> bool {
+        ui.add_sized(
+            (ui.available_width(), 20.0),
+            egui::TextEdit::singleline(&mut self.buffer),
+        ).changed()
+    }
+    fn get(&mut self) -> Arc<String> {
+        self.buffer.clone().into()
+    }
+    fn refresh(&mut self, new_value: &str) {
+        self.buffer.replace_range(.., new_value);
+    }
+}
+
+#[derive(Clone, Default)]
+pub struct UmlClassNullProfile;
+impl UmlClassProfile for UmlClassNullProfile {
+    type Palette = UmlClassNullPalette;
+
+    fn view_type() -> &'static str {
+        "umlclass-diagram-view"
+    }
+}
+
+pub struct UmlClassDomain<P: UmlClassProfile> {
+    _profile: PhantomData<P>,
+}
+impl<P: UmlClassProfile> Domain for UmlClassDomain<P> {
     type CommonElementT = UmlClassElement;
     type DiagramModelT = UmlClassDiagram;
-    type CommonElementViewT = UmlClassElementView;
-    type QueryableT<'a> = UmlClassQueryable<'a>;
+    type CommonElementViewT = UmlClassElementView<P>;
+    type QueryableT<'a> = UmlClassQueryable<'a, P>;
     type LabelProviderT = UmlClassLabelProvider;
-    type ToolT = NaiveUmlClassTool;
-    type AddCommandElementT = UmlClassElementOrVertex;
+    type ToolT = NaiveUmlClassTool<P>;
+    type AddCommandElementT = UmlClassElementOrVertex<P>;
     type PropChangeT = UmlClassPropChange;
 }
 
-type PackageViewT = PackageView<UmlClassDomain, UmlClassPackageAdapter>;
-type GeneralizationViewT = MulticonnectionView<UmlClassDomain, UmlClassGeneralizationAdapter>;
-type DependencyViewT = MulticonnectionView<UmlClassDomain, UmlClassDependencyAdapter>;
-type AssociationViewT = MulticonnectionView<UmlClassDomain, UmlClassAssocationAdapter>;
-type CommentLinkViewT = MulticonnectionView<UmlClassDomain, UmlClassCommentLinkAdapter>;
+type PackageViewT<P> = PackageView<UmlClassDomain<P>, UmlClassPackageAdapter<P>>;
+type GeneralizationViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassGeneralizationAdapter>;
+type DependencyViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassDependencyAdapter<P>>;
+type AssociationViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassAssocationAdapter<P>>;
+type CommentLinkViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassCommentLinkAdapter>;
 
-pub struct UmlClassQueryable<'a> {
+pub struct UmlClassQueryable<'a, P: UmlClassProfile> {
     models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-    flattened_views: &'a HashMap<ViewUuid, UmlClassElementView>,
+    flattened_views: &'a HashMap<ViewUuid, UmlClassElementView<P>>,
 }
 
-impl<'a> Queryable<'a, UmlClassDomain> for UmlClassQueryable<'a> {
+impl<'a, P: UmlClassProfile> Queryable<'a, UmlClassDomain<P>> for UmlClassQueryable<'a, P> {
     fn new(
         models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-        flattened_views: &'a HashMap<ViewUuid, UmlClassElementView>,
+        flattened_views: &'a HashMap<ViewUuid, UmlClassElementView<P>>,
     ) -> Self {
         Self { models_to_views, flattened_views }
     }
 
-    fn get_view(&self, m: &ModelUuid) -> Option<UmlClassElementView> {
+    fn get_view(&self, m: &ModelUuid) -> Option<UmlClassElementView<P>> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
     }
 }
@@ -214,21 +289,21 @@ impl TryFrom<UmlClassPropChange> for ColorChangeData {
 }
 
 #[derive(Clone, derive_more::From)]
-pub enum UmlClassElementOrVertex {
-    Element(UmlClassElementView),
+pub enum UmlClassElementOrVertex<Profile: UmlClassProfile> {
+    Element(UmlClassElementView<Profile>),
     Vertex(VertexInformation),
 }
 
-impl Debug for UmlClassElementOrVertex {
+impl<P: UmlClassProfile> Debug for UmlClassElementOrVertex<P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "UmlClassElementOrVertex::???")
     }
 }
 
-impl TryFrom<UmlClassElementOrVertex> for VertexInformation {
+impl<P: UmlClassProfile> TryFrom<UmlClassElementOrVertex<P>> for VertexInformation {
     type Error = ();
 
-    fn try_from(value: UmlClassElementOrVertex) -> Result<Self, Self::Error> {
+    fn try_from(value: UmlClassElementOrVertex<P>) -> Result<Self, Self::Error> {
         match value {
             UmlClassElementOrVertex::Vertex(v) => Ok(v),
             _ => Err(()),
@@ -236,10 +311,10 @@ impl TryFrom<UmlClassElementOrVertex> for VertexInformation {
     }
 }
 
-impl TryFrom<UmlClassElementOrVertex> for UmlClassElementView {
+impl<P: UmlClassProfile> TryFrom<UmlClassElementOrVertex<P>> for UmlClassElementView<P> {
     type Error = ();
 
-    fn try_from(value: UmlClassElementOrVertex) -> Result<Self, Self::Error> {
+    fn try_from(value: UmlClassElementOrVertex<P>) -> Result<Self, Self::Error> {
         match value {
             UmlClassElementOrVertex::Element(v) => Ok(v),
             _ => Err(()),
@@ -249,22 +324,22 @@ impl TryFrom<UmlClassElementOrVertex> for UmlClassElementView {
 
 
 #[derive(Clone, derive_more::From, nh_derive::View, nh_derive::NHContextSerDeTag)]
-#[view(default_passthrough = "eref", domain = UmlClassDomain)]
+#[view(default_passthrough = "eref", domain = "UmlClassDomain<P>")]
 #[nh_context_serde(uuid_type = ViewUuid)]
-pub enum UmlClassElementView {
-    Package(ERef<PackageViewT>),
-    Instance(ERef<UmlClassInstanceView>),
-    Class(ERef<UmlClassView>),
-    Generalization(ERef<GeneralizationViewT>),
-    Dependency(ERef<DependencyViewT>),
-    Association(ERef<AssociationViewT>),
-    Comment(ERef<UmlClassCommentView>),
-    CommentLink(ERef<CommentLinkViewT>),
+pub enum UmlClassElementView<P: UmlClassProfile> {
+    Package(ERef<PackageViewT<P>>),
+    Instance(ERef<UmlClassInstanceView<P>>),
+    Class(ERef<UmlClassView<P>>),
+    Generalization(ERef<GeneralizationViewT<P>>),
+    Dependency(ERef<DependencyViewT<P>>),
+    Association(ERef<AssociationViewT<P>>),
+    Comment(ERef<UmlClassCommentView<P>>),
+    CommentLink(ERef<CommentLinkViewT<P>>),
 }
 
 
 #[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-pub struct UmlClassDiagramAdapter {
+pub struct UmlClassDiagramAdapter<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassDiagram>,
     background_color: MGlobalColor,
@@ -273,7 +348,7 @@ pub struct UmlClassDiagramAdapter {
     buffer: UmlClassDiagramBuffer,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
-    placeholders: UmlClassPlaceholderViews,
+    placeholders: P::Palette,
 }
 
 #[derive(Clone, Default)]
@@ -283,13 +358,14 @@ struct UmlClassDiagramBuffer {
 }
 
 #[derive(Clone)]
-struct UmlClassPlaceholderViews {
-    views: [UmlClassElementView; 9],
+pub struct UmlClassNullPalette {
+    views: [(UmlClassToolStage, &'static str, UmlClassElementView<UmlClassNullProfile>); 9],
 }
 
-impl Default for UmlClassPlaceholderViews {
+impl Default for UmlClassNullPalette {
     fn default() -> Self {
         let (_instance, instance_view) = new_umlclass_instance("o", "Type", "", egui::Pos2::ZERO);
+        instance_view.write().refresh_buffers();
         let (class_m, class_view) = new_umlclass_class("ClassName", "class", false, Vec::new(), Vec::new(), egui::Pos2::ZERO);
         let class_1 = (class_m.clone(), class_view.clone().into());
         let class_2 = (class_m.clone().into(), class_view.into());
@@ -312,22 +388,30 @@ impl Default for UmlClassPlaceholderViews {
 
         Self {
             views: [
-                instance_view.into(),
-                class_2.1,
-                package_view.into(),
-                gen_view.into(),
-                assoc_view.into(),
-                intreal_view.into(),
-                usage_view.into(),
-                comment.1,
-                commentlink.1.into(),
+                (UmlClassToolStage::Instance, "Instance", instance_view.into()),
+                (UmlClassToolStage::Class { name: "ClassName", stereotype: "class" }, "Class", class_2.1),
+
+                (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
+                (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } }, "Association", assoc_view.into()),
+                (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: false, stereotype: "", } }, "IntReal", intreal_view.into()),
+                (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype: "use", } }, "Usage", usage_view.into()),
+
+                (UmlClassToolStage::PackageStart, "Package", package_view.into()),
+                (UmlClassToolStage::Comment, "Comment", comment.1),
+                (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
             ]
         }
     }
 }
 
-impl UmlClassDiagramAdapter {
-    fn new(model: ERef<UmlClassDiagram>) -> Self {
+impl UmlClassPalette<UmlClassNullProfile> for UmlClassNullPalette {
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (UmlClassToolStage, &'static str, UmlClassElementView<UmlClassNullProfile>)> {
+        self.views.iter_mut()
+    }
+}
+
+impl<P: UmlClassProfile> UmlClassDiagramAdapter<P> {
+    pub fn new(model: ERef<UmlClassDiagram>) -> Self {
         let m = model.read();
          Self {
             model: model.clone(),
@@ -341,7 +425,7 @@ impl UmlClassDiagramAdapter {
     }
 }
 
-impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
+impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAdapter<P> {
     fn model(&self) -> ERef<UmlClassDiagram> {
         self.model.clone()
     }
@@ -352,14 +436,14 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
         self.model.read().name.clone()
     }
     fn view_type(&self) -> &'static str {
-        "umlclass-diagram-view"
+        P::view_type()
     }
 
     fn create_new_view_for(
         &self,
-        q: &UmlClassQueryable<'_>,
+        q: &UmlClassQueryable<'_, P>,
         element: UmlClassElement,
-    ) -> Result<UmlClassElementView, HashSet<ModelUuid>> {
+    ) -> Result<UmlClassElementView<P>, HashSet<ModelUuid>> {
         let v = match element {
             UmlClassElement::UmlClassPackage(inner) => {
                 UmlClassElementView::from(
@@ -449,7 +533,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
         &mut self,
         drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-    ) -> PropertiesStatus<UmlClassDomain> {
+    ) -> PropertiesStatus<UmlClassDomain<P>> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
             &drawing_context.global_colors,
@@ -465,7 +549,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         ui.label("Name:");
         if ui
@@ -509,8 +593,8 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
     fn apply_property_change_fun(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, properties) = command {
             let mut model = self.model.write();
@@ -550,7 +634,7 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
 
     fn show_tool_palette(
         &mut self,
-        tool: &mut Option<NaiveUmlClassTool>,
+        tool: &mut Option<NaiveUmlClassTool<P>>,
         drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) {
@@ -589,94 +673,36 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
 
         let (empty_a, empty_b) = (HashMap::new(), HashMap::new());
         let empty_q = UmlClassQueryable::new(&empty_a, &empty_b);
-        let mut icon_counter = 0;
-        for cat in [
-            &[
-                (UmlClassToolStage::Instance, "Instance"),
-                (UmlClassToolStage::Class, "Class"),
-                (UmlClassToolStage::PackageStart, "Package"),
-            ][..],
-            &[
-                (
-                    UmlClassToolStage::LinkStart {
-                        link_type: LinkType::Generalization,
-                    },
-                    "Generalization (Set)",
-                ),
-                (
-                    UmlClassToolStage::LinkStart {
-                        link_type: LinkType::Association {
-                            stereotype: "",
-                        },
-                    },
-                    "Association",
-                ),
-                (
-                    UmlClassToolStage::LinkStart {
-                        link_type: LinkType::Dependency {
-                            target_arrow_open: false,
-                            stereotype: "",
-                        },
-                    },
-                    "IntReal",
-                ),
-                (
-                    UmlClassToolStage::LinkStart {
-                        link_type: LinkType::Dependency {
-                            target_arrow_open: true,
-                            stereotype: "use",
-                        },
-                    },
-                    "Usage",
-                ),
-            ][..],
-            &[
-                (UmlClassToolStage::Comment, "Comment"),
-                (UmlClassToolStage::CommentLinkStart, "Comment Link"),
-            ][..],
-        ] {
-            for (stage, name) in cat {
-                let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
-                if response.clicked() {
-                    if let Some(t) = &tool && t.initial_stage == *stage {
-                        *tool = None;
-                    } else {
-                        *tool = Some(NaiveUmlClassTool::new(*stage));
-                    }
+        for (stage, name, view) in self.placeholders.iter_mut() {
+            let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
+            if response.clicked() {
+                if let Some(t) = &tool && t.initial_stage == *stage {
+                    *tool = None;
+                } else {
+                    *tool = Some(NaiveUmlClassTool::new(*stage));
                 }
-
-                let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
-                let painter = ui.painter().with_clip_rect(icon_rect);
-                let mut mc = canvas::MeasuringCanvas::new(&painter);
-                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
-                let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
-                let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
-                c.clear(egui::Color32::GRAY);
-                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
-                icon_counter += 1;
             }
-            ui.separator();
+
+            let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
+            let painter = ui.painter().with_clip_rect(icon_rect);
+            let mut mc = canvas::MeasuringCanvas::new(&painter);
+            view.draw_in(&empty_q, drawing_context, &mut mc, &None);
+            let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
+            let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
+            c.clear(egui::Color32::GRAY);
+            view.draw_in(&empty_q, drawing_context, &mut c, &None);
         }
+        ui.separator();
     }
 
     fn menubar_options_fun(
         &self,
-        _view_uuid: &ViewUuid,
-        _label_provider: &ERef<dyn LabelProvider>,
+        view_uuid: &ViewUuid,
+        label_provider: &ERef<dyn LabelProvider>,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
-        if ui.button("PlantUML description").clicked() {
-            let uuid = uuid::Uuid::now_v7();
-            commands.push(ProjectCommand::AddCustomTab(
-                uuid,
-                Arc::new(RwLock::new(PlantUmlTab {
-                    diagram: self.model.clone(),
-                    plantuml_description: "".to_owned(),
-                })),
-            ));
-        }
-        ui.separator();
+        P::menubar_options_fun(&self.model, view_uuid, label_provider, ui, commands);
     }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, UmlClassElement>) {
@@ -696,9 +722,15 @@ impl DiagramAdapter<UmlClassDomain> for UmlClassDiagramAdapter {
     }
 }
 
-struct PlantUmlTab {
+pub struct PlantUmlTab {
     diagram: ERef<UmlClassDiagram>,
     plantuml_description: String,
+}
+
+impl PlantUmlTab {
+    pub fn new(diagram: ERef<UmlClassDiagram>) -> Self {
+        Self { diagram, plantuml_description: String::new() }
+    }
 }
 
 impl CustomTab for PlantUmlTab {
@@ -730,7 +762,7 @@ pub fn new(no: u32) -> ERef<dyn DiagramController> {
     DiagramControllerGen2::new(
         Arc::new(view_uuid),
         name.clone().into(),
-        UmlClassDiagramAdapter::new(diagram.clone()),
+        UmlClassDiagramAdapter::<UmlClassNullProfile>::new(diagram.clone()),
         Vec::new(),
     )
 }
@@ -739,7 +771,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
 
-    fn af_operations() -> Vec<(ERef<UmlClassOperation>, ERef<UmlClassOperationView>)>{
+    fn af_operations() -> Vec<(ERef<UmlClassOperation>, ERef<UmlClassOperationView<UmlClassNullProfile>>)>{
         vec![
             new_umlclass_operation(UFOption::Some(UmlClassVisibilityKind::Public), "createProductA", "", "ProductA", ""),
             new_umlclass_operation(UFOption::Some(UmlClassVisibilityKind::Public), "createProductB", "", "ProductB", ""),
@@ -936,7 +968,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
 }
 
 pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<DiagramControllerGen2<UmlClassDomain, UmlClassDiagramAdapter>>(&uuid)?)
+    Ok(d.get_entity::<DiagramControllerGen2<UmlClassDomain<UmlClassNullProfile>, UmlClassDiagramAdapter<UmlClassNullProfile>>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -954,7 +986,7 @@ pub enum LinkType {
 #[derive(Clone, Copy, PartialEq)]
 pub enum UmlClassToolStage {
     Instance,
-    Class,
+    Class { name: &'static str, stereotype: &'static str },
     LinkStart { link_type: LinkType },
     LinkEnd,
     LinkAddEnding { source: bool },
@@ -965,9 +997,9 @@ pub enum UmlClassToolStage {
     CommentLinkEnd,
 }
 
-enum PartialUmlClassElement {
+enum PartialUmlClassElement<P: UmlClassProfile> {
     None,
-    Some(UmlClassElementView),
+    Some(UmlClassElementView<P>),
     Link {
         link_type: LinkType,
         source: UmlClassClassifier,
@@ -988,14 +1020,14 @@ enum PartialUmlClassElement {
     },
 }
 
-pub struct NaiveUmlClassTool {
+pub struct NaiveUmlClassTool<P: UmlClassProfile> {
     initial_stage: UmlClassToolStage,
     current_stage: UmlClassToolStage,
-    result: PartialUmlClassElement,
+    result: PartialUmlClassElement<P>,
     event_lock: bool,
 }
 
-impl NaiveUmlClassTool {
+impl<P: UmlClassProfile> NaiveUmlClassTool<P> {
     pub fn new(initial_stage: UmlClassToolStage) -> Self {
         Self {
             initial_stage,
@@ -1009,7 +1041,7 @@ impl NaiveUmlClassTool {
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
 const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
 
-impl Tool<UmlClassDomain> for NaiveUmlClassTool {
+impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
     type Stage = UmlClassToolStage;
 
     fn initial_stage(&self) -> Self::Stage {
@@ -1020,7 +1052,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
         match element {
             None => match self.current_stage {
                 UmlClassToolStage::Instance
-                | UmlClassToolStage::Class
+                | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::Comment
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd => TARGETTABLE_COLOR,
@@ -1033,7 +1065,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             },
             Some(UmlClassElement::UmlClassPackage(..)) => match self.current_stage {
                 UmlClassToolStage::Instance
-                | UmlClassToolStage::Class
+                | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
@@ -1048,7 +1080,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
             },
             Some(UmlClassElement::UmlClassInstance(..)) => match self.current_stage {
                 UmlClassToolStage::Instance
-                | UmlClassToolStage::Class
+                | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
@@ -1070,7 +1102,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                     TARGETTABLE_COLOR
                 }
                 UmlClassToolStage::Instance
-                | UmlClassToolStage::Class
+                | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
@@ -1084,7 +1116,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 | UmlClassToolStage::LinkEnd
                 | UmlClassToolStage::LinkAddEnding { .. }
                 | UmlClassToolStage::Instance
-                | UmlClassToolStage::Class
+                | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
@@ -1096,7 +1128,7 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 | UmlClassElement::UmlClassCommentLink(..)) => todo!(),
         }
     }
-    fn draw_status_hint(&self, q: &UmlClassQueryable,  canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
+    fn draw_status_hint(&self, q: &UmlClassQueryable<P>,  canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
         match &self.result {
             PartialUmlClassElement::Link {
                 source,
@@ -1156,9 +1188,9 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
                 self.result = PartialUmlClassElement::Some(object_view.into());
                 self.event_lock = true;
             }
-            (UmlClassToolStage::Class, _) => {
+            (UmlClassToolStage::Class { name, stereotype }, _) => {
                 let (_class_model, class_view) =
-                    new_umlclass_class("ClassName", "class", false, Vec::new(), Vec::new(), pos);
+                    new_umlclass_class(name, stereotype, false, Vec::new(), Vec::new(), pos);
                 self.result = PartialUmlClassElement::Some(class_view.into());
                 self.event_lock = true;
             }
@@ -1304,14 +1336,14 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
 
     fn try_construct_view(
         &mut self,
-        into: &dyn ContainerGen2<UmlClassDomain>,
-    ) -> Option<(UmlClassElementView, Option<Box<dyn CustomModal>>)> {
+        into: &dyn ContainerGen2<UmlClassDomain<P>>,
+    ) -> Option<(UmlClassElementView<P>, Option<Box<dyn CustomModal>>)> {
         match &self.result {
             PartialUmlClassElement::Some(x) => {
                 let x = x.clone();
                 let esm: Option<Box<dyn CustomModal>> = match &x {
                     UmlClassElementView::Instance(inner) => Some(Box::new(UmlClassInstanceSetupModal::from(&inner.read().model))),
-                    UmlClassElementView::Class(inner) => Some(Box::new(UmlClassSetupModal::from(&inner.read().model))),
+                    UmlClassElementView::Class(inner) => Some(Box::new(UmlClassSetupModal::<P::ClassStereotypeController>::from(&inner.read().model))),
                     _ => None,
                 };
                 self.result = PartialUmlClassElement::None;
@@ -1409,16 +1441,19 @@ impl Tool<UmlClassDomain> for NaiveUmlClassTool {
 }
 
 #[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-pub struct UmlClassPackageAdapter {
+pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassPackage>,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
+
+    #[nh_context_serde(skip_and_default)]
+    _profile: PhantomData<P>,
 }
 
-impl PackageAdapter<UmlClassDomain> for UmlClassPackageAdapter {
+impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAdapter<P> {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -1439,7 +1474,7 @@ impl PackageAdapter<UmlClassDomain> for UmlClassPackageAdapter {
     fn show_properties(
         &mut self,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) {
         ui.label("Name:");
         if ui
@@ -1470,8 +1505,8 @@ impl PackageAdapter<UmlClassDomain> for UmlClassPackageAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, properties) = command {
             let mut model = self.model.write();
@@ -1517,7 +1552,12 @@ impl PackageAdapter<UmlClassDomain> for UmlClassPackageAdapter {
             modelish
         };
 
-        Self { model, name_buffer: self.name_buffer.clone(), comment_buffer: self.comment_buffer.clone() }
+        Self {
+            model,
+            name_buffer: self.name_buffer.clone(),
+            comment_buffer: self.comment_buffer.clone(),
+            _profile: PhantomData,
+        }
     }
 
     fn deep_copy_finish(
@@ -1528,10 +1568,10 @@ impl PackageAdapter<UmlClassDomain> for UmlClassPackageAdapter {
     }
 }
 
-fn new_umlclass_package(
+pub fn new_umlclass_package<P: UmlClassProfile>(
     name: &str,
     bounds_rect: egui::Rect,
-) -> (ERef<UmlClassPackage>, ERef<PackageViewT>) {
+) -> (ERef<UmlClassPackage>, ERef<PackageViewT<P>>) {
     let package_model = ERef::new(UmlClassPackage::new(
         uuid::Uuid::now_v7().into(),
         name.to_owned(),
@@ -1541,10 +1581,10 @@ fn new_umlclass_package(
 
     (package_model, package_view)
 }
-fn new_umlclass_package_view(
+pub fn new_umlclass_package_view<P: UmlClassProfile>(
     model: ERef<UmlClassPackage>,
     bounds_rect: egui::Rect,
-) -> ERef<PackageViewT> {
+) -> ERef<PackageViewT<P>> {
     let m = model.read();
     PackageView::new(
         Arc::new(uuid::Uuid::now_v7().into()),
@@ -1552,6 +1592,7 @@ fn new_umlclass_package_view(
             model: model.clone(),
             name_buffer: (*m.name).clone(),
             comment_buffer: (*m.comment).clone(),
+            _profile: PhantomData,
         },
         Vec::new(),
         bounds_rect,
@@ -1559,12 +1600,12 @@ fn new_umlclass_package_view(
 }
 
 
-fn new_umlclass_instance(
+fn new_umlclass_instance<P: UmlClassProfile>(
     instance_name: &str,
     instance_type: &str,
     instance_slots: &str,
     position: egui::Pos2,
-) -> (ERef<UmlClassInstance>, ERef<UmlClassInstanceView>) {
+) -> (ERef<UmlClassInstance>, ERef<UmlClassInstanceView<P>>) {
     let instance_model = ERef::new(UmlClassInstance::new(
         uuid::Uuid::now_v7().into(),
         instance_name.to_owned(),
@@ -1575,14 +1616,15 @@ fn new_umlclass_instance(
 
     (instance_model, instance_view)
 }
-fn new_umlclass_instance_view(
+fn new_umlclass_instance_view<P: UmlClassProfile>(
     model: ERef<UmlClassInstance>,
     position: egui::Pos2,
-) -> ERef<UmlClassInstanceView> {
+) -> ERef<UmlClassInstanceView<P>> {
     let m = model.read();
     ERef::new(UmlClassInstanceView {
         uuid: Arc::new(uuid::Uuid::now_v7().into()),
         model: model.clone(),
+        main_text: String::new(),
         name_buffer: (*m.instance_name).clone(),
         type_buffer: (*m.instance_type).clone(),
         slots_buffer: (*m.instance_slots).clone(),
@@ -1592,6 +1634,7 @@ fn new_umlclass_instance_view(
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color: MGlobalColor::None,
+        _profile: PhantomData,
     })
 }
 
@@ -1645,11 +1688,13 @@ impl CustomModal for UmlClassInstanceSetupModal {
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-pub struct UmlClassInstanceView {
+pub struct UmlClassInstanceView<P: UmlClassProfile> {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
     pub model: ERef<UmlClassInstance>,
 
+    #[nh_context_serde(skip_and_default)]
+    main_text: String,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -1666,9 +1711,12 @@ pub struct UmlClassInstanceView {
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
+
+    #[nh_context_serde(skip_and_default)]
+    _profile: PhantomData<P>,
 }
 
-impl UmlClassInstanceView {
+impl<P: UmlClassProfile> UmlClassInstanceView<P> {
     fn association_button_rect(&self, ui_scale: f32) -> egui::Rect {
         let b_radius = 8.0;
         let b_center = self.bounds_rect.right_top() + egui::Vec2::splat(b_radius / ui_scale);
@@ -1679,13 +1727,13 @@ impl UmlClassInstanceView {
     }
 }
 
-impl Entity for UmlClassInstanceView {
+impl<P: UmlClassProfile> Entity for UmlClassInstanceView<P> {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl View for UmlClassInstanceView {
+impl<P: UmlClassProfile> View for UmlClassInstanceView<P> {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -1694,7 +1742,7 @@ impl View for UmlClassInstanceView {
     }
 }
 
-impl ElementController<UmlClassElement> for UmlClassInstanceView {
+impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassInstanceView<P> {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -1710,17 +1758,17 @@ impl ElementController<UmlClassElement> for UmlClassInstanceView {
     }
 }
 
-impl ContainerGen2<UmlClassDomain> for UmlClassInstanceView {}
+impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassInstanceView<P> {}
 
-impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
+impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassInstanceView<P> {
     fn show_properties(
         &mut self,
         drawing_context: &GlobalDrawingContext,
-        _q: &UmlClassQueryable,
+        _q: &UmlClassQueryable<P>,
         _lp: &UmlClassLabelProvider,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
-    ) -> PropertiesStatus<UmlClassDomain> {
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+    ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
         }
@@ -1808,23 +1856,17 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
 
     fn draw_in(
         &mut self,
-        _: &UmlClassQueryable,
+        _: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
-        tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>,
+        tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
         let read = self.model.read();
-
-        let text = if read.instance_name.is_empty() {
-            format!(":{}", read.instance_type)
-        } else {
-            format!("{}: {}", read.instance_name, read.instance_type)
-        };
 
         let mut min = canvas.measure_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            &text,
+            &self.main_text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
         );
         let slots_start = min.center_bottom();
@@ -1848,7 +1890,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
         canvas.draw_text(
             self.position,
             egui::Align2::CENTER_CENTER,
-            &text,
+            &self.main_text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
@@ -1927,9 +1969,9 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        tool: &mut Option<NaiveUmlClassTool>,
+        tool: &mut Option<NaiveUmlClassTool<P>>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -2009,8 +2051,8 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -2094,6 +2136,13 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
+
+        self.main_text = if model.instance_name.is_empty() {
+            format!(":{}", model.instance_type)
+        } else {
+            format!("{}: {}", model.instance_name, model.instance_type)
+        };
+
         self.name_buffer = (*model.instance_name).clone();
         self.type_buffer = (*model.instance_type).clone();
         self.slots_buffer = (*model.instance_slots).clone();
@@ -2102,7 +2151,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, UmlClassElementView>,
+        flattened_views: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -2113,8 +2162,8 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid, UmlClassElementView>,
-        c: &mut HashMap<ViewUuid, UmlClassElementView>,
+        tlc: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
+        c: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
         m: &mut HashMap<ModelUuid, UmlClassElement>,
     ) {
         let old_model = self.model.read();
@@ -2136,6 +2185,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
         let mut cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            main_text: self.main_text.clone(),
             name_buffer: self.name_buffer.clone(),
             type_buffer: self.type_buffer.clone(),
             slots_buffer: self.slots_buffer.clone(),
@@ -2145,6 +2195,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
+            _profile: PhantomData,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -2152,14 +2203,14 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassInstanceView {
 }
 
 
-fn new_umlclass_property(
+fn new_umlclass_property<P: UmlClassProfile>(
     visibility_modifier: UFOption<UmlClassVisibilityKind>,
     name: &str,
     value_type: &str,
     multiplicity: &str,
     default_value: &str,
     stereotype: &str,
-) -> (ERef<UmlClassProperty>, ERef<UmlClassPropertyView>) {
+) -> (ERef<UmlClassProperty>, ERef<UmlClassPropertyView<P>>) {
     let model = ERef::new(UmlClassProperty::new(
         uuid::Uuid::now_v7().into(),
         visibility_modifier,
@@ -2174,9 +2225,9 @@ fn new_umlclass_property(
     (model, view)
 }
 
-fn new_umlclass_property_view(
+fn new_umlclass_property_view<P: UmlClassProfile>(
     model: ERef<UmlClassProperty>,
-) -> ERef<UmlClassPropertyView> {
+) -> ERef<UmlClassPropertyView<P>> {
     let m = model.read();
     ERef::new(UmlClassPropertyView {
         uuid: Arc::new(uuid::Uuid::now_v7().into()),
@@ -2191,12 +2242,13 @@ fn new_umlclass_property_view(
 
         highlight: canvas::Highlight::NONE,
         bounds_rect: egui::Rect::ZERO,
+        _profile: PhantomData,
     })
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-pub struct UmlClassPropertyView {
+pub struct UmlClassPropertyView<P: UmlClassProfile> {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
     pub model: ERef<UmlClassProperty>,
@@ -2217,9 +2269,12 @@ pub struct UmlClassPropertyView {
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     bounds_rect: egui::Rect,
+
+    #[nh_context_serde(skip_and_default)]
+    _profile: PhantomData<P>,
 }
 
-impl UmlClassPropertyView {
+impl<P: UmlClassProfile> UmlClassPropertyView<P> {
     fn display_text(&self) -> String {
         format!("{}: {}", self.name_buffer, self.value_type_buffer)
     }
@@ -2227,10 +2282,10 @@ impl UmlClassPropertyView {
     fn draw_in(
         &mut self,
         at: egui::Pos2,
-        q: &UmlClassQueryable,
+        q: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
-        tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>,
+        tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> egui::Rect {
         self.bounds_rect = canvas.measure_text(
             at,
@@ -2249,13 +2304,13 @@ impl UmlClassPropertyView {
     }
 }
 
-impl Entity for UmlClassPropertyView {
+impl<P: UmlClassProfile> Entity for UmlClassPropertyView<P> {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl View for UmlClassPropertyView {
+impl<P: UmlClassProfile> View for UmlClassPropertyView<P> {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -2264,7 +2319,7 @@ impl View for UmlClassPropertyView {
     }
 }
 
-impl ElementController<UmlClassElement> for UmlClassPropertyView {
+impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassPropertyView<P> {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -2280,16 +2335,16 @@ impl ElementController<UmlClassElement> for UmlClassPropertyView {
     }
 }
 
-impl ContainerGen2<UmlClassDomain> for UmlClassPropertyView {}
+impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassPropertyView<P> {}
 
 
-fn new_umlclass_operation(
+fn new_umlclass_operation<P: UmlClassProfile>(
     visibility_modifier: UFOption<UmlClassVisibilityKind>,
     name: &str,
     parameters: &str,
     return_type: &str,
     stereotype: &str,
-) -> (ERef<UmlClassOperation>, ERef<UmlClassOperationView>) {
+) -> (ERef<UmlClassOperation>, ERef<UmlClassOperationView<P>>) {
     let model = ERef::new(UmlClassOperation::new(
         uuid::Uuid::now_v7().into(),
         visibility_modifier,
@@ -2303,9 +2358,9 @@ fn new_umlclass_operation(
     (model, view)
 }
 
-fn new_umlclass_operation_view(
+fn new_umlclass_operation_view<P: UmlClassProfile>(
     model: ERef<UmlClassOperation>,
-) -> ERef<UmlClassOperationView> {
+) -> ERef<UmlClassOperationView<P>> {
     let m = model.read();
     ERef::new(UmlClassOperationView {
         uuid: Arc::new(uuid::Uuid::now_v7().into()),
@@ -2319,12 +2374,14 @@ fn new_umlclass_operation_view(
 
         highlight: canvas::Highlight::NONE,
         bounds_rect: egui::Rect::ZERO,
+
+        _profile: PhantomData,
     })
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-pub struct UmlClassOperationView {
+pub struct UmlClassOperationView<P: UmlClassProfile> {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
     pub model: ERef<UmlClassOperation>,
@@ -2343,9 +2400,12 @@ pub struct UmlClassOperationView {
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     bounds_rect: egui::Rect,
+
+    #[nh_context_serde(skip_and_default)]
+    _profile: PhantomData<P>,
 }
 
-impl UmlClassOperationView {
+impl<P: UmlClassProfile> UmlClassOperationView<P> {
     fn display_text(&self) -> String {
         format!("{}(): {}", self.name_buffer, self.return_type_buffer)
     }
@@ -2353,10 +2413,10 @@ impl UmlClassOperationView {
     fn draw_in(
         &mut self,
         at: egui::Pos2,
-        q: &UmlClassQueryable,
+        q: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
-        tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>,
+        tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> egui::Rect {
         self.bounds_rect = canvas.measure_text(
             at,
@@ -2375,13 +2435,13 @@ impl UmlClassOperationView {
     }
 }
 
-impl Entity for UmlClassOperationView {
+impl<P: UmlClassProfile> Entity for UmlClassOperationView<P> {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl View for UmlClassOperationView {
+impl<P: UmlClassProfile> View for UmlClassOperationView<P> {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -2390,7 +2450,7 @@ impl View for UmlClassOperationView {
     }
 }
 
-impl ElementController<UmlClassElement> for UmlClassOperationView {
+impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassOperationView<P> {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -2406,17 +2466,17 @@ impl ElementController<UmlClassElement> for UmlClassOperationView {
     }
 }
 
-impl ContainerGen2<UmlClassDomain> for UmlClassOperationView {}
+impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassOperationView<P> {}
 
 
-fn new_umlclass_class(
+pub fn new_umlclass_class<P: UmlClassProfile>(
     name: &str,
     stereotype: &str,
     is_abstract: bool,
-    properties: Vec<(ERef<UmlClassProperty>, ERef<UmlClassPropertyView>)>,
-    operations: Vec<(ERef<UmlClassOperation>, ERef<UmlClassOperationView>)>,
+    properties: Vec<(ERef<UmlClassProperty>, ERef<UmlClassPropertyView<P>>)>,
+    operations: Vec<(ERef<UmlClassOperation>, ERef<UmlClassOperationView<P>>)>,
     position: egui::Pos2,
-) -> (ERef<UmlClass>, ERef<UmlClassView>) {
+) -> (ERef<UmlClass>, ERef<UmlClassView<P>>) {
     let class_model = ERef::new(UmlClass::new(
         uuid::Uuid::now_v7().into(),
         name.to_owned(),
@@ -2435,12 +2495,12 @@ fn new_umlclass_class(
 
     (class_model, class_view)
 }
-fn new_umlclass_class_view(
+pub fn new_umlclass_class_view<P: UmlClassProfile>(
     model: ERef<UmlClass>,
-    properties_views: Vec<ERef<UmlClassPropertyView>>,
-    operations_views: Vec<ERef<UmlClassOperationView>>,
+    properties_views: Vec<ERef<UmlClassPropertyView<P>>>,
+    operations_views: Vec<ERef<UmlClassOperationView<P>>>,
     position: egui::Pos2,
-) -> ERef<UmlClassView> {
+) -> ERef<UmlClassView<P>> {
     let m = model.read();
     ERef::new(UmlClassView {
         uuid: Arc::new(uuid::Uuid::now_v7().into()),
@@ -2449,9 +2509,9 @@ fn new_umlclass_class_view(
         operations_views,
 
         stereotype_in_guillemets: if m.stereotype.is_empty() { None } else {
-            Some(Arc::new(format!("«{}»", m.stereotype)))
+            Some(format!("«{}»", m.stereotype).into())
         },
-        stereotype_buffer: (*m.stereotype).clone(),
+        stereotype_controller: Default::default(),
         name_buffer: (*m.name).clone(),
         template_parameters_buffer: (*m.template_parameters).clone(),
         is_abstract_buffer: m.is_abstract,
@@ -2467,28 +2527,32 @@ fn new_umlclass_class_view(
         suppress_properties: false,
         suppress_operations: false,
         comment_indication: CommentIndication::Icon,
+
+        _profile: PhantomData,
     })
 }
 
-struct UmlClassSetupModal {
+struct UmlClassSetupModal<SC: StereotypeController> {
     model: ERef<UmlClass>,
 
-    stereotype_buffer: String,
+    stereotype_controller: SC,
     name_buffer: String,
 }
 
-impl From<&ERef<UmlClass>> for UmlClassSetupModal {
+impl<SC: StereotypeController> From<&ERef<UmlClass>> for UmlClassSetupModal<SC> {
     fn from(model: &ERef<UmlClass>) -> Self {
         let m = model.read();
+        let mut stereotype_controller: SC = Default::default();
+        stereotype_controller.refresh(&*m.stereotype);
         Self {
             model: model.clone(),
-            stereotype_buffer: (*m.stereotype).clone(),
+            stereotype_controller,
             name_buffer: (*m.name).clone(),
         }
     }
 }
 
-impl CustomModal for UmlClassSetupModal {
+impl<SC: StereotypeController> CustomModal for UmlClassSetupModal<SC> {
     fn show(
         &mut self,
         d: &mut GlobalDrawingContext,
@@ -2496,7 +2560,7 @@ impl CustomModal for UmlClassSetupModal {
         commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Stereotype:");
-        ui.text_edit_singleline(&mut self.stereotype_buffer);
+        self.stereotype_controller.show(ui);
         ui.label("Name:");
         ui.text_edit_singleline(&mut self.name_buffer);
         ui.separator();
@@ -2505,7 +2569,7 @@ impl CustomModal for UmlClassSetupModal {
         ui.horizontal(|ui| {
             if ui.button("Ok").clicked() {
                 let mut m = self.model.write();
-                m.stereotype = Arc::new(self.stereotype_buffer.clone());
+                m.stereotype = self.stereotype_controller.get();
                 m.name = Arc::new(self.name_buffer.clone());
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
@@ -2520,19 +2584,19 @@ impl CustomModal for UmlClassSetupModal {
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-pub struct UmlClassView {
+pub struct UmlClassView<P: UmlClassProfile> {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
     pub model: ERef<UmlClass>,
     #[nh_context_serde(entity)]
-    pub properties_views: Vec<ERef<UmlClassPropertyView>>,
+    pub properties_views: Vec<ERef<UmlClassPropertyView<P>>>,
     #[nh_context_serde(entity)]
-    pub operations_views: Vec<ERef<UmlClassOperationView>>,
+    pub operations_views: Vec<ERef<UmlClassOperationView<P>>>,
 
     #[nh_context_serde(skip_and_default)]
     stereotype_in_guillemets: Option<Arc<String>>,
     #[nh_context_serde(skip_and_default)]
-    stereotype_buffer: String,
+    stereotype_controller: P::ClassStereotypeController,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -2554,6 +2618,9 @@ pub struct UmlClassView {
     suppress_properties: bool,
     suppress_operations: bool,
     comment_indication: CommentIndication,
+
+    #[nh_context_serde(skip_and_default)]
+    _profile: PhantomData<P>,
 }
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -2573,7 +2640,7 @@ impl CommentIndication {
     }
 }
 
-impl UmlClassView {
+impl<P: UmlClassProfile> UmlClassView<P> {
     fn association_button_rect(&self, ui_scale: f32) -> egui::Rect {
         let b_radius = 8.0;
         let b_center = self.bounds_rect.right_top() + egui::Vec2::splat(b_radius / ui_scale);
@@ -2584,13 +2651,13 @@ impl UmlClassView {
     }
 }
 
-impl Entity for UmlClassView {
+impl<P: UmlClassProfile> Entity for UmlClassView<P> {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl View for UmlClassView {
+impl<P: UmlClassProfile> View for UmlClassView<P> {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -2599,7 +2666,7 @@ impl View for UmlClassView {
     }
 }
 
-impl ElementController<UmlClassElement> for UmlClassView {
+impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassView<P> {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -2615,7 +2682,7 @@ impl ElementController<UmlClassElement> for UmlClassView {
     }
 }
 
-impl ContainerGen2<UmlClassDomain> for UmlClassView {}
+impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassView<P> {}
 
 pub fn draw_uml_class<'a>(
     canvas: &'a mut dyn canvas::NHCanvas,
@@ -2760,15 +2827,15 @@ pub fn draw_uml_class<'a>(
     rect
 }
 
-impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
+impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassView<P> {
     fn show_properties(
         &mut self,
         drawing_context: &GlobalDrawingContext,
-        _q: &UmlClassQueryable,
+        _q: &UmlClassQueryable<P>,
         _lp: &UmlClassLabelProvider,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
-    ) -> PropertiesStatus<UmlClassDomain> {
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+    ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
         }
@@ -2776,15 +2843,9 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         ui.label("Model properties");
 
         ui.label("Stereotype:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.stereotype_buffer),
-            )
-            .changed()
-        {
+        if self.stereotype_controller.show(ui) {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
             ]));
         }
 
@@ -2875,10 +2936,10 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
 
     fn draw_in(
         &mut self,
-        q: &UmlClassQueryable,
+        q: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
-        tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>,
+        tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
         fn rect_union_fold<I: Iterator<Item = egui::Rect>>(elements: I) -> egui::Rect {
             let mut acc = egui::Rect::NOTHING;
@@ -3030,9 +3091,9 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        tool: &mut Option<NaiveUmlClassTool>,
+        tool: &mut Option<NaiveUmlClassTool<P>>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -3112,8 +3173,8 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -3212,10 +3273,10 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
         self.stereotype_in_guillemets = if model.stereotype.is_empty() {
             None
         } else {
-            Some(Arc::new(format!("«{}»", model.stereotype)))
+            Some(format!("«{}»", model.stereotype).into())
         };
 
-        self.stereotype_buffer = (*model.stereotype).clone();
+        self.stereotype_controller.refresh(&*model.stereotype);
         self.name_buffer = (*model.name).clone();
         self.template_parameters_buffer = (*model.template_parameters).clone();
         self.is_abstract_buffer = model.is_abstract;
@@ -3224,7 +3285,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, UmlClassElementView>,
+        flattened_views: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -3235,8 +3296,8 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid, UmlClassElementView>,
-        c: &mut HashMap<ViewUuid, UmlClassElementView>,
+        tlc: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
+        c: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
         m: &mut HashMap<ModelUuid, UmlClassElement>,
     ) {
         let old_model = self.model.read();
@@ -3261,7 +3322,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             properties_views: self.properties_views.clone(),
             operations_views: self.operations_views.clone(),
             stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
-            stereotype_buffer: self.stereotype_buffer.clone(),
+            stereotype_controller: self.stereotype_controller.clone(),
             name_buffer: self.name_buffer.clone(),
             template_parameters_buffer: self.template_parameters_buffer.clone(),
             is_abstract_buffer: self.is_abstract_buffer,
@@ -3275,6 +3336,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
             suppress_properties: self.suppress_properties,
             suppress_operations: self.suppress_operations,
             comment_indication: self.comment_indication,
+            _profile: PhantomData,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -3282,11 +3344,11 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassView {
 }
 
 
-fn new_umlclass_generalization(
+pub fn new_umlclass_generalization<P: UmlClassProfile>(
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (ERef<UmlClass>, UmlClassElementView),
-    target: (ERef<UmlClass>, UmlClassElementView),
-) -> (ERef<UmlClassGeneralization>, ERef<GeneralizationViewT>) {
+    source: (ERef<UmlClass>, UmlClassElementView<P>),
+    target: (ERef<UmlClass>, UmlClassElementView<P>),
+) -> (ERef<UmlClassGeneralization>, ERef<GeneralizationViewT<P>>) {
     let link_model = ERef::new(UmlClassGeneralization::new(
         uuid::Uuid::now_v7().into(),
         vec![source.0],
@@ -3295,12 +3357,12 @@ fn new_umlclass_generalization(
     let link_view = new_umlclass_generalization_view(link_model.clone(), center_point, vec![source.1], vec![target.1]);
     (link_model, link_view)
 }
-fn new_umlclass_generalization_view(
+pub fn new_umlclass_generalization_view<P: UmlClassProfile>(
     model: ERef<UmlClassGeneralization>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    sources: Vec<UmlClassElementView>,
-    targets: Vec<UmlClassElementView>,
-) -> ERef<GeneralizationViewT> {
+    sources: Vec<UmlClassElementView<P>>,
+    targets: Vec<UmlClassElementView<P>>,
+) -> ERef<GeneralizationViewT<P>> {
     let m = model.read();
 
     let (sp, mp, tp) = multiconnection_view::init_points(m.sources.iter().map(|e| *e.read().uuid), *m.targets[0].read().uuid, targets[0].min_shape(), center_point);
@@ -3338,7 +3400,7 @@ struct UmlClassGeneralizationTemporaries {
     comment_buffer: String,
 }
 
-impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
+impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassGeneralizationAdapter {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -3367,7 +3429,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
         self.model.write().flip_multiconnection();
         Ok(())
     }
-    fn push_source(&mut self, e: <UmlClassDomain as Domain>::CommonElementT) -> Result<(), ()> {
+    fn push_source(&mut self, e: <UmlClassDomain<P> as Domain>::CommonElementT) -> Result<(), ()> {
         if let UmlClassElement::UmlClass(c) = e {
             self.model.write().sources.push(c);
             Ok(())
@@ -3388,7 +3450,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
             Err(())
         }
     }
-    fn push_target(&mut self, e: <UmlClassDomain as Domain>::CommonElementT) -> Result<(), ()> {
+    fn push_target(&mut self, e: <UmlClassDomain<P> as Domain>::CommonElementT) -> Result<(), ()> {
         if let UmlClassElement::UmlClass(c) = e {
             self.model.write().targets.push(c);
             Ok(())
@@ -3413,8 +3475,8 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
     fn show_properties(
         &mut self,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
-    ) -> PropertiesStatus<UmlClassDomain> {
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+    ) -> PropertiesStatus<UmlClassDomain<P>> {
         if ui.add_enabled(self.model.read().targets.len() <= 1, egui::Button::new("Add source")).clicked() {
             return PropertiesStatus::ToolRequest(
                 Some(NaiveUmlClassTool {
@@ -3486,8 +3548,8 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, properties) = command {
             let mut model = self.model.write();
@@ -3615,13 +3677,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassGeneralizationAdapter {
 }
 
 
-fn new_umlclass_dependency(
+pub fn new_umlclass_dependency<P: UmlClassProfile>(
     stereotype: &str,
     target_arrow_open: bool,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (UmlClassClassifier, UmlClassElementView),
-    target: (UmlClassClassifier, UmlClassElementView),
-) -> (ERef<UmlClassDependency>, ERef<DependencyViewT>) {
+    source: (UmlClassClassifier, UmlClassElementView<P>),
+    target: (UmlClassClassifier, UmlClassElementView<P>),
+) -> (ERef<UmlClassDependency>, ERef<DependencyViewT<P>>) {
     let link_model = ERef::new(UmlClassDependency::new(
         uuid::Uuid::now_v7().into(),
         stereotype.to_owned(),
@@ -3632,12 +3694,12 @@ fn new_umlclass_dependency(
     let link_view = new_umlclass_dependency_view(link_model.clone(), center_point, source.1, target.1);
     (link_model, link_view)
 }
-fn new_umlclass_dependency_view(
+pub fn new_umlclass_dependency_view<P: UmlClassProfile>(
     model: ERef<UmlClassDependency>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: UmlClassElementView,
-    target: UmlClassElementView,
-) -> ERef<DependencyViewT> {
+    source: UmlClassElementView<P>,
+    target: UmlClassElementView<P>,
+) -> ERef<DependencyViewT<P>> {
     let m = model.read();
 
     let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.source.uuid()), *m.target.uuid(), target.min_shape(), center_point);
@@ -3655,25 +3717,26 @@ fn new_umlclass_dependency_view(
 }
 
 #[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-pub struct UmlClassDependencyAdapter {
+pub struct UmlClassDependencyAdapter<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassDependency>,
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
-    temporaries: UmlClassDependencyTemporaries,
+    temporaries: UmlClassDependencyTemporaries<P>,
 }
 
 #[derive(Clone, Default)]
-struct UmlClassDependencyTemporaries {
+struct UmlClassDependencyTemporaries<P: UmlClassProfile> {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
-    stereotype_buffer: String,
+    stereotype_in_guillemets: Option<Arc<String>>,
+    stereotype_controller: P::DependencyStereotypeController,
     target_arrow_open_buffer: bool,
     comment_buffer: String,
 }
 
-impl MulticonnectionAdapter<UmlClassDomain> for UmlClassDependencyAdapter {
+impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassDependencyAdapter<P> {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -3683,12 +3746,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassDependencyAdapter {
     }
 
     fn midpoint_label(&self) -> Option<Arc<String>> {
-        let r = self.model.read();
-        if r.stereotype.is_empty() {
-            None
-        } else {
-            Some(format!("«{}»", r.stereotype).into())
-        }
+        self.temporaries.stereotype_in_guillemets.clone()
     }
 
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
@@ -3711,20 +3769,12 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassDependencyAdapter {
     fn show_properties(
         &mut self,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
-    ) -> PropertiesStatus<UmlClassDomain> {
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+    ) -> PropertiesStatus<UmlClassDomain<P>> {
         ui.label("Stereotype:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.stereotype_buffer),
-            )
-            .changed()
-        {
+        if self.temporaries.stereotype_controller.show(ui) {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::StereotypeChange(Arc::new(
-                    self.temporaries.stereotype_buffer.clone(),
-                )),
+                UmlClassPropChange::StereotypeChange(self.temporaries.stereotype_controller.get()),
             ]));
         }
         ui.separator();
@@ -3764,8 +3814,8 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassDependencyAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, properties) = command {
             let mut model = self.model.write();
@@ -3840,7 +3890,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassDependencyAdapter {
         self.temporaries.target_uuids.clear();
         self.temporaries.target_uuids.push(*model.target.uuid());
 
-        self.temporaries.stereotype_buffer = (*model.stereotype).clone();
+        self.temporaries.stereotype_in_guillemets = if model.stereotype.is_empty() {
+            None
+        } else {
+            Some(format!("«{}»", model.stereotype).into())
+        };
+
+        self.temporaries.stereotype_controller.refresh(&*model.stereotype);
         self.temporaries.target_arrow_open_buffer = model.target_arrow_open;
         self.temporaries.comment_buffer = (*model.comment).clone();
     }
@@ -3884,12 +3940,12 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassDependencyAdapter {
 }
 
 
-fn new_umlclass_association(
+pub fn new_umlclass_association<P: UmlClassProfile>(
     stereotype: &str,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (UmlClassClassifier, UmlClassElementView),
-    target: (UmlClassClassifier, UmlClassElementView),
-) -> (ERef<UmlClassAssociation>, ERef<AssociationViewT>) {
+    source: (UmlClassClassifier, UmlClassElementView<P>),
+    target: (UmlClassClassifier, UmlClassElementView<P>),
+) -> (ERef<UmlClassAssociation>, ERef<AssociationViewT<P>>) {
     let link_model = ERef::new(UmlClassAssociation::new(
         uuid::Uuid::now_v7().into(),
         stereotype.to_owned(),
@@ -3899,12 +3955,12 @@ fn new_umlclass_association(
     let link_view = new_umlclass_association_view(link_model.clone(), center_point, source.1, target.1);
     (link_model, link_view)
 }
-fn new_umlclass_association_view(
+pub fn new_umlclass_association_view<P: UmlClassProfile>(
     model: ERef<UmlClassAssociation>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: UmlClassElementView,
-    target: UmlClassElementView,
-) -> ERef<AssociationViewT> {
+    source: UmlClassElementView<P>,
+    target: UmlClassElementView<P>,
+) -> ERef<AssociationViewT<P>> {
     let m = model.read();
 
     let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.source.uuid()), *m.target.uuid(), target.min_shape(), center_point);
@@ -3922,20 +3978,21 @@ fn new_umlclass_association_view(
 }
 
 #[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-pub struct UmlClassAssocationAdapter {
+pub struct UmlClassAssocationAdapter<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassAssociation>,
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
-    temporaries: UmlClassAssociationTemporaries,
+    temporaries: UmlClassAssociationTemporaries<P>,
 }
 
 #[derive(Clone, Default)]
-struct UmlClassAssociationTemporaries {
+struct UmlClassAssociationTemporaries<P: UmlClassProfile> {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
-    stereotype_buffer: String,
+    stereotype_in_guillemets: Option<Arc<String>>,
+    stereotype_controller: P::AssociationStereotypeController,
     source_multiplicity_buffer: String,
     source_role_buffer: String,
     source_reading_buffer: String,
@@ -3949,7 +4006,7 @@ struct UmlClassAssociationTemporaries {
     comment_buffer: String,
 }
 
-impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
+impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassAssocationAdapter<P> {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -3959,12 +4016,7 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
     }
 
     fn midpoint_label(&self) -> Option<Arc<String>> {
-        let r = self.model.read();
-        if r.stereotype.is_empty() {
-            None
-        } else {
-            Some(format!("«{}»", r.stereotype).into())
-        }
+        self.temporaries.stereotype_in_guillemets.clone()
     }
 
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
@@ -3987,20 +4039,12 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
     fn show_properties(
         &mut self,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
-    ) -> PropertiesStatus<UmlClassDomain> {
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+    ) -> PropertiesStatus<UmlClassDomain<P>> {
         ui.label("Stereotype:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.stereotype_buffer),
-            )
-            .changed()
-        {
+        if self.temporaries.stereotype_controller.show(ui) {
             commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                UmlClassPropChange::StereotypeChange(Arc::new(
-                    self.temporaries.stereotype_buffer.clone(),
-                )),
+                UmlClassPropChange::StereotypeChange(self.temporaries.stereotype_controller.get()),
             ]));
         }
         ui.separator();
@@ -4194,8 +4238,8 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, properties) = command {
             let mut model = self.model.write();
@@ -4372,7 +4416,13 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
         self.temporaries.target_uuids.clear();
         self.temporaries.target_uuids.push(*model.target.uuid());
 
-        self.temporaries.stereotype_buffer = (*model.stereotype).clone();
+        self.temporaries.stereotype_in_guillemets = if model.stereotype.is_empty() {
+            None
+        } else {
+            Some(format!("«{}»", model.stereotype).into())
+        };
+
+        self.temporaries.stereotype_controller.refresh(&*model.stereotype);
         self.temporaries.source_multiplicity_buffer = (*model.source_label_multiplicity).clone();
         self.temporaries.source_role_buffer = (*model.source_label_role).clone();
         self.temporaries.source_reading_buffer = (*model.source_label_reading).clone();
@@ -4425,10 +4475,10 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassAssocationAdapter {
 }
 
 
-fn new_umlclass_comment(
+pub fn new_umlclass_comment<P: UmlClassProfile>(
     text: &str,
     position: egui::Pos2,
-) -> (ERef<UmlClassComment>, ERef<UmlClassCommentView>) {
+) -> (ERef<UmlClassComment>, ERef<UmlClassCommentView<P>>) {
     let comment_model = ERef::new(UmlClassComment::new(
         uuid::Uuid::now_v7().into(),
         text.to_owned(),
@@ -4437,10 +4487,10 @@ fn new_umlclass_comment(
 
     (comment_model, comment_view)
 }
-fn new_umlclass_comment_view(
+pub fn new_umlclass_comment_view<P: UmlClassProfile>(
     model: ERef<UmlClassComment>,
     position: egui::Pos2,
-) -> ERef<UmlClassCommentView> {
+) -> ERef<UmlClassCommentView<P>> {
     let m = model.read();
     ERef::new(UmlClassCommentView {
         uuid: Arc::new(uuid::Uuid::now_v7().into()),
@@ -4453,12 +4503,13 @@ fn new_umlclass_comment_view(
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color: MGlobalColor::None,
+        _profile: PhantomData,
     })
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-pub struct UmlClassCommentView {
+pub struct UmlClassCommentView<P: UmlClassProfile> {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
     pub model: ERef<UmlClassComment>,
@@ -4473,15 +4524,18 @@ pub struct UmlClassCommentView {
     pub position: egui::Pos2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
+
+    #[nh_context_serde(skip_and_default)]
+    _profile: PhantomData<P>,
 }
 
-impl Entity for UmlClassCommentView {
+impl<P: UmlClassProfile> Entity for UmlClassCommentView<P> {
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl View for UmlClassCommentView {
+impl<P: UmlClassProfile> View for UmlClassCommentView<P> {
     fn uuid(&self) -> Arc<ViewUuid> {
         self.uuid.clone()
     }
@@ -4490,7 +4544,7 @@ impl View for UmlClassCommentView {
     }
 }
 
-impl ElementController<UmlClassElement> for UmlClassCommentView {
+impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassCommentView<P> {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -4506,17 +4560,17 @@ impl ElementController<UmlClassElement> for UmlClassCommentView {
     }
 }
 
-impl ContainerGen2<UmlClassDomain> for UmlClassCommentView {}
+impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassCommentView<P> {}
 
-impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
+impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCommentView<P> {
     fn show_properties(
         &mut self,
         drawing_context: &GlobalDrawingContext,
-        _q: &UmlClassQueryable,
+        _q: &UmlClassQueryable<P>,
         _lp: &UmlClassLabelProvider,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
-    ) -> PropertiesStatus<UmlClassDomain> {
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+    ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
         }
@@ -4565,10 +4619,10 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
 
     fn draw_in(
         &mut self,
-        _: &UmlClassQueryable,
+        _: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
-        tool: &Option<(egui::Pos2, &NaiveUmlClassTool)>,
+        tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
         let read = self.model.read();
 
@@ -4661,9 +4715,9 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        tool: &mut Option<NaiveUmlClassTool>,
+        tool: &mut Option<NaiveUmlClassTool<P>>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -4729,8 +4783,8 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -4798,7 +4852,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, UmlClassElementView>,
+        flattened_views: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -4809,8 +4863,8 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
-        tlc: &mut HashMap<ViewUuid, UmlClassElementView>,
-        c: &mut HashMap<ViewUuid, UmlClassElementView>,
+        tlc: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
+        c: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
         m: &mut HashMap<ModelUuid, UmlClassElement>,
     ) {
         let old_model = self.model.read();
@@ -4838,6 +4892,7 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
+            _profile: PhantomData,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -4845,11 +4900,11 @@ impl ElementControllerGen2<UmlClassDomain> for UmlClassCommentView {
 }
 
 
-fn new_umlclass_commentlink(
+pub fn new_umlclass_commentlink<P: UmlClassProfile>(
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (ERef<UmlClassComment>, UmlClassElementView),
-    target: (UmlClassElement, UmlClassElementView),
-) -> (ERef<UmlClassCommentLink>, ERef<CommentLinkViewT>) {
+    source: (ERef<UmlClassComment>, UmlClassElementView<P>),
+    target: (UmlClassElement, UmlClassElementView<P>),
+) -> (ERef<UmlClassCommentLink>, ERef<CommentLinkViewT<P>>) {
     let link_model = ERef::new(UmlClassCommentLink::new(
         uuid::Uuid::now_v7().into(),
         source.0,
@@ -4858,12 +4913,12 @@ fn new_umlclass_commentlink(
     let link_view = new_umlclass_commentlink_view(link_model.clone(), center_point, source.1, target.1);
     (link_model, link_view)
 }
-fn new_umlclass_commentlink_view(
+pub fn new_umlclass_commentlink_view<P: UmlClassProfile>(
     model: ERef<UmlClassCommentLink>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: UmlClassElementView,
-    target: UmlClassElementView,
-) -> ERef<CommentLinkViewT> {
+    source: UmlClassElementView<P>,
+    target: UmlClassElementView<P>,
+) -> ERef<CommentLinkViewT<P>> {
     let m = model.read();
     MulticonnectionView::new(
         Arc::new(uuid::Uuid::now_v7().into()),
@@ -4893,7 +4948,7 @@ struct UmlClassCommentLinkTemporaries {
     target_uuids: Vec<ModelUuid>,
 }
 
-impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
+impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassCommentLinkAdapter {
     fn model(&self) -> UmlClassElement {
         self.model.clone().into()
     }
@@ -4921,15 +4976,15 @@ impl MulticonnectionAdapter<UmlClassDomain> for UmlClassCommentLinkAdapter {
     fn show_properties(
         &mut self,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>
-    ) -> PropertiesStatus<UmlClassDomain> {
+        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+    ) -> PropertiesStatus<UmlClassDomain<P>> {
         PropertiesStatus::Shown
     }
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {}
     fn refresh_buffers(&mut self) {
         let model = self.model.read();

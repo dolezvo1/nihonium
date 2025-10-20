@@ -7,7 +7,7 @@ use quote::quote;
 #[darling(attributes(view))]
 struct DeriveViewOpts {
     default_passthrough: String,
-    domain: syn::Path,
+    domain: String,
 }
 
 #[derive(FromVariant)]
@@ -30,6 +30,8 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
         .to_compile_error()
         .into();
     };
+
+    let (impl_generics, type_generics, where_clause) = input_ast.generics.split_for_impl();
 
     let arms = data_enum.variants.iter()
         .flat_map(|v| DeriveViewVariantOpts::from_variant(v).map(|e| (v, e))).collect::<Vec<_>>();
@@ -82,10 +84,11 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
     let arms_deep_copy_relink = arms_mutable.iter().map(|e| quote! { #e.deep_copy_relink(c, m) }).collect::<Vec<_>>();
 
     let ident = input_ast.ident;
-    let domain = opts.domain;
+    let domain: proc_macro2::TokenStream = syn::parse_str(&opts.domain)
+        .unwrap_or_else(|err| panic!("Could not parse {} due to {}", opts.domain, err));
 
     let output = quote! {
-        impl crate::common::entity::Entity for #ident {
+        impl #impl_generics crate::common::entity::Entity for #ident #type_generics #where_clause {
             fn tagged_uuid(&self) -> crate::common::entity::EntityUuid {
                 match self {
                     #(#arms_tagged_uuid),*
@@ -93,7 +96,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
             }
         }
 
-        impl View for #ident {
+        impl #impl_generics View for #ident #type_generics #where_clause {
             fn uuid(&self) -> Arc<ViewUuid> {
                 match self {
                     #(#arms_uuid),*
@@ -107,7 +110,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
             }
         }
 
-        impl ElementController<<#domain as crate::common::controller::Domain> :: CommonElementT> for #ident {
+        impl #impl_generics ElementController<<#domain as crate::common::controller::Domain> :: CommonElementT> for #ident #type_generics #where_clause {
             fn model(&self) -> <#domain as crate::common::controller::Domain> :: CommonElementT {
                 match self {
                     #(#arms_model),*
@@ -130,7 +133,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
             }
         }
 
-        impl ContainerGen2<#domain> for #ident {
+        impl #impl_generics ContainerGen2<#domain> for #ident #type_generics #where_clause {
             fn controller_for(&self, uuid: &ModelUuid) -> Option<<#domain as crate::common::controller::Domain> :: CommonElementViewT> {
                 match self {
                     #(#arms_controller_for),*
@@ -138,7 +141,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
             }
         }
 
-        impl ElementControllerGen2<#domain> for #ident {
+        impl #impl_generics ElementControllerGen2<#domain> for #ident #type_generics #where_clause {
             fn show_properties(
                 &mut self,
                 drawing_context: &GlobalDrawingContext,
