@@ -562,6 +562,7 @@ pub struct UmlClassInstance {
     pub uuid: Arc<ModelUuid>,
     pub instance_name: Arc<String>,
     pub instance_type: Arc<String>,
+    pub stereotype: Arc<String>,
     pub instance_slots: Arc<String>,
 
     pub comment: Arc<String>,
@@ -572,12 +573,14 @@ impl UmlClassInstance {
         uuid: ModelUuid,
         instance_name: String,
         instance_type: String,
+        stereotype: String,
         instance_slots: String,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             instance_name: Arc::new(instance_name),
             instance_type: Arc::new(instance_type),
+            stereotype: Arc::new(stereotype),
             instance_slots: Arc::new(instance_slots),
             comment: Arc::new("".to_owned()),
         }
@@ -587,6 +590,7 @@ impl UmlClassInstance {
             uuid: Arc::new(new_uuid),
             instance_name: self.instance_name.clone(),
             instance_type: self.instance_type.clone(),
+            stereotype: self.stereotype.clone(),
             instance_slots: self.instance_slots.clone(),
             comment: self.comment.clone(),
         })

@@ -211,8 +211,8 @@ pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn D
     Ok(d.get_entity::<DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>>(&uuid)?)
 }
 
-fn ontouml_class_stereotype_literal(e: &str) -> &'static str {
-    match e {
+fn ontouml_class_stereotype_literal(e: &str) -> Option<&'static str> {
+    let e = match e {
         // Sortals
         "kind" => "kind",
         "subkind" => "subkind",
@@ -229,8 +229,9 @@ fn ontouml_class_stereotype_literal(e: &str) -> &'static str {
         // Aspects
         "mode" => "mode",
         "quality" => "quality",
-        _ => unreachable!(),
-    }
+        _ => return None,
+    };
+    Some(e)
 }
 
 #[derive(Clone, Default)]
@@ -273,8 +274,13 @@ impl StereotypeController for OntoUmlClassStereotypeController {
     fn get(&mut self) -> Arc<String> {
         self.buffer.to_owned().into()
     }
+    fn is_valid(&self, value: &str) -> bool {
+        ontouml_class_stereotype_literal(value).is_some()
+    }
     fn refresh(&mut self, new_value: &str) {
-        self.buffer = ontouml_class_stereotype_literal(new_value);
+        if let Some(new_value) = ontouml_class_stereotype_literal(new_value) {
+            self.buffer = new_value;
+        }
         self.display_string = if self.buffer.is_empty() {
             "None".to_owned()
         } else {
@@ -283,8 +289,8 @@ impl StereotypeController for OntoUmlClassStereotypeController {
     }
 }
 
-fn ontouml_association_stereotype_literal(e: &str) -> &'static str {
-    match e {
+fn ontouml_association_stereotype_literal(e: &str) -> Option<&'static str> {
+    let e = match e {
         "" => "",
         "formal" => "formal",
         "mediation" => "mediation",
@@ -296,8 +302,9 @@ fn ontouml_association_stereotype_literal(e: &str) -> &'static str {
         "memberOf" => "memberOf",
         "subcollectionOf" => "subcollectionOf",
         "subquantityOf" => "subquantityOf",
-        _ => unreachable!(),
-    }
+        _ => return None,
+    };
+    Some(e)
 }
 
 #[derive(Clone, Default)]
@@ -338,8 +345,13 @@ impl StereotypeController for OntoUmlAssociationStereotypeController {
     fn get(&mut self) -> Arc<String> {
         self.buffer.to_owned().into()
     }
+    fn is_valid(&self, value: &str) -> bool {
+        ontouml_association_stereotype_literal(value).is_some()
+    }
     fn refresh(&mut self, new_value: &str) {
-        self.buffer = ontouml_association_stereotype_literal(new_value);
+        if let Some(new_value) = ontouml_association_stereotype_literal(new_value) {
+            self.buffer = new_value;
+        }
         self.display_string = if self.buffer.is_empty() {
             "None".to_owned()
         } else {
