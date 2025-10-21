@@ -1508,7 +1508,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
     fn model_name(&self) -> Arc<String> {
         self.model.read().name.clone()
     }
-    
+
     fn add_element(&mut self, element: UmlClassElement) {
         self.model.write().add_element(element);
     }
@@ -1689,7 +1689,7 @@ fn new_umlclass_instance_view<P: UmlClassProfile>(
 
 struct UmlClassInstanceSetupModal<SC: StereotypeController> {
     model: ERef<UmlClassInstance>,
-    first_frame: bool,
+
     name_buffer: String,
     type_buffer: String,
     stereotype_controller: SC,
@@ -1702,7 +1702,6 @@ impl<SC: StereotypeController> From<&ERef<UmlClassInstance>> for UmlClassInstanc
         stereotype_controller.refresh(&*m.stereotype);
         Self {
             model: model.clone(),
-            first_frame: true,
             name_buffer: (*m.instance_name).clone(),
             type_buffer: (*m.instance_type).clone(),
             stereotype_controller,
@@ -1718,17 +1717,12 @@ impl<SC: StereotypeController> CustomModal for UmlClassInstanceSetupModal<SC> {
         commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Name:");
-        let r = ui.text_edit_singleline(&mut self.name_buffer);
+        ui.text_edit_singleline(&mut self.name_buffer);
         ui.label("Type:");
         ui.text_edit_singleline(&mut self.type_buffer);
         ui.label("Stereotype:");
         self.stereotype_controller.show(ui);
         ui.separator();
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
@@ -2355,60 +2349,6 @@ fn new_umlclass_property_view<P: UmlClassProfile>(
         bounds_rect: egui::Rect::ZERO,
         _profile: PhantomData,
     })
-}
-
-struct UmlClassSetupModal {
-    model: ERef<UmlClass>,
-    first_frame: bool,
-    stereotype_buffer: String,
-    name_buffer: String,
-}
-
-impl From<&ERef<UmlClass>> for UmlClassSetupModal {
-    fn from(model: &ERef<UmlClass>) -> Self {
-        let m = model.read();
-        Self {
-            model: model.clone(),
-            first_frame: true,
-            stereotype_buffer: (*m.stereotype).clone(),
-            name_buffer: (*m.name).clone(),
-        }
-    }
-}
-
-impl CustomModal for UmlClassSetupModal {
-    fn show(
-        &mut self,
-        d: &mut GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        commands: &mut Vec<ProjectCommand>,
-    ) -> CustomModalResult {
-        ui.label("Stereotype:");
-        ui.text_edit_singleline(&mut self.stereotype_buffer);
-        ui.label("Name:");
-        let r = ui.text_edit_singleline(&mut self.name_buffer);
-        ui.separator();
-
-        if self.first_frame {
-            r.request_focus();
-            self.first_frame = false;
-        }
-
-        let mut result = CustomModalResult::KeepOpen;
-        ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
-                let mut m = self.model.write();
-                m.stereotype = Arc::new(self.stereotype_buffer.clone());
-                m.name = Arc::new(self.name_buffer.clone());
-                result = CustomModalResult::CloseModified(*m.uuid);
-            }
-            if ui.button("Cancel").clicked() {
-                result = CustomModalResult::CloseUnmodified;
-            }
-        });
-
-        result
-    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -4187,7 +4127,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             flattened_views.insert(*w.uuid(), e.clone().into());
         }
     }
-    
+
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
@@ -5428,7 +5368,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
         m: &HashMap<ModelUuid, UmlClassElement>,
     ) {
         let mut model = self.model.write();
-        
+
         let source_uuid = *model.source.uuid();
         if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.as_classifier()) {
             model.source = new_source;
