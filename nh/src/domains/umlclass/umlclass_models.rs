@@ -220,6 +220,17 @@ impl VisitableElement for UmlClassElement {
                 }
                 v.close_complex(self);
             },
+            UmlClassElement::UmlClass(inner) => {
+                v.open_complex(self);
+                let r = inner.read();
+                for e in &r.properties {
+                    UmlClassElement::from(e.clone()).accept(v);
+                }
+                for e in &r.operations {
+                    UmlClassElement::from(e.clone()).accept(v);
+                }
+                v.close_complex(self);
+            }
             e => v.visit_simple(e),
         }
     }
@@ -610,12 +621,31 @@ impl Model for UmlClassInstance {
 }
 
 
-#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UmlClassVisibilityKind {
     Public,
     Package,
     Protected,
     Private,
+}
+
+impl UmlClassVisibilityKind {
+    pub fn char(&self) -> &'static str {
+        match self {
+            UmlClassVisibilityKind::Public => "+",
+            UmlClassVisibilityKind::Package => "~",
+            UmlClassVisibilityKind::Protected => "#",
+            UmlClassVisibilityKind::Private => "-",
+        }
+    }
+    pub fn name(&self) -> &'static str {
+        match self {
+            UmlClassVisibilityKind::Public => "Public",
+            UmlClassVisibilityKind::Package => "Package",
+            UmlClassVisibilityKind::Protected => "Protected",
+            UmlClassVisibilityKind::Private => "Private",
+        }
+    }
 }
 
 #[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -915,6 +945,7 @@ impl Model for UmlClassGeneralization {
 pub struct UmlClassDependency {
     pub uuid: Arc<ModelUuid>,
     pub stereotype: Arc<String>,
+    pub name: Arc<String>,
     #[nh_context_serde(entity)]
     pub source: UmlClassClassifier,
     #[nh_context_serde(entity)]
@@ -928,6 +959,7 @@ impl UmlClassDependency {
     pub fn new(
         uuid: ModelUuid,
         stereotype: String,
+        name: String,
         source: UmlClassClassifier,
         target: UmlClassClassifier,
         target_arrow_open: bool,
@@ -935,6 +967,7 @@ impl UmlClassDependency {
         Self {
             uuid: Arc::new(uuid),
             stereotype: Arc::new(stereotype),
+            name: Arc::new(name),
             source,
             target,
             target_arrow_open,
@@ -945,6 +978,7 @@ impl UmlClassDependency {
         ERef::new(Self {
             uuid: Arc::new(uuid),
             stereotype: self.stereotype.clone(),
+            name: self.name.clone(),
             source: self.source.clone(),
             target: self.target.clone(),
             target_arrow_open: self.target_arrow_open,
@@ -1010,6 +1044,7 @@ impl UmlClassAssociationAggregation {
 pub struct UmlClassAssociation {
     pub uuid: Arc<ModelUuid>,
     pub stereotype: Arc<String>,
+    pub name: Arc<String>,
     #[nh_context_serde(entity)]
     pub source: UmlClassClassifier,
     pub source_label_multiplicity: Arc<String>,
@@ -1032,12 +1067,14 @@ impl UmlClassAssociation {
     pub fn new(
         uuid: ModelUuid,
         stereotype: String,
+        name: String,
         source: UmlClassClassifier,
         target: UmlClassClassifier,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             stereotype: Arc::new(stereotype),
+            name: Arc::new(name),
             source,
             source_label_multiplicity: Arc::new("0..*".to_owned()),
             source_label_role: Arc::new("".to_owned()),
@@ -1057,6 +1094,7 @@ impl UmlClassAssociation {
         ERef::new(Self {
             uuid: Arc::new(uuid),
             stereotype: self.stereotype.clone(),
+            name: self.name.clone(),
             source: self.source.clone(),
             source_label_multiplicity: self.source_label_multiplicity.clone(),
             source_label_role: self.source_label_role.clone(),

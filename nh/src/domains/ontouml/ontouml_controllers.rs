@@ -72,19 +72,19 @@ impl Default for UmlClassPlaceholderViews {
         let role = (role, role_view.into());
 
         let (_gen, gen_view) = new_umlclass_generalization(None, kind1.clone(), subkind.clone());
-        let (assoc, assoc_view) = new_umlclass_association("", None, kind2.clone(), phase2.clone());
+        let (assoc, assoc_view) = new_umlclass_association("", "", None, kind2.clone(), phase2.clone());
         assoc.write().source_label_multiplicity = Arc::new("".to_owned());
         assoc.write().target_label_multiplicity = Arc::new("".to_owned());
         assoc_view.write().refresh_buffers();
-        let (mediation, mediation_view) = new_umlclass_association("mediation", None, kind2.clone(), phase2.clone());
+        let (mediation, mediation_view) = new_umlclass_association("mediation", "", None, kind2.clone(), phase2.clone());
         mediation.write().source_label_multiplicity = Arc::new("".to_owned());
         mediation.write().target_label_multiplicity = Arc::new("".to_owned());
         mediation_view.write().refresh_buffers();
-        let (chara, char_view) = new_umlclass_association("characterization", None, kind2.clone(), phase2.clone());
+        let (chara, char_view) = new_umlclass_association("characterization", "", None, kind2.clone(), phase2.clone());
         chara.write().source_label_multiplicity = Arc::new("".to_owned());
         chara.write().target_label_multiplicity = Arc::new("".to_owned());
         char_view.write().refresh_buffers();
-        let (comp, comp_view) = new_umlclass_association("componentOf", None, kind2.clone(), phase2.clone());
+        let (comp, comp_view) = new_umlclass_association("componentOf", "", None, kind2.clone(), phase2.clone());
         comp.write().source_label_multiplicity = Arc::new("".to_owned());
         comp.write().target_label_multiplicity = Arc::new("".to_owned());
         comp_view.write().refresh_buffers();
@@ -166,7 +166,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     );
 
     let (mediation_model, mediation_view) = new_umlclass_association(
-        "mediation", None,
+        "mediation", "", None,
         (human_model.clone().into(), human_view.clone().into()),
         (marriage_model.clone().into(), marriage_view.clone().into()),
     );
