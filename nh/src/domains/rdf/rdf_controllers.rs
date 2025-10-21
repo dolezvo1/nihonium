@@ -866,6 +866,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
 
 struct RdfIriBasedSetupModal {
     model: RdfElement,
+    first_frame: bool,
     iri_buffer: String,
 }
 
@@ -879,6 +880,7 @@ impl From<RdfElement> for RdfIriBasedSetupModal {
         };
         Self {
             model,
+            first_frame: true,
             iri_buffer,
         }
     }
@@ -892,8 +894,13 @@ impl CustomModal for RdfIriBasedSetupModal {
         commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("IRI:");
-        ui.text_edit_singleline(&mut self.iri_buffer);
+        let r = ui.text_edit_singleline(&mut self.iri_buffer);
         ui.separator();
+
+        if self.first_frame {
+            r.request_focus();
+            self.first_frame = false;
+        }
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
@@ -1513,7 +1520,7 @@ fn new_rdf_literal_view(
 
 struct RdfLiteralSetupModal {
     model: ERef<RdfLiteral>,
-
+    first_frame: bool,
     content_buffer: String,
     datatype_buffer: String,
     langtag_buffer: String,
@@ -1524,6 +1531,7 @@ impl From<&ERef<RdfLiteral>> for RdfLiteralSetupModal {
         let m = model.read();
         Self {
             model: model.clone(),
+            first_frame: true,
             content_buffer: (*m.content).clone(),
             datatype_buffer: (*m.datatype).clone(),
             langtag_buffer: (*m.langtag).clone(),
@@ -1539,12 +1547,17 @@ impl CustomModal for RdfLiteralSetupModal {
         commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Content:");
-        ui.text_edit_singleline(&mut self.content_buffer);
+        let r = ui.text_edit_singleline(&mut self.content_buffer);
         ui.label("Datatype:");
         ui.text_edit_singleline(&mut self.datatype_buffer);
         ui.label("Langtag:");
         ui.text_edit_singleline(&mut self.langtag_buffer);
         ui.separator();
+
+        if self.first_frame {
+            r.request_focus();
+            self.first_frame = false;
+        }
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {

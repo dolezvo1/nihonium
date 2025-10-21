@@ -1138,6 +1138,7 @@ fn new_democsd_transactor_view(
 
 struct DemoCsdTransactorSetupModal {
     model: ERef<DemoCsdTransactor>,
+    first_frame: bool,
     identifier_buffer: String,
     name_buffer: String,
 }
@@ -1148,6 +1149,7 @@ impl From<&ERef<DemoCsdTransactor>> for DemoCsdTransactorSetupModal {
 
         Self {
             model: model.clone(),
+            first_frame: true,
             identifier_buffer: (*m.identifier).clone(),
             name_buffer: (*m.name).clone(),
         }
@@ -1162,9 +1164,14 @@ impl CustomModal for DemoCsdTransactorSetupModal {
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Identifier:");
-        ui.text_edit_singleline(&mut self.identifier_buffer);
+        let r = ui.text_edit_singleline(&mut self.identifier_buffer);
         ui.label("Name:");
         ui.text_edit_multiline(&mut self.name_buffer);
+
+        if self.first_frame {
+            r.request_focus();
+            self.first_frame = false;
+        }
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
@@ -1977,6 +1984,7 @@ fn new_democsd_transaction_view(
 
 struct DemoCsdTransactionSetupModal {
     model: ERef<DemoCsdTransaction>,
+    first_frame: bool,
     identifier_buffer: String,
     name_buffer: String,
     multiple_buffer: bool,
@@ -1988,6 +1996,7 @@ impl From<&ERef<DemoCsdTransaction>> for DemoCsdTransactionSetupModal {
 
         Self {
             model: model.clone(),
+            first_frame: true,
             identifier_buffer: (*m.identifier).clone(),
             name_buffer: (*m.name).clone(),
             multiple_buffer: m.multiple,
@@ -2003,10 +2012,15 @@ impl CustomModal for DemoCsdTransactionSetupModal {
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Identifier:");
-        ui.text_edit_singleline(&mut self.identifier_buffer);
+        let r = ui.text_edit_singleline(&mut self.identifier_buffer);
         ui.label("Name:");
         ui.text_edit_multiline(&mut self.name_buffer);
         ui.checkbox(&mut self.multiple_buffer, "Multiple");
+
+        if self.first_frame {
+            r.request_focus();
+            self.first_frame = false;
+        }
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {

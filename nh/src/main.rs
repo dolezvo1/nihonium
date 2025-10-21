@@ -860,6 +860,7 @@ impl NHContext {
                     };
 
                     struct ViewRenameModal {
+                        first_frame: bool,
                         view_uuid: ViewUuid,
                         name_buffer: String,
                     }
@@ -872,7 +873,11 @@ impl NHContext {
                             commands: &mut Vec<ProjectCommand>,
                         ) -> CustomModalResult {
                             ui.label("Name:");
-                            ui.text_edit_singleline(&mut self.name_buffer);
+                            let r = ui.text_edit_singleline(&mut self.name_buffer);
+                            if self.first_frame {
+                                r.request_focus();
+                                self.first_frame = false;
+                            }
 
                             let mut result = CustomModalResult::KeepOpen;
                             ui.horizontal(|ui| {
@@ -889,7 +894,13 @@ impl NHContext {
                         }
                     }
 
-                    self.custom_modal = Some(Box::new(ViewRenameModal { view_uuid: view_uuid, name_buffer: original_name, }));
+                    self.custom_modal = Some(Box::new(
+                        ViewRenameModal {
+                            first_frame: true,
+                            view_uuid: view_uuid,
+                            name_buffer: original_name,
+                        }
+                    ));
                 }
                 ContextMenuAction::DeleteFolder(view_uuid) => {
                     self.project_hierarchy.remove(&view_uuid);
