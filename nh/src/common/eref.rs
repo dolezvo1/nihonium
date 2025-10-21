@@ -6,6 +6,7 @@ use crate::common::entity::Entity;
 pub struct ERef<T: ?Sized>(Arc<RwLock<T>>);
 
 unsafe impl<T: ?Sized> Send for ERef<T> {}
+unsafe impl<T: ?Sized> Sync for ERef<T> {}
 
 impl<T: ?Sized> Clone for ERef<T> {
     fn clone(&self) -> Self {

@@ -200,7 +200,7 @@ impl TryFrom<DemoOfdElementOrVertex> for DemoOfdElementView {
 
 
 #[derive(Clone, derive_more::From, nh_derive::View, nh_derive::NHContextSerDeTag)]
-#[view(default_passthrough = "eref", domain = DemoOfdDomain)]
+#[view(default_passthrough = "eref", domain = "DemoOfdDomain")]
 #[nh_context_serde(uuid_type = ViewUuid)]
 pub enum DemoOfdElementView {
     Package(ERef<PackageViewT>),

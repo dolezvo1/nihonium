@@ -165,7 +165,7 @@ impl Debug for RdfElementOrVertex {
 }
 
 #[derive(Clone, derive_more::From, nh_derive::View, nh_derive::NHContextSerDeTag)]
-#[view(default_passthrough = "eref", domain = RdfDomain)]
+#[view(default_passthrough = "eref", domain = "RdfDomain")]
 #[nh_context_serde(uuid_type = ViewUuid)]
 pub enum RdfElementView {
     Graph(ERef<PackageViewT>),
@@ -1726,7 +1726,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {
         // Draw shape and text
-        self.bounds_rect = canvas.draw_class(
+        self.bounds_rect = crate::domains::umlclass::umlclass_controllers::draw_uml_class(
+            canvas,
             self.position,
             None,
             &self.model.read().content,

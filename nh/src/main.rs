@@ -1,4 +1,4 @@
-#![feature(unsize, coerce_unsized)]
+#![feature(unsize, coerce_unsized, associated_type_defaults)]
 // hide console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -243,6 +243,7 @@ struct NHContext {
     undo_stack: Vec<(Arc<String>, ViewUuid)>,
     redo_stack: Vec<(Arc<String>, ViewUuid)>,
     unprocessed_commands: Vec<ProjectCommand>,
+    should_change_title: bool,
     has_unsaved_changes: bool,
 
     open_unique_tabs: HashSet<NHTab>,
@@ -335,6 +336,17 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
         };
     }
 
+    macro_rules! diagram_button {
+        ($ui:expr, $label:expr, $diagram_type:expr, $fun:expr) => {
+            if $ui.button($label).clicked() {
+                let diagram_controller = $fun(new_diagram_no);
+                commands.push(ProjectCommand::SetNewDiagramNumber(new_diagram_no + 1));
+                commands.push(ProjectCommand::AddNewDiagram($diagram_type, diagram_controller));
+                $ui.close();
+            }
+        }
+    }
+
     if ui.button(translate!("nh-project-addnewdocument")).clicked() {
         commands.push(ProjectCommand::AddNewDocument(uuid::Uuid::now_v7().into(), "New Document".to_owned()));
     }
@@ -342,17 +354,25 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
         ui.set_min_width(MIN_MENU_WIDTH);
 
         type NDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
+        ui.menu_button("UML Class", |ui| {
+            ui.set_min_width(MIN_MENU_WIDTH);
+            for (label, diagram_type, fun) in [
+                (
+                    "UML Class diagram",
+                    1,
+                    crate::domains::umlclass::umlclass_controllers::new as NDC,
+                ),
+                (
+                    "OntoUML diagram",
+                    3,
+                    crate::domains::ontouml::ontouml_controllers::new as NDC,
+                ),
+            ] {
+                diagram_button!(ui, label, diagram_type, fun);
+            }
+        });
+
         for (label, diagram_type, fun) in [
-            (
-                "UML Class diagram",
-                1,
-                crate::domains::umlclass::umlclass_controllers::new as NDC,
-            ),
-            (
-                "OntoUML diagram",
-                3,
-                crate::domains::ontouml::ontouml_controllers::new as NDC,
-            ),
             (
                 "DEMO Coordination Structure Diagram",
                 2,
@@ -365,29 +385,32 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
             ),
             ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::new as NDC),
         ] {
-            if ui.button(label).clicked() {
-                let diagram_controller = fun(new_diagram_no);
-                commands.push(ProjectCommand::SetNewDiagramNumber(new_diagram_no + 1));
-                commands.push(ProjectCommand::AddNewDiagram(diagram_type, diagram_controller));
-                ui.close();
-            }
+            diagram_button!(ui, label, diagram_type, fun);
         }
     });
     ui.menu_button(translate!("nh-project-adddemodiagram"), |ui| {
         ui.set_min_width(MIN_MENU_WIDTH);
 
         type DDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
+        ui.menu_button("UML Class", |ui| {
+            ui.set_min_width(MIN_MENU_WIDTH);
+            for (label, diagram_type, fun) in [
+                (
+                    "UML Class diagram",
+                    1,
+                    crate::domains::umlclass::umlclass_controllers::demo as DDC,
+                ),
+                (
+                    "OntoUML diagram",
+                    3,
+                    crate::domains::ontouml::ontouml_controllers::demo as DDC,
+                ),
+            ] {
+                diagram_button!(ui, label, diagram_type, fun);
+            }
+        });
+
         for (label, diagram_type, fun) in [
-            (
-                "UML Class diagram",
-                1,
-                crate::domains::umlclass::umlclass_controllers::demo as DDC,
-            ),
-            (
-                "OntoUML diagram",
-                3,
-                crate::domains::ontouml::ontouml_controllers::demo as DDC,
-            ),
             (
                 "DEMO Coordination Structure Diagram",
                 2,
@@ -400,12 +423,7 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
             ),
             ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::demo as DDC),
         ] {
-            if ui.button(label).clicked() {
-                let diagram_controller = fun(new_diagram_no);
-                commands.push(ProjectCommand::SetNewDiagramNumber(new_diagram_no + 1));
-                commands.push(ProjectCommand::AddNewDiagram(diagram_type, diagram_controller));
-                ui.close();
-            }
+            diagram_button!(ui, label, diagram_type, fun);
         }
     });
     ui.separator();
@@ -429,6 +447,15 @@ fn execute<F: Future<Output = ()> + 'static>(f: F) {
 }
 
 impl NHContext {
+    fn set_project_path(&mut self, project_path: Option<PathBuf>) {
+        self.project_path = project_path;
+        self.should_change_title = true;
+    }
+    fn set_has_unsaved_changes(&mut self, has_unsaved_changes: bool) {
+        self.has_unsaved_changes = has_unsaved_changes;
+        self.should_change_title = true;
+    }
+
     fn export_project(&self, fh: FileHandle) -> Result<(), NHSerializeError> {
         let project_file_name = PathBuf::from(fh.file_name());
         let extension = if cfg!(target_arch = "wasm32") {
@@ -565,6 +592,7 @@ impl NHContext {
         self.undo_stack.clear();
         self.redo_stack.clear();
         self.unprocessed_commands.clear();
+        self.should_change_title = true;
         self.has_unsaved_changes = false;
 
         self.last_focused_diagram = None;
@@ -895,7 +923,7 @@ impl NHContext {
 
     fn set_modified_state(&mut self, view_uuid: ViewUuid, undo_accumulator: Vec<Arc<String>>) {
         if !undo_accumulator.is_empty() {
-            self.has_unsaved_changes = true;
+            self.set_has_unsaved_changes(true);
             let Some((_t, target_diagram)) = self.diagram_controllers.get(&view_uuid) else { return; };
 
             for (_uuid, (_t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| **uuid != view_uuid) {
@@ -1518,7 +1546,7 @@ impl NHContext {
     
     // In general it should draw first and handle input second, right?
     fn diagram_tab(&mut self, tab_uuid: &ViewUuid, ui: &mut Ui) {
-        let Some((t, v)) = self.diagram_controllers.get(tab_uuid) else { return; };
+        let Some((t, v)) = self.diagram_controllers.get(tab_uuid).cloned() else { return; };
         let mut diagram_controller = v.write();
 
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(&self.drawing_context, ui);
@@ -1527,7 +1555,7 @@ impl NHContext {
         });
 
         diagram_controller.draw_in(&self.drawing_context, ui_canvas.as_mut(), pos);
-        let shade_color = self.diagram_shades[*t].1[self.selected_diagram_shades[*t]];
+        let shade_color = self.diagram_shades[t].1[self.selected_diagram_shades[t]];
         ui_canvas.draw_rectangle(egui::Rect::EVERYTHING, egui::CornerRadius::ZERO, shade_color, common::canvas::Stroke::NONE, Highlight::NONE);
 
         let mut undo_accumulator = Vec::<Arc<String>>::new();
@@ -1538,7 +1566,7 @@ impl NHContext {
         );
 
         if !undo_accumulator.is_empty() {
-            self.has_unsaved_changes = true;
+            self.set_has_unsaved_changes(true);
             for (_uuid, (t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != tab_uuid) {
                 c.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![], &mut HashSet::new());
             }
@@ -1560,7 +1588,7 @@ impl NHContext {
         let c = self.documents.get_mut(uuid).unwrap();
         if ui.add_sized(ui.available_size(), egui::TextEdit::multiline(&mut c.1)).changed() {
             c.0 = c.1.lines().next().unwrap_or("empty document").to_owned();
-            self.has_unsaved_changes = true;
+            self.set_has_unsaved_changes(true);
         }
     }
 
@@ -1624,7 +1652,7 @@ impl Default for NHApp {
         diagram_deserializers.insert("rdf-diagram-view".to_string(), (0, &crate::domains::rdf::rdf_controllers::deserializer as &DDes));
         diagram_deserializers.insert("umlclass-diagram-view".to_string(), (1, &crate::domains::umlclass::umlclass_controllers::deserializer as &DDes));
         diagram_deserializers.insert("democsd-diagram-view".to_string(), (2, &crate::domains::democsd::democsd_controllers::deserializer as &DDes));
-        diagram_deserializers.insert("ontouml-diagram-view".to_string(), (3, &crate::domains::ontouml::ontouml_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("umlclass-diagram-view-ontouml".to_string(), (3, &crate::domains::ontouml::ontouml_controllers::deserializer as &DDes));
         diagram_deserializers.insert("demoofd-diagram-view".to_string(), (4, &crate::domains::demoofd::demoofd_controllers::deserializer as &DDes));
 
         let mut dock_state = DockState::new(tabs);
@@ -1693,6 +1721,7 @@ impl Default for NHApp {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             unprocessed_commands: Vec::new(),
+            should_change_title: true,
             has_unsaved_changes: true,
             
             shortcut_top_order: vec![],
@@ -1796,7 +1825,7 @@ impl NHApp {
         }
         
         self.context.redo_stack.push(e);
-        self.context.has_unsaved_changes = true;
+        self.context.set_has_unsaved_changes(true);
     }
     fn redo_immediate(&mut self) {
         let Some(e) = self.context.redo_stack.pop() else { return; };
@@ -1811,7 +1840,7 @@ impl NHApp {
         }
         
         self.context.undo_stack.push(e);
-        self.context.has_unsaved_changes = true;
+        self.context.set_has_unsaved_changes(true);
     }
 
     fn add_diagram(
@@ -1878,7 +1907,7 @@ impl eframe::App for NHApp {
                     match self.context.import_project(fh) {
                         Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error opening: {:?}", e))),
                         Ok(_) => {
-                            self.context.project_path = Some(file_name.into());
+                            self.context.set_project_path(Some(file_name.into()));
                             self.clear_nonstatic_tabs();
                         }
                     }
@@ -1895,8 +1924,8 @@ impl eframe::App for NHApp {
                     match self.context.export_project(fh) {
                         Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error exporting: {:?}", e))),
                         Ok(_) => {
-                            self.context.project_path = Some(file_name.into());
-                            self.context.has_unsaved_changes = false;
+                            self.context.set_project_path(Some(file_name.into()));
+                            self.context.set_has_unsaved_changes(false);
                         }
                     }
                 },
@@ -1991,14 +2020,17 @@ impl eframe::App for NHApp {
         }
 
         // Set window title depending on the project path
-        let modified = if self.context.has_unsaved_changes { "*" } else { "" };
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(
-            if let Some(project_path) = &self.context.project_path {
-                format!("Nihonium{} - {}", modified, project_path.to_string_lossy())
-            } else {
-                format!("Nihonium{}", modified)
-            }
-        ));
+        if self.context.should_change_title {
+            let modified = if self.context.has_unsaved_changes { "*" } else { "" };
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+                if let Some(project_path) = &self.context.project_path {
+                    format!("Nihonium{} - {}", modified, project_path.to_string_lossy())
+                } else {
+                    format!("Nihonium{}", modified)
+                }
+            ));
+            self.context.should_change_title = false;
+        }
 
         macro_rules! translate {
             ($msg_name:expr) => {

@@ -1,6 +1,7 @@
 use crate::common::controller::{ContainerModel, DiagramVisitor, Model, ElementVisitor, VisitableDiagram, VisitableElement};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
+use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
 use std::{
     collections::{HashMap, HashSet},
@@ -72,9 +73,12 @@ impl UmlClassCollector {
                 self.plantuml_data.push_str(&format!("<<{}>> ", class.stereotype));
             }
             self.plantuml_data.push_str("{\n");
-            self.plantuml_data.push_str(&class.properties);
-            self.plantuml_data.push_str("\n");
-            self.plantuml_data.push_str(&class.functions);
+            for e in &class.properties {
+                todo!("export properties");
+            }
+            for e in &class.operations {
+                todo!("export operations");
+            }
             self.plantuml_data.push_str("}\n");
         }
     }
@@ -156,6 +160,8 @@ pub enum UmlClassElement {
     UmlClassPackage(ERef<UmlClassPackage>),
     UmlClassInstance(ERef<UmlClassInstance>),
     UmlClass(ERef<UmlClass>),
+    UmlClassProperty(ERef<UmlClassProperty>),
+    UmlClassOperation(ERef<UmlClassOperation>),
     UmlClassGeneralization(ERef<UmlClassGeneralization>),
     UmlClassDependency(ERef<UmlClassDependency>),
     UmlClassAssociation(ERef<UmlClassAssociation>),
@@ -177,6 +183,8 @@ impl UmlClassElement {
             UmlClassElement::UmlClassInstance(inner) => Some(inner.clone().into()),
             UmlClassElement::UmlClass(inner) => Some(inner.clone().into()),
             UmlClassElement::UmlClassPackage(..)
+            | UmlClassElement::UmlClassProperty(..)
+            | UmlClassElement::UmlClassOperation(..)
             | UmlClassElement::UmlClassGeneralization(..)
             | UmlClassElement::UmlClassDependency(..)
             | UmlClassElement::UmlClassAssociation(..)
@@ -190,6 +198,8 @@ impl UmlClassElement {
             UmlClassElement::UmlClassPackage(inner) => visitor.visit_package(&inner.read()),
             UmlClassElement::UmlClassInstance(inner) => visitor.visit_object(&inner.read()),
             UmlClassElement::UmlClass(inner) => visitor.visit_class(&inner.read()),
+            UmlClassElement::UmlClassProperty(..)
+            | UmlClassElement::UmlClassOperation(..) => unreachable!(),
             UmlClassElement::UmlClassGeneralization(inner) => visitor.visit_generalization(&inner.read()),
             UmlClassElement::UmlClassDependency(inner) => visitor.visit_dependency(&inner.read()),
             UmlClassElement::UmlClassAssociation(inner) => visitor.visit_association(&inner.read()),
@@ -210,6 +220,17 @@ impl VisitableElement for UmlClassElement {
                 }
                 v.close_complex(self);
             },
+            UmlClassElement::UmlClass(inner) => {
+                v.open_complex(self);
+                let r = inner.read();
+                for e in &r.properties {
+                    UmlClassElement::from(e.clone()).accept(v);
+                }
+                for e in &r.operations {
+                    UmlClassElement::from(e.clone()).accept(v);
+                }
+                v.close_complex(self);
+            }
             e => v.visit_simple(e),
         }
     }
@@ -240,6 +261,12 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
             UmlClassElement::UmlClass(inner) => {
                 UmlClassElement::UmlClass(inner.read().clone_with(*new_uuid))
             },
+            UmlClassElement::UmlClassProperty(inner) => {
+                inner.read().clone_with(*new_uuid).into()
+            }
+            UmlClassElement::UmlClassOperation(inner) => {
+                inner.read().clone_with(*new_uuid).into()
+            }
             UmlClassElement::UmlClassGeneralization(inner) => {
                 UmlClassElement::UmlClassGeneralization(inner.read().clone_with(*new_uuid))
             },
@@ -297,6 +324,8 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                     }
                 }
             },
+            UmlClassElement::UmlClassProperty(..)
+            | UmlClassElement::UmlClassOperation(..) => {}
             UmlClassElement::UmlClassDependency(inner) => {
                 let mut model = inner.write();
 
@@ -544,6 +573,7 @@ pub struct UmlClassInstance {
     pub uuid: Arc<ModelUuid>,
     pub instance_name: Arc<String>,
     pub instance_type: Arc<String>,
+    pub stereotype: Arc<String>,
     pub instance_slots: Arc<String>,
 
     pub comment: Arc<String>,
@@ -554,12 +584,14 @@ impl UmlClassInstance {
         uuid: ModelUuid,
         instance_name: String,
         instance_type: String,
+        stereotype: String,
         instance_slots: String,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             instance_name: Arc::new(instance_name),
             instance_type: Arc::new(instance_type),
+            stereotype: Arc::new(stereotype),
             instance_slots: Arc::new(instance_slots),
             comment: Arc::new("".to_owned()),
         }
@@ -569,6 +601,7 @@ impl UmlClassInstance {
             uuid: Arc::new(new_uuid),
             instance_name: self.instance_name.clone(),
             instance_type: self.instance_type.clone(),
+            stereotype: self.stereotype.clone(),
             instance_slots: self.instance_slots.clone(),
             comment: self.comment.clone(),
         })
@@ -588,22 +621,193 @@ impl Model for UmlClassInstance {
 }
 
 
-#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
-pub enum UMLClassAccessModifier {
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum UmlClassVisibilityKind {
     Public,
     Package,
     Protected,
     Private,
 }
 
-impl UMLClassAccessModifier {
+impl UmlClassVisibilityKind {
     pub fn char(&self) -> &'static str {
         match self {
-            UMLClassAccessModifier::Public => "+",
-            UMLClassAccessModifier::Package => "~",
-            UMLClassAccessModifier::Protected => "#",
-            UMLClassAccessModifier::Private => "-",
+            UmlClassVisibilityKind::Public => "+",
+            UmlClassVisibilityKind::Package => "~",
+            UmlClassVisibilityKind::Protected => "#",
+            UmlClassVisibilityKind::Private => "-",
         }
+    }
+    pub fn name(&self) -> &'static str {
+        match self {
+            UmlClassVisibilityKind::Public => "Public",
+            UmlClassVisibilityKind::Package => "Package",
+            UmlClassVisibilityKind::Protected => "Protected",
+            UmlClassVisibilityKind::Private => "Private",
+        }
+    }
+}
+
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+pub enum UmlClassMemberInheritanceKind {
+    #[default]
+    None,
+    Inherited,
+    Redefines(String),
+}
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlClassProperty {
+    pub uuid: Arc<ModelUuid>,
+    pub name: Arc<String>,
+    pub value_type: Arc<String>,
+    pub multiplicity: Arc<String>,
+    pub default_value: Arc<String>,
+    pub stereotype: Arc<String>,
+
+    pub visibility: UFOption<UmlClassVisibilityKind>,
+    pub inherited: UmlClassMemberInheritanceKind,
+    pub is_static: bool,
+    pub is_derived: bool,
+    pub is_read_only: bool,
+    pub is_ordered: bool,
+    pub is_unique: bool,
+    pub is_id: bool,
+}
+
+impl UmlClassProperty {
+    pub fn new(
+        uuid: ModelUuid,
+        visibility: UFOption<UmlClassVisibilityKind>,
+        name: String,
+        value_type: String,
+        multiplicity: String,
+        default_value: String,
+        stereotype: String,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            visibility,
+            name: Arc::new(name),
+            value_type: Arc::new(value_type),
+            multiplicity: Arc::new(multiplicity),
+            default_value: Arc::new(default_value),
+            stereotype: Arc::new(stereotype),
+
+            inherited: UmlClassMemberInheritanceKind::None,
+            is_static: false,
+            is_derived: false,
+            is_read_only: false,
+            is_ordered: false,
+            is_unique: false,
+            is_id: false,
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            name: self.name.clone(),
+            value_type: self.value_type.clone(),
+            multiplicity: self.multiplicity.clone(),
+            default_value: self.default_value.clone(),
+            stereotype: self.stereotype.clone(),
+
+            visibility: self.visibility.clone(),
+            inherited: self.inherited.clone(),
+            is_static: self.is_static,
+            is_derived: self.is_derived,
+            is_read_only: self.is_read_only,
+            is_ordered: self.is_ordered,
+            is_unique: self.is_unique,
+            is_id: self.is_id,
+        })
+    }
+}
+
+impl Entity for UmlClassProperty {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for UmlClassProperty {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlClassOperation {
+    pub uuid: Arc<ModelUuid>,
+    pub name: Arc<String>,
+    pub parameters: Arc<String>,
+    pub return_type: Arc<String>,
+    pub stereotype: Arc<String>,
+
+    pub visibility: UFOption<UmlClassVisibilityKind>,
+    pub inherited: UmlClassMemberInheritanceKind,
+    pub is_static: bool,
+    pub is_abstract: bool,
+    pub is_query: bool,
+    pub is_ordered: bool,
+    pub is_unique: bool,
+}
+
+impl UmlClassOperation {
+    pub fn new(
+        uuid: ModelUuid,
+        visibility: UFOption<UmlClassVisibilityKind>,
+        name: String,
+        parameters: String,
+        return_type: String,
+        stereotype: String,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            visibility,
+            name: Arc::new(name),
+            parameters: Arc::new(parameters),
+            return_type: Arc::new(return_type),
+            stereotype: Arc::new(stereotype),
+
+            inherited: UmlClassMemberInheritanceKind::None,
+            is_static: false,
+            is_abstract: false,
+            is_query: false,
+            is_ordered: false,
+            is_unique: false,
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            name: self.name.clone(),
+            parameters: self.parameters.clone(),
+            return_type: self.return_type.clone(),
+            stereotype: self.stereotype.clone(),
+
+            visibility: self.visibility.clone(),
+            inherited: self.inherited.clone(),
+            is_static: self.is_static,
+            is_abstract: self.is_abstract,
+            is_query: self.is_query,
+            is_ordered: self.is_ordered,
+            is_unique: self.is_unique,
+        })
+    }
+}
+
+impl Entity for UmlClassOperation {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for UmlClassOperation {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
     }
 }
 
@@ -612,10 +816,13 @@ impl UMLClassAccessModifier {
 pub struct UmlClass {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
-    pub is_abstract: bool,
     pub stereotype: Arc<String>,
-    pub properties: Arc<String>,
-    pub functions: Arc<String>,
+    pub template_parameters: Arc<String>,
+    pub is_abstract: bool,
+    #[nh_context_serde(entity)]
+    pub properties: Vec<ERef<UmlClassProperty>>,
+    #[nh_context_serde(entity)]
+    pub operations: Vec<ERef<UmlClassOperation>>,
 
     pub comment: Arc<String>,
 }
@@ -623,62 +830,35 @@ pub struct UmlClass {
 impl UmlClass {
     pub fn new(
         uuid: ModelUuid,
-        stereotype: String,
         name: String,
+        stereotype: String,
+        template_parameters: String,
         is_abstract: bool,
-        properties: String,
-        functions: String,
+        properties: Vec<ERef<UmlClassProperty>>,
+        operations: Vec<ERef<UmlClassOperation>>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            stereotype: Arc::new(stereotype),
             name: Arc::new(name),
+            stereotype: Arc::new(stereotype),
+            template_parameters: Arc::new(template_parameters),
             is_abstract,
-            properties: Arc::new(properties),
-            functions: Arc::new(functions),
+            properties,
+            operations,
             comment: Arc::new("".to_owned()),
         }
     }
     pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
-            stereotype: self.stereotype.clone(),
             name: self.name.clone(),
+            stereotype: self.stereotype.clone(),
+            template_parameters: self.template_parameters.clone(),
             is_abstract: self.is_abstract,
             properties: self.properties.clone(),
-            functions: self.functions.clone(),
+            operations: self.operations.clone(),
             comment: self.comment.clone(),
         })
-    }
-
-    pub fn parse_properties(&self) -> Vec<(&str, &str)> {
-        Self::parse_string(&self.properties)
-    }
-
-    pub fn parse_functions(&self) -> Vec<(&str, &str)> {
-        Self::parse_string(&self.functions)
-    }
-
-    fn parse_string(input: &str) -> Vec<(&str, &str)> {
-        input
-            .split("\n")
-            .filter(|e| e.len() > 0)
-            .map(Self::strip_access_modifiers)
-            .collect()
-    }
-
-    fn strip_access_modifiers(input: &str) -> (&str, &str) {
-        for m in [
-            UMLClassAccessModifier::Public,
-            UMLClassAccessModifier::Package,
-            UMLClassAccessModifier::Protected,
-            UMLClassAccessModifier::Private,
-        ] {
-            if let Some(r) = input.strip_prefix(m.char()) {
-                return (m.char(), r.trim());
-            }
-        }
-        return ("", input.trim());
     }
 }
 
@@ -765,6 +945,7 @@ impl Model for UmlClassGeneralization {
 pub struct UmlClassDependency {
     pub uuid: Arc<ModelUuid>,
     pub stereotype: Arc<String>,
+    pub name: Arc<String>,
     #[nh_context_serde(entity)]
     pub source: UmlClassClassifier,
     #[nh_context_serde(entity)]
@@ -778,6 +959,7 @@ impl UmlClassDependency {
     pub fn new(
         uuid: ModelUuid,
         stereotype: String,
+        name: String,
         source: UmlClassClassifier,
         target: UmlClassClassifier,
         target_arrow_open: bool,
@@ -785,6 +967,7 @@ impl UmlClassDependency {
         Self {
             uuid: Arc::new(uuid),
             stereotype: Arc::new(stereotype),
+            name: Arc::new(name),
             source,
             target,
             target_arrow_open,
@@ -795,6 +978,7 @@ impl UmlClassDependency {
         ERef::new(Self {
             uuid: Arc::new(uuid),
             stereotype: self.stereotype.clone(),
+            name: self.name.clone(),
             source: self.source.clone(),
             target: self.target.clone(),
             target_arrow_open: self.target_arrow_open,
@@ -860,6 +1044,7 @@ impl UmlClassAssociationAggregation {
 pub struct UmlClassAssociation {
     pub uuid: Arc<ModelUuid>,
     pub stereotype: Arc<String>,
+    pub name: Arc<String>,
     #[nh_context_serde(entity)]
     pub source: UmlClassClassifier,
     pub source_label_multiplicity: Arc<String>,
@@ -882,12 +1067,14 @@ impl UmlClassAssociation {
     pub fn new(
         uuid: ModelUuid,
         stereotype: String,
+        name: String,
         source: UmlClassClassifier,
         target: UmlClassClassifier,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             stereotype: Arc::new(stereotype),
+            name: Arc::new(name),
             source,
             source_label_multiplicity: Arc::new("0..*".to_owned()),
             source_label_role: Arc::new("".to_owned()),
@@ -907,6 +1094,7 @@ impl UmlClassAssociation {
         ERef::new(Self {
             uuid: Arc::new(uuid),
             stereotype: self.stereotype.clone(),
+            name: self.name.clone(),
             source: self.source.clone(),
             source_label_multiplicity: self.source_label_multiplicity.clone(),
             source_label_role: self.source_label_role.clone(),
