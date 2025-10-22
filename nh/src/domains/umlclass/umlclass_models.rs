@@ -74,10 +74,24 @@ impl UmlClassCollector {
             }
             self.plantuml_data.push_str("{\n");
             for e in &class.properties {
-                todo!("export properties");
+                let r = e.read();
+                let visibility = r.visibility.as_ref().map(|e| e.char()).unwrap_or("");
+                let value_type = if !r.value_type.is_empty() {
+                    format!(": {}", r.value_type)
+                } else {
+                    "".to_owned()
+                };
+                self.plantuml_data.push_str(&format!("  {}{}{}\n", visibility, r.name, value_type));
             }
             for e in &class.operations {
-                todo!("export operations");
+                let r = e.read();
+                let visibility = r.visibility.as_ref().map(|e| e.char()).unwrap_or("");
+                let return_type = if !r.return_type.is_empty() {
+                    format!(": {}", r.return_type)
+                } else {
+                    "".to_owned()
+                };
+                self.plantuml_data.push_str(&format!("  {}{}({}){}\n", visibility, r.name, r.parameters, return_type));
             }
             self.plantuml_data.push_str("}\n");
         }
@@ -95,16 +109,22 @@ impl UmlClassCollector {
         }
     }
     fn visit_dependency(&mut self, link: &UmlClassDependency) {
-        let source_name = self.absolute_paths.get(&link.source.uuid()).unwrap();
-        let target_name = self.absolute_paths.get(&link.target.uuid()).unwrap();
+        if !self.collecting_absolute_paths {
+            let source_name = self.absolute_paths.get(&link.source.uuid()).unwrap();
+            let target_name = self.absolute_paths.get(&link.target.uuid()).unwrap();
 
-        self.plantuml_data.push_str(source_name);
-        self.plantuml_data.push_str(" ..> ");
-        self.plantuml_data.push_str(target_name);
-        if !link.stereotype.is_empty() {
-            self.plantuml_data.push_str(&format!(": <<{}>>", link.stereotype));
+            self.plantuml_data.push_str(source_name);
+            if link.target_arrow_open {
+                self.plantuml_data.push_str(" ..> ");
+            } else {
+                self.plantuml_data.push_str(" ..|> ");
+            }
+            self.plantuml_data.push_str(target_name);
+            if !link.stereotype.is_empty() {
+                self.plantuml_data.push_str(&format!(": <<{}>>", link.stereotype));
+            }
+            self.plantuml_data.push_str("\n");
         }
-        self.plantuml_data.push_str("\n");
     }
     fn visit_association(&mut self, link: &UmlClassAssociation) {
         if !self.collecting_absolute_paths {
@@ -147,6 +167,19 @@ impl UmlClassCollector {
                 self.plantuml_data.push_str(&format!(": <<{}>>", link.stereotype));
             }
             self.plantuml_data.push_str("\n");
+        }
+    }
+    fn visit_comment(&mut self, comment: &UmlClassComment) {
+        if !self.collecting_absolute_paths {
+            let comment_name: String = comment.uuid.to_string().chars().filter(|e| *e != '-').collect();
+            self.plantuml_data.push_str(&format!("note {:?} as N{}\n", comment.text, comment_name));
+        }
+    }
+    fn visit_commentlink(&mut self, comment_link: &UmlClassCommentLink) {
+        if !self.collecting_absolute_paths {
+            let comment_name: String = comment_link.source.read().uuid.to_string().chars().filter(|e| *e != '-').collect();
+            let target_name = self.absolute_paths.get(&comment_link.target.uuid()).unwrap();
+            self.plantuml_data.push_str(&format!("N{} .. {}\n", comment_name, target_name));
         }
     }
 }
@@ -203,9 +236,8 @@ impl UmlClassElement {
             UmlClassElement::UmlClassGeneralization(inner) => visitor.visit_generalization(&inner.read()),
             UmlClassElement::UmlClassDependency(inner) => visitor.visit_dependency(&inner.read()),
             UmlClassElement::UmlClassAssociation(inner) => visitor.visit_association(&inner.read()),
-            UmlClassElement::UmlClassComment(..) | UmlClassElement::UmlClassCommentLink(..) => {
-                // TODO: comments
-            },
+            UmlClassElement::UmlClassComment(inner) => visitor.visit_comment(&inner.read()),
+            UmlClassElement::UmlClassCommentLink(inner) => visitor.visit_commentlink(&inner.read()),
         }
     }
 }

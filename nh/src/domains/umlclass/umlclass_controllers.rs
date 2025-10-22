@@ -936,6 +936,18 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     point_assoc_model.write().target_label_multiplicity = Arc::new("3..*".to_owned());
     point_assoc_model.write().target_navigability = UmlClassAssociationNavigability::Navigable;
 
+    let (comment, comment_view) = new_umlclass_comment("This is a comment\nwith multiple lines", egui::Pos2::new(650.0, 250.0));
+    let (commentlink1, commentlink1_view) = new_umlclass_commentlink(
+        None,
+        (comment.clone(), comment_view.clone().into()),
+        (class_producta.clone().into(), class_producta_view.clone().into()),
+    );
+    let (commentlink2, commentlink2_view) = new_umlclass_commentlink(
+        None,
+        (comment.clone(), comment_view.clone().into()),
+        (class_productb.clone().into(), class_productb_view.clone().into()),
+    );
+
     let diagram_view_uuid = uuid::Uuid::now_v7().into();
     let diagram_model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("Demo UML class diagram {}", no);
@@ -960,6 +972,9 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
             gen_model.into(),
             point_model.into(),
             point_assoc_model.into(),
+            comment.into(),
+            commentlink1.into(),
+            commentlink2.into(),
         ],
     ));
     DiagramControllerGen2::new(
@@ -984,6 +999,9 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
             gen_view.into(),
             point_view.into(),
             point_assoc_view.into(),
+            comment_view.into(),
+            commentlink1_view.into(),
+            commentlink2_view.into(),
         ],
     )
 }
