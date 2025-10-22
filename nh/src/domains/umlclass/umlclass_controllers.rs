@@ -249,6 +249,14 @@ pub enum UmlClassPropChange {
     OperationParametersChange(Arc<String>),
     OperationReturnTypeChange(Arc<String>),
     VisibilityChange(UFOption<UmlClassVisibilityKind>),
+    IsStaticChange(bool),
+    IsDerivedChange(bool),
+    IsReadOnlyChange(bool),
+    IsOrderedChange(bool),
+    IsUniqueChange(bool),
+    IsIdChange(bool),
+    IsAbstractChange(bool),
+    IsQueryChange(bool),
 
     SetNameChange(Arc<String>),
     SetCoveringChange(bool),
@@ -2369,6 +2377,13 @@ fn new_umlclass_property_view<P: UmlClassProfile>(
         multiplicity_buffer: (*m.multiplicity).clone(),
         default_value_buffer: (*m.default_value).clone(),
 
+        is_static_buffer: m.is_static,
+        is_derived_buffer: m.is_derived,
+        is_read_only_buffer: m.is_read_only,
+        is_ordered_buffer: m.is_ordered,
+        is_unique_buffer: m.is_unique,
+        is_id_buffer: m.is_id,
+
         highlight: canvas::Highlight::NONE,
         bounds_rect: egui::Rect::ZERO,
         _profile: PhantomData,
@@ -2396,6 +2411,18 @@ pub struct UmlClassPropertyView<P: UmlClassProfile> {
     multiplicity_buffer: String,
     #[nh_context_serde(skip_and_default)]
     default_value_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    is_static_buffer: bool,
+    #[nh_context_serde(skip_and_default)]
+    is_derived_buffer: bool,
+    #[nh_context_serde(skip_and_default)]
+    is_read_only_buffer: bool,
+    #[nh_context_serde(skip_and_default)]
+    is_ordered_buffer: bool,
+    #[nh_context_serde(skip_and_default)]
+    is_unique_buffer: bool,
+    #[nh_context_serde(skip_and_default)]
+    is_id_buffer: bool,
 
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
@@ -2562,6 +2589,37 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                 }
             });
 
+        if ui.checkbox(&mut self.is_static_buffer, "isStatic").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::IsStaticChange(self.is_static_buffer),
+            ]));
+        }
+        if ui.checkbox(&mut self.is_derived_buffer, "isDerived").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::IsDerivedChange(self.is_derived_buffer),
+            ]));
+        }
+        if ui.checkbox(&mut self.is_read_only_buffer, "isReadOnly").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::IsReadOnlyChange(self.is_read_only_buffer),
+            ]));
+        }
+        if ui.checkbox(&mut self.is_ordered_buffer, "isOrdered").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::IsOrderedChange(self.is_ordered_buffer),
+            ]));
+        }
+        if ui.checkbox(&mut self.is_unique_buffer, "isUnique").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::IsUniqueChange(self.is_unique_buffer),
+            ]));
+        }
+        if ui.checkbox(&mut self.is_id_buffer, "isID").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::IsIdChange(self.is_id_buffer),
+            ]));
+        }
+
         PropertiesStatus::Shown
     }
 
@@ -2681,6 +2739,48 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                                 ));
                                 model.visibility = visibility.clone();
                             }
+                            UmlClassPropChange::IsStaticChange(is_static) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::IsStaticChange(model.is_static.clone())],
+                                ));
+                                model.is_static = is_static.clone();
+                            }
+                            UmlClassPropChange::IsDerivedChange(is_derived) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::IsDerivedChange(model.is_derived.clone())],
+                                ));
+                                model.is_derived = is_derived.clone();
+                            }
+                            UmlClassPropChange::IsReadOnlyChange(is_read_only) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::IsReadOnlyChange(model.is_read_only.clone())],
+                                ));
+                                model.is_read_only = is_read_only.clone();
+                            }
+                            UmlClassPropChange::IsOrderedChange(is_ordered) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::IsOrderedChange(model.is_ordered.clone())],
+                                ));
+                                model.is_ordered = is_ordered.clone();
+                            }
+                            UmlClassPropChange::IsUniqueChange(is_unique) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::IsUniqueChange(model.is_unique.clone())],
+                                ));
+                                model.is_unique = is_unique.clone();
+                            }
+                            UmlClassPropChange::IsIdChange(is_id) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::IsIdChange(model.is_id.clone())],
+                                ));
+                                model.is_id = is_id.clone();
+                            }
                             _ => {}
                         }
                     }
@@ -2708,6 +2808,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                 t.push_str(vis.char());
             }
 
+            if m.is_derived {
+                t.push_str("/");
+            }
             t.push_str(&*m.name);
 
             if !m.value_type.is_empty() {
@@ -2729,6 +2832,28 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                 t.push_str(&*m.default_value);
             }
 
+            if m.is_read_only || m.is_ordered || m.is_unique || m.is_id {
+                t.push_str(" {");
+                let mut first = true;
+                for e in [
+                    (m.is_id, "id"),
+                    (m.is_read_only, "readOnly"),
+                    (m.is_unique, "unique"),
+                    (m.is_ordered, "ordered"),
+                ] {
+                    if !e.0 {
+                        continue;
+                    }
+                    if first {
+                        first = false;
+                    } else {
+                        t.push_str(", ");
+                    }
+                    t.push_str(e.1);
+                }
+                t.push_str("}");
+            }
+
             t
         };
 
@@ -2738,6 +2863,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         self.value_type_buffer = (*m.value_type).clone();
         self.multiplicity_buffer = (*m.multiplicity).clone();
         self.default_value_buffer = (*m.default_value).clone();
+
+        self.is_static_buffer = m.is_static;
+        self.is_derived_buffer = m.is_derived;
+        self.is_read_only_buffer = m.is_read_only;
+        self.is_ordered_buffer = m.is_ordered;
+        self.is_unique_buffer = m.is_unique;
+        self.is_id_buffer = m.is_id;
     }
     fn head_count(
         &mut self,
@@ -2756,7 +2888,47 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         c: &mut HashMap<ViewUuid, <UmlClassDomain<P> as Domain>::CommonElementViewT>,
         m: &mut HashMap<ModelUuid, <UmlClassDomain<P> as Domain>::CommonElementT>,
     ) {
-        todo!()
+        let old_model = self.model.read();
+
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+        } else {
+            (*self.uuid, *old_model.uuid)
+        };
+
+        let modelish = if let Some(UmlClassElement::UmlClassProperty(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(model_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        let mut cloneish = ERef::new(Self {
+            uuid: view_uuid.into(),
+            model: modelish,
+
+            display_text: self.display_text.clone(),
+            visibility_buffer: self.visibility_buffer,
+            stereotype_controller: self.stereotype_controller.clone(),
+            name_buffer: self.name_buffer.clone(),
+            value_type_buffer: self.value_type_buffer.clone(),
+            multiplicity_buffer: self.multiplicity_buffer.clone(),
+            default_value_buffer: self.default_value_buffer.clone(),
+
+            is_static_buffer: self.is_static_buffer,
+            is_derived_buffer: self.is_derived_buffer,
+            is_read_only_buffer: self.is_read_only_buffer,
+            is_ordered_buffer: self.is_ordered_buffer,
+            is_unique_buffer: self.is_unique_buffer,
+            is_id_buffer: self.is_id_buffer,
+
+            highlight: self.highlight,
+            bounds_rect: self.bounds_rect,
+            _profile: PhantomData,
+        });
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
     }
 }
 
@@ -2796,6 +2968,12 @@ fn new_umlclass_operation_view<P: UmlClassProfile>(
         parameters_buffer: (*m.parameters).clone(),
         return_type_buffer: (*m.return_type).clone(),
 
+        is_static_buffer: m.is_static,
+        is_abstract_buffer: m.is_abstract,
+        is_query_buffer: m.is_query,
+        is_ordered_buffer: m.is_ordered,
+        is_unique_buffer: m.is_unique,
+
         highlight: canvas::Highlight::NONE,
         bounds_rect: egui::Rect::ZERO,
 
@@ -2822,6 +3000,16 @@ pub struct UmlClassOperationView<P: UmlClassProfile> {
     parameters_buffer: String,
     #[nh_context_serde(skip_and_default)]
     return_type_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    is_static_buffer: bool,
+    #[nh_context_serde(skip_and_default)]
+    is_abstract_buffer: bool,
+    #[nh_context_serde(skip_and_default)]
+    is_query_buffer: bool,
+    #[nh_context_serde(skip_and_default)]
+    is_ordered_buffer: bool,
+    #[nh_context_serde(skip_and_default)]
+    is_unique_buffer: bool,
 
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
@@ -2975,6 +3163,32 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                 }
             });
 
+        if ui.checkbox(&mut self.is_static_buffer, "isStatic").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::IsStaticChange(self.is_static_buffer),
+            ]));
+        }
+        if ui.checkbox(&mut self.is_abstract_buffer, "isAbstract").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::IsAbstractChange(self.is_abstract_buffer),
+            ]));
+        }
+        if ui.checkbox(&mut self.is_query_buffer, "isQuery").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::IsQueryChange(self.is_query_buffer),
+            ]));
+        }
+        if ui.checkbox(&mut self.is_ordered_buffer, "isOrdered").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::IsOrderedChange(self.is_ordered_buffer),
+            ]));
+        }
+        if ui.checkbox(&mut self.is_unique_buffer, "isUnique").changed() {
+            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                UmlClassPropChange::IsUniqueChange(self.is_unique_buffer),
+            ]));
+        }
+
         PropertiesStatus::Shown
     }
 
@@ -3087,6 +3301,41 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                                 ));
                                 model.visibility = visibility.clone();
                             }
+                            UmlClassPropChange::IsStaticChange(is_static) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::IsStaticChange(model.is_static.clone())],
+                                ));
+                                model.is_static = is_static.clone();
+                            }
+                            UmlClassPropChange::IsAbstractChange(is_abstract) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::IsAbstractChange(model.is_abstract.clone())],
+                                ));
+                                model.is_abstract = is_abstract.clone();
+                            }
+                            UmlClassPropChange::IsQueryChange(is_query) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::IsQueryChange(model.is_query.clone())],
+                                ));
+                                model.is_query = is_query.clone();
+                            }
+                            UmlClassPropChange::IsOrderedChange(is_ordered) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::IsOrderedChange(model.is_ordered.clone())],
+                                ));
+                                model.is_ordered = is_ordered.clone();
+                            }
+                            UmlClassPropChange::IsUniqueChange(is_unique) => {
+                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                    std::iter::once(*self.uuid).collect(),
+                                    vec![UmlClassPropChange::IsUniqueChange(model.is_unique.clone())],
+                                ));
+                                model.is_unique = is_unique.clone();
+                            }
                             _ => {}
                         }
                     }
@@ -3124,6 +3373,27 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                 t.push_str(&*m.return_type);
             }
 
+            if m.is_query || m.is_ordered || m.is_unique {
+                t.push_str(" {");
+                let mut first = true;
+                for e in [
+                    (m.is_query, "query"),
+                    (m.is_unique, "unique"),
+                    (m.is_ordered, "ordered"),
+                ] {
+                    if !e.0 {
+                        continue;
+                    }
+                    if first {
+                        first = false;
+                    } else {
+                        t.push_str(", ");
+                    }
+                    t.push_str(e.1);
+                }
+                t.push_str("}");
+            }
+
             t
         };
 
@@ -3132,6 +3402,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         self.name_buffer = (*m.name).clone();
         self.parameters_buffer = (*m.parameters).clone();
         self.return_type_buffer = (*m.return_type).clone();
+
+        self.is_static_buffer = m.is_static;
+        self.is_abstract_buffer = m.is_abstract;
+        self.is_query_buffer = m.is_query;
+        self.is_ordered_buffer = m.is_ordered;
+        self.is_unique_buffer = m.is_unique;
     }
     fn head_count(
         &mut self,
@@ -3150,7 +3426,45 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         c: &mut HashMap<ViewUuid, <UmlClassDomain<P> as Domain>::CommonElementViewT>,
         m: &mut HashMap<ModelUuid, <UmlClassDomain<P> as Domain>::CommonElementT>,
     ) {
-        todo!()
+        let old_model = self.model.read();
+
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+        } else {
+            (*self.uuid, *old_model.uuid)
+        };
+
+        let modelish = if let Some(UmlClassElement::UmlClassOperation(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(model_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        let mut cloneish = ERef::new(Self {
+            uuid: view_uuid.into(),
+            model: modelish,
+
+            display_text: self.display_text.clone(),
+            visibility_buffer: self.visibility_buffer,
+            stereotype_controller: self.stereotype_controller.clone(),
+            name_buffer: self.name_buffer.clone(),
+            parameters_buffer: self.parameters_buffer.clone(),
+            return_type_buffer: self.return_type_buffer.clone(),
+
+            is_static_buffer: self.is_static_buffer,
+            is_abstract_buffer: self.is_abstract_buffer,
+            is_query_buffer: self.is_query_buffer,
+            is_ordered_buffer: self.is_ordered_buffer,
+            is_unique_buffer: self.is_unique_buffer,
+
+            highlight: self.highlight,
+            bounds_rect: self.bounds_rect,
+            _profile: PhantomData,
+        });
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
     }
 }
 
@@ -4157,6 +4471,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             flattened_views.insert(*w.uuid(), e.clone().into());
         }
     }
+    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
+        into.insert(*self.model_uuid());
+        for e in &self.properties_views {
+            e.read().collect_model_uuids(into);
+        }
+        for e in &self.operations_views {
+            e.read().collect_model_uuids(into);
+        }
+    }
 
     fn deep_copy_clone(
         &self,
@@ -4180,6 +4503,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
+
+        let mut dev_null = HashMap::new();
+        self.properties_views.iter().for_each(|e| e.read().deep_copy_clone(uuid_present, &mut dev_null, c, m));
+        self.operations_views.iter().for_each(|e| e.read().deep_copy_clone(uuid_present, &mut dev_null, c, m));
 
         let mut cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
@@ -4205,6 +4532,38 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
+    }
+    fn deep_copy_relink(
+        &mut self,
+        c: &HashMap<ViewUuid, <UmlClassDomain<P> as Domain>::CommonElementViewT>,
+        m: &HashMap<ModelUuid, <UmlClassDomain<P> as Domain>::CommonElementT>,
+    ) {
+        for e in self.properties_views.iter_mut() {
+            let uuid = *e.read().uuid;
+            if let Some(UmlClassElementView::ClassProperty(new_property)) = c.get(&uuid) {
+                *e = new_property.clone();
+            }
+        }
+        for e in self.operations_views.iter_mut() {
+            let uuid = *e.read().uuid;
+            if let Some(UmlClassElementView::ClassOperation(new_operation)) = c.get(&uuid) {
+                *e = new_operation.clone();
+            }
+        }
+
+        let mut w = self.model.write();
+        for e in w.properties.iter_mut() {
+            let uuid = *e.read().uuid;
+            if let Some(UmlClassElement::UmlClassProperty(new_property)) = m.get(&uuid) {
+                *e = new_property.clone();
+            }
+        }
+        for e in w.operations.iter_mut() {
+            let uuid = *e.read().uuid;
+            if let Some(UmlClassElement::UmlClassOperation(new_operation)) = m.get(&uuid) {
+                *e = new_operation.clone();
+            }
+        }
     }
 }
 
