@@ -1046,7 +1046,12 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         &mut self,
         m: &HashMap<ModelUuid, DemoCsdElement>,
     ) {
-        todo!()
+        let mut w = self.model.write();
+        for e in w.contained_elements.iter_mut() {
+            if let Some(new_model) = m.get(&*e.uuid()) {
+                *e = new_model.clone();
+            }
+        }
     }
 }
 

@@ -1038,7 +1038,12 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         &mut self,
         m: &HashMap<ModelUuid, RdfElement>,
     ) {
-        todo!()
+        let mut w = self.model.write();
+        for e in w.contained_elements.iter_mut() {
+            if let Some(new_model) = m.get(&*e.uuid()) {
+                *e = new_model.clone();
+            }
+        }
     }
 }
 

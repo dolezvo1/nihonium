@@ -1635,7 +1635,12 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         &mut self,
         m: &HashMap<ModelUuid, UmlClassElement>,
     ) {
-        todo!()
+        let mut w = self.model.write();
+        for e in w.contained_elements.iter_mut() {
+            if let Some(new_model) = m.get(&*e.uuid()) {
+                *e = new_model.clone();
+            }
+        }
     }
 }
 

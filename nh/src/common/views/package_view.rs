@@ -771,5 +771,6 @@ where
         self.owned_views.event_order_foreach_mut(|v|
             v.deep_copy_relink(c, m)
         );
+        self.adapter.deep_copy_finish(m);
     }
 }

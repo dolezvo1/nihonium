@@ -1416,7 +1416,12 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         &mut self,
         m: &HashMap<ModelUuid, DemoOfdElement>,
     ) {
-        todo!()
+        let mut w = self.model.write();
+        for e in w.contained_elements.iter_mut() {
+            if let Some(new_model) = m.get(&*e.uuid()) {
+                *e = new_model.clone();
+            }
+        }
     }
 }
 
