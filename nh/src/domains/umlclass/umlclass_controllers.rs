@@ -2596,7 +2596,19 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
             canvas::CLASS_ITEM_FONT_SIZE,
             egui::Color32::BLACK,
         );
-        (self.bounds_rect, TargettingStatus::NotDrawn)
+        if let Some((pos, tool)) = tool && self.bounds_rect.contains(*pos) {
+            canvas.draw_rectangle(
+                self.bounds_rect,
+                egui::CornerRadius::ZERO,
+                tool.targetting_for_element(Some(self.model.clone().into())),
+                canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
+                canvas::Highlight::NONE,
+            );
+
+            (self.bounds_rect, TargettingStatus::Drawn)
+        } else {
+            (self.bounds_rect, TargettingStatus::NotDrawn)
+        }
     }
 }
 
@@ -3293,7 +3305,19 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
             canvas::CLASS_ITEM_FONT_SIZE,
             egui::Color32::BLACK,
         );
-        (self.bounds_rect, TargettingStatus::NotDrawn)
+        if let Some((pos, tool)) = tool && self.bounds_rect.contains(*pos) {
+            canvas.draw_rectangle(
+                self.bounds_rect,
+                egui::CornerRadius::ZERO,
+                tool.targetting_for_element(Some(self.model.clone().into())),
+                canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
+                canvas::Highlight::NONE,
+            );
+
+            (self.bounds_rect, TargettingStatus::Drawn)
+        } else {
+            (self.bounds_rect, TargettingStatus::NotDrawn)
+        }
     }
 }
 
@@ -3887,12 +3911,29 @@ impl CommentIndication {
 }
 
 impl<P: UmlClassProfile> UmlClassView<P> {
-    fn association_button_rect(&self, ui_scale: f32) -> egui::Rect {
-        let b_radius = 8.0;
-        let b_center = self.bounds_rect.right_top() + egui::Vec2::splat(b_radius / ui_scale);
+    const BUTTON_RADIUS: f32 = 8.0;
+    fn association_button_rect(&self, ui_scale: f32) ->  egui::Rect {
+        let b_center = self.bounds_rect.right_top()
+            + egui::Vec2::splat(Self::BUTTON_RADIUS / ui_scale);
         egui::Rect::from_center_size(
             b_center,
-            egui::Vec2::splat(2.0 * b_radius / ui_scale),
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
+        )
+    }
+    fn property_button_rect(&self, ui_scale: f32) ->  egui::Rect {
+        let b_center = self.bounds_rect.right_top()
+            + egui::Vec2::new(Self::BUTTON_RADIUS / ui_scale, 3.0 * Self::BUTTON_RADIUS / ui_scale);
+        egui::Rect::from_center_size(
+            b_center,
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
+        )
+    }
+    fn operation_button_rect(&self, ui_scale: f32) -> egui::Rect {
+        let b_center = self.bounds_rect.right_top()
+            + egui::Vec2::new(Self::BUTTON_RADIUS / ui_scale, 5.0 * Self::BUTTON_RADIUS / ui_scale);
+        egui::Rect::from_center_size(
+            b_center,
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
         )
     }
 }
@@ -4225,12 +4266,19 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         }
 
         let read = self.model.read();
+        let child_status = RwLock::new(TargettingStatus::NotDrawn);
         let mut body = Vec::<(egui::Vec2, Box<dyn Fn(&mut dyn canvas::NHCanvas, egui::Pos2)>)>::new();
         if !self.suppress_properties && !self.properties_views.is_empty() {
             body.push((
                 rect_union_fold(self.properties_views.iter().map(|e| e.read().bounding_box())).size(),
                 Box::new(|c, at| {
-                    self.properties_views.iter().fold(at, |s, e| e.write().draw_inner(s, q, context, c, tool).0.left_bottom());
+                    self.properties_views.iter().fold(at, |s, e| {
+                        let r = e.write().draw_inner(s, q, context, c, tool);
+                        if r.1 != TargettingStatus::NotDrawn {
+                            *child_status.write().unwrap() = r.1;
+                        }
+                        r.0.left_bottom()
+                    });
                 })
             ));
         }
@@ -4238,7 +4286,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             body.push((
                 rect_union_fold(self.operations_views.iter().map(|e| e.read().bounding_box())).size(),
                 Box::new(|c, at| {
-                    self.operations_views.iter().fold(at, |s, e| e.write().draw_inner(s, q, context, c, tool).0.left_bottom());
+                    self.operations_views.iter().fold(at, |s, e| {
+                        let r = e.write().draw_inner(s, q, context, c, tool);
+                        if r.1 != TargettingStatus::NotDrawn {
+                            *child_status.write().unwrap() = r.1;
+                        }
+                        r.0.left_bottom()
+                    });
                 })
             ));
         }
@@ -4290,15 +4344,35 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
         // Draw buttons
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            let b_rect = self.association_button_rect(ui_scale);
+            let b1 = self.association_button_rect(ui_scale);
             canvas.draw_rectangle(
-                b_rect,
+                b1,
                 egui::CornerRadius::ZERO,
                 egui::Color32::WHITE,
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
-            canvas.draw_text(b_rect.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
+            canvas.draw_text(b1.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
+
+            let b2 = self.property_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b2,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(b2.center(), egui::Align2::CENTER_CENTER, "P", 14.0 / ui_scale, egui::Color32::BLACK);
+
+            let b3 = self.operation_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b3,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(b3.center(), egui::Align2::CENTER_CENTER, "O", 14.0 / ui_scale, egui::Color32::BLACK);
         }
 
         if canvas.ui_scale().is_some() {
@@ -4334,11 +4408,14 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 );
             }
 
+            let child_status = *child_status.read().unwrap();
+
             // Draw targetting rectangle
             if let Some(t) = tool
                 .as_ref()
                 .filter(|e| self.min_shape().contains(e.0))
                 .map(|e| e.1)
+                && child_status == TargettingStatus::NotDrawn
             {
                 canvas.draw_rectangle(
                     self.bounds_rect,
@@ -4349,7 +4426,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 );
                 TargettingStatus::Drawn
             } else {
-                TargettingStatus::NotDrawn
+                child_status
             }
         } else {
             TargettingStatus::NotDrawn
@@ -4392,6 +4469,48 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     },
                     event_lock: true,
                 });
+
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::Click(pos) if self.highlight.selected && self.property_button_rect(ehc.ui_scale).contains(pos) => {
+                *tool = Some(NaiveUmlClassTool {
+                    initial_stage: UmlClassToolStage::ClassProperty,
+                    current_stage: UmlClassToolStage::ClassProperty,
+                    result: PartialUmlClassElement::None,
+                    event_lock: false,
+                });
+
+                if let Some(tool) = tool {
+                    tool.add_element(self.model());
+                    if let Some((view, esm)) = tool.try_construct_view(self)
+                        && matches!(view, UmlClassElementView::ClassProperty(_)) {
+                        commands.push(InsensitiveCommand::AddElement(*self.uuid, view.into(), true).into());
+                        if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                            *element_setup_modal = esm;
+                        }
+                    }
+                }
+
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::Click(pos) if self.highlight.selected && self.operation_button_rect(ehc.ui_scale).contains(pos) => {
+                *tool = Some(NaiveUmlClassTool {
+                    initial_stage: UmlClassToolStage::ClassOperation,
+                    current_stage: UmlClassToolStage::ClassOperation,
+                    result: PartialUmlClassElement::None,
+                    event_lock: false,
+                });
+
+                if let Some(tool) = tool {
+                    tool.add_element(self.model());
+                    if let Some((view, esm)) = tool.try_construct_view(self)
+                        && matches!(view, UmlClassElementView::ClassOperation(_)) {
+                        commands.push(InsensitiveCommand::AddElement(*self.uuid, view.into(), true).into());
+                        if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                            *element_setup_modal = esm;
+                        }
+                    }
+                }
 
                 EventHandlingStatus::HandledByElement
             }
