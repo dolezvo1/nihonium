@@ -488,15 +488,21 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 )
             }
             UmlClassElement::UmlClass(inner) => {
+                let (properties_views, operations_views) = {
+                    let r = inner.read();
+                    (
+                        r.properties.iter().map(|e| new_umlclass_property_view(e.clone())).collect(),
+                        r.operations.iter().map(|e| new_umlclass_operation_view(e.clone())).collect(),
+                    )
+                };
+
                 UmlClassElementView::from(
-                    new_umlclass_class_view(inner, Vec::new(), Vec::new(), egui::Pos2::ZERO)
+                    new_umlclass_class_view(inner, properties_views, operations_views, egui::Pos2::ZERO)
                 )
             },
-            UmlClassElement::UmlClassProperty(inner) => {
-                todo!()
-            }
-            UmlClassElement::UmlClassOperation(inner) => {
-                todo!()
+            UmlClassElement::UmlClassProperty(..)
+            | UmlClassElement::UmlClassOperation(..) => {
+                unreachable!()
             }
             UmlClassElement::UmlClassGeneralization(inner) => {
                 let m = inner.read();
@@ -1413,6 +1419,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 let esm: Option<Box<dyn CustomModal>> = match &x {
                     UmlClassElementView::Instance(inner) => Some(Box::new(UmlClassInstanceSetupModal::<P::InstanceStereotypeController>::from(&inner.read().model))),
                     UmlClassElementView::Class(inner) => Some(Box::new(UmlClassSetupModal::<P::ClassStereotypeController>::from(&inner.read().model))),
+                    UmlClassElementView::ClassProperty(inner) => Some(Box::new(UmlClassPropertySetupModal::<P::ClassPropertyStereotypeController>::from(&inner.read().model))),
+                    UmlClassElementView::ClassOperation(inner) => Some(Box::new(UmlClassOperationSetupModal::<P::ClassOperationStereotypeController>::from(&inner.read().model))),
                     _ => None,
                 };
                 self.result = PartialUmlClassElement::None;
@@ -2395,6 +2403,128 @@ fn new_umlclass_property_view<P: UmlClassProfile>(
     })
 }
 
+struct UmlClassPropertySetupModal<SC: StereotypeController> {
+    model: ERef<UmlClassProperty>,
+    first_frame: bool,
+
+    stereotype_controller: SC,
+    name_buffer: String,
+    value_type_buffer: String,
+    multiplicity_buffer: String,
+    default_value_buffer: String,
+
+    visibility_buffer: UFOption<UmlClassVisibilityKind>,
+    is_static_buffer: bool,
+    is_derived_buffer: bool,
+    is_read_only_buffer: bool,
+    is_ordered_buffer: bool,
+    is_unique_buffer: bool,
+    is_id_buffer: bool,
+}
+
+impl<SC: StereotypeController> From<&ERef<UmlClassProperty>> for UmlClassPropertySetupModal<SC> {
+    fn from(model: &ERef<UmlClassProperty>) -> Self {
+        let m = model.read();
+        let mut stereotype_controller: SC = Default::default();
+        stereotype_controller.refresh(&*m.stereotype);
+        Self {
+            model: model.clone(),
+            first_frame: true,
+
+            stereotype_controller,
+            name_buffer: (*m.name).clone(),
+            value_type_buffer: (*m.value_type).clone(),
+            multiplicity_buffer: (*m.multiplicity).clone(),
+            default_value_buffer: (*m.default_value).clone(),
+
+            visibility_buffer: m.visibility,
+            is_static_buffer: m.is_static,
+            is_derived_buffer: m.is_derived,
+            is_read_only_buffer: m.is_read_only,
+            is_ordered_buffer: m.is_ordered,
+            is_unique_buffer: m.is_unique,
+            is_id_buffer: m.is_id,
+        }
+    }
+}
+
+impl<SC: StereotypeController> CustomModal for UmlClassPropertySetupModal<SC> {
+    fn show(
+        &mut self,
+        d: &mut GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) -> CustomModalResult {
+        ui.label("Stereotype:");
+        self.stereotype_controller.show(ui);
+        ui.label("Name:");
+        let r = ui.text_edit_singleline(&mut self.name_buffer);
+        ui.label("Type:");
+        ui.text_edit_singleline(&mut self.value_type_buffer);
+        ui.label("Multiplicity:");
+        ui.text_edit_singleline(&mut self.multiplicity_buffer);
+        ui.label("Default value:");
+        ui.text_edit_singleline(&mut self.default_value_buffer);
+
+        ui.label("Visibility:");
+        egui::ComboBox::from_id_salt("Visibility:")
+            .selected_text(self.visibility_buffer.as_ref().map(|e| e.name()).unwrap_or("Unspecified"))
+            .show_ui(ui, |ui| {
+                for e in [
+                    UFOption::None,
+                    UFOption::Some(UmlClassVisibilityKind::Public),
+                    UFOption::Some(UmlClassVisibilityKind::Package),
+                    UFOption::Some(UmlClassVisibilityKind::Protected),
+                    UFOption::Some(UmlClassVisibilityKind::Private),
+                ] {
+                    ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.name()).unwrap_or("Unspecified"));
+                }
+            });
+
+        ui.checkbox(&mut self.is_static_buffer, "isStatic");
+        ui.checkbox(&mut self.is_derived_buffer, "isDerived");
+        ui.checkbox(&mut self.is_read_only_buffer, "isReadOnly");
+        ui.checkbox(&mut self.is_ordered_buffer, "isOrdered");
+        ui.checkbox(&mut self.is_unique_buffer, "isUnique");
+        ui.checkbox(&mut self.is_id_buffer, "isID");
+
+        ui.separator();
+
+        if self.first_frame {
+            r.request_focus();
+            self.first_frame = false;
+        }
+
+        let mut result = CustomModalResult::KeepOpen;
+        ui.horizontal(|ui| {
+            if ui.button("Ok").clicked() {
+                let mut m = self.model.write();
+
+                m.stereotype = self.stereotype_controller.get();
+                m.name = Arc::new(self.name_buffer.clone());
+                m.value_type = Arc::new(self.value_type_buffer.clone());
+                m.multiplicity = Arc::new(self.multiplicity_buffer.clone());
+                m.default_value = Arc::new(self.default_value_buffer.clone());
+
+                m.visibility = self.visibility_buffer;
+                m.is_static = self.is_static_buffer;
+                m.is_derived = self.is_derived_buffer;
+                m.is_read_only = self.is_read_only_buffer;
+                m.is_ordered = self.is_ordered_buffer;
+                m.is_unique = self.is_unique_buffer;
+                m.is_id = self.is_id_buffer;
+
+                result = CustomModalResult::CloseModified(*m.uuid);
+            }
+            if ui.button("Cancel").clicked() {
+                result = CustomModalResult::CloseUnmodified;
+            }
+        });
+
+        result
+    }
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassPropertyView<P: UmlClassProfile> {
@@ -2803,13 +2933,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             if !m.stereotype.is_empty() {
                 t.push_str("«");
                 t.push_str(&*m.stereotype);
-                t.push_str("»");
+                t.push_str("» ");
             }
 
             if let UFOption::Some(vis) = m.visibility {
-                if !t.is_empty() {
-                    t.push_str(" ");
-                }
                 t.push_str(vis.char());
             }
 
@@ -2984,6 +3111,119 @@ fn new_umlclass_operation_view<P: UmlClassProfile>(
 
         _profile: PhantomData,
     })
+}
+
+
+struct UmlClassOperationSetupModal<SC: StereotypeController> {
+    model: ERef<UmlClassOperation>,
+    first_frame: bool,
+
+    stereotype_controller: SC,
+    name_buffer: String,
+    parameters_buffer: String,
+    return_type_buffer: String,
+
+    visibility_buffer: UFOption<UmlClassVisibilityKind>,
+    is_static_buffer: bool,
+    is_abstract_buffer: bool,
+    is_query_buffer: bool,
+    is_ordered_buffer: bool,
+    is_unique_buffer: bool,
+}
+
+impl<SC: StereotypeController> From<&ERef<UmlClassOperation>> for UmlClassOperationSetupModal<SC> {
+    fn from(model: &ERef<UmlClassOperation>) -> Self {
+        let m = model.read();
+        let mut stereotype_controller: SC = Default::default();
+        stereotype_controller.refresh(&*m.stereotype);
+        Self {
+            model: model.clone(),
+            first_frame: true,
+
+            stereotype_controller,
+            name_buffer: (*m.name).clone(),
+            parameters_buffer: (*m.parameters).clone(),
+            return_type_buffer: (*m.return_type).clone(),
+
+            visibility_buffer: m.visibility,
+            is_static_buffer: m.is_static,
+            is_abstract_buffer: m.is_abstract,
+            is_query_buffer: m.is_query,
+            is_ordered_buffer: m.is_ordered,
+            is_unique_buffer: m.is_unique,
+        }
+    }
+}
+
+impl<SC: StereotypeController> CustomModal for UmlClassOperationSetupModal<SC> {
+    fn show(
+        &mut self,
+        d: &mut GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) -> CustomModalResult {
+        ui.label("Stereotype:");
+        self.stereotype_controller.show(ui);
+        ui.label("Name:");
+        let r = ui.text_edit_singleline(&mut self.name_buffer);
+        ui.label("Parameters:");
+        ui.text_edit_singleline(&mut self.parameters_buffer);
+        ui.label("Return type:");
+        ui.text_edit_singleline(&mut self.return_type_buffer);
+
+        ui.label("Visibility:");
+        egui::ComboBox::from_id_salt("Visibility:")
+            .selected_text(self.visibility_buffer.as_ref().map(|e| e.name()).unwrap_or("Unspecified"))
+            .show_ui(ui, |ui| {
+                for e in [
+                    UFOption::None,
+                    UFOption::Some(UmlClassVisibilityKind::Public),
+                    UFOption::Some(UmlClassVisibilityKind::Package),
+                    UFOption::Some(UmlClassVisibilityKind::Protected),
+                    UFOption::Some(UmlClassVisibilityKind::Private),
+                ] {
+                    ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.name()).unwrap_or("Unspecified"));
+                }
+            });
+
+        ui.checkbox(&mut self.is_static_buffer, "isStatic");
+        ui.checkbox(&mut self.is_abstract_buffer, "isAbstract");
+        ui.checkbox(&mut self.is_query_buffer, "isQuery");
+        ui.checkbox(&mut self.is_ordered_buffer, "isOrdered");
+        ui.checkbox(&mut self.is_unique_buffer, "isUnique");
+
+        ui.separator();
+
+        if self.first_frame {
+            r.request_focus();
+            self.first_frame = false;
+        }
+
+        let mut result = CustomModalResult::KeepOpen;
+        ui.horizontal(|ui| {
+            if ui.button("Ok").clicked() {
+                let mut m = self.model.write();
+                m.stereotype = self.stereotype_controller.get();
+                m.name = Arc::new(self.name_buffer.clone());
+                m.parameters = Arc::new(self.parameters_buffer.clone());
+                m.return_type = Arc::new(self.return_type_buffer.clone());
+
+                m.visibility = self.visibility_buffer;
+                m.is_static = self.is_static_buffer;
+                m.is_abstract = self.is_abstract_buffer;
+                m.is_query = self.is_query_buffer;
+                m.is_ordered = self.is_ordered_buffer;
+                m.is_unique = self.is_unique_buffer;
+
+                result = CustomModalResult::CloseModified(*m.uuid);
+            }
+            if ui.button("Cancel").clicked() {
+                result = CustomModalResult::CloseUnmodified;
+            }
+        });
+
+        result
+    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -3358,13 +3598,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             if !m.stereotype.is_empty() {
                 t.push_str("«");
                 t.push_str(&*m.stereotype);
-                t.push_str("»");
+                t.push_str("» ");
             }
 
             if let UFOption::Some(vis) = m.visibility {
-                if !t.is_empty() {
-                    t.push_str(" ");
-                }
                 t.push_str(vis.char());
             }
 
@@ -4205,9 +4442,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 if let Some(tool) = tool {
                     tool.add_element(self.model());
 
-                    if let Some((view, _)) = tool.try_construct_view(self)
+                    if let Some((view, esm)) = tool.try_construct_view(self)
                         && matches!(view, UmlClassElementView::ClassProperty(_) | UmlClassElementView::ClassOperation(_)) {
                         commands.push(InsensitiveCommand::AddElement(*self.uuid, view.into(), true).into());
+                        if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                            *element_setup_modal = esm;
+                        }
                     }
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
