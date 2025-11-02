@@ -69,7 +69,8 @@ impl OntoUMLValidationTab {
         #[derive(Default)]
         struct ElementInfo {
             stereotype: Arc<String>,
-            identity_providers_no: usize,
+            identity_providers_min: usize,
+            identity_providers_max: usize,
             is_abstract: bool,
             in_disjoint_complete_set: bool,
             direct_mediations_opposing_lower_bounds: usize,
@@ -93,7 +94,8 @@ impl OntoUMLValidationTab {
                     let e = element_infos.entry(*m.uuid).or_default();
                     e.stereotype = m.stereotype.clone();
                     if is_identity_provider(&*m.stereotype) {
-                        e.identity_providers_no += 1;
+                        e.identity_providers_min += 1;
+                        e.identity_providers_max += 1;
                     }
                     if m.is_abstract {
                         e.is_abstract = true;
@@ -103,11 +105,20 @@ impl OntoUMLValidationTab {
                     let m = inner.read();
                     let identity_providers_no = m.targets.iter()
                         .filter(|t| is_identity_provider(&*t.read().stereotype) || requires_identity(&*t.read().stereotype)).count();
-                    let weight = if m.set_is_disjoint { identity_providers_no.clamp(0, 1) } else { identity_providers_no };
+                    let (weight_min, weight_max) = if m.set_is_disjoint || m.targets.len() == 1 {
+                        (if identity_providers_no == m.targets.len() { 1 } else { 0 }, identity_providers_no.min(1))
+                    } else {
+                        if m.set_is_covering {
+                            (identity_providers_no.min(1), identity_providers_no)
+                        } else {
+                            (0, identity_providers_no + 1)
+                        }
+                    };
 
                     for s in &m.sources {
                         let mut e = element_infos.entry(*s.read().uuid).or_default();
-                        e.identity_providers_no += weight;
+                        e.identity_providers_min += weight_min;
+                        e.identity_providers_max += weight_max;
                         e.supertype_generalizations.push(inner.clone());
                         if m.set_is_disjoint && m.set_is_covering {
                             e.in_disjoint_complete_set = true;
@@ -117,6 +128,7 @@ impl OntoUMLValidationTab {
                             if !valid_direct_subtyping(&*s.read().stereotype, &*t.read().stereotype) {
                                 problems.push(ValidationProblem::Error {
                                     uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidSubtyping,
                                     text: format!("«{}» cannot be subtype of «{}»", s.read().stereotype, t.read().stereotype),
                                 });
                             }
@@ -145,20 +157,36 @@ impl OntoUMLValidationTab {
                     let target_multiplicity = parse_multiplicity(&*m.target_label_multiplicity);
 
                     if source_multiplicity.zip(target_multiplicity).is_none() {
-                        problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("invalid multiplicities") });
+                        problems.push(ValidationProblem::Error {
+                            uuid: *m.uuid,
+                            error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                            text: format!("invalid multiplicities"),
+                        });
                     }
                     if let Some((lm1, um1)) = source_multiplicity && um1.is_some_and(|um| lm1 > um) {
-                        problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("invalid multiplicities") });
+                        problems.push(ValidationProblem::Error {
+                            uuid: *m.uuid,
+                            error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                            text: format!("invalid multiplicities"),
+                        });
                     }
                     if let Some((lm2, um2)) = target_multiplicity && um2.is_some_and(|um| lm2 > um) {
-                        problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("invalid multiplicities") });
+                        problems.push(ValidationProblem::Error {
+                            uuid: *m.uuid,
+                            error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                            text: format!("invalid multiplicities"),
+                        });
                     }
 
                     match m.stereotype.as_str() {
                         "mediation" => {
                             if let Some(((lm1, _), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 < 1 || lm2 < 1) {
-                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«mediation» must have multiplicities of at least 1..*") });
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                    text: format!("«mediation» must have multiplicities of at least 1..*"),
+                                });
                             }
                             if let Some((lm, um)) = &target_multiplicity {
                                 let mut e = element_infos.entry(*m.source.uuid()).or_default();
@@ -172,14 +200,22 @@ impl OntoUMLValidationTab {
                         "characterization" => {
                             if let Some(((lm1, um1), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 < 1) {
-                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«characterization» must have multiplicities of 1..1 and at least 1..*") });
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                    text: format!("«characterization» must have multiplicities of 1..1 and at least 1..*"),
+                                });
                             }
                             if let UmlClassClassifier::UmlClass(t) = &m.target {
                                 let t = t.read();
                                 let mut e = element_infos.entry(*t.uuid).or_default();
 
                                 if t.stereotype.as_str() != "quality" && t.stereotype.as_str() != "mode" {
-                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«characterization» must have «quality» or «mode» on the target end") });
+                                    problems.push(ValidationProblem::Error {
+                                        uuid: *m.uuid,
+                                        error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
+                                        text: format!("«characterization» must have «quality» or «mode» on the target end"),
+                                    });
                                 }
 
                                 e.direct_characterizations_toward += 1;
@@ -188,7 +224,11 @@ impl OntoUMLValidationTab {
                         "derivation" => {
                             if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
-                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«derivation» must have multiplicities of 1..1") });
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                    text: format!("«derivation» must have multiplicities of 1..1"),
+                                });
                             }
                             // source: Relator
                             // target: material
@@ -196,92 +236,148 @@ impl OntoUMLValidationTab {
                         "structuration" => {
                             if let Some(((_, _), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm2 != 1 || um2.is_none_or(|um| um != 1)) {
-                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«structuration» must have multiplicities of 1..1 on the target end") });
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                    text: format!("«structuration» must have multiplicities of 1..1 on the target end"),
+                                });
                             }
 
                             if let UmlClassClassifier::UmlClass(s) = &m.source {
                                 let s = s.read();
                                 if s.stereotype.as_str() != "quality" {
-                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«structuration» must have «quality» on the source end") });
+                                    problems.push(ValidationProblem::Error {
+                                        uuid: *m.uuid,
+                                        error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
+                                        text: format!("«structuration» must have «quality» on the source end"),
+                                    });
                                 }
                             }
 
                             if let UmlClassClassifier::UmlClass(t) = &m.target {
                                 let t = t.read();
                                 if t.stereotype.as_str() != "quality" && t.stereotype.as_str() != "mode" {
-                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«structuration» must have «quality» or «mode» on the target end") });
+                                    problems.push(ValidationProblem::Error {
+                                        uuid: *m.uuid,
+                                        error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
+                                        text: format!("«structuration» must have «quality» or «mode» on the target end"),
+                                    });
                                 }
                             }
                         }
                         "componentOf" => {
                             if let Some(((lm1, _), (_, _))) = source_multiplicity.zip(target_multiplicity)
                                 && lm1 < 1 {
-                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«componentOf» must have multiplicities of at least 1..* on the source end") });
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                    text: format!("«componentOf» must have multiplicities of at least 1..* on the source end"),
+                                });
                             }
                         }
                         "subcollectionOf" => {
                             if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
-                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subcollectionOf» must have multiplicities of 1..1") });
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                    text: format!("«subcollectionOf» must have multiplicities of 1..1"),
+                                });
                             }
 
                             if let UmlClassClassifier::UmlClass(s) = &m.source {
                                 let s = s.read();
                                 if s.stereotype.as_str() != "collective" {
-                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subcollectionOf» must have «collective» on the source end") });
+                                    problems.push(ValidationProblem::Error {
+                                        uuid: *m.uuid,
+                                        error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
+                                        text: format!("«subcollectionOf» must have «collective» on the source end"),
+                                    });
                                 }
                             }
 
                             if let UmlClassClassifier::UmlClass(t) = &m.target {
                                 let t = t.read();
                                 if t.stereotype.as_str() != "collective" {
-                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subcollectionOf» must have «collective» on the target end") });
+                                    problems.push(ValidationProblem::Error {
+                                        uuid: *m.uuid,
+                                        error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
+                                        text: format!("«subcollectionOf» must have «collective» on the target end"),
+                                    });
                                 }
                             }
                         }
                         "memberOf" => {
                             if let Some(((lm1, _), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 < 1 || lm2 < 1) {
-                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«memberOf» must have multiplicities of at least 1..*") });
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                    text: format!("«memberOf» must have multiplicities of at least 1..*"),
+                                });
                             }
 
                             if let UmlClassClassifier::UmlClass(s) = &m.source {
                                 let s = s.read();
                                 if s.stereotype.as_str() != "collective" {
-                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«memberOf» must have «collective» on the source end") });
+                                    problems.push(ValidationProblem::Error {
+                                        uuid: *m.uuid,
+                                        error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
+                                        text: format!("«memberOf» must have «collective» on the source end"),
+                                    });
                                 }
                             }
                         }
                         "containment" => {
                             if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
-                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«containment» must have multiplicities of 1..1") });
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                    text: format!("«containment» must have multiplicities of 1..1"),
+                                });
                             }
 
                             if let UmlClassClassifier::UmlClass(t) = &m.target {
                                 let t = t.read();
                                 if t.stereotype.as_str() != "quantity" {
-                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«containment» must have «quantity» on the target end") });
+                                    problems.push(ValidationProblem::Error {
+                                        uuid: *m.uuid,
+                                        error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
+                                        text: format!("«containment» must have «quantity» on the target end"),
+                                    });
                                 }
                             }
                         }
                         "subquantityOf" => {
                             if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
-                                problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subquantityOf» must have multiplicities of 1..1") });
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                    text: format!("«subquantityOf» must have multiplicities of 1..1"),
+                                });
                             }
 
                             if let UmlClassClassifier::UmlClass(s) = &m.source {
                                 let s = s.read();
                                 if s.stereotype.as_str() != "quantity" {
-                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subquantityOf» must have «quantity» on the source end") });
+                                    problems.push(ValidationProblem::Error {
+                                        uuid: *m.uuid,
+                                        error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
+                                        text: format!("«subquantityOf» must have «quantity» on the source end"),
+                                    });
                                 }
                             }
 
                             if let UmlClassClassifier::UmlClass(t) = &m.target {
                                 let t = t.read();
                                 if t.stereotype.as_str() != "quantity" {
-                                    problems.push(ValidationProblem::Error { uuid: *m.uuid, text: format!("«subquantityOf» must have «quantity» on the target end") });
+                                    problems.push(ValidationProblem::Error {
+                                        uuid: *m.uuid,
+                                        error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
+                                        text: format!("«subquantityOf» must have «quantity» on the target end"),
+                                    });
                                 }
                             }
                         }
@@ -296,8 +392,12 @@ impl OntoUMLValidationTab {
             r_validate_subtyping(&mut problems, &mut element_infos, e);
         }
         for (k, info) in &element_infos {
-            if requires_identity(&*info.stereotype) && info.identity_providers_no != 1 {
-                problems.push(ValidationProblem::Error { uuid: *k, text: format!("element does not have exactly one identity provider (found {})", info.identity_providers_no) });
+            if requires_identity(&*info.stereotype) && (info.identity_providers_min != 1 || info.identity_providers_max != 1) {
+                problems.push(ValidationProblem::Error {
+                    uuid: *k,
+                    error_type: ErrorType::InvalidIdentity,
+                    text: format!("element does not have exactly one identity provider (found {}..{})", info.identity_providers_min, info.identity_providers_max),
+                });
             }
             fn r_lowerbounds(infos: &HashMap<ModelUuid, ElementInfo>, uuid: &ModelUuid) -> usize {
                 if let Some(e) = infos.get(uuid) {
@@ -318,23 +418,43 @@ impl OntoUMLValidationTab {
                 }
             }
             if info.stereotype.as_str() == "role" && r_lowerbounds(&element_infos, &k) == 0 {
-                problems.push(ValidationProblem::Error { uuid: *k, text: format!("«role» must be connected to a «mediation»") });
+                problems.push(ValidationProblem::Error {
+                    uuid: *k,
+                    error_type: ErrorType::InvalidRole,
+                    text: format!("«role» must be connected to a «mediation»"),
+                });
             }
             if info.stereotype.as_str() == "relator" && r_lowerbounds(&element_infos, &k) < 2 {
-                problems.push(ValidationProblem::Error { uuid: *k, text: format!("«relator» must have sum of lower bounds on the opposite sides of «mediation»s of at least 2") });
+                problems.push(ValidationProblem::Error {
+                    uuid: *k,
+                    error_type: ErrorType::InvalidRelator,
+                    text: format!("«relator» must have sum of lower bounds on the opposite sides of «mediation»s of at least 2"),
+                });
             }
             if info.stereotype.as_str() == "phase" && !info.in_disjoint_complete_set {
-                problems.push(ValidationProblem::Error { uuid: *k, text: format!("«phase» must always be part of a generalization set which is disjoint and complete") });
+                problems.push(ValidationProblem::Error {
+                    uuid: *k,
+                    error_type: ErrorType::InvalidPhase,
+                    text: format!("«phase» must always be part of a generalization set which is disjoint and complete"),
+                });
             }
             if (info.stereotype.as_str() == "category"
                 || info.stereotype.as_str() == "mixin"
                 || info.stereotype.as_str() == "phaseMixin"
                 || info.stereotype.as_str() == "roleMixin") && !info.is_abstract {
-                problems.push(ValidationProblem::Error { uuid: *k, text: format!("«{}» must always be abstract", info.stereotype) });
+                problems.push(ValidationProblem::Error {
+                    uuid: *k,
+                    error_type: ErrorType::InvalidNonabstractMixin,
+                    text: format!("«{}» must always be abstract", info.stereotype),
+                });
             }
             if (info.stereotype.as_str() == "quality" || info.stereotype.as_str() == "mode")
                 && info.direct_characterizations_toward < 1 {
-                problems.push(ValidationProblem::Error { uuid: *k, text: format!("«{}» must be at the target end of at least one «characterization»", info.stereotype) });
+                problems.push(ValidationProblem::Error {
+                    uuid: *k,
+                    error_type: ErrorType::InvalidMissingCharacterization,
+                    text: format!("«{}» must be at the target end of at least one «characterization»", info.stereotype),
+                });
             }
         }
 
@@ -486,7 +606,7 @@ impl CustomTab for OntoUMLValidationTab {
                             });
 
                             match rr {
-                                ValidationProblem::Error { uuid, text } => {
+                                ValidationProblem::Error { uuid, text, .. } => {
                                     row.col(|ui| {
                                         ui.label(text);
                                     });
@@ -505,10 +625,11 @@ impl CustomTab for OntoUMLValidationTab {
     }
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
 enum ValidationProblem {
     Error {
         uuid: ModelUuid,
+        error_type: ErrorType,
         text: String,
     },
     AntiPattern {
@@ -517,7 +638,26 @@ enum ValidationProblem {
     },
 }
 
-#[derive(Debug)]
+#[derive(PartialEq, Debug)]
+enum ErrorType {
+    InvalidSubtyping,
+    InvalidRelation(RelationError),
+    InvalidIdentity,
+    InvalidMissingCharacterization,
+    InvalidPhase,
+    InvalidRole,
+    InvalidRelator,
+    InvalidNonabstractMixin,
+}
+
+#[derive(PartialEq, Debug)]
+enum RelationError {
+    SourceStereotype,
+    TargetStereotype,
+    Multiplicities,
+}
+
+#[derive(PartialEq, Debug)]
 enum AntiPatternType {
     BinOver,
     DecInt,
@@ -539,4 +679,544 @@ enum AntiPatternType {
     UndefFormal,
     UndefPhase,
     WholeOver,
+}
+
+
+mod test {
+    use uuid::uuid;
+
+    use crate::domains::umlclass::{umlclass_controllers::UmlClassLabelProvider, umlclass_models::{UmlClass, UmlClassAssociation}};
+
+    use super::*;
+
+    fn generate_modeluuid(id: u32) -> ModelUuid {
+        uuid::Uuid::from_u128(id as u128).into()
+    }
+
+    fn new_class(id: u32, stereotype: &'static str, is_abstract: bool) -> ERef<UmlClass> {
+        ERef::new(
+            UmlClass::new(
+                generate_modeluuid(id),
+                "".to_owned(),
+                stereotype.to_owned(),
+                "".to_owned(),
+                is_abstract,
+                Vec::new(),
+                Vec::new(),
+            )
+        )
+    }
+
+    fn new_generalization(
+        id: u32,
+        sources: Vec<ERef<UmlClass>>, targets: Vec<ERef<UmlClass>>,
+        is_disjoint: bool, is_covering: bool,
+    ) ->ERef<UmlClassGeneralization> {
+        let mut g = UmlClassGeneralization::new(
+            generate_modeluuid(id),
+            sources,
+            targets,
+        );
+        g.set_is_disjoint = is_disjoint;
+        g.set_is_covering = is_covering;
+
+        ERef::new(g)
+    }
+
+    fn new_association(
+        id: u32,
+        stereotype: &'static str,
+        source: UmlClassClassifier,
+        target: UmlClassClassifier,
+    ) -> ERef<UmlClassAssociation> {
+        ERef::new(
+            UmlClassAssociation::new(
+                generate_modeluuid(id),
+                stereotype.to_owned(),
+                "".to_owned(),
+                source,
+                target,
+            )
+        )
+    }
+
+    fn new_diagram(elements: Vec<UmlClassElement>) -> ERef<UmlClassDiagram> {
+        ERef::new(
+            UmlClassDiagram::new(
+                uuid!("10000000-0000-0000-0000-000000000000").into(),
+                "Test OntoUML Diagram".to_owned(),
+                elements,
+            )
+        )
+    }
+
+    fn validate(elements: Vec<UmlClassElement>, check_errors: bool, check_antipatterns: bool) -> Vec<ValidationProblem> {
+        let d = new_diagram(elements);
+        let vt = super::OntoUMLValidationTab::new(d, ERef::new(UmlClassLabelProvider::default()), uuid::Uuid::nil().into());
+        vt.validate(check_errors, check_antipatterns)
+    }
+
+    // Structure validations tests
+
+    #[test]
+    fn test_valid_subtyping() {
+        let subkind = new_class(1, "subkind", false);
+        let kind = new_class(2, "kind", false);
+        let generalization = new_generalization(3, vec![subkind.clone()], vec![kind.clone()], true, true);
+
+        assert_eq!(
+            validate(vec![subkind.into(), kind.into(), generalization.into()], true, false),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_subtyping() {
+        let subkind = new_class(1, "subkind", false);
+        let kind = new_class(2, "kind", false);
+        let generalization = new_generalization(3, vec![kind.clone()], vec![subkind.clone()], true, true);
+        let gen_uuid = *generalization.read().uuid;
+
+        assert!(
+            validate(vec![subkind.into(), kind.into(), generalization.into()], true, false)
+                .iter().find(|e| matches!(e, ValidationProblem::Error { uuid, error_type: ErrorType::InvalidSubtyping, .. } if *uuid == gen_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_valid_relation() {
+        let quality = new_class(1, "quality", false);
+        let collective = new_class(2, "collective", false);
+        let memberOf = new_association(3, "memberOf", collective.clone().into(), quality.clone().into());
+        memberOf.write().source_label_multiplicity = Arc::new("1".to_owned());
+        memberOf.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        let mode = new_class(4, "mode", false);
+        let quantity = new_class(5, "quantity", false);
+        let containment = new_association(6, "containment", mode.clone().into(), quantity.clone().into());
+        containment.write().source_label_multiplicity = Arc::new("1".to_owned());
+        containment.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        let elements = vec![
+            quality.into(), collective.into(), memberOf.into(),
+            mode.into(), quantity.into(), containment.into(),
+        ];
+
+        assert_eq!(
+            validate(elements, true, false)
+                // for the sake of simplicity, ignore the MissingCharacterization errors
+                .into_iter().filter(|e| !matches!(e, ValidationProblem::Error { error_type: ErrorType::InvalidMissingCharacterization, .. }))
+                .collect::<Vec<ValidationProblem>>(),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_relation() {
+        let quality = new_class(1, "quality", false);
+        let collective = new_class(2, "collective", false);
+        let memberOf = new_association(3, "memberOf", quality.clone().into(), collective.clone().into());
+        memberOf.write().source_label_multiplicity = Arc::new("1".to_owned());
+        memberOf.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let memberOf_uuid = *memberOf.read().uuid;
+
+        let mode = new_class(4, "mode", false);
+        let containment = new_association(5, "containment", quality.clone().into(), mode.clone().into());
+        containment.write().source_label_multiplicity = Arc::new("1".to_owned());
+        containment.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let containment_uuid = *containment.read().uuid;
+
+        let elements = vec![
+            quality.into(), collective.into(), memberOf.into(),
+            mode.into(), containment.into(),
+        ];
+        let result = validate(elements, true, false);
+
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid,
+                    error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
+                    ..
+                } if *uuid == memberOf_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid,
+                    error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
+                    ..
+                } if *uuid == containment_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_valid_identity() {
+        // subkind, phase, role subtype of kind
+        let kind1 = new_class(1, "kind", false);
+        let subkind1 = new_class(2, "subkind", false);
+        let phase = new_class(3, "phase", false);
+        let role = new_class(4, "role", false);
+        let generalization1 = new_generalization(5, vec![subkind1.clone(), phase.clone(), role.clone()], vec![kind1.clone()], true, true);
+
+        // disjoint generalization set of kinds
+        let kind2 = new_class(6, "kind", false);
+        let kind3 = new_class(7, "kind", false);
+        let subkind2 = new_class(8, "subkind", false);
+        let generalization2 = new_generalization(9, vec![subkind2.clone()], vec![kind2.clone(), kind3.clone()], true, true);
+
+        let elements = vec![
+            kind1.into(), subkind1.into(), phase.into(), role.into(), generalization1.into(),
+            kind2.into(), kind3.into(), subkind2.into(), generalization2.into(),
+        ];
+
+        assert_eq!(
+            validate(elements, true, false)
+                // for the sake of simplicity, ignore missing dependencies
+                .into_iter().filter(|e| !matches!(e, ValidationProblem::Error { error_type: ErrorType::InvalidPhase | ErrorType::InvalidRole, .. }))
+                .collect::<Vec<ValidationProblem>>(),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_identity() {
+        // kind subtype of subkind (with no identity provider)
+        let kind1 = new_class(1, "kind", false);
+        let kind1_uuid = *kind1.read().uuid;
+        let subkind1 = new_class(2, "subkind", false);
+        let subkind1_uuid = *subkind1.read().uuid;
+        let generalization1 = new_generalization(3, vec![kind1.clone()], vec![subkind1.clone()], true, true);
+
+        // disjoint generalization set where one possibility does not provide identity
+        let kind2 = new_class(4, "kind", false);
+        let category = new_class(5, "category", true);
+        let subkind2 = new_class(6, "subkind", false);
+        let subkind2_uuid = *subkind2.read().uuid;
+        let generalization2 = new_generalization(7, vec![subkind2.clone()], vec![kind2.clone(), category.clone()], true, true);
+
+        let elements = vec![
+            kind1.into(), subkind1.into(), generalization1.into(),
+            kind2.into(), category.into(), subkind2.into(), generalization2.into(),
+        ];
+        let result = validate(elements, true, false);
+
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidIdentity,
+                    ..
+                } if *uuid == kind1_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidIdentity,
+                    ..
+                } if *uuid == subkind1_uuid)).is_some()
+        );
+
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidIdentity,
+                    ..
+                } if *uuid == subkind2_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_valid_missing_characterization() {
+        // kind characterized by quality
+        let kind = new_class(1, "kind", false);
+        let mode = new_class(2, "mode", false);
+        let mode_uuid = *mode.read().uuid;
+        let characterization1 = new_association(3, "characterization", kind.clone().into(), mode.clone().into());
+        characterization1.write().source_label_multiplicity = Arc::new("1".to_owned());
+        characterization1.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let quality = new_class(4, "quality", false);
+        let quality_uuid = *quality.read().uuid;
+        let characterization2 = new_association(5, "characterization", kind.clone().into(), quality.clone().into());
+        characterization2.write().source_label_multiplicity = Arc::new("1".to_owned());
+        characterization2.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        let elements = vec![
+            kind.into(), mode.into(), characterization1.into(),
+            quality.into(), characterization2.into(),
+        ];
+        assert_eq!(validate(elements, true, false), vec![]);
+    }
+
+    #[test]
+    fn test_invalid_missing_characterization() {
+        let mode = new_class(1, "mode", false);
+        let mode_uuid = *mode.read().uuid;
+        let quality = new_class(2, "quality", false);
+        let quality_uuid = *quality.read().uuid;
+
+        let elements = vec![
+            mode.into(), quality.into(),
+        ];
+        let result = validate(elements, true, false);
+
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidMissingCharacterization,
+                    ..
+                } if *uuid == mode_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidMissingCharacterization,
+                    ..
+                } if *uuid == quality_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_valid_phase() {
+        // phase in a generalization set (disjoint, complete) from kind
+        let kind = new_class(1, "kind", false);
+        let phase = new_class(2, "phase", false);
+        let phase_uuid = *phase.read().uuid;
+        let generalization = new_generalization(3, vec![phase.clone()], vec![kind.clone()], true, true);
+
+        let elements = vec![
+            kind.into(), phase.into(), generalization.into(),
+        ];
+        assert_eq!(validate(elements, true, false), vec![]);
+    }
+
+    #[test]
+    fn test_invalid_phase() {
+        // phase without a generalization set
+        let phase1 = new_class(1, "phase", false);
+        let phase1_uuid = *phase1.read().uuid;
+
+        // phase in a non-partition generalization set
+        let kind = new_class(2, "kind", false);
+        let phase2 = new_class(3, "phase", false);
+        let phase2_uuid = *phase2.read().uuid;
+        let generalization = new_generalization(4, vec![phase2.clone()], vec![kind.clone()], false, false);
+
+        let elements = vec![
+            phase1.into(),
+            kind.into(), phase2.into(), generalization.into(),
+        ];
+        let result = validate(elements, true, false);
+
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidPhase,
+                    ..
+                } if *uuid == phase1_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidPhase,
+                    ..
+                } if *uuid == phase2_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_valid_role() {
+        // role that has mediation
+        let kind = new_class(1, "kind", false);
+        let role = new_class(2, "role", false);
+        let generalization = new_generalization(3, vec![role.clone()], vec![kind.clone()], true, true);
+        let role_uuid = *role.read().uuid;
+        let relator = new_class(4, "relator", false);
+        let mediation = new_association(5, "mediation", role.clone().into(), relator.clone().into());
+        mediation.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        let elements = vec![
+            kind.into(), role.into(), generalization.into(),
+            relator.into(), mediation.into(),
+        ];
+
+        assert_eq!(
+            validate(elements, true, false)
+                // for the sake of simplicity, ignore relator errors
+                .into_iter().filter(|e| !matches!(e, ValidationProblem::Error { error_type: ErrorType::InvalidRelator, .. }))
+                .collect::<Vec<ValidationProblem>>(),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_role() {
+        // role without a mediation
+        let role = new_class(1, "role", false);
+        let role_uuid = *role.read().uuid;
+
+        let result = validate(vec![role.into()], true, false);
+
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidRole,
+                    ..
+                } if *uuid == role_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_valid_relator() {
+        // relator with one mediation with multiplicity >1
+        let relator2 = new_class(2, "relator", false);
+        let relator2_uuid = *relator2.read().uuid;
+        let kind1 = new_class(3, "kind", false);
+        let mediation1 = new_association(4, "mediation", kind1.clone().into(), relator2.clone().into());
+        mediation1.write().source_label_multiplicity = Arc::new("2".to_owned());
+        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        // relator with two mediations with multiplicity =1
+        let relator3 = new_class(5, "relator", false);
+        let kind2 = new_class(6, "kind", false);
+        let mediation2 = new_association(7, "mediation", kind2.clone().into(), relator3.clone().into());
+        mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let kind3 = new_class(8, "kind", false);
+        let mediation3 = new_association(9, "mediation", kind3.clone().into(), relator3.clone().into());
+        let mediation3_uuid = *mediation3.read().uuid;
+        mediation3.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation3.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        let elements = vec![
+            relator2.into(), kind1.into(), mediation1.into(),
+            relator3.into(), kind2.into(), mediation2.into(), kind3.into(), mediation3.into(),
+        ];
+        assert_eq!(validate(elements, true, false), vec![]);
+    }
+
+    #[test]
+    fn test_invalid_relator() {
+        // relator with no mediation
+        let relator1 = new_class(1, "relator", false);
+        let relator1_uuid = *relator1.read().uuid;
+
+        // relator with one mediation with multiplicity =1
+        let relator2 = new_class(2, "relator", false);
+        let relator2_uuid = *relator2.read().uuid;
+        let kind1 = new_class(3, "kind", false);
+        let mediation1 = new_association(4, "mediation", kind1.clone().into(), relator2.clone().into());
+        mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        // relator with two mediations with multiplicity 0..1
+        let relator3 = new_class(5, "relator", false);
+        let relator3_uuid = *relator3.read().uuid;
+        let kind2 = new_class(6, "kind", false);
+        let mediation2 = new_association(7, "mediation", kind2.clone().into(), relator3.clone().into());
+        let mediation2_uuid = *mediation2.read().uuid;
+        mediation2.write().source_label_multiplicity = Arc::new("0..1".to_owned());
+        mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let kind3 = new_class(8, "kind", false);
+        let mediation3 = new_association(9, "mediation", kind3.clone().into(), relator3.clone().into());
+        mediation3.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation3.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        let elements = vec![
+            relator1.into(),
+            relator2.into(), kind1.into(), mediation1.into(),
+            relator3.into(), kind2.into(), mediation2.into(), kind3.into(), mediation3.into(),
+        ];
+        let result = validate(elements, true, false);
+
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidRelator,
+                    ..
+                } if *uuid == relator1_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidRelator,
+                    ..
+                } if *uuid == relator2_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidRelator,
+                    ..
+                } if *uuid == relator3_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                    ..
+                } if *uuid == mediation2_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_valid_mixins() {
+        let category = new_class(1, "category", true);
+        let mixin = new_class(2, "mixin", true);
+        let roleMixin = new_class(3, "roleMixin", true);
+        let phaseMixin = new_class(4, "phaseMixin", true);
+
+        let elements = vec![
+            category.into(), mixin.into(), roleMixin.into(), phaseMixin.into(),
+        ];
+        assert_eq!(validate(elements, true, false), vec![]);
+    }
+
+    #[test]
+    fn test_invalid_mixins() {
+        let category = new_class(1, "category", false);
+        let category_uuid = *category.read().uuid;
+        let mixin = new_class(2, "mixin", false);
+        let mixin_uuid = *mixin.read().uuid;
+        let roleMixin = new_class(3, "roleMixin", false);
+        let roleMixin_uuid = *roleMixin.read().uuid;
+        let phaseMixin = new_class(4, "phaseMixin", false);
+        let phaseMixin_uuid = *phaseMixin.read().uuid;
+
+        let elements = vec![
+            category.into(), mixin.into(), roleMixin.into(), phaseMixin.into(),
+        ];
+        let result = validate(elements, true, false);
+
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidNonabstractMixin,
+                    ..
+                } if *uuid == category_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidNonabstractMixin,
+                    ..
+                } if *uuid == mixin_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidNonabstractMixin,
+                    ..
+                } if *uuid == roleMixin_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidNonabstractMixin,
+                    ..
+                } if *uuid == phaseMixin_uuid)).is_some()
+        );
+    }
+
+    // TODO: Antipatterns validations tests
 }
