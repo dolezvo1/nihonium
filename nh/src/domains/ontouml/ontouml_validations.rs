@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use eframe::egui;
 
-use crate::{common::{canvas::Highlight, controller::{DiagramCommand, LabelProvider, Model, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, domains::umlclass::umlclass_models::{UmlClassClassifier, UmlClassGeneralization}, CustomTab};
+use crate::{CustomTab, common::{canvas::Highlight, controller::{DiagramCommand, LabelProvider, Model, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, domains::{ontouml::ontouml_models, umlclass::umlclass_models::{UmlClassClassifier, UmlClassGeneralization}}};
 use super::super::umlclass::umlclass_models::{UmlClassDiagram, UmlClassElement};
 
 pub struct OntoUMLValidationTab {
@@ -51,20 +51,20 @@ impl OntoUMLValidationTab {
         // Subtyping and identity providers validation
         fn valid_direct_subtyping(s: &str, t: &str) -> bool {
             match (s, t) {
-                ("kind" | "collective" | "quantity" | "relator" | "quality" | "mode" | "category" | "mixin", "category" | "mixin") => true,
-                ("subkind" | "role", "kind" | "subkind" | "collective" | "quantity" | "relator" | "category" | "mixin" | "mode" | "quality") => true,
-                ("phase", "kind" | "subkind" | "collective" | "quantity" | "relator" | "mixin" | "mode" | "quality" | "phase" | "phaseMixin") => true,
-                ("role", "role" | "roleMixin") => true,
-                ("phaseMixin", "mixin" | "phaseMixin" | "category") => true,
-                ("roleMixin", "mixin" | "roleMixin" | "category" | "phaseMixin") => true,
+                (ontouml_models::KIND | ontouml_models::COLLECTIVE | ontouml_models::QUANTITY | ontouml_models::RELATOR | ontouml_models::QUALITY | ontouml_models::MODE | ontouml_models::CATEGORY | ontouml_models::MIXIN, ontouml_models::CATEGORY | ontouml_models::MIXIN) => true,
+                (ontouml_models::SUBKIND | ontouml_models::ROLE, ontouml_models::KIND | ontouml_models::SUBKIND | ontouml_models::COLLECTIVE | ontouml_models::QUANTITY | ontouml_models::RELATOR | ontouml_models::CATEGORY | ontouml_models::MIXIN | ontouml_models::MODE | ontouml_models::QUALITY) => true,
+                (ontouml_models::PHASE, ontouml_models::KIND | ontouml_models::SUBKIND | ontouml_models::COLLECTIVE | ontouml_models::QUANTITY | ontouml_models::RELATOR | ontouml_models::MIXIN | ontouml_models::MODE | ontouml_models::QUALITY | ontouml_models::PHASE | ontouml_models::PHASE_MIXIN) => true,
+                (ontouml_models::ROLE, ontouml_models::ROLE | ontouml_models::ROLE_MIXIN) => true,
+                (ontouml_models::PHASE_MIXIN, ontouml_models::MIXIN | ontouml_models::PHASE_MIXIN | ontouml_models::CATEGORY) => true,
+                (ontouml_models::ROLE_MIXIN, ontouml_models::MIXIN | ontouml_models::ROLE_MIXIN | ontouml_models::CATEGORY | ontouml_models::PHASE_MIXIN) => true,
                 _ => false,
             }
         }
         fn is_identity_provider(s: &str) -> bool {
-            ["kind", "collective", "quantity", "relator", "quality", "mode"].iter().find(|e| **e == s).is_some()
+            [ontouml_models::KIND, ontouml_models::COLLECTIVE, ontouml_models::QUANTITY, ontouml_models::RELATOR, ontouml_models::QUALITY, ontouml_models::MODE].iter().find(|e| **e == s).is_some()
         }
         fn requires_identity(s: &str) -> bool {
-            ["category", "mixin", "phaseMixin", "roleMixin"].iter().find(|e| **e == s).is_none()
+            [ontouml_models::CATEGORY, ontouml_models::MIXIN, ontouml_models::PHASE_MIXIN, ontouml_models::ROLE_MIXIN].iter().find(|e| **e == s).is_none()
         }
         #[derive(Default)]
         struct ElementInfo {
@@ -105,7 +105,7 @@ impl OntoUMLValidationTab {
                     let m = inner.read();
                     let identity_providers_no = m.targets.iter()
                         .filter(|t| is_identity_provider(&*t.read().stereotype) || requires_identity(&*t.read().stereotype)).count();
-                    let (weight_min, weight_max) = if m.set_is_disjoint || m.targets.len() == 1 {
+                    let (weight_min, weight_max) = if m.set_is_disjoint || (m.sources.len() == 1 && m.targets.len() == 1) {
                         (if identity_providers_no == m.targets.len() { 1 } else { 0 }, identity_providers_no.min(1))
                     } else {
                         if m.set_is_covering {
@@ -179,7 +179,7 @@ impl OntoUMLValidationTab {
                     }
 
                     match m.stereotype.as_str() {
-                        "mediation" => {
+                        ontouml_models::MEDIATION => {
                             if let Some(((lm1, _), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 < 1 || lm2 < 1) {
                                 problems.push(ValidationProblem::Error {
@@ -197,7 +197,7 @@ impl OntoUMLValidationTab {
                                 e.direct_mediations_opposing_lower_bounds += lm;
                             }
                         }
-                        "characterization" => {
+                        ontouml_models::CHARACTERIZATION => {
                             if let Some(((lm1, um1), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 < 1) {
                                 problems.push(ValidationProblem::Error {
@@ -210,7 +210,7 @@ impl OntoUMLValidationTab {
                                 let t = t.read();
                                 let mut e = element_infos.entry(*t.uuid).or_default();
 
-                                if t.stereotype.as_str() != "quality" && t.stereotype.as_str() != "mode" {
+                                if t.stereotype.as_str() != ontouml_models::QUALITY && t.stereotype.as_str() != ontouml_models::MODE {
                                     problems.push(ValidationProblem::Error {
                                         uuid: *m.uuid,
                                         error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
@@ -221,19 +221,7 @@ impl OntoUMLValidationTab {
                                 e.direct_characterizations_toward += 1;
                             }
                         },
-                        "derivation" => {
-                            if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
-                                problems.push(ValidationProblem::Error {
-                                    uuid: *m.uuid,
-                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                    text: format!("«derivation» must have multiplicities of 1..1"),
-                                });
-                            }
-                            // source: Relator
-                            // target: material
-                        },
-                        "structuration" => {
+                        ontouml_models::STRUCTURATION => {
                             if let Some(((_, _), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm2 != 1 || um2.is_none_or(|um| um != 1)) {
                                 problems.push(ValidationProblem::Error {
@@ -245,7 +233,7 @@ impl OntoUMLValidationTab {
 
                             if let UmlClassClassifier::UmlClass(s) = &m.source {
                                 let s = s.read();
-                                if s.stereotype.as_str() != "quality" {
+                                if s.stereotype.as_str() != ontouml_models::QUALITY {
                                     problems.push(ValidationProblem::Error {
                                         uuid: *m.uuid,
                                         error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
@@ -256,7 +244,7 @@ impl OntoUMLValidationTab {
 
                             if let UmlClassClassifier::UmlClass(t) = &m.target {
                                 let t = t.read();
-                                if t.stereotype.as_str() != "quality" && t.stereotype.as_str() != "mode" {
+                                if t.stereotype.as_str() !=ontouml_models::QUALITY && t.stereotype.as_str() != ontouml_models::MODE {
                                     problems.push(ValidationProblem::Error {
                                         uuid: *m.uuid,
                                         error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
@@ -265,7 +253,7 @@ impl OntoUMLValidationTab {
                                 }
                             }
                         }
-                        "componentOf" => {
+                        ontouml_models::COMPONENT_OF => {
                             if let Some(((lm1, _), (_, _))) = source_multiplicity.zip(target_multiplicity)
                                 && lm1 < 1 {
                                 problems.push(ValidationProblem::Error {
@@ -275,7 +263,7 @@ impl OntoUMLValidationTab {
                                 });
                             }
                         }
-                        "subcollectionOf" => {
+                        ontouml_models::SUBCOLLECTION_OF => {
                             if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
                                 problems.push(ValidationProblem::Error {
@@ -287,7 +275,7 @@ impl OntoUMLValidationTab {
 
                             if let UmlClassClassifier::UmlClass(s) = &m.source {
                                 let s = s.read();
-                                if s.stereotype.as_str() != "collective" {
+                                if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
                                     problems.push(ValidationProblem::Error {
                                         uuid: *m.uuid,
                                         error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
@@ -298,7 +286,7 @@ impl OntoUMLValidationTab {
 
                             if let UmlClassClassifier::UmlClass(t) = &m.target {
                                 let t = t.read();
-                                if t.stereotype.as_str() != "collective" {
+                                if t.stereotype.as_str() != ontouml_models::COLLECTIVE {
                                     problems.push(ValidationProblem::Error {
                                         uuid: *m.uuid,
                                         error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
@@ -307,7 +295,7 @@ impl OntoUMLValidationTab {
                                 }
                             }
                         }
-                        "memberOf" => {
+                        ontouml_models::MEMBER_OF => {
                             if let Some(((lm1, _), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 < 1 || lm2 < 1) {
                                 problems.push(ValidationProblem::Error {
@@ -319,7 +307,7 @@ impl OntoUMLValidationTab {
 
                             if let UmlClassClassifier::UmlClass(s) = &m.source {
                                 let s = s.read();
-                                if s.stereotype.as_str() != "collective" {
+                                if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
                                     problems.push(ValidationProblem::Error {
                                         uuid: *m.uuid,
                                         error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
@@ -328,7 +316,7 @@ impl OntoUMLValidationTab {
                                 }
                             }
                         }
-                        "containment" => {
+                        ontouml_models::CONTAINMENT => {
                             if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
                                 problems.push(ValidationProblem::Error {
@@ -340,7 +328,7 @@ impl OntoUMLValidationTab {
 
                             if let UmlClassClassifier::UmlClass(t) = &m.target {
                                 let t = t.read();
-                                if t.stereotype.as_str() != "quantity" {
+                                if t.stereotype.as_str() != ontouml_models::QUANTITY {
                                     problems.push(ValidationProblem::Error {
                                         uuid: *m.uuid,
                                         error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
@@ -349,7 +337,7 @@ impl OntoUMLValidationTab {
                                 }
                             }
                         }
-                        "subquantityOf" => {
+                        ontouml_models::SUBQUANTITY_OF => {
                             if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
                                 && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
                                 problems.push(ValidationProblem::Error {
@@ -361,7 +349,7 @@ impl OntoUMLValidationTab {
 
                             if let UmlClassClassifier::UmlClass(s) = &m.source {
                                 let s = s.read();
-                                if s.stereotype.as_str() != "quantity" {
+                                if s.stereotype.as_str() != ontouml_models::QUANTITY {
                                     problems.push(ValidationProblem::Error {
                                         uuid: *m.uuid,
                                         error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
@@ -372,7 +360,7 @@ impl OntoUMLValidationTab {
 
                             if let UmlClassClassifier::UmlClass(t) = &m.target {
                                 let t = t.read();
-                                if t.stereotype.as_str() != "quantity" {
+                                if t.stereotype.as_str() != ontouml_models::QUANTITY {
                                     problems.push(ValidationProblem::Error {
                                         uuid: *m.uuid,
                                         error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
@@ -417,38 +405,38 @@ impl OntoUMLValidationTab {
                     0
                 }
             }
-            if info.stereotype.as_str() == "role" && r_lowerbounds(&element_infos, &k) == 0 {
+            if info.stereotype.as_str() == ontouml_models::ROLE && r_lowerbounds(&element_infos, &k) == 0 {
                 problems.push(ValidationProblem::Error {
                     uuid: *k,
                     error_type: ErrorType::InvalidRole,
                     text: format!("«role» must be connected to a «mediation»"),
                 });
             }
-            if info.stereotype.as_str() == "relator" && r_lowerbounds(&element_infos, &k) < 2 {
+            if info.stereotype.as_str() == ontouml_models::RELATOR && r_lowerbounds(&element_infos, &k) < 2 {
                 problems.push(ValidationProblem::Error {
                     uuid: *k,
                     error_type: ErrorType::InvalidRelator,
                     text: format!("«relator» must have sum of lower bounds on the opposite sides of «mediation»s of at least 2"),
                 });
             }
-            if info.stereotype.as_str() == "phase" && !info.in_disjoint_complete_set {
+            if info.stereotype.as_str() == ontouml_models::PHASE && !info.in_disjoint_complete_set {
                 problems.push(ValidationProblem::Error {
                     uuid: *k,
                     error_type: ErrorType::InvalidPhase,
                     text: format!("«phase» must always be part of a generalization set which is disjoint and complete"),
                 });
             }
-            if (info.stereotype.as_str() == "category"
-                || info.stereotype.as_str() == "mixin"
-                || info.stereotype.as_str() == "phaseMixin"
-                || info.stereotype.as_str() == "roleMixin") && !info.is_abstract {
+            if (info.stereotype.as_str() == ontouml_models::CATEGORY
+                || info.stereotype.as_str() == ontouml_models::MIXIN
+                || info.stereotype.as_str() == ontouml_models::PHASE_MIXIN
+                || info.stereotype.as_str() == ontouml_models::ROLE_MIXIN) && !info.is_abstract {
                 problems.push(ValidationProblem::Error {
                     uuid: *k,
                     error_type: ErrorType::InvalidNonabstractMixin,
                     text: format!("«{}» must always be abstract", info.stereotype),
                 });
             }
-            if (info.stereotype.as_str() == "quality" || info.stereotype.as_str() == "mode")
+            if (info.stereotype.as_str() == ontouml_models::QUALITY || info.stereotype.as_str() == ontouml_models::MODE)
                 && info.direct_characterizations_toward < 1 {
                 problems.push(ValidationProblem::Error {
                     uuid: *k,
@@ -760,8 +748,8 @@ mod test {
 
     #[test]
     fn test_valid_subtyping() {
-        let subkind = new_class(1, "subkind", false);
-        let kind = new_class(2, "kind", false);
+        let subkind = new_class(1, ontouml_models::SUBKIND, false);
+        let kind = new_class(2, ontouml_models::KIND, false);
         let generalization = new_generalization(3, vec![subkind.clone()], vec![kind.clone()], true, true);
 
         assert_eq!(
@@ -772,8 +760,8 @@ mod test {
 
     #[test]
     fn test_invalid_subtyping() {
-        let subkind = new_class(1, "subkind", false);
-        let kind = new_class(2, "kind", false);
+        let subkind = new_class(1, ontouml_models::SUBKIND, false);
+        let kind = new_class(2, ontouml_models::KIND, false);
         let generalization = new_generalization(3, vec![kind.clone()], vec![subkind.clone()], true, true);
         let gen_uuid = *generalization.read().uuid;
 
@@ -785,15 +773,15 @@ mod test {
 
     #[test]
     fn test_valid_relation() {
-        let quality = new_class(1, "quality", false);
-        let collective = new_class(2, "collective", false);
-        let memberOf = new_association(3, "memberOf", collective.clone().into(), quality.clone().into());
+        let quality = new_class(1, ontouml_models::QUALITY, false);
+        let collective = new_class(2, ontouml_models::COLLECTIVE, false);
+        let memberOf = new_association(3, ontouml_models::MEMBER_OF, collective.clone().into(), quality.clone().into());
         memberOf.write().source_label_multiplicity = Arc::new("1".to_owned());
         memberOf.write().target_label_multiplicity = Arc::new("1".to_owned());
 
-        let mode = new_class(4, "mode", false);
-        let quantity = new_class(5, "quantity", false);
-        let containment = new_association(6, "containment", mode.clone().into(), quantity.clone().into());
+        let mode = new_class(4, ontouml_models::MODE, false);
+        let quantity = new_class(5, ontouml_models::QUANTITY, false);
+        let containment = new_association(6, ontouml_models::CONTAINMENT, mode.clone().into(), quantity.clone().into());
         containment.write().source_label_multiplicity = Arc::new("1".to_owned());
         containment.write().target_label_multiplicity = Arc::new("1".to_owned());
 
@@ -813,15 +801,15 @@ mod test {
 
     #[test]
     fn test_invalid_relation() {
-        let quality = new_class(1, "quality", false);
-        let collective = new_class(2, "collective", false);
-        let memberOf = new_association(3, "memberOf", quality.clone().into(), collective.clone().into());
+        let quality = new_class(1, ontouml_models::QUALITY, false);
+        let collective = new_class(2, ontouml_models::COLLECTIVE, false);
+        let memberOf = new_association(3, ontouml_models::MEMBER_OF, quality.clone().into(), collective.clone().into());
         memberOf.write().source_label_multiplicity = Arc::new("1".to_owned());
         memberOf.write().target_label_multiplicity = Arc::new("1".to_owned());
         let memberOf_uuid = *memberOf.read().uuid;
 
-        let mode = new_class(4, "mode", false);
-        let containment = new_association(5, "containment", quality.clone().into(), mode.clone().into());
+        let mode = new_class(4, ontouml_models::MODE, false);
+        let containment = new_association(5, ontouml_models::CONTAINMENT, quality.clone().into(), mode.clone().into());
         containment.write().source_label_multiplicity = Arc::new("1".to_owned());
         containment.write().target_label_multiplicity = Arc::new("1".to_owned());
         let containment_uuid = *containment.read().uuid;
@@ -853,16 +841,16 @@ mod test {
     #[test]
     fn test_valid_identity() {
         // subkind, phase, role subtype of kind
-        let kind1 = new_class(1, "kind", false);
-        let subkind1 = new_class(2, "subkind", false);
-        let phase = new_class(3, "phase", false);
-        let role = new_class(4, "role", false);
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
+        let phase = new_class(3, ontouml_models::PHASE, false);
+        let role = new_class(4, ontouml_models::ROLE, false);
         let generalization1 = new_generalization(5, vec![subkind1.clone(), phase.clone(), role.clone()], vec![kind1.clone()], true, true);
 
         // disjoint generalization set of kinds
-        let kind2 = new_class(6, "kind", false);
-        let kind3 = new_class(7, "kind", false);
-        let subkind2 = new_class(8, "subkind", false);
+        let kind2 = new_class(6, ontouml_models::KIND, false);
+        let kind3 = new_class(7, ontouml_models::KIND, false);
+        let subkind2 = new_class(8, ontouml_models::SUBKIND, false);
         let generalization2 = new_generalization(9, vec![subkind2.clone()], vec![kind2.clone(), kind3.clone()], true, true);
 
         let elements = vec![
@@ -882,16 +870,16 @@ mod test {
     #[test]
     fn test_invalid_identity() {
         // kind subtype of subkind (with no identity provider)
-        let kind1 = new_class(1, "kind", false);
+        let kind1 = new_class(1, ontouml_models::KIND, false);
         let kind1_uuid = *kind1.read().uuid;
-        let subkind1 = new_class(2, "subkind", false);
+        let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
         let subkind1_uuid = *subkind1.read().uuid;
         let generalization1 = new_generalization(3, vec![kind1.clone()], vec![subkind1.clone()], true, true);
 
         // disjoint generalization set where one possibility does not provide identity
-        let kind2 = new_class(4, "kind", false);
-        let category = new_class(5, "category", true);
-        let subkind2 = new_class(6, "subkind", false);
+        let kind2 = new_class(4, ontouml_models::KIND, false);
+        let category = new_class(5, ontouml_models::CATEGORY, true);
+        let subkind2 = new_class(6, ontouml_models::SUBKIND, false);
         let subkind2_uuid = *subkind2.read().uuid;
         let generalization2 = new_generalization(7, vec![subkind2.clone()], vec![kind2.clone(), category.clone()], true, true);
 
@@ -928,15 +916,15 @@ mod test {
     #[test]
     fn test_valid_missing_characterization() {
         // kind characterized by quality
-        let kind = new_class(1, "kind", false);
-        let mode = new_class(2, "mode", false);
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let mode = new_class(2, ontouml_models::MODE, false);
         let mode_uuid = *mode.read().uuid;
-        let characterization1 = new_association(3, "characterization", kind.clone().into(), mode.clone().into());
+        let characterization1 = new_association(3, ontouml_models::CHARACTERIZATION, kind.clone().into(), mode.clone().into());
         characterization1.write().source_label_multiplicity = Arc::new("1".to_owned());
         characterization1.write().target_label_multiplicity = Arc::new("1".to_owned());
-        let quality = new_class(4, "quality", false);
+        let quality = new_class(4, ontouml_models::QUALITY, false);
         let quality_uuid = *quality.read().uuid;
-        let characterization2 = new_association(5, "characterization", kind.clone().into(), quality.clone().into());
+        let characterization2 = new_association(5, ontouml_models::CHARACTERIZATION, kind.clone().into(), quality.clone().into());
         characterization2.write().source_label_multiplicity = Arc::new("1".to_owned());
         characterization2.write().target_label_multiplicity = Arc::new("1".to_owned());
 
@@ -949,9 +937,9 @@ mod test {
 
     #[test]
     fn test_invalid_missing_characterization() {
-        let mode = new_class(1, "mode", false);
+        let mode = new_class(1, ontouml_models::MODE, false);
         let mode_uuid = *mode.read().uuid;
-        let quality = new_class(2, "quality", false);
+        let quality = new_class(2, ontouml_models::QUALITY, false);
         let quality_uuid = *quality.read().uuid;
 
         let elements = vec![
@@ -978,8 +966,8 @@ mod test {
     #[test]
     fn test_valid_phase() {
         // phase in a generalization set (disjoint, complete) from kind
-        let kind = new_class(1, "kind", false);
-        let phase = new_class(2, "phase", false);
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let phase = new_class(2, ontouml_models::PHASE, false);
         let phase_uuid = *phase.read().uuid;
         let generalization = new_generalization(3, vec![phase.clone()], vec![kind.clone()], true, true);
 
@@ -992,12 +980,12 @@ mod test {
     #[test]
     fn test_invalid_phase() {
         // phase without a generalization set
-        let phase1 = new_class(1, "phase", false);
+        let phase1 = new_class(1, ontouml_models::PHASE, false);
         let phase1_uuid = *phase1.read().uuid;
 
         // phase in a non-partition generalization set
-        let kind = new_class(2, "kind", false);
-        let phase2 = new_class(3, "phase", false);
+        let kind = new_class(2, ontouml_models::KIND, false);
+        let phase2 = new_class(3, ontouml_models::PHASE, false);
         let phase2_uuid = *phase2.read().uuid;
         let generalization = new_generalization(4, vec![phase2.clone()], vec![kind.clone()], false, false);
 
@@ -1026,12 +1014,12 @@ mod test {
     #[test]
     fn test_valid_role() {
         // role that has mediation
-        let kind = new_class(1, "kind", false);
-        let role = new_class(2, "role", false);
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let role = new_class(2, ontouml_models::ROLE, false);
         let generalization = new_generalization(3, vec![role.clone()], vec![kind.clone()], true, true);
         let role_uuid = *role.read().uuid;
-        let relator = new_class(4, "relator", false);
-        let mediation = new_association(5, "mediation", role.clone().into(), relator.clone().into());
+        let relator = new_class(4, ontouml_models::RELATOR, false);
+        let mediation = new_association(5, ontouml_models::MEDIATION, role.clone().into(), relator.clone().into());
         mediation.write().source_label_multiplicity = Arc::new("1".to_owned());
         mediation.write().target_label_multiplicity = Arc::new("1".to_owned());
 
@@ -1052,7 +1040,7 @@ mod test {
     #[test]
     fn test_invalid_role() {
         // role without a mediation
-        let role = new_class(1, "role", false);
+        let role = new_class(1, ontouml_models::ROLE, false);
         let role_uuid = *role.read().uuid;
 
         let result = validate(vec![role.into()], true, false);
@@ -1069,21 +1057,21 @@ mod test {
     #[test]
     fn test_valid_relator() {
         // relator with one mediation with multiplicity >1
-        let relator2 = new_class(2, "relator", false);
+        let relator2 = new_class(2, ontouml_models::RELATOR, false);
         let relator2_uuid = *relator2.read().uuid;
-        let kind1 = new_class(3, "kind", false);
-        let mediation1 = new_association(4, "mediation", kind1.clone().into(), relator2.clone().into());
+        let kind1 = new_class(3, ontouml_models::KIND, false);
+        let mediation1 = new_association(4, ontouml_models::MEDIATION, kind1.clone().into(), relator2.clone().into());
         mediation1.write().source_label_multiplicity = Arc::new("2".to_owned());
         mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
 
         // relator with two mediations with multiplicity =1
-        let relator3 = new_class(5, "relator", false);
-        let kind2 = new_class(6, "kind", false);
-        let mediation2 = new_association(7, "mediation", kind2.clone().into(), relator3.clone().into());
+        let relator3 = new_class(5, ontouml_models::RELATOR, false);
+        let kind2 = new_class(6, ontouml_models::KIND, false);
+        let mediation2 = new_association(7, ontouml_models::MEDIATION, kind2.clone().into(), relator3.clone().into());
         mediation2.write().source_label_multiplicity = Arc::new("1".to_owned());
         mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
-        let kind3 = new_class(8, "kind", false);
-        let mediation3 = new_association(9, "mediation", kind3.clone().into(), relator3.clone().into());
+        let kind3 = new_class(8, ontouml_models::KIND, false);
+        let mediation3 = new_association(9, ontouml_models::MEDIATION, kind3.clone().into(), relator3.clone().into());
         let mediation3_uuid = *mediation3.read().uuid;
         mediation3.write().source_label_multiplicity = Arc::new("1".to_owned());
         mediation3.write().target_label_multiplicity = Arc::new("1".to_owned());
@@ -1098,27 +1086,27 @@ mod test {
     #[test]
     fn test_invalid_relator() {
         // relator with no mediation
-        let relator1 = new_class(1, "relator", false);
+        let relator1 = new_class(1, ontouml_models::RELATOR, false);
         let relator1_uuid = *relator1.read().uuid;
 
         // relator with one mediation with multiplicity =1
-        let relator2 = new_class(2, "relator", false);
+        let relator2 = new_class(2, ontouml_models::RELATOR, false);
         let relator2_uuid = *relator2.read().uuid;
-        let kind1 = new_class(3, "kind", false);
-        let mediation1 = new_association(4, "mediation", kind1.clone().into(), relator2.clone().into());
+        let kind1 = new_class(3, ontouml_models::KIND, false);
+        let mediation1 = new_association(4, ontouml_models::MEDIATION, kind1.clone().into(), relator2.clone().into());
         mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
         mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
 
         // relator with two mediations with multiplicity 0..1
-        let relator3 = new_class(5, "relator", false);
+        let relator3 = new_class(5, ontouml_models::RELATOR, false);
         let relator3_uuid = *relator3.read().uuid;
-        let kind2 = new_class(6, "kind", false);
-        let mediation2 = new_association(7, "mediation", kind2.clone().into(), relator3.clone().into());
+        let kind2 = new_class(6, ontouml_models::KIND, false);
+        let mediation2 = new_association(7, ontouml_models::MEDIATION, kind2.clone().into(), relator3.clone().into());
         let mediation2_uuid = *mediation2.read().uuid;
         mediation2.write().source_label_multiplicity = Arc::new("0..1".to_owned());
         mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
-        let kind3 = new_class(8, "kind", false);
-        let mediation3 = new_association(9, "mediation", kind3.clone().into(), relator3.clone().into());
+        let kind3 = new_class(8, ontouml_models::KIND, false);
+        let mediation3 = new_association(9, ontouml_models::MEDIATION, kind3.clone().into(), relator3.clone().into());
         mediation3.write().source_label_multiplicity = Arc::new("1".to_owned());
         mediation3.write().target_label_multiplicity = Arc::new("1".to_owned());
 
@@ -1161,10 +1149,10 @@ mod test {
 
     #[test]
     fn test_valid_mixins() {
-        let category = new_class(1, "category", true);
-        let mixin = new_class(2, "mixin", true);
-        let roleMixin = new_class(3, "roleMixin", true);
-        let phaseMixin = new_class(4, "phaseMixin", true);
+        let category = new_class(1, ontouml_models::CATEGORY, true);
+        let mixin = new_class(2, ontouml_models::MIXIN, true);
+        let roleMixin = new_class(3, ontouml_models::ROLE_MIXIN, true);
+        let phaseMixin = new_class(4, ontouml_models::PHASE_MIXIN, true);
 
         let elements = vec![
             category.into(), mixin.into(), roleMixin.into(), phaseMixin.into(),
@@ -1174,13 +1162,13 @@ mod test {
 
     #[test]
     fn test_invalid_mixins() {
-        let category = new_class(1, "category", false);
+        let category = new_class(1, ontouml_models::CATEGORY, false);
         let category_uuid = *category.read().uuid;
-        let mixin = new_class(2, "mixin", false);
+        let mixin = new_class(2, ontouml_models::MIXIN, false);
         let mixin_uuid = *mixin.read().uuid;
-        let roleMixin = new_class(3, "roleMixin", false);
+        let roleMixin = new_class(3, ontouml_models::ROLE_MIXIN, false);
         let roleMixin_uuid = *roleMixin.read().uuid;
-        let phaseMixin = new_class(4, "phaseMixin", false);
+        let phaseMixin = new_class(4, ontouml_models::PHASE_MIXIN, false);
         let phaseMixin_uuid = *phaseMixin.read().uuid;
 
         let elements = vec![
