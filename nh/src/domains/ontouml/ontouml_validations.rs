@@ -1,8 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use eframe::egui;
 
-use crate::{CustomTab, common::{canvas::Highlight, controller::{DiagramCommand, LabelProvider, Model, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, domains::{ontouml::ontouml_models, umlclass::umlclass_models::{UmlClassClassifier, UmlClassGeneralization}}};
+use crate::{CustomTab, common::{canvas::Highlight, controller::{DiagramCommand, LabelProvider, Model, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, domains::{ontouml::{ontouml_controllers, ontouml_models}, umlclass::umlclass_models::{UmlClass, UmlClassClassifier, UmlClassGeneralization}}};
 use super::super::umlclass::umlclass_models::{UmlClassDiagram, UmlClassElement};
 
 pub struct OntoUMLValidationTab {
@@ -92,6 +92,15 @@ impl OntoUMLValidationTab {
                 UmlClassElement::UmlClass(inner) => {
                     let m = inner.read();
                     let e = element_infos.entry(*m.uuid).or_default();
+
+                    if ontouml_controllers::ontouml_class_stereotype_literal(&m.stereotype).is_none_or(|e| e == ontouml_models::NONE) {
+                        problems.push(ValidationProblem::Error {
+                            uuid: *m.uuid,
+                            error_type: ErrorType::InvalidStereotype,
+                            text: format!("Invalid or missing stereotype"),
+                        });
+                    }
+
                     e.stereotype = m.stereotype.clone();
                     if is_identity_provider(&*m.stereotype) {
                         e.identity_providers_min += 1;
@@ -153,6 +162,15 @@ impl OntoUMLValidationTab {
                         }
                     }
                     let m = inner.read();
+
+                    if ontouml_controllers::ontouml_association_stereotype_literal(&m.stereotype).is_none_or(|e| e == ontouml_models::NONE) {
+                        problems.push(ValidationProblem::Error {
+                            uuid: *m.uuid,
+                            error_type: ErrorType::InvalidStereotype,
+                            text: format!("Invalid or missing stereotype"),
+                        });
+                    }
+
                     let source_multiplicity = parse_multiplicity(&*m.source_label_multiplicity);
                     let target_multiplicity = parse_multiplicity(&*m.target_label_multiplicity);
 
@@ -453,6 +471,202 @@ impl OntoUMLValidationTab {
         let mut problems = Vec::new();
         let m = self.model.read();
 
+
+        fn is_rigid(stereotype: &str) -> bool {
+            match stereotype {
+                ontouml_models::KIND
+                | ontouml_models::SUBKIND
+                | ontouml_models::QUANTITY
+                | ontouml_models::COLLECTIVE
+                | ontouml_models::CATEGORY => true,
+                _ => false,
+            }
+        }
+        fn is_anti_rigid(stereotype: &str) -> bool {
+            match stereotype {
+                ontouml_models::ROLE
+                | ontouml_models::PHASE
+                | ontouml_models::ROLE_MIXIN => true,
+                _ => false,
+            }
+        }
+
+
+        // BinOver (Binary Relation between Overlapping Types)
+        #[derive(Default)]
+        struct BinOverInfo {
+            children: Vec<ERef<UmlClassGeneralization>>,
+            parents: Vec<ERef<UmlClassGeneralization>>,
+        }
+        fn r_binover_collect(
+            infos: &mut HashMap<ModelUuid, BinOverInfo>,
+            e: &UmlClassElement,
+        ) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_binover_collect(infos, e);
+                    }
+                },
+                UmlClassElement::UmlClass(inner) => {
+                    infos.entry(*inner.read().uuid).or_default();
+                }
+                UmlClassElement::UmlClassGeneralization(inner) => {
+                    let m = inner.read();
+                    for e in &m.sources {
+                        infos.entry(*e.read().uuid).or_default().parents.push(inner.clone());
+                    }
+                    for e in &m.targets {
+                        infos.entry(*e.read().uuid).or_default().children.push(inner.clone());
+                    }
+                },
+                _ => {},
+            }
+        }
+        let mut infos = HashMap::new();
+        for e in &m.contained_elements {
+            r_binover_collect(&mut infos, e);
+        }
+        fn r_binover_test(
+            problems: &mut Vec<ValidationProblem>,
+            infos: &HashMap<ModelUuid, BinOverInfo>,
+            e: &UmlClassElement,
+        ) {
+            fn is_subtype_of(
+                infos: &HashMap<ModelUuid, BinOverInfo>,
+                a: ModelUuid,
+                b: ModelUuid,
+            ) -> bool {
+                fn is_subtype_of_inner(
+                    visited: &mut HashSet<ModelUuid>,
+                    infos: &HashMap<ModelUuid, BinOverInfo>,
+                    a: ModelUuid,
+                    b: ModelUuid,
+                ) -> bool {
+                    if visited.contains(&a) {
+                        return false;
+                    }
+                    visited.insert(a);
+
+                    let info = infos.get(&a).unwrap();
+                    let result = if info.parents.iter().any(|e| e.read().targets.iter().any(|e| *e.read().uuid == b)) {
+                        true
+                    } else {
+                        info.parents.iter().any(|e| e.read().targets.iter().any(|e| is_subtype_of_inner(visited, infos, *e.read().uuid, b)))
+                    };
+
+                    visited.remove(&a);
+                    result
+                }
+
+                is_subtype_of_inner(&mut HashSet::new(), infos, a, b)
+            }
+            fn is_nonprovider_sortal(c: &UmlClassClassifier) -> bool {
+                match c {
+                    UmlClassClassifier::UmlClassObject(_) => false,
+                    UmlClassClassifier::UmlClass(inner) => {
+                        [
+                            ontouml_models::SUBKIND,
+                            ontouml_models::ROLE,
+                            ontouml_models::PHASE,
+                        ].contains(&&**inner.read().stereotype)
+                    },
+                }
+            }
+            fn is_relator(c: &UmlClassClassifier) -> bool {
+                match c {
+                    UmlClassClassifier::UmlClassObject(_) => false,
+                    UmlClassClassifier::UmlClass(inner) => {
+                        &*inner.read().stereotype == ontouml_models::RELATOR
+                    },
+                }
+            }
+            fn is_mode(c: &UmlClassClassifier) -> bool {
+                match c {
+                    UmlClassClassifier::UmlClassObject(_) => false,
+                    UmlClassClassifier::UmlClass(inner) => {
+                        &*inner.read().stereotype == ontouml_models::MODE
+                    },
+                }
+            }
+            fn are_disjoint_upwards(
+                infos: &HashMap<ModelUuid, BinOverInfo>,
+                a: ModelUuid,
+                b: ModelUuid,
+            ) -> bool {
+                fn least_upper_bound(
+                    infos: &HashMap<ModelUuid, BinOverInfo>,
+                    a: ModelUuid,
+                    b: ModelUuid,
+                ) -> Option<ERef<UmlClass>> {
+                    for g in &infos.get(&a).unwrap().parents {
+                        for p in &g.read().targets {
+                            if is_subtype_of(infos, b, *p.read().uuid) {
+                                return Some(p.clone());
+                            }
+                            if let Some(lub) = least_upper_bound(infos, *p.read().uuid, b) {
+                                return Some(lub);
+                            }
+                        }
+                    }
+                    None
+                }
+
+                match least_upper_bound(infos, a, b) {
+                    None => true,
+                    Some(lub) => {
+                        fn is_subtype_of_or_self(
+                            infos: &HashMap<ModelUuid, BinOverInfo>,
+                            a: ModelUuid,
+                            b: ModelUuid,
+                        ) -> bool {
+                            a == b || is_subtype_of(infos, a, b)
+                        }
+
+                        let info = infos.get(&lub.read().uuid).unwrap();
+                        let mut found_disjoint_generalization = false;
+                        for e in &info.children {
+                            let e = e.read();
+                            if e.sources.iter().find(|e| is_subtype_of_or_self(infos, a, *e.read().uuid)).is_some()
+                                && e.sources.iter().find(|e| is_subtype_of_or_self(infos, b, *e.read().uuid)).is_some()
+                                && e.set_is_disjoint {
+                                found_disjoint_generalization = true;
+                            }
+                        }
+                        found_disjoint_generalization
+                    }
+                }
+            }
+
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_binover_test(problems, infos, e);
+                    }
+                },
+                UmlClassElement::UmlClassAssociation(inner) => {
+                    let m = inner.read();
+                    if *m.source.uuid() == *m.target.uuid()
+                        || is_subtype_of(infos, *m.source.uuid(), *m.target.uuid())
+                        || is_subtype_of(infos, *m.target.uuid(), *m.source.uuid())
+                        || (is_nonprovider_sortal(&m.source) && is_nonprovider_sortal(&m.target) && !are_disjoint_upwards(infos, *m.source.uuid(), *m.target.uuid()))
+                        || (is_relator(&m.source) && is_relator(&m.target) && !are_disjoint_upwards(infos, *m.source.uuid(), *m.target.uuid()))
+                        || (is_mode(&m.source) && is_mode(&m.target) && !are_disjoint_upwards(infos, *m.source.uuid(), *m.target.uuid()))
+                        // TODO: mixins
+                    {
+                        problems.push(ValidationProblem::AntiPattern { uuid: *m.uuid, antipattern_type: AntiPatternType::BinOver });
+                    }
+                },
+                _ => {},
+            }
+        }
+        for e in &m.contained_elements {
+            r_binover_test(&mut problems, &mut infos, e);
+        }
+
+
         // DecInt (Decieving Intersection)
         fn r_decint_collect(
             parents: &mut HashMap<ModelUuid, usize>,
@@ -467,6 +681,7 @@ impl OntoUMLValidationTab {
                 },
                 UmlClassElement::UmlClassGeneralization(inner) => {
                     let m = inner.read();
+                    // TODO: take abstractness into account
                     let weight = if m.set_is_disjoint { 1 } else { m.targets.len() };
                     for e in &m.sources {
                         *parents.entry(*e.read().uuid).or_default() += weight;
@@ -482,6 +697,353 @@ impl OntoUMLValidationTab {
         for (k, v) in parents {
             if v > 1 {
                 problems.push(ValidationProblem::AntiPattern { uuid: k, antipattern_type: AntiPatternType::DecInt });
+            }
+        }
+
+
+        // DepPhase (Relationally Dependent Phase)
+        #[derive(Default)]
+        struct DepPhaseInfo {
+            stereotype: Option<Arc<String>>,
+            assoc_mediation_count: usize,
+        }
+        fn r_depphase_collect(
+            infos: &mut HashMap<ModelUuid, DepPhaseInfo>,
+            e: &UmlClassElement,
+        ) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_depphase_collect(infos, e);
+                    }
+                },
+                UmlClassElement::UmlClass(inner) => {
+                    let r = inner.read();
+                    infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
+                },
+                UmlClassElement::UmlClassAssociation(inner) => {
+                    let r = inner.read();
+                    if *r.stereotype == ontouml_models::MEDIATION {
+                        infos.entry(*r.source.uuid()).or_default().assoc_mediation_count += 1;
+                        infos.entry(*r.target.uuid()).or_default().assoc_mediation_count += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut infos = HashMap::new();
+        for e in &m.contained_elements {
+            r_depphase_collect(&mut infos, e);
+        }
+        for e in &infos {
+            if let Some(s) = &e.1.stereotype && **s == ontouml_models::PHASE && e.1.assoc_mediation_count >= 1 {
+                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::DepPhase });
+            }
+        }
+
+
+        // FreeRole (Free Role Specialization)
+        #[derive(Default)]
+        struct FreeRoleInfo {
+            stereotype: Option<Arc<String>>,
+            assoc_mediation_count: usize,
+        }
+        fn r_freerole_collect(
+            infos: &mut HashMap<ModelUuid, FreeRoleInfo>,
+            e: &UmlClassElement,
+        ) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_freerole_collect(infos, e);
+                    }
+                },
+                UmlClassElement::UmlClass(inner) => {
+                    let r = inner.read();
+                    infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
+                },
+                UmlClassElement::UmlClassAssociation(inner) => {
+                    let r = inner.read();
+                    if *r.stereotype == ontouml_models::MEDIATION {
+                        infos.entry(*r.source.uuid()).or_default().assoc_mediation_count += 1;
+                        infos.entry(*r.target.uuid()).or_default().assoc_mediation_count += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut infos = HashMap::new();
+        for e in &m.contained_elements {
+            r_freerole_collect(&mut infos, e);
+        }
+        for e in &infos {
+            if let Some(s) = &e.1.stereotype && **s == ontouml_models::ROLE && e.1.assoc_mediation_count == 0 {
+                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::FreeRole });
+            }
+        }
+
+
+        // HetColl (Heterogeneous Collective)
+        #[derive(Default)]
+        struct HetCollInfo {
+            stereotype: Option<Arc<String>>,
+            source_end_membership_count: usize,
+        }
+        fn r_hetcoll_collect(
+            infos: &mut HashMap<ModelUuid, HetCollInfo>,
+            e: &UmlClassElement,
+        ) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_hetcoll_collect(infos, e);
+                    }
+                },
+                UmlClassElement::UmlClass(inner) => {
+                    let r = inner.read();
+                    infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
+                },
+                UmlClassElement::UmlClassAssociation(inner) => {
+                    let r = inner.read();
+                    if *r.stereotype == ontouml_models::MEMBER_OF {
+                        infos.entry(*r.source.uuid()).or_default().source_end_membership_count += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut infos = HashMap::new();
+        for e in &m.contained_elements {
+            r_hetcoll_collect(&mut infos, e);
+        }
+        for e in &infos {
+            if let Some(s) = &e.1.stereotype && **s == ontouml_models::COLLECTIVE && e.1.source_end_membership_count > 1 {
+                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::HetColl });
+            }
+        }
+
+
+        // MixRig (Mixin With Same Rigidity)
+        #[derive(Default)]
+        struct MixRigInfo {
+            stereotype: Option<Arc<String>>,
+            has_rigid_children: bool,
+            has_anti_rigid_children: bool,
+        }
+        fn r_mixrig_collect(
+            infos: &mut HashMap<ModelUuid, MixRigInfo>,
+            e: &UmlClassElement,
+        ) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_mixrig_collect(infos, e);
+                    }
+                },
+                UmlClassElement::UmlClass(inner) => {
+                    let r = inner.read();
+                    infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
+                },
+                UmlClassElement::UmlClassGeneralization(inner) => {
+                    let r = inner.read();
+                    let has_rigid_children = r.sources.iter().any(|e| is_rigid(&e.read().stereotype));
+                    let has_anti_rigid_children = r.sources.iter().any(|e| is_anti_rigid(&e.read().stereotype));
+
+                    for t in &r.targets {
+                        let mut e = infos.entry(*t.read().uuid).or_default();
+                        e.has_rigid_children |= has_rigid_children;
+                        e.has_anti_rigid_children |= has_anti_rigid_children;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut infos = HashMap::new();
+        for e in &m.contained_elements {
+            r_mixrig_collect(&mut infos, e);
+        }
+        for e in &infos {
+            if let Some(s) = &e.1.stereotype && **s == ontouml_models::MIXIN && e.1.has_rigid_children != e.1.has_anti_rigid_children {
+                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::MixRig });
+            }
+        }
+
+
+        // MultDep (Multiple Relational Dependency)
+        #[derive(Default)]
+        struct MultDepInfo {
+            assoc_relators_count: usize,
+        }
+        fn r_multdep_collect(
+            infos: &mut HashMap<ModelUuid, MultDepInfo>,
+            e: &UmlClassElement,
+        ) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_multdep_collect(infos, e);
+                    }
+                },
+                UmlClassElement::UmlClass(inner) => {
+                    let r = inner.read();
+                    infos.entry(*r.uuid).or_default();
+                },
+                UmlClassElement::UmlClassAssociation(inner) => {
+                    let r = inner.read();
+                    // TODO: should keep track of the relators to not count a subtype twice
+                    if *r.stereotype == ontouml_models::MEDIATION {
+                        if let UmlClassClassifier::UmlClass(c) = &r.source
+                            && *c.read().stereotype == ontouml_models::RELATOR {
+                            infos.entry(*r.target.uuid()).or_default().assoc_relators_count += 1;
+                        }
+                        if let UmlClassClassifier::UmlClass(c) = &r.target
+                            && *c.read().stereotype == ontouml_models::RELATOR {
+                            infos.entry(*r.source.uuid()).or_default().assoc_relators_count += 1;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut infos = HashMap::new();
+        for e in &m.contained_elements {
+            r_multdep_collect(&mut infos, e);
+        }
+        for e in &infos {
+            if e.1.assoc_relators_count > 1 {
+                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::MultDep });
+            }
+        }
+
+        // RelRig (Relator Mediating Rigid Types)
+        #[derive(Default)]
+        struct RelRigInfo {
+            stereotype: Option<Arc<String>>,
+            has_associated_rigids: bool,
+        }
+        fn r_relrig_collect(
+            infos: &mut HashMap<ModelUuid, RelRigInfo>,
+            e: &UmlClassElement,
+        ) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_relrig_collect(infos, e);
+                    }
+                },
+                UmlClassElement::UmlClass(inner) => {
+                    let r = inner.read();
+                    infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
+                },
+                UmlClassElement::UmlClassAssociation(inner) => {
+                    let r = inner.read();
+                    if *r.stereotype == ontouml_models::MEDIATION {
+                        if let UmlClassClassifier::UmlClass(s) = &r.source
+                            && is_rigid(&s.read().stereotype) {
+                            infos.entry(*r.target.uuid()).or_default().has_associated_rigids = true;
+                        }
+                        if let UmlClassClassifier::UmlClass(t) = &r.target
+                            && is_rigid(&t.read().stereotype) {
+                            infos.entry(*r.source.uuid()).or_default().has_associated_rigids = true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut infos = HashMap::new();
+        for e in &m.contained_elements {
+            r_relrig_collect(&mut infos, e);
+        }
+        for e in &infos {
+            if let Some(s) = &e.1.stereotype && **s == ontouml_models::RELATOR && e.1.has_associated_rigids {
+                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::RelRig });
+            }
+        }
+
+
+        // UndefFormal (Undefined Phase Partition)
+        #[derive(Default)]
+        struct UndefPhaseInfo {
+            stereotype: Option<Arc<String>>,
+            has_intrinsics: bool,
+            parents: Vec<ERef<UmlClassGeneralization>>,
+        }
+        fn r_undefphase_collect(
+            infos: &mut HashMap<ModelUuid, UndefPhaseInfo>,
+            e: &UmlClassElement,
+        ) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_undefphase_collect(infos, e);
+                    }
+                },
+                UmlClassElement::UmlClass(inner) => {
+                    let r = inner.read();
+                    let mut e = infos.entry(*r.uuid).or_default();
+                    e.stereotype = Some(r.stereotype.clone());
+                    if !r.properties.is_empty() {
+                        e.has_intrinsics = true;
+                    }
+                },
+                UmlClassElement::UmlClassAssociation(inner) => {
+                    let r = inner.read();
+                    if *r.stereotype == ontouml_models::CHARACTERIZATION {
+                        infos.entry(*r.source.uuid()).or_default().has_intrinsics = true;
+                    }
+                }
+                UmlClassElement::UmlClassGeneralization(inner) => {
+                    let r = inner.read();
+                    for e in &r.sources {
+                        infos.entry(*e.read().uuid()).or_default().parents.push(inner.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        fn has_intrinsics_including_transitively(
+            infos: &HashMap<ModelUuid, UndefPhaseInfo>,
+            e: ModelUuid,
+        ) -> bool {
+            fn inner(
+                visited: &mut HashSet<ModelUuid>,
+                infos: &HashMap<ModelUuid, UndefPhaseInfo>,
+                e: ModelUuid,
+            ) -> bool {
+                if visited.contains(&e) {
+                    return false;
+                }
+                visited.insert(e);
+
+                let e2 = infos.get(&e).unwrap();
+                let result = if e2.has_intrinsics {
+                    true
+                } else {
+                    e2.parents.iter().any(|e| e.read().targets.iter().any(|e| inner(visited, infos, *e.read().uuid)))
+                };
+
+                visited.remove(&e);
+                result
+            }
+
+            inner(&mut HashSet::new(), infos, e)
+        }
+        let mut infos = HashMap::new();
+        for e in &m.contained_elements {
+            r_undefphase_collect(&mut infos, e);
+        }
+        for e in &infos {
+            if let Some(s) = &e.1.stereotype && **s == ontouml_models::PHASE
+                && !e.1.parents.iter().any(|e| e.read().targets.iter().any(|e| has_intrinsics_including_transitively(&infos, *e.read().uuid))) {
+                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::UndefPhase });
             }
         }
 
@@ -628,6 +1190,7 @@ enum ValidationProblem {
 
 #[derive(PartialEq, Debug)]
 enum ErrorType {
+    InvalidStereotype,
     InvalidSubtyping,
     InvalidRelation(RelationError),
     InvalidIdentity,
@@ -745,6 +1308,96 @@ mod test {
     }
 
     // Structure validations tests
+
+    #[test]
+    fn test_valid_stereotypes() {
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let assoc = new_association(2, ontouml_models::COMPONENT_OF, kind.clone().into(), kind.clone().into());
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(vec![kind.into(), assoc.into()], true, false),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_stereotypes() {
+        // missing stereotypes
+        let kind = new_class(1, ontouml_models::NONE, false);
+        let kind_uuid = *kind.read().uuid;
+        let assoc = new_association(2, ontouml_models::NONE, kind.clone().into(), kind.clone().into());
+        let assoc_uuid = *assoc.read().uuid;
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        let result = validate(vec![kind.into(), assoc.into()], true, false);
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid,
+                    error_type: ErrorType::InvalidStereotype,
+                    ..
+                } if *uuid == kind_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid,
+                    error_type: ErrorType::InvalidStereotype,
+                    ..
+                } if *uuid == assoc_uuid)).is_some()
+        );
+
+        // swapped stereotype domains
+        let kind = new_class(3, ontouml_models::COMPONENT_OF, false);
+        let kind_uuid = *kind.read().uuid;
+        let assoc = new_association(4, ontouml_models::KIND, kind.clone().into(), kind.clone().into());
+        let assoc_uuid = *assoc.read().uuid;
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        let result = validate(vec![kind.into(), assoc.into()], true, false);
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid,
+                    error_type: ErrorType::InvalidStereotype,
+                    ..
+                } if *uuid == kind_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid,
+                    error_type: ErrorType::InvalidStereotype,
+                    ..
+                } if *uuid == assoc_uuid)).is_some()
+        );
+
+        // garbage stereotypes
+        let kind = new_class(5, "hello", false);
+        let kind_uuid = *kind.read().uuid;
+        let assoc = new_association(6, "world", kind.clone().into(), kind.clone().into());
+        let assoc_uuid = *assoc.read().uuid;
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        let result = validate(vec![kind.into(), assoc.into()], true, false);
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid,
+                    error_type: ErrorType::InvalidStereotype,
+                    ..
+                } if *uuid == kind_uuid)).is_some()
+        );
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid,
+                    error_type: ErrorType::InvalidStereotype,
+                    ..
+                } if *uuid == assoc_uuid)).is_some()
+        );
+    }
 
     #[test]
     fn test_valid_subtyping() {
@@ -1207,4 +1860,95 @@ mod test {
     }
 
     // TODO: Antipatterns validations tests
+
+    #[test]
+    fn test_valid_binover() {
+        // unconnected
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let kind2 = new_class(2, ontouml_models::KIND, false);
+        let assoc = new_association(3, ontouml_models::COMPONENT_OF, kind1.clone().into(), kind2.clone().into());
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(vec![kind1.into(), kind2.into(), assoc.into()], false, true),
+            vec![],
+        );
+
+        // disjoint
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
+        let subkind2 = new_class(3, ontouml_models::SUBKIND, false);
+        let gen1 = new_generalization(4, vec![subkind1.clone().into(), subkind2.clone().into()], vec![kind1.clone().into()], true, true);
+        let assoc = new_association(5, ontouml_models::COMPONENT_OF, subkind1.clone().into(), subkind2.clone().into());
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), assoc.into()], false, true),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_binover() {
+        // self
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let assoc = new_association(2, ontouml_models::COMPONENT_OF, kind1.clone().into(), kind1.clone().into());
+        let assoc_uuid = *assoc.read().uuid;
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(vec![kind1.into(), assoc.into()], false, true),
+            vec![
+                ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
+            ],
+        );
+
+        // subtype
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
+        let gen1 = new_generalization(3, vec![subkind1.clone().into()], vec![kind1.clone().into()], false, true);
+        let assoc = new_association(4, ontouml_models::COMPONENT_OF, kind1.clone().into(), subkind1.clone().into());
+        let assoc_uuid = *assoc.read().uuid;
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(vec![kind1.into(), subkind1.into(), gen1.into(), assoc.into()], false, true),
+            vec![
+                ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
+            ],
+        );
+
+        // multiple
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
+        let subkind2 = new_class(3, ontouml_models::SUBKIND, false);
+        let gen1 = new_generalization(4, vec![subkind1.clone().into()], vec![kind1.clone().into()], false, true);
+        let gen2 = new_generalization(5, vec![subkind2.clone().into()], vec![kind1.clone().into()], false, true);
+        let assoc = new_association(6, ontouml_models::COMPONENT_OF, subkind1.clone().into(), subkind2.clone().into());
+        let assoc_uuid = *assoc.read().uuid;
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), gen2.into(), assoc.into()], false, true),
+            vec![
+                ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
+            ],
+        );
+
+        // overlapping
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
+        let subkind2 = new_class(3, ontouml_models::SUBKIND, false);
+        let gen1 = new_generalization(4, vec![subkind1.clone().into(), subkind2.clone().into()], vec![kind1.clone().into()], false, true);
+        let assoc = new_association(5, ontouml_models::COMPONENT_OF, subkind1.clone().into(), subkind2.clone().into());
+        let assoc_uuid = *assoc.read().uuid;
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), assoc.into()], false, true),
+            vec![
+                ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
+            ],
+        );
+    }
 }

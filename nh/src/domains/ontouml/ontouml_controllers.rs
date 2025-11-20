@@ -60,22 +60,22 @@ pub struct UmlClassPlaceholderViews {
 impl Default for UmlClassPlaceholderViews {
     fn default() -> Self {
         let (kind, kind_view) = new_umlclass_class("Animal", ontouml_models::KIND, false, Vec::new(), Vec::new(), egui::Pos2::ZERO);
+        kind_view.write().refresh_buffers();
         let kind1 = (kind.clone(), kind_view.clone().into());
         let kind2 = (kind.clone().into(), kind_view.clone().into());
         let kind3 = (kind.clone().into(), kind_view.clone().into());
         let (subkind, subkind_view) = new_umlclass_class("Human", ontouml_models::SUBKIND, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0));
+        subkind_view.write().refresh_buffers();
         let subkind = (subkind, subkind_view.into());
         let (phase, phase_view) = new_umlclass_class("Adult", ontouml_models::PHASE, false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0));
+        phase_view.write().refresh_buffers();
         let phase2 = (phase.clone().into(), phase_view.clone().into());
         let phase3 = ((), phase_view.clone().into());
         let (role, role_view) = new_umlclass_class("Customer", ontouml_models::ROLE, false, Vec::new(), Vec::new(), egui::Pos2::ZERO);
+        role_view.write().refresh_buffers();
         let role = (role, role_view.into());
 
         let (_gen, gen_view) = new_umlclass_generalization(None, kind1.clone(), subkind.clone());
-        let (assoc, assoc_view) = new_umlclass_association(ontouml_models::NONE, "", None, kind2.clone(), phase2.clone());
-        assoc.write().source_label_multiplicity = Arc::new("".to_owned());
-        assoc.write().target_label_multiplicity = Arc::new("".to_owned());
-        assoc_view.write().refresh_buffers();
         let (mediation, mediation_view) = new_umlclass_association(ontouml_models::MEDIATION, "", None, kind2.clone(), phase2.clone());
         mediation.write().source_label_multiplicity = Arc::new("".to_owned());
         mediation.write().target_label_multiplicity = Arc::new("".to_owned());
@@ -84,6 +84,10 @@ impl Default for UmlClassPlaceholderViews {
         chara.write().source_label_multiplicity = Arc::new("".to_owned());
         chara.write().target_label_multiplicity = Arc::new("".to_owned());
         char_view.write().refresh_buffers();
+        let (struc, struc_view) = new_umlclass_association(ontouml_models::STRUCTURATION, "", None, kind2.clone(), phase2.clone());
+        struc.write().source_label_multiplicity = Arc::new("".to_owned());
+        struc.write().target_label_multiplicity = Arc::new("".to_owned());
+        struc_view.write().refresh_buffers();
         let (comp, comp_view) = new_umlclass_association(ontouml_models::COMPONENT_OF, "", None, kind2.clone(), phase2.clone());
         comp.write().source_label_multiplicity = Arc::new("".to_owned());
         comp.write().target_label_multiplicity = Arc::new("".to_owned());
@@ -102,9 +106,9 @@ impl Default for UmlClassPlaceholderViews {
                 (UmlClassToolStage::Class { name: "Customer", stereotype: ontouml_models::ROLE }, "Role", role.1),
 
                 (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
-                (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: ontouml_models::NONE } }, "Association", assoc_view.into()),
                 (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: ontouml_models::MEDIATION } }, "Mediation", mediation_view.into()),
                 (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: ontouml_models::CHARACTERIZATION } }, "Characterization",char_view.into()),
+                (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: ontouml_models::STRUCTURATION } }, "Structuration", struc_view.into()),
                 (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: ontouml_models::COMPONENT_OF } }, "ComponentOf", comp_view.into()),
 
                 (UmlClassToolStage::PackageStart, "Package", package_view.into()),
@@ -211,8 +215,9 @@ pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn D
     Ok(d.get_entity::<DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>>(&uuid)?)
 }
 
-fn ontouml_class_stereotype_literal(e: &str) -> Option<&'static str> {
+pub fn ontouml_class_stereotype_literal(e: &str) -> Option<&'static str> {
     let e = match e {
+        ontouml_models::NONE => ontouml_models::NONE,
         // Sortals
         ontouml_models::KIND => ontouml_models::KIND,
         ontouml_models::SUBKIND => ontouml_models::SUBKIND,
@@ -247,6 +252,7 @@ impl StereotypeController for OntoUmlClassStereotypeController {
             .selected_text(&self.display_string)
             .show_ui(ui, |ui| {
                 for e in [
+                    (ontouml_models::NONE, "None"),
                     // Sortals
                     (ontouml_models::KIND, "Kind"),
                     (ontouml_models::SUBKIND, "Subkind"),
@@ -290,7 +296,7 @@ impl StereotypeController for OntoUmlClassStereotypeController {
     }
 }
 
-fn ontouml_association_stereotype_literal(e: &str) -> Option<&'static str> {
+pub fn ontouml_association_stereotype_literal(e: &str) -> Option<&'static str> {
     let e = match e {
         ontouml_models::NONE => ontouml_models::NONE,
         ontouml_models::FORMAL => ontouml_models::FORMAL,
