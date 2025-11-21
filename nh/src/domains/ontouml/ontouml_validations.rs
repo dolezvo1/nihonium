@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::{collections::{HashMap, HashSet}, sync::{Arc, RwLockReadGuard}};
 
 use eframe::egui;
 
@@ -491,181 +491,7 @@ impl OntoUMLValidationTab {
             }
         }
 
-
-        // BinOver (Binary Relation between Overlapping Types)
-        #[derive(Default)]
-        struct BinOverInfo {
-            children: Vec<ERef<UmlClassGeneralization>>,
-            parents: Vec<ERef<UmlClassGeneralization>>,
-        }
-        fn r_binover_collect(
-            infos: &mut HashMap<ModelUuid, BinOverInfo>,
-            e: &UmlClassElement,
-        ) {
-            match e {
-                UmlClassElement::UmlClassPackage(inner) => {
-                    let m = inner.read();
-                    for e in &m.contained_elements {
-                        r_binover_collect(infos, e);
-                    }
-                },
-                UmlClassElement::UmlClass(inner) => {
-                    infos.entry(*inner.read().uuid).or_default();
-                }
-                UmlClassElement::UmlClassGeneralization(inner) => {
-                    let m = inner.read();
-                    for e in &m.sources {
-                        infos.entry(*e.read().uuid).or_default().parents.push(inner.clone());
-                    }
-                    for e in &m.targets {
-                        infos.entry(*e.read().uuid).or_default().children.push(inner.clone());
-                    }
-                },
-                _ => {},
-            }
-        }
-        let mut infos = HashMap::new();
-        for e in &m.contained_elements {
-            r_binover_collect(&mut infos, e);
-        }
-        fn r_binover_test(
-            problems: &mut Vec<ValidationProblem>,
-            infos: &HashMap<ModelUuid, BinOverInfo>,
-            e: &UmlClassElement,
-        ) {
-            fn is_subtype_of(
-                infos: &HashMap<ModelUuid, BinOverInfo>,
-                a: ModelUuid,
-                b: ModelUuid,
-            ) -> bool {
-                fn is_subtype_of_inner(
-                    visited: &mut HashSet<ModelUuid>,
-                    infos: &HashMap<ModelUuid, BinOverInfo>,
-                    a: ModelUuid,
-                    b: ModelUuid,
-                ) -> bool {
-                    if visited.contains(&a) {
-                        return false;
-                    }
-                    visited.insert(a);
-
-                    let info = infos.get(&a).unwrap();
-                    let result = if info.parents.iter().any(|e| e.read().targets.iter().any(|e| *e.read().uuid == b)) {
-                        true
-                    } else {
-                        info.parents.iter().any(|e| e.read().targets.iter().any(|e| is_subtype_of_inner(visited, infos, *e.read().uuid, b)))
-                    };
-
-                    visited.remove(&a);
-                    result
-                }
-
-                is_subtype_of_inner(&mut HashSet::new(), infos, a, b)
-            }
-            fn is_nonprovider_sortal(c: &UmlClassClassifier) -> bool {
-                match c {
-                    UmlClassClassifier::UmlClassObject(_) => false,
-                    UmlClassClassifier::UmlClass(inner) => {
-                        [
-                            ontouml_models::SUBKIND,
-                            ontouml_models::ROLE,
-                            ontouml_models::PHASE,
-                        ].contains(&&**inner.read().stereotype)
-                    },
-                }
-            }
-            fn is_relator(c: &UmlClassClassifier) -> bool {
-                match c {
-                    UmlClassClassifier::UmlClassObject(_) => false,
-                    UmlClassClassifier::UmlClass(inner) => {
-                        &*inner.read().stereotype == ontouml_models::RELATOR
-                    },
-                }
-            }
-            fn is_mode(c: &UmlClassClassifier) -> bool {
-                match c {
-                    UmlClassClassifier::UmlClassObject(_) => false,
-                    UmlClassClassifier::UmlClass(inner) => {
-                        &*inner.read().stereotype == ontouml_models::MODE
-                    },
-                }
-            }
-            fn are_disjoint_upwards(
-                infos: &HashMap<ModelUuid, BinOverInfo>,
-                a: ModelUuid,
-                b: ModelUuid,
-            ) -> bool {
-                fn least_upper_bound(
-                    infos: &HashMap<ModelUuid, BinOverInfo>,
-                    a: ModelUuid,
-                    b: ModelUuid,
-                ) -> Option<ERef<UmlClass>> {
-                    for g in &infos.get(&a).unwrap().parents {
-                        for p in &g.read().targets {
-                            if is_subtype_of(infos, b, *p.read().uuid) {
-                                return Some(p.clone());
-                            }
-                            if let Some(lub) = least_upper_bound(infos, *p.read().uuid, b) {
-                                return Some(lub);
-                            }
-                        }
-                    }
-                    None
-                }
-
-                match least_upper_bound(infos, a, b) {
-                    None => true,
-                    Some(lub) => {
-                        fn is_subtype_of_or_self(
-                            infos: &HashMap<ModelUuid, BinOverInfo>,
-                            a: ModelUuid,
-                            b: ModelUuid,
-                        ) -> bool {
-                            a == b || is_subtype_of(infos, a, b)
-                        }
-
-                        let info = infos.get(&lub.read().uuid).unwrap();
-                        let mut found_disjoint_generalization = false;
-                        for e in &info.children {
-                            let e = e.read();
-                            if e.sources.iter().find(|e| is_subtype_of_or_self(infos, a, *e.read().uuid)).is_some()
-                                && e.sources.iter().find(|e| is_subtype_of_or_self(infos, b, *e.read().uuid)).is_some()
-                                && e.set_is_disjoint {
-                                found_disjoint_generalization = true;
-                            }
-                        }
-                        found_disjoint_generalization
-                    }
-                }
-            }
-
-            match e {
-                UmlClassElement::UmlClassPackage(inner) => {
-                    let m = inner.read();
-                    for e in &m.contained_elements {
-                        r_binover_test(problems, infos, e);
-                    }
-                },
-                UmlClassElement::UmlClassAssociation(inner) => {
-                    let m = inner.read();
-                    if *m.source.uuid() == *m.target.uuid()
-                        || is_subtype_of(infos, *m.source.uuid(), *m.target.uuid())
-                        || is_subtype_of(infos, *m.target.uuid(), *m.source.uuid())
-                        || (is_nonprovider_sortal(&m.source) && is_nonprovider_sortal(&m.target) && !are_disjoint_upwards(infos, *m.source.uuid(), *m.target.uuid()))
-                        || (is_relator(&m.source) && is_relator(&m.target) && !are_disjoint_upwards(infos, *m.source.uuid(), *m.target.uuid()))
-                        || (is_mode(&m.source) && is_mode(&m.target) && !are_disjoint_upwards(infos, *m.source.uuid(), *m.target.uuid()))
-                        // TODO: mixins
-                    {
-                        problems.push(ValidationProblem::AntiPattern { uuid: *m.uuid, antipattern_type: AntiPatternType::BinOver });
-                    }
-                },
-                _ => {},
-            }
-        }
-        for e in &m.contained_elements {
-            r_binover_test(&mut problems, &mut infos, e);
-        }
-
+        validate_binover(&mut problems, &m);
 
         // DecInt (Decieving Intersection)
         fn r_decint_collect(
@@ -681,8 +507,7 @@ impl OntoUMLValidationTab {
                 },
                 UmlClassElement::UmlClassGeneralization(inner) => {
                     let m = inner.read();
-                    // TODO: take abstractness into account
-                    let weight = if m.set_is_disjoint { 1 } else { m.targets.len() };
+                    let weight = if m.set_is_disjoint { 1 } else { m.targets.iter().filter(|e| !e.read().is_abstract).count() };
                     for e in &m.sources {
                         *parents.entry(*e.read().uuid).or_default() += weight;
                     }
@@ -785,6 +610,35 @@ impl OntoUMLValidationTab {
         }
 
 
+        // GSRig (Generalization Set with Mixed Rigidity)
+        fn r_gsrig_test(
+            problems: &mut Vec<ValidationProblem>,
+            e: &UmlClassElement,
+        ) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_gsrig_test(problems, e);
+                    }
+                },
+                UmlClassElement::UmlClassGeneralization(inner) => {
+                    let r = inner.read();
+                    let has_rigid_children = r.sources.iter().any(|e| is_rigid(&e.read().stereotype));
+                    let has_anti_rigid_children = r.sources.iter().any(|e| is_anti_rigid(&e.read().stereotype));
+
+                    if has_rigid_children && has_anti_rigid_children {
+                        problems.push(ValidationProblem::AntiPattern { uuid: *r.uuid, antipattern_type: AntiPatternType::GSRig });
+                    }
+                }
+                _ => {}
+            }
+        }
+        for e in &m.contained_elements {
+            r_gsrig_test(&mut problems, e);
+        }
+
+
         // HetColl (Heterogeneous Collective)
         #[derive(Default)]
         struct HetCollInfo {
@@ -822,6 +676,46 @@ impl OntoUMLValidationTab {
         for e in &infos {
             if let Some(s) = &e.1.stereotype && **s == ontouml_models::COLLECTIVE && e.1.source_end_membership_count > 1 {
                 problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::HetColl });
+            }
+        }
+
+
+        // HomoFunc (Homogeneous Functional Complex)
+        #[derive(Default)]
+        struct HomoFuncInfo {
+            source_end_component_count: usize,
+        }
+        fn r_homofunc_collect(
+            infos: &mut HashMap<ModelUuid, HomoFuncInfo>,
+            e: &UmlClassElement,
+        ) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let m = inner.read();
+                    for e in &m.contained_elements {
+                        r_homofunc_collect(infos, e);
+                    }
+                },
+                UmlClassElement::UmlClass(inner) => {
+                    let r = inner.read();
+                    infos.entry(*r.uuid).or_default();
+                },
+                UmlClassElement::UmlClassAssociation(inner) => {
+                    let r = inner.read();
+                    if *r.stereotype == ontouml_models::COMPONENT_OF {
+                        infos.entry(*r.source.uuid()).or_default().source_end_component_count += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut infos = HashMap::new();
+        for e in &m.contained_elements {
+            r_homofunc_collect(&mut infos, e);
+        }
+        for e in &infos {
+            if e.1.source_end_component_count == 1 {
+                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::HomoFunc });
             }
         }
 
@@ -1232,6 +1126,240 @@ enum AntiPatternType {
     WholeOver,
 }
 
+fn validate_binover(
+    problems: &mut Vec<ValidationProblem>,
+    m: &RwLockReadGuard<'_, UmlClassDiagram>,
+) {
+    // BinOver (Binary Relation between Overlapping Types)
+    #[derive(Default)]
+    struct BinOverInfo {
+        children: Vec<ERef<UmlClassGeneralization>>,
+        parents: Vec<ERef<UmlClassGeneralization>>,
+    }
+    fn r_binover_collect(
+        infos: &mut HashMap<ModelUuid, BinOverInfo>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_binover_collect(infos, e);
+                }
+            },
+            UmlClassElement::UmlClass(inner) => {
+                infos.entry(*inner.read().uuid).or_default();
+            }
+            UmlClassElement::UmlClassGeneralization(inner) => {
+                let m = inner.read();
+                for e in &m.sources {
+                    infos.entry(*e.read().uuid).or_default().parents.push(inner.clone());
+                }
+                for e in &m.targets {
+                    infos.entry(*e.read().uuid).or_default().children.push(inner.clone());
+                }
+            },
+            _ => {},
+        }
+    }
+    let mut infos = HashMap::new();
+    for e in &m.contained_elements {
+        r_binover_collect(&mut infos, e);
+    }
+    fn r_binover_test(
+        problems: &mut Vec<ValidationProblem>,
+        infos: &HashMap<ModelUuid, BinOverInfo>,
+        e: &UmlClassElement,
+    ) {
+        fn is_subtype_of(
+            infos: &HashMap<ModelUuid, BinOverInfo>,
+            a: ModelUuid,
+            b: ModelUuid,
+        ) -> bool {
+            fn is_subtype_of_inner(
+                visited: &mut HashSet<ModelUuid>,
+                infos: &HashMap<ModelUuid, BinOverInfo>,
+                a: ModelUuid,
+                b: ModelUuid,
+            ) -> bool {
+                if visited.contains(&a) {
+                    return false;
+                }
+                visited.insert(a);
+
+                let info = infos.get(&a).unwrap();
+                let result = if info.parents.iter().any(|e| e.read().targets.iter().any(|e| *e.read().uuid == b)) {
+                    true
+                } else {
+                    info.parents.iter().any(|e| e.read().targets.iter().any(|e| is_subtype_of_inner(visited, infos, *e.read().uuid, b)))
+                };
+
+                visited.remove(&a);
+                result
+            }
+
+            is_subtype_of_inner(&mut HashSet::new(), infos, a, b)
+        }
+        fn is_subtype_of_or_self(
+            infos: &HashMap<ModelUuid, BinOverInfo>,
+            a: ModelUuid,
+            b: ModelUuid,
+        ) -> bool {
+            a == b || is_subtype_of(infos, a, b)
+        }
+        fn is_nonprovider_sortal(c: &UmlClassClassifier) -> bool {
+            match c {
+                UmlClassClassifier::UmlClassObject(_) => false,
+                UmlClassClassifier::UmlClass(inner) => {
+                    [
+                        ontouml_models::SUBKIND,
+                        ontouml_models::ROLE,
+                        ontouml_models::PHASE,
+                    ].contains(&&**inner.read().stereotype)
+                },
+            }
+        }
+        fn is_relator(c: &UmlClassClassifier) -> bool {
+            match c {
+                UmlClassClassifier::UmlClassObject(_) => false,
+                UmlClassClassifier::UmlClass(inner) => {
+                    &*inner.read().stereotype == ontouml_models::RELATOR
+                },
+            }
+        }
+        fn is_mode(c: &UmlClassClassifier) -> bool {
+            match c {
+                UmlClassClassifier::UmlClassObject(_) => false,
+                UmlClassClassifier::UmlClass(inner) => {
+                    &*inner.read().stereotype == ontouml_models::MODE
+                },
+            }
+        }
+        fn is_mixin(c: &UmlClassClassifier) -> bool {
+            match c {
+                UmlClassClassifier::UmlClassObject(_) => false,
+                UmlClassClassifier::UmlClass(inner) => {
+                    [
+                        ontouml_models::CATEGORY,
+                        ontouml_models::PHASE_MIXIN,
+                        ontouml_models::ROLE_MIXIN,
+                        ontouml_models::MIXIN,
+                    ].contains(&&**inner.read().stereotype)
+                },
+            }
+        }
+        fn are_disjoint_upwards(
+            infos: &HashMap<ModelUuid, BinOverInfo>,
+            a: ModelUuid,
+            b: ModelUuid,
+        ) -> bool {
+            fn least_upper_bound(
+                infos: &HashMap<ModelUuid, BinOverInfo>,
+                a: ModelUuid,
+                b: ModelUuid,
+            ) -> Option<ERef<UmlClass>> {
+                for g in &infos.get(&a).unwrap().parents {
+                    for p in &g.read().targets {
+                        if is_subtype_of(infos, b, *p.read().uuid) {
+                            return Some(p.clone());
+                        }
+                        if let Some(lub) = least_upper_bound(infos, *p.read().uuid, b) {
+                            return Some(lub);
+                        }
+                    }
+                }
+                None
+            }
+
+            match least_upper_bound(infos, a, b) {
+                None => true,
+                Some(lub) => {
+                    let info = infos.get(&lub.read().uuid).unwrap();
+                    let mut found_disjoint_generalization = false;
+                    for e in &info.children {
+                        let e = e.read();
+                        if e.set_is_disjoint
+                            && e.sources.iter().find(|e| is_subtype_of_or_self(infos, a, *e.read().uuid)).is_some()
+                            && e.sources.iter().find(|e| is_subtype_of_or_self(infos, b, *e.read().uuid)).is_some() {
+                            found_disjoint_generalization = true;
+                        }
+                    }
+                    found_disjoint_generalization
+                }
+            }
+        }
+        fn are_disjoint_downwards(
+            infos: &HashMap<ModelUuid, BinOverInfo>,
+            a: ModelUuid,
+            b: ModelUuid,
+        ) -> bool {
+            fn greatest_lower_bound(
+                infos: &HashMap<ModelUuid, BinOverInfo>,
+                a: ModelUuid,
+                b: ModelUuid,
+            ) -> Option<ERef<UmlClass>> {
+                for g in &infos.get(&a).unwrap().children {
+                    for p in &g.read().sources {
+                        if is_subtype_of(infos, *p.read().uuid, b) {
+                            return Some(p.clone());
+                        }
+                        if let Some(lub) = greatest_lower_bound(infos, *p.read().uuid, b) {
+                            return Some(lub);
+                        }
+                    }
+                }
+                None
+            }
+
+            match greatest_lower_bound(infos, a, b) {
+                None => true,
+                Some(glb) => {
+                    let info = infos.get(&glb.read().uuid).unwrap();
+                    let mut found_disjoint_generalization = false;
+                    for e in &info.parents {
+                        let e = e.read();
+                        if e.set_is_disjoint
+                            && e.targets.iter().find(|e| is_subtype_of_or_self(infos, *e.read().uuid, a)).is_some()
+                            && e.targets.iter().find(|e| is_subtype_of_or_self(infos, *e.read().uuid, b)).is_some() {
+                            found_disjoint_generalization = true;
+                        }
+                    }
+                    found_disjoint_generalization
+                }
+            }
+        }
+
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_binover_test(problems, infos, e);
+                }
+            },
+            UmlClassElement::UmlClassAssociation(inner) => {
+                let m = inner.read();
+                if *m.source.uuid() == *m.target.uuid()
+                    || is_subtype_of(infos, *m.source.uuid(), *m.target.uuid())
+                    || is_subtype_of(infos, *m.target.uuid(), *m.source.uuid())
+                    || (is_nonprovider_sortal(&m.source) && is_nonprovider_sortal(&m.target) && !are_disjoint_upwards(infos, *m.source.uuid(), *m.target.uuid()))
+                    || (is_relator(&m.source) && is_relator(&m.target) && !are_disjoint_upwards(infos, *m.source.uuid(), *m.target.uuid()))
+                    || (is_mode(&m.source) && is_mode(&m.target) && !are_disjoint_upwards(infos, *m.source.uuid(), *m.target.uuid()))
+                    || (is_mixin(&m.source) && is_mixin(&m.target) && (
+                        !are_disjoint_downwards(infos, *m.source.uuid(), *m.target.uuid())
+                        || !are_disjoint_upwards(infos, *m.source.uuid(), *m.target.uuid())
+                    ))
+                {
+                    problems.push(ValidationProblem::AntiPattern { uuid: *m.uuid, antipattern_type: AntiPatternType::BinOver });
+                }
+            },
+            _ => {},
+        }
+    }
+    for e in &m.contained_elements {
+        r_binover_test(problems, &mut infos, e);
+    }
+}
+
 
 mod test {
     use uuid::uuid;
@@ -1307,6 +1435,13 @@ mod test {
         vt.validate(check_errors, check_antipatterns)
     }
 
+    fn validate_binover_inner(elements: Vec<UmlClassElement>) -> Vec<ValidationProblem> {
+        let d = new_diagram(elements);
+        let mut problems = Vec::new();
+        validate_binover(&mut problems, &d.read());
+        problems
+    }
+
     // Structure validations tests
 
     #[test]
@@ -1322,7 +1457,7 @@ mod test {
     }
 
     #[test]
-    fn test_invalid_stereotypes() {
+    fn test_invalid_stereotypes1() {
         // missing stereotypes
         let kind = new_class(1, ontouml_models::NONE, false);
         let kind_uuid = *kind.read().uuid;
@@ -1347,7 +1482,10 @@ mod test {
                     ..
                 } if *uuid == assoc_uuid)).is_some()
         );
+    }
 
+    #[test]
+    fn test_invalid_stereotypes2() {
         // swapped stereotype domains
         let kind = new_class(3, ontouml_models::COMPONENT_OF, false);
         let kind_uuid = *kind.read().uuid;
@@ -1372,7 +1510,10 @@ mod test {
                     ..
                 } if *uuid == assoc_uuid)).is_some()
         );
+    }
 
+    #[test]
+    fn test_invalid_stereotypes3() {
         // garbage stereotypes
         let kind = new_class(5, "hello", false);
         let kind_uuid = *kind.read().uuid;
@@ -1425,13 +1566,28 @@ mod test {
     }
 
     #[test]
-    fn test_valid_relation() {
+    fn test_valid_relation1() {
         let quality = new_class(1, ontouml_models::QUALITY, false);
         let collective = new_class(2, ontouml_models::COLLECTIVE, false);
         let memberOf = new_association(3, ontouml_models::MEMBER_OF, collective.clone().into(), quality.clone().into());
         memberOf.write().source_label_multiplicity = Arc::new("1".to_owned());
         memberOf.write().target_label_multiplicity = Arc::new("1".to_owned());
 
+        let elements = vec![
+            quality.into(), collective.into(), memberOf.into(),
+        ];
+
+        assert_eq!(
+            validate(elements, true, false)
+                // for the sake of simplicity, ignore the MissingCharacterization errors
+                .into_iter().filter(|e| !matches!(e, ValidationProblem::Error { error_type: ErrorType::InvalidMissingCharacterization, .. }))
+                .collect::<Vec<ValidationProblem>>(),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_valid_relation2() {
         let mode = new_class(4, ontouml_models::MODE, false);
         let quantity = new_class(5, ontouml_models::QUANTITY, false);
         let containment = new_association(6, ontouml_models::CONTAINMENT, mode.clone().into(), quantity.clone().into());
@@ -1439,7 +1595,6 @@ mod test {
         containment.write().target_label_multiplicity = Arc::new("1".to_owned());
 
         let elements = vec![
-            quality.into(), collective.into(), memberOf.into(),
             mode.into(), quantity.into(), containment.into(),
         ];
 
@@ -1453,7 +1608,7 @@ mod test {
     }
 
     #[test]
-    fn test_invalid_relation() {
+    fn test_invalid_relation1() {
         let quality = new_class(1, ontouml_models::QUALITY, false);
         let collective = new_class(2, ontouml_models::COLLECTIVE, false);
         let memberOf = new_association(3, ontouml_models::MEMBER_OF, quality.clone().into(), collective.clone().into());
@@ -1461,15 +1616,8 @@ mod test {
         memberOf.write().target_label_multiplicity = Arc::new("1".to_owned());
         let memberOf_uuid = *memberOf.read().uuid;
 
-        let mode = new_class(4, ontouml_models::MODE, false);
-        let containment = new_association(5, ontouml_models::CONTAINMENT, quality.clone().into(), mode.clone().into());
-        containment.write().source_label_multiplicity = Arc::new("1".to_owned());
-        containment.write().target_label_multiplicity = Arc::new("1".to_owned());
-        let containment_uuid = *containment.read().uuid;
-
         let elements = vec![
             quality.into(), collective.into(), memberOf.into(),
-            mode.into(), containment.into(),
         ];
         let result = validate(elements, true, false);
 
@@ -1481,6 +1629,22 @@ mod test {
                     ..
                 } if *uuid == memberOf_uuid)).is_some()
         );
+    }
+
+    #[test]
+    fn test_invalid_relation2() {
+        let quality = new_class(1, ontouml_models::QUALITY, false);
+        let mode = new_class(4, ontouml_models::MODE, false);
+        let containment = new_association(5, ontouml_models::CONTAINMENT, quality.clone().into(), mode.clone().into());
+        containment.write().source_label_multiplicity = Arc::new("1".to_owned());
+        containment.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let containment_uuid = *containment.read().uuid;
+
+        let elements = vec![
+            quality.into(), mode.into(), containment.into(),
+        ];
+        let result = validate(elements, true, false);
+
         assert!(
             result
                 .iter().find(|e| matches!(e, ValidationProblem::Error {
@@ -1492,7 +1656,7 @@ mod test {
     }
 
     #[test]
-    fn test_valid_identity() {
+    fn test_valid_identity1() {
         // subkind, phase, role subtype of kind
         let kind1 = new_class(1, ontouml_models::KIND, false);
         let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
@@ -1500,6 +1664,21 @@ mod test {
         let role = new_class(4, ontouml_models::ROLE, false);
         let generalization1 = new_generalization(5, vec![subkind1.clone(), phase.clone(), role.clone()], vec![kind1.clone()], true, true);
 
+        let elements = vec![
+            kind1.into(), subkind1.into(), phase.into(), role.into(), generalization1.into(),
+        ];
+
+        assert_eq!(
+            validate(elements, true, false)
+                // for the sake of simplicity, ignore missing dependencies
+                .into_iter().filter(|e| !matches!(e, ValidationProblem::Error { error_type: ErrorType::InvalidPhase | ErrorType::InvalidRole, .. }))
+                .collect::<Vec<ValidationProblem>>(),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_valid_identity2() {
         // disjoint generalization set of kinds
         let kind2 = new_class(6, ontouml_models::KIND, false);
         let kind3 = new_class(7, ontouml_models::KIND, false);
@@ -1507,7 +1686,6 @@ mod test {
         let generalization2 = new_generalization(9, vec![subkind2.clone()], vec![kind2.clone(), kind3.clone()], true, true);
 
         let elements = vec![
-            kind1.into(), subkind1.into(), phase.into(), role.into(), generalization1.into(),
             kind2.into(), kind3.into(), subkind2.into(), generalization2.into(),
         ];
 
@@ -1521,7 +1699,7 @@ mod test {
     }
 
     #[test]
-    fn test_invalid_identity() {
+    fn test_invalid_identity1() {
         // kind subtype of subkind (with no identity provider)
         let kind1 = new_class(1, ontouml_models::KIND, false);
         let kind1_uuid = *kind1.read().uuid;
@@ -1529,16 +1707,8 @@ mod test {
         let subkind1_uuid = *subkind1.read().uuid;
         let generalization1 = new_generalization(3, vec![kind1.clone()], vec![subkind1.clone()], true, true);
 
-        // disjoint generalization set where one possibility does not provide identity
-        let kind2 = new_class(4, ontouml_models::KIND, false);
-        let category = new_class(5, ontouml_models::CATEGORY, true);
-        let subkind2 = new_class(6, ontouml_models::SUBKIND, false);
-        let subkind2_uuid = *subkind2.read().uuid;
-        let generalization2 = new_generalization(7, vec![subkind2.clone()], vec![kind2.clone(), category.clone()], true, true);
-
         let elements = vec![
             kind1.into(), subkind1.into(), generalization1.into(),
-            kind2.into(), category.into(), subkind2.into(), generalization2.into(),
         ];
         let result = validate(elements, true, false);
 
@@ -1556,6 +1726,21 @@ mod test {
                     ..
                 } if *uuid == subkind1_uuid)).is_some()
         );
+    }
+
+    #[test]
+    fn test_invalid_identity2() {
+        // disjoint generalization set where one possibility does not provide identity
+        let kind2 = new_class(4, ontouml_models::KIND, false);
+        let category = new_class(5, ontouml_models::CATEGORY, true);
+        let subkind2 = new_class(6, ontouml_models::SUBKIND, false);
+        let subkind2_uuid = *subkind2.read().uuid;
+        let generalization2 = new_generalization(7, vec![subkind2.clone()], vec![kind2.clone(), category.clone()], true, true);
+
+        let elements = vec![
+            kind2.into(), category.into(), subkind2.into(), generalization2.into(),
+        ];
+        let result = validate(elements, true, false);
 
         assert!(
             result
@@ -1631,20 +1816,13 @@ mod test {
     }
 
     #[test]
-    fn test_invalid_phase() {
+    fn test_invalid_phase1() {
         // phase without a generalization set
         let phase1 = new_class(1, ontouml_models::PHASE, false);
         let phase1_uuid = *phase1.read().uuid;
 
-        // phase in a non-partition generalization set
-        let kind = new_class(2, ontouml_models::KIND, false);
-        let phase2 = new_class(3, ontouml_models::PHASE, false);
-        let phase2_uuid = *phase2.read().uuid;
-        let generalization = new_generalization(4, vec![phase2.clone()], vec![kind.clone()], false, false);
-
         let elements = vec![
             phase1.into(),
-            kind.into(), phase2.into(), generalization.into(),
         ];
         let result = validate(elements, true, false);
 
@@ -1655,6 +1833,21 @@ mod test {
                     ..
                 } if *uuid == phase1_uuid)).is_some()
         );
+    }
+
+    #[test]
+    fn test_invalid_phase2() {
+        // phase in a non-partition generalization set
+        let kind = new_class(2, ontouml_models::KIND, false);
+        let phase2 = new_class(3, ontouml_models::PHASE, false);
+        let phase2_uuid = *phase2.read().uuid;
+        let generalization = new_generalization(4, vec![phase2.clone()], vec![kind.clone()], false, false);
+
+        let elements = vec![
+            kind.into(), phase2.into(), generalization.into(),
+        ];
+        let result = validate(elements, true, false);
+
         assert!(
             result
                 .iter().find(|e| matches!(e, ValidationProblem::Error {
@@ -1708,7 +1901,7 @@ mod test {
     }
 
     #[test]
-    fn test_valid_relator() {
+    fn test_valid_relator1() {
         // relator with one mediation with multiplicity >1
         let relator2 = new_class(2, ontouml_models::RELATOR, false);
         let relator2_uuid = *relator2.read().uuid;
@@ -1717,6 +1910,14 @@ mod test {
         mediation1.write().source_label_multiplicity = Arc::new("2".to_owned());
         mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
 
+        let elements = vec![
+            relator2.into(), kind1.into(), mediation1.into(),
+        ];
+        assert_eq!(validate(elements, true, false), vec![]);
+    }
+
+    #[test]
+    fn test_valid_relator2() {
         // relator with two mediations with multiplicity =1
         let relator3 = new_class(5, ontouml_models::RELATOR, false);
         let kind2 = new_class(6, ontouml_models::KIND, false);
@@ -1730,18 +1931,33 @@ mod test {
         mediation3.write().target_label_multiplicity = Arc::new("1".to_owned());
 
         let elements = vec![
-            relator2.into(), kind1.into(), mediation1.into(),
             relator3.into(), kind2.into(), mediation2.into(), kind3.into(), mediation3.into(),
         ];
         assert_eq!(validate(elements, true, false), vec![]);
     }
 
     #[test]
-    fn test_invalid_relator() {
+    fn test_invalid_relator1() {
         // relator with no mediation
         let relator1 = new_class(1, ontouml_models::RELATOR, false);
         let relator1_uuid = *relator1.read().uuid;
 
+        let elements = vec![
+            relator1.into(),
+        ];
+        let result = validate(elements, true, false);
+
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidRelator,
+                    ..
+                } if *uuid == relator1_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_invalid_relator2() {
         // relator with one mediation with multiplicity =1
         let relator2 = new_class(2, ontouml_models::RELATOR, false);
         let relator2_uuid = *relator2.read().uuid;
@@ -1750,6 +1966,22 @@ mod test {
         mediation1.write().source_label_multiplicity = Arc::new("1".to_owned());
         mediation1.write().target_label_multiplicity = Arc::new("1".to_owned());
 
+        let elements = vec![
+            relator2.into(), kind1.into(), mediation1.into(),
+        ];
+        let result = validate(elements, true, false);
+
+        assert!(
+            result
+                .iter().find(|e| matches!(e, ValidationProblem::Error {
+                    uuid, error_type: ErrorType::InvalidRelator,
+                    ..
+                } if *uuid == relator2_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_invalid_relator3() {
         // relator with two mediations with multiplicity 0..1
         let relator3 = new_class(5, ontouml_models::RELATOR, false);
         let relator3_uuid = *relator3.read().uuid;
@@ -1764,26 +1996,10 @@ mod test {
         mediation3.write().target_label_multiplicity = Arc::new("1".to_owned());
 
         let elements = vec![
-            relator1.into(),
-            relator2.into(), kind1.into(), mediation1.into(),
             relator3.into(), kind2.into(), mediation2.into(), kind3.into(), mediation3.into(),
         ];
         let result = validate(elements, true, false);
 
-        assert!(
-            result
-                .iter().find(|e| matches!(e, ValidationProblem::Error {
-                    uuid, error_type: ErrorType::InvalidRelator,
-                    ..
-                } if *uuid == relator1_uuid)).is_some()
-        );
-        assert!(
-            result
-                .iter().find(|e| matches!(e, ValidationProblem::Error {
-                    uuid, error_type: ErrorType::InvalidRelator,
-                    ..
-                } if *uuid == relator2_uuid)).is_some()
-        );
         assert!(
             result
                 .iter().find(|e| matches!(e, ValidationProblem::Error {
@@ -1862,7 +2078,7 @@ mod test {
     // TODO: Antipatterns validations tests
 
     #[test]
-    fn test_valid_binover() {
+    fn test_valid_binover1() {
         // unconnected
         let kind1 = new_class(1, ontouml_models::KIND, false);
         let kind2 = new_class(2, ontouml_models::KIND, false);
@@ -1870,10 +2086,13 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate(vec![kind1.into(), kind2.into(), assoc.into()], false, true),
+            validate_binover_inner(vec![kind1.into(), kind2.into(), assoc.into()]),
             vec![],
         );
+    }
 
+    #[test]
+    fn test_valid_binover2() {
         // disjoint
         let kind1 = new_class(1, ontouml_models::KIND, false);
         let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
@@ -1883,13 +2102,27 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), assoc.into()], false, true),
+            validate_binover_inner(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), assoc.into()]),
             vec![],
         );
     }
 
     #[test]
-    fn test_invalid_binover() {
+    fn test_valid_binover3() {
+        // mixins with no common elements
+        let mixin1 = new_class(1, ontouml_models::MIXIN, true);
+        let mixin2 = new_class(2, ontouml_models::MIXIN, true);
+        let assoc = new_association(3, ontouml_models::COMPONENT_OF, mixin1.clone().into(), mixin2.clone().into());
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate_binover_inner(vec![mixin1.into(), mixin2.into(), assoc.into()]),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_binover1() {
         // self
         let kind1 = new_class(1, ontouml_models::KIND, false);
         let assoc = new_association(2, ontouml_models::COMPONENT_OF, kind1.clone().into(), kind1.clone().into());
@@ -1897,12 +2130,15 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate(vec![kind1.into(), assoc.into()], false, true),
+            validate_binover_inner(vec![kind1.into(), assoc.into()]),
             vec![
                 ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
             ],
         );
+    }
 
+    #[test]
+    fn test_invalid_binover2() {
         // subtype
         let kind1 = new_class(1, ontouml_models::KIND, false);
         let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
@@ -1912,12 +2148,15 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate(vec![kind1.into(), subkind1.into(), gen1.into(), assoc.into()], false, true),
+            validate_binover_inner(vec![kind1.into(), subkind1.into(), gen1.into(), assoc.into()]),
             vec![
                 ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
             ],
         );
+    }
 
+    #[test]
+    fn test_invalid_binover3() {
         // multiple
         let kind1 = new_class(1, ontouml_models::KIND, false);
         let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
@@ -1929,12 +2168,15 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), gen2.into(), assoc.into()], false, true),
+            validate_binover_inner(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), gen2.into(), assoc.into()]),
             vec![
                 ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
             ],
         );
+    }
 
+    #[test]
+    fn test_invalid_binover4() {
         // overlapping
         let kind1 = new_class(1, ontouml_models::KIND, false);
         let subkind1 = new_class(2, ontouml_models::SUBKIND, false);
@@ -1945,10 +2187,188 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), assoc.into()], false, true),
+            validate_binover_inner(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), assoc.into()]),
             vec![
                 ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
             ],
+        );
+    }
+
+    #[test]
+    fn test_invalid_binover5() {
+        // mixins generalizing common sortal
+        let mixin1 = new_class(1, ontouml_models::MIXIN, true);
+        let mixin2 = new_class(2, ontouml_models::MIXIN, true);
+        let kind1 = new_class(3, ontouml_models::KIND, false);
+        let gen1 = new_generalization(4, vec![kind1.clone()], vec![mixin1.clone()], false, false);
+        let gen2 = new_generalization(5, vec![kind1.clone()], vec![mixin2.clone()], false, false);
+        let assoc = new_association(6, ontouml_models::COMPONENT_OF, mixin1.clone().into(), mixin2.clone().into());
+        let assoc_uuid = *assoc.read().uuid;
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert!(
+            validate_binover_inner(vec![
+                mixin1.into(), mixin2.into(),
+                kind1.into(), gen1.into(), gen2.into(),
+                assoc.into(),
+            ])
+            .iter().find(|e| matches!(e, ValidationProblem::AntiPattern {
+                uuid, antipattern_type: AntiPatternType::BinOver,
+                ..
+            } if *uuid == assoc_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_invalid_binover6() {
+        // mixins generalized by a common mixin
+        let mixin1 = new_class(1, ontouml_models::MIXIN, true);
+        let mixin2 = new_class(2, ontouml_models::MIXIN, true);
+        let mixin3 = new_class(3, ontouml_models::MIXIN, true);
+        let gen1 = new_generalization(4, vec![mixin2.clone()], vec![mixin1.clone()], false, false);
+        let gen2 = new_generalization(5, vec![mixin3.clone()], vec![mixin1.clone()], false, false);
+        let assoc = new_association(6, ontouml_models::COMPONENT_OF, mixin2.clone().into(), mixin3.clone().into());
+        let assoc_uuid = *assoc.read().uuid;
+        assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate_binover_inner(vec![
+                mixin1.into(),
+                mixin2.into(), mixin3.into(),
+                gen1.into(), gen2.into(),
+                assoc.into(),
+            ]),
+            vec![
+                ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
+            ],
+        );
+    }
+
+    #[test]
+    fn test_valid_decint() {
+        // kind <- subkind -> category
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let subkind = new_class(2, ontouml_models::SUBKIND, false);
+        let category = new_class(3, ontouml_models::CATEGORY, true);
+        let gen1 = new_generalization(4, vec![subkind.clone().into()], vec![kind.clone().into()], false, false);
+        let gen2 = new_generalization(5, vec![subkind.clone().into()], vec![category.clone().into()], false, false);
+
+        assert_eq!(
+            validate(vec![kind.into(), subkind.into(), category.into(), gen1.into(), gen2.into()], false, true),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_decint() {
+        // kind, kind <- subkind
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let kind2 = new_class(2, ontouml_models::KIND, false);
+        let subkind = new_class(3, ontouml_models::SUBKIND, false);
+        let subkind_uuid = *subkind.read().uuid;
+        let gen1 = new_generalization(4, vec![subkind.clone().into()], vec![kind1.clone().into(), kind1.clone().into()], false, false);
+
+        assert_eq!(
+            validate(vec![kind1.into(), kind2.into(), subkind.into(), gen1.into()], false, true),
+            vec![
+                ValidationProblem::AntiPattern { uuid: subkind_uuid, antipattern_type: AntiPatternType::DecInt }
+            ],
+        );
+    }
+
+    #[test]
+    fn test_invalid_depphase() {
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let phase = new_class(2, ontouml_models::PHASE, false);
+        let phase_uuid = *phase.read().uuid;
+        let relator = new_class(3, ontouml_models::RELATOR, false);
+        let gen1 = new_generalization(4, vec![phase.clone().into()], vec![kind.clone().into()], false, false);
+        let mediation = new_association(5, ontouml_models::MEDIATION, phase.clone().into(), relator.clone().into());
+        mediation.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        assert!(
+            validate(vec![kind.into(), phase.into(), gen1.into(), relator.into(), mediation.into()], false, true)
+            .iter().find(|e| matches!(e, ValidationProblem::AntiPattern {
+                uuid, antipattern_type: AntiPatternType::DepPhase,
+                ..
+            } if *uuid == phase_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_invalid_freerole() {
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let role1 = new_class(2, ontouml_models::ROLE, false);
+        let role2 = new_class(3, ontouml_models::ROLE, false);
+        let role2_uuid = *role2.read().uuid;
+        let gen1 = new_generalization(4, vec![role1.clone().into()], vec![kind.clone().into()], false, false);
+        let gen2 = new_generalization(5, vec![role2.clone().into()], vec![role1.clone().into()], false, false);
+        let relator = new_class(6, ontouml_models::RELATOR, false);
+        let mediation = new_association(7, ontouml_models::MEDIATION, role1.clone().into(), relator.clone().into());
+        mediation.write().source_label_multiplicity = Arc::new("1".to_owned());
+        mediation.write().target_label_multiplicity = Arc::new("1".to_owned());
+
+        assert!(
+            validate(vec![kind.into(), role1.into(), role2.into(), gen1.into(), gen2.into(), relator.into(), mediation.into()], false, true)
+            .iter().find(|e| matches!(e, ValidationProblem::AntiPattern {
+                uuid, antipattern_type: AntiPatternType::FreeRole,
+                ..
+            } if *uuid == role2_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_invalid_gsrig() {
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let subkind = new_class(2, ontouml_models::SUBKIND, false);
+        let role = new_class(3, ontouml_models::ROLE, false);
+        let gen1 = new_generalization(4, vec![subkind.clone().into(), role.clone().into()], vec![kind.clone().into()], false, false);
+        let gen1_uuid = *gen1.read().uuid;
+
+        assert!(
+            validate(vec![kind.into(), subkind.into(), role.into(), gen1.into()], false, true)
+            .iter().find(|e| matches!(e, ValidationProblem::AntiPattern {
+                uuid, antipattern_type: AntiPatternType::GSRig,
+                ..
+            } if *uuid == gen1_uuid)).is_some()
+        );
+    }
+
+    #[test]
+    fn test_invalid_hetcoll() {
+        let collective = new_class(1, ontouml_models::COLLECTIVE, true);
+        let collective_uuid = *collective.read().uuid;
+        let kind1 = new_class(2, ontouml_models::KIND, false);
+        let kind2 = new_class(3, ontouml_models::KIND, false);
+        let assoc1 = new_association(4, ontouml_models::MEMBER_OF, collective.clone().into(), kind1.clone().into());
+        assoc1.write().source_label_multiplicity = Arc::new("1".to_owned());
+        let assoc2 = new_association(5, ontouml_models::MEMBER_OF, collective.clone().into(), kind2.clone().into());
+        assoc2.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(vec![collective.into(), kind1.into(), kind2.into(), assoc1.into(), assoc2.into()], false, true),
+            vec![ValidationProblem::AntiPattern {
+                uuid: collective_uuid,
+                antipattern_type: AntiPatternType::HetColl,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_invalid_homofunc() {
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let kind1_uuid = *kind1.read().uuid;
+        let kind2 = new_class(2, ontouml_models::KIND, false);
+        let assoc1 = new_association(3, ontouml_models::COMPONENT_OF, kind1.clone().into(), kind2.clone().into());
+        assoc1.write().source_label_multiplicity = Arc::new("1".to_owned());
+
+        assert_eq!(
+            validate(vec![kind1.into(), kind2.into(), assoc1.into()], false, true),
+            vec![ValidationProblem::AntiPattern {
+                uuid: kind1_uuid,
+                antipattern_type: AntiPatternType::HomoFunc,
+            }]
         );
     }
 }
