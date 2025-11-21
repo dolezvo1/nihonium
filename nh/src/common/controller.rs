@@ -2074,52 +2074,57 @@ impl<
                         ui: &mut egui::Ui,
                         commands: &mut Vec<ProjectCommand>,
                     ) -> CustomModalResult {
+                        ui.style_mut().spacing.indent += 20.0;
                         ui.heading("Color picker");
 
                         ui.radio_value(&mut self.selected_color_type, MGlobalColorType::None, "No override");
 
                         ui.radio_value(&mut self.selected_color_type, MGlobalColorType::Local, "Local color");
                         ui.add_enabled_ui(self.selected_color_type == MGlobalColorType::Local, |ui| {
-                            egui::widgets::color_picker::color_picker_color32(
-                                ui,
-                                &mut self.local_color,
-                                egui::widgets::color_picker::Alpha::OnlyBlend
-                            );
+                            ui.indent("local color", |ui| {
+                                egui::widgets::color_picker::color_picker_color32(
+                                    ui,
+                                    &mut self.local_color,
+                                    egui::widgets::color_picker::Alpha::OnlyBlend
+                                );
+                            });
                         });
 
                         ui.radio_value(&mut self.selected_color_type, MGlobalColorType::Global, "Global color");
                         ui.add_enabled_ui(self.selected_color_type == MGlobalColorType::Global, |ui| {
-                            let gc = &mut d.global_colors;
-                            for id in gc.colors_order.iter() {
-                                ui.horizontal(|ui| {
-                                    if let Some(c) = gc.colors.get_mut(id) {
-                                        egui::widgets::color_picker::color_edit_button_srgba(
-                                            ui,
-                                            &mut c.1,
-                                            egui::widgets::color_picker::Alpha::OnlyBlend
-                                        );
+                            ui.indent("global color", |ui| {
+                                let gc = &mut d.global_colors;
+                                for id in gc.colors_order.iter() {
+                                    ui.horizontal(|ui| {
+                                        if let Some(c) = gc.colors.get_mut(id) {
+                                            egui::widgets::color_picker::color_edit_button_srgba(
+                                                ui,
+                                                &mut c.1,
+                                                egui::widgets::color_picker::Alpha::OnlyBlend
+                                            );
 
-                                        let text = if *id == self.global_color {
-                                            &format!("[{}]", c.0)
-                                        } else {
-                                            &c.0
-                                        };
-                                        if ui.label(text).clicked() {
-                                            self.global_color = *id;
+                                            let text = if *id == self.global_color {
+                                                &format!("[{}]", c.0)
+                                            } else {
+                                                &c.0
+                                            };
+                                            if ui.label(text).clicked() {
+                                                self.global_color = *id;
+                                            }
                                         }
+                                    });
+                                }
+
+                                ui.horizontal(|ui| {
+                                    let r = ui.text_edit_singleline(&mut self.new_global_color_name);
+
+                                    if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) || ui.button("Add new").clicked() {
+                                        let new_uuid = uuid::Uuid::now_v7();
+                                        gc.colors_order.push(new_uuid);
+                                        gc.colors.insert(new_uuid, (std::mem::take(&mut self.new_global_color_name), egui::Color32::WHITE));
                                     }
                                 });
-                            }
-
-                            ui.horizontal(|ui| {
-                                let r = ui.text_edit_singleline(&mut self.new_global_color_name);
-
-                                if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) || ui.button("Add new").clicked() {
-                                    let new_uuid = uuid::Uuid::now_v7();
-                                    gc.colors_order.push(new_uuid);
-                                    gc.colors.insert(new_uuid, (std::mem::take(&mut self.new_global_color_name), egui::Color32::WHITE));
-                                }
-                            })
+                            });
                         });
 
                         ui.separator();
