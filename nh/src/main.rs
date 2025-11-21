@@ -2151,8 +2151,13 @@ impl eframe::App for NHApp {
                                 && let Some(r) = self.tree[t.0][t.1].rect()
                                 && r.contains(*pos)
                             {
+                                let delta: f32 = match unit {
+                                    egui::MouseWheelUnit::Point => delta.y,
+                                    egui::MouseWheelUnit::Line => delta.y * 5.0,
+                                    egui::MouseWheelUnit::Page => delta.y * 20.0,
+                                }.clamp(-25.0, 25.0);
                                 self.context.drawing_context.tool_palette_item_height =
-                                    (self.context.drawing_context.tool_palette_item_height as f32 + delta.y * 5.0)
+                                    (self.context.drawing_context.tool_palette_item_height as f32 + delta)
                                         .max(TOOL_PALETTE_MIN_HEIGHT as f32) as u32;
                             }
                         }
