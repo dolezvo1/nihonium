@@ -24,7 +24,9 @@ use std::{
 };
 
 pub trait UmlClassPalette<P: UmlClassProfile>: Default + Clone {
-    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (UmlClassToolStage, &'static str, UmlClassElementView<P>)>;
+    fn iter_mut(&mut self) -> impl Iterator<
+        Item = (&str, &mut Vec<(UmlClassToolStage, &'static str, UmlClassElementView<P>)>)
+    >;
 }
 
 pub trait StereotypeController: Default + Clone + Send + Sync + 'static {
@@ -381,7 +383,7 @@ struct UmlClassDiagramBuffer {
 
 #[derive(Clone)]
 pub struct UmlClassNullPalette {
-    views: [(UmlClassToolStage, &'static str, UmlClassElementView<UmlClassNullProfile>); 11],
+    views: [(&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<UmlClassNullProfile>)>); 3],
 }
 
 impl Default for UmlClassNullPalette {
@@ -389,6 +391,7 @@ impl Default for UmlClassNullPalette {
         let (_instance, instance_view) = new_umlclass_instance("o", "Type", "", "", egui::Pos2::ZERO);
         instance_view.write().refresh_buffers();
         let (class_m, class_view) = new_umlclass_class("ClassName", "class", false, Vec::new(), Vec::new(), egui::Pos2::ZERO);
+        class_view.write().refresh_buffers();
         let class_1 = (class_m.clone(), class_view.clone().into());
         let class_2 = (class_m.clone().into(), class_view.into());
         let (d, dv) = new_umlclass_class("dummy", "class", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0));
@@ -415,27 +418,31 @@ impl Default for UmlClassNullPalette {
 
         Self {
             views: [
-                (UmlClassToolStage::Instance, "Instance", instance_view.into()),
-                (UmlClassToolStage::Class { name: "ClassName", stereotype: "class" }, "Class", class_2.1),
-                (UmlClassToolStage::ClassProperty, "Property", property_view.into()),
-                (UmlClassToolStage::ClassOperation, "Operation", operation_view.into()),
-
-                (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
-                (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } }, "Association", assoc_view.into()),
-                (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: false, stereotype: "", } }, "IntReal", intreal_view.into()),
-                (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype: "use", } }, "Usage", usage_view.into()),
-
-                (UmlClassToolStage::PackageStart, "Package", package_view.into()),
-                (UmlClassToolStage::Comment, "Comment", comment.1),
-                (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
+                ("Elements", vec![
+                    (UmlClassToolStage::Instance, "Instance", instance_view.into()),
+                    (UmlClassToolStage::Class { name: "ClassName", stereotype: "class" }, "Class", class_2.1),
+                    (UmlClassToolStage::ClassProperty, "Property", property_view.into()),
+                    (UmlClassToolStage::ClassOperation, "Operation", operation_view.into()),
+                ]),
+                ("Relationships", vec![
+                    (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
+                    (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } }, "Association", assoc_view.into()),
+                    (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: false, stereotype: "", } }, "IntReal", intreal_view.into()),
+                    (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype: "use", } }, "Usage", usage_view.into()),
+                ]),
+                ("Other", vec![
+                    (UmlClassToolStage::PackageStart, "Package", package_view.into()),
+                    (UmlClassToolStage::Comment, "Comment", comment.1),
+                    (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
+                ]),
             ]
         }
     }
 }
 
 impl UmlClassPalette<UmlClassNullProfile> for UmlClassNullPalette {
-    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (UmlClassToolStage, &'static str, UmlClassElementView<UmlClassNullProfile>)> {
-        self.views.iter_mut()
+    fn iter_mut(&mut self) -> impl Iterator<Item = (&str, &mut Vec<(UmlClassToolStage, &'static str, UmlClassElementView<UmlClassNullProfile>)>)> {
+        self.views.iter_mut().map(|e| (e.0, &mut e.1))
     }
 }
 
@@ -673,7 +680,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) {
-        let button_height = 60.0;
+        let button_height = drawing_context.tool_palette_item_height as f32;
         let width = ui.available_width();
         let selected_background_color = if ui.style().visuals.dark_mode {
             egui::Color32::BLUE
@@ -708,26 +715,32 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
 
         let (empty_a, empty_b) = (HashMap::new(), HashMap::new());
         let empty_q = UmlClassQueryable::new(&empty_a, &empty_b);
-        for (stage, name, view) in self.placeholders.iter_mut() {
-            let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
-            if response.clicked() {
-                if let Some(t) = &tool && t.initial_stage == *stage {
-                    *tool = None;
-                } else {
-                    *tool = Some(NaiveUmlClassTool::new(*stage));
-                }
-            }
+        for (label, items) in self.placeholders.iter_mut() {
+            egui::CollapsingHeader::new(label)
+                .default_open(true)
+                .show(ui, |ui| {
+                    let width = ui.available_width();
+                    for (stage, name, view) in items.iter_mut() {
+                        let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
+                        if response.clicked() {
+                            if let Some(t) = &tool && t.initial_stage == *stage {
+                                *tool = None;
+                            } else {
+                                *tool = Some(NaiveUmlClassTool::new(*stage));
+                            }
+                        }
 
-            let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
-            let painter = ui.painter().with_clip_rect(icon_rect);
-            let mut mc = canvas::MeasuringCanvas::new(&painter);
-            view.draw_in(&empty_q, drawing_context, &mut mc, &None);
-            let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
-            let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
-            c.clear(egui::Color32::GRAY);
-            view.draw_in(&empty_q, drawing_context, &mut c, &None);
+                        let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
+                        let painter = ui.painter().with_clip_rect(icon_rect);
+                        let mut mc = canvas::MeasuringCanvas::new(&painter);
+                        view.draw_in(&empty_q, drawing_context, &mut mc, &None);
+                        let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
+                        let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
+                        c.clear(egui::Color32::GRAY);
+                        view.draw_in(&empty_q, drawing_context, &mut c, &None);
+                    }
+                });
         }
-        ui.separator();
     }
 
     fn menubar_options_fun(

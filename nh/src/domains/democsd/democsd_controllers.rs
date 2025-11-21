@@ -418,7 +418,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) {
-        let button_height = 60.0;
+        let button_height = drawing_context.tool_palette_item_height as f32;
         let width = ui.available_width();
         let selected_background_color = if ui.style().visuals.dark_mode {
             egui::Color32::BLUE

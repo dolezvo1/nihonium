@@ -526,10 +526,12 @@ impl ColorBundle {
     }
 }
 
+pub const TOOL_PALETTE_MIN_HEIGHT: u32 = 5;
 pub struct GlobalDrawingContext {
     pub global_colors: ColorBundle,
     pub fluent_bundle: fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
     pub shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
+    pub tool_palette_item_height: u32,
 }
 
 

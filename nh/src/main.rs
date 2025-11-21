@@ -25,7 +25,7 @@ mod domains;
 
 use crate::common::eref::ERef;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
-use crate::common::controller::{ColorBundle, DeleteKind, DiagramCommand, DiagramController, ModifierKeys, ModifierSettings};
+use crate::common::controller::{ColorBundle, DeleteKind, DiagramCommand, DiagramController, ModifierKeys, ModifierSettings, TOOL_PALETTE_MIN_HEIGHT};
 use crate::common::project_serde::{FSRawReader, FSRawWriter, FSReadAbstraction, FSWriteAbstraction, ZipFSReader, ZipFSWriter};
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
@@ -1441,6 +1441,9 @@ impl NHContext {
         });
 
         ui.collapsing("Keys and Shortcuts", |ui| {
+            ui.label("Tool palette item height");
+            ui.add(egui::Slider::new(&mut self.drawing_context.tool_palette_item_height, TOOL_PALETTE_MIN_HEIGHT..=200));
+
             ui.label("Modifiers");
 
 
@@ -1716,6 +1719,7 @@ impl Default for NHApp {
                 global_colors: ColorBundle::new(),
                 fluent_bundle,
                 shortcuts: HashMap::new(),
+                tool_palette_item_height: 60,
             },
             
             undo_stack: Vec::new(),
@@ -2086,6 +2090,7 @@ impl eframe::App for NHApp {
         // Show ui
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             // Check diagram-handled shortcuts
+            let interact_pos = ui.ctx().pointer_interact_pos();
             ui.input(|is|
                 'outer: for e in is.events.iter() {
                     match e {
@@ -2140,6 +2145,18 @@ impl eframe::App for NHApp {
                                 }
                                 
                                 break 'outer;
+                            }
+                        }
+                        egui::Event::MouseWheel { unit, delta, modifiers }
+                            if modifiers.matches_logically(egui::Modifiers::COMMAND) => {
+                            if let Some(pos) = &interact_pos
+                                && let Some(t) = self.tree.find_tab(&NHTab::Toolbar)
+                                && let Some(r) = self.tree[t.0][t.1].rect()
+                                && r.contains(*pos)
+                            {
+                                self.context.drawing_context.tool_palette_item_height =
+                                    (self.context.drawing_context.tool_palette_item_height as f32 + delta.y * 5.0)
+                                        .max(TOOL_PALETTE_MIN_HEIGHT as f32) as u32;
                             }
                         }
                         _ => {}
