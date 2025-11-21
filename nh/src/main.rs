@@ -793,8 +793,6 @@ impl NHContext {
                                 }
                             }
                         }
-                        // TODO: uncomment when egui_ltreeview/#28 is fixed in release
-                        /*
                         egui_ltreeview::Action::MoveExternal(dnde) => {
                             for selected in &dnde.source {
                                 if let Some((HierarchyNode::Diagram(..), _)) = self.project_hierarchy.get(selected) {
@@ -804,7 +802,6 @@ impl NHContext {
                                 }
                             }
                         }
-                        */
                         egui_ltreeview::Action::Move(dnd) => {
                             let target_is_folder = matches!(self.project_hierarchy.get(&dnd.target), Some((HierarchyNode::Folder(..), _)));
 

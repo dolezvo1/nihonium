@@ -8,15 +8,15 @@ edition = "2024"
 nh-derive = { path = "../nh-derive" }
 
 derive_more = { version = "2.0", features = [ "from", "try_into", "not" ] }
-eframe = "0.32"
-egui_extras = { version = "0.32", features = [ "serde" ] }
-egui_dock = "0.17"
-egui_ltreeview = "0.5"
+eframe = "0.33"
+egui_extras = { version = "0.33", features = [ "serde" ] }
+egui_dock = "0.18"
+egui_ltreeview = "0.6"
 rfd = "0.15"
 serde = { version = "1.0", features = [ "derive", "rc" ] }
 toml = "0.9"
 uuid = { version = "1.18", features = [ "std", "v7", "serde" ] }
-zip = { version = "5.1", default-features = false }
+zip = { version = "6", default-features = false }
 
 # Fluent
 fluent-bundle = "0.16"
