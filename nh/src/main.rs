@@ -2148,8 +2148,9 @@ impl eframe::App for NHApp {
                             if modifiers.matches_logically(egui::Modifiers::COMMAND) => {
                             if let Some(pos) = &interact_pos
                                 && let Some(t) = self.tree.find_tab(&NHTab::Toolbar)
-                                && let Some(r) = self.tree[t.0][t.1].rect()
-                                && r.contains(*pos)
+                                && let Some(ln) = self.tree[t.0][t.1].get_leaf()
+                                && ln.active == t.2
+                                && ln.viewport.contains(*pos)
                             {
                                 let delta: f32 = match unit {
                                     egui::MouseWheelUnit::Point => delta.y,
