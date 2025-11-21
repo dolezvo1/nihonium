@@ -526,7 +526,8 @@ impl ColorBundle {
     }
 }
 
-pub const TOOL_PALETTE_MIN_HEIGHT: u32 = 5;
+pub const TOOL_PALETTE_MIN_HEIGHT: u32 = 15;
+pub const TOOL_PALETTE_MAX_HEIGHT: u32 = 200;
 pub struct GlobalDrawingContext {
     pub global_colors: ColorBundle,
     pub fluent_bundle: fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,

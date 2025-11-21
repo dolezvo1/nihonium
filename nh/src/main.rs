@@ -25,7 +25,7 @@ mod domains;
 
 use crate::common::eref::ERef;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
-use crate::common::controller::{ColorBundle, DeleteKind, DiagramCommand, DiagramController, ModifierKeys, ModifierSettings, TOOL_PALETTE_MIN_HEIGHT};
+use crate::common::controller::{ColorBundle, DeleteKind, DiagramCommand, DiagramController, ModifierKeys, ModifierSettings, TOOL_PALETTE_MAX_HEIGHT, TOOL_PALETTE_MIN_HEIGHT};
 use crate::common::project_serde::{FSRawReader, FSRawWriter, FSReadAbstraction, FSWriteAbstraction, ZipFSReader, ZipFSWriter};
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
@@ -1439,7 +1439,7 @@ impl NHContext {
 
         ui.collapsing("Keys and Shortcuts", |ui| {
             ui.label("Tool palette item height");
-            ui.add(egui::Slider::new(&mut self.drawing_context.tool_palette_item_height, TOOL_PALETTE_MIN_HEIGHT..=200));
+            ui.add(egui::Slider::new(&mut self.drawing_context.tool_palette_item_height, TOOL_PALETTE_MIN_HEIGHT..=TOOL_PALETTE_MAX_HEIGHT));
 
             ui.label("Modifiers");
 
@@ -2155,10 +2155,13 @@ impl eframe::App for NHApp {
                                     egui::MouseWheelUnit::Point => delta.y,
                                     egui::MouseWheelUnit::Line => delta.y * 5.0,
                                     egui::MouseWheelUnit::Page => delta.y * 20.0,
-                                }.clamp(-25.0, 25.0);
+                                }.clamp(-20.0, 20.0);
                                 self.context.drawing_context.tool_palette_item_height =
                                     (self.context.drawing_context.tool_palette_item_height as f32 + delta)
-                                        .max(TOOL_PALETTE_MIN_HEIGHT as f32) as u32;
+                                        .clamp(
+                                            TOOL_PALETTE_MIN_HEIGHT as f32,
+                                            TOOL_PALETTE_MAX_HEIGHT as f32,
+                                        ) as u32;
                             }
                         }
                         _ => {}
