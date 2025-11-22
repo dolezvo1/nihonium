@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::{Arc, RwLockReadGuard}};
 
 use eframe::egui;
 
-use crate::{CustomTab, common::{canvas::Highlight, controller::{DiagramCommand, LabelProvider, Model, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, domains::{ontouml::{ontouml_controllers, ontouml_models}, umlclass::umlclass_models::{UmlClass, UmlClassClassifier, UmlClassGeneralization}}};
+use crate::{CustomTab, common::{canvas::Highlight, controller::{DiagramCommand, LabelProvider, Model, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, domains::{ontouml::ontouml_models, umlclass::umlclass_models::{UmlClass, UmlClassClassifier, UmlClassGeneralization}}};
 use super::super::umlclass::umlclass_models::{UmlClassDiagram, UmlClassElement};
 
 pub struct OntoUMLValidationTab {
@@ -93,7 +93,7 @@ impl OntoUMLValidationTab {
                     let m = inner.read();
                     let e = element_infos.entry(*m.uuid).or_default();
 
-                    if ontouml_controllers::ontouml_class_stereotype_literal(&m.stereotype).is_none_or(|e| e == ontouml_models::NONE) {
+                    if ontouml_models::ontouml_class_stereotype_literal(&m.stereotype).is_none_or(|e| e == ontouml_models::NONE) {
                         problems.push(ValidationProblem::Error {
                             uuid: *m.uuid,
                             error_type: ErrorType::InvalidStereotype,
@@ -163,7 +163,7 @@ impl OntoUMLValidationTab {
                     }
                     let m = inner.read();
 
-                    if ontouml_controllers::ontouml_association_stereotype_literal(&m.stereotype).is_none_or(|e| e == ontouml_models::NONE) {
+                    if ontouml_models::ontouml_association_stereotype_literal(&m.stereotype).is_none_or(|e| e == ontouml_models::NONE) {
                         problems.push(ValidationProblem::Error {
                             uuid: *m.uuid,
                             error_type: ErrorType::InvalidStereotype,

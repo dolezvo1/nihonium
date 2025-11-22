@@ -1,4 +1,7 @@
 
+// "NONE"
+pub const NONE: &str = "";
+
 // Class stereotypes
 // Sortals
 pub const KIND: &str = "kind";
@@ -17,8 +20,31 @@ pub const MIXIN: &str = "mixin";
 pub const MODE: &str = "mode";
 pub const QUALITY: &str = "quality";
 
+pub fn ontouml_class_stereotype_literal(e: &str) -> Option<&'static str> {
+    let e = match e {
+        NONE => NONE,
+        // Sortals
+        KIND => KIND,
+        SUBKIND => SUBKIND,
+        PHASE => PHASE,
+        ROLE => ROLE,
+        COLLECTIVE => COLLECTIVE,
+        QUANTITY => QUANTITY,
+        RELATOR => RELATOR,
+        // Nonsortals
+        CATEGORY => CATEGORY,
+        PHASE_MIXIN => PHASE_MIXIN,
+        ROLE_MIXIN => ROLE_MIXIN,
+        MIXIN => MIXIN,
+        // Aspects
+        MODE => MODE,
+        QUALITY => QUALITY,
+        _ => return None,
+    };
+    Some(e)
+}
+
 // Association stereotypes
-pub const NONE: &str = "";
 pub const FORMAL: &str = "formal";
 pub const MEDIATION: &str = "mediation";
 pub const CHARACTERIZATION: &str = "characterization";
@@ -28,3 +54,20 @@ pub const CONTAINMENT: &str = "containment";
 pub const MEMBER_OF: &str = "memberOf";
 pub const SUBCOLLECTION_OF: &str = "subcollectionOf";
 pub const SUBQUANTITY_OF: &str = "subquantityOf";
+
+pub fn ontouml_association_stereotype_literal(e: &str) -> Option<&'static str> {
+    let e = match e {
+        NONE => NONE,
+        FORMAL => FORMAL,
+        MEDIATION => MEDIATION,
+        CHARACTERIZATION => CHARACTERIZATION,
+        STRUCTURATION => STRUCTURATION,
+        COMPONENT_OF => COMPONENT_OF,
+        CONTAINMENT => CONTAINMENT,
+        MEMBER_OF => MEMBER_OF,
+        SUBCOLLECTION_OF => SUBCOLLECTION_OF,
+        SUBQUANTITY_OF => SUBQUANTITY_OF,
+        _ => return None,
+    };
+    Some(e)
+}

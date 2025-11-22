@@ -227,30 +227,6 @@ pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn D
     Ok(d.get_entity::<DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>>(&uuid)?)
 }
 
-pub fn ontouml_class_stereotype_literal(e: &str) -> Option<&'static str> {
-    let e = match e {
-        ontouml_models::NONE => ontouml_models::NONE,
-        // Sortals
-        ontouml_models::KIND => ontouml_models::KIND,
-        ontouml_models::SUBKIND => ontouml_models::SUBKIND,
-        ontouml_models::PHASE => ontouml_models::PHASE,
-        ontouml_models::ROLE => ontouml_models::ROLE,
-        ontouml_models::COLLECTIVE => ontouml_models::COLLECTIVE,
-        ontouml_models::QUANTITY => ontouml_models::QUANTITY,
-        ontouml_models::RELATOR => ontouml_models::RELATOR,
-        // Nonsortals
-        ontouml_models::CATEGORY => ontouml_models::CATEGORY,
-        ontouml_models::PHASE_MIXIN => ontouml_models::PHASE_MIXIN,
-        ontouml_models::ROLE_MIXIN => ontouml_models::ROLE_MIXIN,
-        ontouml_models::MIXIN => ontouml_models::MIXIN,
-        // Aspects
-        ontouml_models::MODE => ontouml_models::MODE,
-        ontouml_models::QUALITY => ontouml_models::QUALITY,
-        _ => return None,
-    };
-    Some(e)
-}
-
 #[derive(Clone, Default)]
 pub struct OntoUmlClassStereotypeController {
     display_string: String,
@@ -294,10 +270,10 @@ impl StereotypeController for OntoUmlClassStereotypeController {
         self.buffer.to_owned().into()
     }
     fn is_valid(&self, value: &str) -> bool {
-        ontouml_class_stereotype_literal(value).is_some()
+        ontouml_models::ontouml_class_stereotype_literal(value).is_some()
     }
     fn refresh(&mut self, new_value: &str) {
-        if let Some(new_value) = ontouml_class_stereotype_literal(new_value) {
+        if let Some(new_value) = ontouml_models::ontouml_class_stereotype_literal(new_value) {
             self.buffer = new_value;
         }
         self.display_string = if self.buffer.is_empty() {
@@ -306,23 +282,6 @@ impl StereotypeController for OntoUmlClassStereotypeController {
             format!("«{}»", self.buffer)
         };
     }
-}
-
-pub fn ontouml_association_stereotype_literal(e: &str) -> Option<&'static str> {
-    let e = match e {
-        ontouml_models::NONE => ontouml_models::NONE,
-        ontouml_models::FORMAL => ontouml_models::FORMAL,
-        ontouml_models::MEDIATION => ontouml_models::MEDIATION,
-        ontouml_models::CHARACTERIZATION => ontouml_models::CHARACTERIZATION,
-        ontouml_models::STRUCTURATION => ontouml_models::STRUCTURATION,
-        ontouml_models::COMPONENT_OF => ontouml_models::COMPONENT_OF,
-        ontouml_models::CONTAINMENT => ontouml_models::CONTAINMENT,
-        ontouml_models::MEMBER_OF => ontouml_models::MEMBER_OF,
-        ontouml_models::SUBCOLLECTION_OF => ontouml_models::SUBCOLLECTION_OF,
-        ontouml_models::SUBQUANTITY_OF => ontouml_models::SUBQUANTITY_OF,
-        _ => return None,
-    };
-    Some(e)
 }
 
 #[derive(Clone, Default)]
@@ -364,10 +323,10 @@ impl StereotypeController for OntoUmlAssociationStereotypeController {
         self.buffer.to_owned().into()
     }
     fn is_valid(&self, value: &str) -> bool {
-        ontouml_association_stereotype_literal(value).is_some()
+        ontouml_models::ontouml_association_stereotype_literal(value).is_some()
     }
     fn refresh(&mut self, new_value: &str) {
-        if let Some(new_value) = ontouml_association_stereotype_literal(new_value) {
+        if let Some(new_value) = ontouml_models::ontouml_association_stereotype_literal(new_value) {
             self.buffer = new_value;
         }
         self.display_string = if self.buffer.is_empty() {
