@@ -40,6 +40,9 @@ nh-edit-arrange-backwardone = Krok do pozadí
 nh-edit-arrange-sendtoback = Odsunout do pozadí
 
 nh-view = Pohled
+nh-view-resetposition = Resetovat umístění
+nh-view-resetscale = Resetovat zoom
+nh-view-zoomtofit = Zoom podle obsahu
 
 nh-diagram = Diagram
 nh-diagram-exportto = Exportovat Diagram { $name } do
@@ -55,3 +58,30 @@ nh-windows-layers = Vrstvy
 nh-about = O Programu
 nh-about-mainpage = Hlavní stránka Nihonium
 nh-about-bugtracker = Hlášení chyb/Požadavky
+
+nh-tab-recentlyused = Nedávné
+nh-tab-settings = Nastavení
+
+nh-tab-projecthierarchy = Hierarchie Projektu
+nh-tab-projecthierarchy-newfolder = Nová složka
+nh-tab-projecthierarchy-collapseall = Sbalit vše
+nh-tab-projecthierarchy-uncollapseall = Rozbalit vše
+nh-tab-projecthierarchy-togglecollapse = Přepnout rozbalení
+nh-tab-projecthierarchy-collapsechildren = Sbalit potomky
+nh-tab-projecthierarchy-uncollapsechildren = Rozbalit potomky
+nh-tab-projecthierarchy-open = Otevřít
+nh-tab-projecthierarchy-rename = Přejmenovat
+nh-tab-projecthierarchy-delete = Odstranit
+nh-tab-projecthierarchy-duplicate = Duplikovat
+nh-tab-projecthierarchy-duplicateshallow = Duplikovat (mělce)
+
+nh-tab-modelhierarchy = Hierarchie Modelu
+nh-tab-modelhierarchy-createview = Vytvořit pohled
+nh-tab-modelhierarchy-deleteview = Odstranit pohled
+nh-tab-modelhierarchy-deletemodel = Odstranit model
+
+nh-tab-toolbar = Nástroje
+nh-tab-properties = Vlastnosti
+nh-tab-diagram = Diagram
+nh-tab-document = Dokument
+nh-tab-customtab = Zvláštní karta

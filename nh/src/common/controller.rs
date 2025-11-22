@@ -269,7 +269,12 @@ impl HierarchyNode {
 }
 
 pub trait ModelHierarchyView {
-    fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Vec<DiagramCommand>;
+    fn show_model_hierarchy(
+        &self,
+        gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        is_represented: &dyn Fn(&ModelUuid) -> bool,
+    ) -> Vec<DiagramCommand>;
 }
 
 pub struct SimpleModelHierarchyView<ModelT>
@@ -296,11 +301,27 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
     where ModelT: VisitableDiagram,
         <ModelT as ContainerModel>::ElementT: VisitableElement,
 {
-    fn show_model_hierarchy(&self, ui: &mut egui::Ui, is_represented: &dyn Fn(&ModelUuid) -> bool) -> Vec<DiagramCommand> {
+    fn show_model_hierarchy(
+        &self,
+        gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        is_represented: &dyn Fn(&ModelUuid) -> bool
+    ) -> Vec<DiagramCommand> {
+        macro_rules! translate {
+            ($context:expr, $msg_name:expr) => {
+                $context.fluent_bundle.format_pattern(
+                    $context.fluent_bundle.get_message($msg_name).unwrap().value().unwrap(),
+                    None,
+                    &mut vec![],
+                )
+            };
+        }
+
         struct HierarchyViewVisitor<'data, 'ui, ModelT>
             where ModelT: VisitableDiagram,
                 <ModelT as ContainerModel>::ElementT: VisitableElement,
         {
+            gdc: &'data GlobalDrawingContext,
             commands: Vec<DiagramCommand>,
             is_represented: &'data dyn Fn(&ModelUuid) -> bool,
             label_provider: &'data dyn LabelProvider,
@@ -325,17 +346,17 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
                             ui.set_min_width(crate::MIN_MENU_WIDTH);
 
                             let is_represented = (self.is_represented)(model_uuid);
-                            if !is_represented && ui.button("Create view").clicked() {
+                            if !is_represented && ui.button(translate!(self.gdc, "nh-tab-modelhierarchy-createview")).clicked() {
                                 self.commands.push(DiagramCommand::CreateViewFor(*model_uuid));
                                 ui.close();
                             }
 
-                            if is_represented && ui.button("Delete view").clicked() {
+                            if is_represented && ui.button(translate!(self.gdc, "nh-tab-modelhierarchy-deleteview")).clicked() {
                                 self.commands.push(DiagramCommand::DeleteViewFor(*model_uuid, false));
                                 ui.close();
                             }
 
-                            if ui.button("Delete model").clicked() {
+                            if ui.button(translate!(self.gdc, "nh-tab-modelhierarchy-deletemodel")).clicked() {
                                 self.commands.push(DiagramCommand::DeleteViewFor(*model_uuid, true));
                                 ui.close();
                             }
@@ -379,6 +400,7 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
         let mut c = vec![];
         let (r, a) = egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show(ui, |builder| {
             let mut hvv = HierarchyViewVisitor {
+                gdc,
                 commands: vec![],
                 is_represented, builder,
                 label_provider: &*self.label_provider.read(),
@@ -2194,14 +2216,24 @@ impl<
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
-        if ui.button("Reset position").clicked() {
+        macro_rules! translate {
+            ($msg_name:expr) => {
+                context.fluent_bundle.format_pattern(
+                    context.fluent_bundle.get_message($msg_name).unwrap().value().unwrap(),
+                    None,
+                    &mut vec![],
+                )
+            };
+        }
+
+        if ui.button(translate!("nh-view-resetposition")).clicked() {
             self.temporaries.camera_offset = egui::Pos2::ZERO;
         }
-        if ui.button("Reset scale").clicked() {
+        if ui.button(translate!("nh-view-resetscale")).clicked() {
             self.temporaries.camera_offset = self.temporaries.camera_offset / self.temporaries.camera_scale;
             self.temporaries.camera_scale = 1.0;
         }
-        if ui.button("Zoom to fit").clicked() {
+        if ui.button(translate!("nh-view-zoomtofit")).clicked() {
             const PADDING: egui::Vec2 = egui::Vec2::splat(10.0);
 
             let mut mc = canvas::MeasuringCanvas::new(ui.painter());

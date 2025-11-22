@@ -2,6 +2,7 @@
 // hide console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
@@ -124,14 +125,13 @@ fn main() {
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
 enum NHTab {
     RecentlyUsed,
-    StyleEditor,
+    Settings,
 
     ProjectHierarchy,
     ModelHierarchy,
 
     Toolbar,
     Properties,
-    Layers,
 
     Diagram { uuid: ViewUuid },
     Document { uuid: ViewUuid },
@@ -139,21 +139,29 @@ enum NHTab {
 }
 
 impl NHTab {
-    pub fn name(&self) -> &str {
+    pub fn name<'a>(&self, b: &'a fluent_bundle::FluentBundle<fluent_bundle::FluentResource>) -> Cow<'a, str> {
+        macro_rules! translate {
+            ($msg_name:expr) => {
+                b.format_pattern(
+                    b.get_message($msg_name).unwrap().value().unwrap(),
+                    None,
+                    &mut vec![],
+                )
+            };
+        }
         match self {
-            NHTab::RecentlyUsed => "Recently Used",
-            NHTab::StyleEditor => "Style Editor",
+            NHTab::RecentlyUsed => translate!("nh-tab-recentlyused"),
+            NHTab::Settings => translate!("nh-tab-settings"),
 
-            NHTab::ProjectHierarchy => "Project Hierarchy",
-            NHTab::ModelHierarchy => "Model Hierarchy",
+            NHTab::ProjectHierarchy => translate!("nh-tab-projecthierarchy"),
+            NHTab::ModelHierarchy => translate!("nh-tab-modelhierarchy"),
 
-            NHTab::Toolbar => "Toolbar",
-            NHTab::Properties => "Properties",
-            NHTab::Layers => "Layers",
+            NHTab::Toolbar => translate!("nh-tab-toolbar"),
+            NHTab::Properties => translate!("nh-tab-properties"),
 
-            NHTab::Diagram { .. } => "Diagram",
-            NHTab::Document { .. } => "Document",
-            NHTab::CustomTab { .. } => "Custom Tab",
+            NHTab::Diagram { .. } => translate!("nh-tab-diagram"),
+            NHTab::Document { .. } => translate!("nh-tab-document"),
+            NHTab::CustomTab { .. } => translate!("nh-tab-customtab"),
         }
     }
 }
@@ -281,7 +289,7 @@ impl TabViewer for NHContext {
                 self.custom_tabs.get(uuid).unwrap()
                     .read().unwrap().title().into()
             }
-            t => t.name().into(),
+            t => t.name(&self.drawing_context.fluent_bundle).into(),
         }
     }
 
@@ -292,14 +300,13 @@ impl TabViewer for NHContext {
                 ui.heading("Recently used");
                 ui.label("[no recently used]");
             },
-            NHTab::StyleEditor => self.style_editor_tab(ui),
+            NHTab::Settings => self.settings_tab(ui),
 
             NHTab::ProjectHierarchy => self.project_hierarchy(ui),
             NHTab::ModelHierarchy => self.model_hierarchy(ui),
 
             NHTab::Toolbar => self.toolbar(ui),
             NHTab::Properties => self.properties(ui),
-            NHTab::Layers => self.layers(ui),
 
             NHTab::Diagram { uuid } => self.diagram_tab(uuid, ui),
             NHTab::Document { uuid } => self.document_tab(uuid, ui),
@@ -314,7 +321,6 @@ impl TabViewer for NHContext {
         _surface: SurfaceIndex,
         _node: NodeIndex,
     ) {
-        ui.label("asdfasdf");
         ui.label("This is a tab context menu");
     }
 
@@ -611,6 +617,16 @@ impl NHContext {
     }
 
     fn project_hierarchy(&mut self, ui: &mut Ui) {
+        macro_rules! translate {
+            ($context:expr, $msg_name:expr) => {
+                $context.fluent_bundle.format_pattern(
+                    $context.fluent_bundle.get_message($msg_name).unwrap().value().unwrap(),
+                    None,
+                    &mut vec![],
+                )
+            };
+        }
+
         enum ContextMenuAction {
             NewFolder(ViewUuid),
             CollapseAt(/*collapse:*/ Option<bool>, /*recurse:*/ bool, ViewUuid),
@@ -621,13 +637,13 @@ impl NHContext {
         let mut context_menu_action = None;
 
         ui.horizontal(|ui| {
-            if ui.button("New folder").clicked() {
+            if ui.button(translate!(self.drawing_context, "nh-tab-projecthierarchy-newfolder")).clicked() {
                 context_menu_action = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
             }
-            if ui.button("Collapse all").clicked() {
+            if ui.button(translate!(self.drawing_context, "nh-tab-projecthierarchy-collapseall")).clicked() {
                 context_menu_action = Some(ContextMenuAction::CollapseAt(Some(true), true, uuid::Uuid::nil().into()));
             }
-            if ui.button("Uncollapse all").clicked() {
+            if ui.button(translate!(self.drawing_context, "nh-tab-projecthierarchy-uncollapseall")).clicked() {
                 context_menu_action = Some(ContextMenuAction::CollapseAt(Some(false), true, uuid::Uuid::nil().into()));
             }
         });
@@ -649,33 +665,33 @@ impl NHContext {
                             .context_menu(|ui| {
                                 ui.set_min_width(MIN_MENU_WIDTH);
 
-                                if ui.button("Toggle Collapse").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-togglecollapse")).clicked() {
                                     *cma = Some(ContextMenuAction::CollapseAt(None, false, *uuid));
                                     ui.close();
                                 }
                                 ui.separator();
-                                if ui.button("New Folder").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-newfolder")).clicked() {
                                     *cma = Some(ContextMenuAction::NewFolder(*uuid));
                                     ui.close();
                                 }
 
                                 add_project_element_block(gdc, new_diagram_no, ui, commands);
 
-                                if ui.button("Collapse children").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-collapsechildren")).clicked() {
                                     *cma = Some(ContextMenuAction::CollapseAt(Some(true), true, *uuid));
                                     ui.close();
                                 }
-                                if ui.button("Uncollapse children").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-uncollapsechildren")).clicked() {
                                     *cma = Some(ContextMenuAction::CollapseAt(Some(false), true, *uuid));
                                     ui.close();
                                 }
                                 ui.separator();
-                                if ui.button("Rename").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-rename")).clicked() {
                                     *cma = Some(ContextMenuAction::RenameElement(*uuid));
                                     ui.close();
                                 }
                                 ui.separator();
-                                if ui.button("Delete").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-delete")).clicked() {
                                     *cma = Some(ContextMenuAction::DeleteFolder(*uuid));
                                     ui.close();
                                 }
@@ -696,33 +712,33 @@ impl NHContext {
                             .context_menu(|ui| {
                                 ui.set_min_width(MIN_MENU_WIDTH);
 
-                                if ui.button("Open").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-open")).clicked() {
                                     commands.push(ProjectCommand::OpenAndFocusDiagram(*hm.uuid(), None));
                                     ui.close();
                                 }
                                 ui.separator();
-                                if ui.button("New Folder").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-newfolder")).clicked() {
                                     *cma = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
                                     ui.close();
                                 }
 
                                 add_project_element_block(gdc, new_diagram_no, ui, commands);
 
-                                if ui.button("Duplicate (deep)").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-duplicate")).clicked() {
                                     commands.push(ProjectCommand::CopyDiagram(*hm.uuid(), true));
                                     ui.close();
                                 }
-                                if ui.button("Duplicate (shallow)").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-duplicateshallow")).clicked() {
                                     commands.push(ProjectCommand::CopyDiagram(*hm.uuid(), false));
                                     ui.close();
                                 }
                                 ui.separator();
-                                if ui.button("Rename").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-rename")).clicked() {
                                     *cma = Some(ContextMenuAction::RenameElement(*hm.uuid()));
                                     ui.close();
                                 }
                                 ui.separator();
-                                if ui.button("Delete").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-delete")).clicked() {
                                     commands.push(ProjectCommand::DeleteDiagram(*hm.uuid()));
                                     ui.close();
                                 }
@@ -736,29 +752,29 @@ impl NHContext {
                             .context_menu(|ui| {
                                 ui.set_min_width(MIN_MENU_WIDTH);
 
-                                if ui.button("Open").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-open")).clicked() {
                                     commands.push(ProjectCommand::OpenAndFocusDocument(*uuid, None));
                                     ui.close();
                                 }
                                 ui.separator();
-                                if ui.button("New Folder").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-newfolder")).clicked() {
                                     *cma = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
                                     ui.close();
                                 }
 
                                 add_project_element_block(gdc, new_diagram_no, ui, commands);
 
-                                if ui.button("Duplicate").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-duplicate")).clicked() {
                                     commands.push(ProjectCommand::DuplicateDocument(*uuid));
                                     ui.close();
                                 }
                                 ui.separator();
-                                if ui.button("Rename").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-rename")).clicked() {
                                     *cma = Some(ContextMenuAction::RenameElement(*uuid));
                                     ui.close();
                                 }
                                 ui.separator();
-                                if ui.button("Delete").clicked() {
+                                if ui.button(translate!(gdc, "nh-tab-projecthierarchy-delete")).clicked() {
                                     commands.push(ProjectCommand::DeleteDocument(*uuid));
                                     ui.close();
                                 }
@@ -947,7 +963,7 @@ impl NHContext {
             let lock = lfc.read();
             let rm = lock.represented_models();
             let rf = |uuid: &ModelUuid| rm.contains_key(uuid);
-            model_hierarchy_view.show_model_hierarchy(ui, &rf)
+            model_hierarchy_view.show_model_hierarchy(&self.drawing_context, ui, &rf)
         };
 
         if !cmds.is_empty() {
@@ -984,14 +1000,8 @@ impl NHContext {
         self.refresh_buffers(&affected_models);
     }
 
-    fn layers(&self, ui: &mut Ui) {
-        let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
-        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
-        c.write().show_layers(ui);
-    }
-
-    fn style_editor_tab(&mut self, ui: &mut Ui) {
-        ui.heading("Style Editor");
+    fn settings_tab(&mut self, ui: &mut Ui) {
+        ui.heading("Settings");
 
         if ui.button("Switch light/dark theme").clicked() {
             let (new_theme, new_visuals) = match ui.ctx().theme() {
@@ -1616,7 +1626,7 @@ impl Default for NHApp {
         let mut diagram_controllers = HashMap::new();
         let mut hierarchy = vec![];
         let mut model_hierarchy_views = HashMap::<_, Arc<dyn ModelHierarchyView>>::new();
-        let mut tabs = vec![NHTab::RecentlyUsed, NHTab::StyleEditor];
+        let mut tabs = vec![NHTab::RecentlyUsed, NHTab::Settings];
 
         let documents = {
             let mut d = HashMap::<ViewUuid, (String, String)>::new();
@@ -1660,7 +1670,7 @@ impl Default for NHApp {
 
         let mut open_unique_tabs = HashSet::new();
         open_unique_tabs.insert(NHTab::RecentlyUsed);
-        open_unique_tabs.insert(NHTab::StyleEditor);
+        open_unique_tabs.insert(NHTab::Settings);
 
         let [a, b] = dock_state.main_surface_mut().split_left(
             NodeIndex::root(),
@@ -2342,17 +2352,16 @@ impl eframe::App for NHApp {
                     // allow certain tabs to be toggled
                     for tab in &[
                         NHTab::RecentlyUsed,
-                        NHTab::StyleEditor,
+                        NHTab::Settings,
                         NHTab::ProjectHierarchy,
                         NHTab::ModelHierarchy,
                         NHTab::Toolbar,
                         NHTab::Properties,
-                        NHTab::Layers,
                     ] {
                         if ui
                             .selectable_label(
                                 self.context.open_unique_tabs.contains(tab),
-                                tab.name(),
+                                tab.name(&self.context.drawing_context.fluent_bundle),
                             )
                             .clicked()
                         {

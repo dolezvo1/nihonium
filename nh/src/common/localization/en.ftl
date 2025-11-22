@@ -40,6 +40,9 @@ nh-edit-arrange-backwardone = Backward One
 nh-edit-arrange-sendtoback = Send to Back
 
 nh-view = View
+nh-view-resetposition = Reset Position
+nh-view-resetscale = Reset Scale
+nh-view-zoomtofit = Zoom to fit
 
 nh-diagram = Diagram
 nh-diagram-exportto = Export Diagram { $name } to
@@ -55,3 +58,31 @@ nh-windows-layers = Layers
 nh-about = About
 nh-about-mainpage = Nihonium Main Page
 nh-about-bugtracker = Bug reporting/Feature requests
+
+nh-tab-recentlyused = Recently Used
+nh-tab-settings = Settings
+
+nh-tab-projecthierarchy = Project Hierarchy
+nh-tab-projecthierarchy-newfolder = New folder
+nh-tab-projecthierarchy-collapseall = Collapse all
+nh-tab-projecthierarchy-uncollapseall = Uncollapse all
+nh-tab-projecthierarchy-togglecollapse = Toggle collapse
+nh-tab-projecthierarchy-collapsechildren = Collapse children
+nh-tab-projecthierarchy-uncollapsechildren = Uncollapse children
+nh-tab-projecthierarchy-open = Open
+nh-tab-projecthierarchy-rename = Rename
+nh-tab-projecthierarchy-delete = Delete
+nh-tab-projecthierarchy-duplicate = Duplicate
+nh-tab-projecthierarchy-duplicateshallow = Duplicate (shallow)
+
+nh-tab-modelhierarchy = Model Hierarchy
+nh-tab-modelhierarchy-createview = Create view
+nh-tab-modelhierarchy-deleteview = Delete view
+nh-tab-modelhierarchy-deletemodel = Delete model
+
+nh-tab-toolbar = Toolbar
+nh-tab-properties = Properties
+nh-tab-diagram = Diagram
+nh-tab-document = Document
+nh-tab-customtab = Custom Tab
+
