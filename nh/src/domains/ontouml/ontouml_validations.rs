@@ -862,84 +862,7 @@ impl OntoUMLValidationTab {
         }
 
 
-        // UndefFormal (Undefined Phase Partition)
-        #[derive(Default)]
-        struct UndefPhaseInfo {
-            stereotype: Option<Arc<String>>,
-            has_intrinsics: bool,
-            parents: Vec<ERef<UmlClassGeneralization>>,
-        }
-        fn r_undefphase_collect(
-            infos: &mut HashMap<ModelUuid, UndefPhaseInfo>,
-            e: &UmlClassElement,
-        ) {
-            match e {
-                UmlClassElement::UmlClassPackage(inner) => {
-                    let m = inner.read();
-                    for e in &m.contained_elements {
-                        r_undefphase_collect(infos, e);
-                    }
-                },
-                UmlClassElement::UmlClass(inner) => {
-                    let r = inner.read();
-                    let mut e = infos.entry(*r.uuid).or_default();
-                    e.stereotype = Some(r.stereotype.clone());
-                    if !r.properties.is_empty() {
-                        e.has_intrinsics = true;
-                    }
-                },
-                UmlClassElement::UmlClassAssociation(inner) => {
-                    let r = inner.read();
-                    if *r.stereotype == ontouml_models::CHARACTERIZATION {
-                        infos.entry(*r.source.uuid()).or_default().has_intrinsics = true;
-                    }
-                }
-                UmlClassElement::UmlClassGeneralization(inner) => {
-                    let r = inner.read();
-                    for e in &r.sources {
-                        infos.entry(*e.read().uuid()).or_default().parents.push(inner.clone());
-                    }
-                }
-                _ => {}
-            }
-        }
-        fn has_intrinsics_including_transitively(
-            infos: &HashMap<ModelUuid, UndefPhaseInfo>,
-            e: ModelUuid,
-        ) -> bool {
-            fn inner(
-                visited: &mut HashSet<ModelUuid>,
-                infos: &HashMap<ModelUuid, UndefPhaseInfo>,
-                e: ModelUuid,
-            ) -> bool {
-                if visited.contains(&e) {
-                    return false;
-                }
-                visited.insert(e);
-
-                let e2 = infos.get(&e).unwrap();
-                let result = if e2.has_intrinsics {
-                    true
-                } else {
-                    e2.parents.iter().any(|e| e.read().targets.iter().any(|e| inner(visited, infos, *e.read().uuid)))
-                };
-
-                visited.remove(&e);
-                result
-            }
-
-            inner(&mut HashSet::new(), infos, e)
-        }
-        let mut infos = HashMap::new();
-        for e in &m.contained_elements {
-            r_undefphase_collect(&mut infos, e);
-        }
-        for e in &infos {
-            if let Some(s) = &e.1.stereotype && **s == ontouml_models::PHASE
-                && !e.1.parents.iter().any(|e| e.read().targets.iter().any(|e| has_intrinsics_including_transitively(&infos, *e.read().uuid))) {
-                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::UndefPhase });
-            }
-        }
+        validate_undef(&mut problems, &m);
 
 
         problems
@@ -1360,6 +1283,116 @@ fn validate_binover(
     }
 }
 
+fn validate_undef(
+    problems: &mut Vec<ValidationProblem>,
+    m: &RwLockReadGuard<'_, UmlClassDiagram>,
+) {
+    // UndefFormal (Undefined Formal Association), UndefPhase (Undefined Phase Partition)
+    #[derive(Default)]
+    struct UndefInfo {
+        stereotype: Option<Arc<String>>,
+        has_intrinsics: bool,
+        parents: Vec<ERef<UmlClassGeneralization>>,
+    }
+    fn r_undef_collect(
+        infos: &mut HashMap<ModelUuid, UndefInfo>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_undef_collect(infos, e);
+                }
+            },
+            UmlClassElement::UmlClass(inner) => {
+                let r = inner.read();
+                let mut e = infos.entry(*r.uuid).or_default();
+                e.stereotype = Some(r.stereotype.clone());
+                if !r.properties.is_empty() {
+                    e.has_intrinsics = true;
+                }
+            },
+            UmlClassElement::UmlClassAssociation(inner) => {
+                let r = inner.read();
+                if *r.stereotype == ontouml_models::CHARACTERIZATION {
+                    infos.entry(*r.source.uuid()).or_default().has_intrinsics = true;
+                }
+            }
+            UmlClassElement::UmlClassGeneralization(inner) => {
+                let r = inner.read();
+                for e in &r.sources {
+                    infos.entry(*e.read().uuid()).or_default().parents.push(inner.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    fn has_intrinsics_including_transitively(
+        infos: &HashMap<ModelUuid, UndefInfo>,
+        e: ModelUuid,
+    ) -> bool {
+        fn inner(
+            visited: &mut HashSet<ModelUuid>,
+            infos: &HashMap<ModelUuid, UndefInfo>,
+            e: ModelUuid,
+        ) -> bool {
+            if visited.contains(&e) {
+                return false;
+            }
+            visited.insert(e);
+
+            let e2 = infos.get(&e).unwrap();
+            let result = if e2.has_intrinsics {
+                true
+            } else {
+                e2.parents.iter().any(|e| e.read().targets.iter().any(|e| inner(visited, infos, *e.read().uuid)))
+            };
+
+            visited.remove(&e);
+            result
+        }
+
+        inner(&mut HashSet::new(), infos, e)
+    }
+    let mut infos = HashMap::new();
+    for e in &m.contained_elements {
+        r_undef_collect(&mut infos, e);
+    }
+    for e in &infos {
+        if let Some(s) = &e.1.stereotype && **s == ontouml_models::PHASE
+            && !e.1.parents.iter().any(|e| e.read().targets.iter().any(|e| has_intrinsics_including_transitively(&infos, *e.read().uuid))) {
+            problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::UndefPhase });
+        }
+    }
+    fn r_undefformal_test(
+        problems: &mut Vec<ValidationProblem>,
+        infos: &HashMap<ModelUuid, UndefInfo>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_undefformal_test(problems, infos, e);
+                }
+            },
+            UmlClassElement::UmlClassAssociation(inner) => {
+                let r = inner.read();
+                if *r.stereotype == ontouml_models::FORMAL
+                    && (!has_intrinsics_including_transitively(infos, *r.source.uuid())
+                        || !has_intrinsics_including_transitively(infos, *r.target.uuid())){
+                    problems.push(ValidationProblem::AntiPattern { uuid: *r.uuid, antipattern_type: AntiPatternType::UndefFormal });
+                }
+            }
+            _ => {}
+        }
+    }
+    for e in &m.contained_elements {
+        r_undefformal_test(problems, &infos, e);
+    }
+}
+
 
 mod test {
     use uuid::uuid;
@@ -1435,10 +1468,16 @@ mod test {
         vt.validate(check_errors, check_antipatterns)
     }
 
-    fn validate_binover_inner(elements: Vec<UmlClassElement>) -> Vec<ValidationProblem> {
+    fn call_validate_binover(elements: Vec<UmlClassElement>) -> Vec<ValidationProblem> {
         let d = new_diagram(elements);
         let mut problems = Vec::new();
         validate_binover(&mut problems, &d.read());
+        problems
+    }
+    fn call_validate_undef(elements: Vec<UmlClassElement>) -> Vec<ValidationProblem> {
+        let d = new_diagram(elements);
+        let mut problems = Vec::new();
+        validate_undef(&mut problems, &d.read());
         problems
     }
 
@@ -2086,7 +2125,7 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate_binover_inner(vec![kind1.into(), kind2.into(), assoc.into()]),
+            call_validate_binover(vec![kind1.into(), kind2.into(), assoc.into()]),
             vec![],
         );
     }
@@ -2102,7 +2141,7 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate_binover_inner(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), assoc.into()]),
+            call_validate_binover(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), assoc.into()]),
             vec![],
         );
     }
@@ -2116,7 +2155,7 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate_binover_inner(vec![mixin1.into(), mixin2.into(), assoc.into()]),
+            call_validate_binover(vec![mixin1.into(), mixin2.into(), assoc.into()]),
             vec![],
         );
     }
@@ -2130,7 +2169,7 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate_binover_inner(vec![kind1.into(), assoc.into()]),
+            call_validate_binover(vec![kind1.into(), assoc.into()]),
             vec![
                 ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
             ],
@@ -2148,7 +2187,7 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate_binover_inner(vec![kind1.into(), subkind1.into(), gen1.into(), assoc.into()]),
+            call_validate_binover(vec![kind1.into(), subkind1.into(), gen1.into(), assoc.into()]),
             vec![
                 ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
             ],
@@ -2168,7 +2207,7 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate_binover_inner(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), gen2.into(), assoc.into()]),
+            call_validate_binover(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), gen2.into(), assoc.into()]),
             vec![
                 ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
             ],
@@ -2187,7 +2226,7 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate_binover_inner(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), assoc.into()]),
+            call_validate_binover(vec![kind1.into(), subkind1.into(), subkind2.into(), gen1.into(), assoc.into()]),
             vec![
                 ValidationProblem::AntiPattern { uuid: assoc_uuid, antipattern_type: AntiPatternType::BinOver }
             ],
@@ -2207,7 +2246,7 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert!(
-            validate_binover_inner(vec![
+            call_validate_binover(vec![
                 mixin1.into(), mixin2.into(),
                 kind1.into(), gen1.into(), gen2.into(),
                 assoc.into(),
@@ -2232,7 +2271,7 @@ mod test {
         assoc.write().source_label_multiplicity = Arc::new("1".to_owned());
 
         assert_eq!(
-            validate_binover_inner(vec![
+            call_validate_binover(vec![
                 mixin1.into(),
                 mixin2.into(), mixin3.into(),
                 gen1.into(), gen2.into(),
@@ -2369,6 +2408,186 @@ mod test {
                 uuid: kind1_uuid,
                 antipattern_type: AntiPatternType::HomoFunc,
             }]
+        );
+    }
+
+    #[test]
+    fn test_valid_mixrig() {
+        // one rigid and one antirigid
+        let mixin = new_class(1, ontouml_models::MIXIN, true);
+        let kind = new_class(2, ontouml_models::KIND, false);
+        let gen1 = new_generalization(3, vec![kind.clone()], vec![mixin.clone()], false, false);
+        let roleMixin = new_class(4, ontouml_models::ROLE_MIXIN, true);
+        let gen2 = new_generalization(5, vec![roleMixin.clone()], vec![mixin.clone()], false, false);
+
+        assert_eq!(
+            validate(vec![mixin.into(), kind.into(), gen1.into(), roleMixin.into(), gen2.into()], false, true),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_mixrig1() {
+        // only one rigid
+        let mixin = new_class(1, ontouml_models::MIXIN, true);
+        let mixin_uuid = *mixin.read().uuid;
+        let kind = new_class(2, ontouml_models::KIND, false);
+        let gen1 = new_generalization(3, vec![kind.clone()], vec![mixin.clone()], false, false);
+
+        assert_eq!(
+            validate(vec![mixin.into(), kind.into(), gen1.into()], false, true),
+            vec![ValidationProblem::AntiPattern {
+                uuid: mixin_uuid,
+                antipattern_type: AntiPatternType::MixRig,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_invalid_mixrig2() {
+        // only one antirigid
+        let mixin = new_class(1, ontouml_models::MIXIN, true);
+        let mixin_uuid = *mixin.read().uuid;
+        let roleMixin = new_class(2, ontouml_models::ROLE_MIXIN, true);
+        let gen1 = new_generalization(3, vec![roleMixin.clone()], vec![mixin.clone()], false, false);
+
+        assert_eq!(
+            validate(vec![mixin.into(), roleMixin.into(), gen1.into()], false, true),
+            vec![ValidationProblem::AntiPattern {
+                uuid: mixin_uuid,
+                antipattern_type: AntiPatternType::MixRig,
+            }]
+        );
+    }
+
+    // TODO: multdep
+
+    // TODO: relrig
+
+    #[test]
+    fn test_valid_undefformal1() {
+        // self
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let mode = new_class(2, ontouml_models::MODE, false);
+        let assoc1 = new_association(3, ontouml_models::CHARACTERIZATION, kind.clone().into(), mode.clone().into());
+        let assoc2 = new_association(4, ontouml_models::FORMAL, kind.clone().into(), kind.clone().into());
+
+        assert_eq!(
+            call_validate_undef(vec![kind.into(), mode.into(), assoc1.into(), assoc2.into()]),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_valid_undefformal2() {
+        // two kinds with both having qualities
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let kind2 = new_class(2, ontouml_models::KIND, false);
+        let mode = new_class(3, ontouml_models::MODE, false);
+        let assoc1 = new_association(4, ontouml_models::CHARACTERIZATION, kind1.clone().into(), mode.clone().into());
+        let assoc2 = new_association(5, ontouml_models::CHARACTERIZATION, kind2.clone().into(), mode.clone().into());
+        let assoc3 = new_association(6, ontouml_models::FORMAL, kind1.clone().into(), kind2.clone().into());
+
+        assert_eq!(
+            call_validate_undef(vec![
+                kind1.into(), kind2.into(), mode.into(),
+                assoc1.into(), assoc2.into(), assoc3.into(),
+            ]),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_undefformal1() {
+        // self with no qualities
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let assoc = new_association(2, ontouml_models::FORMAL, kind.clone().into(), kind.clone().into());
+        let assoc_uuid = *assoc.read().uuid;
+
+        assert_eq!(
+            call_validate_undef(vec![kind.into(), assoc.into()]),
+            vec![
+                ValidationProblem::AntiPattern {
+                    uuid: assoc_uuid,
+                    antipattern_type: AntiPatternType::UndefFormal,
+                }
+            ],
+        );
+    }
+
+    #[test]
+    fn test_invalid_undefformal2() {
+        // two kinds with one missing any qualities
+        let kind1 = new_class(1, ontouml_models::KIND, false);
+        let kind2 = new_class(2, ontouml_models::KIND, false);
+        let mode = new_class(3, ontouml_models::MODE, false);
+        let assoc1 = new_association(4, ontouml_models::CHARACTERIZATION, kind1.clone().into(), mode.clone().into());
+        let assoc2 = new_association(5, ontouml_models::FORMAL, kind1.clone().into(), kind2.clone().into());
+        let assoc2_uuid = *assoc2.read().uuid;
+
+        assert_eq!(
+            call_validate_undef(vec![
+                kind1.into(), kind2.into(), mode.into(),
+                assoc1.into(), assoc2.into(),
+            ]),
+            vec![ValidationProblem::AntiPattern {
+                uuid: assoc2_uuid,
+                antipattern_type: AntiPatternType::UndefFormal,
+            }],
+        );
+    }
+
+    #[test]
+    fn test_valid_undefphase1() {
+        // simple
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let mode = new_class(2, ontouml_models::MODE, false);
+        let assoc = new_association(3, ontouml_models::CHARACTERIZATION, kind.clone().into(), mode.clone().into());
+        let phase = new_class(4, ontouml_models::PHASE, false);
+        let gen1 = new_generalization(5, vec![phase.clone()], vec![kind.clone()], true, true);
+
+        assert_eq!(
+            call_validate_undef(vec![kind.into(), mode.into(), assoc.into(), phase.into(), gen1.into()]),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_valid_undefphase2() {
+        // ancestor
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let mode = new_class(2, ontouml_models::MODE, false);
+        let assoc = new_association(3, ontouml_models::CHARACTERIZATION, kind.clone().into(), mode.clone().into());
+        let subkind = new_class(4, ontouml_models::KIND, false);
+        let gen1 = new_generalization(6, vec![subkind.clone()], vec![kind.clone()], true, true);
+        let phase = new_class(7, ontouml_models::PHASE, false);
+        let gen2 = new_generalization(8, vec![phase.clone()], vec![subkind.clone()], true, true);
+
+        assert_eq!(
+            call_validate_undef(vec![
+                kind.into(), mode.into(), assoc.into(),
+                subkind.into(), gen1.into(),
+                phase.into(), gen2.into(),
+            ]),
+            vec![],
+        );
+    }
+
+    #[test]
+    fn test_invalid_undefphase() {
+        let kind = new_class(1, ontouml_models::KIND, false);
+        let phase = new_class(2, ontouml_models::PHASE, false);
+        let phase_uuid = *phase.read().uuid;
+        let gen1 = new_generalization(3, vec![phase.clone()], vec![kind.clone()], true, true);
+
+        assert_eq!(
+            call_validate_undef(vec![kind.into(), phase.into(), gen1.into()]),
+            vec![
+                ValidationProblem::AntiPattern {
+                    uuid: phase_uuid,
+                    antipattern_type: AntiPatternType::UndefPhase,
+                }
+            ],
         );
     }
 }
