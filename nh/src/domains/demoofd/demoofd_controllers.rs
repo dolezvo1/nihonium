@@ -32,6 +32,7 @@ impl Domain for DemoOfdDomain {
     type CommonElementT = DemoOfdElement;
     type DiagramModelT = DemoOfdDiagram;
     type CommonElementViewT = DemoOfdElementView;
+    type ViewTargettingSectionT = DemoOfdElement;
     type QueryableT<'a> = DemoOfdQueryable<'a>;
     type LabelProviderT = DemoOfdLabelProvider;
     type ToolT = NaiveDemoOfdTool;
@@ -810,7 +811,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
         self.initial_stage
     }
 
-    fn targetting_for_element(&self, element: Option<DemoOfdElement>) -> egui::Color32 {
+    fn targetting_for_section(&self, element: Option<DemoOfdElement>) -> egui::Color32 {
         match element {
             None => match self.current_stage {
                 DemoOfdToolStage::Entity
@@ -993,7 +994,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             _ => {}
         }
     }
-    fn add_element(&mut self, element: DemoOfdElement) {
+    fn add_section(&mut self, element: DemoOfdElement) {
         if self.event_lock {
             return;
         }
@@ -1313,7 +1314,7 @@ pub struct DemoOfdPackageAdapter {
 }
 
 impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
-    fn model(&self) -> DemoOfdElement {
+    fn model_section(&self) -> DemoOfdElement {
         self.model.clone().into()
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
@@ -1728,7 +1729,7 @@ impl DemoOfdEntityView {
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     CORNER_RADIUS,
-                    t.targetting_for_element(Some(self.model())),
+                    t.targetting_for_section(Some(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -1931,7 +1932,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model());
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         self.highlight.selected = true;
@@ -2478,7 +2479,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                         pos + egui::Vec2::new(0.0, Self::RADIUS),
                         pos - egui::Vec2::new(Self::RADIUS, 0.0),
                     ].to_vec(),
-                    t.targetting_for_element(Some(self.model())),
+                    t.targetting_for_section(Some(self.model())),
                     canvas::Stroke::new_solid(1.0, match read.kind {
                         DemoTransactionKind::Performa => PERFORMA_DETAIL,
                         DemoTransactionKind::Informa => INFORMA_DETAIL,
@@ -2519,7 +2520,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model());
 
                     if !self.specialization_view.is_some()
                         && let Some((DemoOfdElementView::EntityType(new_e), esm)) = tool.try_construct_view(self) {

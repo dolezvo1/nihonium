@@ -32,6 +32,7 @@ impl Domain for DemoPsdDomain {
     type CommonElementT = DemoPsdElement;
     type DiagramModelT = DemoPsdDiagram;
     type CommonElementViewT = DemoPsdElementView;
+    type ViewTargettingSectionT = DemoPsdElementTargettingSection;
     type QueryableT<'a> = DemoPsdQueryable<'a>;
     type LabelProviderT = DemoPsdLabelProvider;
     type ToolT = NaiveDemoPsdTool;
@@ -200,6 +201,27 @@ impl DemoPsdStateView {
 impl Debug for DemoPsdStateView {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "DemoPsdStateView::???")
+    }
+}
+
+#[derive(derive_more::From)]
+pub enum DemoPsdElementTargettingSection {
+    Package(ERef<DemoPsdPackage>),
+    Transaction(ERef<DemoPsdTransaction>, egui::Align2),
+    Fact(ERef<DemoPsdFact>),
+    Act(ERef<DemoPsdAct>),
+    Link(ERef<DemoPsdLink>),
+}
+
+impl Into<DemoPsdElement> for DemoPsdElementTargettingSection {
+    fn into(self) -> DemoPsdElement {
+        match self {
+            DemoPsdElementTargettingSection::Package(inner) => inner.into(),
+            DemoPsdElementTargettingSection::Transaction(inner, ..) => inner.into(),
+            DemoPsdElementTargettingSection::Fact(inner) => inner.into(),
+            DemoPsdElementTargettingSection::Act(inner) => inner.into(),
+            DemoPsdElementTargettingSection::Link(inner) => inner.into(),
+        }
     }
 }
 
@@ -661,7 +683,8 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         self.initial_stage
     }
 
-    fn targetting_for_element(&self, element: Option<DemoPsdElement>) -> egui::Color32 {
+    fn targetting_for_section(&self, element: Option<DemoPsdElementTargettingSection>) -> egui::Color32 {
+        type TS = DemoPsdElementTargettingSection;
         match element {
             None => match self.current_stage {
                 DemoPsdToolStage::Transaction
@@ -674,7 +697,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     NON_TARGETTABLE_COLOR
                 }
             },
-            Some(DemoPsdElement::DemoPsdPackage(..)) => match self.current_stage {
+            Some(TS::Package(..)) => match self.current_stage {
                 DemoPsdToolStage::Transaction
                 | DemoPsdToolStage::Fact
                 | DemoPsdToolStage::Act
@@ -685,23 +708,22 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     NON_TARGETTABLE_COLOR
                 }
             },
-            Some(DemoPsdElement::DemoPsdTransaction(tx)) => match self.current_stage {
-                // TODO: reimplement
-                DemoPsdToolStage::Fact => NON_TARGETTABLE_COLOR,
-                DemoPsdToolStage::Act => if tx.read().p_act.is_some() {
-                    NON_TARGETTABLE_COLOR
-                } else {
+            Some(TS::Transaction(tx, align)) => {
+                if align == egui::Align2::CENTER_CENTER {
+                    return if self.current_stage == DemoPsdToolStage::Act && !tx.read().p_act.is_some() {
+                        TARGETTABLE_COLOR
+                    } else {
+                        NON_TARGETTABLE_COLOR
+                    };
+                }
+
+                if matches!(self.current_stage, DemoPsdToolStage::Fact | DemoPsdToolStage::Act) {
                     TARGETTABLE_COLOR
-                },
-
-
-                DemoPsdToolStage::Transaction
-                | DemoPsdToolStage::LinkStart { .. }
-                | DemoPsdToolStage::LinkEnd
-                | DemoPsdToolStage::PackageStart
-                | DemoPsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
+                } else {
+                    NON_TARGETTABLE_COLOR
+                }
             },
-            Some(DemoPsdElement::DemoPsdFact(..)) => match self.current_stage {
+            Some(TS::Fact(..)) => match self.current_stage {
                 DemoPsdToolStage::LinkStart { .. } => TARGETTABLE_COLOR,
                 DemoPsdToolStage::Transaction
                 | DemoPsdToolStage::Fact
@@ -710,7 +732,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 | DemoPsdToolStage::PackageStart
                 | DemoPsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             }
-            Some(DemoPsdElement::DemoPsdAct(..)) => match self.current_stage {
+            Some(TS::Act(..)) => match self.current_stage {
                 DemoPsdToolStage::LinkEnd => TARGETTABLE_COLOR,
                 DemoPsdToolStage::Transaction
                 | DemoPsdToolStage::Fact
@@ -719,7 +741,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 | DemoPsdToolStage::PackageStart
                 | DemoPsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             }
-            Some(DemoPsdElement::DemoPsdLink(..)) => todo!(),
+            Some(TS::Link(..)) => todo!(),
         }
     }
     fn draw_status_hint(&self, q: &DemoPsdQueryable, canvas: &mut dyn canvas::NHCanvas, pos: egui::Pos2) {
@@ -787,25 +809,27 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             _ => {}
         }
     }
-    fn add_element(&mut self, element: DemoPsdElement) {
+    fn add_section(&mut self, section: DemoPsdElementTargettingSection) {
         if self.event_lock {
             return;
         }
 
-        match element {
-            DemoPsdElement::DemoPsdPackage(..)
-            | DemoPsdElement::DemoPsdTransaction(..) => {},
-            DemoPsdElement::DemoPsdFact(inner) => if let DemoPsdToolStage::LinkStart { link_type } = self.current_stage {
+        type TS = DemoPsdElementTargettingSection;
+
+        match section {
+            TS::Package(..)
+            | TS::Transaction(..) => {},
+            TS::Fact(inner) => if let DemoPsdToolStage::LinkStart { link_type } = self.current_stage {
                 self.result = PartialDemoPsdElement::Link { link_type: link_type, source: inner, dest: None };
                 self.current_stage = DemoPsdToolStage::LinkEnd;
                 self.event_lock = true;
             } else {},
-            DemoPsdElement::DemoPsdAct(inner) => if let DemoPsdToolStage::LinkEnd = self.current_stage
+            TS::Act(inner) => if let DemoPsdToolStage::LinkEnd = self.current_stage
                 && let PartialDemoPsdElement::Link { dest, .. } = &mut self.result {
                 *dest = Some(inner);
                 self.event_lock = true;
             } else {},
-            DemoPsdElement::DemoPsdLink(..) => {}
+            TS::Link(..) => {}
         }
     }
 
@@ -887,7 +911,7 @@ pub struct DemoPsdPackageAdapter {
 }
 
 impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
-    fn model(&self) -> DemoPsdElement {
+    fn model_section(&self) -> DemoPsdElementTargettingSection {
         self.model.clone().into()
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
@@ -1179,6 +1203,33 @@ pub struct DemoPsdTransactionView {
 
 impl DemoPsdTransactionView {
     const MIN_SIZE: egui::Vec2 = egui::Vec2::splat(50.0);
+
+    fn section_for(&self, pos: egui::Pos2) -> (ERef<DemoPsdTransaction>, egui::Align2) {
+        let radius = self.tx_outer_rectangle.height() / 2.0;
+        let tx_mark_center = egui::Pos2::new(
+            self.tx_outer_rectangle.min.x + self.tx_outer_rectangle.width() * self.tx_mark_percentage,
+            self.tx_outer_rectangle.center().y,
+        );
+        let delta = tx_mark_center - pos;
+
+        if delta.x.abs() + delta.y.abs() <= radius {
+            (
+                self.model.clone(),
+                egui::Align2::CENTER_CENTER,
+            )
+        } else {
+            let quadrant = match (pos.x > tx_mark_center.x, pos.y > tx_mark_center.y) {
+                (false, false) => egui::Align2::LEFT_TOP,
+                (false, true) => egui::Align2::LEFT_BOTTOM,
+                (true, true) => egui::Align2::RIGHT_BOTTOM,
+                (true, false) => egui::Align2::RIGHT_TOP,
+            };
+            (
+                self.model.clone(),
+                quadrant,
+            )
+        }
+    }
 }
 
 impl Entity for DemoPsdTransactionView {
@@ -1312,8 +1363,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
         ui.horizontal(|ui| {
             let mut width = self.tx_outer_rectangle.width();
-            let mark_deadzone = 25.0 / width;
-            let mut mark_percentage = self.tx_mark_percentage;
+            let mark_deadzone = 2500.0 / width;
+            let mut mark_percentage = self.tx_mark_percentage * 100.0;
 
             ui.label("width");
             if ui.add(egui::DragValue::new(&mut width).range(Self::MIN_SIZE.x..=5000.0).speed(1.0)).changed() {
@@ -1323,9 +1374,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 ));
             }
             ui.label("mark percentage");
-            if ui.add(egui::DragValue::new(&mut mark_percentage).range(mark_deadzone..=(1.0-mark_deadzone)).speed(0.01)).changed() {
+            if ui.add(egui::DragValue::new(&mut mark_percentage).range(mark_deadzone..=(100.0-mark_deadzone)).speed(1.0)).changed() {
                 commands.push(SensitiveCommand::PropertyChangeSelected(vec![
-                    DemoPsdPropChange::TransactionPercentageChange(mark_percentage),
+                    DemoPsdPropChange::TransactionPercentageChange(mark_percentage / 100.0),
                 ]));
             }
         });
@@ -1398,6 +1449,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         if let UFOption::Some(e) = &self.p_act_view {
             child_targetting_drawn |= e.write().draw_inner(
                 q, context, canvas, tool,
+                egui::Pos2::new(tx_mark_center.x, self.tx_outer_rectangle.max.y),
                 egui::Align2::LEFT_TOP,
             ) == TargettingStatus::Drawn;
         }
@@ -1414,20 +1466,28 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         tx_mark_center - egui::Vec2::new(radius, 0.0),
                         tx_mark_center - egui::Vec2::new(0.0, radius),
                     ],
-                    tool.targetting_for_element(Some(self.model.clone().into())),
+                    tool.targetting_for_section(Some(self.section_for(*pos).into())),
                     canvas::Stroke::new_solid(1.0, detail_color),
                     canvas::Highlight::NONE,
                 );
                 return TargettingStatus::Drawn;
             } else if self.tx_outer_rectangle.contains(*pos) {
+                let section = self.section_for(*pos);
+                let quadrant_rect = egui::Rect::from_two_pos(tx_mark_center, match section.1 {
+                    egui::Align2::LEFT_TOP => self.tx_outer_rectangle.left_top(),
+                    egui::Align2::LEFT_BOTTOM => self.tx_outer_rectangle.left_bottom(),
+                    egui::Align2::RIGHT_BOTTOM => self.tx_outer_rectangle.right_bottom(),
+                    egui::Align2::RIGHT_TOP => self.tx_outer_rectangle.right_top(),
+                    _ => unreachable!()
+                });
+
                 canvas.draw_rectangle(
-                    self.tx_outer_rectangle,
-                    egui::CornerRadius::same(127),
-                    tool.targetting_for_element(Some(self.model.clone().into())),
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    quadrant_rect,
+                    egui::CornerRadius::ZERO,
+                    tool.targetting_for_section(Some(section.into())),
+                    canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-                draw_tx_mark(canvas);
                 return TargettingStatus::Drawn;
             }
         }
@@ -1513,17 +1573,12 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.section_for(pos).into());
 
                     if self.p_act_view.as_ref().is_none() {
-                        tool.add_position(*event.mouse_position());
+                        tool.add_position(pos);
                         if let Some((new_e, esm)) = tool.try_construct_view(self)
-                            && let DemoPsdElementView::Act(ref act) = new_e {
-                            act.write().position = egui::Pos2::new(
-                                self.tx_outer_rectangle.min.x + self.tx_outer_rectangle.width() * self.tx_mark_percentage,
-                                self.tx_outer_rectangle.max.y,
-                            );
-
+                            && let DemoPsdElementView::Act(_) = new_e {
                             commands.push(InsensitiveCommand::AddElement(*self.uuid, new_e.into(), true).into());
                             if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                 *element_setup_modal = esm;
@@ -1597,17 +1652,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                     self.tx_outer_rectangle.size(),
                 ));
                 self.tx_outer_rectangle = r;
-
-                // TODO: move before
-                if let UFOption::Some(e) = &self.p_act_view {
-                    let delta = $delta.x * self.tx_mark_percentage;
-                    e.write().apply_command(
-                        &InsensitiveCommand::MoveAllElements(egui::Vec2::new(delta, 0.0)),
-                        &mut Vec::new(),
-                        &mut HashSet::new(),
-                    );
-                }
-                // TODO: move after
             };
         }
 
@@ -1663,15 +1707,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
-                // TODO: move before
-                if let UFOption::Some(e) = &self.p_act_view {
-                    e.write().apply_command(
-                        &InsensitiveCommand::MoveAllElements(*delta),
-                        &mut Vec::new(),
-                        affected_models,
-                    );
-                }
-                // TODO: move after
             }
 
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
@@ -1785,16 +1820,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                     )],
                                 ));
                                 self.tx_mark_percentage = new_percentage;
-
-                                // TODO: move before
-                                if let UFOption::Some(e) = &self.p_act_view {
-                                    e.write().apply_command(
-                                        &InsensitiveCommand::MoveAllElements(egui::Vec2::new(delta, 0.0)),
-                                        &mut Vec::new(),
-                                        &mut HashSet::new(),
-                                    );
-                                }
-                                // TODO: move after
                             }
                             _ => {}
                         }
@@ -1984,9 +2009,12 @@ impl DemoPsdFactView {
         context: &GlobalDrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
+        pos: egui::Pos2,
         text_align: egui::Align2,
     ) -> TargettingStatus {
         let read = self.model.read();
+
+        self.position = pos;
 
         canvas.draw_ellipse(
             self.position,
@@ -2016,7 +2044,7 @@ impl DemoPsdFactView {
             canvas.draw_ellipse(
                 self.position,
                 Self::RADIUS,
-                t.targetting_for_element(Some(self.model())),
+                t.targetting_for_section(Some(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -2130,7 +2158,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
     ) -> TargettingStatus {
-        self.draw_inner(q, context, canvas, tool, egui::Align2::LEFT_CENTER)
+        self.draw_inner(q, context, canvas, tool, self.position, egui::Align2::LEFT_CENTER)
     }
 
     fn handle_event(
@@ -2159,7 +2187,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
             }
             InputEvent::Click(_) => {
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model.clone().into());
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
@@ -2360,7 +2388,7 @@ fn new_demopsd_act_view(
 
         dragged: false,
         highlight: canvas::Highlight::NONE,
-        position,
+        bounds_rect: egui::Rect::from_center_size(position, DemoPsdActView::SIZE),
     })
 }
 
@@ -2382,7 +2410,7 @@ struct DemoPsdActView {
     dragged: bool,
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
-    position: egui::Pos2,
+    bounds_rect: egui::Rect,
 }
 
 impl DemoPsdActView {
@@ -2394,14 +2422,15 @@ impl DemoPsdActView {
         context: &GlobalDrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
+        pos: egui::Pos2,
         text_align: egui::Align2,
     ) -> TargettingStatus {
         let read = self.model.read();
 
-        let r = egui::Rect::from_center_size(self.position, Self::SIZE);
+        self.bounds_rect = egui::Rect::from_center_size(pos, Self::SIZE);
 
         canvas.draw_rectangle(
-            r,
+            self.bounds_rect,
             egui::CornerRadius::ZERO,
             if read.internal {
                 INTERNAL_ROLE_BACKGROUND
@@ -2412,7 +2441,7 @@ impl DemoPsdActView {
             self.highlight,
         );
         canvas.draw_text(
-            self.position + egui::Vec2::new(Self::SIZE.x, 0.0),
+            pos + egui::Vec2::new(Self::SIZE.x, 0.0),
             text_align,
             &read.identifier,
             canvas::CLASS_BOTTOM_FONT_SIZE,
@@ -2426,9 +2455,9 @@ impl DemoPsdActView {
             .map(|e| e.1)
         {
             canvas.draw_rectangle(
-                r,
+                self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_element(Some(self.model())),
+                t.targetting_for_section(Some(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -2460,11 +2489,11 @@ impl ElementController<DemoPsdElement> for DemoPsdActView {
     }
     fn min_shape(&self) -> canvas::NHShape {
         canvas::NHShape::Rect {
-            inner: egui::Rect::from_center_size(self.position, Self::SIZE),
+            inner: self.bounds_rect,
         }
     }
     fn position(&self) -> egui::Pos2 {
-        self.position
+        self.bounds_rect.center()
     }
 }
 
@@ -2520,15 +2549,15 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         ui.label("View properties");
 
         ui.horizontal(|ui| {
-            let egui::Pos2 { mut x, mut y } = self.position;
+            let egui::Pos2 { mut x, mut y } = self.position();
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position().x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position().y)));
             }
         });
 
@@ -2541,7 +2570,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
     ) -> TargettingStatus {
-        self.draw_inner(q, context, canvas, tool, egui::Align2::LEFT_CENTER)
+        self.draw_inner(q, context, canvas, tool, self.bounds_rect.center(), egui::Align2::LEFT_CENTER)
     }
 
     fn handle_event(
@@ -2570,7 +2599,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
             }
             InputEvent::Click(_) => {
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model.clone().into());
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
@@ -2637,7 +2666,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                 if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MoveSpecificElements(_, delta)
             | InsensitiveCommand::MoveAllElements(delta) => {
-                self.position += *delta;
+                self.bounds_rect.translate(*delta);
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
@@ -2735,7 +2764,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
             comment_buffer: self.comment_buffer.clone(),
             dragged: false,
             highlight: self.highlight,
-            position: self.position,
+            bounds_rect: self.bounds_rect,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());

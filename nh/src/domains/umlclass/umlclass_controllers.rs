@@ -109,6 +109,7 @@ impl<P: UmlClassProfile> Domain for UmlClassDomain<P> {
     type CommonElementT = UmlClassElement;
     type DiagramModelT = UmlClassDiagram;
     type CommonElementViewT = UmlClassElementView<P>;
+    type ViewTargettingSectionT = UmlClassElement;
     type QueryableT<'a> = UmlClassQueryable<'a, P>;
     type LabelProviderT = UmlClassLabelProvider;
     type ToolT = NaiveUmlClassTool<P>;
@@ -1116,7 +1117,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
         self.initial_stage
     }
 
-    fn targetting_for_element(&self, element: Option<UmlClassElement>) -> egui::Color32 {
+    fn targetting_for_section(&self, element: Option<UmlClassElement>) -> egui::Color32 {
         match element {
             None => match self.current_stage {
                 UmlClassToolStage::Instance
@@ -1293,7 +1294,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             _ => {}
         }
     }
-    fn add_element(&mut self, element: UmlClassElement) {
+    fn add_section(&mut self, element: UmlClassElement) {
         if self.event_lock {
             return;
         }
@@ -1546,7 +1547,7 @@ pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
 }
 
 impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAdapter<P> {
-    fn model(&self) -> UmlClassElement {
+    fn model_section(&self) -> UmlClassElement {
         self.model.clone().into()
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
@@ -2095,7 +2096,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::CornerRadius::ZERO,
-                    t.targetting_for_element(Some(self.model())),
+                    t.targetting_for_section(Some(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -2148,7 +2149,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model());
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         self.highlight.selected = true;
@@ -2613,7 +2614,7 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                tool.targetting_for_element(Some(self.model.clone().into())),
+                tool.targetting_for_section(Some(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
                 canvas::Highlight::NONE,
             );
@@ -3322,7 +3323,7 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                tool.targetting_for_element(Some(self.model.clone().into())),
+                tool.targetting_for_section(Some(self.model.clone().into())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
                 canvas::Highlight::NONE,
             );
@@ -4433,7 +4434,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 canvas.draw_rectangle(
                     self.bounds_rect,
                     egui::CornerRadius::ZERO,
-                    t.targetting_for_element(Some(self.model())),
+                    t.targetting_for_section(Some(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -4494,7 +4495,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 });
 
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model());
                     if let Some((view, esm)) = tool.try_construct_view(self)
                         && matches!(view, UmlClassElementView::ClassProperty(_)) {
                         commands.push(InsensitiveCommand::AddElement(*self.uuid, view.into(), true).into());
@@ -4515,7 +4516,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 });
 
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model());
                     if let Some((view, esm)) = tool.try_construct_view(self)
                         && matches!(view, UmlClassElementView::ClassOperation(_)) {
                         commands.push(InsensitiveCommand::AddElement(*self.uuid, view.into(), true).into());
@@ -4572,7 +4573,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model());
 
                     if let Some((view, esm)) = tool.try_construct_view(self)
                         && matches!(view, UmlClassElementView::ClassProperty(_) | UmlClassElementView::ClassOperation(_)) {
@@ -6370,7 +6371,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                         egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
                         egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
                     ].into_iter().collect(),
-                    t.targetting_for_element(Some(self.model())),
+                    t.targetting_for_section(Some(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
@@ -6409,7 +6410,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model());
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         self.highlight.selected = true;

@@ -31,6 +31,7 @@ impl Domain for DemoCsdDomain {
     type CommonElementT = DemoCsdElement;
     type DiagramModelT = DemoCsdDiagram;
     type CommonElementViewT = DemoCsdElementView;
+    type ViewTargettingSectionT = DemoCsdElement;
     type QueryableT<'a> = DemoCsdQueryable<'a>;
     type LabelProviderT = DemoCsdLabelProvider;
     type ToolT = NaiveDemoCsdTool;
@@ -692,7 +693,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         self.initial_stage
     }
 
-    fn targetting_for_element(&self, element: Option<DemoCsdElement>) -> egui::Color32 {
+    fn targetting_for_section(&self, element: Option<DemoCsdElement>) -> egui::Color32 {
         match element {
             None => match self.current_stage {
                 DemoCsdToolStage::Client
@@ -822,7 +823,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             _ => {}
         }
     }
-    fn add_element(&mut self, element: DemoCsdElement) {
+    fn add_section(&mut self, element: DemoCsdElement) {
         if self.event_lock {
             return;
         }
@@ -942,7 +943,7 @@ pub struct DemoCsdPackageAdapter {
 }
 
 impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
-    fn model(&self) -> DemoCsdElement {
+    fn model_section(&self) -> DemoCsdElement {
         self.model.clone().into()
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
@@ -1535,7 +1536,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_element(Some(self.model())),
+                t.targetting_for_section(Some(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -1640,7 +1641,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model());
 
                     if self.transaction_view.as_ref().is_none() {
                         tool.add_position(*event.mouse_position());
@@ -2320,7 +2321,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                     self.position - TX_MULTIPLE_OFFSET
                 },
                 egui::Vec2::splat(radius),
-                t.targetting_for_element(Some(self.model())),
+                t.targetting_for_section(Some(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -2356,7 +2357,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             }
             InputEvent::Click(_) => {
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model());
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());

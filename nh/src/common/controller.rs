@@ -954,6 +954,7 @@ pub trait Domain: Sized + 'static {
     type CommonElementT: Model + VisitableElement + Clone;
     type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT> + VisitableDiagram;
     type CommonElementViewT: ElementControllerGen2<Self> + serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone;
+    type ViewTargettingSectionT: Into<Self::CommonElementT>;
     type QueryableT<'a>: Queryable<'a, Self>;
     type LabelProviderT: CachingLabelDeriver<Self::CommonElementT>;
     type ToolT: Tool<Self>;
@@ -1012,11 +1013,11 @@ pub trait Tool<DomainT: Domain> {
 
     fn initial_stage(&self) -> Self::Stage;
 
-    fn targetting_for_element(&self, element: Option<DomainT::CommonElementT>) -> egui::Color32;
+    fn targetting_for_section(&self, element: Option<DomainT::ViewTargettingSectionT>) -> egui::Color32;
     fn draw_status_hint(&self, q: &DomainT::QueryableT<'_>, canvas: &mut dyn NHCanvas, pos: egui::Pos2);
 
     fn add_position(&mut self, pos: egui::Pos2);
-    fn add_element(&mut self, element: DomainT::CommonElementT);
+    fn add_section(&mut self, element: DomainT::ViewTargettingSectionT);
 
     fn try_additional_dependency(&mut self) -> Option<(u8, ModelUuid, ModelUuid)>;
     fn try_construct_view(
@@ -2463,7 +2464,7 @@ impl<
                     canvas.draw_rectangle(
                         egui::Rect::EVERYTHING,
                         egui::CornerRadius::ZERO,
-                        tool.targetting_for_element(None),
+                        tool.targetting_for_section(None),
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );

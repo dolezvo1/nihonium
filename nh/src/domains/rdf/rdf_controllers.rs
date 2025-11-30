@@ -23,6 +23,7 @@ impl Domain for RdfDomain {
     type CommonElementT = RdfElement;
     type DiagramModelT = RdfDiagram;
     type CommonElementViewT = RdfElementView;
+    type ViewTargettingSectionT = RdfElement;
     type QueryableT<'a> = RdfQueryable<'a>;
     type LabelProviderT = RdfLabelProvider;
     type ToolT = NaiveRdfTool;
@@ -670,7 +671,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
         self.initial_stage
     }
 
-    fn targetting_for_element(&self, element: Option<RdfElement>) -> egui::Color32 {
+    fn targetting_for_section(&self, element: Option<RdfElement>) -> egui::Color32 {
         match element {
             None => match self.current_stage {
                 RdfToolStage::Literal
@@ -762,7 +763,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             _ => {}
         }
     }
-    fn add_element(&mut self, controller: RdfElement) {
+    fn add_section(&mut self, controller: RdfElement) {
         if self.event_lock {
             return;
         }
@@ -934,7 +935,7 @@ pub struct RdfGraphAdapter {
 }
 
 impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
-    fn model(&self) -> RdfElement {
+    fn model_section(&self) -> RdfElement {
         self.model.clone().into()
     }
     fn model_uuid(&self) -> Arc<ModelUuid> {
@@ -1283,7 +1284,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             canvas.draw_ellipse(
                 self.position,
                 self.bounds_radius,
-                t.targetting_for_element(Some(self.model())),
+                t.targetting_for_section(Some(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -1329,7 +1330,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model());
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -1752,7 +1753,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
-                t.targetting_for_element(Some(self.model())),
+                t.targetting_for_section(Some(self.model())),
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                 canvas::Highlight::NONE,
             );
@@ -1788,7 +1789,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
-                    tool.add_element(self.model());
+                    tool.add_section(self.model());
                 }
 
                 EventHandlingStatus::HandledByElement

@@ -6,7 +6,7 @@ use crate::{common::{canvas::{self, Highlight}, controller::{ColorBundle, Contai
 
 
 pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
-    fn model(&self) -> DomainT::CommonElementT;
+    fn model_section(&self) -> DomainT::ViewTargettingSectionT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
 
@@ -122,7 +122,7 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> View for PackageView<Do
 
 impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementController<DomainT::CommonElementT> for PackageView<DomainT, AdapterT> {
     fn model(&self) -> DomainT::CommonElementT {
-        self.adapter.model()
+        self.adapter.model_section().into()
     }
 
     fn min_shape(&self) -> canvas::NHShape {
@@ -315,7 +315,7 @@ where
                     canvas.draw_rectangle(
                         self.bounds_rect,
                         egui::CornerRadius::ZERO,
-                        t.targetting_for_element(Some(self.adapter.model())),
+                        t.targetting_for_section(Some(self.adapter.model_section())),
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
@@ -405,7 +405,7 @@ where
 
                 if let Some(tool) = tool {
                     tool.add_position(*event.mouse_position());
-                    tool.add_element(self.adapter.model());
+                    tool.add_section(self.adapter.model_section());
 
                     if let Some((new_e, esm)) = tool.try_construct_view(self) {
                         commands.push(InsensitiveCommand::AddElement(*self.uuid, new_e.into(), true).into());
