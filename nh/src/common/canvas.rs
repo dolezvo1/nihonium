@@ -390,8 +390,8 @@ impl NHShape {
                 };
                 [x0, x1, y0, y1]
             },
-            NHShape::Ellipse { position, bounds_radius }
-            | NHShape::Rhombus { position, bounds_radius } => {
+            NHShape::Ellipse { position, .. }
+            | NHShape::Rhombus { position, .. } => {
                 // TODO: doesn't actually generate two unique positions, but close enough
                 let [x0, x1] = if around.x < position.x {
                     [

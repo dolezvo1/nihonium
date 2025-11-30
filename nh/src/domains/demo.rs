@@ -16,7 +16,7 @@ pub enum DemoTransactionKind {
 }
 
 impl DemoTransactionKind {
-    pub fn char(&self) -> &str {
+    pub fn char(&self) -> &'static str {
         match self {
             Self::Performa => "Performa",
             Self::Informa => "Informa",

@@ -399,42 +399,42 @@ where
                 }
             }
             InputEvent::Click(pos) => {
-                if self.min_shape().contains(pos) {
-                    if let Some(tool) = tool {
-                        tool.add_position(*event.mouse_position());
-                        tool.add_element(self.adapter.model());
+                if !self.min_shape().contains(pos) {
+                    return k_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled);
+                }
 
-                        if let Some((new_e, esm)) = tool.try_construct_view(self) {
-                            commands.push(InsensitiveCommand::AddElement(*self.uuid, new_e.into(), true).into());
-                            if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                                *element_setup_modal = esm;
-                            }
-                        }
+                if let Some(tool) = tool {
+                    tool.add_position(*event.mouse_position());
+                    tool.add_element(self.adapter.model());
 
-                        EventHandlingStatus::HandledByContainer
-                    } else if let Some((k, status)) = k_status {
-                        if status == EventHandlingStatus::HandledByElement {
-                            if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                                commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
-                                commands.push(InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    true,
-                                    Highlight::SELECTED,
-                                ).into());
-                            } else {
-                                commands.push(InsensitiveCommand::HighlightSpecific(
-                                    std::iter::once(k).collect(),
-                                    !self.selected_direct_elements.contains(&k),
-                                    Highlight::SELECTED,
-                                ).into());
-                            }
+                    if let Some((new_e, esm)) = tool.try_construct_view(self) {
+                        commands.push(InsensitiveCommand::AddElement(*self.uuid, new_e.into(), true).into());
+                        if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                            *element_setup_modal = esm;
                         }
-                        EventHandlingStatus::HandledByContainer
-                    } else {
-                        EventHandlingStatus::HandledByElement
                     }
+
+                    EventHandlingStatus::HandledByContainer
+                } else if let Some((k, status)) = k_status {
+                    if status == EventHandlingStatus::HandledByElement {
+                        if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                            commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                Highlight::SELECTED,
+                            ).into());
+                        } else {
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.selected_direct_elements.contains(&k),
+                                Highlight::SELECTED,
+                            ).into());
+                        }
+                    }
+                    EventHandlingStatus::HandledByContainer
                 } else {
-                    k_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled)
+                    EventHandlingStatus::HandledByElement
                 }
             },
             InputEvent::Drag { delta, .. } => match self.dragged_type_and_shape {

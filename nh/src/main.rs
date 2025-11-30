@@ -378,17 +378,30 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
             }
         });
 
+        ui.menu_button("DEMO", |ui| {
+            ui.set_min_width(MIN_MENU_WIDTH);
+            for (label, diagram_type, fun) in [
+                (
+                    "Coordination Structure Diagram",
+                    2,
+                    crate::domains::democsd::democsd_controllers::new as NDC,
+                ),
+                (
+                    "Process Structure Diagram",
+                    5,
+                    crate::domains::demopsd::demopsd_controllers::new as NDC,
+                ),
+                (
+                    "Object Fact Diagram",
+                    4,
+                    crate::domains::demoofd::demoofd_controllers::new as NDC,
+                ),
+            ] {
+                diagram_button!(ui, label, diagram_type, fun);
+            }
+        });
+
         for (label, diagram_type, fun) in [
-            (
-                "DEMO Coordination Structure Diagram",
-                2,
-                crate::domains::democsd::democsd_controllers::new as NDC,
-            ),
-            (
-                "DEMO Object Fact Diagram",
-                4,
-                crate::domains::demoofd::demoofd_controllers::new as NDC,
-            ),
             ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::new as NDC),
         ] {
             diagram_button!(ui, label, diagram_type, fun);
@@ -416,17 +429,30 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
             }
         });
 
+        ui.menu_button("DEMO", |ui| {
+            ui.set_min_width(MIN_MENU_WIDTH);
+            for (label, diagram_type, fun) in [
+                (
+                    "Coordination Structure Diagram",
+                    2,
+                    crate::domains::democsd::democsd_controllers::demo as DDC,
+                ),
+                (
+                    "Process Structure Diagram",
+                    5,
+                    crate::domains::demopsd::demopsd_controllers::demo as DDC,
+                ),
+                (
+                    "Object Fact Diagram",
+                    4,
+                    crate::domains::demoofd::demoofd_controllers::demo as DDC,
+                ),
+            ] {
+                diagram_button!(ui, label, diagram_type, fun);
+            }
+        });
+
         for (label, diagram_type, fun) in [
-            (
-                "DEMO Coordination Structure Diagram",
-                2,
-                crate::domains::democsd::democsd_controllers::demo as DDC,
-            ),
-            (
-                "DEMO Object Fact Diagram",
-                4,
-                crate::domains::demoofd::demoofd_controllers::demo as DDC,
-            ),
             ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::demo as DDC),
         ] {
             diagram_button!(ui, label, diagram_type, fun);
@@ -1664,6 +1690,7 @@ impl Default for NHApp {
         diagram_deserializers.insert("democsd-diagram-view".to_string(), (2, &crate::domains::democsd::democsd_controllers::deserializer as &DDes));
         diagram_deserializers.insert("umlclass-diagram-view-ontouml".to_string(), (3, &crate::domains::ontouml::ontouml_controllers::deserializer as &DDes));
         diagram_deserializers.insert("demoofd-diagram-view".to_string(), (4, &crate::domains::demoofd::demoofd_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("demopsd-diagram-view".to_string(), (5, &crate::domains::demoofd::demoofd_controllers::deserializer as &DDes));
 
         let mut dock_state = DockState::new(tabs);
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
@@ -1694,6 +1721,7 @@ impl Default for NHApp {
             ("DEMO Coordination Structure Diagram".to_owned(), vec![egui::Color32::TRANSPARENT]),
             ("OntoUML".to_owned(), vec![egui::Color32::TRANSPARENT]),
             ("DEMO Object Fact Diagram".to_owned(), vec![egui::Color32::TRANSPARENT]),
+            ("DEMO Project Structure Diagram".to_owned(), vec![egui::Color32::TRANSPARENT]),
         ];
         
         let selected_diagram_shades = diagram_shades.iter().map(|_| 0).collect();

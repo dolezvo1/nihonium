@@ -91,7 +91,7 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
                 }
             }
 
-            fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
+            fn delete_elements(&mut self, uuids: &std::collections::HashSet<ModelUuid>) -> Result<(), ()> {
                 match self {
                     #(#arms_delete_elements),*
                 }

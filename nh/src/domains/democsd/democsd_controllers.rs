@@ -1657,16 +1657,17 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                             }
                         }
                     }
-                    return EventHandlingStatus::HandledByContainer;
+
+                    EventHandlingStatus::HandledByContainer
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         self.highlight.selected = true;
                     } else {
                         self.highlight.selected = !self.highlight.selected;
                     }
-                }
 
-                EventHandlingStatus::HandledByElement
+                    EventHandlingStatus::HandledByElement
+                }
             }
             InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
                 let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
@@ -1890,8 +1891,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         m: &mut HashMap<ModelUuid, DemoCsdElement>,
     ) {
         let tx_clone = if let Some(t) = self.transaction_view.as_ref() {
-            let mut inner = HashMap::new();
-            t.read().deep_copy_clone(uuid_present, &mut inner, c, m);
+            t.read().deep_copy_clone(uuid_present, &mut HashMap::new(), c, m);
             if let Some(DemoCsdElementView::Transaction(t)) = c.get(&t.read().uuid()) {
                 Some(t.clone())
             } else { None }
@@ -1937,6 +1937,14 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
     ) {
         if let Some(DemoCsdElementView::Transaction(new_ta)) = self.transaction_view.as_ref().and_then(|e| c.get(&e.read().uuid()))  {
             self.transaction_view = UFOption::Some(new_ta.clone());
+        }
+
+        let mut w = self.model.write();
+        if let UFOption::Some(ta) = &w.transaction {
+            let ta_uuid = *ta.read().uuid;
+            if let Some(DemoCsdElement::DemoCsdTransaction(new_ta)) = m.get(&ta_uuid) {
+                w.transaction = UFOption::Some(new_ta.clone());
+            }
         }
     }
 }

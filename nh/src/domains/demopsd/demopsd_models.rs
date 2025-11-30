@@ -1,0 +1,637 @@
+
+use std::{collections::{HashMap, HashSet}, sync::Arc};
+
+use crate::{common::{
+    canvas, controller::{ContainerModel, DiagramVisitor, ElementVisitor, Model, VisitableDiagram, VisitableElement}, entity::{Entity, EntityUuid}, eref::ERef, ufoption::UFOption, uuid::ModelUuid
+}, domains::demo::DemoTransactionKind};
+
+
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[model(default_passthrough = "eref")]
+#[container_model(element_type = DemoPsdElement, default_passthrough = "none")]
+#[nh_context_serde(uuid_type = ModelUuid)]
+pub enum DemoPsdElement {
+    #[container_model(passthrough = "eref")]
+    DemoPsdPackage(ERef<DemoPsdPackage>),
+    #[container_model(passthrough = "eref")]
+    DemoPsdTransaction(ERef<DemoPsdTransaction>),
+    DemoPsdFact(ERef<DemoPsdFact>),
+    DemoPsdAct(ERef<DemoPsdAct>),
+    DemoPsdLink(ERef<DemoPsdLink>),
+}
+
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[model(default_passthrough = "eref")]
+#[container_model(element_type = DemoPsdElement, default_passthrough = "none")]
+#[nh_context_serde(uuid_type = ModelUuid)]
+pub enum DemoPsdState {
+    Fact(ERef<DemoPsdFact>),
+    Act(ERef<DemoPsdAct>),
+}
+
+impl DemoPsdElement {
+    fn as_state(self) -> Option<DemoPsdState> {
+        match self {
+            Self::DemoPsdFact(inner) => Some(DemoPsdState::Fact(inner)),
+            Self::DemoPsdAct(inner) => Some(DemoPsdState::Act(inner)),
+            Self::DemoPsdPackage(..)
+            | Self::DemoPsdTransaction(..)
+            | Self::DemoPsdLink(..) => None,
+        }
+    }
+}
+
+impl DemoPsdState {
+    fn as_element(self) -> DemoPsdElement {
+        match self {
+            Self::Fact(inner) => DemoPsdElement::DemoPsdFact(inner),
+            Self::Act(inner) => DemoPsdElement::DemoPsdAct(inner),
+        }
+    }
+}
+
+impl VisitableElement for DemoPsdElement {
+    fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
+        match self {
+            DemoPsdElement::DemoPsdPackage(inner) => {
+                v.open_complex(self);
+                for e in &inner.read().contained_elements {
+                    e.accept(v);
+                }
+                v.close_complex(self);
+            },
+            DemoPsdElement::DemoPsdTransaction(inner) => {
+                v.open_complex(self);
+                let r = inner.read();
+                for e in &r.before {
+                    e.clone().as_element().accept(v);
+                }
+                if let UFOption::Some(e) = &r.p_act {
+                    DemoPsdElement::from(e.clone()).accept(v);
+                }
+                for e in &r.after {
+                    e.clone().as_element().accept(v);
+                }
+                v.close_complex(self);
+            }
+            e => v.visit_simple(e),
+        }
+    }
+}
+
+
+pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<ModelUuid, DemoPsdElement>) {
+    fn walk(e: &DemoPsdElement, into: &mut HashMap<ModelUuid, DemoPsdElement>) -> DemoPsdElement {
+        let new_uuid = Arc::new(uuid::Uuid::now_v7().into());
+        match e {
+            DemoPsdElement::DemoPsdPackage(inner) => {
+                let model = inner.read();
+
+                let new_model = DemoPsdPackage {
+                    uuid: new_uuid,
+                    name: model.name.clone(),
+                    contained_elements: model.contained_elements.iter().map(|e| {
+                        let new_model = walk(e, into);
+                        into.insert(*e.uuid(), new_model.clone());
+                        new_model
+                    }).collect(),
+                    comment: model.comment.clone()
+                };
+                DemoPsdElement::DemoPsdPackage(ERef::new(new_model))
+            },
+            DemoPsdElement::DemoPsdTransaction(inner) => {
+                let model = inner.read();
+
+                let new_model = DemoPsdTransaction {
+                    uuid: new_uuid,
+                    kind: model.kind,
+                    identifier: model.identifier.clone(),
+                    name: model.name.clone(),
+                    before: model.before.iter().map(|e| {
+                        let new_model = walk(&e.clone().as_element(), into);
+                        into.insert(*e.uuid(), new_model.clone());
+                        new_model.as_state().unwrap()
+                    }).collect(),
+                    before_is_executor: model.before_is_executor.clone(),
+                    p_act: match &model.p_act {
+                        UFOption::None => UFOption::None,
+                        UFOption::Some(inner) => {
+                            let new_model = walk(&((*inner).clone().into()), into);
+                            into.insert(*inner.read().uuid(), new_model.clone());
+                            match new_model {
+                                DemoPsdElement::DemoPsdAct(inner) => UFOption::Some(inner),
+                                _ => unreachable!(),
+                            }
+                        }
+                    },
+                    after: model.after.iter().map(|e| {
+                        let new_model = walk(&e.clone().as_element(), into);
+                        into.insert(*e.uuid(), new_model.clone());
+                        new_model.as_state().unwrap()
+                    }).collect(),
+                    after_is_executor: model.after_is_executor.clone(),
+                    comment: model.comment.clone(),
+                };
+
+                DemoPsdElement::DemoPsdTransaction(ERef::new(new_model))
+            },
+            DemoPsdElement::DemoPsdFact(inner) => {
+                DemoPsdElement::DemoPsdFact(inner.read().clone_with(*new_uuid))
+            },
+            DemoPsdElement::DemoPsdAct(inner) => {
+                DemoPsdElement::DemoPsdAct(inner.read().clone_with(*new_uuid))
+            },
+            DemoPsdElement::DemoPsdLink(inner) => {
+                DemoPsdElement::DemoPsdLink(inner.read().clone_with(*new_uuid))
+            },
+        }
+    }
+
+    fn relink(e: &mut DemoPsdElement, all_models: &HashMap<ModelUuid, DemoPsdElement>) {
+        match e {
+            DemoPsdElement::DemoPsdPackage(inner) => {
+                let mut model = inner.write();
+                for e in model.contained_elements.iter_mut() {
+                    relink(e, all_models);
+                }
+            },
+            DemoPsdElement::DemoPsdTransaction(..)
+            | DemoPsdElement::DemoPsdFact(..)
+            | DemoPsdElement::DemoPsdAct(..) => {}
+            DemoPsdElement::DemoPsdLink(inner) => {
+                let mut model = inner.write();
+
+                let source_uuid = *model.source.read().uuid();
+                if let Some(DemoPsdElement::DemoPsdFact(ta)) = all_models.get(&source_uuid) {
+                    model.source = ta.clone();
+                }
+                let target_uuid = *model.target.read().uuid();
+                if let Some(DemoPsdElement::DemoPsdAct(tx)) = all_models.get(&target_uuid) {
+                    model.target = tx.clone();
+                }
+            },
+        }
+    }
+
+    let mut all_models = HashMap::new();
+    let mut new_contained_elements = Vec::new();
+    for e in &d.contained_elements {
+        let new_model = walk(&e, &mut all_models);
+        all_models.insert(*e.uuid(), new_model.clone());
+        new_contained_elements.push(new_model);
+    }
+    for e in new_contained_elements.iter_mut() {
+        relink(e, &all_models);
+    }
+
+    let new_diagram = DemoPsdDiagram {
+        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        name: d.name.clone(),
+        contained_elements: new_contained_elements,
+        comment: d.comment.clone(),
+    };
+    (ERef::new(new_diagram), all_models)
+}
+
+pub fn fake_copy_diagram(d: &DemoPsdDiagram) -> HashMap<ModelUuid, DemoPsdElement> {
+    fn walk(e: &DemoPsdElement, into: &mut HashMap<ModelUuid, DemoPsdElement>) {
+        match e {
+            DemoPsdElement::DemoPsdPackage(inner) => {
+                let model = inner.read();
+
+                for e in &model.contained_elements {
+                    walk(e, into);
+                    into.insert(*e.uuid(), e.clone());
+                }
+            },
+            DemoPsdElement::DemoPsdTransaction(..)
+            | DemoPsdElement::DemoPsdFact(..)
+            | DemoPsdElement::DemoPsdAct(..)
+            | DemoPsdElement::DemoPsdLink(..) => {},
+        }
+    }
+
+    let mut all_models = HashMap::new();
+    for e in &d.contained_elements {
+        walk(e, &mut all_models);
+        all_models.insert(*e.uuid(), e.clone());
+    }
+
+    all_models
+}
+
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
+pub struct DemoPsdDiagram {
+    pub uuid: Arc<ModelUuid>,
+    pub name: Arc<String>,
+    #[nh_context_serde(entity)]
+    pub contained_elements: Vec<DemoPsdElement>,
+
+    pub comment: Arc<String>,
+}
+
+impl DemoPsdDiagram {
+    pub fn new(
+        uuid: ModelUuid,
+        name: String,
+        contained_elements: Vec<DemoPsdElement>,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            name: Arc::new(name),
+            contained_elements,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+}
+
+impl Entity for DemoPsdDiagram {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoPsdDiagram {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+impl VisitableDiagram for DemoPsdDiagram {
+    fn accept(&self, v: &mut dyn DiagramVisitor<Self>) {
+        v.open_diagram(self);
+        for e in &self.contained_elements {
+            e.accept(v);
+        }
+        v.close_diagram(self);
+    }
+}
+
+impl ContainerModel for DemoPsdDiagram {
+    type ElementT = DemoPsdElement;
+
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoPsdElement, ModelUuid)> {
+        for e in &self.contained_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone(), *self.uuid));
+            }
+            if let Some(e) = e.find_element(uuid) {
+                return Some(e);
+            }
+        }
+        return None;
+    }
+    fn add_element(&mut self, element: DemoPsdElement) -> Result<(), DemoPsdElement> {
+        self.contained_elements.push(element);
+        Ok(())
+    }
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
+        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        Ok(())
+    }
+}
+
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct DemoPsdPackage {
+    pub uuid: Arc<ModelUuid>,
+    pub name: Arc<String>,
+    #[nh_context_serde(entity)]
+    pub contained_elements: Vec<DemoPsdElement>,
+
+    pub comment: Arc<String>,
+}
+
+impl DemoPsdPackage {
+    pub fn new(
+        uuid: ModelUuid,
+        name: String,
+        contained_elements: Vec<DemoPsdElement>,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            name: Arc::new(name),
+            contained_elements,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+}
+
+impl Entity for DemoPsdPackage {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoPsdPackage {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+impl ContainerModel for DemoPsdPackage {
+    type ElementT = DemoPsdElement;
+
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoPsdElement, ModelUuid)> {
+        for e in &self.contained_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone(), *self.uuid));
+            }
+            if let Some(e) = e.find_element(uuid) {
+                return Some(e);
+            }
+        }
+        return None;
+    }
+    fn add_element(&mut self, element: DemoPsdElement) -> Result<(), DemoPsdElement> {
+        self.contained_elements.push(element);
+        Ok(())
+    }
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
+        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        Ok(())
+    }
+}
+
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct DemoPsdTransaction {
+    pub uuid: Arc<ModelUuid>,
+    pub kind: DemoTransactionKind,
+    pub identifier: Arc<String>,
+    pub name: Arc<String>,
+
+    #[nh_context_serde(entity)]
+    pub before: Vec<DemoPsdState>,
+    pub before_is_executor: Vec<bool>,
+    #[nh_context_serde(entity)]
+    pub p_act: UFOption<ERef<DemoPsdAct>>,
+    #[nh_context_serde(entity)]
+    pub after: Vec<DemoPsdState>,
+    pub after_is_executor: Vec<bool>,
+
+    pub comment: Arc<String>,
+}
+
+impl DemoPsdTransaction {
+    pub fn new(
+        uuid: ModelUuid,
+        kind: DemoTransactionKind,
+        identifier: String,
+        name: String,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            kind,
+            identifier: Arc::new(identifier),
+            name: Arc::new(name),
+            before: Vec::new(),
+            before_is_executor: Vec::new(),
+            p_act: UFOption::None,
+            after: Vec::new(),
+            after_is_executor: Vec::new(),
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            kind: self.kind,
+            identifier: self.identifier.clone(),
+            name: self.name.clone(),
+            before: self.before.clone(),
+            before_is_executor: self.before_is_executor.clone(),
+            p_act: self.p_act.clone(),
+            after: self.after.clone(),
+            after_is_executor: self.after_is_executor.clone(),
+            comment: self.comment.clone(),
+        })
+    }
+}
+
+impl Entity for DemoPsdTransaction {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoPsdTransaction {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+impl ContainerModel for DemoPsdTransaction {
+    type ElementT = DemoPsdElement;
+
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoPsdElement, ModelUuid)> {
+        /*
+        for e in &self.contained_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone(), *self.uuid));
+            }
+            if let Some(e) = e.find_element(uuid) {
+                return Some(e);
+            }
+        }
+        return None;
+        */
+        todo!("find")
+    }
+    fn add_element(&mut self, element: DemoPsdElement) -> Result<(), DemoPsdElement> {
+        /*
+        self.contained_elements.push(element);
+        Ok(())
+        */
+        todo!("insert")
+    }
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
+        /*
+        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        Ok(())
+        */
+        todo!("delete")
+    }
+}
+
+
+// "Disc"
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct DemoPsdFact {
+    pub uuid: Arc<ModelUuid>,
+    pub identifier: Arc<String>,
+    pub internal: bool,
+    pub comment: Arc<String>,
+}
+
+impl DemoPsdFact {
+    pub fn new(
+        uuid: ModelUuid,
+        identifier: String,
+        internal: bool,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            identifier: Arc::new(identifier),
+            internal,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(
+            Self {
+                uuid: Arc::new(uuid),
+                identifier: self.identifier.clone(),
+                internal: self.internal,
+                comment: self.comment.clone(),
+            }
+        )
+    }
+}
+
+impl Entity for DemoPsdFact {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoPsdFact {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+
+// "Box"
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct DemoPsdAct {
+    pub uuid: Arc<ModelUuid>,
+    pub identifier: Arc<String>,
+    pub internal: bool,
+    pub comment: Arc<String>,
+}
+
+impl DemoPsdAct {
+    pub fn new(
+        uuid: ModelUuid,
+        identifier: String,
+        internal: bool,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            identifier: Arc::new(identifier),
+            internal,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(
+            Self {
+                uuid: Arc::new(uuid),
+                identifier: self.identifier.clone(),
+                internal: self.internal,
+                comment: self.comment.clone(),
+            }
+        )
+    }
+}
+
+impl Entity for DemoPsdAct {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoPsdAct {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+#[derive(Clone, Copy, Default, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum DemoPsdLinkType {
+    #[default]
+    ResponseLink,
+    WaitLink,
+}
+
+impl DemoPsdLinkType {
+    pub fn char(&self) -> &'static str {
+        match self {
+            DemoPsdLinkType::ResponseLink => "Response Link",
+            DemoPsdLinkType::WaitLink => "Wait Link",
+        }
+    }
+
+    pub fn line_type(&self) -> canvas::LineType {
+        match self {
+            DemoPsdLinkType::ResponseLink => canvas::LineType::Solid,
+            DemoPsdLinkType::WaitLink => canvas::LineType::Dashed,
+        }
+    }
+}
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct DemoPsdLink {
+    pub uuid: Arc<ModelUuid>,
+
+    pub link_type: DemoPsdLinkType,
+    #[nh_context_serde(entity)]
+    pub source: ERef<DemoPsdFact>,
+    #[nh_context_serde(entity)]
+    pub target: ERef<DemoPsdAct>,
+    pub multiplicity: Arc<String>,
+
+    pub comment: Arc<String>,
+}
+
+impl DemoPsdLink {
+    pub fn new(
+        uuid: ModelUuid,
+        link_type: DemoPsdLinkType,
+        source: ERef<DemoPsdFact>,
+        target: ERef<DemoPsdAct>,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            link_type,
+            source,
+            target,
+            multiplicity: Arc::new("".to_owned()),
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(
+            Self {
+                uuid: Arc::new(uuid),
+                link_type: self.link_type,
+                source: self.source.clone(),
+                target: self.target.clone(),
+                multiplicity: self.multiplicity.clone(),
+                comment: self.comment.clone(),
+            }
+        )
+    }
+}
+
+impl Entity for DemoPsdLink {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for DemoPsdLink {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
