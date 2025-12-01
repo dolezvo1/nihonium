@@ -8,7 +8,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::{ModelUuid, ViewUuid};
-use crate::domains::demopsd::demopsd_models::{DemoPsdAct, DemoPsdFact};
+use crate::domains::demopsd::demopsd_models::{DemoPsdAct, DemoPsdFact, DemoPsdStateInfo};
 use super::demopsd_models::{
     DemoPsdDiagram, DemoPsdElement, DemoPsdLink, DemoPsdLinkType, DemoPsdPackage, DemoPsdTransaction,
 };
@@ -175,6 +175,18 @@ pub enum DemoPsdElementView {
     Link(ERef<LinkViewT>),
 }
 
+impl DemoPsdElementView {
+    fn as_state_view(self) -> Option<DemoPsdStateView> {
+        match self {
+            DemoPsdElementView::Fact(inner) => Some(inner.into()),
+            DemoPsdElementView::Act(inner) => Some(inner.into()),
+            DemoPsdElementView::Package(..)
+            | DemoPsdElementView::Transaction(..)
+            | DemoPsdElementView::Link(..) => None,
+        }
+    }
+}
+
 impl Debug for DemoPsdElementView {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
         write!(f, "DemoPsdElementView::???")
@@ -194,6 +206,21 @@ impl DemoPsdStateView {
         match self {
             Self::Fact(inner) => DemoPsdElementView::Fact(inner),
             Self::Act(inner) => DemoPsdElementView::Act(inner),
+        }
+    }
+
+    fn draw_inner(
+        &mut self,
+        q: &DemoPsdQueryable,
+        context: &GlobalDrawingContext,
+        canvas: &mut dyn canvas::NHCanvas,
+        tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
+        pos: egui::Pos2,
+        text_align: egui::Align2,
+    ) -> TargettingStatus {
+        match self {
+            DemoPsdStateView::Fact(inner) => inner.write().draw_inner(q, context, canvas, tool, pos, text_align),
+            DemoPsdStateView::Act(inner) => inner.write().draw_inner(q, context, canvas, tool, pos, text_align),
         }
     }
 }
@@ -1168,6 +1195,13 @@ impl CustomModal for DemoPsdTransactionSetupModal {
     }
 }
 
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct DemoPsdStateViewInfo {
+    #[nh_context_serde(entity)]
+    view: DemoPsdStateView,
+    executor: bool,
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoPsdTransactionView {
@@ -1176,11 +1210,11 @@ pub struct DemoPsdTransactionView {
     model: ERef<DemoPsdTransaction>,
 
     #[nh_context_serde(entity)]
-    before_views: Vec<DemoPsdStateView>,
+    before_views: Vec<DemoPsdStateViewInfo>,
     #[nh_context_serde(entity)]
     p_act_view: UFOption<ERef<DemoPsdActView>>,
     #[nh_context_serde(entity)]
-    after_views: Vec<DemoPsdStateView>,
+    after_views: Vec<DemoPsdStateViewInfo>,
     #[nh_context_serde(skip_and_default)]
     selected_direct_elements: HashSet<ViewUuid>,
 
@@ -1274,12 +1308,21 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
-        // TODO: try before
+        // try before
+        if let Some(child) = self.before_views.iter_mut()
+            .flat_map(|e| e.view.show_properties(drawing_context, q, lp, ui, commands).to_non_default()).next() {
+            return child;
+        }
+        // try P-act
         if let Some(child) = self.p_act_view.as_mut()
                 .and_then(|c| c.write().show_properties(drawing_context, q, lp, ui, commands).to_non_default()) {
             return child;
         }
-        // TODO: try after
+        // try after
+        if let Some(child) = self.after_views.iter_mut()
+            .flat_map(|e| e.view.show_properties(drawing_context, q, lp, ui, commands).to_non_default()).next() {
+            return child;
+        }
 
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -1445,7 +1488,23 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
 
         let mut child_targetting_drawn = false;
-        // TODO: draw before
+        // draw before
+        let spaces_count = (self.before_views.len() + 1) as f32;
+        let width_before = self.tx_outer_rectangle.width() * self.tx_mark_percentage - Self::MIN_SIZE.x / 2.0;
+        for (idx, e) in self.before_views.iter_mut().enumerate().map(|(idx, e)| ((idx + 1) as f32, e)) {
+            let (pos_y, align) = if !e.executor {
+                (self.tx_outer_rectangle.min.y, egui::Align2::CENTER_TOP)
+            } else {
+                (self.tx_outer_rectangle.max.y, egui::Align2::CENTER_BOTTOM)
+            };
+
+            child_targetting_drawn |= e.view.draw_inner(
+                q, context, canvas, tool,
+                egui::Pos2::new(self.tx_outer_rectangle.min.x + width_before * idx / spaces_count, pos_y),
+                align,
+            ) == TargettingStatus::Drawn;
+        }
+        // draw P-act
         if let UFOption::Some(e) = &self.p_act_view {
             child_targetting_drawn |= e.write().draw_inner(
                 q, context, canvas, tool,
@@ -1453,11 +1512,26 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 egui::Align2::LEFT_TOP,
             ) == TargettingStatus::Drawn;
         }
-        // TODO: draw after
+        // draw after
+        let spaces_count = (self.after_views.len() + 1) as f32;
+        let width_after = self.tx_outer_rectangle.width() * (1.0 - self.tx_mark_percentage) - Self::MIN_SIZE.x / 2.0;
+        for (idx, e) in self.after_views.iter_mut().enumerate().map(|(idx, e)| ((idx + 1) as f32, e)) {
+            let (pos_y, align) = if !e.executor {
+                (self.tx_outer_rectangle.min.y, egui::Align2::CENTER_TOP)
+            } else {
+                (self.tx_outer_rectangle.max.y, egui::Align2::CENTER_BOTTOM)
+            };
+
+            child_targetting_drawn |= e.view.draw_inner(
+                q, context, canvas, tool,
+                egui::Pos2::new(tx_mark_center.x + Self::MIN_SIZE.x / 2.0 + width_after * idx / spaces_count, pos_y),
+                align,
+            ) == TargettingStatus::Drawn;
+        }
 
         if let Some((pos, tool)) = tool && !child_targetting_drawn {
-            let delta = tx_mark_center - *pos;
-            if delta.x.abs() + delta.y.abs() <= radius {
+            let section = self.section_for(*pos);
+            if section.1 == egui::Align2::CENTER_CENTER {
                 canvas.draw_polygon(
                     vec![
                         tx_mark_center - egui::Vec2::new(0.0, radius),
@@ -1466,13 +1540,12 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         tx_mark_center - egui::Vec2::new(radius, 0.0),
                         tx_mark_center - egui::Vec2::new(0.0, radius),
                     ],
-                    tool.targetting_for_section(Some(self.section_for(*pos).into())),
+                    tool.targetting_for_section(Some(section.into())),
                     canvas::Stroke::new_solid(1.0, detail_color),
                     canvas::Highlight::NONE,
                 );
                 return TargettingStatus::Drawn;
             } else if self.tx_outer_rectangle.contains(*pos) {
-                let section = self.section_for(*pos);
                 let quadrant_rect = egui::Rect::from_two_pos(tx_mark_center, match section.1 {
                     egui::Align2::LEFT_TOP => self.tx_outer_rectangle.left_top(),
                     egui::Align2::LEFT_BOTTOM => self.tx_outer_rectangle.left_bottom(),
@@ -1488,6 +1561,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                     canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
+                draw_tx_mark(canvas);
                 return TargettingStatus::Drawn;
             }
         }
@@ -1503,8 +1577,17 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> EventHandlingStatus {
-        // TODO: handle before
-        let child_status = self.p_act_view.as_ref().and_then(|e| {
+        let child_status = self.before_views.iter_mut()
+            .flat_map(|e| {
+                let s = e.view.handle_event(event, ehc, tool, element_setup_modal, commands);
+                if s != EventHandlingStatus::NotHandled {
+                    Some((*e.view.uuid(), s))
+                } else {
+                    None
+                }
+            })
+            .next();
+        let child_status = child_status.or_else(|| self.p_act_view.as_ref().and_then(|e| {
             let mut w = e.write();
             let s = w.handle_event(event, ehc, tool, element_setup_modal, commands);
             if s != EventHandlingStatus::NotHandled {
@@ -1512,8 +1595,16 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             } else {
                 None
             }
-        });
-        // TODO: handle after
+        }));
+        let child_status = child_status.or_else(|| self.after_views.iter_mut()
+            .flat_map(|e| {
+                let s = e.view.handle_event(event, ehc, tool, element_setup_modal, commands);
+                if s != EventHandlingStatus::NotHandled {
+                    Some((*e.view.uuid(), s))
+                } else {
+                    None
+                }
+            }).next());
 
 
         match event {
@@ -1573,15 +1664,31 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 }
 
                 if let Some(tool) = tool {
-                    tool.add_section(self.section_for(pos).into());
+                    let section = self.section_for(pos);
+                    let quadrant = section.1;
+                    tool.add_section(section.into());
 
-                    if self.p_act_view.as_ref().is_none() {
+                    if self.p_act_view.as_ref().is_none() || quadrant != egui::Align2::CENTER_CENTER {
                         tool.add_position(pos);
-                        if let Some((new_e, esm)) = tool.try_construct_view(self)
-                            && let DemoPsdElementView::Act(_) = new_e {
-                            commands.push(InsensitiveCommand::AddElement(*self.uuid, new_e.into(), true).into());
-                            if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                                *element_setup_modal = esm;
+                        if let Some((new_e, esm)) = tool.try_construct_view(self) {
+                            if (quadrant == egui::Align2::CENTER_CENTER
+                                && !self.model.read().p_act.is_some()
+                                && matches!(new_e, DemoPsdElementView::Act(_)))
+                               || (quadrant != egui::Align2::CENTER_CENTER
+                                   && matches!(new_e, DemoPsdElementView::Act(_) | DemoPsdElementView::Fact(_))) {
+                                let quadrant_no = match quadrant {
+                                    egui::Align2::CENTER_CENTER => 0,
+                                    egui::Align2::LEFT_TOP => 1,
+                                    egui::Align2::LEFT_BOTTOM => 2,
+                                    egui::Align2::RIGHT_BOTTOM => 3,
+                                    egui::Align2::RIGHT_TOP => 4,
+                                    _ => unreachable!(),
+                                };
+
+                                commands.push(InsensitiveCommand::AddDependency(*self.uuid, quadrant_no, new_e.into(), true).into());
+                                if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                                    *element_setup_modal = esm;
+                                }
                             }
                         }
                     }
@@ -1624,7 +1731,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
     ) {
         macro_rules! recurse {
             ($self:ident) => {
-                // TODO: recurse before
+                for e in &mut self.before_views {
+                    e.view.apply_command(
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    );
+                }
                 if let UFOption::Some(e) = &self.p_act_view {
                     e.write().apply_command(
                         command,
@@ -1632,7 +1745,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         affected_models,
                     );
                 }
-                // TODO: recurse after
+                for e in &mut self.after_views {
+                    e.view.apply_command(
+                        command,
+                        undo_accumulator,
+                        affected_models,
+                    );
+                }
             };
         }
         macro_rules! resize_by {
@@ -1734,39 +1853,103 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 recurse!(self);
             }
 
-            InsensitiveCommand::DeleteSpecificElements(uuids, into_model) => {
-                if *into_model
-                    && let Some(e) = self.p_act_view.as_ref()
-                    && uuids.contains(&*e.read().uuid) {
-                    undo_accumulator.push(InsensitiveCommand::AddElement(
-                        *self.uuid,
-                        DemoPsdElementOrVertex::Element(e.clone().into()),
-                        true,
-                    ));
-                    self.model.write().p_act = UFOption::None;
-                    self.p_act_view = UFOption::None;
-                }
-                recurse!(self);
-            }
-            InsensitiveCommand::AddElement(v, e, into_model) => {
-                if *v == *self.uuid && *into_model
-                    && self.p_act_view.as_ref().is_none()
-                    && let DemoPsdElementOrVertex::Element(DemoPsdElementView::Act(e)) = e
-                    {
-                    undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
-                        std::iter::once(*e.read().uuid).collect(),
-                        true,
-                    ));
-                    self.model.write().p_act = UFOption::Some(e.read().model.clone());
-                    self.p_act_view = UFOption::Some(e.clone());
-                }
-                recurse!(self);
-            }
+            InsensitiveCommand::DeleteSpecificElements(..)
+            | InsensitiveCommand::AddElement(..)
+            | InsensitiveCommand::CutSpecificElements(..)
+            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            InsensitiveCommand::AddDependency(v, b, e, into_model) => {
+                if *v == *self.uuid && *into_model {
+                    let mut w = self.model.write();
+                    if *b == 0 {
+                        if self.p_act_view.as_ref().is_none()
+                            && let DemoPsdElementOrVertex::Element(DemoPsdElementView::Act(e)) = e {
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                                *v,
+                                *b,
+                                *e.read().uuid,
+                                true,
+                            ));
+                            w.p_act = UFOption::Some(e.read().model.clone());
+                            self.p_act_view = UFOption::Some(e.clone());
+                        }
+                    } else {
+                        if let DemoPsdElementOrVertex::Element(e) = e
+                            && let Some(e) = e.clone().as_state_view() {
+                            let after = match b {
+                                1 | 2 => false,
+                                3 | 4 => true,
+                                _ => unreachable!(),
+                            };
+                            let executor = match b {
+                                1 | 4 => false,
+                                2 | 3 => true,
+                                _ => unreachable!()
+                            };
 
-            InsensitiveCommand::CutSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                                *v,
+                                *b,
+                                *e.uuid(),
+                                true,
+                            ));
+
+                            if !after {
+                                w.before.push(
+                                    DemoPsdStateInfo {
+                                        state: e.model().to_state().unwrap(),
+                                        executor,
+                                    }
+                                );
+                                self.before_views.push(DemoPsdStateViewInfo { view: e, executor });
+                            } else {
+                                w.after.push(
+                                    DemoPsdStateInfo {
+                                        state: e.model().to_state().unwrap(),
+                                        executor,
+                                    }
+                                );
+                                self.after_views.push(DemoPsdStateViewInfo { view: e, executor });
+                            }
+                        }
+                    }
+                }
+                recurse!(self);
+            }
+            InsensitiveCommand::RemoveDependency(v, b, duuid, into_model) => {
+                if *v == *self.uuid && *into_model {
+                    let mut w = self.model.write();
+                    if *b == 0 {
+                        if let Some(e) = self.p_act_view.as_ref()
+                            && *duuid == *e.read().uuid {
+                            undo_accumulator.push(InsensitiveCommand::AddDependency(
+                                *v,
+                                *b,
+                                DemoPsdElementOrVertex::Element(e.clone().into()),
+                                true,
+                            ));
+                            w.p_act = UFOption::None;
+                            self.p_act_view = UFOption::None;
+                        }
+                    } else {
+                        let closure = |e: &DemoPsdStateViewInfo| if *e.view.uuid() == *duuid {
+                                w.delete_elements(&std::iter::once(*e.view.model_uuid()).collect());
+                                undo_accumulator.push(InsensitiveCommand::AddDependency(
+                                    *v,
+                                    *b,
+                                    DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
+                                    true,
+                                ));
+                                false
+                            } else { true };
+                        match b {
+                            1 | 2 => self.before_views.retain(closure),
+                            3 | 4 => self.after_views.retain(closure),
+                            _ => unreachable!(),
+                        };
+                    }
+                }
+                recurse!(self);
+            }
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
@@ -1836,14 +2019,14 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         self.comment_buffer = (*model.comment).clone();
 
         for e in &mut self.before_views {
-            e.refresh_buffers();
+            e.view.refresh_buffers();
         }
         if let UFOption::Some(e) = &self.p_act_view {
             let mut w = e.write();
             w.refresh_buffers();
         }
         for e in &mut self.after_views {
-            e.refresh_buffers();
+            e.view.refresh_buffers();
         }
     }
 
@@ -1859,8 +2042,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         // TODO: collect SelectionStatus
 
         for e in &mut self.before_views {
-            e.head_count(flattened_views, flattened_views_status, flattened_represented_models);
-            flattened_views.insert(*e.uuid(), e.clone().as_element_view());
+            e.view.head_count(flattened_views, flattened_views_status, flattened_represented_models);
+            flattened_views.insert(*e.view.uuid(), e.view.clone().as_element_view());
         }
         if let UFOption::Some(e) = &self.p_act_view {
             let mut w = e.write();
@@ -1868,8 +2051,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             flattened_views.insert(*w.uuid(), e.clone().into());
         }
         for e in &mut self.after_views {
-            e.head_count(flattened_views, flattened_views_status, flattened_represented_models);
-            flattened_views.insert(*e.uuid(), e.clone().as_element_view());
+            e.view.head_count(flattened_views, flattened_views_status, flattened_represented_models);
+            flattened_views.insert(*e.view.uuid(), e.view.clone().as_element_view());
         }
     }
 
@@ -1887,14 +2070,26 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             (*self.uuid, *old_model.uuid)
         };
 
-        // TODO: deep_copy_clone before
+        let new_before_views = self.before_views.iter().map(|e| {
+            e.view.deep_copy_clone(uuid_present, &mut HashMap::new(), c, m);
+            DemoPsdStateViewInfo {
+                view: c.get(&e.view.uuid()).and_then(|e| e.clone().as_state_view()).unwrap(),
+                executor: e.executor,
+            }
+        }).collect();
         let new_p_act_view = if let UFOption::Some(e) = &self.p_act_view {
             e.write().deep_copy_clone(uuid_present, &mut HashMap::new(), c, m);
             if let Some(DemoPsdElementView::Act(e)) = c.get(&e.read().uuid()) {
                 Some(e.clone())
             } else { None }
         } else { None }.into();
-        // TODO: deep_copy_clone after
+        let new_after_views = self.after_views.iter().map(|e| {
+            e.view.deep_copy_clone(uuid_present, &mut HashMap::new(), c, m);
+            DemoPsdStateViewInfo {
+                view: c.get(&e.view.uuid()).and_then(|e| e.clone().as_state_view()).unwrap(),
+                executor: e.executor,
+            }
+        }).collect();
 
         let modelish = if let Some(DemoPsdElement::DemoPsdTransaction(m)) = m.get(&old_model.uuid) {
             m.clone()
@@ -1908,9 +2103,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             uuid: view_uuid.into(),
             model: modelish,
 
-            before_views: self.before_views.clone(),
+            before_views: new_before_views,
             p_act_view: new_p_act_view,
-            after_views: self.after_views.clone(),
+            after_views: new_after_views,
             selected_direct_elements: self.selected_direct_elements.clone(),
 
             kind_buffer: self.kind_buffer,
@@ -1931,18 +2126,26 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         c: &HashMap<ViewUuid, <DemoPsdDomain as Domain>::CommonElementViewT>,
         m: &HashMap<ModelUuid, <DemoPsdDomain as Domain>::CommonElementT>,
     ) {
-        // TODO: replace before
-        if let Some(DemoPsdElementView::Act(new_p_act)) = self.p_act_view.as_ref().and_then(|e| c.get(&e.read().uuid())) {
-            self.p_act_view = UFOption::Some(new_p_act.clone());
-        }
+
         let mut w = self.model.write();
+        for e in w.before.iter_mut() {
+            let e_uuid = *e.state.uuid();
+            if let Some(new_state) = m.get(&e_uuid).and_then(|e| e.clone().to_state()) {
+                e.state = new_state;
+            }
+        }
         if let UFOption::Some(p_act) = &w.p_act {
             let p_act_uuid = *p_act.read().uuid;
             if let Some(DemoPsdElement::DemoPsdAct(new_p_act)) = m.get(&p_act_uuid) {
                 w.p_act = UFOption::Some(new_p_act.clone());
             }
         }
-        // TODO: replace after
+        for e in w.after.iter_mut() {
+            let e_uuid = *e.state.uuid();
+            if let Some(new_state) = m.get(&e_uuid).and_then(|e| e.clone().to_state()) {
+                e.state = new_state;
+            }
+        }
     }
 }
 
@@ -2028,7 +2231,18 @@ impl DemoPsdFactView {
             self.highlight,
         );
         canvas.draw_text(
-            self.position + egui::Vec2::new(2.0 * Self::RADIUS.x, 0.0),
+            self.position + egui::Vec2::new(
+                match text_align.x() {
+                    egui::Align::Min => 1.5 * Self::RADIUS.x,
+                    egui::Align::Center => 0.0,
+                    egui::Align::Max => -1.5 * Self::RADIUS.x,
+                },
+                match text_align.y() {
+                    egui::Align::Min => Self::RADIUS.y,
+                    egui::Align::Center => 0.0,
+                    egui::Align::Max => -Self::RADIUS.y,
+                }
+            ),
             text_align,
             &read.identifier,
             canvas::CLASS_BOTTOM_FONT_SIZE,
@@ -2441,7 +2655,18 @@ impl DemoPsdActView {
             self.highlight,
         );
         canvas.draw_text(
-            pos + egui::Vec2::new(Self::SIZE.x, 0.0),
+            pos + egui::Vec2::new(
+                match text_align.x() {
+                    egui::Align::Min => 2.0 * Self::SIZE.x / 3.0,
+                    egui::Align::Center => 0.0,
+                    egui::Align::Max => -2.0 * Self::SIZE.x / 3.0,
+                },
+                match text_align.y() {
+                    egui::Align::Min => Self::SIZE.y / 2.0,
+                    egui::Align::Center => 0.0,
+                    egui::Align::Max => -Self::SIZE.y / 2.0,
+                }
+            ),
             text_align,
             &read.identifier,
             canvas::CLASS_BOTTOM_FONT_SIZE,
@@ -2666,7 +2891,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                 if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MoveSpecificElements(_, delta)
             | InsensitiveCommand::MoveAllElements(delta) => {
-                self.bounds_rect.translate(*delta);
+                self.bounds_rect = self.bounds_rect.translate(*delta);
                 undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,

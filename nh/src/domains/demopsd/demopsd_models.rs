@@ -30,7 +30,7 @@ pub enum DemoPsdState {
 }
 
 impl DemoPsdElement {
-    fn as_state(self) -> Option<DemoPsdState> {
+    pub fn to_state(self) -> Option<DemoPsdState> {
         match self {
             Self::DemoPsdFact(inner) => Some(DemoPsdState::Fact(inner)),
             Self::DemoPsdAct(inner) => Some(DemoPsdState::Act(inner)),
@@ -42,7 +42,7 @@ impl DemoPsdElement {
 }
 
 impl DemoPsdState {
-    fn as_element(self) -> DemoPsdElement {
+    pub fn to_element(self) -> DemoPsdElement {
         match self {
             Self::Fact(inner) => DemoPsdElement::DemoPsdFact(inner),
             Self::Act(inner) => DemoPsdElement::DemoPsdAct(inner),
@@ -64,13 +64,13 @@ impl VisitableElement for DemoPsdElement {
                 v.open_complex(self);
                 let r = inner.read();
                 for e in &r.before {
-                    e.clone().as_element().accept(v);
+                    e.state.clone().to_element().accept(v);
                 }
                 if let UFOption::Some(e) = &r.p_act {
                     DemoPsdElement::from(e.clone()).accept(v);
                 }
                 for e in &r.after {
-                    e.clone().as_element().accept(v);
+                    e.state.clone().to_element().accept(v);
                 }
                 v.close_complex(self);
             }
@@ -108,11 +108,13 @@ pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<M
                     identifier: model.identifier.clone(),
                     name: model.name.clone(),
                     before: model.before.iter().map(|e| {
-                        let new_model = walk(&e.clone().as_element(), into);
-                        into.insert(*e.uuid(), new_model.clone());
-                        new_model.as_state().unwrap()
+                        let new_model = walk(&e.state.clone().to_element(), into);
+                        into.insert(*e.state.uuid(), new_model.clone());
+                        DemoPsdStateInfo {
+                            state: new_model.to_state().unwrap(),
+                            executor: e.executor,
+                        }
                     }).collect(),
-                    before_is_executor: model.before_is_executor.clone(),
                     p_act: match &model.p_act {
                         UFOption::None => UFOption::None,
                         UFOption::Some(inner) => {
@@ -125,11 +127,13 @@ pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<M
                         }
                     },
                     after: model.after.iter().map(|e| {
-                        let new_model = walk(&e.clone().as_element(), into);
-                        into.insert(*e.uuid(), new_model.clone());
-                        new_model.as_state().unwrap()
+                        let new_model = walk(&e.state.clone().to_element(), into);
+                        into.insert(*e.state.uuid(), new_model.clone());
+                        DemoPsdStateInfo {
+                            state: new_model.to_state().unwrap(),
+                            executor: e.executor,
+                        }
                     }).collect(),
-                    after_is_executor: model.after_is_executor.clone(),
                     comment: model.comment.clone(),
                 };
 
@@ -356,6 +360,12 @@ impl ContainerModel for DemoPsdPackage {
     }
 }
 
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct DemoPsdStateInfo {
+    #[nh_context_serde(entity)]
+    pub state: DemoPsdState,
+    pub executor: bool,
+}
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -366,13 +376,11 @@ pub struct DemoPsdTransaction {
     pub name: Arc<String>,
 
     #[nh_context_serde(entity)]
-    pub before: Vec<DemoPsdState>,
-    pub before_is_executor: Vec<bool>,
+    pub before: Vec<DemoPsdStateInfo>,
     #[nh_context_serde(entity)]
     pub p_act: UFOption<ERef<DemoPsdAct>>,
     #[nh_context_serde(entity)]
-    pub after: Vec<DemoPsdState>,
-    pub after_is_executor: Vec<bool>,
+    pub after: Vec<DemoPsdStateInfo>,
 
     pub comment: Arc<String>,
 }
@@ -390,10 +398,8 @@ impl DemoPsdTransaction {
             identifier: Arc::new(identifier),
             name: Arc::new(name),
             before: Vec::new(),
-            before_is_executor: Vec::new(),
             p_act: UFOption::None,
             after: Vec::new(),
-            after_is_executor: Vec::new(),
             comment: Arc::new("".to_owned()),
         }
     }
@@ -404,10 +410,8 @@ impl DemoPsdTransaction {
             identifier: self.identifier.clone(),
             name: self.name.clone(),
             before: self.before.clone(),
-            before_is_executor: self.before_is_executor.clone(),
             p_act: self.p_act.clone(),
             after: self.after.clone(),
-            after_is_executor: self.after_is_executor.clone(),
             comment: self.comment.clone(),
         })
     }
@@ -429,32 +433,41 @@ impl ContainerModel for DemoPsdTransaction {
     type ElementT = DemoPsdElement;
 
     fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoPsdElement, ModelUuid)> {
-        /*
-        for e in &self.contained_elements {
-            if *e.uuid() == *uuid {
-                return Some((e.clone(), *self.uuid));
+        for e in &self.before {
+            if *e.state.uuid() == *uuid {
+                return Some((e.state.clone().to_element(), *self.uuid));
             }
-            if let Some(e) = e.find_element(uuid) {
+            if let Some(e) = e.state.find_element(uuid) {
+                return Some(e);
+            }
+        }
+        if let UFOption::Some(e) = &self.p_act {
+            let r = e.read();
+            if *r.uuid() == *uuid {
+                return Some((e.clone().into(), *self.uuid));
+            }
+        }
+        for e in &self.after {
+            if *e.state.uuid() == *uuid {
+                return Some((e.state.clone().to_element(), *self.uuid));
+            }
+            if let Some(e) = e.state.find_element(uuid) {
                 return Some(e);
             }
         }
         return None;
-        */
-        todo!("find")
     }
     fn add_element(&mut self, element: DemoPsdElement) -> Result<(), DemoPsdElement> {
-        /*
-        self.contained_elements.push(element);
-        Ok(())
-        */
-        todo!("insert")
+        // cannot "just add element"
+        Err(element)
     }
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
-        /*
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        self.before.retain(|e| !uuids.contains(&e.state.uuid()));
+        if let UFOption::Some(e) = &self.p_act && uuids.contains(&*e.read().uuid) {
+            self.p_act = UFOption::None;
+        }
+        self.after.retain(|e| !uuids.contains(&e.state.uuid()));
         Ok(())
-        */
-        todo!("delete")
     }
 }
 
