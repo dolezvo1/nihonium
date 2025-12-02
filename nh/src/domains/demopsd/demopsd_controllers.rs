@@ -82,15 +82,36 @@ impl CachingLabelDeriver<DemoPsdElement> for DemoPsdLabelProvider {
             },
             DemoPsdElement::DemoPsdTransaction(inner) => {
                 let r = inner.read();
-                self.cache.insert(*r.uuid, Arc::new(format!("Transaction {}", r.identifier)));
+                let mut l = format!("Transaction {}", r.identifier);
+                if !r.name.is_empty() {
+                    l.push_str(" (");
+                    l.push_str(&r.name);
+                    l.push_str(&")");
+                }
+
+                self.cache.insert(*r.uuid, Arc::new(l));
             },
             DemoPsdElement::DemoPsdFact(inner) => {
                 let r = inner.read();
-                self.cache.insert(*r.uuid, Arc::new(format!("Fact")));
+                let mut l = format!("Fact");
+                if !r.identifier.is_empty() {
+                    l.push_str(" (");
+                    l.push_str(&r.identifier);
+                    l.push_str(&")");
+                }
+
+                self.cache.insert(*r.uuid, Arc::new(l));
             }
             DemoPsdElement::DemoPsdAct(inner) => {
                 let r = inner.read();
-                self.cache.insert(*r.uuid, Arc::new(format!("Act")));
+                let mut l = format!("Act");
+                if !r.identifier.is_empty() {
+                    l.push_str(" (");
+                    l.push_str(&r.identifier);
+                    l.push_str(&")");
+                }
+
+                self.cache.insert(*r.uuid, Arc::new(l));
             }
             DemoPsdElement::DemoPsdLink(inner) => {
                 let r = inner.read();
@@ -534,7 +555,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         let mut icon_counter = 0;
         for cat in [
             &[
-                (DemoPsdToolStage::Transaction, "Transaction"),
+                (DemoPsdToolStage::TransactionStart, "Transaction"),
                 (DemoPsdToolStage::Fact, "Fact"),
                 (DemoPsdToolStage::Act, "Act"),
             ][..],
@@ -659,7 +680,8 @@ pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn D
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum DemoPsdToolStage {
-    Transaction,
+    TransactionStart,
+    TransactionEnd,
     Fact,
     Act,
     LinkStart { link_type: DemoPsdLinkType },
@@ -671,6 +693,9 @@ pub enum DemoPsdToolStage {
 enum PartialDemoPsdElement {
     None,
     Some(DemoPsdElementView),
+    TransactionStart {
+        start_pos: egui::Pos2,
+    },
     Link {
         link_type: DemoPsdLinkType,
         source: ERef<DemoPsdFact>,
@@ -714,7 +739,8 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         type TS = DemoPsdElementTargettingSection;
         match element {
             None => match self.current_stage {
-                DemoPsdToolStage::Transaction
+                DemoPsdToolStage::TransactionStart
+                | DemoPsdToolStage::TransactionEnd
                 | DemoPsdToolStage::Fact
                 | DemoPsdToolStage::Act
                 | DemoPsdToolStage::PackageStart
@@ -725,7 +751,8 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 }
             },
             Some(TS::Package(..)) => match self.current_stage {
-                DemoPsdToolStage::Transaction
+                DemoPsdToolStage::TransactionStart
+                | DemoPsdToolStage::TransactionEnd
                 | DemoPsdToolStage::Fact
                 | DemoPsdToolStage::Act
                 | DemoPsdToolStage::PackageStart
@@ -752,7 +779,8 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             },
             Some(TS::Fact(..)) => match self.current_stage {
                 DemoPsdToolStage::LinkStart { .. } => TARGETTABLE_COLOR,
-                DemoPsdToolStage::Transaction
+                DemoPsdToolStage::TransactionStart
+                | DemoPsdToolStage::TransactionEnd
                 | DemoPsdToolStage::Fact
                 | DemoPsdToolStage::Act
                 | DemoPsdToolStage::LinkEnd
@@ -761,7 +789,8 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             }
             Some(TS::Act(..)) => match self.current_stage {
                 DemoPsdToolStage::LinkEnd => TARGETTABLE_COLOR,
-                DemoPsdToolStage::Transaction
+                DemoPsdToolStage::TransactionStart
+                | DemoPsdToolStage::TransactionEnd
                 | DemoPsdToolStage::Fact
                 | DemoPsdToolStage::Act
                 | DemoPsdToolStage::LinkStart { .. }
@@ -773,6 +802,13 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
     }
     fn draw_status_hint(&self, q: &DemoPsdQueryable, canvas: &mut dyn canvas::NHCanvas, pos: egui::Pos2) {
         match &self.result {
+            PartialDemoPsdElement::TransactionStart { start_pos } => {
+                canvas.draw_line(
+                    [*start_pos, egui::Pos2::new(pos.x, start_pos.y)],
+                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
             PartialDemoPsdElement::Link {
                 source,
                 link_type,
@@ -809,10 +845,20 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         }
 
         match (self.current_stage, &mut self.result) {
-            (DemoPsdToolStage::Transaction, _) => {
+            (DemoPsdToolStage::TransactionStart, _) => {
+                self.result = PartialDemoPsdElement::TransactionStart { start_pos: pos };
+                self.current_stage = DemoPsdToolStage::TransactionEnd;
+                self.event_lock = true;
+            }
+            (DemoPsdToolStage::TransactionEnd, PartialDemoPsdElement::TransactionStart { start_pos }) => {
+                let rect = egui::Rect::from_two_pos(
+                    egui::Pos2::new(start_pos.x, start_pos.y),
+                    egui::Pos2::new(pos.x, start_pos.y),
+                );
                 let (_transaction_model, transaction_view) =
-                    new_democsd_transaction("01", "", pos, 200.0);
+                    new_democsd_transaction("01", "", rect.center(), rect.width());
                 self.result = PartialDemoPsdElement::Some(transaction_view.into());
+                self.current_stage = DemoPsdToolStage::TransactionStart;
                 self.event_lock = true;
             }
             (DemoPsdToolStage::Fact, _) => {
@@ -1118,7 +1164,7 @@ fn new_demopsd_transaction_view(
         name_buffer: (*m.name).clone(),
         comment_buffer: (*m.comment).to_owned(),
 
-        dragged: false,
+        dragged_rect: None,
         highlight: canvas::Highlight::NONE,
         tx_outer_rectangle: egui::Rect::from_center_size(position, egui::Vec2::new(width, 50.0)),
         tx_mark_percentage: 0.5,
@@ -1228,7 +1274,7 @@ pub struct DemoPsdTransactionView {
     comment_buffer: String,
 
     #[nh_context_serde(skip_and_default)]
-    dragged: bool,
+    dragged_rect: Option<egui::Rect>,
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     tx_outer_rectangle: egui::Rect,
@@ -1613,15 +1659,15 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             }
             InputEvent::MouseDown(pos) => {
                 if self.min_shape().contains(pos) {
-                    self.dragged = true;
+                    self.dragged_rect = Some(self.tx_outer_rectangle);
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged {
-                    self.dragged = false;
+                if self.dragged_rect.is_some() {
+                    self.dragged_rect = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -1704,14 +1750,29 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                     EventHandlingStatus::HandledByElement
                 }
             }
-            InputEvent::Drag { delta, .. } if self.dragged => {
+            InputEvent::Drag { delta, .. } if self.dragged_rect.is_some() => {
+                let translated_real_rect = self.dragged_rect.unwrap().translate(delta);
+                self.dragged_rect = Some(translated_real_rect);
+                let translated_shape = canvas::NHShape::Rect { inner: translated_real_rect };
+                let coerced_pos = if self.highlight.selected {
+                    ehc.snap_manager.coerce(translated_shape, |e| {
+                        !ehc.all_elements
+                            .get(e)
+                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    })
+                } else {
+                    ehc.snap_manager
+                        .coerce(translated_shape, |e| *e != *self.uuid)
+                };
+                let coerced_delta = coerced_pos - self.tx_outer_rectangle.center();
+
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
-                            delta,
+                            coerced_delta,
                         )
                         .into(),
                     );
@@ -1853,8 +1914,43 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 recurse!(self);
             }
 
-            InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::CutSpecificElements(..)
+            InsensitiveCommand::DeleteSpecificElements(uuids, from_model) => {
+                if *from_model {
+                    let mut w = self.model.write();
+
+                    if let Some(e) = self.p_act_view.as_ref()
+                        && uuids.contains(&e.read().uuid) {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency(
+                            *self.uuid,
+                            0,
+                            DemoPsdElementOrVertex::Element(e.clone().into()),
+                            true,
+                        ));
+                        w.p_act = UFOption::None;
+                        self.p_act_view = UFOption::None;
+                    }
+
+                    let mut closure = |after: bool, e: &DemoPsdStateViewInfo| if uuids.contains(&e.view.uuid()) {
+                            w.delete_elements(&std::iter::once(*e.view.model_uuid()).collect());
+                            undo_accumulator.push(InsensitiveCommand::AddDependency(
+                                *self.uuid,
+                                match (after, e.executor) {
+                                    (false, false) => 1,
+                                    (false, true) => 2,
+                                    (true, true) => 3,
+                                    (true, false) => 4,
+                                },
+                                DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
+                                true,
+                            ));
+                            false
+                        } else { true };
+                    self.before_views.retain(|e| closure(false, e));
+                    self.after_views.retain(|e| closure(true, e));
+                }
+                recurse!(self);
+            }
+            InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency(v, b, e, into_model) => {
                 if *v == *self.uuid && *into_model {
@@ -1868,6 +1964,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                 *e.read().uuid,
                                 true,
                             ));
+                            affected_models.insert(*e.read().model_uuid());
                             w.p_act = UFOption::Some(e.read().model.clone());
                             self.p_act_view = UFOption::Some(e.clone());
                         }
@@ -1891,6 +1988,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                 *e.uuid(),
                                 true,
                             ));
+                            affected_models.insert(*e.model_uuid());
 
                             if !after {
                                 w.before.push(
@@ -2038,21 +2136,28 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
 
-        // TODO: collect SelectionStatus
-
+        let mut flattened_status_temp = HashMap::new();
         for e in &mut self.before_views {
-            e.view.head_count(flattened_views, flattened_views_status, flattened_represented_models);
+            e.view.head_count(flattened_views, &mut flattened_status_temp, flattened_represented_models);
             flattened_views.insert(*e.view.uuid(), e.view.clone().as_element_view());
         }
         if let UFOption::Some(e) = &self.p_act_view {
             let mut w = e.write();
-            w.head_count(flattened_views, flattened_views_status, flattened_represented_models);
+            w.head_count(flattened_views, &mut flattened_status_temp, flattened_represented_models);
             flattened_views.insert(*w.uuid(), e.clone().into());
         }
         for e in &mut self.after_views {
-            e.view.head_count(flattened_views, flattened_views_status, flattened_represented_models);
+            e.view.head_count(flattened_views, &mut flattened_status_temp, flattened_represented_models);
             flattened_views.insert(*e.view.uuid(), e.view.clone().as_element_view());
         }
+
+        flattened_status_temp.iter().for_each(|e| {
+            let s = match e.1 {
+                SelectionStatus::NotSelected if self.highlight.selected => SelectionStatus::TransitivelySelected,
+                a => *a,
+            };
+            flattened_views_status.insert(*e.0, s);
+        });
     }
 
     fn deep_copy_clone(
@@ -2111,7 +2216,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             identifier_buffer: self.identifier_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
-            dragged: false,
+            dragged_rect: None,
             highlight: self.highlight,
             tx_outer_rectangle: self.tx_outer_rectangle,
             tx_mark_percentage: self.tx_mark_percentage,
@@ -2175,7 +2280,7 @@ fn new_demopsd_fact_view(
         internal_buffer: r.internal,
         comment_buffer: (*r.comment).clone(),
 
-        dragged: false,
+        dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position,
     })
@@ -2196,7 +2301,7 @@ struct DemoPsdFactView {
     comment_buffer: String,
 
     #[nh_context_serde(skip_and_default)]
-    dragged: bool,
+    dragged_shape: Option<canvas::NHShape>,
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     position: egui::Pos2,
@@ -2387,12 +2492,12 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                 return EventHandlingStatus::NotHandled
             }
             InputEvent::MouseDown(_) => {
-                self.dragged = true;
+                self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged {
-                    self.dragged = false;
+                if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -2426,14 +2531,28 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged => {
+            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
+                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
+                self.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.highlight.selected {
+                    ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        !ehc.all_elements
+                            .get(e)
+                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    })
+                } else {
+                    ehc.snap_manager
+                        .coerce(translated_real_shape, |e| *e != *self.uuid)
+                };
+                let coerced_delta = coerced_pos - self.position;
+
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
-                            delta,
+                            coerced_delta,
                         )
                         .into(),
                     );
@@ -2562,7 +2681,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
             identifier_buffer: self.identifier_buffer.clone(),
             internal_buffer: self.internal_buffer,
             comment_buffer: self.comment_buffer.clone(),
-            dragged: false,
+            dragged_shape: None,
             highlight: self.highlight,
             position: self.position,
         });
@@ -2598,7 +2717,7 @@ fn new_demopsd_act_view(
         internal_buffer: r.internal,
         comment_buffer: (*r.comment).clone(),
 
-        dragged: false,
+        dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         bounds_rect: egui::Rect::from_center_size(position, DemoPsdActView::SIZE),
     })
@@ -2619,7 +2738,7 @@ struct DemoPsdActView {
     comment_buffer: String,
 
     #[nh_context_serde(skip_and_default)]
-    dragged: bool,
+    dragged_shape: Option<canvas::NHShape>,
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     bounds_rect: egui::Rect,
@@ -2809,12 +2928,12 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                 return EventHandlingStatus::NotHandled
             }
             InputEvent::MouseDown(_) => {
-                self.dragged = true;
+                self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::MouseUp(_) => {
-                if self.dragged {
-                    self.dragged = false;
+                if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
@@ -2848,14 +2967,28 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Drag { delta, .. } if self.dragged => {
+            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
+                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
+                self.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.highlight.selected {
+                    ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        !ehc.all_elements
+                            .get(e)
+                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    })
+                } else {
+                    ehc.snap_manager
+                        .coerce(translated_real_shape, |e| *e != *self.uuid)
+                };
+                let coerced_delta = coerced_pos - self.bounds_rect.center();
+
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
-                            delta,
+                            coerced_delta,
                         )
                         .into(),
                     );
@@ -2984,7 +3117,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
             identifier_buffer: self.identifier_buffer.clone(),
             internal_buffer: self.internal_buffer,
             comment_buffer: self.comment_buffer.clone(),
-            dragged: false,
+            dragged_shape: None,
             highlight: self.highlight,
             bounds_rect: self.bounds_rect,
         });

@@ -1615,8 +1615,23 @@ impl<
                         }
                     }
                 }
-                InsensitiveCommand::RemoveDependency(..) => {
-                    todo!("RemoveDependency");
+                InsensitiveCommand::RemoveDependency(t, b, elm, from_model) => {
+                    if *t == *self.uuid && *b == 0 {
+                        let mut model_uuids = HashSet::new();
+                        for (uuid, element) in self
+                            .owned_views
+                            .iter_event_order_pairs()
+                            .filter(|e| e.0 == *elm)
+                        {
+                            model_uuids.insert(*element.model_uuid());
+                            undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid(), 0, element.clone().into(), *from_model));
+                        }
+                        if *from_model {
+                            self.adapter.delete_elements(&model_uuids);
+                        }
+
+                        self.owned_views.retain(|k, _v| *k != *elm);
+                    }
                 }
                 InsensitiveCommand::DeleteSpecificElements(uuids, _)
                 | InsensitiveCommand::CutSpecificElements(uuids) => {
