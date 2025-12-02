@@ -1854,7 +1854,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             }
 
             InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency(v, b, e, into_model) => {
@@ -2477,7 +2476,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
@@ -2900,7 +2898,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)

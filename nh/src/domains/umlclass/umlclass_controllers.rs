@@ -2224,7 +2224,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
@@ -2840,7 +2839,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
@@ -3531,7 +3529,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
@@ -4498,7 +4495,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     tool.add_section(self.model());
                     if let Some((view, esm)) = tool.try_construct_view(self)
                         && matches!(view, UmlClassElementView::ClassProperty(_)) {
-                        commands.push(InsensitiveCommand::AddElement(*self.uuid, view.into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, view.into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -4519,7 +4516,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     tool.add_section(self.model());
                     if let Some((view, esm)) = tool.try_construct_view(self)
                         && matches!(view, UmlClassElementView::ClassOperation(_)) {
-                        commands.push(InsensitiveCommand::AddElement(*self.uuid, view.into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, view.into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -4577,7 +4574,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
                     if let Some((view, esm)) = tool.try_construct_view(self)
                         && matches!(view, UmlClassElementView::ClassProperty(_) | UmlClassElementView::ClassOperation(_)) {
-                        commands.push(InsensitiveCommand::AddElement(*self.uuid, view.into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, view.into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -4673,8 +4670,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     self.properties_views.retain(
                         |e| {
                             if uuids.contains(&*e.read().uuid) {
-                                undo_accumulator.push(InsensitiveCommand::AddElement(
+                                undo_accumulator.push(InsensitiveCommand::AddDependency(
                                     *self.uuid,
+                                    0,
                                     UmlClassElementOrVertex::Element(e.clone().into()),
                                     true,
                                 ));
@@ -4690,8 +4688,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     self.operations_views.retain(
                         |e| {
                             if uuids.contains(&*e.read().uuid) {
-                                undo_accumulator.push(InsensitiveCommand::AddElement(
+                                undo_accumulator.push(InsensitiveCommand::AddDependency(
                                     *self.uuid,
+                                    0,
                                     UmlClassElementOrVertex::Element(e.clone().into()),
                                     true,
                                 ));
@@ -4710,7 +4709,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     }
                 }
             }
-            InsensitiveCommand::AddElement(v, e, into_model) => {
+            InsensitiveCommand::CutSpecificElements(..)
+            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            InsensitiveCommand::AddDependency(v, b, e, into_model) => {
                 if *v == *self.uuid && *into_model
                     && let UmlClassElementOrVertex::Element(e) = e {
                     let uuid = match e {
@@ -4736,10 +4737,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     affected_models.insert(*self.model.read().uuid);
                 }
             }
-            | InsensitiveCommand::CutSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
@@ -6485,7 +6483,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)

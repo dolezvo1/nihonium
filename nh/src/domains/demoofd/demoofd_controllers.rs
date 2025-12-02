@@ -2007,7 +2007,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
@@ -2525,7 +2524,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     if !self.specialization_view.is_some()
                         && let Some((DemoOfdElementView::EntityType(new_e), esm)) = tool.try_construct_view(self) {
                         new_e.write().position = self.position;
-                        commands.push(InsensitiveCommand::AddElement(*self.uuid, DemoOfdElementView::from(new_e).into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, DemoOfdElementView::from(new_e).into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -2661,26 +2660,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::CutSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::DeleteSpecificElements(uuids, into_model) => {
-                if let Some(e) = self.specialization_view.as_ref()
-                    && uuids.contains(&*e.read().uuid) {
-                    undo_accumulator.push(InsensitiveCommand::AddElement(
-                        *self.uuid,
-                        DemoOfdElementOrVertex::Element(e.clone().into()),
-                        *into_model,
-                    ));
-                    if *into_model {
-                        self.model.write().specialization_entity_type = UFOption::None;
-                    }
-                    self.specialization_view = UFOption::None;
-                }
-                recurse!(self);
-            }
-            InsensitiveCommand::AddElement(v, e, into_model) => {
+            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            InsensitiveCommand::AddDependency(v, b, e, into_model) => {
                 if *v == *self.uuid
                     && self.specialization_view.as_ref().is_none()
                     && let DemoOfdElementOrVertex::Element(DemoOfdElementView::EntityType(e)) = e
@@ -2697,6 +2678,24 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     affected_models.insert(*e.read().model_uuid());
 
                     self.specialization_view = UFOption::Some(e.clone());
+                }
+                recurse!(self);
+            }
+            InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            InsensitiveCommand::DeleteSpecificElements(uuids, into_model) => {
+                if let Some(e) = self.specialization_view.as_ref()
+                    && uuids.contains(&*e.read().uuid) {
+                    undo_accumulator.push(InsensitiveCommand::AddDependency(
+                        *self.uuid,
+                        0,
+                        DemoOfdElementOrVertex::Element(e.clone().into()),
+                        *into_model,
+                    ));
+                    if *into_model {
+                        self.model.write().specialization_entity_type = UFOption::None;
+                    }
+                    self.specialization_view = UFOption::None;
                 }
                 recurse!(self);
             }

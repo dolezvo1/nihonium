@@ -1652,7 +1652,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                                 self.position.y - 3.84 * canvas::CLASS_MIDDLE_FONT_SIZE,
                             );
 
-                            commands.push(InsensitiveCommand::AddElement(*self.uuid, new_e.into(), true).into());
+                            commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, new_e.into(), true).into());
                             if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                 *element_setup_modal = esm;
                             }
@@ -1745,34 +1745,37 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::CutSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            InsensitiveCommand::AddDependency(v, b, e, into_model) => {
+                if *v == *self.uuid && *into_model
+                    && self.transaction_view.as_ref().is_none()
+                    && let DemoCsdElementOrVertex::Element(DemoCsdElementView::Transaction(e)) = e
+                {
+                    undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                        *v,
+                        *b,
+                        *e.read().uuid,
+                        true,
+                    ));
+                    self.model.write().transaction = UFOption::Some(e.read().model.clone());
+                    self.transaction_view = UFOption::Some(e.clone());
+                }
+
+            }
+            InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids, into_model) => {
                 if *into_model
                     && let Some(e) = self.transaction_view.as_ref()
                     && uuids.contains(&*e.read().uuid) {
-                    undo_accumulator.push(InsensitiveCommand::AddElement(
+                    undo_accumulator.push(InsensitiveCommand::AddDependency(
                         *self.uuid,
+                        0,
                         DemoCsdElementOrVertex::Element(e.clone().into()),
                         true,
                     ));
                     self.model.write().transaction = UFOption::None;
                     self.transaction_view = UFOption::None;
-                }
-            }
-            InsensitiveCommand::AddElement(v, e, into_model) => {
-                if *v == *self.uuid && *into_model
-                    && self.transaction_view.as_ref().is_none()
-                    && let DemoCsdElementOrVertex::Element(DemoCsdElementView::Transaction(e)) = e
-                    {
-                    undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
-                        std::iter::once(*e.read().uuid).collect(),
-                        true,
-                    ));
-                    self.model.write().transaction = UFOption::Some(e.read().model.clone());
-                    self.transaction_view = UFOption::Some(e.clone());
                 }
             }
             InsensitiveCommand::PropertyChange(uuids, properties) => {
@@ -2433,7 +2436,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::AddElement(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)

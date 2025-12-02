@@ -864,8 +864,7 @@ pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: Clone + Deb
     CutSpecificElements(HashSet<ViewUuid>),
     PasteSpecificElements(ViewUuid, Vec<AddElementT>),
     ArrangeSpecificElements(HashSet<ViewUuid>, Arrangement),
-    AddElement(ViewUuid, AddElementT, /*into_model:*/ bool),
-    AddDependency(ViewUuid, u8, AddElementT, /*into_model:*/ bool),
+    AddDependency(ViewUuid, /*bucket:*/ u8, AddElementT, /*into_model:*/ bool),
     RemoveDependency(ViewUuid, u8, ViewUuid, /*including_model:*/ bool),
     PropertyChange(HashSet<ViewUuid>, Vec<PropChangeT>),
 }
@@ -893,7 +892,6 @@ impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug>
             InsensitiveCommand::CutSpecificElements(uuids) => Arc::new(format!("Cut {} elements", uuids.len())),
             InsensitiveCommand::PasteSpecificElements(_, uuids) => Arc::new(format!("Paste {} elements", uuids.len())),
             InsensitiveCommand::ArrangeSpecificElements(uuids, _) => Arc::new(format!("Arranged {} elements", uuids.len())),
-            InsensitiveCommand::AddElement(..) => Arc::new(format!("Add 1 element")),
             InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..) => Arc::new(format!("Modify 1 element")),
             InsensitiveCommand::PropertyChange(uuids, ..) => {
@@ -1467,8 +1465,9 @@ impl<
                     };
                 }
                 if let Some((new_e, esm)) = tool.as_mut().and_then(|e| e.try_construct_view(self)) {
-                    commands.push(InsensitiveCommand::AddElement(
+                    commands.push(InsensitiveCommand::AddDependency(
                         *self.uuid(),
+                        0,
                         DomainT::AddCommandElementT::from(new_e),
                         true,
                     ).into());
@@ -1594,9 +1593,31 @@ impl<
                 | InsensitiveCommand::MoveSpecificElements(..)
                 | InsensitiveCommand::MoveAllElements(..)
                 | InsensitiveCommand::ResizeSpecificElementsBy(..)
-                | InsensitiveCommand::ResizeSpecificElementsTo(..)
-                | InsensitiveCommand::AddDependency(..)
-                | InsensitiveCommand::RemoveDependency(..) => {}
+                | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
+                InsensitiveCommand::AddDependency(t, b, element, into_model) => {
+                    if *t == *self.uuid && *b == 0 {
+                        if let Ok(view) = element.clone().try_into() {
+                            let uuid = *view.uuid();
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                                *self.uuid,
+                                *b,
+                                uuid,
+                                *into_model,
+                            ));
+
+                            if *into_model {
+                                self.adapter.add_element(view.model());
+                                affected_models.insert(*self.adapter.model_uuid());
+                            }
+                            view.collect_model_uuids(affected_models);
+
+                            self.owned_views.push(uuid, view);
+                        }
+                    }
+                }
+                InsensitiveCommand::RemoveDependency(..) => {
+                    todo!("RemoveDependency");
+                }
                 InsensitiveCommand::DeleteSpecificElements(uuids, _)
                 | InsensitiveCommand::CutSpecificElements(uuids) => {
                     let from_model = matches!(
@@ -1610,32 +1631,13 @@ impl<
                         .filter(|e| uuids.contains(&e.0))
                     {
                         model_uuids.insert(*element.model_uuid());
-                        undo_accumulator.push(InsensitiveCommand::AddElement(*self.uuid(), element.clone().into(), from_model));
+                        undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid(), 0, element.clone().into(), from_model));
                     }
                     if from_model {
                         self.adapter.delete_elements(&model_uuids);
                     }
 
                     self.owned_views.retain(|k, _v| !uuids.contains(k));
-                }
-                InsensitiveCommand::AddElement(target, element, into_model) => {
-                    if *target == *self.uuid {
-                        if let Ok(view) = element.clone().try_into() {
-                            let uuid = *view.uuid();
-                            undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
-                                std::iter::once(uuid).collect(),
-                                *into_model,
-                            ));
-
-                            if *into_model {
-                                self.adapter.add_element(view.model());
-                                affected_models.insert(*self.adapter.model_uuid());
-                            }
-                            view.collect_model_uuids(affected_models);
-
-                            self.owned_views.push(uuid, view);
-                        }
-                    }
                 }
                 InsensitiveCommand::PasteSpecificElements(_, elements) => {
                     for element in elements {
@@ -1677,7 +1679,6 @@ impl<
                 | InsensitiveCommand::HighlightSpecific(..)
                 | InsensitiveCommand::SelectByDrag(..)
                 | InsensitiveCommand::DeleteSpecificElements(..)
-                | InsensitiveCommand::AddElement(..)
                 | InsensitiveCommand::CutSpecificElements(..)
                 | InsensitiveCommand::PasteSpecificElements(..) => true,
                 InsensitiveCommand::MoveSpecificElements(..)
@@ -2410,7 +2411,7 @@ impl<
                                 Ok(new_view) => {
                                     pseudo_fv.insert(*new_view.uuid(), new_view.clone());
                                     pseudo_frm.insert(*model.uuid(), *new_view.uuid());
-                                    cmds.push(InsensitiveCommand::AddElement(parent_view_uuid, new_view.into(), false).into());
+                                    cmds.push(InsensitiveCommand::AddDependency(parent_view_uuid, 0, new_view.into(), false).into());
                                     models_to_create_views_for.pop();
                                 },
                                 Err(mut prerequisites) => models_to_create_views_for.extend(prerequisites.drain()),

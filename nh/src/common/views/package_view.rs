@@ -408,7 +408,7 @@ where
                     tool.add_section(self.adapter.model_section());
 
                     if let Some((new_e, esm)) = tool.try_construct_view(self) {
-                        commands.push(InsensitiveCommand::AddElement(*self.uuid, new_e.into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, new_e.into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -620,8 +620,9 @@ where
                     .filter(|e| uuids.contains(&e.0))
                 {
                     model_uuids.insert(*element.model_uuid());
-                    undo_accumulator.push(InsensitiveCommand::AddElement(
+                    undo_accumulator.push(InsensitiveCommand::AddDependency(
                         *self.uuid,
+                        0,
                         element.clone().into(),
                         from_model,
                     ));
@@ -634,8 +635,15 @@ where
 
                 recurse!(self);
             }
-            InsensitiveCommand::AddElement(target, element, into_model) => {
+            InsensitiveCommand::PasteSpecificElements(target, _elements) => {
                 if *target == *self.uuid {
+                    todo!("undo = delete")
+                }
+
+                recurse!(self);
+            },
+            InsensitiveCommand::AddDependency(target, b, element, into_model) => {
+                if *target == *self.uuid && *b == 0 {
                     if let Ok(view) = element.clone().try_into() {
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
@@ -655,15 +663,7 @@ where
 
                 recurse!(self);
             }
-            InsensitiveCommand::PasteSpecificElements(target, _elements) => {
-                if *target == *self.uuid {
-                    todo!("undo = delete")
-                }
-
-                recurse!(self);
-            },
-            InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..) => {
+            InsensitiveCommand::RemoveDependency(..) => {
                 recurse!(self);
             }
             InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {
