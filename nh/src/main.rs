@@ -354,7 +354,7 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
     }
 
     if ui.button(translate!("nh-project-addnewdocument")).clicked() {
-        commands.push(ProjectCommand::AddNewDocument(uuid::Uuid::now_v7().into(), "New Document".to_owned()));
+        commands.push(ProjectCommand::AddNewDocument(ViewUuid::now_v7(), "New Document".to_owned()));
     }
     ui.menu_button(translate!("nh-project-addnewdiagram"), |ui| {
         ui.set_min_width(MIN_MENU_WIDTH);
@@ -614,7 +614,7 @@ impl NHContext {
     fn clear_project_data(&mut self) {
         self.project_path = None;
         self.diagram_controllers.clear();
-        self.project_hierarchy = HierarchyNode::Folder(uuid::Uuid::nil().into(), "New Project".to_owned().into(), vec![]);
+        self.project_hierarchy = HierarchyNode::Folder(ViewUuid::nil(), "New Project".to_owned().into(), vec![]);
         self.model_hierarchy_views.clear();
         self.new_diagram_no = 1;
         self.documents.clear();
@@ -664,13 +664,13 @@ impl NHContext {
 
         ui.horizontal(|ui| {
             if ui.button(translate!(self.drawing_context, "nh-tab-projecthierarchy-newfolder")).clicked() {
-                context_menu_action = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
+                context_menu_action = Some(ContextMenuAction::NewFolder(ViewUuid::nil()));
             }
             if ui.button(translate!(self.drawing_context, "nh-tab-projecthierarchy-collapseall")).clicked() {
-                context_menu_action = Some(ContextMenuAction::CollapseAt(Some(true), true, uuid::Uuid::nil().into()));
+                context_menu_action = Some(ContextMenuAction::CollapseAt(Some(true), true, ViewUuid::nil()));
             }
             if ui.button(translate!(self.drawing_context, "nh-tab-projecthierarchy-uncollapseall")).clicked() {
-                context_menu_action = Some(ContextMenuAction::CollapseAt(Some(false), true, uuid::Uuid::nil().into()));
+                context_menu_action = Some(ContextMenuAction::CollapseAt(Some(false), true, ViewUuid::nil()));
             }
         });
 
@@ -744,7 +744,7 @@ impl NHContext {
                                 }
                                 ui.separator();
                                 if ui.button(translate!(gdc, "nh-tab-projecthierarchy-newfolder")).clicked() {
-                                    *cma = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
+                                    *cma = Some(ContextMenuAction::NewFolder(ViewUuid::nil()));
                                     ui.close();
                                 }
 
@@ -784,7 +784,7 @@ impl NHContext {
                                 }
                                 ui.separator();
                                 if ui.button(translate!(gdc, "nh-tab-projecthierarchy-newfolder")).clicked() {
-                                    *cma = Some(ContextMenuAction::NewFolder(uuid::Uuid::nil().into()));
+                                    *cma = Some(ContextMenuAction::NewFolder(ViewUuid::nil()));
                                     ui.close();
                                 }
 
@@ -869,7 +869,7 @@ impl NHContext {
                     self.project_hierarchy.insert(
                         &view_uuid,
                         egui_ltreeview::DirPosition::Last,
-                        HierarchyNode::Folder(uuid::Uuid::now_v7().into(), Arc::new("New folder".into()), vec![]),
+                        HierarchyNode::Folder(ViewUuid::now_v7(), Arc::new("New folder".into()), vec![]),
                     );
                 },
                 ContextMenuAction::CollapseAt(collapse, recurse, view_uuid) => {
@@ -1656,7 +1656,7 @@ impl Default for NHApp {
 
         let documents = {
             let mut d = HashMap::<ViewUuid, (String, String)>::new();
-            let document_uuid = uuid::Uuid::now_v7().into();
+            let document_uuid = ViewUuid::now_v7();
             hierarchy.push(HierarchyNode::Document(document_uuid));
             tabs.push(NHTab::Document { uuid: document_uuid });
             d.insert(
@@ -1733,7 +1733,7 @@ impl Default for NHApp {
             file_io_channel: std::sync::mpsc::channel(),
             project_path: None,
             diagram_controllers,
-            project_hierarchy: HierarchyNode::Folder(uuid::Uuid::nil().into(), Arc::new("New Project".to_owned()), hierarchy),
+            project_hierarchy: HierarchyNode::Folder(ViewUuid::nil(), Arc::new("New Project".to_owned()), hierarchy),
             tree_view_state: TreeViewState::default(),
             model_hierarchy_views,
             diagram_deserializers,

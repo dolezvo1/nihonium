@@ -536,12 +536,12 @@ pub fn new(no: u32) -> ERef<dyn DiagramController> {
     let name = format!("New DEMO CSD diagram {}", no);
 
     let diagram = ERef::new(DemoCsdDiagram::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         name.clone(),
         vec![],
     ));
     DiagramControllerGen2::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         name.clone().into(),
         DemoCsdDiagramAdapter::new(diagram.clone()),
         Vec::new(),
@@ -623,12 +623,12 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     {
         let name = format!("Demo DEMO CSD diagram {}", no);
         let diagram = ERef::new(DemoCsdDiagram::new(
-            uuid::Uuid::now_v7().into(),
+            ModelUuid::now_v7(),
             name.clone(),
             models,
         ));
         DiagramControllerGen2::new(
-            Arc::new(uuid::Uuid::now_v7().into()),
+            ViewUuid::now_v7().into(),
             name.clone().into(),
             DemoCsdDiagramAdapter::new(diagram.clone()),
             controllers,
@@ -1061,7 +1061,7 @@ fn new_democsd_package(
     bounds_rect: egui::Rect,
 ) -> (ERef<DemoCsdPackage>, ERef<PackageViewT>) {
     let graph_model = ERef::new(DemoCsdPackage::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         name.to_owned(),
         vec![],
     ));
@@ -1075,7 +1075,7 @@ fn new_democsd_package_view(
 ) -> ERef<PackageViewT> {
     let m = model.read();
     PackageViewT::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         DemoCsdPackageAdapter {
             model: model.clone(),
             name_buffer: (*m.name).clone(),
@@ -1101,7 +1101,7 @@ fn new_democsd_transactor(
     position: egui::Pos2,
 ) -> (ERef<DemoCsdTransactor>, ERef<DemoCsdTransactorView>) {
     let ta_model = ERef::new(DemoCsdTransactor::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         identifier.to_owned(),
         name.to_owned(),
         internal,
@@ -1124,7 +1124,7 @@ fn new_democsd_transactor_view(
 ) -> ERef<DemoCsdTransactorView> {
     let m = model.read();
     ERef::new(DemoCsdTransactorView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
         transaction_view: transaction.into(),
 
@@ -1906,7 +1906,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
         let old_model = self.model.read();
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -1964,7 +1964,7 @@ fn new_democsd_transaction(
     actor: bool,
 ) -> (ERef<DemoCsdTransaction>, ERef<DemoCsdTransactionView>) {
     let tx_model = ERef::new(DemoCsdTransaction::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         DemoTransactionKind::Performa,
         identifier.to_owned(),
         name.to_owned(),
@@ -1980,7 +1980,7 @@ fn new_democsd_transaction_view(
 ) -> ERef<DemoCsdTransactionView> {
     let m = model.read();
     ERef::new(DemoCsdTransactionView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
         kind_buffer: m.kind,
@@ -2526,7 +2526,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     ) {
         let old_model = self.model.read();
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -2570,7 +2570,7 @@ fn new_democsd_link(
     ),
 ) -> (ERef<DemoCsdLink>, ERef<LinkViewT>) {
     let link_model = ERef::new(DemoCsdLink::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         link_type,
         Arc::new("".to_owned()),
         source.0,
@@ -2586,7 +2586,7 @@ fn new_democsd_link_view(
 ) -> ERef<LinkViewT> {
     let m = model.read();
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         DemoCsdLinkAdapter {
             model: model.clone(),
             temporaries: Default::default(),

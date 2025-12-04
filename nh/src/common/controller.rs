@@ -827,7 +827,7 @@ impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Ad
             return inner;
         }
         if let SC::PasteClipboardElements = self {
-            return IC::PasteSpecificElements(uuid::Uuid::nil().into(), clipboard_elements());
+            return IC::PasteSpecificElements(ViewUuid::nil(), clipboard_elements());
         }
 
         let se = selected_elements();
@@ -1771,7 +1771,7 @@ impl<
         models: HashMap<ModelUuid, DomainT::CommonElementT>
     ) -> ERef<dyn DiagramController> {
         Self::new(
-            Arc::new(uuid::Uuid::now_v7().into()),
+            ViewUuid::now_v7().into(),
             format!("{} (copy)", self.name).into(),
             new_adapter,
             Self::elements_deep_copy(

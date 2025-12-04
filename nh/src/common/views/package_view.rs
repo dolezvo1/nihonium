@@ -746,7 +746,7 @@ where
         m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *self.model_uuid())
         };

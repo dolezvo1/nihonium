@@ -271,7 +271,7 @@ impl VisitableElement for UmlClassElement {
 
 pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap<ModelUuid, UmlClassElement>) {
     fn walk(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClassElement>) -> UmlClassElement {
-        let new_uuid = Arc::new(uuid::Uuid::now_v7().into());
+        let new_uuid = ModelUuid::now_v7().into();
         match e {
             UmlClassElement::UmlClassPackage(inner) => {
                 let model = inner.read();
@@ -411,7 +411,7 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
     }
 
     let new_diagram = UmlClassDiagram {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ModelUuid::now_v7().into(),
         name: d.name.clone(),
         contained_elements: new_contained_elements,
         comment: d.comment.clone(),

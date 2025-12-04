@@ -113,7 +113,7 @@ impl VisitableElement for RdfElement {
 
 pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid, RdfElement>) {
     fn walk(e: &RdfElement, into: &mut HashMap<ModelUuid, RdfElement>) -> RdfElement {
-        let new_uuid = Arc::new(uuid::Uuid::now_v7().into());
+        let new_uuid = ModelUuid::now_v7().into();
         match e {
             RdfElement::RdfGraph(inner) => {
                 let model = inner.read();
@@ -203,7 +203,7 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid
     }
 
     let new_diagram = RdfDiagram {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ModelUuid::now_v7().into(),
         name: d.name.clone(),
         contained_elements: new_contained_elements,
         comment: d.comment.clone(),

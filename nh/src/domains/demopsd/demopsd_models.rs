@@ -82,7 +82,7 @@ impl VisitableElement for DemoPsdElement {
 
 pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<ModelUuid, DemoPsdElement>) {
     fn walk(e: &DemoPsdElement, into: &mut HashMap<ModelUuid, DemoPsdElement>) -> DemoPsdElement {
-        let new_uuid = Arc::new(uuid::Uuid::now_v7().into());
+        let new_uuid = ModelUuid::now_v7().into();
         match e {
             DemoPsdElement::DemoPsdPackage(inner) => {
                 let model = inner.read();
@@ -189,7 +189,7 @@ pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<M
     }
 
     let new_diagram = DemoPsdDiagram {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ModelUuid::now_v7().into(),
         name: d.name.clone(),
         contained_elements: new_contained_elements,
         comment: d.comment.clone(),

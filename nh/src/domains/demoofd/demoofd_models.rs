@@ -81,7 +81,7 @@ pub enum DemoOfdType {
 
 pub fn deep_copy_diagram(d: &DemoOfdDiagram) -> (ERef<DemoOfdDiagram>, HashMap<ModelUuid, DemoOfdElement>) {
     fn walk(e: &DemoOfdElement, into: &mut HashMap<ModelUuid, DemoOfdElement>) -> DemoOfdElement {
-        let new_uuid = Arc::new(uuid::Uuid::now_v7().into());
+        let new_uuid = ModelUuid::now_v7().into();
         match e {
             DemoOfdElement::DemoOfdPackage(inner) => {
                 let model = inner.read();
@@ -222,7 +222,7 @@ pub fn deep_copy_diagram(d: &DemoOfdDiagram) -> (ERef<DemoOfdDiagram>, HashMap<M
     }
 
     let new_diagram = DemoOfdDiagram {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ModelUuid::now_v7().into(),
         name: d.name.clone(),
         contained_elements: new_contained_elements,
         comment: d.comment.clone(),

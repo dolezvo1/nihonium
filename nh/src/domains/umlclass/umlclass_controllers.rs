@@ -800,16 +800,14 @@ impl CustomTab for PlantUmlTab {
 }
 
 pub fn new(no: u32) -> ERef<dyn DiagramController> {
-    let view_uuid = uuid::Uuid::now_v7().into();
-    let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New UML class diagram {}", no);
     let diagram = ERef::new(UmlClassDiagram::new(
-        model_uuid,
+        ModelUuid::now_v7(),
         name.clone(),
         vec![],
     ));
     DiagramControllerGen2::new(
-        Arc::new(view_uuid),
+        ViewUuid::now_v7().into(),
         name.clone().into(),
         UmlClassDiagramAdapter::<UmlClassNullProfile>::new(diagram.clone()),
         Vec::new(),
@@ -882,7 +880,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (usage_client_af, usage_client_af_view) = new_umlclass_dependency(
         "use", "",
         true,
-        Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(200.0, 50.0))),
+        Some((ViewUuid::now_v7(), egui::Pos2::new(200.0, 50.0))),
         (class_client.clone().into(), class_client_view.clone().into()),
         (class_af.clone().into(), class_af_view.clone().into()),
     );
@@ -900,7 +898,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         new_umlclass_dependency(
             "use", "",
             true,
-            Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(450.0, 52.0))),
+            Some((ViewUuid::now_v7(), egui::Pos2::new(450.0, 52.0))),
             (class_client.clone().into(), class_client_view.clone().into()),
             (class_producta.clone().into(), class_producta_view.clone().into()),
         );
@@ -918,7 +916,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         new_umlclass_dependency(
             "use", "",
             true,
-            Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(650.0, 48.0))),
+            Some((ViewUuid::now_v7(), egui::Pos2::new(650.0, 48.0))),
             (class_client.clone().into(), class_client_view.clone().into()),
             (class_productb.clone().into(), class_productb_view.clone().into()),
         );
@@ -937,7 +935,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     };
     let (circle_model, circle_view) = new_umlclass_class("Circle", "entity", false, circle_properties, Vec::new(), egui::Pos2::new(300.0, 550.0));
     let (gen_model, gen_view) = new_umlclass_generalization(
-        Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(200.0, 490.0))),
+        Some((ViewUuid::now_v7(), egui::Pos2::new(200.0, 490.0))),
         (polygon_model.clone(), polygon_view.clone().into()),
         (shape_model.clone(), shape_view.clone().into())
     );
@@ -976,11 +974,9 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         (class_productb.clone().into(), class_productb_view.clone().into()),
     );
 
-    let diagram_view_uuid = uuid::Uuid::now_v7().into();
-    let diagram_model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("Demo UML class diagram {}", no);
     let diagram2 = ERef::new(UmlClassDiagram::new(
-        diagram_model_uuid,
+        ModelUuid::now_v7(),
         name.clone(),
         vec![
             class_af.into(),
@@ -1006,7 +1002,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         ],
     ));
     DiagramControllerGen2::new(
-        Arc::new(diagram_view_uuid),
+        ViewUuid::now_v7().into(),
         name.clone().into(),
         UmlClassDiagramAdapter::new(diagram2.clone()),
         vec![
@@ -1671,7 +1667,7 @@ pub fn new_umlclass_package<P: UmlClassProfile>(
     bounds_rect: egui::Rect,
 ) -> (ERef<UmlClassPackage>, ERef<PackageViewT<P>>) {
     let package_model = ERef::new(UmlClassPackage::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         name.to_owned(),
         Vec::new(),
     ));
@@ -1685,7 +1681,7 @@ pub fn new_umlclass_package_view<P: UmlClassProfile>(
 ) -> ERef<PackageViewT<P>> {
     let m = model.read();
     PackageView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         UmlClassPackageAdapter {
             model: model.clone(),
             name_buffer: (*m.name).clone(),
@@ -1706,7 +1702,7 @@ fn new_umlclass_instance<P: UmlClassProfile>(
     position: egui::Pos2,
 ) -> (ERef<UmlClassInstance>, ERef<UmlClassInstanceView<P>>) {
     let instance_model = ERef::new(UmlClassInstance::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         instance_name.to_owned(),
         instance_type.to_owned(),
         stereotype.to_owned(),
@@ -1722,7 +1718,7 @@ fn new_umlclass_instance_view<P: UmlClassProfile>(
 ) -> ERef<UmlClassInstanceView<P>> {
     let m = model.read();
     ERef::new(UmlClassInstanceView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
         stereotype_in_guillemets: String::new(),
         main_text: String::new(),
@@ -2329,7 +2325,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         let old_model = self.model.read();
 
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -2374,7 +2370,7 @@ fn new_umlclass_property<P: UmlClassProfile>(
     stereotype: &str,
 ) -> (ERef<UmlClassProperty>, ERef<UmlClassPropertyView<P>>) {
     let model = ERef::new(UmlClassProperty::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         visibility_modifier,
         name.to_owned(),
         value_type.to_owned(),
@@ -2392,7 +2388,7 @@ fn new_umlclass_property_view<P: UmlClassProfile>(
 ) -> ERef<UmlClassPropertyView<P>> {
     let m = model.read();
     ERef::new(UmlClassPropertyView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
         display_text: String::new(),
@@ -3047,7 +3043,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         let old_model = self.model.read();
 
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -3097,7 +3093,7 @@ fn new_umlclass_operation<P: UmlClassProfile>(
     stereotype: &str,
 ) -> (ERef<UmlClassOperation>, ERef<UmlClassOperationView<P>>) {
     let model = ERef::new(UmlClassOperation::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         visibility_modifier,
         name.to_owned(),
         parameters.to_owned(),
@@ -3114,7 +3110,7 @@ fn new_umlclass_operation_view<P: UmlClassProfile>(
 ) -> ERef<UmlClassOperationView<P>> {
     let m = model.read();
     ERef::new(UmlClassOperationView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
         display_text: String::new(),
@@ -3706,7 +3702,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         let old_model = self.model.read();
 
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -3755,7 +3751,7 @@ pub fn new_umlclass_class<P: UmlClassProfile>(
     position: egui::Pos2,
 ) -> (ERef<UmlClass>, ERef<UmlClassView<P>>) {
     let class_model = ERef::new(UmlClass::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         name.to_owned(),
         stereotype.to_owned(),
         "".to_owned(),
@@ -3780,7 +3776,7 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
 ) -> ERef<UmlClassView<P>> {
     let m = model.read();
     ERef::new(UmlClassView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
         properties_views,
         operations_views,
@@ -4874,7 +4870,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         let old_model = self.model.read();
 
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -4957,7 +4953,7 @@ pub fn new_umlclass_generalization<P: UmlClassProfile>(
     target: (ERef<UmlClass>, UmlClassElementView<P>),
 ) -> (ERef<UmlClassGeneralization>, ERef<GeneralizationViewT<P>>) {
     let link_model = ERef::new(UmlClassGeneralization::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         vec![source.0],
         vec![target.0],
     ));
@@ -4975,7 +4971,7 @@ pub fn new_umlclass_generalization_view<P: UmlClassProfile>(
     let (sp, mp, tp) = multiconnection_view::init_points(m.sources.iter().map(|e| *e.read().uuid), *m.targets[0].read().uuid, targets[0].min_shape(), center_point);
 
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         UmlClassGeneralizationAdapter {
             model: model.clone(),
             temporaries: Default::default(),
@@ -5304,7 +5300,7 @@ pub fn new_umlclass_dependency<P: UmlClassProfile>(
     target: (UmlClassClassifier, UmlClassElementView<P>),
 ) -> (ERef<UmlClassDependency>, ERef<DependencyViewT<P>>) {
     let link_model = ERef::new(UmlClassDependency::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         stereotype.to_owned(),
         name.to_owned(),
         source.0,
@@ -5325,7 +5321,7 @@ pub fn new_umlclass_dependency_view<P: UmlClassProfile>(
     let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.source.uuid()), *m.target.uuid(), target.min_shape(), center_point);
 
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         UmlClassDependencyAdapter {
             model: model.clone(),
             temporaries: Default::default(),
@@ -5591,7 +5587,7 @@ pub fn new_umlclass_association<P: UmlClassProfile>(
     target: (UmlClassClassifier, UmlClassElementView<P>),
 ) -> (ERef<UmlClassAssociation>, ERef<AssociationViewT<P>>) {
     let link_model = ERef::new(UmlClassAssociation::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         stereotype.to_owned(),
         name.to_owned(),
         source.0,
@@ -5611,7 +5607,7 @@ pub fn new_umlclass_association_view<P: UmlClassProfile>(
     let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.source.uuid()), *m.target.uuid(), target.min_shape(), center_point);
 
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         UmlClassAssocationAdapter {
             model: model.clone(),
             temporaries: Default::default(),
@@ -6148,7 +6144,7 @@ pub fn new_umlclass_comment<P: UmlClassProfile>(
     position: egui::Pos2,
 ) -> (ERef<UmlClassComment>, ERef<UmlClassCommentView<P>>) {
     let comment_model = ERef::new(UmlClassComment::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         text.to_owned(),
     ));
     let comment_view = new_umlclass_comment_view(comment_model.clone(), position);
@@ -6161,7 +6157,7 @@ pub fn new_umlclass_comment_view<P: UmlClassProfile>(
 ) -> ERef<UmlClassCommentView<P>> {
     let m = model.read();
     ERef::new(UmlClassCommentView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
         text_buffer: (*m.text).clone(),
@@ -6537,7 +6533,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         let old_model = self.model.read();
 
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -6573,7 +6569,7 @@ pub fn new_umlclass_commentlink<P: UmlClassProfile>(
     target: (UmlClassElement, UmlClassElementView<P>),
 ) -> (ERef<UmlClassCommentLink>, ERef<CommentLinkViewT<P>>) {
     let link_model = ERef::new(UmlClassCommentLink::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         source.0,
         target.0,
     ));
@@ -6588,7 +6584,7 @@ pub fn new_umlclass_commentlink_view<P: UmlClassProfile>(
 ) -> ERef<CommentLinkViewT<P>> {
     let m = model.read();
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         UmlClassCommentLinkAdapter {
             model: model.clone(),
             temporaries: Default::default(),

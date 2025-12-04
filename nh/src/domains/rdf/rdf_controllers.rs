@@ -517,17 +517,15 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
 }
 
 pub fn new(no: u32) -> ERef<dyn DiagramController> {
-    let view_uuid = uuid::Uuid::now_v7().into();
-    let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New RDF diagram {}", no);
 
     let diagram = ERef::new(RdfDiagram::new(
-        model_uuid,
+        ModelUuid::now_v7(),
         name.clone(),
         vec![],
     ));
     DiagramControllerGen2::new(
-        Arc::new(view_uuid),
+        ViewUuid::now_v7().into(),
         name.clone().into(),
         RdfDiagramAdapter::new(diagram.clone()),
         Vec::new(),
@@ -598,10 +596,8 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     owned_controllers.push(graph_st_view.into());
 
     let name = format!("Demo RDF diagram {}", no);
-    let view_uuid = uuid::Uuid::now_v7().into();
-    let model_uuid = uuid::Uuid::now_v7().into();
     let diagram = ERef::new(RdfDiagram::new(
-        model_uuid,
+        ModelUuid::now_v7(),
         name.clone(),
         vec![
             node.into(), literal_model.into(),
@@ -609,7 +605,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         ],
     ));
     DiagramControllerGen2::new(
-        Arc::new(view_uuid),
+        ViewUuid::now_v7().into(),
         name.clone().into(),
         RdfDiagramAdapter::new(diagram.clone()),
         owned_controllers,
@@ -1053,7 +1049,7 @@ fn new_rdf_graph(
     bounds_rect: egui::Rect,
 ) -> (ERef<RdfGraph>, ERef<PackageViewT>) {
     let graph_model = ERef::new(RdfGraph::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         iri.to_owned(),
         Vec::new(),
     ));
@@ -1067,7 +1063,7 @@ fn new_rdf_graph_view(
 ) -> ERef<PackageViewT> {
     let m = model.read();
     PackageView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         RdfGraphAdapter {
             model: model.clone(),
             iri_buffer: (*m.iri).clone(),
@@ -1082,7 +1078,7 @@ fn new_rdf_node(
     iri: &str,
     position: egui::Pos2,
 ) -> (ERef<RdfNode>, ERef<RdfNodeView>) {
-    let node_model = ERef::new(RdfNode::new(uuid::Uuid::now_v7().into(), iri.to_owned()));
+    let node_model = ERef::new(RdfNode::new(ModelUuid::now_v7(), iri.to_owned()));
     let node_view = new_rdf_node_view(node_model.clone(), position);
     (node_model, node_view)
 }
@@ -1092,7 +1088,7 @@ fn new_rdf_node_view(
 ) -> ERef<RdfNodeView> {
     let m = model.read();
     let node_view = ERef::new(RdfNodeView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
         iri_buffer: (*m.iri).to_owned(),
@@ -1456,7 +1452,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         let old_model = self.model.read();
 
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -1490,9 +1486,8 @@ fn new_rdf_literal(
     langtag: &str,
     position: egui::Pos2,
 ) -> (ERef<RdfLiteral>, ERef<RdfLiteralView>) {
-    let literal_model_uuid = uuid::Uuid::now_v7().into();
     let literal_model = ERef::new(RdfLiteral::new(
-        literal_model_uuid,
+        ModelUuid::now_v7(),
         content.to_owned(),
         datatype.to_owned(),
         langtag.to_owned(),
@@ -1505,9 +1500,8 @@ fn new_rdf_literal_view(
     position: egui::Pos2,
 ) -> ERef<RdfLiteralView> {
     let m = model.read();
-    let literal_view_uuid = uuid::Uuid::now_v7().into();
     let literal_view = ERef::new(RdfLiteralView {
-        uuid: Arc::new(literal_view_uuid),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
         content_buffer: (*m.content).to_owned(),
@@ -1931,7 +1925,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         let old_model = self.model.read();
 
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7().into(), ModelUuid::now_v7().into())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -1968,7 +1962,7 @@ fn new_rdf_predicate(
     target: (RdfTargettableElement, RdfElementView),
 ) -> (ERef<RdfPredicate>, ERef<LinkViewT>) {
     let predicate_model = ERef::new(RdfPredicate::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         iri.to_owned(),
         source.0,
         target.0,
@@ -1991,7 +1985,7 @@ fn new_rdf_predicate_view(
     let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.source.read().uuid), *m.target.uuid(), target.min_shape(), None);
 
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         RdfPredicateAdapter {
             model: model.clone(),
             temporaries: Default::default(),

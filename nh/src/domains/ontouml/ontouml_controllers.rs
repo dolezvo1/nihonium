@@ -8,7 +8,7 @@ use crate::{common::{
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
-    uuid::ViewUuid,
+    uuid::{ModelUuid, ViewUuid},
 }, domains::ontouml::ontouml_models};
 use eframe::egui;
 use std::{
@@ -138,16 +138,14 @@ impl UmlClassPalette<OntoUmlProfile> for UmlClassPlaceholderViews {
 }
 
 pub fn new(no: u32) -> ERef<dyn DiagramController> {
-    let view_uuid = uuid::Uuid::now_v7().into();
-    let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New OntoUML diagram {}", no);
     let diagram = ERef::new(UmlClassDiagram::new(
-        model_uuid,
+        ModelUuid::now_v7(),
         name.clone(),
         vec![],
     ));
     DiagramControllerGen2::new(
-        Arc::new(view_uuid),
+        ViewUuid::now_v7().into(),
         name.clone().into(),
         UmlClassDiagramAdapter::<OntoUmlProfile>::new(diagram.clone()),
         Vec::new(),
@@ -162,7 +160,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     let (marriage_model, marriage_view) = new_umlclass_class("Marriage", ontouml_models::RELATOR, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 350.0));
 
     let (gen_phase_model, gen_phase_view) = new_umlclass_generalization(
-        Some((uuid::Uuid::now_v7().into(), egui::Pos2::new(280.0, 200.0))),
+        Some((ViewUuid::now_v7(), egui::Pos2::new(280.0, 200.0))),
         (alive_model.clone(), alive_view.clone().into()),
         (animal_model.clone(), animal_view.clone().into()),
     );
@@ -189,11 +187,9 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     mediation_model.write().source_label_multiplicity = Arc::new("2..*".to_owned());
     mediation_model.write().target_label_multiplicity = Arc::new("1..1".to_owned());
 
-    let view_uuid = uuid::Uuid::now_v7().into();
-    let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("Demo OntoUML diagram {}", no);
     let diagram = ERef::new(UmlClassDiagram::new(
-        model_uuid,
+        ModelUuid::now_v7(),
         name.clone(),
         vec![
             animal_model.into(),
@@ -207,7 +203,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         ],
     ));
     DiagramControllerGen2::new(
-        Arc::new(view_uuid),
+        ViewUuid::now_v7().into(),
         name.clone().into(),
         UmlClassDiagramAdapter::<OntoUmlProfile>::new(diagram.clone()),
         vec![

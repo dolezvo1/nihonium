@@ -783,7 +783,7 @@ pub trait NHCanvas {
         ) {
             let focal_point = e.points.first().unwrap();
             let path = std::iter::once((
-                uuid::Uuid::nil().into(),
+                ViewUuid::nil(),
                 e.arrowhead_type.get_intersect(focal_point.1, e.points.get(1).unwrap_or(&central_point).1),
             ))
             .chain(e.points.iter().skip(1).map(|e| *e))

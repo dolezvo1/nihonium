@@ -3,6 +3,20 @@ macro_rules! impl_uuid {
     ($struct_name:ty) => {
         impl $struct_name {
             #[allow(dead_code)]
+            pub fn now_v7() -> Self {
+                Self {
+                    inner: uuid::Uuid::now_v7(),
+                }
+            }
+
+            #[allow(dead_code)]
+            pub fn nil() -> Self {
+                Self {
+                    inner: uuid::Uuid::nil(),
+                }
+            }
+
+            #[allow(dead_code)]
             pub fn is_nil(&self) -> bool {
                 self.inner.is_nil()
             }

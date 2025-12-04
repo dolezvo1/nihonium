@@ -639,16 +639,14 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
 }
 
 pub fn new(no: u32) -> ERef<dyn DiagramController> {
-    let view_uuid = uuid::Uuid::now_v7().into();
-    let model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("New DEMO OFD diagram {}", no);
     let diagram = ERef::new(DemoOfdDiagram::new(
-        model_uuid,
+        ModelUuid::now_v7(),
         name.clone(),
         vec![],
     ));
     DiagramControllerGen2::new(
-        Arc::new(view_uuid),
+        ViewUuid::now_v7().into(),
         name.clone().into(),
         DemoOfdDiagramAdapter::new(diagram.clone()),
         Vec::new(),
@@ -697,11 +695,9 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         egui::Pos2::new(550.0, 250.0),
     );
 
-    let diagram_view_uuid = uuid::Uuid::now_v7().into();
-    let diagram_model_uuid = uuid::Uuid::now_v7().into();
     let name = format!("Demo DEMO OFD diagram {}", no);
     let diagram2 = ERef::new(DemoOfdDiagram::new(
-        diagram_model_uuid,
+        ModelUuid::now_v7(),
         name.clone(),
         vec![
             entity_membership.into(),
@@ -712,7 +708,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         ],
     ));
     DiagramControllerGen2::new(
-        Arc::new(diagram_view_uuid),
+        ViewUuid::now_v7().into(),
         name.clone().into(),
         DemoOfdDiagramAdapter::new(diagram2.clone()),
         vec![
@@ -1431,7 +1427,7 @@ fn new_demoofd_package(
     bounds_rect: egui::Rect,
 ) -> (ERef<DemoOfdPackage>, ERef<PackageViewT>) {
     let graph_model = ERef::new(DemoOfdPackage::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         name.to_owned(),
         vec![],
     ));
@@ -1445,7 +1441,7 @@ fn new_demoofd_package_view(
 ) -> ERef<PackageViewT> {
     let m = model.read();
     PackageViewT::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         DemoOfdPackageAdapter {
             model: model.clone(),
             name_buffer: (*m.name).clone(),
@@ -1464,7 +1460,7 @@ fn new_demoofd_entitytype(
     position: egui::Pos2,
 ) -> (ERef<DemoOfdEntityType>, ERef<DemoOfdEntityView>) {
     let class_model = ERef::new(DemoOfdEntityType::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         name.to_owned(),
         properties.to_owned(),
         is_internal,
@@ -1479,7 +1475,7 @@ fn new_demoofd_entitytype_view(
 ) -> ERef<DemoOfdEntityView> {
     let m = model.read();
     ERef::new(DemoOfdEntityView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
         name_buffer: (*m.name).clone(),
@@ -2085,7 +2081,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         let old_model = self.model.read();
 
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -2128,7 +2124,7 @@ fn new_demoofd_eventtype(
         .unwrap_or((None, None));
 
     let instance_model = ERef::new(DemoOfdEventType::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         DemoTransactionKind::Performa,
         identifier.to_owned(),
         name.to_owned(),
@@ -2147,7 +2143,7 @@ fn new_demoofd_eventtype_view(
 ) -> ERef<DemoOfdEventView> {
     let m = model.read();
     ERef::new(DemoOfdEventView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
         base_entity_type,
         specialization_view: UFOption::from(specialization_entity_type),
@@ -2800,7 +2796,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         let old_model = self.model.read();
 
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -2840,7 +2836,7 @@ fn new_demoofd_propertytype(
     target: (ERef<DemoOfdEntityType>, DemoOfdElementView),
 ) -> (ERef<DemoOfdPropertyType>, ERef<PropertyTypeViewT>) {
     let link_model = ERef::new(DemoOfdPropertyType::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         name.to_owned(),
         source.0,
         target.0,
@@ -2859,7 +2855,7 @@ fn new_demoofd_propertytype_view(
     let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.domain_element.read().uuid), *m.range_element.read().uuid, target.min_shape(), center_point);
 
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         DemoOfdPropertyTypeAdapter {
             model: model.clone(),
             temporaries: Default::default(),
@@ -3134,7 +3130,7 @@ fn new_demoofd_specialization(
     target: (ERef<DemoOfdEntityType>, DemoOfdElementView),
 ) -> (ERef<DemoOfdSpecialization>, ERef<SpecializationViewT>) {
     let link_model = ERef::new(DemoOfdSpecialization::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         source.0,
         target.0,
     ));
@@ -3152,7 +3148,7 @@ fn new_demoofd_specialization_view(
     let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.domain_element.read().uuid), *m.range_element.read().uuid, target.min_shape(), center_point);
 
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         DemoOfdSpecializationAdapter {
             model: model.clone(),
             temporaries: Default::default(),
@@ -3326,7 +3322,7 @@ fn new_demoofd_aggregation(
     target: (ERef<DemoOfdEntityType>, DemoOfdElementView),
 ) -> (ERef<DemoOfdAggregation>, ERef<AggregationViewT>) {
     let link_model = ERef::new(DemoOfdAggregation::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         vec![source.0],
         target.0,
         false,
@@ -3345,7 +3341,7 @@ fn new_demoofd_aggregation_view(
     let (sp, mp, tp) = multiconnection_view::init_points(m.domain_elements.iter().map(|e| *e.read().uuid), *m.range_element.read().uuid, target.min_shape(), center_point);
 
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         DemoOfdAggregationAdapter {
             model: model.clone(),
             temporaries: Default::default(),
@@ -3589,7 +3585,7 @@ fn new_demoofd_precedence(
     target: (ERef<DemoOfdEventType>, DemoOfdElementView),
 ) -> (ERef<DemoOfdPrecedence>, ERef<PrecedenceViewT>) {
     let link_model = ERef::new(DemoOfdPrecedence::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         source.0,
         target.0,
     ));
@@ -3607,7 +3603,7 @@ fn new_demoofd_precedence_view(
     let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.domain_element.read().uuid), *m.range_element.read().uuid, target.min_shape(), center_point);
 
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         DemoOfdPrecedenceAdapter {
             model: model.clone(),
             temporaries: Default::default(),
@@ -3781,7 +3777,7 @@ fn new_demoofd_exclusion(
     target: (DemoOfdType, DemoOfdElementView),
 ) -> (ERef<DemoOfdExclusion>, ERef<ExclusionViewT>) {
     let link_model = ERef::new(DemoOfdExclusion::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         source.0,
         target.0,
     ));
@@ -3799,7 +3795,7 @@ fn new_demoofd_exclusion_view(
     let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.domain_element.uuid()), *m.range_element.uuid(), target.min_shape(), center_point);
 
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         DemoOfdExclusionAdapter {
             model: model.clone(),
             temporaries: Default::default(),

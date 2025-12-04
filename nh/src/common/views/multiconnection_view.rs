@@ -38,20 +38,20 @@ pub fn init_points(
 
         (
             vec![vec![
-                (uuid::Uuid::now_v7().into(), egui::Pos2::ZERO),
-                (uuid::Uuid::now_v7().into(), min + egui::Vec2::new(quarter_size.x, -quarter_size.y)),
+                (ViewUuid::now_v7(), egui::Pos2::ZERO),
+                (ViewUuid::now_v7(), min + egui::Vec2::new(quarter_size.x, -quarter_size.y)),
             ]],
-            Some((uuid::Uuid::now_v7().into(), min - quarter_size)),
+            Some((ViewUuid::now_v7(), min - quarter_size)),
             vec![vec![
-                (uuid::Uuid::now_v7().into(), egui::Pos2::ZERO),
-                (uuid::Uuid::now_v7().into(), min + egui::Vec2::new(-quarter_size.x, quarter_size.y)),
+                (ViewUuid::now_v7(), egui::Pos2::ZERO),
+                (ViewUuid::now_v7(), min + egui::Vec2::new(-quarter_size.x, quarter_size.y)),
             ]],
         )
     } else {
         (
-            vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
+            vec![vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)]],
             center_point,
-            vec![vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)]],
+            vec![vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)]],
         )
     }
 }
@@ -133,7 +133,7 @@ pub struct Ending<T> where T: serde::Serialize + NHContextSerialize + NHContextD
 
 impl<T> Ending<T> where T: serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone {
     pub fn new(e: T) -> Self {
-        Self::new_p(e, vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)])
+        Self::new_p(e, vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)])
     }
 
     pub fn new_p(e: T, p: Vec<(ViewUuid, egui::Pos2)>,) -> Self {
@@ -401,7 +401,7 @@ where
             match &self.center_point {
                 UFOption::Some(point) => *point,
                 UFOption::None => (
-                    uuid::Uuid::nil().into(),
+                    ViewUuid::nil(),
                     (self.sources[0].points[0].1 + self.targets[0].points[0].1.to_vec2()) / 2.0,
                 ),
             },
@@ -544,13 +544,13 @@ where
                         return EventHandlingStatus::HandledByContainer;
                     }
                     UFOption::None if is_over(pos, self.position()) => {
-                        self.dragged_node = Some((uuid::Uuid::now_v7().into(), pos));
+                        self.dragged_node = Some((ViewUuid::now_v7(), pos));
                         commands.push(InsensitiveCommand::AddDependency(
                             *self.uuid,
                             3,
                             None,
                             VertexInformation {
-                                after: uuid::Uuid::nil().into(),
+                                after: ViewUuid::nil(),
                                 id: self.dragged_node.unwrap().0,
                                 position: self.position(),
                             }
@@ -583,7 +583,7 @@ where
 
                                 let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
                                 if is_over(pos, midpoint) {
-                                    self.dragged_node = Some((uuid::Uuid::now_v7().into(), pos));
+                                    self.dragged_node = Some((ViewUuid::now_v7(), pos));
                                     commands.push(InsensitiveCommand::AddDependency(
                                         *self.uuid,
                                         MULTICONNECTION_VERTEX_BUCKET,
@@ -811,7 +811,7 @@ where
                         MULTICONNECTION_VERTEX_BUCKET,
                         None,
                         DomainT::AddCommandElementT::from(VertexInformation {
-                            after: uuid::Uuid::nil().into(),
+                            after: ViewUuid::nil(),
                             id: center_point.0,
                             position: center_point.1,
                         }),
@@ -879,7 +879,7 @@ where
 
                             self.sources.push(Ending {
                                 element: e,
-                                points: vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)],
+                                points: vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)],
                             });
 
                             affected_models.insert(*self.adapter.model_uuid());
@@ -889,7 +889,7 @@ where
 
                             self.targets.push(Ending {
                                 element: e,
-                                points: vec![(uuid::Uuid::now_v7().into(), egui::Pos2::ZERO)],
+                                points: vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)],
                             });
 
                             affected_models.insert(*self.adapter.model_uuid());
@@ -1031,7 +1031,7 @@ where
         m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *self.model_uuid())
         };

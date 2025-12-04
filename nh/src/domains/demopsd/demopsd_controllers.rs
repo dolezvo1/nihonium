@@ -627,12 +627,12 @@ pub fn new(no: u32) -> ERef<dyn DiagramController> {
     let name = format!("New DEMO PSD diagram {}", no);
 
     let diagram = ERef::new(DemoPsdDiagram::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         name.clone(),
         vec![],
     ));
     DiagramControllerGen2::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         name.clone().into(),
         DemoPsdDiagramAdapter::new(diagram.clone()),
         Vec::new(),
@@ -660,12 +660,12 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     {
         let name = format!("Demo DEMO PSD diagram {}", no);
         let diagram = ERef::new(DemoPsdDiagram::new(
-            uuid::Uuid::now_v7().into(),
+            ModelUuid::now_v7(),
             name.clone(),
             models,
         ));
         DiagramControllerGen2::new(
-            Arc::new(uuid::Uuid::now_v7().into()),
+            ViewUuid::now_v7().into(),
             name.clone().into(),
             DemoPsdDiagramAdapter::new(diagram.clone()),
             views,
@@ -1101,7 +1101,7 @@ fn new_demopsd_package(
     bounds_rect: egui::Rect,
 ) -> (ERef<DemoPsdPackage>, ERef<PackageViewT>) {
     let graph_model = ERef::new(DemoPsdPackage::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         name.to_owned(),
         vec![],
     ));
@@ -1115,7 +1115,7 @@ fn new_demopsd_package_view(
 ) -> ERef<PackageViewT> {
     let m = model.read();
     PackageViewT::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         DemoPsdPackageAdapter {
             model: model.clone(),
             name_buffer: (*m.name).clone(),
@@ -1135,7 +1135,7 @@ fn new_democsd_transaction(
     width: f32,
 ) -> (ERef<DemoPsdTransaction>, ERef<DemoPsdTransactionView>) {
     let tx_model = ERef::new(DemoPsdTransaction::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         DemoTransactionKind::Performa,
         identifier.to_owned(),
         name.to_owned(),
@@ -1150,7 +1150,7 @@ fn new_demopsd_transaction_view(
 ) -> ERef<DemoPsdTransactionView> {
     let m = model.read();
     ERef::new(DemoPsdTransactionView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
         before_views: Vec::new(),
@@ -2156,7 +2156,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
     ) {
         let old_model = self.model.read();
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -2247,7 +2247,7 @@ fn new_demopsd_fact(
     position: egui::Pos2,
 ) -> (ERef<DemoPsdFact>, ERef<DemoPsdFactView>) {
     let model = ERef::new(DemoPsdFact::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         identifier.to_owned(),
         internal,
     ));
@@ -2260,7 +2260,7 @@ fn new_demopsd_fact_view(
 ) -> ERef<DemoPsdFactView> {
     let r = model.read();
     ERef::new(DemoPsdFactView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
         identifier_buffer: (*r.identifier).clone(),
@@ -2649,7 +2649,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
     ) {
         let old_model = self.model.read();
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -2684,7 +2684,7 @@ fn new_demopsd_act(
     position: egui::Pos2,
 ) -> (ERef<DemoPsdAct>, ERef<DemoPsdActView>) {
     let model = ERef::new(DemoPsdAct::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         identifier.to_owned(),
         internal,
     ));
@@ -2697,7 +2697,7 @@ fn new_demopsd_act_view(
 ) -> ERef<DemoPsdActView> {
     let r = model.read();
     ERef::new(DemoPsdActView {
-        uuid: Arc::new(uuid::Uuid::now_v7().into()),
+        uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
         identifier_buffer: (*r.identifier).clone(),
@@ -3085,7 +3085,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
     ) {
         let old_model = self.model.read();
         let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
-            (uuid::Uuid::now_v7().into(), uuid::Uuid::now_v7().into())
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
         } else {
             (*self.uuid, *old_model.uuid)
         };
@@ -3126,7 +3126,7 @@ fn new_democsd_link(
     ),
 ) -> (ERef<DemoPsdLink>, ERef<LinkViewT>) {
     let link_model = ERef::new(DemoPsdLink::new(
-        uuid::Uuid::now_v7().into(),
+        ModelUuid::now_v7(),
         link_type,
         source.0,
         target.0,
@@ -3141,7 +3141,7 @@ fn new_democsd_link_view(
 ) -> ERef<LinkViewT> {
     let m = model.read();
     MulticonnectionView::new(
-        Arc::new(uuid::Uuid::now_v7().into()),
+        ViewUuid::now_v7().into(),
         DemoPsdLinkAdapter {
             model: model.clone(),
             temporaries: Default::default(),

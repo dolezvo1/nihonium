@@ -1529,7 +1529,7 @@ mod test {
 
     fn validate(elements: Vec<UmlClassElement>, check_errors: bool, check_antipatterns: bool) -> Vec<ValidationProblem> {
         let d = new_diagram(elements);
-        let vt = super::OntoUMLValidationTab::new(d, ERef::new(UmlClassLabelProvider::default()), uuid::Uuid::nil().into());
+        let vt = super::OntoUMLValidationTab::new(d, ERef::new(UmlClassLabelProvider::default()), ViewUuid::nil());
         vt.validate(check_errors, check_antipatterns)
     }
 
