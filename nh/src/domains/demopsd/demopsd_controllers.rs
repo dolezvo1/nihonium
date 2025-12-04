@@ -8,6 +8,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::{ModelUuid, ViewUuid};
+use crate::domains::demopsd::demopsd_models::{DemoPsdState, DemoPsdStateInfo};
 use super::demopsd_models::{
     DemoPsdDiagram, DemoPsdElement, DemoPsdLink, DemoPsdLinkType, DemoPsdPackage, DemoPsdTransaction, DemoPsdAct, DemoPsdFact,
 };
@@ -299,7 +300,7 @@ struct DemoPsdPlaceholderViews {
 
 impl Default for DemoPsdPlaceholderViews {
     fn default() -> Self {
-        let (ta, ta_view) = new_democsd_transaction("01", "", egui::Pos2::new(100.0, 75.0), 200.0);
+        let (ta, ta_view) = new_demopsd_transaction("01", "", vec![], None, vec![], egui::Pos2::new(100.0, 75.0), 200.0);
         let ta = (ta, ta_view.into());
 
         let (fact, fact_view) = new_demopsd_fact("rq", true, egui::Pos2::ZERO);
@@ -307,8 +308,8 @@ impl Default for DemoPsdPlaceholderViews {
         let (act, act_view) = new_demopsd_act("rq", true, egui::Pos2::new(100.0, 75.0));
         let act = (act, act_view.into());
 
-        let (_response, response_view) = new_democsd_link(DemoPsdLinkType::ResponseLink, fact.clone(), act.clone());
-        let (_wait, wait_view) = new_democsd_link(DemoPsdLinkType::WaitLink, fact.clone(), act.clone());
+        let (_response, response_view) = new_demopsd_link(DemoPsdLinkType::ResponseLink, fact.clone(), act.clone(), None);
+        let (_wait, wait_view) = new_demopsd_link(DemoPsdLinkType::WaitLink, fact.clone(), act.clone(), None);
 
         let (_package, package_view) = new_demopsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
 
@@ -351,7 +352,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         self.model.read().name.clone()
     }
     fn view_type(&self) -> &'static str {
-        "democsd-diagram-view"
+        "demopsd-diagram-view"
     }
 
     fn create_new_view_for(
@@ -369,8 +370,25 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                 )
             },
             DemoPsdElement::DemoPsdTransaction(inner) => {
+                let r = inner.read();
+
+                let f = |e: &DemoPsdStateInfo| DemoPsdStateViewInfo {
+                    view: match &e.state {
+                        DemoPsdState::Fact(inner) => new_demopsd_fact_view(inner.clone(), egui::Pos2::ZERO).into(),
+                        DemoPsdState::Act(inner) => new_demopsd_act_view(inner.clone(), egui::Pos2::ZERO).into(),
+                    },
+                    executor: e.executor,
+                };
+                let before = r.before.iter().map(&f).collect();
+                let p_act = if let UFOption::Some(p_act) = &r.p_act {
+                    UFOption::Some(new_demopsd_act_view(p_act.clone(), egui::Pos2::ZERO))
+                } else {
+                    UFOption::None
+                };
+                let after = r.after.iter().map(&f).collect();
+
                 DemoPsdElementView::from(
-                    new_demopsd_transaction_view(inner, egui::Pos2::ZERO, 200.0)
+                    new_demopsd_transaction_view(inner.clone(), before, p_act, after, egui::Pos2::ZERO, 200.0)
                 )
             },
             DemoPsdElement::DemoPsdFact(inner) => {
@@ -391,10 +409,11 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
                 DemoPsdElementView::from(
-                    new_democsd_link_view(
+                    new_demopsd_link_view(
                         inner.clone(),
                         source_view,
                         target_view,
+                        None,
                     )
                 )
             },
@@ -640,9 +659,30 @@ pub fn new(no: u32) -> ERef<dyn DiagramController> {
 }
 
 pub fn demo(no: u32) -> ERef<dyn DiagramController> {
-    let (tx01, tx01_view) = new_democsd_transaction("01", "usufruct case concluding", egui::Pos2::new(200.0, 100.0), 350.0);
-    let (tx02, tx02_view) = new_democsd_transaction("02", "resource seizing", egui::Pos2::new(100.0, 200.0), 150.0);
-    let (tx03, tx03_view) = new_democsd_transaction("03", "resource releasing", egui::Pos2::new(300.0, 200.0), 150.0);
+    let fact = new_demopsd_fact("TK04/ac", false, egui::Pos2::new(375.0, 300.0));
+    let act = new_demopsd_act("", false, egui::Pos2::new(200.0, 400.0));
+    let wait_link = new_demopsd_link(
+        DemoPsdLinkType::WaitLink,
+        (fact.0.clone(), fact.1.clone().into()),
+        (act.0.clone(), act.1.clone().into()),
+        Some((ViewUuid::now_v7(), egui::Pos2::new(300.0, 300.0))),
+    );
+
+    let (tx01, tx01_view) = new_demopsd_transaction(
+        "01", "usufruct case concluding",
+        vec![], None, vec![],
+        egui::Pos2::new(200.0, 100.0), 350.0,
+    );
+    let (tx02, tx02_view) = new_demopsd_transaction(
+        "02", "resource seizing",
+        vec![], None, vec![],
+        egui::Pos2::new(100.0, 200.0), 150.0,
+    );
+    let (tx03, tx03_view) = new_demopsd_transaction(
+        "03", "resource releasing",
+        vec![], Some(act.clone()), vec![],
+        egui::Pos2::new(300.0, 200.0), 150.0,
+    );
 
     // TODO: states
 
@@ -650,11 +690,15 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         tx01.into(),
         tx02.into(),
         tx03.into(),
+        fact.0.into(),
+        wait_link.0.into(),
     ];
     let views = vec![
         tx01_view.into(),
         tx02_view.into(),
         tx03_view.into(),
+        fact.1.into(),
+        wait_link.1.into(),
     ];
 
     {
@@ -855,7 +899,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     egui::Pos2::new(pos.x, start_pos.y),
                 );
                 let (_transaction_model, transaction_view) =
-                    new_democsd_transaction("01", "", rect.center(), rect.width());
+                    new_demopsd_transaction("01", "", vec![], None, vec![], rect.center(), rect.width());
                 self.result = PartialDemoPsdElement::Some(transaction_view.into());
                 self.current_stage = DemoPsdToolStage::TransactionStart;
                 self.event_lock = true;
@@ -941,10 +985,11 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 ) {
                     self.current_stage = self.initial_stage;
 
-                    let (_link_model, link_view) = new_democsd_link(
+                    let (_link_model, link_view) = new_demopsd_link(
                         *link_type,
                         (source.clone(), source_view),
                         (target.clone(), target_view),
+                        None,
                     );
 
                     self.result = PartialDemoPsdElement::None;
@@ -1128,23 +1173,46 @@ fn new_demopsd_package_view(
 
 // ---
 
-fn new_democsd_transaction(
+fn new_demopsd_transaction(
     identifier: &str,
     name: &str,
+    before: Vec<(bool, DemoPsdState, DemoPsdStateView)>,
+    p_act: Option<(ERef<DemoPsdAct>, ERef<DemoPsdActView>)>,
+    after: Vec<(bool, DemoPsdState, DemoPsdStateView)>,
     position: egui::Pos2,
     width: f32,
 ) -> (ERef<DemoPsdTransaction>, ERef<DemoPsdTransactionView>) {
+    let f = |(executor, state, view)| {
+        (
+            DemoPsdStateInfo { executor, state },
+            DemoPsdStateViewInfo { executor, view },
+        )
+    };
+    let (before_models, before_views) = before.into_iter().map(&f).collect();
+    let (p_act_model, p_act_view) = if let Some((m, v)) = p_act {
+        (UFOption::Some(m), UFOption::Some(v))
+    } else {
+        (UFOption::None, UFOption::None)
+    };
+    let (after_models, after_views) = after.into_iter().map(&f).collect();
+
     let tx_model = ERef::new(DemoPsdTransaction::new(
         ModelUuid::now_v7(),
         DemoTransactionKind::Performa,
         identifier.to_owned(),
         name.to_owned(),
+        before_models,
+        p_act_model,
+        after_models,
     ));
-    let tx_view = new_demopsd_transaction_view(tx_model.clone(), position, width);
+    let tx_view = new_demopsd_transaction_view(tx_model.clone(), before_views, p_act_view, after_views, position, width);
     (tx_model, tx_view)
 }
 fn new_demopsd_transaction_view(
     model: ERef<DemoPsdTransaction>,
+    before_views: Vec<DemoPsdStateViewInfo>,
+    p_act_view: UFOption<ERef<DemoPsdActView>>,
+    after_views: Vec<DemoPsdStateViewInfo>,
     position: egui::Pos2,
     width: f32,
 ) -> ERef<DemoPsdTransactionView> {
@@ -1153,9 +1221,9 @@ fn new_demopsd_transaction_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        before_views: Vec::new(),
-        p_act_view: UFOption::None,
-        after_views: Vec::new(),
+        before_views,
+        p_act_view,
+        after_views,
         selected_direct_elements: HashSet::new(),
 
         kind_buffer: m.kind,
@@ -2475,49 +2543,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
-            e if !self.min_shape().contains(*e.mouse_position()) => {
-                return EventHandlingStatus::NotHandled
-            }
-            InputEvent::MouseDown(_) => {
-                self.dragged_shape = Some(self.min_shape());
-                EventHandlingStatus::HandledByElement
-            }
-            InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
-                    EventHandlingStatus::HandledByElement
-                } else {
-                    EventHandlingStatus::NotHandled
-                }
-            }
-            InputEvent::Click(_) => {
-                if let Some(tool) = tool {
-                    tool.add_section(self.model.clone().into());
-                } else {
-                    if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
-                        commands.push(
-                            InsensitiveCommand::HighlightSpecific(
-                                std::iter::once(*self.uuid).collect(),
-                                true,
-                                Highlight::SELECTED,
-                            )
-                            .into(),
-                        );
-                    } else {
-                        commands.push(
-                            InsensitiveCommand::HighlightSpecific(
-                                std::iter::once(*self.uuid).collect(),
-                                !self.highlight.selected,
-                                Highlight::SELECTED,
-                            )
-                            .into(),
-                        );
-                    }
-                }
-
-                EventHandlingStatus::HandledByElement
-            }
             InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
                 let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
                 self.dragged_shape = Some(translated_real_shape);
@@ -2543,6 +2568,47 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                         )
                         .into(),
                     );
+                }
+
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::MouseUp(_) => {
+                if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
+                }
+                EventHandlingStatus::NotHandled
+            }
+            e if !self.min_shape().contains(*e.mouse_position()) => {
+                return EventHandlingStatus::NotHandled
+            }
+            InputEvent::MouseDown(_) => {
+                self.dragged_shape = Some(self.min_shape());
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::Click(_) => {
+                if let Some(tool) = tool {
+                    tool.add_section(self.model.clone().into());
+                } else {
+                    if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                        commands.push(
+                            InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(*self.uuid).collect(),
+                                true,
+                                Highlight::SELECTED,
+                            )
+                            .into(),
+                        );
+                    } else {
+                        commands.push(
+                            InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(*self.uuid).collect(),
+                                !self.highlight.selected,
+                                Highlight::SELECTED,
+                            )
+                            .into(),
+                        );
+                    }
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -2911,49 +2977,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
-            e if !self.min_shape().contains(*e.mouse_position()) => {
-                return EventHandlingStatus::NotHandled
-            }
-            InputEvent::MouseDown(_) => {
-                self.dragged_shape = Some(self.min_shape());
-                EventHandlingStatus::HandledByElement
-            }
-            InputEvent::MouseUp(_) => {
-                if self.dragged_shape.is_some() {
-                    self.dragged_shape = None;
-                    EventHandlingStatus::HandledByElement
-                } else {
-                    EventHandlingStatus::NotHandled
-                }
-            }
-            InputEvent::Click(_) => {
-                if let Some(tool) = tool {
-                    tool.add_section(self.model.clone().into());
-                } else {
-                    if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
-                        commands.push(
-                            InsensitiveCommand::HighlightSpecific(
-                                std::iter::once(*self.uuid).collect(),
-                                true,
-                                Highlight::SELECTED,
-                            )
-                            .into(),
-                        );
-                    } else {
-                        commands.push(
-                            InsensitiveCommand::HighlightSpecific(
-                                std::iter::once(*self.uuid).collect(),
-                                !self.highlight.selected,
-                                Highlight::SELECTED,
-                            )
-                            .into(),
-                        );
-                    }
-                }
-
-                EventHandlingStatus::HandledByElement
-            }
             InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
                 let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
                 self.dragged_shape = Some(translated_real_shape);
@@ -2979,6 +3002,47 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                         )
                         .into(),
                     );
+                }
+
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::MouseUp(_) => {
+                if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
+                }
+                EventHandlingStatus::NotHandled
+            }
+            e if !self.min_shape().contains(*e.mouse_position()) => {
+                return EventHandlingStatus::NotHandled
+            }
+            InputEvent::MouseDown(_) => {
+                self.dragged_shape = Some(self.min_shape());
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::Click(_) => {
+                if let Some(tool) = tool {
+                    tool.add_section(self.model.clone().into());
+                } else {
+                    if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                        commands.push(
+                            InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(*self.uuid).collect(),
+                                true,
+                                Highlight::SELECTED,
+                            )
+                            .into(),
+                        );
+                    } else {
+                        commands.push(
+                            InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(*self.uuid).collect(),
+                                !self.highlight.selected,
+                                Highlight::SELECTED,
+                            )
+                            .into(),
+                        );
+                    }
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -3114,7 +3178,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
 }
 
 
-fn new_democsd_link(
+fn new_demopsd_link(
     link_type: DemoPsdLinkType,
     source: (
         ERef<DemoPsdFact>,
@@ -3124,6 +3188,7 @@ fn new_democsd_link(
         ERef<DemoPsdAct>,
         DemoPsdElementView,
     ),
+    center_point: Option<(ViewUuid, egui::Pos2)>,
 ) -> (ERef<DemoPsdLink>, ERef<LinkViewT>) {
     let link_model = ERef::new(DemoPsdLink::new(
         ModelUuid::now_v7(),
@@ -3131,13 +3196,14 @@ fn new_democsd_link(
         source.0,
         target.0,
     ));
-    let link_view = new_democsd_link_view(link_model.clone(), source.1, target.1);
+    let link_view = new_demopsd_link_view(link_model.clone(), source.1, target.1, center_point);
     (link_model, link_view)
 }
-fn new_democsd_link_view(
+fn new_demopsd_link_view(
     model: ERef<DemoPsdLink>,
     source: DemoPsdElementView,
     target: DemoPsdElementView,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
 ) -> ERef<LinkViewT> {
     let m = model.read();
     MulticonnectionView::new(
@@ -3148,7 +3214,7 @@ fn new_democsd_link_view(
         },
         vec![Ending::new(source)],
         vec![Ending::new(target)],
-        None,
+        center_point,
     )
 }
 

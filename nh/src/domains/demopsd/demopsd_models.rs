@@ -411,15 +411,18 @@ impl DemoPsdTransaction {
         kind: DemoTransactionKind,
         identifier: String,
         name: String,
+        before: Vec<DemoPsdStateInfo>,
+        p_act: UFOption<ERef<DemoPsdAct>>,
+        after: Vec<DemoPsdStateInfo>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             kind,
             identifier: Arc::new(identifier),
             name: Arc::new(name),
-            before: Vec::new(),
-            p_act: UFOption::None,
-            after: Vec::new(),
+            before,
+            p_act,
+            after,
             comment: Arc::new("".to_owned()),
         }
     }
