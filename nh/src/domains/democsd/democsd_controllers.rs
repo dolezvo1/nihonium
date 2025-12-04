@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View,
+    BucketNoT, CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -864,7 +864,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(u8, ModelUuid, ModelUuid)> {
+    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
         None
     }
 
@@ -953,11 +953,11 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         self.model.read().name.clone()
     }
 
-    fn add_element(&mut self, e: DemoCsdElement) {
-        self.model.write().add_element(e);
+    fn insert_element(&mut self, position: Option<PositionNoT>, e: DemoCsdElement) -> Result<PositionNoT, ()> {
+        self.model.write().insert_element(0, position, e).map_err(|_| ())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
-        self.model.write().delete_elements(uuids);
+    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
+        self.model.write().remove_element(uuid).map(|e| e.1)
     }
     
     fn show_properties(
@@ -1652,7 +1652,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                                 self.position.y - 3.84 * canvas::CLASS_MIDDLE_FONT_SIZE,
                             );
 
-                            commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, new_e.into(), true).into());
+                            commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, new_e.into(), true).into());
                             if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                 *element_setup_modal = esm;
                             }
@@ -1746,10 +1746,11 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
-            InsensitiveCommand::AddDependency(v, b, e, into_model) => {
+            InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
                 if *v == *self.uuid && *into_model
                     && self.transaction_view.as_ref().is_none()
                     && let DemoCsdElementOrVertex::Element(DemoCsdElementView::Transaction(e)) = e
+                    && let Ok(_) = self.model.write().insert_element(*b, *pos, e.read().model.clone().into())
                 {
                     undo_accumulator.push(InsensitiveCommand::RemoveDependency(
                         *v,
@@ -1757,7 +1758,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                         *e.read().uuid,
                         true,
                     ));
-                    self.model.write().transaction = UFOption::Some(e.read().model.clone());
                     self.transaction_view = UFOption::Some(e.clone());
                 }
 
@@ -1768,14 +1768,17 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                 if *into_model
                     && let Some(e) = self.transaction_view.as_ref()
                     && uuids.contains(&*e.read().uuid) {
-                    undo_accumulator.push(InsensitiveCommand::AddDependency(
-                        *self.uuid,
-                        0,
-                        DemoCsdElementOrVertex::Element(e.clone().into()),
-                        true,
-                    ));
-                    self.model.write().transaction = UFOption::None;
-                    self.transaction_view = UFOption::None;
+                    let model_uuid = e.read().model_uuid();
+                    if let Some((_b, pos)) = self.model.write().remove_element(&model_uuid) {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency(
+                            *self.uuid,
+                            0,
+                            Some(pos),
+                            DemoCsdElementOrVertex::Element(e.clone().into()),
+                            true,
+                        ));
+                        self.transaction_view = UFOption::None;
+                    }
                 }
             }
             InsensitiveCommand::PropertyChange(uuids, properties) => {

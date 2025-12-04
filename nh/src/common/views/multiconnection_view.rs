@@ -2,7 +2,7 @@
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 use eframe::egui;
 
-use crate::{common::{canvas::{self, ArrowDataPos, Highlight}, controller::{ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PropertiesStatus, Queryable, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}, CustomModal};
+use crate::{CustomModal, common::{canvas::{self, ArrowDataPos, Highlight}, controller::{BucketNoT, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}};
 
 #[derive(Clone)]
 pub struct ArrowData {
@@ -73,17 +73,17 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
     fn flip_multiconnection(&mut self) -> Result<(), ()> {
         Err(())
     }
-    fn push_source(&mut self, _e: DomainT::CommonElementT) -> Result<(), ()> {
+    fn insert_source(&mut self, _position: Option<PositionNoT>, _e: DomainT::CommonElementT) -> Result<PositionNoT, ()> {
         Err(())
     }
-    fn remove_source(&mut self, _uuid: &ModelUuid) -> Result<(), ()> {
+    fn remove_source(&mut self, _uuid: &ModelUuid) -> Option<PositionNoT> {
+        None
+    }
+    fn insert_target(&mut self, _position: Option<PositionNoT>, _e: DomainT::CommonElementT) -> Result<PositionNoT, ()> {
         Err(())
     }
-    fn push_target(&mut self, _e: DomainT::CommonElementT) -> Result<(), ()> {
-        Err(())
-    }
-    fn remove_target(&mut self, _uuid: &ModelUuid) -> Result<(), ()> {
-        Err(())
+    fn remove_target(&mut self, _uuid: &ModelUuid) -> Option<PositionNoT> {
+        None
     }
 
     fn show_properties(
@@ -110,9 +110,9 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
     );
 }
 
-pub const MULTICONNECTION_SOURCE_BUCKET: u8 = 0;
-pub const MULTICONNECTION_TARGET_BUCKET: u8 = 1;
-pub const MULTICONNECTION_VERTEX_BUCKET: u8 = 2;
+pub const MULTICONNECTION_SOURCE_BUCKET: BucketNoT = 0;
+pub const MULTICONNECTION_TARGET_BUCKET: BucketNoT = 1;
+pub const MULTICONNECTION_VERTEX_BUCKET: BucketNoT = 2;
 
 #[derive(Clone, Debug)]
 pub struct VertexInformation {
@@ -307,7 +307,7 @@ where
             models: &'a [ModelUuid],
             views: &'a [Ending<DomainT::CommonElementViewT>],
             self_uuid: ViewUuid,
-            b: u8,
+            b: BucketNoT,
         ) {
 
             for model_uuid in models {
@@ -325,7 +325,7 @@ where
                     } else {
                         if ui.button("Add to view").clicked() {
                             if let Some(v) = q.get_view(model_uuid) {
-                                commands.push(InsensitiveCommand::AddDependency(self_uuid, b, v.into(), false).into());
+                                commands.push(InsensitiveCommand::AddDependency(self_uuid, b, None, v.into(), false).into());
                             }
                         }
                         if ui.add_enabled(models.len() > 1, egui::Button::new("Remove from model")).clicked() {
@@ -548,6 +548,7 @@ where
                         commands.push(InsensitiveCommand::AddDependency(
                             *self.uuid,
                             3,
+                            None,
                             VertexInformation {
                                 after: uuid::Uuid::nil().into(),
                                 id: self.dragged_node.unwrap().0,
@@ -586,6 +587,7 @@ where
                                     commands.push(InsensitiveCommand::AddDependency(
                                         *self.uuid,
                                         MULTICONNECTION_VERTEX_BUCKET,
+                                        None,
                                         VertexInformation {
                                             after: u.0,
                                             id: self.dragged_node.unwrap().0,
@@ -807,6 +809,7 @@ where
                     undo_accumulator.push(InsensitiveCommand::AddDependency(
                         self_uuid,
                         MULTICONNECTION_VERTEX_BUCKET,
+                        None,
                         DomainT::AddCommandElementT::from(VertexInformation {
                             after: uuid::Uuid::nil().into(),
                             id: center_point.0,
@@ -840,6 +843,7 @@ where
                                     undo_accumulator.push(InsensitiveCommand::AddDependency(
                                         self_uuid,
                                         MULTICONNECTION_VERTEX_BUCKET,
+                                        None,
                                         DomainT::AddCommandElementT::from(VertexInformation {
                                             after: a.0,
                                             id: b.0,
@@ -859,18 +863,18 @@ where
 
                 // Handle dependencies being deleted
                 let mut rtin = |e: &Ending<DomainT::CommonElementViewT>| if uuids.contains(&e.element.uuid()) {
-                    undo_accumulator.push(InsensitiveCommand::AddDependency(self_uuid, 0, e.element.clone().into(), false));
+                    undo_accumulator.push(InsensitiveCommand::AddDependency(self_uuid, 0, None, e.element.clone().into(), false));
                     false
                 } else { true };
                 self.sources.retain(&mut rtin);
                 self.targets.retain(&mut rtin);
             }
-            InsensitiveCommand::AddDependency(target, b, element, into_model) => {
+            InsensitiveCommand::AddDependency(target, b, pos, element, into_model) => {
                 if *target == *self.uuid {
                     // source/target
                     if let Ok(e) = TryInto::<DomainT::CommonElementViewT>::try_into(element.clone()) {
                         if *b == MULTICONNECTION_SOURCE_BUCKET
-                            && (!into_model || self.adapter.push_source(e.model()).is_ok()) {
+                            && (!into_model || self.adapter.insert_source(*pos, e.model()).is_ok()) {
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency(*self.uuid, *b, *e.uuid(), *into_model));
 
                             self.sources.push(Ending {
@@ -880,7 +884,7 @@ where
 
                             affected_models.insert(*self.adapter.model_uuid());
                         } else if *b == MULTICONNECTION_TARGET_BUCKET
-                            && (!into_model || self.adapter.push_target(e.model()).is_ok()) {
+                            && (!into_model || self.adapter.insert_target(*pos, e.model()).is_ok()) {
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency(*self.uuid, *b, *e.uuid(), *into_model));
 
                             self.targets.push(Ending {
@@ -940,20 +944,34 @@ where
                     }
                 }
             }
-            InsensitiveCommand::RemoveDependency(uuid, t, duuid, including_model) => {
+            InsensitiveCommand::RemoveDependency(uuid, b, duuid, including_model) => {
                 if *uuid == *self.uuid {
-                    if *t == MULTICONNECTION_SOURCE_BUCKET && self.sources.len() > 1 {
-                        self.sources.retain(|e| if *duuid == *e.element.uuid()
-                            && (!including_model || self.adapter.remove_source(&*e.element.model_uuid()).is_ok()) {
-                            undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid, *t, e.element.clone().into(), *including_model));
+                    if *b == MULTICONNECTION_SOURCE_BUCKET && self.sources.len() > 1 {
+                        self.sources.retain(|e| if *duuid == *e.element.uuid() {
+                            let pos = if !including_model {
+                                None
+                            } else if let Some(pos) = self.adapter.remove_source(&*e.element.model_uuid()) {
+                                Some(pos)
+                            } else {
+                                return true;
+                            };
+
+                            undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid, *b, pos, e.element.clone().into(), *including_model));
                             false
                         } else { true });
 
                         affected_models.insert(*self.adapter.model_uuid());
-                    } else if *t == MULTICONNECTION_TARGET_BUCKET && self.targets.len() > 1 {
-                        self.targets.retain(|e| if *duuid == *e.element.uuid()
-                            && (!including_model || self.adapter.remove_target(&*e.element.model_uuid()).is_ok()) {
-                            undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid, *t, e.element.clone().into(), *including_model));
+                    } else if *b == MULTICONNECTION_TARGET_BUCKET && self.targets.len() > 1 {
+                        self.targets.retain(|e| if *duuid == *e.element.uuid() {
+                            let pos = if !including_model {
+                                None
+                            } else if let Some(pos) = self.adapter.remove_target(&*e.element.model_uuid()) {
+                                Some(pos)
+                            } else {
+                                return true;
+                            };
+
+                            undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid, *b, pos, e.element.clone().into(), *including_model));
                             false
                         } else { true });
 

@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View,
+    BucketNoT, CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -8,9 +8,8 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::{ModelUuid, ViewUuid};
-use crate::domains::demopsd::demopsd_models::{DemoPsdAct, DemoPsdFact, DemoPsdStateInfo};
 use super::demopsd_models::{
-    DemoPsdDiagram, DemoPsdElement, DemoPsdLink, DemoPsdLinkType, DemoPsdPackage, DemoPsdTransaction,
+    DemoPsdDiagram, DemoPsdElement, DemoPsdLink, DemoPsdLinkType, DemoPsdPackage, DemoPsdTransaction, DemoPsdAct, DemoPsdFact,
 };
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::{CustomModal, CustomModalResult};
@@ -906,7 +905,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(u8, ModelUuid, ModelUuid)> {
+    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
         None
     }
 
@@ -994,11 +993,11 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         self.model.read().name.clone()
     }
 
-    fn add_element(&mut self, e: DemoPsdElement) {
-        self.model.write().add_element(e);
+    fn insert_element(&mut self, position: Option<PositionNoT>, e: DemoPsdElement) -> Result<PositionNoT, ()> {
+        self.model.write().insert_element(0, position, e).map_err(|_| ())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
-        self.model.write().delete_elements(uuids);
+    fn delete_element(&mut self, uuids: &ModelUuid) -> Option<PositionNoT> {
+        self.model.write().remove_element(uuids).map(|e| e.1)
     }
 
     fn show_properties(
@@ -1731,7 +1730,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                     _ => unreachable!(),
                                 };
 
-                                commands.push(InsensitiveCommand::AddDependency(*self.uuid, quadrant_no, new_e.into(), true).into());
+                                commands.push(InsensitiveCommand::AddDependency(*self.uuid, quadrant_no, None, new_e.into(), true).into());
                                 if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                     *element_setup_modal = esm;
                                 }
@@ -1923,6 +1922,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         undo_accumulator.push(InsensitiveCommand::AddDependency(
                             *self.uuid,
                             0,
+                            None,
                             DemoPsdElementOrVertex::Element(e.clone().into()),
                             true,
                         ));
@@ -1930,29 +1930,25 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         self.p_act_view = UFOption::None;
                     }
 
-                    let mut closure = |after: bool, e: &DemoPsdStateViewInfo| if uuids.contains(&e.view.uuid()) {
-                            w.delete_elements(&std::iter::once(*e.view.model_uuid()).collect());
+                    let mut closure = |e: &DemoPsdStateViewInfo| if uuids.contains(&e.view.uuid())
+                        && let Some((b, pos)) = w.remove_element(&e.view.model_uuid()) {
                             undo_accumulator.push(InsensitiveCommand::AddDependency(
                                 *self.uuid,
-                                match (after, e.executor) {
-                                    (false, false) => 1,
-                                    (false, true) => 2,
-                                    (true, true) => 3,
-                                    (true, false) => 4,
-                                },
+                                b,
+                                Some(pos),
                                 DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
                                 true,
                             ));
                             false
                         } else { true };
-                    self.before_views.retain(|e| closure(false, e));
-                    self.after_views.retain(|e| closure(true, e));
+                    self.before_views.retain(&mut closure);
+                    self.after_views.retain(&mut closure);
                 }
                 recurse!(self);
             }
             InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
-            InsensitiveCommand::AddDependency(v, b, e, into_model) => {
+            InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
                 if *v == *self.uuid && *into_model {
                     let mut w = self.model.write();
                     if *b == 0 {
@@ -1970,7 +1966,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         }
                     } else {
                         if let DemoPsdElementOrVertex::Element(e) = e
-                            && let Some(e) = e.clone().as_state_view() {
+                            && let Some(e) = e.clone().as_state_view()
+                            && let Ok(pos) = w.insert_element(*b, *pos, e.model()) {
                             let after = match b {
                                 1 | 2 => false,
                                 3 | 4 => true,
@@ -1991,21 +1988,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                             affected_models.insert(*e.model_uuid());
 
                             if !after {
-                                w.before.push(
-                                    DemoPsdStateInfo {
-                                        state: e.model().to_state().unwrap(),
-                                        executor,
-                                    }
-                                );
-                                self.before_views.push(DemoPsdStateViewInfo { view: e, executor });
+                                self.before_views.insert(pos.try_into().unwrap(), DemoPsdStateViewInfo { view: e, executor });
                             } else {
-                                w.after.push(
-                                    DemoPsdStateInfo {
-                                        state: e.model().to_state().unwrap(),
-                                        executor,
-                                    }
-                                );
-                                self.after_views.push(DemoPsdStateViewInfo { view: e, executor });
+                                self.after_views.insert(pos.try_into().unwrap(), DemoPsdStateViewInfo { view: e, executor });
                             }
                         }
                     }
@@ -2021,6 +2006,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                             undo_accumulator.push(InsensitiveCommand::AddDependency(
                                 *v,
                                 *b,
+                                None,
                                 DemoPsdElementOrVertex::Element(e.clone().into()),
                                 true,
                             ));
@@ -2028,11 +2014,12 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                             self.p_act_view = UFOption::None;
                         }
                     } else {
-                        let closure = |e: &DemoPsdStateViewInfo| if *e.view.uuid() == *duuid {
-                                w.delete_elements(&std::iter::once(*e.view.model_uuid()).collect());
+                        let closure = |e: &DemoPsdStateViewInfo| if *e.view.uuid() == *duuid
+                            && let Some((b, pos)) = w.remove_element(&e.view.model_uuid()) {
                                 undo_accumulator.push(InsensitiveCommand::AddDependency(
                                     *v,
-                                    *b,
+                                    b,
+                                    Some(pos),
                                     DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
                                     true,
                                 ));

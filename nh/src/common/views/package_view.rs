@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use eframe::{egui, epaint};
 
-use crate::{common::{canvas::{self, Highlight}, controller::{ColorBundle, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}, CustomModal};
+use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{ColorBundle, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
 
 
 pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
@@ -10,8 +10,8 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
 
-    fn add_element(&mut self, element: DomainT::CommonElementT);
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>);
+    fn insert_element(&mut self, position: Option<PositionNoT>, element: DomainT::CommonElementT) -> Result<PositionNoT, ()>;
+    fn delete_element(&mut self, uuids: &ModelUuid) -> Option<PositionNoT>;
 
     fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::WHITE
@@ -408,7 +408,7 @@ where
                     tool.add_section(self.adapter.model_section());
 
                     if let Some((new_e, esm)) = tool.try_construct_view(self) {
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, new_e.into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, new_e.into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -613,22 +613,26 @@ where
                     command,
                     InsensitiveCommand::DeleteSpecificElements(_, true) | InsensitiveCommand::CutSpecificElements(..)
                 );
-                let mut model_uuids = HashSet::new();
                 for (uuid, element) in self
                     .owned_views
                     .iter_event_order_pairs()
                     .filter(|e| uuids.contains(&e.0))
                 {
-                    model_uuids.insert(*element.model_uuid());
+                    let pos = if !from_model {
+                        None
+                    } else if let Some(pos) = self.adapter.delete_element(&element.model_uuid()) {
+                        Some(pos)
+                    } else {
+                        continue;
+                    };
+
                     undo_accumulator.push(InsensitiveCommand::AddDependency(
                         *self.uuid,
                         0,
+                        pos,
                         element.clone().into(),
                         from_model,
                     ));
-                }
-                if from_model {
-                    self.adapter.delete_elements(&model_uuids);
                 }
 
                 self.owned_views.retain(|k, _v| !uuids.contains(k));
@@ -642,17 +646,19 @@ where
 
                 recurse!(self);
             },
-            InsensitiveCommand::AddDependency(target, b, element, into_model) => {
+            InsensitiveCommand::AddDependency(target, b, pos, element, into_model) => {
                 if *target == *self.uuid && *b == 0 {
-                    if let Ok(view) = element.clone().try_into() {
+                    if let Ok(view) = element.clone().try_into()
+                        && (!*into_model || self.adapter.insert_element(*pos, view.model()).is_ok()){
                         let uuid = *view.uuid();
-                        undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
-                            std::iter::once(uuid).collect(),
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                            *self.uuid,
+                            *b,
+                            uuid,
                             *into_model,
                         ));
 
                         if *into_model {
-                            self.adapter.add_element(view.model());
                             affected_models.insert(*self.adapter.model_uuid());
                         }
                         view.collect_model_uuids(affected_models);

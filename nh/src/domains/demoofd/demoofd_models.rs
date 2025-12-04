@@ -1,12 +1,11 @@
 
 use std::{
     collections::HashMap,
-    collections::HashSet,
     sync::Arc,
 };
 
 use crate::{common::{
-    controller::{ContainerModel, DiagramVisitor, ElementVisitor, Model, VisitableDiagram, VisitableElement},
+    controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement},
     entity::{Entity, EntityUuid},
     eref::ERef,
     ufoption::UFOption,
@@ -317,13 +316,23 @@ impl ContainerModel for DemoOfdDiagram {
         }
         return None;
     }
-    fn add_element(&mut self, element: DemoOfdElement) -> Result<(), DemoOfdElement> {
-        self.contained_elements.push(element);
-        Ok(())
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoOfdElement) -> Result<PositionNoT, DemoOfdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-        Ok(())
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 }
 
@@ -388,13 +397,23 @@ impl ContainerModel for DemoOfdPackage {
         }
         return None;
     }
-    fn add_element(&mut self, element: DemoOfdElement) -> Result<(), DemoOfdElement> {
-        self.contained_elements.push(element);
-        Ok(())
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoOfdElement) -> Result<PositionNoT, DemoOfdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-        Ok(())
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 }
 
@@ -522,22 +541,26 @@ impl ContainerModel for DemoOfdEventType {
             None
         }
     }
-    fn add_element(&mut self, element: DemoOfdElement) -> Result<(), DemoOfdElement> {
+    fn insert_element(&mut self, bucket: BucketNoT, _position: Option<PositionNoT>, element: DemoOfdElement) -> Result<PositionNoT, DemoOfdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
         if !self.specialization_entity_type.is_some()
             && let DemoOfdElement::DemoOfdEntityType(e) = element {
             self.specialization_entity_type = UFOption::Some(e);
-            Ok(())
+            Ok(0)
         } else {
             Err(element)
         }
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         if let UFOption::Some(e) = &self.specialization_entity_type
-            && uuids.contains(&*e.read().uuid) {
+            && *e.read().uuid == *uuid {
             self.specialization_entity_type = UFOption::None;
-            Ok(())
+            Some((0, 0))
         } else {
-            Err(())
+            None
         }
     }
 }
@@ -712,6 +735,38 @@ impl Entity for DemoOfdAggregation {
 impl Model for DemoOfdAggregation {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl ContainerModel for DemoOfdAggregation {
+    type ElementT = DemoOfdElement;
+
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoOfdElement, ModelUuid)> {
+        for e in &self.domain_elements {
+            if *e.read().uuid == *uuid {
+                return Some((e.clone().into(), *self.uuid))
+            }
+        }
+        if *self.range_element.read().uuid == *uuid {
+            return Some((self.range_element.clone().into(), *self.uuid))
+        }
+        None
+    }
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoOfdElement) -> Result<PositionNoT, DemoOfdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let DemoOfdElement::DemoOfdEntityType(entity) = element else {
+            return Err(element);
+        };
+
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.domain_elements.len());
+        self.domain_elements.insert(pos, entity);
+        Ok(pos.try_into().unwrap())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        todo!()
     }
 }
 

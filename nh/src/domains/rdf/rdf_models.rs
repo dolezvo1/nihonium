@@ -1,9 +1,9 @@
-use crate::common::controller::{ContainerModel, DiagramVisitor, Model, ElementVisitor, VisitableDiagram, VisitableElement};
+use crate::common::controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::ModelUuid;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc},
 };
 
@@ -321,13 +321,23 @@ impl ContainerModel for RdfDiagram {
         }
         return None;
     }
-    fn add_element(&mut self, element: RdfElement) -> Result<(), RdfElement> {
-        self.contained_elements.push(element);
-        Ok(())
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: RdfElement) -> Result<PositionNoT, RdfElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-        Ok(())
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 }
 
@@ -383,13 +393,23 @@ impl ContainerModel for RdfGraph {
         }
         return None;
     }
-    fn add_element(&mut self, element: RdfElement) -> Result<(), RdfElement> {
-        self.contained_elements.push(element);
-        Ok(())
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: RdfElement) -> Result<PositionNoT, RdfElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-        Ok(())
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 }
 

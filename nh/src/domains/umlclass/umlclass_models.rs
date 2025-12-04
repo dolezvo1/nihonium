@@ -1,10 +1,10 @@
-use crate::common::controller::{ContainerModel, DiagramVisitor, Model, ElementVisitor, VisitableDiagram, VisitableElement};
+use crate::common::controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::Arc,
 };
 
@@ -192,6 +192,7 @@ pub enum UmlClassElement {
     #[container_model(passthrough = "eref")]
     UmlClassPackage(ERef<UmlClassPackage>),
     UmlClassInstance(ERef<UmlClassInstance>),
+    #[container_model(passthrough = "eref")]
     UmlClass(ERef<UmlClass>),
     UmlClassProperty(ERef<UmlClassProperty>),
     UmlClassOperation(ERef<UmlClassOperation>),
@@ -525,13 +526,23 @@ impl ContainerModel for UmlClassDiagram {
         }
         return None;
     }
-    fn add_element(&mut self, element: UmlClassElement) -> Result<(), UmlClassElement> {
-        self.contained_elements.push(element);
-        Ok(())
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-        Ok(())
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 }
 
@@ -588,13 +599,23 @@ impl ContainerModel for UmlClassPackage {
         }
         return None;
     }
-    fn add_element(&mut self, element: UmlClassElement) -> Result<(), UmlClassElement> {
-        self.contained_elements.push(element);
-        Ok(())
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-        Ok(())
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 }
 
@@ -906,6 +927,42 @@ impl Model for UmlClass {
     }
 }
 
+impl ContainerModel for UmlClass {
+    type ElementT = UmlClassElement;
+
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
+        todo!()
+    }
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
+        if bucket == 0 && let UmlClassElement::UmlClassProperty(p) = element {
+            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.properties.len());
+            self.properties.insert(pos, p);
+            Ok(pos.try_into().unwrap())
+        } else if bucket == 1 && let UmlClassElement::UmlClassOperation(o) = element {
+            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.operations.len());
+            self.operations.insert(pos, o);
+            Ok(pos.try_into().unwrap())
+        } else {
+            Err(element)
+        }
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.properties.iter().enumerate() {
+            if *e.read().uuid == *uuid {
+                self.properties.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        for (idx, e) in self.operations.iter().enumerate() {
+            if *e.read().uuid == *uuid {
+                self.operations.remove(idx);
+                return Some((1, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
+}
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -968,6 +1025,36 @@ impl Entity for UmlClassGeneralization {
 impl Model for UmlClassGeneralization {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl ContainerModel for UmlClassGeneralization {
+    type ElementT = UmlClassElement;
+
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
+        todo!()
+    }
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
+        if bucket > 1 {
+            return Err(element);
+        }
+
+        let UmlClassElement::UmlClass(c) = element else {
+            return Err(element);
+        };
+
+        if bucket == 0 {
+            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.sources.len());
+            self.sources.insert(pos, c);
+            Ok(pos.try_into().unwrap())
+        } else {
+            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.targets.len());
+            self.targets.insert(pos, c);
+            Ok(pos.try_into().unwrap())
+        }
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        todo!()
     }
 }
 

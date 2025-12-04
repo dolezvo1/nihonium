@@ -63,13 +63,13 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
         Ok(e) => quote! { #e.find_element(uuid) },
         Err(e) => quote! { #e => None },
     }).collect::<Vec<_>>();
-    let arms_add_element = arms_mutable.iter().map(|e| match e {
-        Ok(e) => quote! { #e.add_element(element) },
+    let arms_insert_element = arms_mutable.iter().map(|e| match e {
+        Ok(e) => quote! { #e.insert_element(bucket, position, element) },
         Err(e) => quote! { #e => Err(element) },
     }).collect::<Vec<_>>();
-    let arms_delete_elements = arms_mutable.iter().map(|e| match e {
-        Ok(e) => quote! { #e.delete_elements(uuids) },
-        Err(e) => quote! { #e => Err(()) },
+    let arms_remove_element = arms_mutable.iter().map(|e| match e {
+        Ok(e) => quote! { #e.remove_element(uuid) },
+        Err(e) => quote! { #e => None },
     }).collect::<Vec<_>>();
 
     let ident = input_ast.ident;
@@ -85,15 +85,20 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
                 }
             }
 
-            fn add_element(&mut self, element: Self::ElementT) -> Result<(), Self::ElementT> {
+            fn insert_element(
+                &mut self,
+                bucket: crate::common::controller::BucketNoT,
+                position: Option<crate::common::controller::PositionNoT>,
+                element: Self::ElementT,
+            ) -> Result<crate::common::controller::PositionNoT, Self::ElementT> {
                 match self {
-                    #(#arms_add_element),*
+                    #(#arms_insert_element),*
                 }
             }
 
-            fn delete_elements(&mut self, uuids: &std::collections::HashSet<ModelUuid>) -> Result<(), ()> {
+            fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(crate::common::controller::BucketNoT, crate::common::controller::PositionNoT)> {
                 match self {
-                    #(#arms_delete_elements),*
+                    #(#arms_remove_element),*
                 }
             }
         }

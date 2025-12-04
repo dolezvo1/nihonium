@@ -3,11 +3,11 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View,
+    BucketNoT, CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
-use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
+use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MULTICONNECTION_SOURCE_BUCKET, MULTICONNECTION_TARGET_BUCKET, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
@@ -945,7 +945,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     gen_model.write().set_is_disjoint = true;
     let gen_uuid = *gen_view.read().uuid();
     gen_view.write().apply_command(
-        &InsensitiveCommand::AddDependency(gen_uuid, 0, UmlClassElementOrVertex::Element(circle_view.clone().into()), true),
+        &InsensitiveCommand::AddDependency(gen_uuid, 0, None, UmlClassElementOrVertex::Element(circle_view.clone().into()), true),
         &mut Vec::new(),
         &mut HashSet::new(),
     );
@@ -1410,7 +1410,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(u8, ModelUuid, ModelUuid)> {
+    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
         match &mut self.result {
             PartialUmlClassElement::LinkEnding { source, gen_model, new_model } if new_model.is_some() => {
                 let r = Some((if *source { 0 } else { 1 }, *gen_model.read().uuid, new_model.unwrap()));
@@ -1557,11 +1557,11 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         self.model.read().name.clone()
     }
 
-    fn add_element(&mut self, element: UmlClassElement) {
-        self.model.write().add_element(element);
+    fn insert_element(&mut self, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, ()> {
+        self.model.write().insert_element(0, position, element).map_err(|_| ())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
-        self.model.write().delete_elements(uuids);
+    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
+        self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
     fn show_properties(
@@ -4495,7 +4495,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     tool.add_section(self.model());
                     if let Some((view, esm)) = tool.try_construct_view(self)
                         && matches!(view, UmlClassElementView::ClassProperty(_)) {
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, view.into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, view.into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -4516,7 +4516,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     tool.add_section(self.model());
                     if let Some((view, esm)) = tool.try_construct_view(self)
                         && matches!(view, UmlClassElementView::ClassOperation(_)) {
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, view.into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 1, None, view.into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -4574,7 +4574,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
                     if let Some((view, esm)) = tool.try_construct_view(self)
                         && matches!(view, UmlClassElementView::ClassProperty(_) | UmlClassElementView::ClassOperation(_)) {
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, view.into(), true).into());
+                        let b = match view {
+                            UmlClassElementView::ClassProperty(_) => 0,
+                            UmlClassElementView::ClassOperation(_) => 1,
+                            _ => unreachable!()
+                        };
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, b, None, view.into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -4669,15 +4674,16 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     let mut removed_any = false;
                     self.properties_views.retain(
                         |e| {
-                            if uuids.contains(&*e.read().uuid) {
+                            let r = e.read();
+                            if uuids.contains(&r.uuid)
+                                && let Some((b, pos)) = self.model.write().remove_element(&r.model_uuid()) {
                                 undo_accumulator.push(InsensitiveCommand::AddDependency(
                                     *self.uuid,
-                                    0,
+                                    b,
+                                    Some(pos),
                                     UmlClassElementOrVertex::Element(e.clone().into()),
                                     true,
                                 ));
-                                let model_uuid = *e.read().model_uuid();
-                                let m = self.model.write().properties.retain(|e| *e.read().uuid != model_uuid);
                                 removed_any = true;
                                 false
                             } else {
@@ -4687,15 +4693,16 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     );
                     self.operations_views.retain(
                         |e| {
-                            if uuids.contains(&*e.read().uuid) {
+                            let r = e.read();
+                            if uuids.contains(&r.uuid)
+                                && let Some((b, pos)) = self.model.write().remove_element(&r.model_uuid()){
                                 undo_accumulator.push(InsensitiveCommand::AddDependency(
                                     *self.uuid,
-                                    0,
+                                    b,
+                                    Some(pos),
                                     UmlClassElementOrVertex::Element(e.clone().into()),
                                     true,
                                 ));
-                                let model_uuid = *e.read().model_uuid();
-                                let m = self.model.write().operations.retain(|e| *e.read().uuid != model_uuid);
                                 removed_any = true;
                                 false
                             } else {
@@ -4711,30 +4718,30 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             }
             InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
-            InsensitiveCommand::AddDependency(v, b, e, into_model) => {
-                if *v == *self.uuid && *into_model
-                    && let UmlClassElementOrVertex::Element(e) = e {
-                    let uuid = match e {
-                        UmlClassElementView::ClassProperty(inner) => {
-                            let r = inner.read();
-                            self.model.write().properties.push(r.model.clone());
-                            self.properties_views.push(inner.clone());
-                            *r.uuid
-                        },
-                        UmlClassElementView::ClassOperation(inner) => {
-                            let r = inner.read();
-                            self.model.write().operations.push(r.model.clone());
-                            self.operations_views.push(inner.clone());
-                            *r.uuid
-                        },
-                        _ => return,
-                    };
+            InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
+                if *v == *self.uuid && *into_model {
+                    let mut w = self.model.write();
+                    if let UmlClassElementOrVertex::Element(e) = e
+                        && let Ok(pos) = w.insert_element(*b, *pos, e.model()) {
+                        match e {
+                            UmlClassElementView::ClassProperty(inner) => {
+                                self.properties_views.insert(pos.try_into().unwrap(), inner.clone());
+                            },
+                            UmlClassElementView::ClassOperation(inner) => {
+                                self.operations_views.insert(pos.try_into().unwrap(), inner.clone());
+                            },
+                            _ => return,
+                        }
 
-                    undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
-                        std::iter::once(uuid).collect(),
-                        true,
-                    ));
-                    affected_models.insert(*self.model.read().uuid);
+                        let uuid = *e.uuid();
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                            *self.uuid,
+                            *b,
+                            uuid,
+                            true,
+                        ));
+                        affected_models.insert(*w.uuid);
+                    }
                 }
             }
             InsensitiveCommand::RemoveDependency(..)
@@ -5029,47 +5036,37 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
         self.model.write().flip_multiconnection();
         Ok(())
     }
-    fn push_source(&mut self, e: <UmlClassDomain<P> as Domain>::CommonElementT) -> Result<(), ()> {
-        if let UmlClassElement::UmlClass(c) = e {
-            self.model.write().sources.push(c);
-            Ok(())
-        } else {
-            Err(())
-        }
+    fn insert_source(&mut self, position: Option<PositionNoT>, e: <UmlClassDomain<P> as Domain>::CommonElementT) -> Result<PositionNoT, ()> {
+        self.model.write().insert_element(MULTICONNECTION_SOURCE_BUCKET, position, e).map_err(|_| ())
     }
-    fn remove_source(&mut self, uuid: &ModelUuid) -> Result<(), ()> {
+    fn remove_source(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
         let mut w = self.model.write();
         if w.sources.len() == 1 {
-            return Err(())
+            return None;
         }
-        let original_count = w.sources.len();
-        w.sources.retain(|e| *uuid != *e.read().uuid);
-        if w.sources.len() != original_count {
-            Ok(())
-        } else {
-            Err(())
+        for (idx, e) in w.sources.iter().enumerate() {
+            if *e.read().uuid == *uuid {
+                w.sources.remove(idx);
+                return Some(idx.try_into().unwrap());
+            }
         }
+        None
     }
-    fn push_target(&mut self, e: <UmlClassDomain<P> as Domain>::CommonElementT) -> Result<(), ()> {
-        if let UmlClassElement::UmlClass(c) = e {
-            self.model.write().targets.push(c);
-            Ok(())
-        } else {
-            Err(())
-        }
+    fn insert_target(&mut self, position: Option<PositionNoT>, e: <UmlClassDomain<P> as Domain>::CommonElementT) -> Result<PositionNoT, ()> {
+        self.model.write().insert_element(MULTICONNECTION_TARGET_BUCKET, position, e).map_err(|_| ())
     }
-    fn remove_target(&mut self, uuid: &ModelUuid) -> Result<(), ()> {
+    fn remove_target(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
         let mut w = self.model.write();
         if w.targets.len() == 1 {
-            return Err(())
+            return None;
         }
-        let original_count = w.targets.len();
-        w.targets.retain(|e| *uuid != *e.read().uuid);
-        if w.targets.len() != original_count {
-            Ok(())
-        } else {
-            Err(())
+        for (idx, e) in w.targets.iter().enumerate() {
+            if *e.read().uuid == *uuid {
+                w.targets.remove(idx);
+                return Some(idx.try_into().unwrap());
+            }
         }
+        None
     }
 
     fn show_properties(

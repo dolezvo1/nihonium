@@ -1,8 +1,8 @@
 
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use crate::{common::{
-    canvas, controller::{ContainerModel, DiagramVisitor, ElementVisitor, Model, VisitableDiagram, VisitableElement}, entity::{Entity, EntityUuid}, eref::ERef, ufoption::UFOption, uuid::ModelUuid
+    canvas, controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement}, entity::{Entity, EntityUuid}, eref::ERef, ufoption::UFOption, uuid::ModelUuid
 }, domains::demo::DemoTransactionKind};
 
 
@@ -287,13 +287,23 @@ impl ContainerModel for DemoPsdDiagram {
         }
         return None;
     }
-    fn add_element(&mut self, element: DemoPsdElement) -> Result<(), DemoPsdElement> {
-        self.contained_elements.push(element);
-        Ok(())
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoPsdElement) -> Result<PositionNoT, DemoPsdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-        Ok(())
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 }
 
@@ -350,13 +360,23 @@ impl ContainerModel for DemoPsdPackage {
         }
         return None;
     }
-    fn add_element(&mut self, element: DemoPsdElement) -> Result<(), DemoPsdElement> {
-        self.contained_elements.push(element);
-        Ok(())
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoPsdElement) -> Result<PositionNoT, DemoPsdElement> {
+        if bucket != 0 {
+            return Err(element);
+        }
+
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-        Ok(())
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 }
 
@@ -457,17 +477,59 @@ impl ContainerModel for DemoPsdTransaction {
         }
         return None;
     }
-    fn add_element(&mut self, element: DemoPsdElement) -> Result<(), DemoPsdElement> {
-        // cannot "just add element"
-        Err(element)
-    }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) -> Result<(), ()> {
-        self.before.retain(|e| !uuids.contains(&e.state.uuid()));
-        if let UFOption::Some(e) = &self.p_act && uuids.contains(&*e.read().uuid) {
-            self.p_act = UFOption::None;
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoPsdElement) -> Result<PositionNoT, DemoPsdElement> {
+        if bucket == 0 {
+            if !self.p_act.is_some()
+                && let DemoPsdElement::DemoPsdAct(act) = element {
+                self.p_act = UFOption::Some(act.clone());
+                Ok(0)
+            } else {
+                Err(element)
+            }
+        } else if let Some(state) = element.clone().to_state() {
+            let after = match bucket {
+                1 | 2 => false,
+                3 | 4 => true,
+                _ => unreachable!(),
+            };
+            let executor = match bucket {
+                1 | 4 => false,
+                2 | 3 => true,
+                _ => unreachable!(),
+            };
+            if !after {
+                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.before.len());
+                self.before.insert(pos, DemoPsdStateInfo { state, executor });
+                Ok(pos.try_into().unwrap())
+            } else {
+                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.after.len());
+                self.after.insert(pos, DemoPsdStateInfo { state, executor });
+                Ok(pos.try_into().unwrap())
+            }
+        } else {
+            Err(element)
         }
-        self.after.retain(|e| !uuids.contains(&e.state.uuid()));
-        Ok(())
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.before.iter().enumerate() {
+            if *e.state.uuid() == *uuid {
+                let is_executor = e.executor;
+                self.before.remove(idx);
+                return Some((if !is_executor {1} else {2}, idx.try_into().unwrap()));
+            }
+        }
+        if let UFOption::Some(e) = &self.p_act && *e.read().uuid == *uuid {
+            self.p_act = UFOption::None;
+            return Some((0, 0))
+        }
+        for (idx, e) in self.after.iter().enumerate() {
+            if *e.state.uuid() == *uuid {
+                let is_executor = e.executor;
+                self.after.remove(idx);
+                return Some((if !is_executor {4} else {3}, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 }
 

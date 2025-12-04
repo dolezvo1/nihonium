@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View,
+    BucketNoT, CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -795,7 +795,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(u8, ModelUuid, ModelUuid)> {
+    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
         None
     }
 
@@ -945,11 +945,11 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         self.model.read().iri.clone()
     }
 
-    fn add_element(&mut self, element: RdfElement) {
-        self.model.write().add_element(element);
+    fn insert_element(&mut self, position: Option<PositionNoT>, element: RdfElement) -> Result<PositionNoT, ()> {
+        self.model.write().insert_element(0, position, element).map_err(|_| ())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
-        self.model.write().delete_elements(uuids);
+    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
+        self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
     fn show_properties(

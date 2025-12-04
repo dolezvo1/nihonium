@@ -3,11 +3,11 @@ use super::demoofd_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View,
+    BucketNoT, CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
-use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
+use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MULTICONNECTION_SOURCE_BUCKET, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ModelUuid, ViewUuid};
@@ -1117,7 +1117,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(u8, ModelUuid, ModelUuid)> {
+    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
         match &mut self.result {
             PartialDemoOfdElement::AggregationEnding { gen_model, new_model } if new_model.is_some() => {
                 let r = Some((0, *gen_model.read().uuid, new_model.unwrap()));
@@ -1324,11 +1324,11 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         self.model.read().name.clone()
     }
 
-    fn add_element(&mut self, e: DemoOfdElement) {
-        self.model.write().add_element(e);
+    fn insert_element(&mut self, position: Option<PositionNoT>, e: DemoOfdElement) -> Result<PositionNoT, ()> {
+        self.model.write().insert_element(0, position, e).map_err(|_| ())
     }
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>) {
-        self.model.write().delete_elements(uuids);
+    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
+        self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
     fn show_properties(
@@ -2524,7 +2524,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     if !self.specialization_view.is_some()
                         && let Some((DemoOfdElementView::EntityType(new_e), esm)) = tool.try_construct_view(self) {
                         new_e.write().position = self.position;
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, DemoOfdElementView::from(new_e).into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, DemoOfdElementView::from(new_e).into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -2661,18 +2661,20 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
-            InsensitiveCommand::AddDependency(v, b, e, into_model) => {
+            InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
                 if *v == *self.uuid
                     && self.specialization_view.as_ref().is_none()
                     && let DemoOfdElementOrVertex::Element(DemoOfdElementView::EntityType(e)) = e
+                    && (!*into_model || self.model.write().insert_element(*b, *pos, e.read().model.clone().into()).is_ok())
                     {
-                    undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
-                        std::iter::once(*e.read().uuid).collect(),
+                    undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                        *self.uuid,
+                        *b,
+                        *e.read().uuid,
                         *into_model,
                     ));
 
                     if *into_model {
-                        self.model.write().specialization_entity_type = UFOption::Some(e.read().model.clone());
                         affected_models.insert(*self.model_uuid());
                     }
                     affected_models.insert(*e.read().model_uuid());
@@ -2689,6 +2691,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     undo_accumulator.push(InsensitiveCommand::AddDependency(
                         *self.uuid,
                         0,
+                        None,
                         DemoOfdElementOrVertex::Element(e.clone().into()),
                         *into_model,
                     ));
@@ -3401,26 +3404,21 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
         self.model.write().flip_multiconnection()
     }
 
-    fn push_source(&mut self, e: <DemoOfdDomain as Domain>::CommonElementT) -> Result<(), ()> {
-        if let DemoOfdElement::DemoOfdEntityType(c) = e {
-            self.model.write().domain_elements.push(c);
-            Ok(())
-        } else {
-            Err(())
-        }
+    fn insert_source(&mut self, position: Option<PositionNoT>, e: <DemoOfdDomain as Domain>::CommonElementT) -> Result<PositionNoT, ()> {
+        self.model.write().insert_element(MULTICONNECTION_SOURCE_BUCKET, position, e).map_err(|_| ())
     }
-    fn remove_source(&mut self, uuid: &ModelUuid) -> Result<(), ()> {
+    fn remove_source(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
         let mut w = self.model.write();
         if w.domain_elements.len() == 1 {
-            return Err(())
+            return None;
         }
-        let original_count = w.domain_elements.len();
-        w.domain_elements.retain(|e| *uuid != *e.read().uuid);
-        if w.domain_elements.len() != original_count {
-            Ok(())
-        } else {
-            Err(())
+        for (idx, e) in w.domain_elements.iter().enumerate() {
+            if *e.read().uuid == *uuid {
+                w.domain_elements.remove(idx);
+                return Some(idx.try_into().unwrap());
+            }
         }
+        None
     }
 
     fn show_properties(
