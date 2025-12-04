@@ -1377,6 +1377,55 @@ impl DemoPsdTransactionView {
             )
         }
     }
+
+    fn state_insertion_place(&self, quadrant: egui::Align2, pos: egui::Pos2) -> (PositionNoT, egui::Rect) {
+        let tx_mark_center = egui::Pos2::new(
+            self.tx_outer_rectangle.min.x + self.tx_outer_rectangle.width() * self.tx_mark_percentage,
+            self.tx_outer_rectangle.center().y,
+        );
+        let states_total = match quadrant.x() {
+            egui::Align::Min => self.before_views.len(),
+            egui::Align::Center => unreachable!(),
+            egui::Align::Max => self.after_views.len(),
+        };
+        let (quadrant_start_x, quadrant_width) = match quadrant.x() {
+            egui::Align::Min => (self.tx_outer_rectangle.min.x, self.tx_mark_percentage * self.tx_outer_rectangle.width()),
+            egui::Align::Center => unreachable!(),
+            egui::Align::Max => (tx_mark_center.x, (1.0 - self.tx_mark_percentage) * self.tx_outer_rectangle.width()),
+        };
+        let area_start_x = match quadrant.x() {
+            egui::Align::Min => self.tx_outer_rectangle.min.x,
+            egui::Align::Center => unreachable!(),
+            egui::Align::Max => tx_mark_center.x + Self::MIN_SIZE.x / 2.0,
+        };
+        let state_width = (quadrant_width - Self::MIN_SIZE.x / 2.0) / (states_total as f32 + 1.0);
+        let current_state_idx = ((pos.x - area_start_x) / state_width).floor();
+
+        let selected_state_start_x = match quadrant.x() {
+            egui::Align::Max if current_state_idx <= 0.0 => quadrant_start_x,
+            _ => area_start_x + current_state_idx.clamp(0.0, states_total as f32) * state_width,
+        };
+
+        let selected_state_width = match quadrant.x() {
+            egui::Align::Min if current_state_idx >= states_total as f32 => state_width + Self::MIN_SIZE.x / 2.0,
+            egui::Align::Max if current_state_idx <= 0.0 => state_width + Self::MIN_SIZE.x / 2.0,
+            _ => state_width,
+        };
+
+        let start_y = match quadrant.y() {
+            egui::Align::Min => self.tx_outer_rectangle.min.y,
+            egui::Align::Center => unreachable!(),
+            egui::Align::Max => tx_mark_center.y,
+        };
+
+        (
+            (current_state_idx as usize).try_into().unwrap(),
+            egui::Rect::from_min_size(
+                egui::Pos2::new(selected_state_start_x, start_y),
+                egui::Vec2::new(selected_state_width, Self::MIN_SIZE.y / 2.0),
+            ),
+        )
+    }
 }
 
 impl Entity for DemoPsdTransactionView {
@@ -1659,16 +1708,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 );
                 return TargettingStatus::Drawn;
             } else if self.tx_outer_rectangle.contains(*pos) {
-                let quadrant_rect = egui::Rect::from_two_pos(tx_mark_center, match section.1 {
-                    egui::Align2::LEFT_TOP => self.tx_outer_rectangle.left_top(),
-                    egui::Align2::LEFT_BOTTOM => self.tx_outer_rectangle.left_bottom(),
-                    egui::Align2::RIGHT_BOTTOM => self.tx_outer_rectangle.right_bottom(),
-                    egui::Align2::RIGHT_TOP => self.tx_outer_rectangle.right_top(),
-                    _ => unreachable!()
-                });
-
                 canvas.draw_rectangle(
-                    quadrant_rect,
+                    self.state_insertion_place(section.1, *pos).1,
                     egui::CornerRadius::ZERO,
                     tool.targetting_for_section(Some(section.into())),
                     canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
@@ -1797,8 +1838,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                     egui::Align2::RIGHT_TOP => 4,
                                     _ => unreachable!(),
                                 };
+                                let pos = self.state_insertion_place(quadrant, pos).0;
 
-                                commands.push(InsensitiveCommand::AddDependency(*self.uuid, quadrant_no, None, new_e.into(), true).into());
+                                commands.push(InsensitiveCommand::AddDependency(*self.uuid, quadrant_no, Some(pos), new_e.into(), true).into());
                                 if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                     *element_setup_modal = esm;
                                 }
