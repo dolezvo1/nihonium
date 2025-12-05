@@ -1366,7 +1366,8 @@ impl<'a> NHCanvas for SVGCanvas<'a> {
         let stroke = self.filtered_stroke(stroke, highlight);
 
         let egui::CornerRadius { nw, ne, sw, se } = corner_radius;
-        let (nw, ne, sw, se) = (nw as f32, ne as f32, sw as f32, se as f32);
+        let f = |e: f32| e.min(rect.width() / 2.0).min(rect.height() / 2.0);
+        let (nw, ne, sw, se) = (f(nw as f32), f(ne as f32), f(sw as f32), f(se as f32));
         let top_edge_start = rect.left_top() + egui::Vec2::new(nw, 0.0);
 
         let top_edge = rect.width() - nw - ne;
