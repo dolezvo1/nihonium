@@ -1731,6 +1731,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             None,
             &self.model.read().content,
             None,
+            false,
             &[],
             egui::Color32::WHITE,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),

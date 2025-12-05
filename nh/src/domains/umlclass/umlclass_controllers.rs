@@ -818,11 +818,18 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
 
-    fn af_operations() -> Vec<(ERef<UmlClassOperation>, ERef<UmlClassOperationView<UmlClassNullProfile>>)>{
-        vec![
-            new_umlclass_operation(UFOption::Some(UmlClassVisibilityKind::Public), "createProductA", "", "ProductA", ""),
-            new_umlclass_operation(UFOption::Some(UmlClassVisibilityKind::Public), "createProductB", "", "ProductB", ""),
-        ]
+    fn af_operations(is_abstract: bool) -> Vec<(ERef<UmlClassOperation>, ERef<UmlClassOperationView<UmlClassNullProfile>>)>{
+        [("createProductA", "ProductA"), ("createProductB", "ProductB")]
+            .iter()
+            .map(|e| {
+                let mut e = new_umlclass_operation(UFOption::Some(UmlClassVisibilityKind::Public), e.0, "", e.1, "");
+                if is_abstract {
+                    e.0.write().is_abstract = true;
+                    e.1.write().refresh_buffers();
+                }
+                e
+            })
+            .collect()
     }
 
     let (class_af, class_af_view) = new_umlclass_class(
@@ -830,7 +837,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         "interface",
         false,
         Vec::new(),
-        af_operations(),
+        af_operations(true),
         egui::Pos2::new(200.0, 150.0),
     );
 
@@ -839,7 +846,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         "class",
         false,
         Vec::new(),
-        af_operations(),
+        af_operations(false),
         egui::Pos2::new(100.0, 250.0),
     );
 
@@ -848,7 +855,7 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         "class",
         false,
         Vec::new(),
-        af_operations(),
+        af_operations(false),
         egui::Pos2::new(300.0, 250.0),
     );
 
@@ -2605,6 +2612,17 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
             canvas::CLASS_ITEM_FONT_SIZE,
             egui::Color32::BLACK,
         );
+        if self.is_static_buffer {
+            let d = egui::Vec2::new(0.0, 1.0);
+            canvas.draw_line(
+                [
+                    self.bounds_rect.left_bottom() - d,
+                    self.bounds_rect.right_bottom() - d,
+                ],
+                canvas::Stroke::new_solid(STATIC_UNDERLINE_WIDTH, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+        }
         if let Some((pos, tool)) = tool && self.bounds_rect.contains(*pos) {
             canvas.draw_rectangle(
                 self.bounds_rect,
@@ -3306,13 +3324,29 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
             canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
             self.highlight,
         );
+        let text_color = if !self.is_abstract_buffer {
+            egui::Color32::BLACK
+        } else {
+            IS_ABSTRACT_COLOR
+        };
         canvas.draw_text(
             at,
             egui::Align2::LEFT_TOP,
             &self.display_text,
             canvas::CLASS_ITEM_FONT_SIZE,
-            egui::Color32::BLACK,
+            text_color,
         );
+        if self.is_static_buffer {
+            let d = egui::Vec2::new(0.0, 1.0);
+            canvas.draw_line(
+                [
+                    self.bounds_rect.left_bottom() - d,
+                    self.bounds_rect.right_bottom() - d,
+                ],
+                canvas::Stroke::new_solid(STATIC_UNDERLINE_WIDTH, text_color),
+                canvas::Highlight::NONE,
+            );
+        }
         if let Some((pos, tool)) = tool && self.bounds_rect.contains(*pos) {
             canvas.draw_rectangle(
                 self.bounds_rect,
@@ -3992,12 +4026,15 @@ impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassView<P> {
     }
 }
 
+pub const IS_ABSTRACT_COLOR: egui::Color32 = egui::Color32::from_rgb(130, 130, 130);
+pub const STATIC_UNDERLINE_WIDTH: f32 = 2.0;
 pub fn draw_uml_class<'a>(
     canvas: &'a mut dyn canvas::NHCanvas,
     position: egui::Pos2,
     top_label: Option<Arc<String>>,
     main_label: &str,
     bottom_label: Option<Arc<String>>,
+    is_abstract: bool,
     compartments: &[(egui::Vec2, Box<dyn Fn(&mut dyn canvas::NHCanvas, egui::Pos2) + 'a>)],
     fill: egui::Color32,
     stroke: canvas::Stroke,
@@ -4090,7 +4127,11 @@ pub fn draw_uml_class<'a>(
                 egui::Align2::CENTER_TOP,
                 &main_label,
                 canvas::CLASS_MIDDLE_FONT_SIZE,
-                egui::Color32::BLACK,
+                if !is_abstract {
+                    egui::Color32::BLACK
+                } else {
+                    IS_ABSTRACT_COLOR
+                },
             );
             offset_counter += 1;
         }
@@ -4319,7 +4360,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             self.stereotype_in_guillemets.clone(),
             &read.name,
             None,
-
+            read.is_abstract,
             &body,
             context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
