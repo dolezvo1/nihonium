@@ -398,7 +398,7 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
         }
 
         let mut c = vec![];
-        let (r, a) = egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show(ui, |builder| {
+        let (_r, a) = egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show(ui, |builder| {
             let mut hvv = HierarchyViewVisitor {
                 gdc,
                 commands: vec![],
@@ -617,7 +617,6 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
         undo_accumulator: &mut Vec<Arc<String>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) -> Option<Box<dyn CustomModal>>;
-    fn show_layers(&self, ui: &mut egui::Ui);
     fn show_menubar_edit_options(
         &mut self,
         context: &GlobalDrawingContext,
@@ -988,13 +987,13 @@ pub trait VisitableDiagram: ContainerModel where <Self as ContainerModel>::Eleme
 pub trait ContainerModel: Model {
     type ElementT: Model;
 
-    fn find_element(&self, uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
+    fn find_element(&self, _uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
         None
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: Self::ElementT) -> Result<PositionNoT, Self::ElementT> {
+    fn insert_element(&mut self, _bucket: BucketNoT, _position: Option<PositionNoT>, element: Self::ElementT) -> Result<PositionNoT, Self::ElementT> {
         Err(element)
     }
-    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+    fn remove_element(&mut self, _uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         None
     }
 }
@@ -1029,7 +1028,7 @@ pub trait Tool<DomainT: Domain> {
 }
 
 pub trait ContainerGen2<DomainT: Domain> {
-    fn controller_for(&self, uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
+    fn controller_for(&self, _uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
         None
     }
 }
@@ -1131,7 +1130,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     );
     /// Must return true when a view cannot exist without these views, e.g. a link cannot exist without it's target
-    fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
+    fn delete_when(&self, _deleting: &HashSet<ViewUuid>) -> bool {
         false
     }
 
@@ -1157,8 +1156,8 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
     );
     fn deep_copy_relink(
         &mut self,
-        c: &HashMap<ViewUuid, DomainT::CommonElementViewT>,
-        m: &HashMap<ModelUuid, DomainT::CommonElementT>,
+        _c: &HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        _m: &HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {}
 }
 
@@ -1329,15 +1328,15 @@ impl<
             fn open_complex(&mut self, e: &<DomainT as Domain>::CommonElementT) {
                 self.label_provider.update(e);
             }
-            fn close_complex(&mut self, e: &<DomainT as Domain>::CommonElementT) {}
+            fn close_complex(&mut self, _e: &<DomainT as Domain>::CommonElementT) {}
             fn visit_simple(&mut self, e: &<DomainT as Domain>::CommonElementT) {
                 self.label_provider.update(e);
             }
         }
 
         impl<DomainT: Domain> DiagramVisitor<<DomainT as Domain>::DiagramModelT> for V<DomainT> {
-            fn open_diagram(&mut self, e: &<DomainT as Domain>::DiagramModelT) {}
-            fn close_diagram(&mut self, e: &<DomainT as Domain>::DiagramModelT) {}
+            fn open_diagram(&mut self, _e: &<DomainT as Domain>::DiagramModelT) {}
+            fn close_diagram(&mut self, _e: &<DomainT as Domain>::DiagramModelT) {}
         }
 
         let mut v: V<DomainT> = V { label_provider: Default::default() };
@@ -1563,7 +1562,9 @@ impl<
             ) -> HashSet<ViewUuid> {
                 // Calculate transitives of `deleting`
                 let mut deleting_transitives = HashMap::new();
-                for (k, e1) in all.iter_mut().filter(|e| deleting.contains(e.0)) {
+                for (_uuid, e1) in all.iter_mut()
+                    .filter(|e| deleting.contains(e.0))
+                {
                     e1.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut deleting_transitives);
                 }
                 deleting.extend(deleting_transitives.into_values());
@@ -1571,7 +1572,7 @@ impl<
                 // Calculate transitive closure
                 let mut found_uuids = HashSet::new();
                 loop {
-                    for (k, e1) in all.iter_mut().filter(|e| !deleting.contains(e.0)) {
+                    for (_uuid, e1) in all.iter_mut().filter(|e| !deleting.contains(e.0)) {
                         if e1.delete_when(&deleting) {
                             let mut including_transitives = HashMap::new();
                             e1.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut including_transitives);
@@ -1631,7 +1632,7 @@ impl<
                 }
                 InsensitiveCommand::RemoveDependency(t, b, elm, from_model) => {
                     if *t == *self.uuid && *b == 0 {
-                        for (uuid, element) in self
+                        for (_uuid, element) in self
                             .owned_views
                             .iter_event_order_pairs()
                             .filter(|e| e.0 == *elm)
@@ -1655,7 +1656,7 @@ impl<
                         InsensitiveCommand::DeleteSpecificElements(_, true) | InsensitiveCommand::CutSpecificElements(..)
                     );
 
-                    for (uuid, element) in self
+                    for (_uuid, element) in self
                         .owned_views
                         .iter_event_order_pairs()
                         .filter(|e| uuids.contains(&e.0))
@@ -2218,8 +2219,8 @@ impl<
                     diagram_color_slot: t,
                     selected_color_type: match c {
                         MGlobalColor::None => MGlobalColorType::None,
-                        MGlobalColor::Local(color32) => MGlobalColorType::Local,
-                        MGlobalColor::Global(uuid) => MGlobalColorType::Global,
+                        MGlobalColor::Local(_color32) => MGlobalColorType::Local,
+                        MGlobalColor::Global(_uuid) => MGlobalColorType::Global,
                     },
                     local_color: if let MGlobalColor::Local(color) = c { color } else { egui::Color32::WHITE },
                     global_color: if let MGlobalColor::Global(uuid) = c { uuid } else { uuid::Uuid::nil() },
@@ -2227,9 +2228,6 @@ impl<
                 }))
             },
         }
-    }
-    fn show_layers(&self, _ui: &mut egui::Ui) {
-        // TODO: Layers???
     }
     fn show_menubar_edit_options(
         &mut self,
@@ -2248,7 +2246,7 @@ impl<
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<ProjectCommand>,
+        _commands: &mut Vec<ProjectCommand>,
     ) {
         macro_rules! translate {
             ($msg_name:expr) => {
@@ -2281,7 +2279,7 @@ impl<
     }
     fn show_menubar_diagram_options(
         &mut self,
-        context: &GlobalDrawingContext,
+        _context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
@@ -2406,7 +2404,7 @@ impl<
                 }
             }
             DiagramCommand::CreateViewFor(model_uuid) => {
-                if let Some((model, parent_uuid)) = self.adapter.find_element(&model_uuid) {
+                if self.adapter.find_element(&model_uuid).is_some() {
                     let mut cmds = vec![];
 
                     // create all necessary views, such as parents or elements targetted by a link

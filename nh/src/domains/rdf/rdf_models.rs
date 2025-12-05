@@ -278,7 +278,7 @@ impl RdfDiagram {
         };
 
         for c in &self.contained_elements {
-            let c = c.accept_collector(&mut collector);
+            c.accept_collector(&mut collector);
         }
 
         collector.data

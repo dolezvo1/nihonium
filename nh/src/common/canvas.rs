@@ -1186,7 +1186,12 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         None
     }
 
-    fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke, highlight: Highlight) {
+    fn draw_line(
+        &mut self,
+        points: [egui::Pos2; 2],
+        _stroke: Stroke,
+        _highlight: Highlight,
+    ) {
         self.bounds.extend_with(points[0]);
         self.bounds.extend_with(points[1]);
     }

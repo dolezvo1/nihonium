@@ -151,7 +151,7 @@ impl Debug for DemoPsdPropChange {
 impl TryFrom<&DemoPsdPropChange> for FlipMulticonnection {
     type Error = ();
 
-    fn try_from(value: &DemoPsdPropChange) -> Result<Self, Self::Error> {
+    fn try_from(_value: &DemoPsdPropChange) -> Result<Self, Self::Error> {
         Err(())
     }
 }
@@ -1264,7 +1264,7 @@ impl From<&ERef<DemoPsdTransaction>> for DemoPsdTransactionSetupModal {
 impl CustomModal for DemoPsdTransactionSetupModal {
     fn show(
         &mut self,
-        d: &mut GlobalDrawingContext,
+        _gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -1456,8 +1456,8 @@ impl ElementController<DemoPsdElement> for DemoPsdTransactionView {
 }
 
 impl ContainerGen2<DemoPsdDomain> for DemoPsdTransactionView {
-    fn controller_for(&self, uuid: &ModelUuid) -> Option<<DemoPsdDomain as Domain>::CommonElementViewT> {
-        todo!()
+    fn controller_for(&self, _uuid: &ModelUuid) -> Option<<DemoPsdDomain as Domain>::CommonElementViewT> {
+        None
     }
 }
 
@@ -2188,7 +2188,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                             DemoPsdPropChange::TransactionPercentageChange(percentage) => {
                                 let w = 25.0 / self.tx_outer_rectangle.width();
                                 let new_percentage = percentage.clamp(w, 1.0 - w);
-                                let delta = (new_percentage - self.tx_mark_percentage) * self.tx_outer_rectangle.width();
 
                                 undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                     std::iter::once(*self.uuid).collect(),
@@ -2324,10 +2323,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
     fn deep_copy_relink(
         &mut self,
-        c: &HashMap<ViewUuid, <DemoPsdDomain as Domain>::CommonElementViewT>,
+        _c: &HashMap<ViewUuid, <DemoPsdDomain as Domain>::CommonElementViewT>,
         m: &HashMap<ModelUuid, <DemoPsdDomain as Domain>::CommonElementT>,
     ) {
-
         let mut w = self.model.write();
         for e in w.before.iter_mut() {
             let e_uuid = *e.state.uuid();
@@ -2385,7 +2383,7 @@ fn new_demopsd_fact_view(
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-struct DemoPsdFactView {
+pub struct DemoPsdFactView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
     model: ERef<DemoPsdFact>,
@@ -2409,8 +2407,8 @@ impl DemoPsdFactView {
 
     fn draw_inner(
         &mut self,
-        q: &DemoPsdQueryable,
-        context: &GlobalDrawingContext,
+        _q: &DemoPsdQueryable,
+        _gdc: &GlobalDrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
         pos: egui::Pos2,
@@ -2581,7 +2579,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoPsdTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -2740,7 +2738,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, DemoPsdElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, DemoPsdElementView>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -2820,7 +2818,7 @@ fn new_demopsd_act_view(
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
-struct DemoPsdActView {
+pub struct DemoPsdActView {
     uuid: Arc<ViewUuid>,
     #[nh_context_serde(entity)]
     model: ERef<DemoPsdAct>,
@@ -2844,8 +2842,8 @@ impl DemoPsdActView {
 
     fn draw_inner(
         &mut self,
-        q: &DemoPsdQueryable,
-        context: &GlobalDrawingContext,
+        _q: &DemoPsdQueryable,
+        _gdc: &GlobalDrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
         pos: egui::Pos2,
@@ -3015,7 +3013,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoPsdTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -3174,7 +3172,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, DemoPsdElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, DemoPsdElementView>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -3247,11 +3245,10 @@ fn new_demopsd_link_view(
     target: DemoPsdElementView,
     center_point: Option<(ViewUuid, egui::Pos2)>,
 ) -> ERef<LinkViewT> {
-    let m = model.read();
     MulticonnectionView::new(
         ViewUuid::now_v7().into(),
         DemoPsdLinkAdapter {
-            model: model.clone(),
+            model,
             temporaries: Default::default(),
         },
         vec![Ending::new(source)],

@@ -105,7 +105,7 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<M
                     relink(&mut DemoCsdElement::DemoCsdTransaction(ta.clone()), all_models);
                 }
             },
-            DemoCsdElement::DemoCsdTransaction(inner) => {},
+            DemoCsdElement::DemoCsdTransaction(_inner) => {},
             DemoCsdElement::DemoCsdLink(inner) => {
                 let mut model = inner.write();
 

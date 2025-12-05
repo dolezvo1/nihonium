@@ -346,7 +346,7 @@ where
     fn draw_in(
         &mut self,
         _: &DomainT::QueryableT<'_>,
-        context: &GlobalDrawingContext,
+        _context: &GlobalDrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus {
@@ -1003,7 +1003,7 @@ where
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        _flattened_views: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {

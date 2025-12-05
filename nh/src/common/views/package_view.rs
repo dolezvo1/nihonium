@@ -613,7 +613,7 @@ where
                     command,
                     InsensitiveCommand::DeleteSpecificElements(_, true) | InsensitiveCommand::CutSpecificElements(..)
                 );
-                for (uuid, element) in self
+                for (_uuid, element) in self
                     .owned_views
                     .iter_event_order_pairs()
                     .filter(|e| uuids.contains(&e.0))

@@ -118,7 +118,7 @@ impl Debug for RdfPropChange {
                 Self::DataTypeChange(datatype) => format!("DataTypeChange({})", datatype),
                 Self::LangTagChange(langtag) => format!("LangTagChange({})", langtag),
 
-                Self::ColorChange(color) => format!("ColorChange(..)"),
+                Self::ColorChange(_color) => format!("ColorChange(..)"),
                 Self::CommentChange(comment) => format!("CommentChange({})", comment),
                 Self::FlipMulticonnection(_) => format!("FlipMulticonnection"),
             }
@@ -206,7 +206,7 @@ impl Default for RdfPlaceholderViews {
         let literal = (literal.into(), literal_view.into());
         let (node, node_view) = new_rdf_node("http://iri", egui::Pos2::ZERO);
         let node = (node, node_view.into());
-        let (predicate, predicate_view) = new_rdf_predicate("http://iri", node.clone(), literal.clone());
+        let (_predicate, predicate_view) = new_rdf_predicate("http://iri", node.clone(), literal.clone());
 
         let (_graph, graph_view) = new_rdf_graph("http://graph", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
 
@@ -734,7 +734,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
 
         match (self.current_stage, &mut self.result) {
             (RdfToolStage::Literal, _) => {
-                let (literal_model, literal_view) = new_rdf_literal(
+                let (_literal_model, literal_view) = new_rdf_literal(
                     "Eric Miller",
                     "http://www.w3.org/2001/XMLSchema#string",
                     "en",
@@ -886,9 +886,9 @@ impl From<RdfElement> for RdfIriBasedSetupModal {
 impl CustomModal for RdfIriBasedSetupModal {
     fn show(
         &mut self,
-        d: &mut GlobalDrawingContext,
+        _gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<ProjectCommand>,
+        _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("IRI:");
         let r = ui.text_edit_singleline(&mut self.iri_buffer);
@@ -904,10 +904,10 @@ impl CustomModal for RdfIriBasedSetupModal {
             if ui.button("Ok").clicked() {
                 let iri = Arc::new(self.iri_buffer.clone());
                 match &self.model {
-                    RdfElement::RdfGraph(eref) => eref.write().iri = iri,
-                    RdfElement::RdfNode(eref) => eref.write().iri = iri,
-                    RdfElement::RdfPredicate(eref) => eref.write().iri = iri,
-                    RdfElement::RdfLiteral(eref) => unreachable!(),
+                    RdfElement::RdfGraph(inner) => inner.write().iri = iri,
+                    RdfElement::RdfNode(inner) => inner.write().iri = iri,
+                    RdfElement::RdfPredicate(inner) => inner.write().iri = iri,
+                    RdfElement::RdfLiteral(_inner) => unreachable!(),
                 }
                 result = CustomModalResult::CloseModified(*self.model.uuid());
             }
@@ -1171,7 +1171,7 @@ impl ContainerGen2<RdfDomain> for RdfNodeView {}
 impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     fn show_properties(
         &mut self,
-        drawing_context: &GlobalDrawingContext,
+        _gdc: &GlobalDrawingContext,
         _q: &RdfQueryable,
         _lp: &RdfLabelProvider,
         ui: &mut egui::Ui,
@@ -1228,8 +1228,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     }
     fn draw_in(
         &mut self,
-        _: &RdfQueryable,
-        context: &GlobalDrawingContext,
+        _q: &RdfQueryable,
+        _gdc: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {
@@ -1295,7 +1295,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveRdfTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -1434,7 +1434,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, RdfElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, RdfElementView>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -1541,9 +1541,9 @@ impl From<&ERef<RdfLiteral>> for RdfLiteralSetupModal {
 impl CustomModal for RdfLiteralSetupModal {
     fn show(
         &mut self,
-        d: &mut GlobalDrawingContext,
+        _gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<ProjectCommand>,
+        _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Content:");
         let r = ui.text_edit_singleline(&mut self.content_buffer);
@@ -1636,7 +1636,7 @@ impl ContainerGen2<RdfDomain> for RdfLiteralView {}
 impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     fn show_properties(
         &mut self,
-        drawing_context: &GlobalDrawingContext,
+        _gdc: &GlobalDrawingContext,
         _q: &RdfQueryable,
         _lp: &RdfLabelProvider,
         ui: &mut egui::Ui,
@@ -1719,8 +1719,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
 
     fn draw_in(
         &mut self,
-        _: &RdfQueryable,
-        context: &GlobalDrawingContext,
+        _q: &RdfQueryable,
+        _gdc: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {
@@ -1762,7 +1762,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveRdfTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -1908,7 +1908,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, RdfElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, RdfElementView>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {

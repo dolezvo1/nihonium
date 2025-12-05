@@ -931,7 +931,17 @@ impl ContainerModel for UmlClass {
     type ElementT = UmlClassElement;
 
     fn find_element(&self, uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
-        todo!()
+        for e in &self.properties {
+            if *e.read().uuid == *uuid {
+                return Some((e.clone().into(), *self.uuid));
+            }
+        }
+        for e in &self.operations {
+            if *e.read().uuid == *uuid {
+                return Some((e.clone().into(), *self.uuid));
+            }
+        }
+        None
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
         if bucket == 0 && let UmlClassElement::UmlClassProperty(p) = element {
@@ -1031,8 +1041,8 @@ impl Model for UmlClassGeneralization {
 impl ContainerModel for UmlClassGeneralization {
     type ElementT = UmlClassElement;
 
-    fn find_element(&self, uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
-        todo!()
+    fn find_element(&self, _uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
+        None
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
         if bucket > 1 {
@@ -1054,7 +1064,23 @@ impl ContainerModel for UmlClassGeneralization {
         }
     }
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        todo!()
+        if self.sources.len() > 1 {
+            for (idx, e) in self.sources.iter().enumerate() {
+                if *e.read().uuid == *uuid {
+                    self.sources.remove(idx);
+                    return Some((0, idx.try_into().unwrap()));
+                }
+            }
+        }
+        if self.targets.len() > 1 {
+            for (idx, e) in self.targets.iter().enumerate() {
+                if *e.read().uuid == *uuid {
+                    self.targets.remove(idx);
+                    return Some((1, idx.try_into().unwrap()));
+                }
+            }
+        }
+        None
     }
 }
 

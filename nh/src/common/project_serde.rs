@@ -450,7 +450,7 @@ impl NHSerializer {
     }
 }
 
-#[expect(dead_code)]
+#[allow(dead_code)]
 #[derive(Debug, derive_more::From)]
 pub enum NHSerializeError {
     StructureError(String),

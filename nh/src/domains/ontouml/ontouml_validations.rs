@@ -125,7 +125,7 @@ impl OntoUMLValidationTab {
                     };
 
                     for s in &m.sources {
-                        let mut e = element_infos.entry(*s.read().uuid).or_default();
+                        let e = element_infos.entry(*s.read().uuid).or_default();
                         e.identity_providers_min += weight_min;
                         e.identity_providers_max += weight_max;
                         e.parents.push(inner.clone());
@@ -206,12 +206,12 @@ impl OntoUMLValidationTab {
                                     text: format!("«mediation» must have multiplicities of at least 1..*"),
                                 });
                             }
-                            if let Some((lm, um)) = &target_multiplicity {
-                                let mut e = element_infos.entry(*m.source.uuid()).or_default();
+                            if let Some((lm, _um)) = &target_multiplicity {
+                                let e = element_infos.entry(*m.source.uuid()).or_default();
                                 e.direct_mediations_opposing_lower_bounds += lm;
                             }
-                            if let Some((lm, um)) = &source_multiplicity {
-                                let mut e = element_infos.entry(*m.target.uuid()).or_default();
+                            if let Some((lm, _um)) = &source_multiplicity {
+                                let e = element_infos.entry(*m.target.uuid()).or_default();
                                 e.direct_mediations_opposing_lower_bounds += lm;
                             }
                         }
@@ -226,7 +226,7 @@ impl OntoUMLValidationTab {
                             }
                             if let UmlClassClassifier::UmlClass(t) = &m.target {
                                 let t = t.read();
-                                let mut e = element_infos.entry(*t.uuid).or_default();
+                                let e = element_infos.entry(*t.uuid).or_default();
 
                                 if t.stereotype.as_str() != ontouml_models::QUALITY && t.stereotype.as_str() != ontouml_models::MODE {
                                     problems.push(ValidationProblem::Error {
@@ -761,7 +761,7 @@ impl OntoUMLValidationTab {
                     let has_anti_rigid_children = r.sources.iter().any(|e| is_anti_rigid(&e.read().stereotype));
 
                     for t in &r.targets {
-                        let mut e = infos.entry(*t.read().uuid).or_default();
+                        let e = infos.entry(*t.read().uuid).or_default();
                         e.has_rigid_children |= has_rigid_children;
                         e.has_anti_rigid_children |= has_anti_rigid_children;
                     }
@@ -850,7 +850,7 @@ impl CustomTab for OntoUMLValidationTab {
             } else {
                 ui.label("Results:");
 
-                let mut tb = egui_extras::TableBuilder::new(ui)
+                let tb = egui_extras::TableBuilder::new(ui)
                     .column(egui_extras::Column::auto().resizable(true))
                     .column(egui_extras::Column::auto().resizable(true))
                     .column(egui_extras::Column::remainder().resizable(true));
@@ -894,12 +894,12 @@ impl CustomTab for OntoUMLValidationTab {
                             });
 
                             match rr {
-                                ValidationProblem::Error { uuid, text, .. } => {
+                                ValidationProblem::Error { text, .. } => {
                                     row.col(|ui| {
                                         ui.label(text);
                                     });
                                 },
-                                ValidationProblem::AntiPattern { uuid, antipattern_type } => {
+                                ValidationProblem::AntiPattern { antipattern_type, .. } => {
                                     row.col(|ui| {
                                         ui.label(format!("{:?}", antipattern_type));
                                     });
@@ -946,6 +946,7 @@ enum RelationError {
     Multiplicities,
 }
 
+#[allow(dead_code)]
 #[derive(PartialEq, Debug)]
 enum AntiPatternType {
     BinOver,
@@ -1372,7 +1373,7 @@ fn validate_undef(
             },
             UmlClassElement::UmlClass(inner) => {
                 let r = inner.read();
-                let mut e = infos.entry(*r.uuid).or_default();
+                let e = infos.entry(*r.uuid).or_default();
                 e.stereotype = Some(r.stereotype.clone());
                 if !r.properties.is_empty() {
                     e.has_intrinsics = true;

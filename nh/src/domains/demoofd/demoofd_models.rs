@@ -766,7 +766,16 @@ impl ContainerModel for DemoOfdAggregation {
         Ok(pos.try_into().unwrap())
     }
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        todo!()
+        if self.domain_elements.len() == 1 {
+            return None;
+        }
+        for (idx, e) in self.domain_elements.iter().enumerate() {
+            if *e.read().uuid == *uuid {
+                self.domain_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
 }
 

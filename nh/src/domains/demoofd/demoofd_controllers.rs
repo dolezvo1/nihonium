@@ -617,8 +617,8 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         &self,
         _view_uuid: &ViewUuid,
         _label_provider: &ERef<dyn LabelProvider>,
-        ui: &mut egui::Ui,
-        commands: &mut Vec<ProjectCommand>,
+        _ui: &mut egui::Ui,
+        _commands: &mut Vec<ProjectCommand>,
     ) {}
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DemoOfdElement>) {
@@ -923,7 +923,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     );
                 }
             }
-            PartialDemoOfdElement::AggregationEnding { gen_model, new_model } => {
+            PartialDemoOfdElement::AggregationEnding { gen_model, .. } => {
                 if let Some(source_view) = q.get_view(&*gen_model.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1512,9 +1512,9 @@ impl From<&ERef<DemoOfdEntityType>> for DemoOfdEntityTypeSetupModal {
 impl CustomModal for DemoOfdEntityTypeSetupModal {
     fn show(
         &mut self,
-        d: &mut GlobalDrawingContext,
+        _gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<ProjectCommand>,
+        _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Name:");
         let r = ui.text_edit_singleline(&mut self.name_buffer);
@@ -1597,8 +1597,8 @@ impl DemoOfdEntityView {
 
     fn draw_inner(
         &mut self,
-        q: &DemoOfdQueryable,
-        context: &GlobalDrawingContext,
+        _q: &DemoOfdQueryable,
+        _gdc: &GlobalDrawingContext,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoOfdTool)>,
         event: Option<(NHShape, egui::Rect)>,
@@ -1775,7 +1775,7 @@ impl ContainerGen2<DemoOfdDomain> for DemoOfdEntityView {}
 impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
     fn show_properties(
         &mut self,
-        drawing_context: &GlobalDrawingContext,
+        _gdc: &GlobalDrawingContext,
         _q: &DemoOfdQueryable,
         _lp: &DemoOfdLabelProvider,
         ui: &mut egui::Ui,
@@ -1865,7 +1865,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoOfdTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -2063,7 +2063,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, DemoOfdElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, DemoOfdElementView>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -2094,7 +2094,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             modelish
         };
 
-        let mut cloneish = ERef::new(Self {
+        let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
             name_buffer: self.name_buffer.clone(),
@@ -2182,9 +2182,9 @@ impl From<&ERef<DemoOfdEventType>> for DemoOfdEventTypeSetupModal {
 impl CustomModal for DemoOfdEventTypeSetupModal {
     fn show(
         &mut self,
-        d: &mut GlobalDrawingContext,
+        _gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<ProjectCommand>,
+        _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label("Transaction Kind:");
         egui::ComboBox::from_id_salt("Transaction Kind:")
@@ -2803,7 +2803,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             modelish
         };
 
-        let mut cloneish = ERef::new(Self {
+        let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
             base_entity_type: self.base_entity_type.clone(),

@@ -126,7 +126,7 @@ impl Debug for DemoCsdPropChange {
 impl TryFrom<&DemoCsdPropChange> for FlipMulticonnection {
     type Error = ();
 
-    fn try_from(value: &DemoCsdPropChange) -> Result<Self, Self::Error> {
+    fn try_from(_value: &DemoCsdPropChange) -> Result<Self, Self::Error> {
         Err(())
     }
 }
@@ -1165,7 +1165,7 @@ impl From<&ERef<DemoCsdTransactor>> for DemoCsdTransactorSetupModal {
 impl CustomModal for DemoCsdTransactorSetupModal {
     fn show(
         &mut self,
-        d: &mut GlobalDrawingContext,
+        _gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -1762,7 +1762,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                 }
             }
             InsensitiveCommand::RemoveDependency(v, b, e, from_model) => {
-                if *v == *self.uuid && *from_model
+                if *v == *self.uuid && *b == 0 && *from_model
                     && let Some(tx) = self.transaction_view.as_ref()
                     && *e == *tx.read().uuid {
                     let model_uuid = tx.read().model_uuid();
@@ -1948,13 +1948,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
     }
     fn deep_copy_relink(
         &mut self,
-        c: &HashMap<ViewUuid, DemoCsdElementView>,
+        _c: &HashMap<ViewUuid, DemoCsdElementView>,
         m: &HashMap<ModelUuid, DemoCsdElement>,
     ) {
-        if let Some(DemoCsdElementView::Transaction(new_ta)) = self.transaction_view.as_ref().and_then(|e| c.get(&e.read().uuid()))  {
-            self.transaction_view = UFOption::Some(new_ta.clone());
-        }
-
         let mut w = self.model.write();
         if let UFOption::Some(ta) = &w.transaction {
             let ta_uuid = *ta.read().uuid;
@@ -2036,7 +2032,7 @@ impl From<&ERef<DemoCsdTransaction>> for DemoCsdTransactionSetupModal {
 impl CustomModal for DemoCsdTransactionSetupModal {
     fn show(
         &mut self,
-        d: &mut GlobalDrawingContext,
+        _gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -2291,8 +2287,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     }
     fn draw_in(
         &mut self,
-        _: &DemoCsdQueryable,
-        context: &GlobalDrawingContext,
+        _q: &DemoCsdQueryable,
+        _gdc: &GlobalDrawingContext,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoCsdTool)>,
     ) -> TargettingStatus {
@@ -2351,7 +2347,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         event: InputEvent,
         ehc: &EventHandlingContext,
         tool: &mut Option<NaiveDemoCsdTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -2518,7 +2514,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, DemoCsdElementView>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -2593,11 +2589,10 @@ fn new_democsd_link_view(
     source: DemoCsdElementView,
     target: DemoCsdElementView,
 ) -> ERef<LinkViewT> {
-    let m = model.read();
     MulticonnectionView::new(
         ViewUuid::now_v7().into(),
         DemoCsdLinkAdapter {
-            model: model.clone(),
+            model,
             temporaries: Default::default(),
         },
         vec![Ending::new(source)],

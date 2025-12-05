@@ -74,7 +74,7 @@ fn main() -> eframe::Result<()> {
         viewport: ViewportBuilder::default().with_inner_size(vec2(1024.0, 1024.0)),
         ..Default::default()
     };
-    eframe::run_native("Nihonium", options, Box::new(|cc| {
+    eframe::run_native("Nihonium", options, Box::new(|_cc| {
         Ok(Box::<NHApp>::default())
     }))
 }
@@ -200,9 +200,9 @@ impl ErrorModal {
 impl CustomModal for ErrorModal {
     fn show(
         &mut self,
-        d: &mut GlobalDrawingContext,
+        _gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<ProjectCommand>,
+        _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label(&self.message);
 
@@ -218,7 +218,7 @@ type DDes = dyn Fn(ViewUuid, &mut NHDeserializer) -> Result<ERef<dyn DiagramCont
 
 enum FileIOOperation {
     Open(FileHandle),
-    OpenContent(Result<Box<dyn FSReadAbstraction + Send>, NHDeserializeError>),
+    OpenContent(FileHandle, Result<Box<dyn FSReadAbstraction + Send>, NHDeserializeError>),
     Save(FileHandle),
     ImageExport(FileHandle, ERef<dyn DiagramController>),
     Error(String),
@@ -514,22 +514,22 @@ impl NHContext {
                 let s = self.file_io_channel.0.clone();
                 let mut wa = ZipFSWriter::new("project.nhp", "project");
                 if let Err(e) = self.export_project_nhp(&mut wa, "project") {
-                    s.send(FileIOOperation::Error(format!("Error exporting: {:?}", e)));
+                    let _ = s.send(FileIOOperation::Error(format!("Error exporting: {:?}", e)));
                     return Err(e);
                 };
                 execute(async move {
                     match ZipFSWriter::into_bytes(wa) {
                         Err(e) => {
-                            s.send(FileIOOperation::Error(format!("Error exporting: {:?}", e)));
+                            let _ = s.send(FileIOOperation::Error(format!("Error exporting: {:?}", e)));
                         },
                         Ok(bytes) => if let Err(e) = fh.write(&bytes).await {
-                            s.send(FileIOOperation::Error(format!("Error saving: {:?}", e)));
+                            let _ = s.send(FileIOOperation::Error(format!("Error saving: {:?}", e)));
                         },
                     }
                 });
                 Ok(())
             },
-            otherwise => Err(supported_extensions!(project_file_name).into())
+            _otherwise => Err(supported_extensions!(project_file_name).into())
         }
     }
     fn export_project_nhp<WA: FSWriteAbstraction>(&self, wa: &mut WA, sources_folder_name: &str) -> Result<(), NHSerializeError> {
@@ -567,7 +567,7 @@ impl NHContext {
                     .ok_or_else(|| supported_extensions!(project_file_path))?;
                 let rr = FSRawReader::new(containing_folder.to_path_buf(), file_name.to_os_string())
                     .map(|e| Box::new(e) as Box<dyn FSReadAbstraction + Send>).map_err(|e| e.into());
-                self.file_io_channel.0.send(FileIOOperation::OpenContent(rr));
+                let _ = self.file_io_channel.0.send(FileIOOperation::OpenContent(fh, rr));
                 Ok(())
             },
             "nhpz" => {
@@ -576,11 +576,11 @@ impl NHContext {
                     let file_contents = fh.read().await;
                     let zfsr = ZipFSReader::new(file_contents, "project.nhp", "project")
                         .map(|e| Box::new(e) as Box<dyn FSReadAbstraction + Send>).map_err(|e| e.into());
-                    s.send(FileIOOperation::OpenContent(zfsr));
+                    let _ = s.send(FileIOOperation::OpenContent(fh, zfsr));
                 });
                 Ok(())
             },
-            otherwise => Err(supported_extensions!(project_file_name).into())
+            _otherwise => Err(supported_extensions!(project_file_name).into())
         }
     }
     fn import_project_nhp(&mut self, ra: &mut dyn FSReadAbstraction) -> Result<(), NHDeserializeError> {
@@ -816,7 +816,7 @@ impl NHContext {
             .auto_shrink(false)
             .show(ui, |ui| {
                 let id = ui.make_persistent_id("Project Hierarchy Tree View");
-                let (response, actions) = TreeView::new(id).show_state(
+                let (_response, actions) = TreeView::new(id).show_state(
                     ui,
                     &mut self.tree_view_state,
                     |builder| {
@@ -866,7 +866,7 @@ impl NHContext {
         if let Some(c) = context_menu_action {
             match c {
                 ContextMenuAction::NewFolder(view_uuid) => {
-                    self.project_hierarchy.insert(
+                    let _ = self.project_hierarchy.insert(
                         &view_uuid,
                         egui_ltreeview::DirPosition::Last,
                         HierarchyNode::Folder(ViewUuid::now_v7(), Arc::new("New folder".into()), vec![]),
@@ -907,7 +907,7 @@ impl NHContext {
                     impl CustomModal for ViewRenameModal {
                         fn show(
                             &mut self,
-                            d: &mut GlobalDrawingContext,
+                            _gdc: &mut GlobalDrawingContext,
                             ui: &mut egui::Ui,
                             commands: &mut Vec<ProjectCommand>,
                         ) -> CustomModalResult {
@@ -1005,7 +1005,7 @@ impl NHContext {
 
     fn toolbar(&self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
-        let Some((t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
+        let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
         c.write().show_toolbar(&self.drawing_context, ui);
     }
 
@@ -1014,7 +1014,7 @@ impl NHContext {
         let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
 
         let mut affected_models = HashSet::new();
-        let mut undo_accumulator = {
+        let undo_accumulator = {
             let mut undo_accumulator = Vec::new();
             if let Some(m) = c.write().show_properties(&self.drawing_context, ui, &mut undo_accumulator, &mut affected_models) {
                 self.custom_modal = Some(m);
@@ -1440,7 +1440,7 @@ impl NHContext {
         });
         
         ui.collapsing("Diagram shades", |ui| {
-            for (idx1, (name, values)) in self.diagram_shades.iter_mut().enumerate() {
+            for (name, values) in self.diagram_shades.iter_mut() {
                 ui.horizontal(|ui| {
                     ui.label(&*name);
                     egui::widgets::color_picker::color_edit_button_srgba(
@@ -1603,7 +1603,7 @@ impl NHContext {
 
         if !undo_accumulator.is_empty() {
             self.set_has_unsaved_changes(true);
-            for (_uuid, (t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != tab_uuid) {
+            for (_uuid, (_t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != tab_uuid) {
                 c.write().apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![], &mut HashSet::new());
             }
             
@@ -1940,30 +1940,38 @@ pub const MIN_MENU_WIDTH: f32 = 250.0;
 impl eframe::App for NHApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(e) = self.context.file_io_channel.1.try_recv() {
+            fn get_project_path(fh: &FileHandle) -> PathBuf {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    fh.path().into()
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    fh.file_name().into()
+                }
+            }
             match e {
-                FileIOOperation::Open(fh) => {
-                    let file_name = fh.file_name();
-                    match self.context.import_project(fh) {
-                        Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error opening: {:?}", e))),
-                        Ok(_) => {
-                            self.context.set_project_path(Some(file_name.into()));
-                            self.clear_nonstatic_tabs();
-                        }
-                    }
+                FileIOOperation::Open(fh) => match self.context.import_project(fh) {
+                    Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error opening: {:?}", e))),
+                    Ok(_) => {}
                 },
-                FileIOOperation::OpenContent(r) => match r {
+                FileIOOperation::OpenContent(fh, r) => match r {
                     Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error opening: {:?}", e))),
                     Ok(mut r) => match self.context.import_project_nhp(&mut *r) {
                         Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error opening: {:?}", e))),
-                        Ok(_) => {}
+                        Ok(_) => {
+                            let file_path = get_project_path(&fh);
+                            self.context.set_project_path(Some(file_path));
+                            self.clear_nonstatic_tabs();
+                        }
                     },
                 }
                 FileIOOperation::Save(fh) => {
-                    let file_name = fh.file_name();
+                    let file_path = get_project_path(&fh);
                     match self.context.export_project(fh) {
                         Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error exporting: {:?}", e))),
                         Ok(_) => {
-                            self.context.set_project_path(Some(file_name.into()));
+                            self.context.set_project_path(Some(file_path));
                             self.context.set_has_unsaved_changes(false);
                         }
                     }
@@ -2131,7 +2139,7 @@ impl eframe::App for NHApp {
                     match e {
                         egui::Event::Cut => send_to_focused_diagram!(DiagramCommand::CutSelectedElements),
                         egui::Event::Copy => send_to_focused_diagram!(DiagramCommand::CopySelectedElements),
-                        egui::Event::Paste(a) => send_to_focused_diagram!(DiagramCommand::PasteClipboardElements),
+                        egui::Event::Paste(_a) => send_to_focused_diagram!(DiagramCommand::PasteClipboardElements),
                         egui::Event::Key { key, pressed, modifiers, .. } => {
                             if !pressed {continue;}
 
@@ -2465,7 +2473,7 @@ impl eframe::App for NHApp {
                     let canvas_pos = ui.next_widget_position();
                     let canvas_rect = egui::Rect::from_min_size(canvas_pos, preview_size);
                     
-                    let (painter_response, painter) =
+                    let (_painter_response, painter) =
                         ui.allocate_painter(preview_size, egui::Sense::focusable_noninteractive());
                     if *background {
                         painter.rect(
@@ -2735,14 +2743,14 @@ impl eframe::App for NHApp {
                         execute(async move {
                             let file = dialog.pick_file().await;
                             if let Some(file) = file {
-                                s.send(FileIOOperation::Open(file));
+                                let _ = s.send(FileIOOperation::Open(file));
                             }
                         });
                     } else {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::OpenProject(b));
                     }
                     SimpleProjectCommand::SaveProject
-                    | SimpleProjectCommand::SaveProjectAs => {
+                    | SimpleProjectCommand::SaveProjectAs => 'a: {
                         let mut dialog = rfd::AsyncFileDialog::new();
                         #[cfg(target_arch = "wasm32")]
                         {
@@ -2759,15 +2767,24 @@ impl eframe::App for NHApp {
                             .add_filter("Nihonium Project Zip files", &["nhpz"])
                             .add_filter("All files", &["*"]);
 
-                        let current_path = self.context.project_path.clone()
-                            .filter(|_| spc == SimpleProjectCommand::SaveProject)
-                            .filter(|_| cfg!(not(target_arch = "wasm32")));
-                        let s = self.context.file_io_channel.0.clone();
+                        #[cfg(not(target_arch = "wasm32"))]
+                        if let Some(current_path) = self.context.project_path.clone()
+                            && spc == SimpleProjectCommand::SaveProject {
+                            match self.context.export_project(current_path.into()) {
+                                Err(e) => self.context.custom_modal = Some(ErrorModal::new_box(format!("Error exporting: {:?}", e))),
+                                Ok(_) => {
+                                    self.context.set_has_unsaved_changes(false);
+                                }
+                            }
 
+                            break 'a;
+                        }
+
+                        let s = self.context.file_io_channel.0.clone();
                         execute(async move {
                             let file = dialog.save_file().await;
                             if let Some(file) = file {
-                                s.send(FileIOOperation::Save(file));
+                                let _ = s.send(FileIOOperation::Save(file));
                             }
                         });
                     }
