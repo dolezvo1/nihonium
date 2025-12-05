@@ -2750,7 +2750,7 @@ impl eframe::App for NHApp {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::OpenProject(b));
                     }
                     SimpleProjectCommand::SaveProject
-                    | SimpleProjectCommand::SaveProjectAs => 'a: {
+                    | SimpleProjectCommand::SaveProjectAs => {
                         let mut dialog = rfd::AsyncFileDialog::new();
                         #[cfg(target_arch = "wasm32")]
                         {
@@ -2776,8 +2776,7 @@ impl eframe::App for NHApp {
                                     self.context.set_has_unsaved_changes(false);
                                 }
                             }
-
-                            break 'a;
+                            continue;
                         }
 
                         let s = self.context.file_io_channel.0.clone();
