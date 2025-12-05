@@ -1130,9 +1130,6 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     );
-    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
-        into.insert(*self.model_uuid());
-    }
     /// Must return true when a view cannot exist without these views, e.g. a link cannot exist without it's target
     fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
         false
@@ -1561,14 +1558,26 @@ impl<
 
             // compute transitive closure of dependency when deleting or cutting elements
             fn tr_closure<E: ElementControllerGen2<D>, D: Domain>(
-                all: &HashMap<ViewUuid, E>,
+                all: &mut HashMap<ViewUuid, E>,
                 mut deleting: HashSet<ViewUuid>
             ) -> HashSet<ViewUuid> {
+                // Calculate transitives of `deleting`
+                let mut deleting_transitives = HashMap::new();
+                for (k, e1) in all.iter_mut().filter(|e| deleting.contains(e.0)) {
+                    e1.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut deleting_transitives);
+                }
+                deleting.extend(deleting_transitives.into_values());
+
+                // Calculate transitive closure
                 let mut found_uuids = HashSet::new();
                 loop {
-                    for (k, e1) in all.iter().filter(|e| !deleting.contains(e.0)) {
+                    for (k, e1) in all.iter_mut().filter(|e| !deleting.contains(e.0)) {
                         if e1.delete_when(&deleting) {
-                            found_uuids.insert(*k);
+                            let mut including_transitives = HashMap::new();
+                            e1.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut including_transitives);
+                            for (_m, v) in including_transitives {
+                                found_uuids.insert(v);
+                            }
                         }
                     }
 
@@ -1581,9 +1590,9 @@ impl<
             }
             let command = match command {
                 InsensitiveCommand::DeleteSpecificElements(uuids, b)
-                => InsensitiveCommand::DeleteSpecificElements(tr_closure(&self.temporaries.flattened_views, uuids), b),
+                => InsensitiveCommand::DeleteSpecificElements(tr_closure(&mut self.temporaries.flattened_views, uuids), b),
                 InsensitiveCommand::CutSpecificElements(uuids)
-                => InsensitiveCommand::CutSpecificElements(tr_closure(&self.temporaries.flattened_views, uuids)),
+                => InsensitiveCommand::CutSpecificElements(tr_closure(&mut self.temporaries.flattened_views, uuids)),
                 c => c,
             };
 
@@ -1599,7 +1608,7 @@ impl<
                 | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
                 InsensitiveCommand::AddDependency(t, b, pos, element, into_model) => {
                     if *t == *self.uuid && *b == 0 {
-                        if let Ok(view) = element.clone().try_into()
+                        if let Ok(mut view) = element.clone().try_into()
                             && (!*into_model || self.adapter.insert_element(*b, *pos, view.model()).is_ok()){
                             let uuid = *view.uuid();
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency(
@@ -1612,7 +1621,9 @@ impl<
                             if *into_model {
                                 affected_models.insert(*self.adapter.model_uuid());
                             }
-                            view.collect_model_uuids(affected_models);
+                            let mut model_transitives = HashMap::new();
+                            view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                            affected_models.extend(model_transitives.into_keys());
 
                             self.owned_views.push(uuid, view);
                         }
@@ -1662,14 +1673,16 @@ impl<
                 }
                 InsensitiveCommand::PasteSpecificElements(_, elements) => {
                     for element in elements {
-                        if let Ok(view) = element.clone().try_into()
+                        if let Ok(mut view) = element.clone().try_into()
                             && let Ok(_) = self.adapter.insert_element(0, None, view.model()) {
                             let uuid = *view.uuid();
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(uuid).collect(),
                                 true,
                             ));
-                            view.collect_model_uuids(affected_models);
+                            let mut model_transitives = HashMap::new();
+                            view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                            affected_models.extend(model_transitives.into_keys());
                             self.owned_views.push(uuid, view);
                         }
                     }

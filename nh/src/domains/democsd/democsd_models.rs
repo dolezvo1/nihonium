@@ -409,6 +409,24 @@ impl ContainerModel for DemoCsdTransactor {
             None
         }
     }
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoCsdElement) -> Result<PositionNoT, DemoCsdElement> {
+        if bucket != 0 || position.unwrap_or(0) != 0 || self.transaction.is_some() {
+            return Err(element);
+        }
+        let DemoCsdElement::DemoCsdTransaction(tx) = element else {
+            return Err(element);
+        };
+        self.transaction = UFOption::Some(tx);
+        Ok(0)
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        if let UFOption::Some(tx) = &self.transaction && *tx.read().uuid == *uuid {
+            self.transaction = UFOption::None;
+            Some((0, 0))
+        } else {
+            None
+        }
+    }
 }
 
 // ---

@@ -648,7 +648,7 @@ where
             },
             InsensitiveCommand::AddDependency(target, b, pos, element, into_model) => {
                 if *target == *self.uuid && *b == 0 {
-                    if let Ok(view) = element.clone().try_into()
+                    if let Ok(mut view) = element.clone().try_into()
                         && (!*into_model || self.adapter.insert_element(*pos, view.model()).is_ok()){
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::RemoveDependency(
@@ -661,7 +661,9 @@ where
                         if *into_model {
                             affected_models.insert(*self.adapter.model_uuid());
                         }
-                        view.collect_model_uuids(affected_models);
+                        let mut model_transitives = HashMap::new();
+                        view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                        affected_models.extend(model_transitives.into_keys());
 
                         self.owned_views.push(uuid, view);
                     }
@@ -716,10 +718,6 @@ where
         self.owned_views.event_order_foreach_mut(|v| {
             flattened_views.insert(*v.uuid(), v.clone());
         });
-    }
-    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
-        into.insert(*self.model_uuid());
-        self.owned_views.event_order_foreach(|e| e.collect_model_uuids(into));
     }
 
     fn deep_copy_walk(

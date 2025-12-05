@@ -4850,15 +4850,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             flattened_views.insert(*w.uuid(), e.clone().into());
         }
     }
-    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
-        into.insert(*self.model_uuid());
-        for e in &self.properties_views {
-            e.read().collect_model_uuids(into);
-        }
-        for e in &self.operations_views {
-            e.read().collect_model_uuids(into);
-        }
-    }
 
     fn deep_copy_clone(
         &self,

@@ -1760,20 +1760,35 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                     ));
                     self.transaction_view = UFOption::Some(e.clone());
                 }
-
             }
-            InsensitiveCommand::RemoveDependency(..)
+            InsensitiveCommand::RemoveDependency(v, b, e, from_model) => {
+                if *v == *self.uuid && *from_model
+                    && let Some(tx) = self.transaction_view.as_ref()
+                    && *e == *tx.read().uuid {
+                    let model_uuid = tx.read().model_uuid();
+                    if let Some(_) = self.model.write().remove_element(&model_uuid) {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency(
+                            *self.uuid,
+                            0,
+                            Some(0),
+                            DemoCsdElementOrVertex::Element(tx.clone().into()),
+                            true,
+                        ));
+                        self.transaction_view = UFOption::None;
+                    }
+                }
+            }
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids, into_model) => {
                 if *into_model
                     && let Some(e) = self.transaction_view.as_ref()
                     && uuids.contains(&*e.read().uuid) {
                     let model_uuid = e.read().model_uuid();
-                    if let Some((_b, pos)) = self.model.write().remove_element(&model_uuid) {
+                    if let Some(_) = self.model.write().remove_element(&model_uuid) {
                         undo_accumulator.push(InsensitiveCommand::AddDependency(
                             *self.uuid,
                             0,
-                            Some(pos),
+                            Some(0),
                             DemoCsdElementOrVertex::Element(e.clone().into()),
                             true,
                         ));
@@ -1869,12 +1884,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             }
 
             flattened_views.insert(*tx_l.uuid(), tx.clone().into());
-        }
-    }
-    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
-        into.insert(*self.model_uuid());
-        if let UFOption::Some(tx) = &self.transaction_view {
-            tx.read().collect_model_uuids(into);
         }
     }
     

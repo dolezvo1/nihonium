@@ -2776,12 +2776,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             flattened_views.insert(*sl.uuid(), s.clone().into());
         }
     }
-    fn collect_model_uuids(&self, into: &mut HashSet<ModelUuid>) {
-        into.insert(*self.model_uuid());
-        if let UFOption::Some(s) = &self.specialization_view {
-            s.read().collect_model_uuids(into);
-        }
-    }
     fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
         deleting.contains(&self.base_entity_type.uuid())
     }
