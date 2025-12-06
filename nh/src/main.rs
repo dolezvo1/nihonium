@@ -1690,7 +1690,7 @@ impl Default for NHApp {
         diagram_deserializers.insert("democsd-diagram-view".to_string(), (2, &crate::domains::democsd::democsd_controllers::deserializer as &DDes));
         diagram_deserializers.insert("umlclass-diagram-view-ontouml".to_string(), (3, &crate::domains::ontouml::ontouml_controllers::deserializer as &DDes));
         diagram_deserializers.insert("demoofd-diagram-view".to_string(), (4, &crate::domains::demoofd::demoofd_controllers::deserializer as &DDes));
-        diagram_deserializers.insert("demopsd-diagram-view".to_string(), (5, &crate::domains::demoofd::demoofd_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("demopsd-diagram-view".to_string(), (5, &crate::domains::demopsd::demopsd_controllers::deserializer as &DDes));
 
         let mut dock_state = DockState::new(tabs);
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
