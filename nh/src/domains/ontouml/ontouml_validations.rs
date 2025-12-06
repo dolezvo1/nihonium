@@ -1460,6 +1460,7 @@ fn validate_undef(
 }
 
 
+#[cfg(test)]
 mod test {
     use uuid::uuid;
 

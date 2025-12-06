@@ -65,7 +65,7 @@ pub trait UmlClassProfile: Default + Clone + Send + Sync + 'static {
         ui.separator();
     }
 
-    fn allows_class_attributes() -> bool {
+    fn allows_class_properties() -> bool {
         true
     }
     fn allows_class_operations() -> bool {
@@ -4400,25 +4400,29 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             );
             canvas.draw_text(b1.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
 
-            let b2 = self.property_button_rect(ui_scale);
-            canvas.draw_rectangle(
-                b2,
-                egui::CornerRadius::ZERO,
-                egui::Color32::WHITE,
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
-            canvas.draw_text(b2.center(), egui::Align2::CENTER_CENTER, "P", 14.0 / ui_scale, egui::Color32::BLACK);
+            if P::allows_class_properties() {
+                let b2 = self.property_button_rect(ui_scale);
+                canvas.draw_rectangle(
+                    b2,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(b2.center(), egui::Align2::CENTER_CENTER, "P", 14.0 / ui_scale, egui::Color32::BLACK);
+            }
 
-            let b3 = self.operation_button_rect(ui_scale);
-            canvas.draw_rectangle(
-                b3,
-                egui::CornerRadius::ZERO,
-                egui::Color32::WHITE,
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
-            canvas.draw_text(b3.center(), egui::Align2::CENTER_CENTER, "O", 14.0 / ui_scale, egui::Color32::BLACK);
+            if P::allows_class_operations() {
+                let b3 = self.operation_button_rect(ui_scale);
+                canvas.draw_rectangle(
+                    b3,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(b3.center(), egui::Align2::CENTER_CENTER, "O", 14.0 / ui_scale, egui::Color32::BLACK);
+            }
         }
 
         if canvas.ui_scale().is_some() {
@@ -4518,7 +4522,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Click(pos) if self.highlight.selected && self.property_button_rect(ehc.ui_scale).contains(pos) => {
+            InputEvent::Click(pos) if self.highlight.selected && P::allows_class_properties() && self.property_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlClassTool {
                     initial_stage: UmlClassToolStage::ClassProperty,
                     current_stage: UmlClassToolStage::ClassProperty,
@@ -4539,7 +4543,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
                 EventHandlingStatus::HandledByElement
             }
-            InputEvent::Click(pos) if self.highlight.selected && self.operation_button_rect(ehc.ui_scale).contains(pos) => {
+            InputEvent::Click(pos) if self.highlight.selected && P::allows_class_operations() && self.operation_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlClassTool {
                     initial_stage: UmlClassToolStage::ClassOperation,
                     current_stage: UmlClassToolStage::ClassOperation,
@@ -4779,8 +4783,57 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     }
                 }
             }
-            InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            InsensitiveCommand::RemoveDependency(v, b, element, from_model) => {
+                if *v == *self.uuid && *from_model {
+                    let mut removed_any = false;
+                    if *b == 0 {
+                        self.properties_views.retain(
+                            |e| {
+                                let r = e.read();
+                                if *r.uuid == *element
+                                    && let Some((b, pos)) = self.model.write().remove_element(&r.model_uuid()) {
+                                    undo_accumulator.push(InsensitiveCommand::AddDependency(
+                                        *self.uuid,
+                                        b,
+                                        Some(pos),
+                                        UmlClassElementOrVertex::Element(e.clone().into()),
+                                        true,
+                                    ));
+                                    removed_any = true;
+                                    false
+                                } else {
+                                    true
+                                }
+                            }
+                        );
+                    } else if *b == 1 {
+                        self.operations_views.retain(
+                            |e| {
+                                let r = e.read();
+                                if *r.uuid == *element
+                                    && let Some((b, pos)) = self.model.write().remove_element(&r.model_uuid()){
+                                    undo_accumulator.push(InsensitiveCommand::AddDependency(
+                                        *self.uuid,
+                                        b,
+                                        Some(pos),
+                                        UmlClassElementOrVertex::Element(e.clone().into()),
+                                        true,
+                                    ));
+                                    removed_any = true;
+                                    false
+                                } else {
+                                    true
+                                }
+                            }
+                        );
+                    }
+
+                    if removed_any {
+                        affected_models.insert(*self.model.read().uuid);
+                    }
+                }
+            }
+            InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, properties) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -5532,20 +5585,6 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
-        fn ah(
-            n: UmlClassAssociationNavigability,
-            a: UmlClassAssociationAggregation,
-        ) -> canvas::ArrowheadType {
-            match a {
-                UmlClassAssociationAggregation::None => match n {
-                    UmlClassAssociationNavigability::Unspecified => canvas::ArrowheadType::None,
-                    UmlClassAssociationNavigability::NonNavigable => canvas::ArrowheadType::None,
-                    UmlClassAssociationNavigability::Navigable => canvas::ArrowheadType::OpenTriangle,
-                }
-                UmlClassAssociationAggregation::Shared => canvas::ArrowheadType::EmptyRhombus,
-                UmlClassAssociationAggregation::Composite => canvas::ArrowheadType::FullRhombus,
-            }
-        }
         self.temporaries.arrow_data.clear();
         self.temporaries.arrow_data.insert(
             (false, *model.source.uuid()),

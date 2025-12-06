@@ -50,6 +50,13 @@ impl UmlClassProfile for OntoUmlProfile {
         }
         ui.separator();
     }
+
+    fn allows_class_properties() -> bool {
+        false
+    }
+    fn allows_class_operations() -> bool {
+        false
+    }
 }
 
 #[derive(Clone)]
