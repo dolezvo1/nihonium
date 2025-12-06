@@ -160,14 +160,16 @@ pub fn new(no: u32) -> ERef<dyn DiagramController> {
 }
 
 pub fn demo(no: u32) -> ERef<dyn DiagramController> {
-    let (animal_model, animal_view) = new_umlclass_class("Animal", ontouml_models::KIND, false, Vec::new(), Vec::new(), egui::Pos2::new(150.0, 200.0));
-    let (human_model, human_view) = new_umlclass_class("Human", ontouml_models::SUBKIND, false, Vec::new(), Vec::new(), egui::Pos2::new(150.0, 350.0));
-    let (alive_model, alive_view) = new_umlclass_class("Alive", ontouml_models::PHASE, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 160.0));
-    let (dead_model, dead_view) = new_umlclass_class("Dead", ontouml_models::PHASE, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 250.0));
-    let (marriage_model, marriage_view) = new_umlclass_class("Marriage", ontouml_models::RELATOR, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 350.0));
+    let (animal_model, animal_view) = new_umlclass_class("Animal", ontouml_models::KIND, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 200.0));
+    let (temp_model, temp_view) = new_umlclass_class("Body Temperature", ontouml_models::QUALITY, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 200.0));
+    let (human_model, human_view) = new_umlclass_class("Human", ontouml_models::SUBKIND, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 350.0));
+    let (alive_model, alive_view) = new_umlclass_class("Alive", ontouml_models::PHASE, false, Vec::new(), Vec::new(), egui::Pos2::new(550.0, 160.0));
+    let (dead_model, dead_view) = new_umlclass_class("Dead", ontouml_models::PHASE, false, Vec::new(), Vec::new(), egui::Pos2::new(550.0, 250.0));
+    let (spouse_model, spouse_view) = new_umlclass_class("Spouse", ontouml_models::ROLE, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 500.0));
+    let (marriage_model, marriage_view) = new_umlclass_class("Marriage", ontouml_models::RELATOR, false, Vec::new(), Vec::new(), egui::Pos2::new(550.0, 500.0));
 
     let (gen_phase_model, gen_phase_view) = new_umlclass_generalization(
-        Some((ViewUuid::now_v7(), egui::Pos2::new(280.0, 200.0))),
+        Some((ViewUuid::now_v7(), egui::Pos2::new(480.0, 200.0))),
         (alive_model.clone(), alive_view.clone().into()),
         (animal_model.clone(), animal_view.clone().into()),
     );
@@ -186,9 +188,23 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         (animal_model.clone(), animal_view.clone().into()),
     );
 
+    let (gen_spouse_model, gen_spouse_view) = new_umlclass_generalization(
+        None,
+        (spouse_model.clone(), spouse_view.clone().into()),
+        (human_model.clone(), human_view.clone().into()),
+    );
+
+    let (char_model, char_view) = new_umlclass_association(
+        ontouml_models::CHARACTERIZATION, "", None,
+        (animal_model.clone().into(), animal_view.clone().into()),
+        (temp_model.clone().into(), temp_view.clone().into()),
+    );
+    char_model.write().source_label_multiplicity = Arc::new("1".to_owned());
+    char_model.write().target_label_multiplicity = Arc::new("1".to_owned());
+
     let (mediation_model, mediation_view) = new_umlclass_association(
         ontouml_models::MEDIATION, "", None,
-        (human_model.clone().into(), human_view.clone().into()),
+        (spouse_model.clone().into(), spouse_view.clone().into()),
         (marriage_model.clone().into(), marriage_view.clone().into()),
     );
     mediation_model.write().source_label_multiplicity = Arc::new("2..*".to_owned());
@@ -200,12 +216,16 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         name.clone(),
         vec![
             animal_model.into(),
+            temp_model.into(),
+            char_model.into(),
             human_model.into(),
+            gen_human_model.into(),
             alive_model.into(),
             dead_model.into(),
-            marriage_model.into(),
             gen_phase_model.into(),
-            gen_human_model.into(),
+            spouse_model.into(),
+            gen_spouse_model.into(),
+            marriage_model.into(),
             mediation_model.into(),
         ],
     ));
@@ -215,12 +235,16 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
         UmlClassDiagramAdapter::<OntoUmlProfile>::new(diagram.clone()),
         vec![
             animal_view.into(),
+            temp_view.into(),
+            char_view.into(),
             human_view.into(),
+            gen_human_view.into(),
             alive_view.into(),
             dead_view.into(),
-            marriage_view.into(),
             gen_phase_view.into(),
-            gen_human_view.into(),
+            spouse_view.into(),
+            gen_spouse_view.into(),
+            marriage_view.into(),
             mediation_view.into(),
         ],
     )
