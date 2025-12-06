@@ -2802,25 +2802,27 @@ impl eframe::App for NHApp {
                 ProjectCommand::RenameElement(view_uuid, new_name) => {
                     fn h(
                         e: &mut HierarchyNode,
-                        uuid: ViewUuid,
+                        searched_uuid: ViewUuid,
                         new_name: &str,
                         docs: &mut HashMap<ViewUuid, (String, String)>,
                     ) {
                         match e {
                             HierarchyNode::Folder(view_uuid, name, children) => {
-                                if uuid == *view_uuid {
+                                if searched_uuid == *view_uuid {
                                     *name = new_name.to_owned().into();
                                 }
 
                                 for e in children.iter_mut() {
-                                    h(e, uuid, new_name, docs);
+                                    h(e, searched_uuid, new_name, docs);
                                 }
                             },
-                            HierarchyNode::Diagram(eref) => {
-                                eref.write().set_view_name(new_name.to_owned().into());
+                            HierarchyNode::Diagram(inner) => {
+                                if searched_uuid == *inner.read().uuid() {
+                                    inner.write().set_view_name(new_name.to_owned().into());
+                                }
                             },
                             HierarchyNode::Document(view_uuid) => {
-                                if uuid == *view_uuid
+                                if searched_uuid == *view_uuid
                                     && let Some(e) = docs.get_mut(&view_uuid) {
                                     e.0 = new_name.to_owned();
                                     let mut lines: Vec<&str> = e.1.lines().collect();
