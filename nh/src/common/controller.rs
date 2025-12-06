@@ -800,7 +800,6 @@ pub enum EventHandlingStatus {
 pub enum SensitiveCommand<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> {
     MoveSelectedElements(egui::Vec2),
     ResizeSelectedElementsBy(egui::Align2, egui::Vec2),
-    ResizeSelectedElementsTo(egui::Align2, egui::Vec2),
     DeleteSelectedElements(/*including_models:*/ bool),
     CutSelectedElements,
     PasteClipboardElements,
@@ -833,7 +832,6 @@ impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Ad
         match self {
             SC::MoveSelectedElements(delta) => IC::MoveSpecificElements(se, delta),
             SC::ResizeSelectedElementsBy(align, delta) => IC::ResizeSpecificElementsBy(se, align, delta),
-            SC::ResizeSelectedElementsTo(align, delta) => IC::ResizeSpecificElementsTo(se, align, delta),
             SC::DeleteSelectedElements(including_models) => IC::DeleteSpecificElements(se, including_models),
             SC::CutSelectedElements => IC::CutSpecificElements(se),
             SC::ArrangeSelected(arr) => IC::ArrangeSpecificElements(se, arr),
