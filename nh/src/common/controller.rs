@@ -283,6 +283,7 @@ pub struct SimpleModelHierarchyView<ModelT>
 {
     model: ERef<ModelT>,
     label_provider: ERef<dyn LabelProvider>,
+    state: RwLock<egui_ltreeview::TreeViewState<ModelUuid>>,
 }
 
 impl<ModelT> SimpleModelHierarchyView<ModelT>
@@ -293,7 +294,11 @@ impl<ModelT> SimpleModelHierarchyView<ModelT>
         model: ERef<ModelT>,
         label_provider: ERef<dyn LabelProvider>,
     ) -> Self {
-        Self { model, label_provider }
+        Self {
+            model,
+            label_provider,
+            state: Default::default(),
+        }
     }
 }
 
@@ -326,7 +331,7 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
             is_represented: &'data dyn Fn(&ModelUuid) -> bool,
             label_provider: &'data dyn LabelProvider,
             builder: &'data mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
-            model: PhantomData<ModelT>
+            model: PhantomData<ModelT>,
         }
         impl<'data, 'ui, ModelT> HierarchyViewVisitor<'data, 'ui, ModelT>
             where ModelT: VisitableDiagram,
@@ -338,7 +343,7 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
             fn show_element(&mut self, is_dir: bool, model_uuid: &ModelUuid) {
                 self.builder.node(
                     if is_dir {
-                        egui_ltreeview::NodeBuilder::dir(*model_uuid)
+                        egui_ltreeview::NodeBuilder::dir(*model_uuid).activatable(true)
                     } else {
                         egui_ltreeview::NodeBuilder::leaf(*model_uuid)
                     }.label(format!("{} {}", self.repr_glyph(model_uuid), self.label_provider.get(model_uuid)))
@@ -346,6 +351,17 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
                             ui.set_min_width(crate::MIN_MENU_WIDTH);
 
                             let is_represented = (self.is_represented)(model_uuid);
+                            if is_represented {
+                                if ui.button(translate!(self.gdc, "nh-tab-modelhierarchy-jumpto")).clicked() {
+                                    let model_uuid = (*model_uuid).into();
+                                    self.commands.push(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED));
+                                    self.commands.push(DiagramCommand::HighlightElement(model_uuid, true, Highlight::SELECTED));
+                                    self.commands.push(DiagramCommand::PanToElement(model_uuid, true));
+                                    ui.close();
+                                }
+                                ui.separator();
+                            }
+
                             if !is_represented && ui.button(translate!(self.gdc, "nh-tab-modelhierarchy-createview")).clicked() {
                                 self.commands.push(DiagramCommand::CreateViewFor(*model_uuid));
                                 ui.close();
@@ -397,8 +413,19 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
             }
         }
 
+        let mut set_state = None;
         let mut c = vec![];
-        let (_r, a) = egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show(ui, |builder| {
+        ui.horizontal(|ui| {
+            if ui.button(translate!(gdc, "nh-tab-projecthierarchy-collapseall")).clicked() {
+                set_state = Some(false);
+            }
+            if ui.button(translate!(gdc, "nh-tab-projecthierarchy-uncollapseall")).clicked() {
+                set_state = Some(true);
+            }
+        });
+
+        let mut state = self.state.write().unwrap();
+        let (_r, a) = egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show_state(ui, &mut state, |builder| {
             let mut hvv = HierarchyViewVisitor {
                 gdc,
                 commands: vec![],
@@ -419,6 +446,46 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
                 c.push(DiagramCommand::HighlightElement(e, true, Highlight::SELECTED));
                 c.push(DiagramCommand::PanToElement(e, true));
             }
+        }
+
+        if let Some(b) = set_state {
+            struct StateChangeVisitor<'a, ModelT> {
+                set_open: bool,
+                state: &'a mut egui_ltreeview::TreeViewState<ModelUuid>,
+                model: PhantomData<ModelT>,
+            }
+
+            impl<'a, ModelT> ElementVisitor<<ModelT as ContainerModel>::ElementT> for StateChangeVisitor<'a, ModelT>
+            where ModelT: VisitableDiagram,
+                <ModelT as ContainerModel>::ElementT: VisitableElement,
+            {
+                fn open_complex(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
+                    self.state.set_openness(*e.uuid(), self.set_open);
+                }
+
+                fn close_complex(&mut self, _e: &<ModelT as ContainerModel>::ElementT) {}
+
+                fn visit_simple(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
+                    self.state.set_openness(*e.uuid(), self.set_open);
+                }
+            }
+
+            impl<'a, ModelT> DiagramVisitor<ModelT> for StateChangeVisitor<'a, ModelT>
+                where ModelT: VisitableDiagram,
+                    <ModelT as ContainerModel>::ElementT: VisitableElement,
+            {
+                fn open_diagram(&mut self, e: &ModelT) {
+                    self.state.set_openness(*e.uuid(), self.set_open);
+                }
+
+                fn close_diagram(&mut self, _e: &ModelT) {}
+            }
+
+            self.model.read().accept(&mut StateChangeVisitor {
+                set_open: b,
+                state: &mut state,
+                model: PhantomData,
+            });
         }
 
         c

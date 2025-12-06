@@ -76,6 +76,7 @@ nh-tab-projecthierarchy-duplicate = Duplikovat
 nh-tab-projecthierarchy-duplicateshallow = Duplikovat (mělce)
 
 nh-tab-modelhierarchy = Hierarchie Modelu
+nh-tab-modelhierarchy-jumpto = Skočit k prvku
 nh-tab-modelhierarchy-createview = Vytvořit pohled
 nh-tab-modelhierarchy-deleteview = Odstranit pohled
 nh-tab-modelhierarchy-deletemodel = Odstranit model

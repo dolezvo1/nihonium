@@ -76,6 +76,7 @@ nh-tab-projecthierarchy-duplicate = Duplicate
 nh-tab-projecthierarchy-duplicateshallow = Duplicate (shallow)
 
 nh-tab-modelhierarchy = Model Hierarchy
+nh-tab-modelhierarchy-jumpto = Jump to element
 nh-tab-modelhierarchy-createview = Create view
 nh-tab-modelhierarchy-deleteview = Delete view
 nh-tab-modelhierarchy-deletemodel = Delete model
