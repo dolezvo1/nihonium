@@ -1036,16 +1036,32 @@ where
             (*self.uuid, *self.model_uuid())
         };
 
+        let mut f = |e: &Ending<DomainT::CommonElementViewT>| {
+            Ending::new_p(
+                e.element.clone(),
+                e.points.iter().map(|e| (ViewUuid::now_v7(), e.1)).collect(),
+            )
+        };
+        let sources = self.sources.iter().map(&mut f).collect();
+        let targets = self.targets.iter().map(&mut f).collect();
+        let center_point = if let UFOption::Some(e) = &self.center_point {
+            UFOption::Some((ViewUuid::now_v7(), e.1))
+        } else {
+            UFOption::None
+        };
+
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             adapter: self.adapter.deep_copy_init(model_uuid, m),
-            sources: self.sources.clone(),
-            targets: self.targets.clone(),
+            sources,
+            targets,
             dragged_node: None,
             highlight: self.highlight,
             selected_vertices: self.selected_vertices.clone(),
-            center_point: self.center_point.clone(),
-            point_to_origin: self.point_to_origin.clone(),
+            center_point,
+
+            // There is no need to keep it (undo would destroy the whole clone first)
+            point_to_origin: HashMap::new(),
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
