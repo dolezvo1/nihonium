@@ -130,6 +130,7 @@ enum NHTab {
     ProjectHierarchy,
     ModelHierarchy,
 
+    Search,
     Toolbar,
     Properties,
 
@@ -156,6 +157,7 @@ impl NHTab {
             NHTab::ProjectHierarchy => translate!("nh-tab-projecthierarchy"),
             NHTab::ModelHierarchy => translate!("nh-tab-modelhierarchy"),
 
+            NHTab::Search => translate!("nh-tab-search"),
             NHTab::Toolbar => translate!("nh-tab-toolbar"),
             NHTab::Properties => translate!("nh-tab-properties"),
 
@@ -260,6 +262,10 @@ struct NHContext {
     confirm_modal_reason: Option<SimpleProjectCommand>,
     shortcut_being_set: Option<SimpleProjectCommand>,
 
+    search_query: String,
+    search_error: String,
+    search_results: Vec<(ViewUuid, ModelUuid)>,
+
     show_close_buttons: bool,
     show_add_buttons: bool,
     draggable_tabs: bool,
@@ -300,17 +306,18 @@ impl TabViewer for NHContext {
                 ui.heading("Recently used");
                 ui.label("[no recently used]");
             },
-            NHTab::Settings => self.settings_tab(ui),
+            NHTab::Settings => self.show_settings_tab(ui),
 
-            NHTab::ProjectHierarchy => self.project_hierarchy(ui),
-            NHTab::ModelHierarchy => self.model_hierarchy(ui),
+            NHTab::ProjectHierarchy => self.show_project_hierarchy(ui),
+            NHTab::ModelHierarchy => self.show_model_hierarchy(ui),
 
-            NHTab::Toolbar => self.toolbar(ui),
-            NHTab::Properties => self.properties(ui),
+            NHTab::Search => self.show_search(ui),
+            NHTab::Toolbar => self.show_toolbar(ui),
+            NHTab::Properties => self.show_properties(ui),
 
-            NHTab::Diagram { uuid } => self.diagram_tab(uuid, ui),
-            NHTab::Document { uuid } => self.document_tab(uuid, ui),
-            NHTab::CustomTab { uuid } => self.custom_tab(uuid, ui),
+            NHTab::Diagram { uuid } => self.show_diagram_tab(uuid, ui),
+            NHTab::Document { uuid } => self.show_document_tab(uuid, ui),
+            NHTab::CustomTab { uuid } => self.show_custom_tab(uuid, ui),
         }
     }
 
@@ -642,7 +649,7 @@ impl NHContext {
         self.shortcut_top_order.sort_by(|a, b| weight(&b.1).cmp(&weight(&a.1)));
     }
 
-    fn project_hierarchy(&mut self, ui: &mut Ui) {
+    fn show_project_hierarchy(&mut self, ui: &mut Ui) {
         macro_rules! translate {
             ($context:expr, $msg_name:expr) => {
                 $context.fluent_bundle.format_pattern(
@@ -979,7 +986,7 @@ impl NHContext {
         }
     }
 
-    fn model_hierarchy(&mut self, ui: &mut Ui) {
+    fn show_model_hierarchy(&mut self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((_t, lfc)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
         let model_uuid = lfc.read().model_uuid();
@@ -1003,13 +1010,52 @@ impl NHContext {
         }
     }
 
-    fn toolbar(&self, ui: &mut Ui) {
+    fn show_search(&mut self, ui: &mut Ui) {
+        if ui.text_edit_singleline(&mut self.search_query).changed() {
+            if self.search_query.is_empty() {
+                self.search_results.clear();
+                return;
+            }
+
+            match crate::common::search::parser::parse(&self.search_query) {
+                Err(e) => {
+                    self.search_error = format!("{e}\n\nHint:\nExpr := \"[^\"]*\" | ( Expr )\n\t\t\t| NOT Expr | Expr OR Expr | Expr AND? Expr");
+                },
+                Ok(r) => {
+                    self.search_error.clear();
+                    let mut acc = crate::common::search::Searcher::new(r);
+
+                    for e in &self.diagram_controllers {
+                        e.1.1.read().full_text_search(&mut acc);
+                    }
+
+                    self.search_results = acc.results();
+                }
+            }
+        }
+
+        if !self.search_error.is_empty() {
+            ui.colored_label(egui::Color32::RED, &self.search_error);
+        }
+
+        for (d, m) in &self.search_results {
+            if ui.label(m.to_string()).clicked() {
+                self.unprocessed_commands.extend_from_slice(&[
+                    DiagramCommand::HighlightAllElements(false, crate::common::canvas::Highlight::SELECTED),
+                    DiagramCommand::HighlightElement((*m).into(), true, crate::common::canvas::Highlight::SELECTED),
+                    DiagramCommand::PanToElement((*m).into(), true),
+                ].map(|e| SimpleProjectCommand::SpecificDiagramCommand(*d, e).into()));
+            }
+        }
+    }
+
+    fn show_toolbar(&self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
         c.write().show_toolbar(&self.drawing_context, ui);
     }
 
-    fn properties(&mut self, ui: &mut Ui) {
+    fn show_properties(&mut self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
 
@@ -1026,7 +1072,7 @@ impl NHContext {
         self.refresh_buffers(&affected_models);
     }
 
-    fn settings_tab(&mut self, ui: &mut Ui) {
+    fn show_settings_tab(&mut self, ui: &mut Ui) {
         ui.heading("Settings");
 
         if ui.button("Switch light/dark theme").clicked() {
@@ -1581,7 +1627,7 @@ impl NHContext {
     }
     
     // In general it should draw first and handle input second, right?
-    fn diagram_tab(&mut self, tab_uuid: &ViewUuid, ui: &mut Ui) {
+    fn show_diagram_tab(&mut self, tab_uuid: &ViewUuid, ui: &mut Ui) {
         let Some((t, v)) = self.diagram_controllers.get(tab_uuid).cloned() else { return; };
         let mut diagram_controller = v.write();
 
@@ -1620,7 +1666,7 @@ impl NHContext {
         self.refresh_buffers(&affected_models);
     }
 
-    fn document_tab(&mut self, uuid: &ViewUuid, ui: &mut Ui) {
+    fn show_document_tab(&mut self, uuid: &ViewUuid, ui: &mut Ui) {
         let c = self.documents.get_mut(uuid).unwrap();
         if ui.add_sized(ui.available_size(), egui::TextEdit::multiline(&mut c.1)).changed() {
             c.0 = c.1.lines().next().unwrap_or("empty document").to_owned();
@@ -1628,7 +1674,7 @@ impl NHContext {
         }
     }
 
-    fn custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
+    fn show_custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
         let x = self.custom_tabs.get(tab_uuid).map(|e| e.clone()).unwrap();
         let mut custom_tab = x.write().unwrap();
         custom_tab.show(ui, &mut self.unprocessed_commands);
@@ -1702,10 +1748,11 @@ impl Default for NHApp {
         let [a, b] = dock_state.main_surface_mut().split_left(
             NodeIndex::root(),
             0.2,
-            vec![NHTab::ProjectHierarchy, NHTab::ModelHierarchy],
+            vec![NHTab::ProjectHierarchy, NHTab::ModelHierarchy, NHTab::Search],
         );
         open_unique_tabs.insert(NHTab::ProjectHierarchy);
         open_unique_tabs.insert(NHTab::ModelHierarchy);
+        open_unique_tabs.insert(NHTab::Search);
         let [_, _] = dock_state
             .main_surface_mut()
             .split_right(a, 0.7, vec![NHTab::Properties]);
@@ -1770,6 +1817,10 @@ impl Default for NHApp {
             svg_export_menu: None,
             confirm_modal_reason: None,
             shortcut_being_set: None,
+
+            search_query: "".to_owned(),
+            search_error: "".to_owned(),
+            search_results: Vec::new(),
 
             show_window_close: true,
             show_window_collapse: true,
@@ -2391,6 +2442,7 @@ impl eframe::App for NHApp {
                         NHTab::Settings,
                         NHTab::ProjectHierarchy,
                         NHTab::ModelHierarchy,
+                        NHTab::Search,
                         NHTab::Toolbar,
                         NHTab::Properties,
                     ] {

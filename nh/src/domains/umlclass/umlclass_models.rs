@@ -1,6 +1,7 @@
 use crate::common::controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
+use crate::common::search::FullTextSearchable;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
 use std::{
@@ -265,6 +266,23 @@ impl VisitableElement for UmlClassElement {
                 v.close_complex(self);
             }
             e => v.visit_simple(e),
+        }
+    }
+}
+
+impl FullTextSearchable for UmlClassElement {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        match self {
+            UmlClassElement::UmlClassPackage(inner) => inner.read().full_text_search(acc),
+            UmlClassElement::UmlClassInstance(inner) => inner.read().full_text_search(acc),
+            UmlClassElement::UmlClass(inner) => inner.read().full_text_search(acc),
+            UmlClassElement::UmlClassProperty(inner) => inner.read().full_text_search(acc),
+            UmlClassElement::UmlClassOperation(inner) => inner.read().full_text_search(acc),
+            UmlClassElement::UmlClassGeneralization(inner) => inner.read().full_text_search(acc),
+            UmlClassElement::UmlClassDependency(inner) => inner.read().full_text_search(acc),
+            UmlClassElement::UmlClassAssociation(inner) => inner.read().full_text_search(acc),
+            UmlClassElement::UmlClassComment(inner) => inner.read().full_text_search(acc),
+            UmlClassElement::UmlClassCommentLink(inner) => inner.read().full_text_search(acc),
         }
     }
 }
@@ -546,6 +564,23 @@ impl ContainerModel for UmlClassDiagram {
     }
 }
 
+impl FullTextSearchable for UmlClassDiagram {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.comment,
+            ],
+        );
+
+        for e in &self.contained_elements {
+            e.full_text_search(acc);
+        }
+    }
+}
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -619,6 +654,23 @@ impl ContainerModel for UmlClassPackage {
     }
 }
 
+impl FullTextSearchable for UmlClassPackage {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.comment,
+            ],
+        );
+
+        for e in &self.contained_elements {
+            e.full_text_search(acc);
+        }
+    }
+}
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -670,6 +722,22 @@ impl Entity for UmlClassInstance {
 impl Model for UmlClassInstance {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for UmlClassInstance {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.instance_name,
+                &self.instance_type,
+                &self.stereotype,
+                &self.instance_slots,
+                &self.comment,
+            ],
+        );
     }
 }
 
@@ -790,6 +858,23 @@ impl Model for UmlClassProperty {
     }
 }
 
+impl FullTextSearchable for UmlClassProperty {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.value_type,
+                &self.multiplicity,
+                &self.default_value,
+                &self.stereotype,
+            ],
+        );
+    }
+}
+
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassOperation {
@@ -863,6 +948,22 @@ impl Model for UmlClassOperation {
         self.uuid.clone()
     }
 }
+
+impl FullTextSearchable for UmlClassOperation {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.parameters,
+                &self.return_type,
+                &self.stereotype,
+            ],
+        );
+    }
+}
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -970,6 +1071,28 @@ impl ContainerModel for UmlClass {
             }
         }
         None
+    }
+}
+
+impl FullTextSearchable for UmlClass {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.stereotype,
+                &self.template_parameters,
+                &self.comment,
+            ],
+        );
+
+        for e in &self.properties {
+            e.read().full_text_search(acc);
+        }
+        for e in &self.operations {
+            e.read().full_text_search(acc);
+        }
     }
 }
 
@@ -1084,6 +1207,19 @@ impl ContainerModel for UmlClassGeneralization {
     }
 }
 
+impl FullTextSearchable for UmlClassGeneralization {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.set_name,
+                &self.comment,
+            ],
+        );
+    }
+}
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -1144,6 +1280,20 @@ impl Entity for UmlClassDependency {
 impl Model for UmlClassDependency {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for UmlClassDependency {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.stereotype,
+                &self.name,
+                &self.comment,
+            ],
+        );
     }
 }
 
@@ -1272,6 +1422,21 @@ impl Model for UmlClassAssociation {
     }
 }
 
+impl FullTextSearchable for UmlClassAssociation {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.stereotype,
+                &self.name,
+                &self.comment,
+            ],
+        );
+    }
+}
+
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassComment {
@@ -1300,6 +1465,18 @@ impl Entity for UmlClassComment {
 impl Model for UmlClassComment {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for UmlClassComment {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.text,
+            ],
+        );
     }
 }
 
@@ -1337,5 +1514,16 @@ impl Entity for UmlClassCommentLink {
 impl Model for UmlClassCommentLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for UmlClassCommentLink {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+            ],
+        );
     }
 }

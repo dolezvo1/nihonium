@@ -7,3 +7,4 @@ pub mod views;
 pub mod ufoption;
 pub mod entity;
 pub mod eref;
+pub mod search;

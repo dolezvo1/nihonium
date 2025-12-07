@@ -2,6 +2,7 @@ use crate::common::canvas;
 use crate::common::controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
+use crate::common::search::FullTextSearchable;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
 use crate::domains::demo::DemoTransactionKind;
@@ -43,6 +44,17 @@ impl VisitableElement for DemoCsdElement {
                 }
             }
             e => v.visit_simple(e),
+        }
+    }
+}
+
+impl FullTextSearchable for DemoCsdElement {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        match self {
+            DemoCsdElement::DemoCsdPackage(inner) => inner.read().full_text_search(acc),
+            DemoCsdElement::DemoCsdTransactor(inner) => inner.read().full_text_search(acc),
+            DemoCsdElement::DemoCsdTransaction(inner) => inner.read().full_text_search(acc),
+            DemoCsdElement::DemoCsdLink(inner) => inner.read().full_text_search(acc),
         }
     }
 }
@@ -258,6 +270,23 @@ impl ContainerModel for DemoCsdDiagram {
     }
 }
 
+impl FullTextSearchable for DemoCsdDiagram {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.comment,
+            ],
+        );
+
+        for e in &self.contained_elements {
+            e.full_text_search(acc);
+        }
+    }
+}
+
 // ---
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -329,6 +358,23 @@ impl ContainerModel for DemoCsdPackage {
             }
         }
         None
+    }
+}
+
+impl FullTextSearchable for DemoCsdPackage {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.comment,
+            ],
+        );
+
+        for e in &self.contained_elements {
+            e.full_text_search(acc);
+        }
     }
 }
 
@@ -429,6 +475,24 @@ impl ContainerModel for DemoCsdTransactor {
     }
 }
 
+impl FullTextSearchable for DemoCsdTransactor {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.identifier,
+                &self.name,
+                &self.comment,
+            ],
+        );
+
+        if let UFOption::Some(e) = &self.transaction {
+            e.read().full_text_search(acc);
+        }
+    }
+}
+
 // ---
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -480,6 +544,20 @@ impl Entity for DemoCsdTransaction {
 impl Model for DemoCsdTransaction {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for DemoCsdTransaction {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.identifier,
+                &self.name,
+                &self.comment,
+            ],
+        );
     }
 }
 
@@ -569,5 +647,18 @@ impl Entity for DemoCsdLink {
 impl Model for DemoCsdLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for DemoCsdLink {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.multiplicity,
+                &self.comment,
+            ],
+        );
     }
 }

@@ -1,4 +1,5 @@
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape, UiCanvas};
+use crate::common::search::FullTextSearchable;
 use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
 use egui_ltreeview::DirPosition;
@@ -714,6 +715,8 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
     fn deep_copy(&self) -> ERef<dyn DiagramController>;
     /// Create new view with the same model
     fn shallow_copy(&self) -> ERef<dyn DiagramController>;
+
+    fn full_text_search(&self, _acc: &mut crate::common::search::Searcher);
 }
 
 pub trait ElementController<CommonElementT>: View {
@@ -1016,7 +1019,7 @@ pub struct ColorChangeData {
 
 pub trait Domain: Sized + 'static {
     type CommonElementT: Model + VisitableElement + Clone;
-    type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT> + VisitableDiagram;
+    type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT> + VisitableDiagram + FullTextSearchable;
     type CommonElementViewT: ElementControllerGen2<Self> + serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone;
     type ViewTargettingSectionT: Into<Self::CommonElementT>;
     type QueryableT<'a>: Queryable<'a, Self>;
@@ -2586,6 +2589,11 @@ impl<
     fn shallow_copy(&self) -> ERef<dyn DiagramController> {
         let (new_adapter, models) = self.adapter.fake_copy();
         self.some_kind_of_copy(new_adapter, models)
+    }
+
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.set_current_diagram(*self.uuid);
+        self.adapter.model().read().full_text_search(acc);
     }
 }
 

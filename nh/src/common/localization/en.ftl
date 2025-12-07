@@ -81,6 +81,7 @@ nh-tab-modelhierarchy-createview = Create view
 nh-tab-modelhierarchy-deleteview = Delete view
 nh-tab-modelhierarchy-deletemodel = Delete model
 
+nh-tab-search = Search
 nh-tab-toolbar = Toolbar
 nh-tab-properties = Properties
 nh-tab-diagram = Diagram

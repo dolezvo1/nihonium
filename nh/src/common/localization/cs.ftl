@@ -81,6 +81,7 @@ nh-tab-modelhierarchy-createview = Vytvořit pohled
 nh-tab-modelhierarchy-deleteview = Odstranit pohled
 nh-tab-modelhierarchy-deletemodel = Odstranit model
 
+nh-tab-search = Vyhledávání
 nh-tab-toolbar = Nástroje
 nh-tab-properties = Vlastnosti
 nh-tab-diagram = Diagram

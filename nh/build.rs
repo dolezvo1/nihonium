@@ -2,6 +2,7 @@
 use std::process::Command;
 
 fn main() {
+    // Create commit identifier
     let commit_identifier = {
         if let Ok(output) = Command::new("git")
             .arg("rev-parse")
@@ -22,4 +23,7 @@ fn main() {
     };
 
     println!("cargo:rustc-env=COMMIT_IDENTIFIER={}", commit_identifier);
+
+    // LALRPOP
+    lalrpop::process_root().unwrap();
 }

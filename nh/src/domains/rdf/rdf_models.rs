@@ -1,6 +1,7 @@
 use crate::common::controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
+use crate::common::search::FullTextSearchable;
 use crate::common::uuid::ModelUuid;
 use std::{
     collections::HashMap,
@@ -107,6 +108,17 @@ impl VisitableElement for RdfElement {
                 v.close_complex(self);
             },
             e => v.visit_simple(e),
+        }
+    }
+}
+
+impl FullTextSearchable for RdfElement {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        match self {
+            RdfElement::RdfGraph(inner) => inner.read().full_text_search(acc),
+            RdfElement::RdfLiteral(inner) => inner.read().full_text_search(acc),
+            RdfElement::RdfNode(inner) => inner.read().full_text_search(acc),
+            RdfElement::RdfPredicate(inner) => inner.read().full_text_search(acc),
         }
     }
 }
@@ -341,6 +353,24 @@ impl ContainerModel for RdfDiagram {
     }
 }
 
+impl FullTextSearchable for RdfDiagram {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.comment,
+            ],
+        );
+
+        for e in &self.contained_elements {
+            e.full_text_search(acc);
+        }
+    }
+}
+
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct RdfGraph {
@@ -413,6 +443,24 @@ impl ContainerModel for RdfGraph {
     }
 }
 
+impl FullTextSearchable for RdfGraph {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.iri,
+                &self.comment,
+            ],
+        );
+
+        for e in &self.contained_elements {
+            e.full_text_search(acc);
+        }
+    }
+}
+
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct RdfLiteral {
@@ -469,6 +517,22 @@ impl Model for RdfLiteral {
     }
 }
 
+impl FullTextSearchable for RdfLiteral {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.content,
+                &self.datatype,
+                &self.langtag,
+                &self.comment,
+            ],
+        );
+    }
+}
+
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct RdfNode {
@@ -504,6 +568,20 @@ impl Model for RdfNode {
         self.uuid.clone()
     }
 }
+
+impl FullTextSearchable for RdfNode {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.iri,
+                &self.comment,
+            ],
+        );
+    }
+}
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -544,5 +622,18 @@ impl Entity for RdfPredicate {
 impl Model for RdfPredicate {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for RdfPredicate {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.iri,
+                &self.comment,
+            ],
+        );
     }
 }

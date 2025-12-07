@@ -4,8 +4,13 @@ name = "nh"
 version = "0.1.0"
 edition = "2024"
 
+[build-dependencies]
+lalrpop = "0.22"
+
 [dependencies]
 nh-derive = { path = "../nh-derive" }
+lalrpop = "0.22"
+lalrpop-util = "0.22"
 
 derive_more = { version = "2.0", features = [ "from", "try_into", "not" ] }
 eframe = "0.33"

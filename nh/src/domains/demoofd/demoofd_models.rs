@@ -5,11 +5,7 @@ use std::{
 };
 
 use crate::{common::{
-    controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement},
-    entity::{Entity, EntityUuid},
-    eref::ERef,
-    ufoption::UFOption,
-    uuid::ModelUuid,
+    controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement}, entity::{Entity, EntityUuid}, eref::ERef, search::FullTextSearchable, ufoption::UFOption, uuid::ModelUuid
 }, domains::demo::DemoTransactionKind};
 
 
@@ -65,6 +61,21 @@ impl VisitableElement for DemoOfdElement {
                 }
             }
             _ => v.visit_simple(self),
+        }
+    }
+}
+
+impl FullTextSearchable for DemoOfdElement {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        match self {
+            DemoOfdElement::DemoOfdPackage(inner) => inner.read().full_text_search(acc),
+            DemoOfdElement::DemoOfdEntityType(inner) => inner.read().full_text_search(acc),
+            DemoOfdElement::DemoOfdEventType(inner) => inner.read().full_text_search(acc),
+            DemoOfdElement::DemoOfdPropertyType(inner) => inner.read().full_text_search(acc),
+            DemoOfdElement::DemoOfdSpecialization(inner) => inner.read().full_text_search(acc),
+            DemoOfdElement::DemoOfdAggregation(inner) => inner.read().full_text_search(acc),
+            DemoOfdElement::DemoOfdPrecedence(inner) => inner.read().full_text_search(acc),
+            DemoOfdElement::DemoOfdExclusion(inner) => inner.read().full_text_search(acc),
         }
     }
 }
@@ -336,6 +347,23 @@ impl ContainerModel for DemoOfdDiagram {
     }
 }
 
+impl FullTextSearchable for DemoOfdDiagram {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.comment,
+            ],
+        );
+
+        for e in &self.contained_elements {
+            e.full_text_search(acc);
+        }
+    }
+}
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -417,6 +445,23 @@ impl ContainerModel for DemoOfdPackage {
     }
 }
 
+impl FullTextSearchable for DemoOfdPackage {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.comment,
+            ],
+        );
+
+        for e in &self.contained_elements {
+            e.full_text_search(acc);
+        }
+    }
+}
+
 
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -465,6 +510,20 @@ impl Entity for DemoOfdEntityType {
 impl Model for DemoOfdEntityType {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for DemoOfdEntityType {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.properties,
+                &self.comment,
+            ],
+        );
     }
 }
 
@@ -565,6 +624,25 @@ impl ContainerModel for DemoOfdEventType {
     }
 }
 
+impl FullTextSearchable for DemoOfdEventType {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.identifier,
+                &self.name,
+                &self.comment,
+            ],
+        );
+
+        if let UFOption::Some(e) = &self.specialization_entity_type {
+            e.read().full_text_search(acc);
+        }
+    }
+}
+
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoOfdPropertyType {
@@ -625,6 +703,21 @@ impl Model for DemoOfdPropertyType {
     }
 }
 
+impl FullTextSearchable for DemoOfdPropertyType {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.domain_multiplicity,
+                &self.range_multiplicity,
+                &self.comment,
+            ],
+        );
+    }
+}
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -673,6 +766,18 @@ impl Entity for DemoOfdSpecialization {
 impl Model for DemoOfdSpecialization {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for DemoOfdSpecialization {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.comment,
+            ],
+        );
     }
 }
 
@@ -779,6 +884,18 @@ impl ContainerModel for DemoOfdAggregation {
     }
 }
 
+impl FullTextSearchable for DemoOfdAggregation {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.comment,
+            ],
+        );
+    }
+}
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -830,6 +947,18 @@ impl Model for DemoOfdPrecedence {
     }
 }
 
+impl FullTextSearchable for DemoOfdPrecedence {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.comment,
+            ],
+        );
+    }
+}
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -878,5 +1007,17 @@ impl Entity for DemoOfdExclusion {
 impl Model for DemoOfdExclusion {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for DemoOfdExclusion {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.comment,
+            ],
+        );
     }
 }

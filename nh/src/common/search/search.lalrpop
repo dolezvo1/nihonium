@@ -1,0 +1,31 @@
+
+use crate::common::search::ast::*;
+grammar;
+
+pub Expr: Expr = {
+    #[precedence(level="0")]
+    Primary,
+
+    #[precedence(level="10")]
+    "NOT" <e:Expr> => Expr::Not(Box::new(e)),
+
+    #[precedence(level="20")] #[assoc(side="left")]
+    <l:Expr> "OR" <r:Expr> => Expr::Or(Box::new(l), Box::new(r)),
+
+    #[precedence(level="30")] #[assoc(side="left")]
+    <l:Expr> "AND"? <r:Expr> => Expr::And(Box::new(l), Box::new(r)),
+}
+
+Primary: Expr = {
+    Literal => Expr::Literal(<>),
+    "(" <Expr> ")",
+}
+
+Literal: String = { StringLiteral }
+//BareWord: String = <rs:r#"[^ ]*"#>;
+StringLiteral: String = <rs:r#""[^"]*""#> => {
+        let mut chars = rs.chars();
+        chars.next();
+        chars.next_back();
+        chars.as_str().to_owned()
+    };
