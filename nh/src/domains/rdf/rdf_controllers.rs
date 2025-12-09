@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -25,7 +25,6 @@ impl Domain for RdfDomain {
     type CommonElementViewT = RdfElementView;
     type ViewTargettingSectionT = RdfElement;
     type QueryableT<'a> = RdfQueryable<'a>;
-    type LabelProviderT = RdfLabelProvider;
     type ToolT = NaiveRdfTool;
     type AddCommandElementT = RdfElementOrVertex;
     type PropChangeT = RdfPropChange;
@@ -49,45 +48,6 @@ impl<'a> Queryable<'a, RdfDomain> for RdfQueryable<'a> {
 
     fn get_view(&self, m: &ModelUuid) -> Option<RdfElementView> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
-    }
-}
-
-#[derive(Default)]
-pub struct RdfLabelProvider {
-    cache: HashMap<ModelUuid, Arc<String>>,
-}
-
-impl LabelProvider for RdfLabelProvider {
-    fn get(&self, uuid: &ModelUuid) -> Arc<String> {
-        self.cache.get(uuid).cloned()
-            .unwrap_or_else(|| Arc::new(format!("{:?}", uuid)))
-    }
-}
-
-impl CachingLabelDeriver<RdfElement> for RdfLabelProvider {
-    fn update(&mut self, e: &RdfElement) {
-        match e {
-            RdfElement::RdfGraph(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, r.iri.clone());
-            },
-            RdfElement::RdfLiteral(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, r.content.clone());
-            },
-            RdfElement::RdfNode(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, r.iri.clone());
-            },
-            RdfElement::RdfPredicate(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, r.iri.clone());
-            },
-        }
-    }
-
-    fn insert(&mut self, k: ModelUuid, v: Arc<String>) {
-        self.cache.insert(k, v);
     }
 }
 
@@ -293,6 +253,22 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
 
         Ok(v)
     }
+    fn label_for(&self, e: &RdfElement) -> Arc<String> {
+        match e {
+            RdfElement::RdfGraph(inner) => {
+                inner.read().iri.clone()
+            },
+            RdfElement::RdfLiteral(inner) => {
+                inner.read().content.clone()
+            },
+            RdfElement::RdfNode(inner) => {
+                inner.read().iri.clone()
+            },
+            RdfElement::RdfPredicate(inner) => {
+                inner.read().iri.clone()
+            },
+        }
+    }
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
         global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE)
@@ -478,7 +454,6 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     fn menubar_options_fun(
         &self,
         _view_uuid: &ViewUuid,
-        _label_provider: &ERef<dyn LabelProvider>,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
@@ -1173,7 +1148,6 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         &mut self,
         _gdc: &GlobalDrawingContext,
         _q: &RdfQueryable,
-        _lp: &RdfLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> PropertiesStatus<RdfDomain> {
@@ -1638,7 +1612,6 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         &mut self,
         _gdc: &GlobalDrawingContext,
         _q: &RdfQueryable,
-        _lp: &RdfLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> PropertiesStatus<RdfDomain> {

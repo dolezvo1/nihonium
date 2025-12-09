@@ -3,7 +3,7 @@ use super::demoofd_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -34,7 +34,6 @@ impl Domain for DemoOfdDomain {
     type CommonElementViewT = DemoOfdElementView;
     type ViewTargettingSectionT = DemoOfdElement;
     type QueryableT<'a> = DemoOfdQueryable<'a>;
-    type LabelProviderT = DemoOfdLabelProvider;
     type ToolT = NaiveDemoOfdTool;
     type AddCommandElementT = DemoOfdElementOrVertex;
     type PropChangeT = DemoOfdPropChange;
@@ -62,55 +61,6 @@ impl<'a> Queryable<'a, DemoOfdDomain> for DemoOfdQueryable<'a> {
 
     fn get_view(&self, m: &ModelUuid) -> Option<DemoOfdElementView> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
-    }
-}
-
-#[derive(Default)]
-pub struct DemoOfdLabelProvider {
-    cache: HashMap<ModelUuid, Arc<String>>,
-}
-
-impl LabelProvider for DemoOfdLabelProvider {
-    fn get(&self, uuid: &ModelUuid) -> Arc<String> {
-        self.cache.get(uuid).cloned()
-            .unwrap_or_else(|| Arc::new(format!("{:?}", uuid)))
-    }
-}
-
-impl CachingLabelDeriver<DemoOfdElement> for DemoOfdLabelProvider {
-    fn update(&mut self, e: &DemoOfdElement) {
-        match e {
-            DemoOfdElement::DemoOfdPackage(inner) => {
-                self.cache.insert(*inner.read().uuid, Arc::new("Package".to_owned()));
-            }
-            DemoOfdElement::DemoOfdEntityType(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, r.name.clone());
-            },
-            DemoOfdElement::DemoOfdEventType(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, r.name.clone());
-            },
-            DemoOfdElement::DemoOfdPropertyType(inner) => {
-                self.cache.insert(*inner.read().uuid, Arc::new("Property".to_owned()));
-            },
-            DemoOfdElement::DemoOfdSpecialization(inner) => {
-                self.cache.insert(*inner.read().uuid, Arc::new("Specialization".to_owned()));
-            },
-            DemoOfdElement::DemoOfdAggregation(inner) => {
-                self.cache.insert(*inner.read().uuid, Arc::new("Aggregation".to_owned()));
-            },
-            DemoOfdElement::DemoOfdPrecedence(inner) => {
-                self.cache.insert(*inner.read().uuid, Arc::new("Precedence".to_owned()));
-            },
-            DemoOfdElement::DemoOfdExclusion(inner) => {
-                self.cache.insert(*inner.read().uuid, Arc::new("Exclusion".to_owned()));
-            },
-        }
-    }
-
-    fn insert(&mut self, k: ModelUuid, v: Arc<String>) {
-        self.cache.insert(k, v);
     }
 }
 
@@ -398,6 +348,34 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
 
         Ok(v)
     }
+    fn label_for(&self, e: &DemoOfdElement) -> Arc<String> {
+        match e {
+            DemoOfdElement::DemoOfdPackage(_inner) => {
+                Arc::new("Package".to_owned())
+            }
+            DemoOfdElement::DemoOfdEntityType(inner) => {
+                inner.read().name.clone()
+            },
+            DemoOfdElement::DemoOfdEventType(inner) => {
+                inner.read().name.clone()
+            },
+            DemoOfdElement::DemoOfdPropertyType(_inner) => {
+                Arc::new("Property".to_owned())
+            },
+            DemoOfdElement::DemoOfdSpecialization(_inner) => {
+                Arc::new("Specialization".to_owned())
+            },
+            DemoOfdElement::DemoOfdAggregation(_inner) => {
+                Arc::new("Aggregation".to_owned())
+            },
+            DemoOfdElement::DemoOfdPrecedence(_inner) => {
+                Arc::new("Precedence".to_owned())
+            },
+            DemoOfdElement::DemoOfdExclusion(_inner) => {
+                Arc::new("Exclusion".to_owned())
+            },
+        }
+    }
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
         global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE)
@@ -616,7 +594,6 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
     fn menubar_options_fun(
         &self,
         _view_uuid: &ViewUuid,
-        _label_provider: &ERef<dyn LabelProvider>,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) {}
@@ -1777,7 +1754,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         &mut self,
         _gdc: &GlobalDrawingContext,
         _q: &DemoOfdQueryable,
-        _lp: &DemoOfdLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> PropertiesStatus<DemoOfdDomain> {
@@ -2296,14 +2272,13 @@ impl ContainerGen2<DemoOfdDomain> for DemoOfdEventView {}
 impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     fn show_properties(
         &mut self,
-        drawing_context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         q: &DemoOfdQueryable,
-        lp: &DemoOfdLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> PropertiesStatus<DemoOfdDomain> {
         if let Some(child) = self.specialization_view.as_mut()
-                .and_then(|t| t.write().show_properties(drawing_context, q, lp, ui, commands).to_non_default()) {
+                .and_then(|t| t.write().show_properties(gdc, q, ui, commands).to_non_default()) {
             return child;
         }
 

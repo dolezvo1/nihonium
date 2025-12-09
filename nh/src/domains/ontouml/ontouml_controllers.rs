@@ -4,7 +4,7 @@ use super::super::umlclass::{
 };
 use crate::{common::{
     controller::{
-        DiagramController, DiagramControllerGen2, ElementControllerGen2, InsensitiveCommand, LabelProvider, ProjectCommand, View
+        DiagramController, DiagramControllerGen2, ElementControllerGen2, InsensitiveCommand, ProjectCommand, View
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
@@ -30,7 +30,6 @@ impl UmlClassProfile for OntoUmlProfile {
     fn menubar_options_fun(
         model: &ERef<UmlClassDiagram>,
         view_uuid: &ViewUuid,
-        label_provider: &ERef<dyn LabelProvider>,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
@@ -45,7 +44,7 @@ impl UmlClassProfile for OntoUmlProfile {
             let uuid = uuid::Uuid::now_v7();
             commands.push(ProjectCommand::AddCustomTab(
                 uuid,
-                Arc::new(RwLock::new(super::ontouml_validations::OntoUMLValidationTab::new(model.clone(), label_provider.clone(), *view_uuid))),
+                Arc::new(RwLock::new(super::ontouml_validations::OntoUMLValidationTab::new(model.clone(), *view_uuid))),
             ));
         }
         ui.separator();

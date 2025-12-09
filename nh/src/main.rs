@@ -26,7 +26,7 @@ mod domains;
 
 use crate::common::eref::ERef;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
-use crate::common::controller::{ColorBundle, DeleteKind, DiagramCommand, DiagramController, ModifierKeys, ModifierSettings, TOOL_PALETTE_MAX_HEIGHT, TOOL_PALETTE_MIN_HEIGHT};
+use crate::common::controller::{ColorBundle, DeleteKind, DiagramCommand, DiagramController, LabelProvider, ModifierKeys, ModifierSettings, TOOL_PALETTE_MAX_HEIGHT, TOOL_PALETTE_MIN_HEIGHT};
 use crate::common::project_serde::{FSRawReader, FSRawWriter, FSReadAbstraction, FSWriteAbstraction, ZipFSReader, ZipFSWriter};
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
@@ -170,7 +170,12 @@ impl NHTab {
 
 pub trait CustomTab {
     fn title(&self) -> String;
-    fn show(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>);
+    fn show(
+        &mut self,
+        gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
     //fn on_close(&mut self, context: &mut NHApp);
 }
 
@@ -363,22 +368,23 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
     if ui.button(translate!("nh-project-addnewdocument")).clicked() {
         commands.push(ProjectCommand::AddNewDocument(ViewUuid::now_v7(), "New Document".to_owned()));
     }
+
+    type DiagramF = fn(u32) -> ERef<dyn DiagramController + 'static>;
     ui.menu_button(translate!("nh-project-addnewdiagram"), |ui| {
         ui.set_min_width(MIN_MENU_WIDTH);
 
-        type NDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
         ui.menu_button("UML Class", |ui| {
             ui.set_min_width(MIN_MENU_WIDTH);
             for (label, diagram_type, fun) in [
                 (
                     "UML Class diagram",
                     1,
-                    crate::domains::umlclass::umlclass_controllers::new as NDC,
+                    crate::domains::umlclass::umlclass_controllers::new as DiagramF,
                 ),
                 (
                     "OntoUML diagram",
                     3,
-                    crate::domains::ontouml::ontouml_controllers::new as NDC,
+                    crate::domains::ontouml::ontouml_controllers::new as DiagramF,
                 ),
             ] {
                 diagram_button!(ui, label, diagram_type, fun);
@@ -391,17 +397,17 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
                 (
                     "Coordination Structure Diagram",
                     2,
-                    crate::domains::democsd::democsd_controllers::new as NDC,
+                    crate::domains::democsd::democsd_controllers::new as DiagramF,
                 ),
                 (
                     "Process Structure Diagram",
                     5,
-                    crate::domains::demopsd::demopsd_controllers::new as NDC,
+                    crate::domains::demopsd::demopsd_controllers::new as DiagramF,
                 ),
                 (
                     "Object Fact Diagram",
                     4,
-                    crate::domains::demoofd::demoofd_controllers::new as NDC,
+                    crate::domains::demoofd::demoofd_controllers::new as DiagramF,
                 ),
             ] {
                 diagram_button!(ui, label, diagram_type, fun);
@@ -409,7 +415,7 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
         });
 
         for (label, diagram_type, fun) in [
-            ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::new as NDC),
+            ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::new as DiagramF),
         ] {
             diagram_button!(ui, label, diagram_type, fun);
         }
@@ -417,19 +423,18 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
     ui.menu_button(translate!("nh-project-adddemodiagram"), |ui| {
         ui.set_min_width(MIN_MENU_WIDTH);
 
-        type DDC = fn(u32) -> ERef<dyn DiagramController + 'static>;
         ui.menu_button("UML Class", |ui| {
             ui.set_min_width(MIN_MENU_WIDTH);
             for (label, diagram_type, fun) in [
                 (
                     "UML Class diagram",
                     1,
-                    crate::domains::umlclass::umlclass_controllers::demo as DDC,
+                    crate::domains::umlclass::umlclass_controllers::demo as DiagramF,
                 ),
                 (
                     "OntoUML diagram",
                     3,
-                    crate::domains::ontouml::ontouml_controllers::demo as DDC,
+                    crate::domains::ontouml::ontouml_controllers::demo as DiagramF,
                 ),
             ] {
                 diagram_button!(ui, label, diagram_type, fun);
@@ -442,17 +447,17 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
                 (
                     "Coordination Structure Diagram",
                     2,
-                    crate::domains::democsd::democsd_controllers::demo as DDC,
+                    crate::domains::democsd::democsd_controllers::demo as DiagramF,
                 ),
                 (
                     "Process Structure Diagram",
                     5,
-                    crate::domains::demopsd::demopsd_controllers::demo as DDC,
+                    crate::domains::demopsd::demopsd_controllers::demo as DiagramF,
                 ),
                 (
                     "Object Fact Diagram",
                     4,
-                    crate::domains::demoofd::demoofd_controllers::demo as DDC,
+                    crate::domains::demoofd::demoofd_controllers::demo as DiagramF,
                 ),
             ] {
                 diagram_button!(ui, label, diagram_type, fun);
@@ -460,7 +465,7 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
         });
 
         for (label, diagram_type, fun) in [
-            ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::demo as DDC),
+            ("RDF diagram", 0, crate::domains::rdf::rdf_controllers::demo as DiagramF),
         ] {
             diagram_button!(ui, label, diagram_type, fun);
         }
@@ -608,9 +613,10 @@ impl NHContext {
         *project_name = Arc::new(pdto.project_name());
         self.new_diagram_no = pdto.new_diagram_no_counter() as u32;
         for e in &top_level_views {
-            let r = e.1.1.read();
-            let (uuid, mhv) = (*r.model_uuid(), r.new_hierarchy_view());
+            let mut w = e.1.1.write();
+            let (uuid, mhv) = (*w.model_uuid(), w.new_hierarchy_view());
             self.model_hierarchy_views.insert(uuid, mhv);
+            w.refresh_all_buffers(&mut self.drawing_context.model_labels);
         }
         self.diagram_controllers = top_level_views;
         self.documents = documents;
@@ -963,7 +969,10 @@ impl NHContext {
         }
 
         for (_, e) in self.diagram_controllers.values_mut() {
-            e.write().refresh_buffers(affected_models);
+            e.write().refresh_buffers(
+                affected_models,
+                &mut self.drawing_context.model_labels,
+            );
         }
     }
 
@@ -1039,7 +1048,8 @@ impl NHContext {
         }
 
         for (d, m) in &self.search_results {
-            if ui.label(m.to_string()).clicked() {
+            if ui.label(&*self.drawing_context.model_labels.get(m)).clicked() {
+                self.unprocessed_commands.push(ProjectCommand::OpenAndFocusDiagram(*d, None));
                 self.unprocessed_commands.extend_from_slice(&[
                     DiagramCommand::HighlightAllElements(false, crate::common::canvas::Highlight::SELECTED),
                     DiagramCommand::HighlightElement((*m).into(), true, crate::common::canvas::Highlight::SELECTED),
@@ -1677,7 +1687,7 @@ impl NHContext {
     fn show_custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
         let x = self.custom_tabs.get(tab_uuid).map(|e| e.clone()).unwrap();
         let mut custom_tab = x.write().unwrap();
-        custom_tab.show(ui, &mut self.unprocessed_commands);
+        custom_tab.show(&self.drawing_context, ui, &mut self.unprocessed_commands);
     }
 
     fn last_focused_diagram(&self) -> Option<(usize, ERef<dyn DiagramController>)> {
@@ -1699,6 +1709,7 @@ impl Default for NHApp {
         let mut hierarchy = vec![];
         let mut model_hierarchy_views = HashMap::<_, Arc<dyn ModelHierarchyView>>::new();
         let mut tabs = vec![NHTab::RecentlyUsed, NHTab::Settings];
+        let mut model_labels = LabelProvider::new();
 
         let documents = {
             let mut d = HashMap::<ViewUuid, (String, String)>::new();
@@ -1718,10 +1729,11 @@ impl Default for NHApp {
         for (diagram_type, view) in [
             (1, crate::domains::umlclass::umlclass_controllers::demo(1)),
         ] {
-            let r = view.read();
-            let mhview = r.new_hierarchy_view();
-            let (view_uuid, model_uuid) = (*r.uuid(), *r.model_uuid());
-            drop(r);
+            let mut w = view.write();
+            let mhview = w.new_hierarchy_view();
+            let (view_uuid, model_uuid) = (*w.uuid(), *w.model_uuid());
+            w.refresh_all_buffers(&mut model_labels);
+            drop(w);
 
             hierarchy.push(HierarchyNode::Diagram(view.clone()));
             diagram_controllers.insert(view_uuid, (diagram_type, view));
@@ -1802,6 +1814,7 @@ impl Default for NHApp {
                 fluent_bundle,
                 shortcuts: HashMap::new(),
                 tool_palette_item_height: 60,
+                model_labels,
             },
             
             undo_stack: Vec::new(),
@@ -1938,10 +1951,11 @@ impl NHApp {
         diagram_type: usize,
         diagram_view: ERef<dyn DiagramController>,
     ) {
-        let r = diagram_view.read();
-        let (view_uuid, model_uuid) = (*r.uuid(), *r.model_uuid());
-        let hierarchy_view = r.new_hierarchy_view();
-        drop(r);
+        let mut w = diagram_view.write();
+        let (view_uuid, model_uuid) = (*w.uuid(), *w.model_uuid());
+        w.refresh_all_buffers(&mut self.context.drawing_context.model_labels);
+        let hierarchy_view = w.new_hierarchy_view();
+        drop(w);
 
         if let HierarchyNode::Folder(.., children) = &mut self.context.project_hierarchy {
             children.push(HierarchyNode::Diagram(diagram_view.clone()));

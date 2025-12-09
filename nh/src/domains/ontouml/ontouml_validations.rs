@@ -2,12 +2,11 @@ use std::{collections::{HashMap, HashSet}, sync::{Arc, RwLockReadGuard}};
 
 use eframe::egui;
 
-use crate::{CustomTab, common::{canvas::Highlight, controller::{DiagramCommand, LabelProvider, Model, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, domains::{ontouml::ontouml_models, umlclass::umlclass_models::{UmlClass, UmlClassClassifier, UmlClassGeneralization}}};
+use crate::{CustomTab, common::{canvas::Highlight, controller::{DiagramCommand, GlobalDrawingContext, Model, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, domains::{ontouml::ontouml_models, umlclass::umlclass_models::{UmlClass, UmlClassClassifier, UmlClassGeneralization}}};
 use super::super::umlclass::umlclass_models::{UmlClassDiagram, UmlClassElement};
 
 pub struct OntoUMLValidationTab {
     model: ERef<UmlClassDiagram>,
-    label_provider: ERef<dyn LabelProvider>,
     view_uuid: ViewUuid,
     check_errors: bool,
     check_antipatterns: bool,
@@ -17,12 +16,10 @@ pub struct OntoUMLValidationTab {
 impl OntoUMLValidationTab {
     pub fn new(
         model: ERef<UmlClassDiagram>,
-        label_provider: ERef<dyn LabelProvider>,
         view_uuid: ViewUuid,
     ) -> Self {
         Self {
             model,
-            label_provider,
             view_uuid,
             check_errors: true,
             check_antipatterns: false,
@@ -795,7 +792,12 @@ impl CustomTab for OntoUMLValidationTab {
         "OntoUML Validations".to_owned()
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
+    fn show(
+        &mut self,
+        gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
         ui.horizontal(|ui| {
             if ui.button("Clear highlighting").clicked() {
                 commands.push(
@@ -871,7 +873,7 @@ impl CustomTab for OntoUMLValidationTab {
                             });
 
                             row.col(|ui| {
-                                if ui.label(&*self.label_provider.read().get(&uuid)).clicked() {
+                                if ui.label(&*gdc.model_labels.get(&uuid)).clicked() {
                                     commands.push(
                                         SimpleProjectCommand::SpecificDiagramCommand(
                                             self.view_uuid,

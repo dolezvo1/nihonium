@@ -4,7 +4,7 @@ use eframe::egui;
 use sophia::api::{prelude::SparqlDataset, sparql::Query};
 use sophia_sparql::{ResultTerm, SparqlQuery, SparqlWrapper};
 
-use crate::{common::{controller::ProjectCommand, eref::ERef}, CustomTab};
+use crate::{CustomTab, common::{controller::{GlobalDrawingContext, ProjectCommand}, eref::ERef}};
 use super::rdf_models::RdfDiagram;
 
 pub struct SparqlQueriesTab {
@@ -79,7 +79,12 @@ impl CustomTab for SparqlQueriesTab {
         "SPARQL Queries".to_owned()
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {
+    fn show(
+        &mut self,
+        _gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        _commands: &mut Vec<ProjectCommand>,
+    ) {
         let mut model = self.model.write();
 
         ui.label("Select diagram");

@@ -289,9 +289,8 @@ where
 {
     fn show_properties(
         &mut self,
-        _drawing_context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         q: &DomainT::QueryableT<'_>,
-        lp: &DomainT::LabelProviderT,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
@@ -301,7 +300,7 @@ where
 
         fn display_endings_info<'a, DomainT: Domain>(
             q: &'a DomainT::QueryableT<'_>,
-            lp: &'a DomainT::LabelProviderT,
+            lp: &'a LabelProvider,
             ui: &mut egui::Ui,
             commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
             models: &'a [ModelUuid],
@@ -336,9 +335,9 @@ where
             }
         }
         ui.label("Sources:");
-        display_endings_info::<DomainT>(q, lp, ui, commands, self.adapter.source_uuids(), &self.sources, *self.uuid, 0);
+        display_endings_info::<DomainT>(q, &gdc.model_labels, ui, commands, self.adapter.source_uuids(), &self.sources, *self.uuid, 0);
         ui.label("Targets:");
-        display_endings_info::<DomainT>(q, lp, ui, commands, self.adapter.target_uuids(), &self.targets, *self.uuid, 1);
+        display_endings_info::<DomainT>(q, &gdc.model_labels, ui, commands, self.adapter.target_uuids(), &self.targets, *self.uuid, 1);
 
         return self.adapter.show_properties(ui, commands);
     }

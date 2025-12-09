@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -51,7 +51,6 @@ pub trait UmlClassProfile: Default + Clone + Send + Sync + 'static {
     fn menubar_options_fun(
         model: &ERef<UmlClassDiagram>,
         _view_uuid: &ViewUuid,
-        _label_provider: &ERef<dyn LabelProvider>,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
@@ -111,7 +110,6 @@ impl<P: UmlClassProfile> Domain for UmlClassDomain<P> {
     type CommonElementViewT = UmlClassElementView<P>;
     type ViewTargettingSectionT = UmlClassElement;
     type QueryableT<'a> = UmlClassQueryable<'a, P>;
-    type LabelProviderT = UmlClassLabelProvider;
     type ToolT = NaiveUmlClassTool<P>;
     type AddCommandElementT = UmlClassElementOrVertex<P>;
     type PropChangeT = UmlClassPropChange;
@@ -138,99 +136,6 @@ impl<'a, P: UmlClassProfile> Queryable<'a, UmlClassDomain<P>> for UmlClassQuerya
 
     fn get_view(&self, m: &ModelUuid) -> Option<UmlClassElementView<P>> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
-    }
-}
-
-#[derive(Default)]
-pub struct UmlClassLabelProvider {
-    cache: HashMap<ModelUuid, Arc<String>>,
-}
-
-impl LabelProvider for UmlClassLabelProvider {
-    fn get(&self, uuid: &ModelUuid) -> Arc<String> {
-        self.cache.get(uuid).cloned()
-            .unwrap_or_else(|| Arc::new(format!("{:?}", uuid)))
-    }
-}
-
-impl CachingLabelDeriver<UmlClassElement> for UmlClassLabelProvider {
-    fn update(&mut self, e: &UmlClassElement) {
-        match e {
-            UmlClassElement::UmlClassPackage(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, r.name.clone());
-            },
-            UmlClassElement::UmlClassInstance(inner) => {
-                let r = inner.read();
-                let s = if r.instance_name.is_empty() {
-                    format!(":{}", r.instance_type)
-                } else {
-                    format!("{}: {}", r.instance_name, r.instance_type)
-                };
-                self.cache.insert(*r.uuid, Arc::new(s));
-            },
-            UmlClassElement::UmlClass(inner) => {
-                let r = inner.read();
-                let s = if r.stereotype.is_empty() {
-                    r.name.clone()
-                } else {
-                    Arc::new(format!("{} «{}»", r.name, r.stereotype))
-                };
-                self.cache.insert(*r.uuid, s);
-            },
-            UmlClassElement::UmlClassProperty(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, r.name.clone());
-            }
-            UmlClassElement::UmlClassOperation(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, r.name.clone());
-            }
-            UmlClassElement::UmlClassGeneralization(inner) => {
-                let r = inner.read();
-                let s = if r.set_name.is_empty() {
-                    "Generalization".to_owned()
-                } else {
-                    format!("Generalization ({})", r.set_name)
-                };
-                self.cache.insert(*r.uuid, Arc::new(s));
-            },
-            UmlClassElement::UmlClassDependency(inner) => {
-                let r = inner.read();
-                let s = if r.stereotype.is_empty() {
-                    "Dependency".to_owned()
-                } else {
-                    format!("Dependency ({})", r.stereotype)
-                };
-                self.cache.insert(*r.uuid, Arc::new(s));
-            }
-            UmlClassElement::UmlClassAssociation(inner) => {
-                let r = inner.read();
-                let s = if r.stereotype.is_empty() {
-                    "Association".to_owned()
-                } else {
-                    format!("Association «{}»", r.stereotype)
-                };
-                self.cache.insert(*r.uuid, Arc::new(s));
-            },
-            UmlClassElement::UmlClassComment(inner) => {
-                let r = inner.read();
-                let s = if r.text.is_empty() {
-                    "Comment".to_owned()
-                } else {
-                    format!("Comment ({})", Self::filter_and_elipsis(&r.text))
-                };
-                self.cache.insert(*r.uuid, Arc::new(s));
-            },
-            UmlClassElement::UmlClassCommentLink(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, Arc::new(format!("Comment Link")));
-            },
-        }
-    }
-
-    fn insert(&mut self, k: ModelUuid, v: Arc<String>) {
-        self.cache.insert(k, v);
     }
 }
 
@@ -565,6 +470,75 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
 
         Ok(v)
     }
+    fn label_for(&self, e: &UmlClassElement) -> Arc<String> {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                inner.read().name.clone()
+            },
+            UmlClassElement::UmlClassInstance(inner) => {
+                let r = inner.read();
+                let s = if r.instance_name.is_empty() {
+                    format!(":{}", r.instance_type)
+                } else {
+                    format!("{}: {}", r.instance_name, r.instance_type)
+                };
+                Arc::new(s)
+            },
+            UmlClassElement::UmlClass(inner) => {
+                let r = inner.read();
+                if r.stereotype.is_empty() {
+                    r.name.clone()
+                } else {
+                    Arc::new(format!("{} «{}»", r.name, r.stereotype))
+                }
+            },
+            UmlClassElement::UmlClassProperty(inner) => {
+                inner.read().name.clone()
+            }
+            UmlClassElement::UmlClassOperation(inner) => {
+                inner.read().name.clone()
+            }
+            UmlClassElement::UmlClassGeneralization(inner) => {
+                let r = inner.read();
+                let s = if r.set_name.is_empty() {
+                    "Generalization".to_owned()
+                } else {
+                    format!("Generalization ({})", r.set_name)
+                };
+                Arc::new(s)
+            },
+            UmlClassElement::UmlClassDependency(inner) => {
+                let r = inner.read();
+                let s = if r.stereotype.is_empty() {
+                    "Dependency".to_owned()
+                } else {
+                    format!("Dependency ({})", r.stereotype)
+                };
+                Arc::new(s)
+            }
+            UmlClassElement::UmlClassAssociation(inner) => {
+                let r = inner.read();
+                let s = if r.stereotype.is_empty() {
+                    "Association".to_owned()
+                } else {
+                    format!("Association «{}»", r.stereotype)
+                };
+                Arc::new(s)
+            },
+            UmlClassElement::UmlClassComment(inner) => {
+                let r = inner.read();
+                let s = if r.text.is_empty() {
+                    "Comment".to_owned()
+                } else {
+                    format!("Comment ({})", LabelProvider::filter_and_elipsis(&r.text))
+                };
+                Arc::new(s)
+            },
+            UmlClassElement::UmlClassCommentLink(_inner) => {
+                Arc::new(format!("Comment Link"))
+            },
+        }
+    }
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
         global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE)
@@ -747,11 +721,10 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
     fn menubar_options_fun(
         &self,
         view_uuid: &ViewUuid,
-        label_provider: &ERef<dyn LabelProvider>,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
-        P::menubar_options_fun(&self.model, view_uuid, label_provider, ui, commands);
+        P::menubar_options_fun(&self.model, view_uuid, ui, commands);
     }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, UmlClassElement>) {
@@ -787,7 +760,12 @@ impl CustomTab for PlantUmlTab {
         "PlantUML description".to_owned()
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, _commands: &mut Vec<ProjectCommand>) {
+    fn show(
+        &mut self,
+        _gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        _commands: &mut Vec<ProjectCommand>,
+    ) {
         if ui.button("Refresh").clicked() {
             self.plantuml_description = self.diagram.read().plantuml();
         }
@@ -1885,9 +1863,8 @@ impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassInstanceVi
 impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassInstanceView<P> {
     fn show_properties(
         &mut self,
-        drawing_context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         _q: &UmlClassQueryable<P>,
-        _lp: &UmlClassLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -1973,7 +1950,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &drawing_context.global_colors,
+            &gdc.global_colors,
             ui,
             &mut self.background_color,
         ) {
@@ -2677,7 +2654,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         &mut self,
         _gdc: &GlobalDrawingContext,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
-        _lp: &<UmlClassDomain<P> as Domain>::LabelProviderT,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -3400,7 +3376,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         &mut self,
         _gdc: &GlobalDrawingContext,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
-        _lp: &<UmlClassDomain<P> as Domain>::LabelProviderT,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -4177,17 +4152,16 @@ pub fn draw_uml_class<'a>(
 impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassView<P> {
     fn show_properties(
         &mut self,
-        drawing_context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         q: &UmlClassQueryable<P>,
-        lp: &UmlClassLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         let properties_status = self.properties_views.iter()
-            .flat_map(|e| e.write().show_properties(drawing_context, q, lp, ui, commands).to_non_default())
+            .flat_map(|e| e.write().show_properties(gdc, q, ui, commands).to_non_default())
             .next();
         if let Some(status) = properties_status.or_else(|| self.operations_views.iter()
-                .flat_map(|e| e.write().show_properties(drawing_context, q, lp, ui, commands).to_non_default())
+                .flat_map(|e| e.write().show_properties(gdc, q, ui, commands).to_non_default())
                 .next()) {
             return status;
         }
@@ -4267,7 +4241,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &drawing_context.global_colors,
+            &gdc.global_colors,
             ui,
             &mut self.background_color,
         ) {
@@ -6303,9 +6277,8 @@ impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassCommentVie
 impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCommentView<P> {
     fn show_properties(
         &mut self,
-        drawing_context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         _q: &UmlClassQueryable<P>,
-        _lp: &UmlClassLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -6345,7 +6318,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
 
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &drawing_context.global_colors,
+            &gdc.global_colors,
             ui,
             &mut self.background_color,
         ) {

@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, CachingLabelDeriver, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -34,7 +34,6 @@ impl Domain for DemoPsdDomain {
     type CommonElementViewT = DemoPsdElementView;
     type ViewTargettingSectionT = DemoPsdElementTargettingSection;
     type QueryableT<'a> = DemoPsdQueryable<'a>;
-    type LabelProviderT = DemoPsdLabelProvider;
     type ToolT = NaiveDemoPsdTool;
     type AddCommandElementT = DemoPsdElementOrVertex;
     type PropChangeT = DemoPsdPropChange;
@@ -58,70 +57,6 @@ impl<'a> Queryable<'a, DemoPsdDomain> for DemoPsdQueryable<'a> {
 
     fn get_view(&self, m: &ModelUuid) -> Option<DemoPsdElementView> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
-    }
-}
-
-#[derive(Default)]
-pub struct DemoPsdLabelProvider {
-    cache: HashMap<ModelUuid, Arc<String>>,
-}
-
-impl LabelProvider for DemoPsdLabelProvider {
-    fn get(&self, uuid: &ModelUuid) -> Arc<String> {
-        self.cache.get(uuid).cloned()
-            .unwrap_or_else(|| Arc::new(format!("{:?}", uuid)))
-    }
-}
-
-impl CachingLabelDeriver<DemoPsdElement> for DemoPsdLabelProvider {
-    fn update(&mut self, e: &DemoPsdElement) {
-        match e {
-            DemoPsdElement::DemoPsdPackage(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, r.name.clone());
-            },
-            DemoPsdElement::DemoPsdTransaction(inner) => {
-                let r = inner.read();
-                let mut l = format!("Transaction {}", r.identifier);
-                if !r.name.is_empty() {
-                    l.push_str(" (");
-                    l.push_str(&r.name);
-                    l.push_str(&")");
-                }
-
-                self.cache.insert(*r.uuid, Arc::new(l));
-            },
-            DemoPsdElement::DemoPsdFact(inner) => {
-                let r = inner.read();
-                let mut l = format!("Fact");
-                if !r.identifier.is_empty() {
-                    l.push_str(" (");
-                    l.push_str(&r.identifier);
-                    l.push_str(&")");
-                }
-
-                self.cache.insert(*r.uuid, Arc::new(l));
-            }
-            DemoPsdElement::DemoPsdAct(inner) => {
-                let r = inner.read();
-                let mut l = format!("Act");
-                if !r.identifier.is_empty() {
-                    l.push_str(" (");
-                    l.push_str(&r.identifier);
-                    l.push_str(&")");
-                }
-
-                self.cache.insert(*r.uuid, Arc::new(l));
-            }
-            DemoPsdElement::DemoPsdLink(inner) => {
-                let r = inner.read();
-                self.cache.insert(*r.uuid, Arc::new(r.link_type.char().to_owned()));
-            },
-        }
-    }
-
-    fn insert(&mut self, k: ModelUuid, v: Arc<String>) {
-        self.cache.insert(k, v);
     }
 }
 
@@ -421,6 +356,49 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
 
         Ok(v)
     }
+    fn label_for(&self, e: &DemoPsdElement) -> Arc<String> {
+        match e {
+            DemoPsdElement::DemoPsdPackage(inner) => {
+                inner.read().name.clone()
+            },
+            DemoPsdElement::DemoPsdTransaction(inner) => {
+                let r = inner.read();
+                let mut l = format!("Transaction {}", r.identifier);
+                if !r.name.is_empty() {
+                    l.push_str(" (");
+                    l.push_str(&r.name);
+                    l.push_str(&")");
+                }
+
+                Arc::new(l)
+            },
+            DemoPsdElement::DemoPsdFact(inner) => {
+                let r = inner.read();
+                let mut l = format!("Fact");
+                if !r.identifier.is_empty() {
+                    l.push_str(" (");
+                    l.push_str(&r.identifier);
+                    l.push_str(&")");
+                }
+
+                Arc::new(l)
+            }
+            DemoPsdElement::DemoPsdAct(inner) => {
+                let r = inner.read();
+                let mut l = format!("Act");
+                if !r.identifier.is_empty() {
+                    l.push_str(" (");
+                    l.push_str(&r.identifier);
+                    l.push_str(&")");
+                }
+
+                Arc::new(l)
+            }
+            DemoPsdElement::DemoPsdLink(inner) => {
+                Arc::new(inner.read().link_type.char().to_owned())
+            },
+        }
+    }
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
         global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE)
@@ -620,7 +598,6 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
     fn menubar_options_fun(
         &self,
         _view_uuid: &ViewUuid,
-        _label_provider: &ERef<dyn LabelProvider>,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) {}
@@ -1464,25 +1441,24 @@ impl ContainerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
     fn show_properties(
         &mut self,
-        drawing_context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         q: &DemoPsdQueryable,
-        lp: &DemoPsdLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
         // try before
         if let Some(child) = self.before_views.iter_mut()
-            .flat_map(|e| e.view.show_properties(drawing_context, q, lp, ui, commands).to_non_default()).next() {
+            .flat_map(|e| e.view.show_properties(gdc, q, ui, commands).to_non_default()).next() {
             return child;
         }
         // try P-act
         if let Some(child) = self.p_act_view.as_mut()
-                .and_then(|c| c.write().show_properties(drawing_context, q, lp, ui, commands).to_non_default()) {
+                .and_then(|c| c.write().show_properties(gdc, q, ui, commands).to_non_default()) {
             return child;
         }
         // try after
         if let Some(child) = self.after_views.iter_mut()
-            .flat_map(|e| e.view.show_properties(drawing_context, q, lp, ui, commands).to_non_default()).next() {
+            .flat_map(|e| e.view.show_properties(gdc, q, ui, commands).to_non_default()).next() {
             return child;
         }
 
@@ -2503,9 +2479,8 @@ impl ContainerGen2<DemoPsdDomain> for DemoPsdFactView {}
 impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
     fn show_properties(
         &mut self,
-        _drawing_context: &GlobalDrawingContext,
+        _gdc: &GlobalDrawingContext,
         _parent: &DemoPsdQueryable,
-        _lp: &DemoPsdLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
@@ -2937,9 +2912,8 @@ impl ContainerGen2<DemoPsdDomain> for DemoPsdActView {}
 impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
     fn show_properties(
         &mut self,
-        _drawing_context: &GlobalDrawingContext,
+        _gdc: &GlobalDrawingContext,
         _parent: &DemoPsdQueryable,
-        _lp: &DemoPsdLabelProvider,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {

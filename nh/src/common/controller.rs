@@ -283,7 +283,6 @@ pub struct SimpleModelHierarchyView<ModelT>
         <ModelT as ContainerModel>::ElementT: VisitableElement,
 {
     model: ERef<ModelT>,
-    label_provider: ERef<dyn LabelProvider>,
     state: RwLock<egui_ltreeview::TreeViewState<ModelUuid>>,
 }
 
@@ -291,13 +290,9 @@ impl<ModelT> SimpleModelHierarchyView<ModelT>
     where ModelT: VisitableDiagram,
         <ModelT as ContainerModel>::ElementT: VisitableElement,
 {
-    pub fn new(
-        model: ERef<ModelT>,
-        label_provider: ERef<dyn LabelProvider>,
-    ) -> Self {
+    pub fn new(model: ERef<ModelT>) -> Self {
         Self {
             model,
-            label_provider,
             state: Default::default(),
         }
     }
@@ -330,7 +325,6 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
             gdc: &'data GlobalDrawingContext,
             commands: Vec<DiagramCommand>,
             is_represented: &'data dyn Fn(&ModelUuid) -> bool,
-            label_provider: &'data dyn LabelProvider,
             builder: &'data mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
             model: PhantomData<ModelT>,
         }
@@ -347,7 +341,7 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
                         egui_ltreeview::NodeBuilder::dir(*model_uuid).activatable(true)
                     } else {
                         egui_ltreeview::NodeBuilder::leaf(*model_uuid)
-                    }.label(format!("{} {}", self.repr_glyph(model_uuid), self.label_provider.get(model_uuid)))
+                    }.label(format!("{} {}", self.repr_glyph(model_uuid), self.gdc.model_labels.get(model_uuid)))
                         .context_menu(|ui| {
                             ui.set_min_width(crate::MIN_MENU_WIDTH);
 
@@ -405,7 +399,7 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
                 let model_uuid = *e.uuid();
                 self.builder.node(
                     egui_ltreeview::NodeBuilder::dir(model_uuid)
-                        .label(&*self.label_provider.get(&model_uuid))
+                        .label(&*self.gdc.model_labels.get(&model_uuid))
                 );
             }
 
@@ -431,7 +425,6 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
                 gdc,
                 commands: vec![],
                 is_represented, builder,
-                label_provider: &*self.label_provider.read(),
                 model: PhantomData,
             };
 
@@ -493,26 +486,6 @@ impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
     }
 }
 
-pub trait LabelProvider {
-    fn get(&self, uuid: &ModelUuid) -> Arc<String>;
-}
-
-pub trait CachingLabelDeriver<ModelT: Model>: LabelProvider + Default {
-    fn filter_and_elipsis(src: &str) -> String {
-        const CUTOFF: usize = 40;
-        let mut s: String = src.chars()
-            .map(|c| if c.is_whitespace() { ' ' } else { c } )
-            .take(CUTOFF)
-            .collect();
-        if src.len() > CUTOFF {
-            s.push_str("...");
-        }
-        s
-    }
-
-    fn update(&mut self, e: &ModelT);
-    fn insert(&mut self, k: ModelUuid, v: Arc<String>);
-}
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, derive_more::From, serde::Serialize, serde::Deserialize)]
 pub enum MGlobalColor {
@@ -623,6 +596,37 @@ pub struct GlobalDrawingContext {
     pub fluent_bundle: fluent_bundle::FluentBundle<fluent_bundle::FluentResource>,
     pub shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
     pub tool_palette_item_height: u32,
+    pub model_labels: LabelProvider,
+}
+
+pub struct LabelProvider {
+    labels: HashMap<ModelUuid, Arc<String>>,
+}
+
+impl LabelProvider {
+    pub fn filter_and_elipsis(src: &str) -> String {
+        const CUTOFF: usize = 40;
+        let mut s: String = src.chars()
+            .map(|c| if c.is_whitespace() { ' ' } else { c } )
+            .take(CUTOFF)
+            .collect();
+        if src.len() > CUTOFF {
+            s.push_str("...");
+        }
+        s
+    }
+
+    pub fn new() -> Self {
+        Self { labels: HashMap::new(), }
+    }
+
+    pub fn get(&self, uuid: &ModelUuid) -> Arc<String> {
+        self.labels.get(uuid).cloned().unwrap_or_else(|| format!("{:?}", uuid).into())
+    }
+
+    pub fn insert(&mut self, uuid: ModelUuid, label: Arc<String>) {
+        self.labels.insert(uuid, label);
+    }
 }
 
 
@@ -640,7 +644,15 @@ pub trait TopLevelView: View {
 pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
     fn new_hierarchy_view(&self) -> Arc<dyn ModelHierarchyView>;
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid>;
-    fn refresh_buffers(&mut self, affected_models: &HashSet<ModelUuid>);
+    fn refresh_all_buffers(
+        &mut self,
+        label_provider: &mut LabelProvider,
+    );
+    fn refresh_buffers(
+        &mut self,
+        affected_models: &HashSet<ModelUuid>,
+        label_provider: &mut LabelProvider,
+    );
 
     fn handle_input(
         &mut self,
@@ -716,7 +728,7 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
     /// Create new view with the same model
     fn shallow_copy(&self) -> ERef<dyn DiagramController>;
 
-    fn full_text_search(&self, _acc: &mut crate::common::search::Searcher);
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher);
 }
 
 pub trait ElementController<CommonElementT>: View {
@@ -1023,7 +1035,6 @@ pub trait Domain: Sized + 'static {
     type CommonElementViewT: ElementControllerGen2<Self> + serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone;
     type ViewTargettingSectionT: Into<Self::CommonElementT>;
     type QueryableT<'a>: Queryable<'a, Self>;
-    type LabelProviderT: CachingLabelDeriver<Self::CommonElementT>;
     type ToolT: Tool<Self>;
     type AddCommandElementT: From<Self::CommonElementViewT> + TryInto<Self::CommonElementViewT> + Clone + Debug;
     type PropChangeT: From<ColorChangeData> + TryInto<ColorChangeData> + Clone + Debug;
@@ -1160,7 +1171,6 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         &mut self,
         _drawing_context: &GlobalDrawingContext,
         _q: &DomainT::QueryableT<'_>,
-        _lp: &DomainT::LabelProviderT,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
@@ -1250,6 +1260,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         q: &DomainT::QueryableT<'_>,
         element: DomainT::CommonElementT,
     ) -> Result<DomainT::CommonElementViewT, HashSet<ModelUuid>>;
+    fn label_for(&self, element: &DomainT::CommonElementT) -> Arc<String>;
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32;
     fn gridlines_color(&self, global_colors: &ColorBundle) -> egui::Color32;
@@ -1280,7 +1291,6 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn menubar_options_fun(
         &self,
         view_uuid: &ViewUuid,
-        label_provider: &ERef<dyn LabelProvider>,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     );
@@ -1314,7 +1324,6 @@ struct DiagramControllerGen2Temporaries<DomainT: Domain> {
     flattened_views_status: HashMap<ViewUuid, SelectionStatus>,
     flattened_represented_models: HashMap<ModelUuid, ViewUuid>,
     clipboard_elements: HashMap<ViewUuid, DomainT::CommonElementViewT>,
-    label_provider: ERef<DomainT::LabelProviderT>,
     _layers: Vec<bool>,
 
     camera_offset: egui::Pos2,
@@ -1341,7 +1350,6 @@ impl<DomainT: Domain> Default for DiagramControllerGen2Temporaries<DomainT> {
             flattened_views_status: Default::default(),
             flattened_represented_models: Default::default(),
             clipboard_elements: Default::default(),
-            label_provider: ERef::new(Default::default()),
             _layers: Default::default(),
             camera_offset: Default::default(),
             camera_scale: 1.0,
@@ -1382,45 +1390,6 @@ impl<
     fn initialize(&mut self) {
         // Initialize flattened_* fields, etc.
         self.head_count();
-        // Refresh all buffers to reflect model state
-        self.refresh_all_buffers();
-    }
-
-    fn refresh_all_buffers(&mut self) {
-        // Full label_provider update
-        struct V<DomainT: Domain> {
-            label_provider: DomainT::LabelProviderT,
-        }
-
-        impl<DomainT: Domain> ElementVisitor<<DomainT as Domain>::CommonElementT> for V<DomainT> {
-            fn open_complex(&mut self, e: &<DomainT as Domain>::CommonElementT) {
-                self.label_provider.update(e);
-            }
-            fn close_complex(&mut self, _e: &<DomainT as Domain>::CommonElementT) {}
-            fn visit_simple(&mut self, e: &<DomainT as Domain>::CommonElementT) {
-                self.label_provider.update(e);
-            }
-        }
-
-        impl<DomainT: Domain> DiagramVisitor<<DomainT as Domain>::DiagramModelT> for V<DomainT> {
-            fn open_diagram(&mut self, _e: &<DomainT as Domain>::DiagramModelT) {}
-            fn close_diagram(&mut self, _e: &<DomainT as Domain>::DiagramModelT) {}
-        }
-
-        let mut v: V<DomainT> = V { label_provider: Default::default() };
-        self.model().read().accept(&mut v);
-
-        let mut label_provider = v.label_provider;
-        label_provider.insert(*self.adapter.model_uuid(), self.adapter.model_name());
-        self.temporaries.label_provider = ERef::new(label_provider);
-
-        // Refresh buffers
-        self.temporaries.name_buffer = (*self.name).clone();
-
-        for v in self.temporaries.flattened_views.values_mut() {
-            v.refresh_buffers();
-        }
-        self.adapter.refresh_buffers();
     }
 
     fn depends_on(&self) -> Vec<EntityUuid> {
@@ -1850,7 +1819,7 @@ impl<
     fn some_kind_of_copy(
         &self,
         new_adapter: DiagramAdapterT,
-        models: HashMap<ModelUuid, DomainT::CommonElementT>
+        models: HashMap<ModelUuid, DomainT::CommonElementT>,
     ) -> ERef<dyn DiagramController> {
         Self::new(
             ViewUuid::now_v7().into(),
@@ -1910,18 +1879,21 @@ impl<
     DiagramAdapterT: DiagramAdapter<DomainT>
 > DiagramController for DiagramControllerGen2<DomainT, DiagramAdapterT> {
     fn new_hierarchy_view(&self) -> Arc<dyn ModelHierarchyView> {
-        Arc::new(SimpleModelHierarchyView::new(self.adapter.model(), self.temporaries.label_provider.clone()))
+        Arc::new(SimpleModelHierarchyView::new(self.adapter.model()))
     }
 
     fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid> {
         &self.temporaries.flattened_represented_models
     }
 
-    fn refresh_buffers(&mut self, affected_models: &HashSet<ModelUuid>) {
+    fn refresh_buffers(
+        &mut self,
+        affected_models: &HashSet<ModelUuid>,
+        lp: &mut LabelProvider,
+    ) {
         // TODO: only do head_count when new model was added
         self.head_count();
 
-        let mut lp = self.temporaries.label_provider.write();
         if affected_models.contains(&self.adapter.model_uuid()) {
             self.adapter.refresh_buffers();
             lp.insert(*self.adapter.model_uuid(), self.adapter.model_name());
@@ -1931,9 +1903,51 @@ impl<
             if let Some(vk) = self.temporaries.flattened_represented_models.get(mk)
                 && let Some(v) = self.temporaries.flattened_views.get_mut(vk) {
                 v.refresh_buffers();
-                lp.update(&v.model());
+                lp.insert(*v.model_uuid(), self.adapter.label_for(&v.model()));
             }
         }
+    }
+    fn refresh_all_buffers(
+        &mut self,
+        label_provider: &mut LabelProvider,
+    ) {
+        // Full label_provider update
+        struct V<'a, DomainT: Domain> {
+            label_provider: &'a mut LabelProvider,
+            label_f: &'a dyn Fn(&DomainT::CommonElementT) -> Arc<String>,
+            domain: PhantomData<DomainT>,
+        }
+
+        impl<'a, DomainT: Domain> ElementVisitor<<DomainT as Domain>::CommonElementT> for V<'a, DomainT> {
+            fn open_complex(&mut self, e: &<DomainT as Domain>::CommonElementT) {
+                self.label_provider.insert(*e.uuid(), (self.label_f)(e));
+            }
+            fn close_complex(&mut self, _e: &<DomainT as Domain>::CommonElementT) {}
+            fn visit_simple(&mut self, e: &<DomainT as Domain>::CommonElementT) {
+                self.label_provider.insert(*e.uuid(), (self.label_f)(e));
+            }
+        }
+
+        impl<'a, DomainT: Domain> DiagramVisitor<<DomainT as Domain>::DiagramModelT> for V<'a, DomainT> {
+            fn open_diagram(&mut self, _e: &<DomainT as Domain>::DiagramModelT) {}
+            fn close_diagram(&mut self, _e: &<DomainT as Domain>::DiagramModelT) {}
+        }
+
+        let mut v: V<DomainT> = V {
+            label_provider,
+            label_f: &|e| self.adapter.label_for(e),
+            domain: PhantomData,
+        };
+        self.model().read().accept(&mut v);
+        label_provider.insert(*self.adapter.model_uuid(), self.adapter.model_name());
+
+        // Refresh buffers
+        self.temporaries.name_buffer = (*self.name).clone();
+
+        for v in self.temporaries.flattened_views.values_mut() {
+            v.refresh_buffers();
+        }
+        self.adapter.refresh_buffers();
     }
 
     fn new_ui_canvas(
@@ -2136,11 +2150,10 @@ impl<
         let mut commands = Vec::new();
         let req = 'req: {
             let queryable = DomainT::QueryableT::new(&self.temporaries.flattened_represented_models, &self.temporaries.flattened_views);
-            let lp = self.temporaries.label_provider.read();
 
             let child = self
                 .owned_views
-                .event_order_find_mut(|v| v.show_properties(context, &queryable, &lp, ui, &mut commands).to_non_default());
+                .event_order_find_mut(|v| v.show_properties(context, &queryable, ui, &mut commands).to_non_default());
             if let Some(child) = child {
                 child
             } else {
@@ -2353,7 +2366,6 @@ impl<
     ) {
         self.adapter.menubar_options_fun(
             &*self.uuid,
-            &(self.temporaries.label_provider.clone() as ERef<dyn LabelProvider>),
             ui,
             commands,
         );

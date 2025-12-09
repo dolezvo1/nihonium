@@ -150,15 +150,14 @@ where
 {
     fn show_properties(
         &mut self,
-        drawing_context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         parent: &DomainT::QueryableT<'_>,
-        lp: &DomainT::LabelProviderT,
         ui: &mut egui::Ui,
         commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
         let child = self
             .owned_views
-            .event_order_find_mut(|v| v.show_properties(drawing_context, parent, lp, ui, commands).to_non_default());
+            .event_order_find_mut(|v| v.show_properties(gdc, parent, ui, commands).to_non_default());
 
         if let Some(child) = child {
             child
