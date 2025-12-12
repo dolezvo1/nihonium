@@ -613,6 +613,10 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         let models = super::demoofd_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
     }
+
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+        super::demoofd_models::transitive_closure(&self.model.read(), when_deleting)
+    }
 }
 
 pub fn new(no: u32) -> ERef<dyn DiagramController> {
@@ -2750,9 +2754,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
             flattened_views.insert(*sl.uuid(), s.clone().into());
         }
-    }
-    fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
-        deleting.contains(&self.base_entity_type.uuid())
     }
 
     fn deep_copy_clone(

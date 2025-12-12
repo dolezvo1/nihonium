@@ -1017,10 +1017,6 @@ where
             });
         }
     }
-    fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
-        self.sources.iter().all(|e| deleting.contains(&e.element.uuid()))
-        || self.targets.iter().all(|e| deleting.contains(&e.element.uuid()))
-    }
 
     fn deep_copy_clone(
         &self,

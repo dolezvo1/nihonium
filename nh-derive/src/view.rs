@@ -77,7 +77,6 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
     let arms_apply_command = arms_mutable.iter().map(|e| quote! { #e.apply_command(command, undo_accumulator, affected_models) }).collect::<Vec<_>>();
     let arms_refresh_buffers = arms_mutable.iter().map(|e| quote! { #e.refresh_buffers() }).collect::<Vec<_>>();
     let arms_head_count = arms_mutable.iter().map(|e| quote! { #e.head_count(flattened_views, flattened_views_status, flattened_represented_models) }).collect::<Vec<_>>();
-    let arms_delete_when = arms_immutable.iter().map(|e| quote! { #e.delete_when(deleting) }).collect::<Vec<_>>();
     let arms_deep_copy_walk = arms_immutable.iter().map(|e| quote! { #e.deep_copy_walk(requested, uuid_present, tlc, c, m) }).collect::<Vec<_>>();
     let arms_deep_copy_clone = arms_immutable.iter().map(|e| quote! { #e.deep_copy_clone(uuid_present, tlc, c, m) }).collect::<Vec<_>>();
     let arms_deep_copy_relink = arms_mutable.iter().map(|e| quote! { #e.deep_copy_relink(c, m) }).collect::<Vec<_>>();
@@ -203,11 +202,6 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
             ) {
                 match self {
                     #(#arms_head_count),*
-                }
-            }
-            fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
-                match self {
-                    #(#arms_delete_when),*
                 }
             }
             fn deep_copy_walk(

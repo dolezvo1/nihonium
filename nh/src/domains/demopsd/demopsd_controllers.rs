@@ -617,6 +617,10 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         let models = super::demopsd_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
     }
+
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+        super::demopsd_models::transitive_closure(&self.model.read(), when_deleting)
+    }
 }
 
 pub fn new(no: u32) -> ERef<dyn DiagramController> {

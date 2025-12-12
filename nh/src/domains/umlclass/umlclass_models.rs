@@ -4,6 +4,7 @@ use crate::common::eref::ERef;
 use crate::common::search::FullTextSearchable;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
+use std::collections::HashSet;
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -460,6 +461,136 @@ pub fn fake_copy_diagram(d: &UmlClassDiagram) -> HashMap<ModelUuid, UmlClassElem
 
     all_models
 }
+
+pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+    for e in &d.contained_elements {
+        fn walk(e: &UmlClassElement, when_deleting: &mut HashSet<ModelUuid>) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let r = inner.read();
+                    if when_deleting.contains(&r.uuid) {
+                        enumerate(e, when_deleting);
+                    } else {
+                        for e in &r.contained_elements {
+                            walk(e, when_deleting);
+                        }
+                    }
+                },
+                UmlClassElement::UmlClassInstance(..)
+                | UmlClassElement::UmlClassProperty(..)
+                | UmlClassElement::UmlClassOperation(..) => {},
+                UmlClassElement::UmlClass(inner) => {
+                    let r = inner.read();
+                    if when_deleting.contains(&r.uuid) {
+
+                    } else {
+                        for e in &r.properties {
+                            walk(&e.clone().into(), when_deleting);
+                        }
+                        for e in &r.operations {
+                            walk(&e.clone().into(), when_deleting);
+                        }
+                    }
+                },
+                UmlClassElement::UmlClassGeneralization(..)
+                | UmlClassElement::UmlClassDependency(..)
+                | UmlClassElement::UmlClassAssociation(..)
+                | UmlClassElement::UmlClassComment(..)
+                | UmlClassElement::UmlClassCommentLink(..) => {},
+            }
+        }
+        walk(e, &mut when_deleting);
+    }
+
+    let mut also_delete = HashSet::new();
+    loop {
+        fn walk(e: &UmlClassElement, when_deleting: &HashSet<ModelUuid>, also_delete: &mut HashSet<ModelUuid>) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    for e in &inner.read().contained_elements {
+                        walk(e, when_deleting, also_delete);
+                    }
+                },
+                UmlClassElement::UmlClassInstance(..)
+                | UmlClassElement::UmlClass(..)
+                | UmlClassElement::UmlClassProperty(..)
+                | UmlClassElement::UmlClassOperation(..) => {},
+                UmlClassElement::UmlClassGeneralization(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (r.sources.iter().all(|e| when_deleting.contains(&e.read().uuid))
+                            || r.targets.iter().all(|e| when_deleting.contains(&e.read().uuid))) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+                UmlClassElement::UmlClassDependency(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (when_deleting.contains(&r.source.uuid())
+                            || when_deleting.contains(&r.target.uuid())) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+                UmlClassElement::UmlClassAssociation(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (when_deleting.contains(&r.source.uuid())
+                            || when_deleting.contains(&r.target.uuid())) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+                UmlClassElement::UmlClassComment(..) => {},
+                UmlClassElement::UmlClassCommentLink(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (when_deleting.contains(&r.source.read().uuid)
+                            || when_deleting.contains(&r.target.uuid())) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+            }
+        }
+        for e in &d.contained_elements {
+            walk(e, &when_deleting, &mut also_delete);
+        }
+        if also_delete.is_empty() {
+            break;
+        }
+        when_deleting.extend(also_delete.drain());
+    }
+
+    when_deleting
+}
+
+fn enumerate(e: &UmlClassElement, into: &mut HashSet<ModelUuid>) {
+    into.insert(*e.uuid());
+    match e {
+        UmlClassElement::UmlClassPackage(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate(e, into);
+            }
+        },
+        UmlClassElement::UmlClassInstance(..)
+        | UmlClassElement::UmlClassProperty(..)
+        | UmlClassElement::UmlClassOperation(..) => {},
+        UmlClassElement::UmlClass(inner) => {
+            let r = inner.read();
+            for e in &r.properties {
+                enumerate(&e.clone().into(), into);
+            }
+            for e in &r.operations {
+                enumerate(&e.clone().into(), into);
+            }
+        },
+        UmlClassElement::UmlClassGeneralization(..)
+        | UmlClassElement::UmlClassDependency(..)
+        | UmlClassElement::UmlClassAssociation(..)
+        | UmlClassElement::UmlClassComment(..)
+        | UmlClassElement::UmlClassCommentLink(..) => {},
+    }
+}
+
+
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]

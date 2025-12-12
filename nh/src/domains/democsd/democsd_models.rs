@@ -6,6 +6,7 @@ use crate::common::search::FullTextSearchable;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
 use crate::domains::demo::DemoTransactionKind;
+use std::collections::HashSet;
 use std::{
     collections::HashMap,
     sync::Arc,
@@ -184,6 +185,88 @@ pub fn fake_copy_diagram(d: &DemoCsdDiagram) -> HashMap<ModelUuid, DemoCsdElemen
     }
 
     all_models
+}
+
+pub fn transitive_closure(d: &DemoCsdDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+    for e in &d.contained_elements {
+        fn walk(e: &DemoCsdElement, when_deleting: &mut HashSet<ModelUuid>) {
+            match e {
+                DemoCsdElement::DemoCsdPackage(inner) => {
+                    let r = inner.read();
+                    if when_deleting.contains(&r.uuid) {
+                        enumerate(e, when_deleting);
+                    } else {
+                        for e in &r.contained_elements {
+                            walk(e, when_deleting);
+                        }
+                    }
+                },
+                DemoCsdElement::DemoCsdTransactor(inner) => {
+                    let r = inner.read();
+                    if when_deleting.contains(&r.uuid) {
+                        enumerate(e, when_deleting);
+                    } else {
+                        if let UFOption::Some(e) = &r.transaction {
+                            walk(&e.clone().into(), when_deleting);
+                        }
+                    }
+                },
+                DemoCsdElement::DemoCsdTransaction(..)
+                | DemoCsdElement::DemoCsdLink(..) => {},
+            }
+        }
+        walk(e, &mut when_deleting);
+    }
+
+    let mut also_delete = HashSet::new();
+    loop {
+        fn walk(e: &DemoCsdElement, when_deleting: &HashSet<ModelUuid>, also_delete: &mut HashSet<ModelUuid>) {
+            match e {
+                DemoCsdElement::DemoCsdPackage(inner) => {
+                    for e in &inner.read().contained_elements {
+                        walk(e, when_deleting, also_delete);
+                    }
+                },
+                DemoCsdElement::DemoCsdTransactor(..)
+                | DemoCsdElement::DemoCsdTransaction(..) => {},
+                DemoCsdElement::DemoCsdLink(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (when_deleting.contains(&r.source.read().uuid)
+                            || when_deleting.contains(&r.target.read().uuid)) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+            }
+        }
+        for e in &d.contained_elements {
+            walk(e, &when_deleting, &mut also_delete);
+        }
+        if also_delete.is_empty() {
+            break;
+        }
+        when_deleting.extend(also_delete.drain());
+    }
+
+    when_deleting
+}
+
+fn enumerate(e: &DemoCsdElement, into: &mut HashSet<ModelUuid>) {
+    into.insert(*e.uuid());
+    match e {
+        DemoCsdElement::DemoCsdPackage(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate(e, into);
+            }
+        },
+        DemoCsdElement::DemoCsdTransactor(inner) => {
+            if let UFOption::Some(e) = &inner.read().transaction {
+                enumerate(&e.clone().into(), into);
+            }
+        },
+        DemoCsdElement::DemoCsdTransaction(..)
+        | DemoCsdElement::DemoCsdLink(..) => {},
+    }
 }
 
 // ---

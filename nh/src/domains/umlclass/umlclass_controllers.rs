@@ -742,6 +742,10 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         let models = super::umlclass_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
     }
+
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+        super::umlclass_models::transitive_closure(&self.model.read(), when_deleting)
+    }
 }
 
 pub struct PlantUmlTab {

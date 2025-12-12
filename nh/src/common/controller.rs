@@ -1207,10 +1207,6 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     );
-    /// Must return true when a view cannot exist without these views, e.g. a link cannot exist without it's target
-    fn delete_when(&self, _deleting: &HashSet<ViewUuid>) -> bool {
-        false
-    }
 
     // Create a deep copy, including the models
     fn deep_copy_walk(
@@ -1297,6 +1293,9 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
     fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
+
+    /// Must return all ModelUuids that are to be deleted, including children of deleted containers
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid>;
 }
 
 /// This is a generic DiagramController implementation.
@@ -1582,7 +1581,7 @@ impl<
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         for command in commands {
-            let command = command.to_selection_insensitive(
+            let mut command = command.to_selection_insensitive(
                 || self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
                 || Self::elements_deep_copy(
                     None,
@@ -1592,46 +1591,14 @@ impl<
                     ).into_iter().map(|e| e.1.into()).collect(),
             );
 
-            // compute transitive closure of dependency when deleting or cutting elements
-            fn tr_closure<E: ElementControllerGen2<D>, D: Domain>(
-                all: &mut HashMap<ViewUuid, E>,
-                mut deleting: HashSet<ViewUuid>
-            ) -> HashSet<ViewUuid> {
-                // Calculate transitives of `deleting`
-                let mut deleting_transitives = HashMap::new();
-                for (_uuid, e1) in all.iter_mut()
-                    .filter(|e| deleting.contains(e.0))
-                {
-                    e1.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut deleting_transitives);
+            match command {
+                InsensitiveCommand::DeleteSpecificElements(ref mut uuids, ..)
+                | InsensitiveCommand::CutSpecificElements(ref mut uuids) => {
+                    let model_uuids = uuids.iter().flat_map(|e| self.temporaries.flattened_views.get(e).map(|e| *e.model_uuid())).collect();
+                    let closure = self.adapter.transitive_closure(model_uuids);
+                    uuids.extend(closure.iter().flat_map(|e| self.temporaries.flattened_represented_models.get(e).cloned()));
                 }
-                deleting.extend(deleting_transitives.into_values());
-
-                // Calculate transitive closure
-                let mut found_uuids = HashSet::new();
-                loop {
-                    for (_uuid, e1) in all.iter_mut().filter(|e| !deleting.contains(e.0)) {
-                        if e1.delete_when(&deleting) {
-                            let mut including_transitives = HashMap::new();
-                            e1.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut including_transitives);
-                            for (_m, v) in including_transitives {
-                                found_uuids.insert(v);
-                            }
-                        }
-                    }
-
-                    if found_uuids.is_empty() {
-                        break;
-                    }
-                    deleting.extend(found_uuids.drain());
-                }
-                deleting
-            }
-            let command = match command {
-                InsensitiveCommand::DeleteSpecificElements(uuids, b)
-                => InsensitiveCommand::DeleteSpecificElements(tr_closure(&mut self.temporaries.flattened_views, uuids), b),
-                InsensitiveCommand::CutSpecificElements(uuids)
-                => InsensitiveCommand::CutSpecificElements(tr_closure(&mut self.temporaries.flattened_views, uuids)),
-                c => c,
+                _ => {},
             };
 
             let mut undo_accumulator = vec![];

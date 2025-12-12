@@ -1,5 +1,5 @@
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use crate::{common::{
     canvas, controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement}, entity::{Entity, EntityUuid}, eref::ERef, search::FullTextSearchable, ufoption::UFOption, uuid::ModelUuid
@@ -243,6 +243,104 @@ pub fn fake_copy_diagram(d: &DemoPsdDiagram) -> HashMap<ModelUuid, DemoPsdElemen
     }
 
     all_models
+}
+
+pub fn transitive_closure(d: &DemoPsdDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+    for e in &d.contained_elements {
+        fn walk(e: &DemoPsdElement, when_deleting: &mut HashSet<ModelUuid>) {
+            match e {
+                DemoPsdElement::DemoPsdPackage(inner) => {
+                    let r = inner.read();
+                    if when_deleting.contains(&r.uuid) {
+                        enumerate(e, when_deleting);
+                    } else {
+                        for e in &r.contained_elements {
+                            walk(e, when_deleting);
+                        }
+                    }
+                },
+                DemoPsdElement::DemoPsdTransaction(inner) => {
+                    let r = inner.read();
+                    if when_deleting.contains(&r.uuid) {
+                        enumerate(e, when_deleting);
+                    } else {
+                        for e in &r.before {
+                            walk(&e.state.clone().to_element(), when_deleting);
+                        }
+                        if let UFOption::Some(e) = &r.p_act {
+                            walk(&e.clone().into(), when_deleting);
+                        }
+                        for e in &r.after {
+                            walk(&e.state.clone().to_element(), when_deleting);
+                        }
+                    }
+                },
+                DemoPsdElement::DemoPsdFact(..)
+                | DemoPsdElement::DemoPsdAct(..)
+                | DemoPsdElement::DemoPsdLink(..) => {},
+            }
+        }
+        walk(e, &mut when_deleting);
+    }
+
+    let mut also_delete = HashSet::new();
+    loop {
+        fn walk(e: &DemoPsdElement, when_deleting: &HashSet<ModelUuid>, also_delete: &mut HashSet<ModelUuid>) {
+            match e {
+                DemoPsdElement::DemoPsdPackage(inner) => {
+                    for e in &inner.read().contained_elements {
+                        walk(e, when_deleting, also_delete);
+                    }
+                },
+                DemoPsdElement::DemoPsdTransaction(..)
+                | DemoPsdElement::DemoPsdFact(..)
+                | DemoPsdElement::DemoPsdAct(..) => {},
+                DemoPsdElement::DemoPsdLink(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (when_deleting.contains(&r.source.read().uuid)
+                            || when_deleting.contains(&r.target.read().uuid)) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+            }
+        }
+        for e in &d.contained_elements {
+            walk(e, &when_deleting, &mut also_delete);
+        }
+        if also_delete.is_empty() {
+            break;
+        }
+        when_deleting.extend(also_delete.drain());
+    }
+
+    when_deleting
+}
+
+fn enumerate(e: &DemoPsdElement, into: &mut HashSet<ModelUuid>) {
+    into.insert(*e.uuid());
+    match e {
+        DemoPsdElement::DemoPsdPackage(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate(e, into);
+            }
+        },
+        DemoPsdElement::DemoPsdTransaction(inner) => {
+            let r = inner.read();
+            for e in &r.before {
+                enumerate(&e.state.clone().to_element(), into);
+            }
+            if let UFOption::Some(e) = &r.p_act {
+                enumerate(&e.clone().into(), into);
+            }
+            for e in &r.after {
+                enumerate(&e.state.clone().to_element(), into);
+            }
+        },
+        DemoPsdElement::DemoPsdFact(..)
+        | DemoPsdElement::DemoPsdAct(..)
+        | DemoPsdElement::DemoPsdLink(..) => {},
+    }
 }
 
 

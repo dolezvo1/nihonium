@@ -1,6 +1,6 @@
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::Arc,
 };
 
@@ -264,6 +264,136 @@ pub fn fake_copy_diagram(d: &DemoOfdDiagram) -> HashMap<ModelUuid, DemoOfdElemen
 
     all_models
 }
+
+pub fn transitive_closure(d: &DemoOfdDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+    for e in &d.contained_elements {
+        fn walk(e: &DemoOfdElement, when_deleting: &mut HashSet<ModelUuid>) {
+            match e {
+                DemoOfdElement::DemoOfdPackage(inner) => {
+                    let r = inner.read();
+                    if when_deleting.contains(&r.uuid) {
+                        enumerate(e, when_deleting);
+                    } else {
+                        for e in &r.contained_elements {
+                            walk(e, when_deleting);
+                        }
+                    }
+                },
+                DemoOfdElement::DemoOfdEntityType(..) => {},
+                DemoOfdElement::DemoOfdEventType(inner) => {
+                    let r = inner.read();
+                    if when_deleting.contains(&r.uuid) {
+                        enumerate(e, when_deleting);
+                    } else {
+                        if let UFOption::Some(e) = &r.specialization_entity_type {
+                            walk(&e.clone().into(), when_deleting);
+                        }
+                    }
+                },
+                DemoOfdElement::DemoOfdPropertyType(..)
+                | DemoOfdElement::DemoOfdSpecialization(..)
+                | DemoOfdElement::DemoOfdAggregation(..)
+                | DemoOfdElement::DemoOfdPrecedence(..)
+                | DemoOfdElement::DemoOfdExclusion(..) => {},
+            }
+        }
+        walk(e, &mut when_deleting);
+    }
+
+    let mut also_delete = HashSet::new();
+    loop {
+        fn walk(e: &DemoOfdElement, when_deleting: &HashSet<ModelUuid>, also_delete: &mut HashSet<ModelUuid>) {
+            match e {
+                DemoOfdElement::DemoOfdPackage(inner) => {
+                    for e in &inner.read().contained_elements {
+                        walk(e, when_deleting, also_delete);
+                    }
+                },
+                DemoOfdElement::DemoOfdEntityType(..) => {},
+                DemoOfdElement::DemoOfdEventType(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && when_deleting.contains(&r.base_entity_type.read().uuid) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+                DemoOfdElement::DemoOfdPropertyType(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (when_deleting.contains(&r.domain_element.read().uuid)
+                            || when_deleting.contains(&r.range_element.read().uuid)) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+                DemoOfdElement::DemoOfdSpecialization(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (when_deleting.contains(&r.domain_element.read().uuid)
+                            || when_deleting.contains(&r.range_element.read().uuid)) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+                DemoOfdElement::DemoOfdAggregation(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (r.domain_elements.iter().all(|e| when_deleting.contains(&e.read().uuid))
+                            || when_deleting.contains(&r.range_element.read().uuid)) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+                DemoOfdElement::DemoOfdPrecedence(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (when_deleting.contains(&r.domain_element.read().uuid)
+                            || when_deleting.contains(&r.range_element.read().uuid)) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+                DemoOfdElement::DemoOfdExclusion(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (when_deleting.contains(&r.domain_element.uuid())
+                            || when_deleting.contains(&r.range_element.uuid())) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+            }
+        }
+        for e in &d.contained_elements {
+            walk(e, &when_deleting, &mut also_delete);
+        }
+        if also_delete.is_empty() {
+            break;
+        }
+        when_deleting.extend(also_delete.drain());
+    }
+
+    when_deleting
+}
+
+fn enumerate(e: &DemoOfdElement, into: &mut HashSet<ModelUuid>) {
+    into.insert(*e.uuid());
+    match e {
+        DemoOfdElement::DemoOfdPackage(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate(e, into);
+            }
+        },
+        DemoOfdElement::DemoOfdEntityType(..) => {},
+        DemoOfdElement::DemoOfdEventType(inner) => {
+            if let UFOption::Some(e) = &inner.read().specialization_entity_type {
+                enumerate(&e.clone().into(), into);
+            }
+        },
+        DemoOfdElement::DemoOfdPropertyType(..)
+        | DemoOfdElement::DemoOfdSpecialization(..)
+        | DemoOfdElement::DemoOfdAggregation(..)
+        | DemoOfdElement::DemoOfdPrecedence(..)
+        | DemoOfdElement::DemoOfdExclusion(..) => {},
+    }
+}
+
+// ---
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]

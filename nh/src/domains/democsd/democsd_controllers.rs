@@ -506,6 +506,10 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         let models = super::democsd_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
     }
+
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+        super::democsd_models::transitive_closure(&self.model.read(), when_deleting)
+    }
 }
 
 pub fn new(no: u32) -> ERef<dyn DiagramController> {

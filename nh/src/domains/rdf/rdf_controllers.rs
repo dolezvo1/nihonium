@@ -489,6 +489,10 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         let models = super::rdf_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
     }
+
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+        super::rdf_models::transitive_closure(&self.model.read(), when_deleting)
+    }
 }
 
 pub fn new(no: u32) -> ERef<dyn DiagramController> {
