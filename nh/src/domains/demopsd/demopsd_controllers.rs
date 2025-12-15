@@ -1,13 +1,13 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
-use crate::common::uuid::{ModelUuid, ViewUuid};
+use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::domains::demopsd::demopsd_models::{DemoPsdState, DemoPsdStateInfo};
 use super::demopsd_models::{
     DemoPsdDiagram, DemoPsdElement, DemoPsdLink, DemoPsdLinkType, DemoPsdPackage, DemoPsdTransaction, DemoPsdAct, DemoPsdFact,
@@ -285,9 +285,6 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().name.clone()
-    }
-    fn view_type(&self) -> &'static str {
-        "demopsd-diagram-view"
     }
 
     fn create_new_view_for(
@@ -623,7 +620,33 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
     }
 }
 
-pub fn new(no: u32) -> ERef<dyn DiagramController> {
+fn new_controlller(
+    model: ERef<DemoPsdDiagram>,
+    name: String,
+    elements: Vec<DemoPsdElementView>,
+) -> (ViewUuid, ERef<dyn DiagramController>) {
+    let uuid = ViewUuid::now_v7();
+    (
+        uuid,
+        ERef::new(
+            MultiDiagramController::new(
+                ControllerUuid::now_v7(),
+                "demopsd-diagram",
+                model.clone(),
+                vec![
+                    DiagramControllerGen2::new(
+                        uuid.into(),
+                        name.into(),
+                        DemoPsdDiagramAdapter::new(model),
+                        elements,
+                    )
+                ]
+            )
+        )
+    )
+}
+
+pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let name = format!("New DEMO PSD diagram {}", no);
 
     let diagram = ERef::new(DemoPsdDiagram::new(
@@ -631,15 +654,10 @@ pub fn new(no: u32) -> ERef<dyn DiagramController> {
         name.clone(),
         vec![],
     ));
-    DiagramControllerGen2::new(
-        ViewUuid::now_v7().into(),
-        name.clone().into(),
-        DemoPsdDiagramAdapter::new(diagram.clone()),
-        Vec::new(),
-    )
+    new_controlller(diagram, name, vec![])
 }
 
-pub fn demo(no: u32) -> ERef<dyn DiagramController> {
+pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let fact = new_demopsd_fact("TK04/ac", false, egui::Pos2::new(375.0, 300.0));
     let act = new_demopsd_act("", false, egui::Pos2::new(200.0, 400.0));
     let wait_link = new_demopsd_link(
@@ -689,17 +707,12 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
             name.clone(),
             models,
         ));
-        DiagramControllerGen2::new(
-            ViewUuid::now_v7().into(),
-            name.clone().into(),
-            DemoPsdDiagramAdapter::new(diagram.clone()),
-            views,
-        )
+        new_controlller(diagram, name, views)
     }
 }
 
-pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<DiagramControllerGen2<DemoPsdDomain, DemoPsdDiagramAdapter>>(&uuid)?)
+pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
+    Ok(d.get_entity::<MultiDiagramController<DemoPsdDomain, DiagramControllerGen2<DemoPsdDomain, DemoPsdDiagramAdapter>>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]

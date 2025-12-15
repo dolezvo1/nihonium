@@ -1,13 +1,13 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::ufoption::UFOption;
-use crate::common::uuid::{ModelUuid, ViewUuid};
+use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use super::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage, DemoCsdTransaction, DemoCsdTransactor
 };
@@ -215,9 +215,6 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().name.clone()
-    }
-    fn view_type(&self) -> &'static str {
-        "democsd-diagram-view"
     }
 
     fn create_new_view_for(
@@ -512,7 +509,33 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     }
 }
 
-pub fn new(no: u32) -> ERef<dyn DiagramController> {
+fn new_controlller(
+    model: ERef<DemoCsdDiagram>,
+    name: String,
+    elements: Vec<DemoCsdElementView>,
+) -> (ViewUuid, ERef<dyn DiagramController>) {
+    let uuid = ViewUuid::now_v7();
+    (
+        uuid,
+        ERef::new(
+            MultiDiagramController::new(
+                ControllerUuid::now_v7(),
+                "democsd-diagram",
+                model.clone(),
+                vec![
+                    DiagramControllerGen2::new(
+                        uuid.into(),
+                        name.into(),
+                        DemoCsdDiagramAdapter::new(model),
+                        elements,
+                    )
+                ]
+            )
+        )
+    )
+}
+
+pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let name = format!("New DEMO CSD diagram {}", no);
 
     let diagram = ERef::new(DemoCsdDiagram::new(
@@ -520,15 +543,10 @@ pub fn new(no: u32) -> ERef<dyn DiagramController> {
         name.clone(),
         vec![],
     ));
-    DiagramControllerGen2::new(
-        ViewUuid::now_v7().into(),
-        name.clone().into(),
-        DemoCsdDiagramAdapter::new(diagram.clone()),
-        Vec::new(),
-    )
+    new_controlller(diagram, name, vec![])
 }
 
-pub fn demo(no: u32) -> ERef<dyn DiagramController> {
+pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let mut models: Vec<DemoCsdElement> = vec![];
     let mut controllers = Vec::<DemoCsdElementView>::new();
 
@@ -607,17 +625,12 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
             name.clone(),
             models,
         ));
-        DiagramControllerGen2::new(
-            ViewUuid::now_v7().into(),
-            name.clone().into(),
-            DemoCsdDiagramAdapter::new(diagram.clone()),
-            controllers,
-        )
+        new_controlller(diagram, name, controllers)
     }
 }
 
-pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<DiagramControllerGen2<DemoCsdDomain, DemoCsdDiagramAdapter>>(&uuid)?)
+pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
+    Ok(d.get_entity::<MultiDiagramController<DemoCsdDomain, DiagramControllerGen2<DemoCsdDomain, DemoCsdDiagramAdapter>>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]

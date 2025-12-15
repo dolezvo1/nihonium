@@ -4,11 +4,11 @@ use super::super::umlclass::{
 };
 use crate::{common::{
     controller::{
-        DiagramController, DiagramControllerGen2, ElementControllerGen2, InsensitiveCommand, ProjectCommand, View
+        DiagramController, DiagramControllerGen2, ElementControllerGen2, InsensitiveCommand, MultiDiagramController, ProjectCommand, View
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
-    uuid::{ModelUuid, ViewUuid},
+    uuid::{ControllerUuid, ModelUuid, ViewUuid},
 }, domains::ontouml::ontouml_models};
 use eframe::egui;
 use std::{
@@ -22,10 +22,6 @@ impl UmlClassProfile for OntoUmlProfile {
     type Palette = UmlClassPlaceholderViews;
     type ClassStereotypeController = OntoUmlClassStereotypeController;
     type AssociationStereotypeController = OntoUmlAssociationStereotypeController;
-
-    fn view_type() -> &'static str {
-        "umlclass-diagram-view-ontouml"
-    }
 
     fn menubar_options_fun(
         model: &ERef<UmlClassDiagram>,
@@ -143,22 +139,43 @@ impl UmlClassPalette<OntoUmlProfile> for UmlClassPlaceholderViews {
     }
 }
 
-pub fn new(no: u32) -> ERef<dyn DiagramController> {
+fn new_controlller(
+    model: ERef<UmlClassDiagram>,
+    name: String,
+    elements: Vec<UmlClassElementView<OntoUmlProfile>>,
+) -> (ViewUuid, ERef<dyn DiagramController>) {
+    let uuid = ViewUuid::now_v7();
+    (
+        uuid,
+        ERef::new(
+            MultiDiagramController::new(
+                ControllerUuid::now_v7(),
+                "umlclass-diagram-ontouml",
+                model.clone(),
+                vec![
+                    DiagramControllerGen2::new(
+                        uuid.into(),
+                        name.into(),
+                        UmlClassDiagramAdapter::<OntoUmlProfile>::new(model),
+                        elements,
+                    )
+                ]
+            )
+        )
+    )
+}
+
+pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let name = format!("New OntoUML diagram {}", no);
     let diagram = ERef::new(UmlClassDiagram::new(
         ModelUuid::now_v7(),
         name.clone(),
         vec![],
     ));
-    DiagramControllerGen2::new(
-        ViewUuid::now_v7().into(),
-        name.clone().into(),
-        UmlClassDiagramAdapter::<OntoUmlProfile>::new(diagram.clone()),
-        Vec::new(),
-    )
+    new_controlller(diagram, name, vec![])
 }
 
-pub fn demo(no: u32) -> ERef<dyn DiagramController> {
+pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (animal_model, animal_view) = new_umlclass_class("Animal", ontouml_models::KIND, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 200.0));
     let (temp_model, temp_view) = new_umlclass_class("Body Temperature", ontouml_models::QUALITY, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 200.0));
     let (human_model, human_view) = new_umlclass_class("Human", ontouml_models::SUBKIND, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 350.0));
@@ -228,10 +245,9 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
             mediation_model.into(),
         ],
     ));
-    DiagramControllerGen2::new(
-        ViewUuid::now_v7().into(),
-        name.clone().into(),
-        UmlClassDiagramAdapter::<OntoUmlProfile>::new(diagram.clone()),
+    new_controlller(
+        diagram,
+        name,
         vec![
             animal_view.into(),
             temp_view.into(),
@@ -249,8 +265,8 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     )
 }
 
-pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>>(&uuid)?)
+pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
+    Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<OntoUmlProfile>, DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>>>(&uuid)?)
 }
 
 #[derive(Clone, Default)]

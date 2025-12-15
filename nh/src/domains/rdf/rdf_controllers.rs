@@ -1,14 +1,14 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
-use crate::common::uuid::{ModelUuid, ViewUuid};
+use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::{CustomModal, CustomModalResult};
 use eframe::egui;
 use std::collections::HashSet;
@@ -205,9 +205,6 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().name.clone()
-    }
-    fn view_type(&self) -> &'static str {
-        "rdf-diagram-view"
     }
 
     fn create_new_view_for(
@@ -495,7 +492,33 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     }
 }
 
-pub fn new(no: u32) -> ERef<dyn DiagramController> {
+fn new_controlller(
+    model: ERef<RdfDiagram>,
+    name: String,
+    elements: Vec<RdfElementView>,
+) -> (ViewUuid, ERef<dyn DiagramController>) {
+    let uuid = ViewUuid::now_v7();
+    (
+        uuid,
+        ERef::new(
+            MultiDiagramController::new(
+                ControllerUuid::now_v7(),
+                "rdf-diagram",
+                model.clone(),
+                vec![
+                    DiagramControllerGen2::new(
+                        uuid.into(),
+                        name.into(),
+                        RdfDiagramAdapter::new(model),
+                        elements,
+                    )
+                ]
+            )
+        )
+    )
+}
+
+pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let name = format!("New RDF diagram {}", no);
 
     let diagram = ERef::new(RdfDiagram::new(
@@ -503,15 +526,10 @@ pub fn new(no: u32) -> ERef<dyn DiagramController> {
         name.clone(),
         vec![],
     ));
-    DiagramControllerGen2::new(
-        ViewUuid::now_v7().into(),
-        name.clone().into(),
-        RdfDiagramAdapter::new(diagram.clone()),
-        Vec::new(),
-    )
+    new_controlller(diagram, name, vec![])
 }
 
-pub fn demo(no: u32) -> ERef<dyn DiagramController> {
+pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (node, node_view) = new_rdf_node(
         "http://www.w3.org/People/EM/contact#me",
         egui::Pos2::new(300.0, 100.0),
@@ -583,16 +601,11 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
             predicate.into(), graph.into(), graph_st.into(),
         ],
     ));
-    DiagramControllerGen2::new(
-        ViewUuid::now_v7().into(),
-        name.clone().into(),
-        RdfDiagramAdapter::new(diagram.clone()),
-        owned_controllers,
-    )
+    new_controlller(diagram, name, owned_controllers)
 }
 
-pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<DiagramControllerGen2<RdfDomain, RdfDiagramAdapter>>(&uuid)?)
+pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
+    Ok(d.get_entity::<MultiDiagramController<RdfDomain, DiagramControllerGen2<RdfDomain, RdfDiagramAdapter>>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]

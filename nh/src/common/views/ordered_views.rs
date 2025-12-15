@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::common::{controller::{Arrangement, View}, project_serde::{NHContextDeserialize, NHContextSerialize, NHDeserializeError, NHDeserializer, NHSerializeError, NHSerializer}, uuid::ViewUuid};
+use crate::common::{controller::{Arrangement, View}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize, NHDeserializeError, NHDeserializer, NHSerializeError, NHSerializer}, uuid::ViewUuid};
 
 
 pub struct OrderedViews<T> where T: View {
@@ -141,5 +141,67 @@ impl<T> NHContextDeserialize for OrderedViews<T> where T: View + NHContextDeseri
         deserializer: &mut NHDeserializer,
     ) -> Result<Self, NHDeserializeError> {
         Ok(Self::new(<Vec<T>>::deserialize(source, deserializer)?.into_iter().rev().collect()))
+    }
+}
+
+
+// TODO: this should not exist - just use OrderedViews with a single-variant enum
+pub struct OrderedViewRefs<T: View> {
+    order: Vec<ViewUuid>,
+    views: HashMap<ViewUuid, ERef<T>>,
+}
+
+impl<T: View> OrderedViewRefs<T> {
+    pub fn new(views: Vec<ERef<T>>) -> Self {
+        let order = views.iter().map(|e| *e.read().uuid()).rev().collect();
+        let views = views.into_iter().map(|e| { let uuid = *e.read().uuid(); (uuid, e) }).collect();
+        Self { order, views }
+    }
+
+    pub fn get(&self, uuid: &ViewUuid) -> Option<&ERef<T>> {
+        self.views.get(uuid)
+    }
+
+    pub fn push(&mut self, uuid: ViewUuid, view: ERef<T>) {
+        self.views.insert(uuid, view);
+        self.order.push(uuid);
+    }
+
+    pub fn draw_order_foreach_mut(&mut self, mut f: impl FnMut(&mut T)) {
+        for k in self.order.iter() {
+            if let Some(v) = self.views.get(k) {
+                let mut w = v.write();
+                f(&mut w);
+            }
+        }
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &ViewUuid> {
+        self.order.iter()
+    }
+}
+
+impl<T> serde::Serialize for OrderedViewRefs<T> where T: View {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer {
+        self.order.iter().rev().flat_map(|e| self.views.get(e).cloned()).collect::<Vec<_>>().serialize(serializer)
+    }
+}
+
+impl<T> NHContextSerialize for OrderedViewRefs<T> where T: View + NHContextSerialize {
+    fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
+        for e in self.views.values() {
+            e.serialize_into(into)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T> NHContextDeserialize for OrderedViewRefs<T> where T: View + NHContextDeserialize + 'static {
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        Ok(Self::new(<Vec<ERef<T>>>::deserialize(source, deserializer)?.into_iter().rev().collect()))
     }
 }

@@ -3,14 +3,14 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MULTICONNECTION_SOURCE_BUCKET, MULTICONNECTION_TARGET_BUCKET, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
-use crate::common::uuid::{ModelUuid, ViewUuid};
+use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::domains::umlclass::umlclass_models::{UmlClassVisibilityKind, UmlClassOperation, UmlClassProperty};
 use crate::{CustomModal, CustomModalResult, CustomTab};
@@ -47,7 +47,6 @@ pub trait UmlClassProfile: Default + Clone + Send + Sync + 'static {
     type DependencyStereotypeController: StereotypeController = UnrestrictedStereotypeController;
     type AssociationStereotypeController: StereotypeController = UnrestrictedStereotypeController;
 
-    fn view_type() -> &'static str;
     fn menubar_options_fun(
         model: &ERef<UmlClassDiagram>,
         _view_uuid: &ViewUuid,
@@ -95,10 +94,6 @@ impl StereotypeController for UnrestrictedStereotypeController {
 pub struct UmlClassNullProfile;
 impl UmlClassProfile for UmlClassNullProfile {
     type Palette = UmlClassNullPalette;
-
-    fn view_type() -> &'static str {
-        "umlclass-diagram-view"
-    }
 }
 
 pub struct UmlClassDomain<P: UmlClassProfile> {
@@ -376,9 +371,6 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().name.clone()
-    }
-    fn view_type(&self) -> &'static str {
-        P::view_type()
     }
 
     fn create_new_view_for(
@@ -781,22 +773,43 @@ impl CustomTab for PlantUmlTab {
     }
 }
 
-pub fn new(no: u32) -> ERef<dyn DiagramController> {
+fn new_controlller(
+    model: ERef<UmlClassDiagram>,
+    name: String,
+    elements: Vec<UmlClassElementView<UmlClassNullProfile>>,
+) -> (ViewUuid, ERef<dyn DiagramController>) {
+    let uuid = ViewUuid::now_v7();
+    (
+        uuid,
+        ERef::new(
+            MultiDiagramController::new(
+                ControllerUuid::now_v7(),
+                "umlclass-diagram",
+                model.clone(),
+                vec![
+                    DiagramControllerGen2::new(
+                        uuid.into(),
+                        name.into(),
+                        UmlClassDiagramAdapter::<UmlClassNullProfile>::new(model),
+                        elements,
+                    )
+                ]
+            )
+        )
+    )
+}
+
+pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let name = format!("New UML class diagram {}", no);
     let diagram = ERef::new(UmlClassDiagram::new(
         ModelUuid::now_v7(),
         name.clone(),
         vec![],
     ));
-    DiagramControllerGen2::new(
-        ViewUuid::now_v7().into(),
-        name.clone().into(),
-        UmlClassDiagramAdapter::<UmlClassNullProfile>::new(diagram.clone()),
-        Vec::new(),
-    )
+    new_controlller(diagram, name, vec![])
 }
 
-pub fn demo(no: u32) -> ERef<dyn DiagramController> {
+pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     // https://www.uml-diagrams.org/class-diagrams-overview.html
     // https://www.uml-diagrams.org/design-pattern-abstract-factory-uml-class-diagram-example.html
 
@@ -990,10 +1003,9 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
             commentlink2.into(),
         ],
     ));
-    DiagramControllerGen2::new(
-        ViewUuid::now_v7().into(),
-        name.clone().into(),
-        UmlClassDiagramAdapter::new(diagram2.clone()),
+    new_controlller(
+        diagram2,
+        name,
         vec![
             class_af_view.into(),
             class_cfx_view.into(),
@@ -1019,8 +1031,8 @@ pub fn demo(no: u32) -> ERef<dyn DiagramController> {
     )
 }
 
-pub fn deserializer(uuid: ViewUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<DiagramControllerGen2<UmlClassDomain<UmlClassNullProfile>, UmlClassDiagramAdapter<UmlClassNullProfile>>>(&uuid)?)
+pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
+    Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<UmlClassNullProfile>, DiagramControllerGen2<UmlClassDomain<UmlClassNullProfile>, UmlClassDiagramAdapter<UmlClassNullProfile>>>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]

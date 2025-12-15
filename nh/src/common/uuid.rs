@@ -51,3 +51,11 @@ pub struct ViewUuid {
 }
 
 impl_uuid!(ViewUuid);
+
+#[derive(Clone, Copy, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct ControllerUuid {
+    inner: uuid::Uuid,
+}
+
+impl_uuid!(ControllerUuid);

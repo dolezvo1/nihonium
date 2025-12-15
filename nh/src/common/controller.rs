@@ -1,5 +1,7 @@
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape, UiCanvas};
 use crate::common::search::FullTextSearchable;
+use crate::common::uuid::ControllerUuid;
+use crate::common::views::ordered_views::OrderedViewRefs;
 use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
 use egui_ltreeview::DirPosition;
@@ -111,7 +113,7 @@ pub enum ProjectCommand {
     OpenAndFocusDiagram(ViewUuid, Option<egui::Pos2>),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetNewDiagramNumber(u32),
-    AddNewDiagram(usize, ERef<dyn DiagramController>),
+    AddNewDiagram(usize, (ViewUuid, ERef<dyn DiagramController>)),
     CopyDiagram(ViewUuid, /*deep:*/ bool),
     DeleteDiagram(ViewUuid),
 
@@ -176,7 +178,7 @@ pub enum Arrangement {
 
 pub enum HierarchyNode {
     Folder(ViewUuid, /*name:*/ Arc<String>, /*children:*/ Vec<HierarchyNode>),
-    Diagram(ERef<dyn TopLevelView>),
+    Diagram(ERef<dyn DiagramView>),
     Document(ViewUuid),
 }
 
@@ -266,223 +268,6 @@ impl HierarchyNode {
             },
             Self::Diagram(..) | Self::Document(..) => {},
         }
-    }
-}
-
-pub trait ModelHierarchyView {
-    fn show_model_hierarchy(
-        &self,
-        gdc: &GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        is_represented: &dyn Fn(&ModelUuid) -> bool,
-    ) -> Vec<DiagramCommand>;
-}
-
-pub struct SimpleModelHierarchyView<ModelT>
-    where ModelT: VisitableDiagram,
-        <ModelT as ContainerModel>::ElementT: VisitableElement,
-{
-    model: ERef<ModelT>,
-    state: RwLock<egui_ltreeview::TreeViewState<ModelUuid>>,
-}
-
-impl<ModelT> SimpleModelHierarchyView<ModelT>
-    where ModelT: VisitableDiagram,
-        <ModelT as ContainerModel>::ElementT: VisitableElement,
-{
-    pub fn new(model: ERef<ModelT>) -> Self {
-        Self {
-            model,
-            state: Default::default(),
-        }
-    }
-}
-
-impl<ModelT> ModelHierarchyView for SimpleModelHierarchyView<ModelT>
-    where ModelT: VisitableDiagram,
-        <ModelT as ContainerModel>::ElementT: VisitableElement,
-{
-    fn show_model_hierarchy(
-        &self,
-        gdc: &GlobalDrawingContext,
-        ui: &mut egui::Ui,
-        is_represented: &dyn Fn(&ModelUuid) -> bool
-    ) -> Vec<DiagramCommand> {
-        macro_rules! translate {
-            ($context:expr, $msg_name:expr) => {
-                $context.fluent_bundle.format_pattern(
-                    $context.fluent_bundle.get_message($msg_name).unwrap().value().unwrap(),
-                    None,
-                    &mut vec![],
-                )
-            };
-        }
-
-        struct HierarchyViewVisitor<'data, 'ui, ModelT>
-            where ModelT: VisitableDiagram,
-                <ModelT as ContainerModel>::ElementT: VisitableElement,
-        {
-            gdc: &'data GlobalDrawingContext,
-            commands: Vec<DiagramCommand>,
-            is_represented: &'data dyn Fn(&ModelUuid) -> bool,
-            builder: &'data mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
-            model: PhantomData<ModelT>,
-        }
-        impl<'data, 'ui, ModelT> HierarchyViewVisitor<'data, 'ui, ModelT>
-            where ModelT: VisitableDiagram,
-                <ModelT as ContainerModel>::ElementT: VisitableElement,
-        {
-            fn repr_glyph(&self, m: &ModelUuid) -> &'static str {
-                if (self.is_represented)(m) {"[x]"} else {"[ ]"}
-            }
-            fn show_element(&mut self, is_dir: bool, model_uuid: &ModelUuid) {
-                self.builder.node(
-                    if is_dir {
-                        egui_ltreeview::NodeBuilder::dir(*model_uuid).activatable(true)
-                    } else {
-                        egui_ltreeview::NodeBuilder::leaf(*model_uuid)
-                    }.label(format!("{} {}", self.repr_glyph(model_uuid), self.gdc.model_labels.get(model_uuid)))
-                        .context_menu(|ui| {
-                            ui.set_min_width(crate::MIN_MENU_WIDTH);
-
-                            let is_represented = (self.is_represented)(model_uuid);
-                            if is_represented {
-                                if ui.button(translate!(self.gdc, "nh-tab-modelhierarchy-jumpto")).clicked() {
-                                    let model_uuid = (*model_uuid).into();
-                                    self.commands.push(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED));
-                                    self.commands.push(DiagramCommand::HighlightElement(model_uuid, true, Highlight::SELECTED));
-                                    self.commands.push(DiagramCommand::PanToElement(model_uuid, true));
-                                    ui.close();
-                                }
-                                ui.separator();
-                            }
-
-                            if !is_represented && ui.button(translate!(self.gdc, "nh-tab-modelhierarchy-createview")).clicked() {
-                                self.commands.push(DiagramCommand::CreateViewFor(*model_uuid));
-                                ui.close();
-                            }
-
-                            if is_represented && ui.button(translate!(self.gdc, "nh-tab-modelhierarchy-deleteview")).clicked() {
-                                self.commands.push(DiagramCommand::DeleteViewFor(*model_uuid, false));
-                                ui.close();
-                            }
-
-                            if ui.button(translate!(self.gdc, "nh-tab-modelhierarchy-deletemodel")).clicked() {
-                                self.commands.push(DiagramCommand::DeleteViewFor(*model_uuid, true));
-                                ui.close();
-                            }
-                        })
-                );
-            }
-        }
-        impl<'data, 'ui, ModelT> ElementVisitor<<ModelT as ContainerModel>::ElementT> for HierarchyViewVisitor<'data, 'ui, ModelT>
-            where ModelT: VisitableDiagram,
-                <ModelT as ContainerModel>::ElementT: VisitableElement,
-        {
-            fn open_complex(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
-                self.show_element(true, &*e.uuid());
-            }
-
-            fn close_complex(&mut self, _e: &<ModelT as ContainerModel>::ElementT) {
-                self.builder.close_dir();
-            }
-
-            fn visit_simple(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
-                self.show_element(false, &*e.uuid());
-            }
-        }
-        impl<'data, 'ui, ModelT> DiagramVisitor<ModelT> for HierarchyViewVisitor<'data, 'ui, ModelT>
-            where ModelT: VisitableDiagram,
-                <ModelT as ContainerModel>::ElementT: VisitableElement,
-        {
-            fn open_diagram(&mut self, e: &ModelT) {
-                let model_uuid = *e.uuid();
-                self.builder.node(
-                    egui_ltreeview::NodeBuilder::dir(model_uuid)
-                        .label(&*self.gdc.model_labels.get(&model_uuid))
-                );
-            }
-
-            fn close_diagram(&mut self, _e: &ModelT) {
-                self.builder.close_dir();
-            }
-        }
-
-        let mut set_state = None;
-        let mut c = vec![];
-        ui.horizontal(|ui| {
-            if ui.button(translate!(gdc, "nh-tab-projecthierarchy-collapseall")).clicked() {
-                set_state = Some(false);
-            }
-            if ui.button(translate!(gdc, "nh-tab-projecthierarchy-uncollapseall")).clicked() {
-                set_state = Some(true);
-            }
-        });
-
-        let mut state = self.state.write().unwrap();
-        let (_r, a) = egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show_state(ui, &mut state, |builder| {
-            let mut hvv = HierarchyViewVisitor {
-                gdc,
-                commands: vec![],
-                is_represented, builder,
-                model: PhantomData,
-            };
-
-            self.model.read().accept(&mut hvv);
-
-            c = hvv.commands;
-        });
-
-        for e in a {
-            if let egui_ltreeview::Action::Activate(activate) = e {
-                let e = activate.selected[0].into();
-                c.push(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED));
-                c.push(DiagramCommand::HighlightElement(e, true, Highlight::SELECTED));
-                c.push(DiagramCommand::PanToElement(e, true));
-            }
-        }
-
-        if let Some(b) = set_state {
-            struct StateChangeVisitor<'a, ModelT> {
-                set_open: bool,
-                state: &'a mut egui_ltreeview::TreeViewState<ModelUuid>,
-                model: PhantomData<ModelT>,
-            }
-
-            impl<'a, ModelT> ElementVisitor<<ModelT as ContainerModel>::ElementT> for StateChangeVisitor<'a, ModelT>
-            where ModelT: VisitableDiagram,
-                <ModelT as ContainerModel>::ElementT: VisitableElement,
-            {
-                fn open_complex(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
-                    self.state.set_openness(*e.uuid(), self.set_open);
-                }
-
-                fn close_complex(&mut self, _e: &<ModelT as ContainerModel>::ElementT) {}
-
-                fn visit_simple(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
-                    self.state.set_openness(*e.uuid(), self.set_open);
-                }
-            }
-
-            impl<'a, ModelT> DiagramVisitor<ModelT> for StateChangeVisitor<'a, ModelT>
-                where ModelT: VisitableDiagram,
-                    <ModelT as ContainerModel>::ElementT: VisitableElement,
-            {
-                fn open_diagram(&mut self, e: &ModelT) {
-                    self.state.set_openness(*e.uuid(), self.set_open);
-                }
-
-                fn close_diagram(&mut self, _e: &ModelT) {}
-            }
-
-            self.model.read().accept(&mut StateChangeVisitor {
-                set_open: b,
-                state: &mut state,
-                model: PhantomData,
-            });
-        }
-
-        c
     }
 }
 
@@ -599,6 +384,22 @@ pub struct GlobalDrawingContext {
     pub model_labels: LabelProvider,
 }
 
+impl GlobalDrawingContext {
+    pub fn shortcut_text(&self, ui: &egui::Ui, c: SimpleProjectCommand) -> Option<String> {
+        self.shortcuts
+            .get(&c)
+            .map(|e| ui.ctx().format_shortcut(&e))
+    }
+
+    pub fn translate_0(&self, msg_name: &str) -> std::borrow::Cow<'_, str> {
+        self.fluent_bundle.format_pattern(
+            self.fluent_bundle.get_message(msg_name).unwrap().value().unwrap(),
+            None,
+            &mut vec![],
+        )
+    }
+}
+
 pub struct LabelProvider {
     labels: HashMap<ModelUuid, Arc<String>>,
 }
@@ -635,15 +436,16 @@ pub trait View: Entity {
     fn model_uuid(&self) -> Arc<ModelUuid>;
 }
 
-pub trait TopLevelView: View {
+pub trait DiagramView: View {
     fn view_name(&self) -> Arc<String>;
     fn set_view_name(&mut self, new_name: Arc<String>);
-    fn view_type(&self) -> String;
+
+    fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid>;
 }
 
-pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
-    fn new_hierarchy_view(&self) -> Arc<dyn ModelHierarchyView>;
-    fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid>;
+pub trait DiagramView2<DomainT: Domain>: DiagramView {
+    fn model(&self) -> ERef<DomainT::DiagramModelT>;
+
     fn refresh_all_buffers(
         &mut self,
         label_provider: &mut LabelProvider,
@@ -660,8 +462,7 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
         response: &egui::Response,
         modifier_settings: ModifierSettings,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        undo_accumulator: &mut Vec<Arc<String>>,
-        affected_models: &mut HashSet<ModelUuid>,
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn cancel_tool(&mut self);
 
@@ -694,8 +495,7 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        undo_accumulator: &mut Vec<Arc<String>>,
-        affected_models: &mut HashSet<ModelUuid>,
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> Option<Box<dyn CustomModal>>;
     fn show_menubar_edit_options(
         &mut self,
@@ -716,17 +516,144 @@ pub trait DiagramController: Any + TopLevelView + NHContextSerialize {
         commands: &mut Vec<ProjectCommand>,
     );
 
-    fn apply_command(
+
+    fn diagram_command_to_sensitives(
         &mut self,
         command: DiagramCommand,
-        global_undo: &mut Vec<Arc<String>>,
-        affected_models: &mut HashSet<ModelUuid>,
+    ) -> Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>;
+    fn sensitive_command_to_insensitive(
+        &self,
+        command: SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+    ) -> InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>;
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
 
-    /// Create new view with new model
-    fn deep_copy(&self) -> ERef<dyn DiagramController>;
+
+    /// Create new view with a new model
+    fn deep_copy(&self) -> ERef<Self>;
     /// Create new view with the same model
-    fn shallow_copy(&self) -> ERef<dyn DiagramController>;
+    fn shallow_copy(&self) -> ERef<Self>;
+}
+
+pub trait DiagramController: Any + NHContextSerialize {
+    fn uuid(&self) -> Arc<ControllerUuid>;
+    fn model_uuid(&self) -> Arc<ModelUuid>;
+    fn view_uuids(&self) -> Vec<ViewUuid>;
+    fn view_name(&self, uuid: &ViewUuid) -> Arc<String>;
+
+    fn get(&self, uuid: &ViewUuid) -> Option<ERef<dyn DiagramView>>;
+    fn refresh_all_buffers(
+        &mut self,
+        label_provider: &mut LabelProvider,
+    );
+    fn refresh_buffers(
+        &mut self,
+        affected_models: &HashSet<ModelUuid>,
+        label_provider: &mut LabelProvider,
+    );
+    fn cancel_tool(&mut self);
+
+    fn show_model_hierarchy(
+        &mut self,
+        uuid: &ViewUuid,
+        gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    );
+
+    fn handle_input(
+        &mut self,
+        uuid: &ViewUuid,
+        ui: &mut egui::Ui,
+        response: &egui::Response,
+        modifier_settings: ModifierSettings,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+    );
+
+    fn new_ui_canvas(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
+
+    fn draw_in(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        canvas: &mut dyn NHCanvas,
+        mouse_pos: Option<egui::Pos2>,
+    );
+
+    fn context_menu(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
+
+    fn show_toolbar(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    );
+    fn show_properties(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) -> (bool, Option<Box<dyn CustomModal>>);
+    fn show_menubar_edit_options(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
+    fn show_menubar_view_options(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
+    fn show_menubar_diagram_options(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
+    fn show_undo_stack(
+        &self,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
+    fn show_redo_stack(
+        &self,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    );
+
+    fn apply_diagram_command(
+        &mut self,
+        uuid: &ViewUuid,
+        command: DiagramCommand,
+    );
+
+    fn undo_immediate(&mut self);
+    fn redo_immediate(&mut self);
+
+    /// Create new view with new model
+    fn deep_copy(&self, uuid: &ViewUuid) -> (ViewUuid, ERef<dyn DiagramController>);
+    /// Create new view with the same model
+    fn shallow_copy(&mut self, uuid: &ViewUuid) -> ViewUuid;
 
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher);
 }
@@ -1031,7 +958,7 @@ pub struct ColorChangeData {
 
 pub trait Domain: Sized + 'static {
     type CommonElementT: Model + VisitableElement + Clone;
-    type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT> + VisitableDiagram + FullTextSearchable;
+    type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT> + NHContextSerialize + NHContextDeserialize + VisitableDiagram + FullTextSearchable;
     type CommonElementViewT: ElementControllerGen2<Self> + serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone;
     type ViewTargettingSectionT: Into<Self::CommonElementT>;
     type QueryableT<'a>: Queryable<'a, Self>;
@@ -1235,12 +1162,562 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
     ) {}
 }
 
+
+#[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity, is_subset_with = Self::depends_on)]
+pub struct MultiDiagramController<DomainT: Domain, DiagramViewT>
+where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
+{
+    uuid: Arc<ControllerUuid>,
+    controller_type: String,
+
+    #[nh_context_serde(entity)]
+    model: ERef<DomainT::DiagramModelT>,
+    #[nh_context_serde(entity)]
+    views: OrderedViewRefs<DiagramViewT>,
+
+    #[serde(skip)]
+    #[nh_context_serde(skip_and_default)]
+    undo_stack: Vec<(
+        ViewUuid,
+        InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+    )>,
+    #[serde(skip)]
+    #[nh_context_serde(skip_and_default)]
+    redo_stack: Vec<(ViewUuid, InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>)>,
+
+    #[serde(skip)]
+    #[nh_context_serde(skip_and_default)]
+    tree_view_state: egui_ltreeview::TreeViewState<ModelUuid>,
+}
+
+impl<DomainT: Domain, DiagramViewT> MultiDiagramController<DomainT, DiagramViewT>
+where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
+{
+    pub fn new(
+        uuid: ControllerUuid,
+        controller_type: &str,
+        model: ERef<DomainT::DiagramModelT>,
+        views: Vec<ERef<DiagramViewT>>,
+    ) -> Self {
+        Self {
+            uuid: uuid.into(),
+            controller_type: controller_type.to_owned(),
+            model,
+            views: OrderedViewRefs::new(views),
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            tree_view_state: Default::default(),
+        }
+    }
+
+    fn depends_on(&self) -> Vec<EntityUuid> {
+        self.views.keys().map(|e| (*e).into()).collect()
+    }
+
+    fn apply_commands(
+        &mut self,
+        view_uuid: &ViewUuid,
+        commands: Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        push_to_undo_stack: bool,
+    ) -> bool {
+        let view = self.views.get(view_uuid).unwrap();
+        let mut w = view.write();
+
+        let mut changed = false;
+        for c in commands {
+            let c = w.sensitive_command_to_insensitive(c);
+            // TODO: transitive closure
+            let mut undo_accumulator = Vec::new();
+            w.apply_command(&c, &mut undo_accumulator);
+            if !undo_accumulator.is_empty() {
+                if !changed {
+                    self.redo_stack.clear();
+                }
+                if push_to_undo_stack {
+                    // TODO: try combining with the undo stack item
+                    self.undo_stack.push((*view_uuid, c, undo_accumulator));
+                }
+                changed = true;
+            }
+        }
+
+        // TODO: refresh buffers
+
+        changed
+    }
+}
+
+impl<DomainT: Domain, DiagramViewT> Entity for MultiDiagramController<DomainT, DiagramViewT>
+where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
+{
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl<DomainT: Domain, DiagramViewT> DiagramController for MultiDiagramController<DomainT, DiagramViewT>
+where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
+{
+    fn uuid(&self) -> Arc<ControllerUuid> {
+        self.uuid.clone()
+    }
+
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid()
+    }
+
+    fn view_uuids(&self) -> Vec<ViewUuid> {
+        self.views.keys().cloned().collect()
+    }
+
+    fn view_name(&self, uuid: &ViewUuid) -> Arc<String> {
+        self.views.get(uuid).map(|e| e.read().view_name()).unwrap()
+    }
+
+    fn show_model_hierarchy(
+        &mut self,
+        uuid: &ViewUuid,
+        gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) {
+        let Some(view) = self.views.get(uuid) else {
+            return;
+        };
+
+        struct HierarchyViewVisitor<'a, 'ui, ModelT>
+            where ModelT: VisitableDiagram,
+                <ModelT as ContainerModel>::ElementT: VisitableElement,
+        {
+            gdc: &'a GlobalDrawingContext,
+            commands: Vec<DiagramCommand>,
+            is_represented: &'a dyn Fn(ModelUuid) -> bool,
+            builder: &'a mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
+            model: PhantomData<ModelT>,
+        }
+        impl<'a, 'ui, ModelT> HierarchyViewVisitor<'a, 'ui, ModelT>
+            where ModelT: VisitableDiagram,
+                <ModelT as ContainerModel>::ElementT: VisitableElement,
+        {
+            fn repr_glyph(&self, m: &ModelUuid) -> &'static str {
+                if (self.is_represented)(*m) {"[x]"} else {"[ ]"}
+            }
+            fn show_element(&mut self, is_dir: bool, model_uuid: &ModelUuid) {
+                self.builder.node(
+                    if is_dir {
+                        egui_ltreeview::NodeBuilder::dir(*model_uuid).activatable(true)
+                    } else {
+                        egui_ltreeview::NodeBuilder::leaf(*model_uuid)
+                    }.label(format!("{} {}", self.repr_glyph(model_uuid), self.gdc.model_labels.get(model_uuid)))
+                        .context_menu(|ui| {
+                            ui.set_min_width(crate::MIN_MENU_WIDTH);
+
+                            let is_represented = (self.is_represented)(*model_uuid);
+                            if is_represented {
+                                if ui.button(self.gdc.translate_0("nh-tab-modelhierarchy-jumpto")).clicked() {
+                                    let model_uuid = (*model_uuid).into();
+                                    self.commands.push(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED));
+                                    self.commands.push(DiagramCommand::HighlightElement(model_uuid, true, Highlight::SELECTED));
+                                    self.commands.push(DiagramCommand::PanToElement(model_uuid, true));
+                                    ui.close();
+                                }
+                                ui.separator();
+                            }
+
+                            if !is_represented && ui.button(self.gdc.translate_0("nh-tab-modelhierarchy-createview")).clicked() {
+                                self.commands.push(DiagramCommand::CreateViewFor(*model_uuid));
+                                ui.close();
+                            }
+
+                            if is_represented && ui.button(self.gdc.translate_0("nh-tab-modelhierarchy-deleteview")).clicked() {
+                                self.commands.push(DiagramCommand::DeleteViewFor(*model_uuid, false));
+                                ui.close();
+                            }
+
+                            if ui.button(self.gdc.translate_0("nh-tab-modelhierarchy-deletemodel")).clicked() {
+                                self.commands.push(DiagramCommand::DeleteViewFor(*model_uuid, true));
+                                ui.close();
+                            }
+                        })
+                );
+            }
+        }
+        impl<'a, 'ui, ModelT> ElementVisitor<<ModelT as ContainerModel>::ElementT> for HierarchyViewVisitor<'a, 'ui, ModelT>
+            where ModelT: VisitableDiagram,
+                <ModelT as ContainerModel>::ElementT: VisitableElement,
+        {
+            fn open_complex(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
+                self.show_element(true, &*e.uuid());
+            }
+
+            fn close_complex(&mut self, _e: &<ModelT as ContainerModel>::ElementT) {
+                self.builder.close_dir();
+            }
+
+            fn visit_simple(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
+                self.show_element(false, &*e.uuid());
+            }
+        }
+        impl<'a, 'ui, ModelT> DiagramVisitor<ModelT> for HierarchyViewVisitor<'a, 'ui, ModelT>
+            where ModelT: VisitableDiagram,
+                <ModelT as ContainerModel>::ElementT: VisitableElement,
+        {
+            fn open_diagram(&mut self, e: &ModelT) {
+                let model_uuid = *e.uuid();
+                self.builder.node(
+                    egui_ltreeview::NodeBuilder::dir(model_uuid)
+                        .label(&*self.gdc.model_labels.get(&model_uuid))
+                );
+            }
+
+            fn close_diagram(&mut self, _e: &ModelT) {
+                self.builder.close_dir();
+            }
+        }
+
+        let mut set_state = None;
+        let mut c = vec![];
+        ui.horizontal(|ui| {
+            if ui.button(gdc.translate_0("nh-tab-projecthierarchy-collapseall")).clicked() {
+                set_state = Some(false);
+            }
+            if ui.button(gdc.translate_0("nh-tab-projecthierarchy-uncollapseall")).clicked() {
+                set_state = Some(true);
+            }
+        });
+
+        let (_r, a) = egui_ltreeview::TreeView::new(ui.make_persistent_id("model_hierarchy_view")).show_state(ui, &mut self.tree_view_state, |builder| {
+            let r = view.read();
+            let represented_models = r.represented_models();
+            let is_represented = |e: ModelUuid| represented_models.contains_key(&e);
+
+            let mut hvv = HierarchyViewVisitor {
+                gdc,
+                commands: vec![],
+                is_represented: &is_represented,
+                builder,
+                model: PhantomData,
+            };
+
+            self.model.read().accept(&mut hvv);
+
+            c = hvv.commands;
+        });
+
+        for e in a {
+            if let egui_ltreeview::Action::Activate(activate) = e {
+                let e = activate.selected[0].into();
+                c.push(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED));
+                c.push(DiagramCommand::HighlightElement(e, true, Highlight::SELECTED));
+                c.push(DiagramCommand::PanToElement(e, true));
+            }
+        }
+
+        if let Some(b) = set_state {
+            struct StateChangeVisitor<'a, ModelT> {
+                set_open: bool,
+                state: &'a mut egui_ltreeview::TreeViewState<ModelUuid>,
+                model: PhantomData<ModelT>,
+            }
+
+            impl<'a, ModelT> ElementVisitor<<ModelT as ContainerModel>::ElementT> for StateChangeVisitor<'a, ModelT>
+            where ModelT: VisitableDiagram,
+                <ModelT as ContainerModel>::ElementT: VisitableElement,
+            {
+                fn open_complex(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
+                    self.state.set_openness(*e.uuid(), self.set_open);
+                }
+
+                fn close_complex(&mut self, _e: &<ModelT as ContainerModel>::ElementT) {}
+
+                fn visit_simple(&mut self, e: &<ModelT as ContainerModel>::ElementT) {
+                    self.state.set_openness(*e.uuid(), self.set_open);
+                }
+            }
+
+            impl<'a, ModelT> DiagramVisitor<ModelT> for StateChangeVisitor<'a, ModelT>
+                where ModelT: VisitableDiagram,
+                    <ModelT as ContainerModel>::ElementT: VisitableElement,
+            {
+                fn open_diagram(&mut self, e: &ModelT) {
+                    self.state.set_openness(*e.uuid(), self.set_open);
+                }
+
+                fn close_diagram(&mut self, _e: &ModelT) {}
+            }
+
+            self.model.read().accept(&mut StateChangeVisitor {
+                set_open: b,
+                state: &mut self.tree_view_state,
+                model: PhantomData,
+            });
+        }
+
+        // TODO: apply the command
+    }
+
+    fn get(&self, uuid: &ViewUuid) -> Option<ERef<dyn DiagramView>> {
+        self.views.get(uuid).map(|e| e.clone() as ERef<dyn DiagramView>)
+    }
+
+    fn refresh_all_buffers(
+        &mut self,
+        label_provider: &mut LabelProvider,
+    ) {
+        self.views.draw_order_foreach_mut(|e| e.refresh_all_buffers(label_provider));
+    }
+
+    fn refresh_buffers(
+        &mut self,
+        affected_models: &HashSet<ModelUuid>,
+        label_provider: &mut LabelProvider,
+    ) {
+        self.views.draw_order_foreach_mut(|e| e.refresh_buffers(affected_models, label_provider));
+    }
+
+    fn handle_input(
+        &mut self,
+        uuid: &ViewUuid,
+        ui: &mut egui::Ui,
+        response: &egui::Response,
+        modifier_settings: ModifierSettings,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+    ) {
+        let view = self.views.get(uuid).unwrap();
+        let mut commands = Vec::new();
+        view.write().handle_input(ui, response, modifier_settings, element_setup_modal, &mut commands);
+        self.apply_commands(uuid, commands, true);
+    }
+
+    fn cancel_tool(&mut self) {
+        self.views.draw_order_foreach_mut(|e| e.cancel_tool());
+    }
+
+    fn new_ui_canvas(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
+        let view = self.views.get(uuid).unwrap();
+        view.write().new_ui_canvas(context, ui)
+    }
+
+    fn draw_in(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        canvas: &mut dyn NHCanvas,
+        mouse_pos: Option<egui::Pos2>,
+    ) {
+        let view = self.views.get(uuid).unwrap();
+        view.write().draw_in(context, canvas, mouse_pos);
+    }
+
+    fn context_menu(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
+        let view = self.views.get(uuid).unwrap();
+        view.write().context_menu(context, ui, commands);
+    }
+
+    fn show_toolbar(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) {
+        let view = self.views.get(uuid).unwrap();
+        view.write().show_toolbar(context, ui);
+    }
+
+    fn show_properties(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) -> (bool, Option<Box<dyn CustomModal>>) {
+        let view = self.views.get(uuid).unwrap();
+        let mut commands = Vec::new();
+        let r = view.write().show_properties(context, ui, &mut commands);
+        (self.apply_commands(uuid, commands, true), r)
+    }
+
+    fn show_menubar_edit_options(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
+        let view = self.views.get(uuid).unwrap();
+        view.write().show_menubar_edit_options(context, ui, commands);
+    }
+
+    fn show_menubar_view_options(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
+        let view = self.views.get(uuid).unwrap();
+        view.write().show_menubar_view_options(context, ui, commands);
+    }
+
+    fn show_menubar_diagram_options(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
+        let view = self.views.get(uuid).unwrap();
+        view.write().show_menubar_diagram_options(context, ui, commands);
+    }
+
+    fn apply_diagram_command(
+        &mut self,
+        uuid: &ViewUuid,
+        command: DiagramCommand,
+    ) {
+        let view = self.views.get(uuid).unwrap();
+        let commands = view.write().diagram_command_to_sensitives(command);
+        self.apply_commands(uuid, commands, true);
+    }
+
+    fn undo_immediate(&mut self) {
+        let Some((original_view, original_command, undo_commands)) = self.undo_stack.pop() else {
+            return;
+        };
+        self.apply_commands(
+            &original_view,
+            undo_commands
+                .into_iter().rev()
+                .map(|c| c.into())
+                .collect(),
+            false,
+        );
+        self.redo_stack.push((original_view, original_command));
+    }
+    fn redo_immediate(&mut self) {
+        let Some((original_view, redo_command)) = self.redo_stack.pop() else {
+            return;
+        };
+        let redo_stack = std::mem::take(&mut self.redo_stack);
+        self.apply_commands(&original_view, vec![redo_command.into()], true);
+        self.redo_stack = redo_stack;
+    }
+
+    fn show_undo_stack(
+        &self,
+        gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
+        let shortcut_text = gdc.shortcut_text(ui, DiagramCommand::UndoImmediate.into());
+
+        if self.undo_stack.is_empty() {
+            let mut button = egui::Button::new("(nothing to undo)");
+            if let Some(shortcut_text) = shortcut_text {
+                button = button.shortcut_text(shortcut_text);
+            }
+            let _ = ui.add_enabled(false, button);
+        } else {
+            for (ii, (_, c, _)) in self.undo_stack.iter().rev().enumerate() {
+                let mut button = egui::Button::new(&*c.info_text());
+                if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
+                    button = button.shortcut_text(shortcut_text);
+                }
+
+                if ui.add(button).clicked() {
+                    for _ in 0..=ii {
+                        commands.push(SimpleProjectCommand::FocusedDiagramCommand(DiagramCommand::UndoImmediate).into());
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    fn show_redo_stack(
+        &self,
+        gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
+    ) {
+        let shortcut_text = gdc.shortcut_text(ui, DiagramCommand::RedoImmediate.into());
+
+        if self.redo_stack.is_empty() {
+            let mut button = egui::Button::new("(nothing to redo)");
+            if let Some(shortcut_text) = shortcut_text {
+                button = button.shortcut_text(shortcut_text);
+            }
+            let _ = ui.add_enabled(false, button);
+        } else {
+            for (ii, (_, c)) in self.redo_stack.iter().rev().enumerate() {
+                let mut button = egui::Button::new(&*c.info_text());
+                if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
+                    button = button.shortcut_text(shortcut_text);
+                }
+
+                if ui.add(button).clicked() {
+                    for _ in 0..=ii {
+                        commands.push(SimpleProjectCommand::FocusedDiagramCommand(DiagramCommand::RedoImmediate).into());
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    fn deep_copy(
+        &self,
+        uuid: &ViewUuid,
+    ) -> (ViewUuid, ERef<dyn DiagramController>) {
+        let view = self.views.get(uuid).unwrap();
+        let new_view = view.read().deep_copy();
+        let new_view_uuid = *new_view.read().uuid();
+        let new_view_model = new_view.read().model();
+        (
+            new_view_uuid,
+            ERef::new(
+                Self::new(
+                    ControllerUuid::now_v7().into(),
+                    &self.controller_type,
+                    new_view_model,
+                    vec![new_view],
+                )
+            ),
+        )
+    }
+
+    fn shallow_copy(
+        &mut self,
+        uuid: &ViewUuid,
+    ) -> ViewUuid {
+        let view = self.views.get(uuid).unwrap();
+        let new_view = view.read().deep_copy();
+        let new_view_uuid = *new_view.read().uuid();
+        self.views.push(new_view_uuid, new_view);
+        new_view_uuid
+    }
+
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        self.model.read().full_text_search(acc);
+    }
+}
+
+
 pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + 'static {
     fn model(&self) -> ERef<DomainT::DiagramModelT>;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
-
-    fn view_type(&self) -> &'static str;
 
     fn find_element(&self, model_uuid: &ModelUuid) -> Option<(DomainT::CommonElementT, ModelUuid)> {
         self.model().read().find_element(model_uuid)
@@ -1334,11 +1811,6 @@ struct DiagramControllerGen2Temporaries<DomainT: Domain> {
     select_by_drag: Option<(egui::Pos2, egui::Pos2)>,
 
     last_change_flag: bool,
-    undo_stack: Vec<(
-        InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
-    )>,
-    redo_stack: Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
 }
 
 impl<DomainT: Domain> Default for DiagramControllerGen2Temporaries<DomainT> {
@@ -1358,8 +1830,6 @@ impl<DomainT: Domain> Default for DiagramControllerGen2Temporaries<DomainT> {
             current_tool: Default::default(),
             select_by_drag: Default::default(),
             last_change_flag: Default::default(),
-            undo_stack: Default::default(),
-            redo_stack: Default::default(),
         }
     }
 }
@@ -1405,8 +1875,7 @@ impl<
         modifier_settings: ModifierSettings,
         modifiers: ModifierKeys,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        undo_accumulator: &mut Vec<Arc<String>>,
-        affected_models: &mut HashSet<ModelUuid>,
+        commands_accumulator: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> bool {
         // Collect alignment guides
         self.temporaries.snap_manager = SnapManager::new(self.temporaries.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.temporaries.camera_scale));
@@ -1517,7 +1986,7 @@ impl<
             },
         };
 
-        self.apply_commands(commands, undo_accumulator, true, true, affected_models);
+        commands_accumulator.extend(commands.into_iter());
 
         handled
     }
@@ -1572,214 +2041,127 @@ impl<
         self.temporaries.flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
     }
 
-    fn apply_commands(
+    fn apply_command_inner(
         &mut self,
-        commands: Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
-        global_undo_accumulator: &mut Vec<Arc<String>>,
-        save_to_undo_stack: bool,
-        clear_redo_stack: bool,
-        affected_models: &mut HashSet<ModelUuid>,
+        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) {
-        for command in commands {
-            let mut command = command.to_selection_insensitive(
-                || self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
-                || Self::elements_deep_copy(
-                    None,
-                    |e| self.temporaries.flattened_views_status.contains_key(e),
-                    HashMap::new(),
-                    self.temporaries.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
-                    ).into_iter().map(|e| e.1.into()).collect(),
-            );
-
-            match command {
-                InsensitiveCommand::DeleteSpecificElements(ref mut uuids, ..)
-                | InsensitiveCommand::CutSpecificElements(ref mut uuids) => {
-                    let model_uuids = uuids.iter().flat_map(|e| self.temporaries.flattened_views.get(e).map(|e| *e.model_uuid())).collect();
-                    let closure = self.adapter.transitive_closure(model_uuids);
-                    uuids.extend(closure.iter().flat_map(|e| self.temporaries.flattened_represented_models.get(e).cloned()));
-                }
-                _ => {},
-            };
-
-            let mut undo_accumulator = vec![];
-
-            match &command {
-                InsensitiveCommand::HighlightAll(..)
-                | InsensitiveCommand::HighlightSpecific(..)
-                | InsensitiveCommand::SelectByDrag(..)
-                | InsensitiveCommand::MoveSpecificElements(..)
-                | InsensitiveCommand::MoveAllElements(..)
-                | InsensitiveCommand::ResizeSpecificElementsBy(..)
-                | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
-                InsensitiveCommand::AddDependency(t, b, pos, element, into_model) => {
-                    if *t == *self.uuid && *b == 0 {
-                        if let Ok(mut view) = element.clone().try_into()
-                            && (!*into_model || self.adapter.insert_element(*b, *pos, view.model()).is_ok()){
-                            let uuid = *view.uuid();
-                            undo_accumulator.push(InsensitiveCommand::RemoveDependency(
-                                *self.uuid,
-                                *b,
-                                uuid,
-                                *into_model,
-                            ));
-
-                            if *into_model {
-                                affected_models.insert(*self.adapter.model_uuid());
-                            }
-                            let mut model_transitives = HashMap::new();
-                            view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
-                            affected_models.extend(model_transitives.into_keys());
-
-                            self.owned_views.push(uuid, view);
-                        }
+        match command {
+            InsensitiveCommand::HighlightAll(..)
+            | InsensitiveCommand::HighlightSpecific(..)
+            | InsensitiveCommand::SelectByDrag(..)
+            | InsensitiveCommand::MoveSpecificElements(..)
+            | InsensitiveCommand::MoveAllElements(..)
+            | InsensitiveCommand::ResizeSpecificElementsBy(..)
+            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
+            InsensitiveCommand::AddDependency(t, b, pos, element, into_model) => {
+                if *t == *self.uuid && *b == 0 {
+                    if let Ok(mut view) = element.clone().try_into()
+                        && (!*into_model || self.adapter.insert_element(*b, *pos, view.model()).is_ok()){
+                        let uuid = *view.uuid();
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                            *self.uuid,
+                            *b,
+                            uuid,
+                            *into_model,
+                        ));
+                        self.owned_views.push(uuid, view);
                     }
                 }
-                InsensitiveCommand::RemoveDependency(t, b, elm, from_model) => {
-                    if *t == *self.uuid && *b == 0 {
-                        for (_uuid, element) in self
-                            .owned_views
-                            .iter_event_order_pairs()
-                            .filter(|e| e.0 == *elm)
-                        {
-                            let pos = if !*from_model {
-                                None
-                            } else if let Some((_b, pos)) = self.adapter.remove_element(&element.model_uuid()) {
-                                Some(pos)
-                            } else {
-                                continue;
-                            };
-                            undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid(), *b, pos, element.clone().into(), *from_model));
-                        }
-                        self.owned_views.retain(|k, _v| *k != *elm);
-                    }
-                }
-                InsensitiveCommand::DeleteSpecificElements(uuids, _)
-                | InsensitiveCommand::CutSpecificElements(uuids) => {
-                    let from_model = matches!(
-                        command,
-                        InsensitiveCommand::DeleteSpecificElements(_, true) | InsensitiveCommand::CutSpecificElements(..)
-                    );
-
+            }
+            InsensitiveCommand::RemoveDependency(t, b, elm, from_model) => {
+                if *t == *self.uuid && *b == 0 {
                     for (_uuid, element) in self
                         .owned_views
                         .iter_event_order_pairs()
-                        .filter(|e| uuids.contains(&e.0))
+                        .filter(|e| e.0 == *elm)
                     {
-                        let pos = if !from_model {
+                        let pos = if !*from_model {
                             None
                         } else if let Some((_b, pos)) = self.adapter.remove_element(&element.model_uuid()) {
                             Some(pos)
                         } else {
                             continue;
                         };
-                        undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid(), 0, pos, element.clone().into(), from_model));
+                        undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid(), *b, pos, element.clone().into(), *from_model));
                     }
-                    self.owned_views.retain(|k, _v| !uuids.contains(k));
-                }
-                InsensitiveCommand::PasteSpecificElements(_, elements) => {
-                    for element in elements {
-                        if let Ok(mut view) = element.clone().try_into()
-                            && let Ok(_) = self.adapter.insert_element(0, None, view.model()) {
-                            let uuid = *view.uuid();
-                            undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
-                                std::iter::once(uuid).collect(),
-                                true,
-                            ));
-                            let mut model_transitives = HashMap::new();
-                            view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
-                            affected_models.extend(model_transitives.into_keys());
-                            self.owned_views.push(uuid, view);
-                        }
-                    }
-                }
-                InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {
-                    self.owned_views.apply_arrangement(uuids, *arr);
-                },
-                InsensitiveCommand::PropertyChange(uuids, _property) => {
-                    if uuids.is_empty() || uuids.contains(&*self.uuid) {
-                        self.adapter.apply_property_change_fun(
-                            &self.uuid,
-                            &command,
-                            &mut undo_accumulator,
-                        );
-                        affected_models.insert(*self.adapter.model_uuid());
-                    }
+                    self.owned_views.retain(|k, _v| *k != *elm);
                 }
             }
+            InsensitiveCommand::DeleteSpecificElements(uuids, _)
+            | InsensitiveCommand::CutSpecificElements(uuids) => {
+                let from_model = matches!(
+                    command,
+                    InsensitiveCommand::DeleteSpecificElements(_, true) | InsensitiveCommand::CutSpecificElements(..)
+                );
 
-            self.owned_views.event_order_foreach_mut(|v|
-                v.apply_command(&command, &mut undo_accumulator, affected_models)
-            );
-
-            let modifies_selection = match command {
-                InsensitiveCommand::HighlightAll(..)
-                | InsensitiveCommand::HighlightSpecific(..)
-                | InsensitiveCommand::SelectByDrag(..)
-                | InsensitiveCommand::DeleteSpecificElements(..)
-                | InsensitiveCommand::CutSpecificElements(..)
-                | InsensitiveCommand::PasteSpecificElements(..) => true,
-                InsensitiveCommand::MoveSpecificElements(..)
-                | InsensitiveCommand::MoveAllElements(..)
-                | InsensitiveCommand::ResizeSpecificElementsBy(..)
-                | InsensitiveCommand::ResizeSpecificElementsTo(..)
-                | InsensitiveCommand::ArrangeSpecificElements(..)
-                | InsensitiveCommand::AddDependency(..)
-                | InsensitiveCommand::RemoveDependency(..)
-                | InsensitiveCommand::PropertyChange(..) => false,
-            };
-
-            if !undo_accumulator.is_empty() {
-                if clear_redo_stack {
-                    self.temporaries.redo_stack.clear();
-                }
-                if save_to_undo_stack {
-                    if let Some(merged) = self.temporaries.undo_stack.last()
-                        .filter(|_| self.temporaries.last_change_flag)
-                        .and_then(|e| e.0.merge(&command))
-                    {
-                        let last = self.temporaries.undo_stack.last_mut().unwrap();
-                        last.0 = merged;
-                        let unique_prop_changes: Vec<_> = last
-                            .1
-                            .iter()
-                            .chain(undo_accumulator.iter())
-                            .fold(Vec::new(), |mut uniques, e| {
-                                if let InsensitiveCommand::PropertyChange(uuids, properties) = e {
-                                    for property in properties {
-                                        if uniques
-                                            .iter()
-                                            .find(|(u, p)| {
-                                                *u == uuids
-                                                    && std::mem::discriminant(*p)
-                                                        == std::mem::discriminant(property)
-                                            })
-                                            .is_none()
-                                        {
-                                            uniques.push((uuids, property));
-                                        }
-                                    }
-                                }
-                                uniques
-                            })
-                            .into_iter()
-                            .map(|(u, c)| {
-                                InsensitiveCommand::PropertyChange(u.clone(), vec![c.clone()])
-                            })
-                            .collect();
-                        last.1.extend(undo_accumulator);
-                        last.1
-                            .retain(|e| !matches!(e, InsensitiveCommand::PropertyChange(_uuids, _x)));
-                        last.1.extend(unique_prop_changes);
+                for (_uuid, element) in self
+                    .owned_views
+                    .iter_event_order_pairs()
+                    .filter(|e| uuids.contains(&e.0))
+                {
+                    let pos = if !from_model {
+                        None
+                    } else if let Some((_b, pos)) = self.adapter.remove_element(&element.model_uuid()) {
+                        Some(pos)
                     } else {
-                        global_undo_accumulator.push(command.info_text());
-                        self.temporaries.undo_stack.push((command, undo_accumulator));
+                        continue;
+                    };
+                    undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid(), 0, pos, element.clone().into(), from_model));
+                }
+                self.owned_views.retain(|k, _v| !uuids.contains(k));
+            }
+            InsensitiveCommand::PasteSpecificElements(_, elements) => {
+                for element in elements {
+                    if let Ok(mut view) = element.clone().try_into()
+                        && let Ok(_) = self.adapter.insert_element(0, None, view.model()) {
+                        let uuid = *view.uuid();
+                        undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
+                            std::iter::once(uuid).collect(),
+                            true,
+                        ));
+                        self.owned_views.push(uuid, view);
                     }
                 }
             }
-
-            if modifies_selection {
-                self.head_count();
+            InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {
+                self.owned_views.apply_arrangement(uuids, *arr);
+            },
+            InsensitiveCommand::PropertyChange(uuids, _property) => {
+                if uuids.is_empty() || uuids.contains(&*self.uuid) {
+                    self.adapter.apply_property_change_fun(
+                        &self.uuid,
+                        &command,
+                        undo_accumulator,
+                    );
+                }
             }
+        }
+
+        let mut dev_null = HashSet::new();
+        self.owned_views.event_order_foreach_mut(|v| {
+            v.apply_command(&command, undo_accumulator, &mut dev_null);
+        });
+
+        let modifies_selection = match command {
+            InsensitiveCommand::HighlightAll(..)
+            | InsensitiveCommand::HighlightSpecific(..)
+            | InsensitiveCommand::SelectByDrag(..)
+            | InsensitiveCommand::DeleteSpecificElements(..)
+            | InsensitiveCommand::CutSpecificElements(..)
+            | InsensitiveCommand::PasteSpecificElements(..) => true,
+            InsensitiveCommand::MoveSpecificElements(..)
+            | InsensitiveCommand::MoveAllElements(..)
+            | InsensitiveCommand::ResizeSpecificElementsBy(..)
+            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::AddDependency(..)
+            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::PropertyChange(..) => false,
+        };
+
+        if modifies_selection {
+            self.head_count();
         }
     }
 
@@ -1787,7 +2169,7 @@ impl<
         &self,
         new_adapter: DiagramAdapterT,
         models: HashMap<ModelUuid, DomainT::CommonElementT>,
-    ) -> ERef<dyn DiagramController> {
+    ) -> ERef<Self> {
         Self::new(
             ViewUuid::now_v7().into(),
             format!("{} (copy)", self.name).into(),
@@ -1826,7 +2208,7 @@ impl<
 impl<
     DomainT: Domain,
     DiagramAdapterT: DiagramAdapter<DomainT>
-> TopLevelView for DiagramControllerGen2<DomainT, DiagramAdapterT> {
+> DiagramView for DiagramControllerGen2<DomainT, DiagramAdapterT> {
     fn view_name(&self) -> Arc<String> {
         self.name.clone()
     }
@@ -1836,21 +2218,17 @@ impl<
         self.name = new_name;
     }
 
-    fn view_type(&self) -> String {
-        self.adapter.view_type().to_owned()
+    fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid> {
+        &self.temporaries.flattened_represented_models
     }
 }
 
 impl<
     DomainT: Domain,
     DiagramAdapterT: DiagramAdapter<DomainT>
-> DiagramController for DiagramControllerGen2<DomainT, DiagramAdapterT> {
-    fn new_hierarchy_view(&self) -> Arc<dyn ModelHierarchyView> {
-        Arc::new(SimpleModelHierarchyView::new(self.adapter.model()))
-    }
-
-    fn represented_models(&self) -> &HashMap<ModelUuid, ViewUuid> {
-        &self.temporaries.flattened_represented_models
+> DiagramView2<DomainT> for DiagramControllerGen2<DomainT, DiagramAdapterT> {
+    fn model(&self) -> ERef<<DomainT as Domain>::DiagramModelT> {
+        self.adapter.model()
     }
 
     fn refresh_buffers(
@@ -1963,9 +2341,9 @@ impl<
         ui: &mut egui::Ui,
         response: &egui::Response,
         modifier_settings: ModifierSettings,
+        // TODO: remove, handle as a command
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        undo_accumulator: &mut Vec<Arc<String>>,
-        affected_models: &mut HashSet<ModelUuid>,
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) {
         macro_rules! pos_to_abs {
             ($pos:expr) => {
@@ -1979,7 +2357,7 @@ impl<
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if *pressed && *button == egui::PointerButton::Primary => {
                     self.temporaries.last_unhandled_mouse_pos = Some(pos_to_abs!(*pos));
-                    self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifier_settings, modifiers, element_setup_modal, undo_accumulator, affected_models);
+                    self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifier_settings, modifiers, element_setup_modal, commands);
                 },
                 _ => {}
             })
@@ -1987,19 +2365,19 @@ impl<
         if response.dragged_by(egui::PointerButton::Primary) {
             if let Some(old_pos) = self.temporaries.last_unhandled_mouse_pos {
                 let delta = response.drag_delta() / self.temporaries.camera_scale;
-                self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifier_settings, modifiers, element_setup_modal, undo_accumulator, affected_models);
+                self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifier_settings, modifiers, element_setup_modal, commands);
                 self.temporaries.last_unhandled_mouse_pos = Some(old_pos + delta);
             }
         }
         if response.clicked_by(egui::PointerButton::Primary) {
             if let Some(pos) = ui.ctx().pointer_interact_pos() {
-                self.handle_event(InputEvent::Click(pos_to_abs!(pos)), modifier_settings, modifiers, element_setup_modal, undo_accumulator, affected_models);
+                self.handle_event(InputEvent::Click(pos_to_abs!(pos)), modifier_settings, modifiers, element_setup_modal, commands);
             }
         }
         ui.input(|is| is.events.iter()
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if !*pressed && *button == egui::PointerButton::Primary => {
-                    self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifier_settings, modifiers, element_setup_modal, undo_accumulator, affected_models);
+                    self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifier_settings, modifiers, element_setup_modal, commands);
                     self.temporaries.last_unhandled_mouse_pos = None;
                 },
                 _ => {}
@@ -2040,29 +2418,15 @@ impl<
     }
     fn context_menu(
         &mut self,
-        context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
-        macro_rules! translate {
-            ($msg_name:expr) => {
-                context.fluent_bundle.format_pattern(
-                    context.fluent_bundle.get_message($msg_name).unwrap().value().unwrap(),
-                    None,
-                    &mut vec![],
-                )
-            };
-        }
-        macro_rules! shortcut_text {
-            ($ui:expr, $simple_project_command:expr) => {
-                context.shortcuts.get(&$simple_project_command).map(|e| $ui.ctx().format_shortcut(&e))
-            };
-        }
         macro_rules! button {
             ($ui:expr, $msg_name:expr, $simple_project_command:expr) => {
                 {
-                    let mut button = egui::Button::new(translate!($msg_name));
-                    if let Some(shortcut_text) = shortcut_text!($ui, $simple_project_command) {
+                    let mut button = egui::Button::new(gdc.translate_0($msg_name));
+                    if let Some(shortcut_text) = gdc.shortcut_text($ui, $simple_project_command) {
                         button = button.shortcut_text(shortcut_text);
                     }
                     if $ui.add(button).clicked() {
@@ -2080,7 +2444,7 @@ impl<
         button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements));
         ui.separator();
 
-        ui.menu_button(translate!("nh-edit-delete"), |ui| {
+        ui.menu_button(gdc.translate_0("nh-edit-delete"), |ui| {
             ui.set_min_width(crate::MIN_MENU_WIDTH);
 
             button!(ui, "nh-generic-deletemodel-view", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(false)));
@@ -2090,7 +2454,7 @@ impl<
         ui.separator();
 
         button!(ui, "nh-edit-clearhighlight", SimpleProjectCommand::from(DiagramCommand::HighlightAllElements(false, Highlight::ALL)));
-        ui.menu_button(translate!("nh-edit-arrange"), |ui| {
+        ui.menu_button(gdc.translate_0("nh-edit-arrange"), |ui| {
             ui.set_min_width(crate::MIN_MENU_WIDTH);
 
             button!(ui, "nh-edit-arrange-bringtofront", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::BringToFront)));
@@ -2111,16 +2475,14 @@ impl<
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        undo_accumulator: &mut Vec<Arc<String>>,
-        affected_models: &mut HashSet<ModelUuid>,
+        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> Option<Box<dyn CustomModal>> {
-        let mut commands = Vec::new();
         let req = 'req: {
             let queryable = DomainT::QueryableT::new(&self.temporaries.flattened_represented_models, &self.temporaries.flattened_views);
 
             let child = self
                 .owned_views
-                .event_order_find_mut(|v| v.show_properties(context, &queryable, ui, &mut commands).to_non_default());
+                .event_order_find_mut(|v| v.show_properties(context, &queryable, ui, commands).to_non_default());
             if let Some(child) = child {
                 child
             } else {
@@ -2143,13 +2505,11 @@ impl<
                 ui.add_space(super::views::VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
 
                 ui.label("Model properties:");
-                self.adapter.show_props_fun(&self.uuid, ui, &mut commands);
+                self.adapter.show_props_fun(&self.uuid, ui, commands);
 
                 PropertiesStatus::Shown
             }
         };
-
-        self.apply_commands(commands, undo_accumulator, true, true, affected_models);
 
         match req {
             PropertiesStatus::NotShown | PropertiesStatus::Shown => None,
@@ -2338,51 +2698,28 @@ impl<
         );
     }
 
-    fn apply_command(
+    fn diagram_command_to_sensitives(
         &mut self,
         command: DiagramCommand,
-        global_undo: &mut Vec<Arc<String>>,
-        affected_models: &mut HashSet<ModelUuid>,
-    ) {
+    ) -> Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>> {
         match command {
             DiagramCommand::DropRedoStackAndLastChangeFlag => {
-                self.temporaries.redo_stack.clear();
                 self.temporaries.last_change_flag = false;
             },
             DiagramCommand::SetLastChangeFlag => {
                 self.temporaries.last_change_flag = true;
             },
-            DiagramCommand::UndoImmediate => {
-                let Some((og_command, undo_commands)) = self.temporaries.undo_stack.pop() else {
-                    return;
-                };
-                self.apply_commands(
-                    undo_commands
-                        .into_iter().rev()
-                        .map(|c| c.into())
-                        .collect(),
-                    &mut vec![],
-                    false,
-                    false,
-                    affected_models,
-                );
-                self.temporaries.redo_stack.push(og_command);
-            },
-            DiagramCommand::RedoImmediate => {
-                let Some(redo_command) = self.temporaries.redo_stack.pop() else {
-                    return;
-                };
-                self.apply_commands(vec![redo_command.into()], &mut vec![], true, false, affected_models);
-            }
+            DiagramCommand::UndoImmediate
+            | DiagramCommand::RedoImmediate => {}
             DiagramCommand::InvertSelection => {
-                self.apply_commands(vec![
+                return vec![
                     InsensitiveCommand::HighlightAll(true, Highlight::SELECTED).into(),
                     InsensitiveCommand::HighlightSpecific(
                         self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
                         false,
                         Highlight::SELECTED,
-                    ).into()
-                ], &mut vec![], true, false, affected_models);
+                    ).into(),
+                ];
             }
             DiagramCommand::DeleteSelectedElements(_)
             | DiagramCommand::CutSelectedElements
@@ -2392,8 +2729,7 @@ impl<
                     self.set_clipboard_from_selected();
                 }
 
-                let mut undo = vec![];
-                self.apply_commands(vec![
+                return vec![
                     match command {
                         DiagramCommand::DeleteSelectedElements(b) => SensitiveCommand::DeleteSelectedElements(b),
                         DiagramCommand::CutSelectedElements => SensitiveCommand::CutSelectedElements,
@@ -2401,44 +2737,39 @@ impl<
                         DiagramCommand::ArrangeSelected(arr) => SensitiveCommand::ArrangeSelected(arr),
                         _ => unreachable!(),
                     }
-                ], &mut undo, true, true, affected_models);
-                self.temporaries.last_change_flag = true;
-                global_undo.extend(undo.into_iter());
+                ];
             }
             DiagramCommand::ColorSelected(slot, color) => {
                 let ccd = ColorChangeData {
                     slot,
                     color,
                 };
-                let mut undo = vec![];
-                self.apply_commands(vec![
-                    SensitiveCommand::PropertyChangeSelected(vec![ccd.into()]),
-                ], &mut undo, true, true, affected_models);
-                self.temporaries.last_change_flag = true;
-                global_undo.extend(undo.into_iter());
+                return vec![SensitiveCommand::PropertyChangeSelected(vec![ccd.into()])];
             }
             DiagramCommand::CopySelectedElements => {
+                // TODO: This should technically happen later, I think
                 self.set_clipboard_from_selected();
             },
             DiagramCommand::HighlightAllElements(set, h) => {
-                self.apply_commands(vec![InsensitiveCommand::HighlightAll(set, h).into()], &mut vec![], true, false, affected_models);
+                return vec![InsensitiveCommand::HighlightAll(set, h).into()];
             },
             DiagramCommand::HighlightElement(e, set, h) => {
                 let view_uuid = match e {
                     EntityUuid::Model(model_uuid) => self.temporaries.flattened_represented_models.get(&model_uuid).cloned(),
                     EntityUuid::View(view_uuid) => Some(view_uuid),
+                    EntityUuid::Controller(_) => return vec![],
                 };
                 if let Some(view_uuid) = view_uuid {
-                    self.apply_commands(
-                        vec![InsensitiveCommand::HighlightSpecific(std::iter::once(view_uuid).collect(), set, h).into()],
-                        &mut vec![], true, false, affected_models
-                    );
+                    return vec![
+                        InsensitiveCommand::HighlightSpecific(std::iter::once(view_uuid).collect(), set, h).into()
+                    ];
                 }
             },
             DiagramCommand::PanToElement(e, force) => {
                 let view_uuid = match e {
                     EntityUuid::Model(model_uuid) => self.temporaries.flattened_represented_models.get(&model_uuid).cloned(),
                     EntityUuid::View(view_uuid) => Some(view_uuid),
+                    EntityUuid::Controller(_) => return vec![],
                 };
                 if let Some(v) = view_uuid.and_then(|e| self.temporaries.flattened_views.get(&e)) {
                     let bb = v.bounding_box();
@@ -2491,24 +2822,39 @@ impl<
                         }
                     }
 
-                    // apply commands
-                    let mut undo = vec![];
-                    self.apply_commands(cmds, &mut undo, true, true, affected_models);
-                    self.temporaries.last_change_flag = true;
-                    global_undo.extend(undo.into_iter());
+                    return cmds;
                 }
             }
             DiagramCommand::DeleteViewFor(model_uuid, including_model) => {
                 if let Some(view_uuid) = self.temporaries.flattened_represented_models.get(&model_uuid) {
-                    let mut undo = vec![];
-                    self.apply_commands(vec![
-                        InsensitiveCommand::DeleteSpecificElements(std::iter::once(*view_uuid).collect(), including_model).into()
-                    ], &mut undo, true, true, affected_models);
-                    self.temporaries.last_change_flag = true;
-                    global_undo.extend(undo.into_iter());
+                    return vec![
+                        InsensitiveCommand::DeleteSpecificElements(std::iter::once(*view_uuid).collect(), including_model).into(),
+                    ];
                 }
             }
-        }
+        };
+        vec![]
+    }
+    fn sensitive_command_to_insensitive(
+        &self,
+        command: SensitiveCommand<<DomainT as Domain>::AddCommandElementT, <DomainT as Domain>::PropChangeT>,
+    ) -> InsensitiveCommand<<DomainT as Domain>::AddCommandElementT, <DomainT as Domain>::PropChangeT> {
+        command.to_selection_insensitive(
+            || self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
+            || Self::elements_deep_copy(
+                None,
+                |e| self.temporaries.flattened_views_status.contains_key(e),
+                HashMap::new(),
+                self.temporaries.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
+                ).into_iter().map(|e| e.1.into()).collect(),
+        )
+    }
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+    ) {
+        self.apply_command_inner(command, undo_accumulator);
     }
 
     fn draw_in(
@@ -2560,19 +2906,14 @@ impl<
         }
     }
 
-    fn deep_copy(&self) -> ERef<dyn DiagramController> {
+    fn deep_copy(&self) -> ERef<Self> {
         let (new_adapter, models) = self.adapter.deep_copy();
         self.some_kind_of_copy(new_adapter, models)
     }
 
-    fn shallow_copy(&self) -> ERef<dyn DiagramController> {
+    fn shallow_copy(&self) -> ERef<Self> {
         let (new_adapter, models) = self.adapter.fake_copy();
         self.some_kind_of_copy(new_adapter, models)
-    }
-
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.set_current_diagram(*self.uuid);
-        self.adapter.model().read().full_text_search(acc);
     }
 }
 
