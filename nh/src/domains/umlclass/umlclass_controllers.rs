@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -207,6 +207,32 @@ impl TryFrom<UmlClassPropChange> for ColorChangeData {
         match value {
             UmlClassPropChange::ColorChange(v) => Ok(v),
             _ => Err(()),
+        }
+    }
+}
+
+impl TryMerge for UmlClassPropChange {
+    fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
+        match (self, newer) {
+            (Self::StereotypeChange(_), Self::StereotypeChange(newer)) => Some(Self::StereotypeChange(newer.clone())),
+            (Self::InstanceName(_), Self::InstanceName(newer)) => Some(Self::InstanceName(newer.clone())),
+            (Self::InstanceType(_), Self::InstanceType(newer)) => Some(Self::InstanceType(newer.clone())),
+            (Self::InstanceSlots(_), Self::InstanceSlots(newer)) => Some(Self::InstanceSlots(newer.clone())),
+            (Self::NameChange(_), Self::NameChange(newer)) => Some(Self::NameChange(newer.clone())),
+            (Self::TemplateParametersChange(_), Self::TemplateParametersChange(newer)) => Some(Self::TemplateParametersChange(newer.clone())),
+            (Self::PropertyTypeChange(_), Self::PropertyTypeChange(newer)) => Some(Self::PropertyTypeChange(newer.clone())),
+            (Self::PropertyMultiplicityChange(_), Self::PropertyMultiplicityChange(newer)) => Some(Self::PropertyMultiplicityChange(newer.clone())),
+            (Self::PropertyDefaultValueChange(_), Self::PropertyDefaultValueChange(newer)) => Some(Self::PropertyDefaultValueChange(newer.clone())),
+            (Self::OperationParametersChange(_), Self::OperationParametersChange(newer)) => Some(Self::OperationParametersChange(newer.clone())),
+            (Self::OperationReturnTypeChange(_), Self::OperationReturnTypeChange(newer)) => Some(Self::OperationReturnTypeChange(newer.clone())),
+            (Self::SetNameChange(_), Self::SetNameChange(newer)) => Some(Self::SetNameChange(newer.clone())),
+
+            (Self::LinkMultiplicityChange(b1, _), Self::LinkMultiplicityChange(b2, newer)) if b1 == b2 => Some(Self::LinkMultiplicityChange(*b2, newer.clone())),
+            (Self::LinkRoleChange(b1, _), Self::LinkRoleChange(b2, newer)) if b1 == b2 => Some(Self::LinkRoleChange(*b2, newer.clone())),
+            (Self::LinkReadingChange(b1, _), Self::LinkReadingChange(b2, newer)) if b1 == b2 => Some(Self::LinkReadingChange(*b2, newer.clone())),
+
+            (Self::CommentChange(_), Self::CommentChange(newer)) => Some(Self::CommentChange(newer.clone())),
+            _ => None
         }
     }
 }
@@ -571,9 +597,9 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
-                    vec![UmlClassPropChange::NameChange(Arc::new(
+                    UmlClassPropChange::NameChange(Arc::new(
                         self.buffer.name.clone(),
-                    ))],
+                    )),
                 )
                 .into(),
             );
@@ -590,9 +616,9 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
-                    vec![UmlClassPropChange::CommentChange(Arc::new(
+                    UmlClassPropChange::CommentChange(Arc::new(
                         self.buffer.comment.clone(),
-                    ))],
+                    )),
                 )
                 .into(),
             );
@@ -605,33 +631,31 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    UmlClassPropChange::NameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::NameChange(model.name.clone())],
-                        ));
-                        model.name = name.clone();
-                    }
-                    UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
-                        ));
-                        self.background_color = *color;
-                    }
-                    UmlClassPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                UmlClassPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::NameChange(model.name.clone()),
+                    ));
+                    model.name = name.clone();
                 }
+                UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                    ));
+                    self.background_color = *color;
+                }
+                UmlClassPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -1574,9 +1598,9 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -1587,9 +1611,9 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
     }
     fn apply_change(
@@ -1598,26 +1622,24 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    UmlClassPropChange::NameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::NameChange(model.name.clone())],
-                        ));
-                        model.name = name.clone();
-                    }
-                    UmlClassPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                UmlClassPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::NameChange(model.name.clone()),
+                    ));
+                    model.name = name.clone();
                 }
+                UmlClassPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -1898,9 +1920,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::InstanceName(Arc::new(self.name_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Type:");
@@ -1911,16 +1933,16 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::InstanceType(Arc::new(self.type_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
-            ]));
+            ));
         }
 
         ui.label("Slots:");
@@ -1931,9 +1953,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::InstanceSlots(Arc::new(self.slots_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -1944,9 +1966,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("View properties");
@@ -2225,60 +2247,58 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    for property in properties {
-                        match property {
-                            UmlClassPropChange::InstanceName(name) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::InstanceName(model.instance_name.clone())],
-                                ));
-                                model.instance_name = name.clone();
-                            }
-                            UmlClassPropChange::InstanceType(t) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::InstanceType(model.instance_type.clone())],
-                                ));
-                                model.instance_type = t.clone();
-                            }
-                            UmlClassPropChange::InstanceSlots(s) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::InstanceSlots(model.instance_slots.clone())],
-                                ));
-                                model.instance_slots = s.clone();
-                            }
-                            UmlClassPropChange::StereotypeChange(stereotype) => {
-                                if !self.stereotype_controller.is_valid(&stereotype) {
-                                    continue;
-                                }
-
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::StereotypeChange(model.stereotype.clone())],
-                                ));
-                                model.stereotype = stereotype.clone();
-                            }
-                            UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
-                                ));
-                                self.background_color = *color;
-                            }
-                            UmlClassPropChange::CommentChange(comment) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::CommentChange(model.comment.clone())],
-                                ));
-                                model.comment = comment.clone();
-                            }
-                            _ => {}
+                    match property {
+                        UmlClassPropChange::InstanceName(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::InstanceName(model.instance_name.clone()),
+                            ));
+                            model.instance_name = name.clone();
                         }
+                        UmlClassPropChange::InstanceType(t) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::InstanceType(model.instance_type.clone()),
+                            ));
+                            model.instance_type = t.clone();
+                        }
+                        UmlClassPropChange::InstanceSlots(s) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::InstanceSlots(model.instance_slots.clone()),
+                            ));
+                            model.instance_slots = s.clone();
+                        }
+                        UmlClassPropChange::StereotypeChange(stereotype) => {
+                            if !self.stereotype_controller.is_valid(&stereotype) {
+                                return;
+                            }
+
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::StereotypeChange(model.stereotype.clone()),
+                            ));
+                            model.stereotype = stereotype.clone();
+                        }
+                        UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                            ));
+                            self.background_color = *color;
+                        }
+                        UmlClassPropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -2679,9 +2699,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
 
         ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
-            ]));
+            ));
         }
 
         ui.label("Name:");
@@ -2692,9 +2712,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Type:");
@@ -2705,9 +2725,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::PropertyTypeChange(Arc::new(self.value_type_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Multiplicity:");
@@ -2718,9 +2738,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::PropertyMultiplicityChange(Arc::new(self.multiplicity_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Default value:");
@@ -2731,9 +2751,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::PropertyDefaultValueChange(Arc::new(self.default_value_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Visibility:");
@@ -2748,42 +2768,42 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                     UFOption::Some(UmlClassVisibilityKind::Private),
                 ] {
                     if ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.name()).unwrap_or("Unspecified")).clicked() {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                        commands.push(SensitiveCommand::PropertyChangeSelected(
                             UmlClassPropChange::VisibilityChange(e),
-                        ]));
+                        ));
                     }
                 }
             });
 
         if ui.checkbox(&mut self.is_static_buffer, "isStatic").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::IsStaticChange(self.is_static_buffer),
-            ]));
+            ));
         }
         if ui.checkbox(&mut self.is_derived_buffer, "isDerived").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::IsDerivedChange(self.is_derived_buffer),
-            ]));
+            ));
         }
         if ui.checkbox(&mut self.is_read_only_buffer, "isReadOnly").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::IsReadOnlyChange(self.is_read_only_buffer),
-            ]));
+            ));
         }
         if ui.checkbox(&mut self.is_ordered_buffer, "isOrdered").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::IsOrderedChange(self.is_ordered_buffer),
-            ]));
+            ));
         }
         if ui.checkbox(&mut self.is_unique_buffer, "isUnique").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::IsUniqueChange(self.is_unique_buffer),
-            ]));
+            ));
         }
         if ui.checkbox(&mut self.is_id_buffer, "isID").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::IsIdChange(self.is_id_buffer),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -2849,104 +2869,102 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    for property in properties {
-                        match property {
-                            UmlClassPropChange::StereotypeChange(stereotype) => {
-                                if !self.stereotype_controller.is_valid(&stereotype) {
-                                    continue;
-                                }
+                    match property {
+                        UmlClassPropChange::StereotypeChange(stereotype) => {
+                            if !self.stereotype_controller.is_valid(&stereotype) {
+                                return;
+                            }
 
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::StereotypeChange(
-                                        model.stereotype.clone(),
-                                    )],
-                                ));
-                                model.stereotype = stereotype.clone();
-                            }
-                            UmlClassPropChange::NameChange(name) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::NameChange(model.name.clone())],
-                                ));
-                                model.name = name.clone();
-                            }
-                            UmlClassPropChange::PropertyTypeChange(value_type) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::PropertyTypeChange(model.value_type.clone())],
-                                ));
-                                model.value_type = value_type.clone();
-                            }
-                            UmlClassPropChange::PropertyMultiplicityChange(multiplicity) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::PropertyMultiplicityChange(model.multiplicity.clone())],
-                                ));
-                                model.multiplicity = multiplicity.clone();
-                            }
-                            UmlClassPropChange::PropertyDefaultValueChange(default_value) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::PropertyDefaultValueChange(model.default_value.clone())],
-                                ));
-                                model.default_value = default_value.clone();
-                            }
-                            UmlClassPropChange::VisibilityChange(visibility) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::VisibilityChange(model.visibility.clone())],
-                                ));
-                                model.visibility = visibility.clone();
-                            }
-                            UmlClassPropChange::IsStaticChange(is_static) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::IsStaticChange(model.is_static.clone())],
-                                ));
-                                model.is_static = is_static.clone();
-                            }
-                            UmlClassPropChange::IsDerivedChange(is_derived) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::IsDerivedChange(model.is_derived.clone())],
-                                ));
-                                model.is_derived = is_derived.clone();
-                            }
-                            UmlClassPropChange::IsReadOnlyChange(is_read_only) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::IsReadOnlyChange(model.is_read_only.clone())],
-                                ));
-                                model.is_read_only = is_read_only.clone();
-                            }
-                            UmlClassPropChange::IsOrderedChange(is_ordered) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::IsOrderedChange(model.is_ordered.clone())],
-                                ));
-                                model.is_ordered = is_ordered.clone();
-                            }
-                            UmlClassPropChange::IsUniqueChange(is_unique) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::IsUniqueChange(model.is_unique.clone())],
-                                ));
-                                model.is_unique = is_unique.clone();
-                            }
-                            UmlClassPropChange::IsIdChange(is_id) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::IsIdChange(model.is_id.clone())],
-                                ));
-                                model.is_id = is_id.clone();
-                            }
-                            _ => {}
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::StereotypeChange(
+                                    model.stereotype.clone(),
+                                ),
+                            ));
+                            model.stereotype = stereotype.clone();
                         }
+                        UmlClassPropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
+                        }
+                        UmlClassPropChange::PropertyTypeChange(value_type) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::PropertyTypeChange(model.value_type.clone()),
+                            ));
+                            model.value_type = value_type.clone();
+                        }
+                        UmlClassPropChange::PropertyMultiplicityChange(multiplicity) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::PropertyMultiplicityChange(model.multiplicity.clone()),
+                            ));
+                            model.multiplicity = multiplicity.clone();
+                        }
+                        UmlClassPropChange::PropertyDefaultValueChange(default_value) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::PropertyDefaultValueChange(model.default_value.clone()),
+                            ));
+                            model.default_value = default_value.clone();
+                        }
+                        UmlClassPropChange::VisibilityChange(visibility) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::VisibilityChange(model.visibility.clone()),
+                            ));
+                            model.visibility = visibility.clone();
+                        }
+                        UmlClassPropChange::IsStaticChange(is_static) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::IsStaticChange(model.is_static.clone()),
+                            ));
+                            model.is_static = is_static.clone();
+                        }
+                        UmlClassPropChange::IsDerivedChange(is_derived) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::IsDerivedChange(model.is_derived.clone()),
+                            ));
+                            model.is_derived = is_derived.clone();
+                        }
+                        UmlClassPropChange::IsReadOnlyChange(is_read_only) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::IsReadOnlyChange(model.is_read_only.clone()),
+                            ));
+                            model.is_read_only = is_read_only.clone();
+                        }
+                        UmlClassPropChange::IsOrderedChange(is_ordered) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::IsOrderedChange(model.is_ordered.clone()),
+                            ));
+                            model.is_ordered = is_ordered.clone();
+                        }
+                        UmlClassPropChange::IsUniqueChange(is_unique) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::IsUniqueChange(model.is_unique.clone()),
+                            ));
+                            model.is_unique = is_unique.clone();
+                        }
+                        UmlClassPropChange::IsIdChange(is_id) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::IsIdChange(model.is_id.clone()),
+                            ));
+                            model.is_id = is_id.clone();
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -3401,9 +3419,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
 
         ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
-            ]));
+            ));
         }
 
         ui.label("Name:");
@@ -3414,9 +3432,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Parameters:");
@@ -3427,9 +3445,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::OperationParametersChange(Arc::new(self.parameters_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Return type:");
@@ -3440,9 +3458,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::OperationReturnTypeChange(Arc::new(self.return_type_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Visibility:");
@@ -3457,37 +3475,37 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                     UFOption::Some(UmlClassVisibilityKind::Private),
                 ] {
                     if ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.name()).unwrap_or("Unspecified")).clicked() {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                        commands.push(SensitiveCommand::PropertyChangeSelected(
                             UmlClassPropChange::VisibilityChange(e),
-                        ]));
+                        ));
                     }
                 }
             });
 
         if ui.checkbox(&mut self.is_static_buffer, "isStatic").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::IsStaticChange(self.is_static_buffer),
-            ]));
+            ));
         }
         if ui.checkbox(&mut self.is_abstract_buffer, "isAbstract").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::IsAbstractChange(self.is_abstract_buffer),
-            ]));
+            ));
         }
         if ui.checkbox(&mut self.is_query_buffer, "isQuery").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::IsQueryChange(self.is_query_buffer),
-            ]));
+            ));
         }
         if ui.checkbox(&mut self.is_ordered_buffer, "isOrdered").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::IsOrderedChange(self.is_ordered_buffer),
-            ]));
+            ));
         }
         if ui.checkbox(&mut self.is_unique_buffer, "isUnique").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::IsUniqueChange(self.is_unique_buffer),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -3553,90 +3571,88 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    for property in properties {
-                        match property {
-                            UmlClassPropChange::StereotypeChange(stereotype) => {
-                                if !self.stereotype_controller.is_valid(&stereotype) {
-                                    continue;
-                                }
+                    match property {
+                        UmlClassPropChange::StereotypeChange(stereotype) => {
+                            if !self.stereotype_controller.is_valid(&stereotype) {
+                                return;
+                            }
 
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::StereotypeChange(
-                                        model.stereotype.clone(),
-                                    )],
-                                ));
-                                model.stereotype = stereotype.clone();
-                            }
-                            UmlClassPropChange::NameChange(name) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::NameChange(model.name.clone())],
-                                ));
-                                model.name = name.clone();
-                            }
-                            UmlClassPropChange::OperationParametersChange(parameters) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::OperationParametersChange(model.parameters.clone())],
-                                ));
-                                model.parameters = parameters.clone();
-                            }
-                            UmlClassPropChange::OperationReturnTypeChange(return_type) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::OperationReturnTypeChange(model.return_type.clone())],
-                                ));
-                                model.return_type = return_type.clone();
-                            }
-                            UmlClassPropChange::VisibilityChange(visibility) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::VisibilityChange(model.visibility.clone())],
-                                ));
-                                model.visibility = visibility.clone();
-                            }
-                            UmlClassPropChange::IsStaticChange(is_static) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::IsStaticChange(model.is_static.clone())],
-                                ));
-                                model.is_static = is_static.clone();
-                            }
-                            UmlClassPropChange::IsAbstractChange(is_abstract) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::IsAbstractChange(model.is_abstract.clone())],
-                                ));
-                                model.is_abstract = is_abstract.clone();
-                            }
-                            UmlClassPropChange::IsQueryChange(is_query) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::IsQueryChange(model.is_query.clone())],
-                                ));
-                                model.is_query = is_query.clone();
-                            }
-                            UmlClassPropChange::IsOrderedChange(is_ordered) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::IsOrderedChange(model.is_ordered.clone())],
-                                ));
-                                model.is_ordered = is_ordered.clone();
-                            }
-                            UmlClassPropChange::IsUniqueChange(is_unique) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::IsUniqueChange(model.is_unique.clone())],
-                                ));
-                                model.is_unique = is_unique.clone();
-                            }
-                            _ => {}
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::StereotypeChange(
+                                    model.stereotype.clone(),
+                                ),
+                            ));
+                            model.stereotype = stereotype.clone();
                         }
+                        UmlClassPropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
+                        }
+                        UmlClassPropChange::OperationParametersChange(parameters) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::OperationParametersChange(model.parameters.clone()),
+                            ));
+                            model.parameters = parameters.clone();
+                        }
+                        UmlClassPropChange::OperationReturnTypeChange(return_type) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::OperationReturnTypeChange(model.return_type.clone()),
+                            ));
+                            model.return_type = return_type.clone();
+                        }
+                        UmlClassPropChange::VisibilityChange(visibility) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::VisibilityChange(model.visibility.clone()),
+                            ));
+                            model.visibility = visibility.clone();
+                        }
+                        UmlClassPropChange::IsStaticChange(is_static) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::IsStaticChange(model.is_static.clone()),
+                            ));
+                            model.is_static = is_static.clone();
+                        }
+                        UmlClassPropChange::IsAbstractChange(is_abstract) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::IsAbstractChange(model.is_abstract.clone()),
+                            ));
+                            model.is_abstract = is_abstract.clone();
+                        }
+                        UmlClassPropChange::IsQueryChange(is_query) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::IsQueryChange(model.is_query.clone()),
+                            ));
+                            model.is_query = is_query.clone();
+                        }
+                        UmlClassPropChange::IsOrderedChange(is_ordered) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::IsOrderedChange(model.is_ordered.clone()),
+                            ));
+                            model.is_ordered = is_ordered.clone();
+                        }
+                        UmlClassPropChange::IsUniqueChange(is_unique) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::IsUniqueChange(model.is_unique.clone()),
+                            ));
+                            model.is_unique = is_unique.clone();
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -4190,9 +4206,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
         ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
-            ]));
+            ));
         }
 
         ui.label("Name:");
@@ -4203,9 +4219,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Template parameters:");
@@ -4216,15 +4232,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::TemplateParametersChange(Arc::new(self.template_parameters_buffer.clone())),
-            ]));
+            ));
         }
 
         if ui.checkbox(&mut self.is_abstract_buffer, "isAbstract").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::ClassAbstractChange(self.is_abstract_buffer),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -4235,9 +4251,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("View properties");
@@ -4824,64 +4840,62 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 }
             }
             InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    for property in properties {
-                        match property {
-                            UmlClassPropChange::StereotypeChange(stereotype) => {
-                                if !self.stereotype_controller.is_valid(&stereotype) {
-                                    continue;
-                                }
+                    match property {
+                        UmlClassPropChange::StereotypeChange(stereotype) => {
+                            if !self.stereotype_controller.is_valid(&stereotype) {
+                                return;
+                            }
 
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::StereotypeChange(
-                                        model.stereotype.clone(),
-                                    )],
-                                ));
-                                model.stereotype = stereotype.clone();
-                            }
-                            UmlClassPropChange::NameChange(name) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::NameChange(model.name.clone())],
-                                ));
-                                model.name = name.clone();
-                            }
-                            UmlClassPropChange::TemplateParametersChange(template_parameters) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::TemplateParametersChange(model.template_parameters.clone())],
-                                ));
-                                model.template_parameters = template_parameters.clone();
-                            }
-                            UmlClassPropChange::ClassAbstractChange(is_abstract) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::ClassAbstractChange(
-                                        model.is_abstract,
-                                    )],
-                                ));
-                                model.is_abstract = *is_abstract;
-                            }
-                            UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
-                                ));
-                                self.background_color = *color;
-                            }
-                            UmlClassPropChange::CommentChange(comment) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::CommentChange(model.comment.clone())],
-                                ));
-                                model.comment = comment.clone();
-                            }
-                            _ => {}
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::StereotypeChange(
+                                    model.stereotype.clone(),
+                                ),
+                            ));
+                            model.stereotype = stereotype.clone();
                         }
+                        UmlClassPropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
+                        }
+                        UmlClassPropChange::TemplateParametersChange(template_parameters) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::TemplateParametersChange(model.template_parameters.clone()),
+                            ));
+                            model.template_parameters = template_parameters.clone();
+                        }
+                        UmlClassPropChange::ClassAbstractChange(is_abstract) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::ClassAbstractChange(
+                                    model.is_abstract,
+                                ),
+                            ));
+                            model.is_abstract = *is_abstract;
+                        }
+                        UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                            ));
+                            self.background_color = *color;
+                        }
+                        UmlClassPropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        _ => {}
                     }
                 }
 
@@ -5178,26 +5192,26 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
         }
 
         if ui.add_enabled(true, egui::Button::new("Switch source and target")).clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::FlipMulticonnection(FlipMulticonnection {}),
-            ]));
+            ));
         }
 
         ui.label("Generalization set name:");
         if ui.text_edit_singleline(&mut self.temporaries.set_name_buffer).changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::SetNameChange(Arc::new(self.temporaries.set_name_buffer.clone())),
-            ]));
+            ));
         }
         if ui.checkbox(&mut self.temporaries.set_is_covering_buffer, "isCovering").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::SetCoveringChange(self.temporaries.set_is_covering_buffer),
-            ]));
+            ));
         }
         if ui.checkbox(&mut self.temporaries.set_is_disjoint_buffer, "isDisjoint").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::SetDisjointChange(self.temporaries.set_is_disjoint_buffer),
-            ]));
+            ));
         }
         ui.separator();
 
@@ -5209,9 +5223,9 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -5222,40 +5236,38 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
         command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    UmlClassPropChange::SetNameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::SetNameChange(model.set_name.clone())],
-                        ));
-                        model.set_name = name.clone();
-                    }
-                    UmlClassPropChange::SetCoveringChange(is_covering) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::SetCoveringChange(model.set_is_covering.clone())],
-                        ));
-                        model.set_is_covering = is_covering.clone();
-                    }
-                    UmlClassPropChange::SetDisjointChange(is_disjoint) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::SetDisjointChange(model.set_is_disjoint.clone())],
-                        ));
-                        model.set_is_disjoint = is_disjoint.clone();
-                    }
-                    UmlClassPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                UmlClassPropChange::SetNameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::SetNameChange(model.set_name.clone()),
+                    ));
+                    model.set_name = name.clone();
                 }
+                UmlClassPropChange::SetCoveringChange(is_covering) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::SetCoveringChange(model.set_is_covering.clone()),
+                    ));
+                    model.set_is_covering = is_covering.clone();
+                }
+                UmlClassPropChange::SetDisjointChange(is_disjoint) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::SetDisjointChange(model.set_is_disjoint.clone()),
+                    ));
+                    model.set_is_disjoint = is_disjoint.clone();
+                }
+                UmlClassPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -5468,9 +5480,9 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         ui.label("Stereotype:");
         if self.temporaries.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::StereotypeChange(self.temporaries.stereotype_controller.get()),
-            ]));
+            ));
         }
 
         ui.label("Name:");
@@ -5481,26 +5493,26 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
-            ]));
+            ));
         }
         ui.separator();
 
         ui.label("Target arrow open:");
         if ui.checkbox(&mut self.temporaries.target_arrow_open_buffer, "").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::DependencyArrowOpenChange(
                     self.temporaries.target_arrow_open_buffer,
                 ),
-            ]));
+            ));
         }
         ui.separator();
 
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::FlipMulticonnection(FlipMulticonnection {}),
-            ]));
+            ));
         }
         ui.separator();
 
@@ -5512,9 +5524,9 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -5525,50 +5537,48 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
         command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    UmlClassPropChange::StereotypeChange(stereotype) => {
-                        if !self.temporaries.stereotype_controller.is_valid(&stereotype) {
-                            continue;
-                        }
+            match property {
+                UmlClassPropChange::StereotypeChange(stereotype) => {
+                    if !self.temporaries.stereotype_controller.is_valid(&stereotype) {
+                        return;
+                    }
 
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::StereotypeChange(
-                                model.stereotype.clone(),
-                            )],
-                        ));
-                        model.stereotype = stereotype.clone();
-                    }
-                    UmlClassPropChange::NameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::StereotypeChange(
-                                model.name.clone(),
-                            )],
-                        ));
-                        model.name = name.clone();
-                    }
-                    UmlClassPropChange::DependencyArrowOpenChange(open) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::DependencyArrowOpenChange(
-                                model.target_arrow_open,
-                            )],
-                        ));
-                        model.target_arrow_open = *open;
-                    }
-                    UmlClassPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::StereotypeChange(
+                            model.stereotype.clone(),
+                        ),
+                    ));
+                    model.stereotype = stereotype.clone();
                 }
+                UmlClassPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::StereotypeChange(
+                            model.name.clone(),
+                        ),
+                    ));
+                    model.name = name.clone();
+                }
+                UmlClassPropChange::DependencyArrowOpenChange(open) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::DependencyArrowOpenChange(
+                            model.target_arrow_open,
+                        ),
+                    ));
+                    model.target_arrow_open = *open;
+                }
+                UmlClassPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -5749,9 +5759,9 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         ui.label("Stereotype:");
         if self.temporaries.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::StereotypeChange(self.temporaries.stereotype_controller.get()),
-            ]));
+            ));
         }
 
         ui.label("Name:");
@@ -5762,9 +5772,9 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
-            ]));
+            ));
         }
         ui.separator();
 
@@ -5776,11 +5786,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::LinkMultiplicityChange(false, Arc::new(
                     self.temporaries.source_multiplicity_buffer.clone(),
                 )),
-            ]));
+            ));
         }
         ui.label("Source role:");
         if ui
@@ -5790,11 +5800,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::LinkRoleChange(false, Arc::new(
                     self.temporaries.source_role_buffer.clone(),
                 )),
-            ]));
+            ));
         }
         ui.label("Source reading:");
         if ui
@@ -5804,11 +5814,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::LinkReadingChange(false, Arc::new(
                     self.temporaries.source_reading_buffer.clone(),
                 )),
-            ]));
+            ));
         }
         ui.label("Source navigability:");
         egui::ComboBox::from_id_salt("source navigability")
@@ -5823,9 +5833,9 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                         .selectable_value(&mut self.temporaries.source_navigability_buffer, sv, &*sv.name())
                         .changed()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                        commands.push(SensitiveCommand::PropertyChangeSelected(
                             UmlClassPropChange::LinkNavigabilityChange(false, self.temporaries.source_navigability_buffer),
-                        ]));
+                        ));
                     }
                 }
             });
@@ -5842,9 +5852,9 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                         .selectable_value(&mut self.temporaries.source_aggregation_buffer, sv, &*sv.name())
                         .changed()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                        commands.push(SensitiveCommand::PropertyChangeSelected(
                             UmlClassPropChange::LinkAggregationChange(false, self.temporaries.source_aggregation_buffer),
-                        ]));
+                        ));
                     }
                 }
             });
@@ -5858,11 +5868,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::LinkMultiplicityChange(true, Arc::new(
                     self.temporaries.target_multiplicity_buffer.clone(),
                 )),
-            ]));
+            ));
         }
         ui.label("Target role:");
         if ui
@@ -5872,11 +5882,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::LinkRoleChange(true, Arc::new(
                     self.temporaries.target_role_buffer.clone(),
                 )),
-            ]));
+            ));
         }
         ui.label("Target reading:");
         if ui
@@ -5886,11 +5896,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::LinkReadingChange(true, Arc::new(
                     self.temporaries.target_reading_buffer.clone(),
                 )),
-            ]));
+            ));
         }
         ui.label("Target navigability:");
         egui::ComboBox::from_id_salt("target navigability")
@@ -5905,9 +5915,9 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                         .selectable_value(&mut self.temporaries.target_navigability_buffer, sv, &*sv.name())
                         .changed()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                        commands.push(SensitiveCommand::PropertyChangeSelected(
                             UmlClassPropChange::LinkNavigabilityChange(true, self.temporaries.target_navigability_buffer),
-                        ]));
+                        ));
                     }
                 }
             });
@@ -5924,18 +5934,18 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                         .selectable_value(&mut self.temporaries.target_aggregation_buffer, sv, &*sv.name())
                         .changed()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                        commands.push(SensitiveCommand::PropertyChangeSelected(
                             UmlClassPropChange::LinkAggregationChange(true, self.temporaries.target_aggregation_buffer),
-                        ]));
+                        ));
                     }
                 }
             });
         ui.separator();
 
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::FlipMulticonnection(FlipMulticonnection {}),
-            ]));
+            ));
         }
         ui.separator();
 
@@ -5947,9 +5957,9 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -5960,129 +5970,129 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
         command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    UmlClassPropChange::StereotypeChange(stereotype) => {
-                        if !self.temporaries.stereotype_controller.is_valid(&stereotype) {
-                            continue;
-                        }
+            match property {
+                UmlClassPropChange::StereotypeChange(stereotype) => {
+                    if !self.temporaries.stereotype_controller.is_valid(&stereotype) {
+                        return;
+                    }
 
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::StereotypeChange(
-                                model.stereotype.clone(),
-                            )],
-                        ));
-                        model.stereotype = stereotype.clone();
-                    }
-                    UmlClassPropChange::NameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::StereotypeChange(
-                                model.name.clone(),
-                            )],
-                        ));
-                        model.name = name.clone();
-                    }
-                    UmlClassPropChange::LinkMultiplicityChange(t, multiplicity) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::LinkMultiplicityChange(
-                                *t,
-                                if !t {
-                                    model.source_label_multiplicity.clone()
-                                } else {
-                                    model.target_label_multiplicity.clone()
-                                }
-                            )],
-                        ));
-                        if !t {
-                            model.source_label_multiplicity = multiplicity.clone();
-                        } else {
-                            model.target_label_multiplicity = multiplicity.clone();
-                        }
-                    }
-                    UmlClassPropChange::LinkRoleChange(t, role) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::LinkRoleChange(
-                                *t,
-                                if !t {
-                                    model.source_label_role.clone()
-                                } else {
-                                    model.target_label_role.clone()
-                                }
-                            )],
-                        ));
-                        if !t {
-                            model.source_label_role = role.clone();
-                        } else {
-                            model.target_label_role = role.clone();
-                        }
-                    }
-                    UmlClassPropChange::LinkReadingChange(t, reading) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::LinkRoleChange(
-                                *t,
-                                if !t {
-                                    model.source_label_reading.clone()
-                                } else {
-                                    model.target_label_reading.clone()
-                                }
-                            )],
-                        ));
-                        if !t {
-                            model.source_label_reading = reading.clone();
-                        } else {
-                            model.target_label_reading = reading.clone();
-                        }
-                    }
-                    UmlClassPropChange::LinkNavigabilityChange(t, navigability) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::LinkNavigabilityChange(
-                                *t,
-                                if !*t {
-                                    model.source_navigability
-                                } else {
-                                    model.target_navigability
-                                })],
-                        ));
-                        if !*t {
-                            model.source_navigability = *navigability;
-                        } else {
-                            model.target_navigability = *navigability;
-                        }
-                    }
-                    UmlClassPropChange::LinkAggregationChange(t, aggregation) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::LinkAggregationChange(
-                                *t,
-                                if !*t {
-                                    model.source_aggregation
-                                } else {
-                                    model.target_aggregation
-                                })],
-                        ));
-                        if !*t {
-                            model.source_aggregation = *aggregation;
-                        } else {
-                            model.target_aggregation = *aggregation;
-                        }
-                    }
-                    UmlClassPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![UmlClassPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::StereotypeChange(
+                            model.stereotype.clone(),
+                        ),
+                    ));
+                    model.stereotype = stereotype.clone();
                 }
+                UmlClassPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::StereotypeChange(
+                            model.name.clone(),
+                        ),
+                    ));
+                    model.name = name.clone();
+                }
+                UmlClassPropChange::LinkMultiplicityChange(t, multiplicity) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::LinkMultiplicityChange(
+                            *t,
+                            if !t {
+                                model.source_label_multiplicity.clone()
+                            } else {
+                                model.target_label_multiplicity.clone()
+                            }
+                        ),
+                    ));
+                    if !t {
+                        model.source_label_multiplicity = multiplicity.clone();
+                    } else {
+                        model.target_label_multiplicity = multiplicity.clone();
+                    }
+                }
+                UmlClassPropChange::LinkRoleChange(t, role) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::LinkRoleChange(
+                            *t,
+                            if !t {
+                                model.source_label_role.clone()
+                            } else {
+                                model.target_label_role.clone()
+                            }
+                        ),
+                    ));
+                    if !t {
+                        model.source_label_role = role.clone();
+                    } else {
+                        model.target_label_role = role.clone();
+                    }
+                }
+                UmlClassPropChange::LinkReadingChange(t, reading) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::LinkRoleChange(
+                            *t,
+                            if !t {
+                                model.source_label_reading.clone()
+                            } else {
+                                model.target_label_reading.clone()
+                            }
+                        ),
+                    ));
+                    if !t {
+                        model.source_label_reading = reading.clone();
+                    } else {
+                        model.target_label_reading = reading.clone();
+                    }
+                }
+                UmlClassPropChange::LinkNavigabilityChange(t, navigability) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::LinkNavigabilityChange(
+                            *t,
+                            if !*t {
+                                model.source_navigability
+                            } else {
+                                model.target_navigability
+                            }
+                        ),
+                    ));
+                    if !*t {
+                        model.source_navigability = *navigability;
+                    } else {
+                        model.target_navigability = *navigability;
+                    }
+                }
+                UmlClassPropChange::LinkAggregationChange(t, aggregation) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::LinkAggregationChange(
+                            *t,
+                            if !*t {
+                                model.source_aggregation
+                            } else {
+                                model.target_aggregation
+                            }
+                        ),
+                    ));
+                    if !*t {
+                        model.source_aggregation = *aggregation;
+                    } else {
+                        model.target_aggregation = *aggregation;
+                    }
+                }
+                UmlClassPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -6312,9 +6322,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 UmlClassPropChange::NameChange(Arc::new(self.text_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("View properties");
@@ -6544,28 +6554,26 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    for property in properties {
-                        match property {
-                            UmlClassPropChange::NameChange(text) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::NameChange(model.text.clone())],
-                                ));
-                                model.text = text.clone();
-                            }
-                            UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
-                                ));
-                                self.background_color = *color;
-                            }
-                            _ => {}
+                    match property {
+                        UmlClassPropChange::NameChange(text) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::NameChange(model.text.clone()),
+                            ));
+                            model.text = text.clone();
                         }
+                        UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                            ));
+                            self.background_color = *color;
+                        }
+                        _ => {}
                     }
                 }
             }

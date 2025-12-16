@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -109,6 +109,20 @@ impl TryFrom<RdfPropChange> for ColorChangeData {
         match value {
             RdfPropChange::ColorChange(v) => Ok(v),
             _ => Err(()),
+        }
+    }
+}
+
+impl TryMerge for RdfPropChange {
+    fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
+        match (self, newer) {
+            (Self::NameChange(_), Self::NameChange(newer)) => Some(Self::NameChange(newer.clone())),
+            (Self::IriChange(_), Self::IriChange(newer)) => Some(Self::IriChange(newer.clone())),
+            (Self::ContentChange(_), Self::ContentChange(newer)) => Some(Self::ContentChange(newer.clone())),
+            (Self::DataTypeChange(_), Self::DataTypeChange(newer)) => Some(Self::DataTypeChange(newer.clone())),
+            (Self::LangTagChange(_), Self::LangTagChange(newer)) => Some(Self::LangTagChange(newer.clone())),
+            (Self::CommentChange(_), Self::CommentChange(newer)) => Some(Self::CommentChange(newer.clone())),
+            _ => None
         }
     }
 }
@@ -306,7 +320,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
-                    vec![RdfPropChange::NameChange(Arc::new(self.buffer.name.clone()))],
+                    RdfPropChange::NameChange(Arc::new(self.buffer.name.clone())),
                 )
                 .into(),
             );
@@ -323,9 +337,9 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
-                    vec![RdfPropChange::CommentChange(Arc::new(
+                    RdfPropChange::CommentChange(Arc::new(
                         self.buffer.comment.clone(),
-                    ))],
+                    )),
                 )
                 .into(),
             );
@@ -338,33 +352,31 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    RdfPropChange::NameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![RdfPropChange::NameChange(model.name.clone())],
-                        ));
-                        model.name = name.clone();
-                    }
-                    RdfPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![RdfPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
-                        ));
-                        self.background_color = *color;
-                    }
-                    RdfPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![RdfPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                RdfPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        RdfPropChange::NameChange(model.name.clone()),
+                    ));
+                    model.name = name.clone();
                 }
+                RdfPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        RdfPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                    ));
+                    self.background_color = *color;
+                }
+                RdfPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        RdfPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -953,9 +965,9 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -966,9 +978,9 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
     }
     fn apply_change(
@@ -977,26 +989,24 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    RdfPropChange::IriChange(iri) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![RdfPropChange::IriChange(model.iri.clone())],
-                        ));
-                        model.iri = iri.clone();
-                    }
-                    RdfPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![RdfPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                RdfPropChange::IriChange(iri) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        RdfPropChange::IriChange(model.iri.clone()),
+                    ));
+                    model.iri = iri.clone();
                 }
+                RdfPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        RdfPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -1182,9 +1192,9 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -1195,9 +1205,9 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("View properties");
@@ -1390,28 +1400,26 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    for property in properties {
-                        match property {
-                            RdfPropChange::IriChange(iri) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![RdfPropChange::IriChange(model.iri.clone())],
-                                ));
-                                model.iri = iri.clone();
-                            }
-                            RdfPropChange::CommentChange(comment) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![RdfPropChange::CommentChange(model.comment.clone())],
-                                ));
-                                model.comment = comment.clone();
-                            }
-                            _ => {}
+                    match property {
+                        RdfPropChange::IriChange(iri) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                RdfPropChange::IriChange(model.iri.clone()),
+                            ));
+                            model.iri = iri.clone();
                         }
+                        RdfPropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                RdfPropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -1646,9 +1654,9 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 RdfPropChange::ContentChange(Arc::new(self.content_buffer.clone())),
-            ]));
+            ));
         }
         ui.label("Datatype:");
         if ui
@@ -1658,9 +1666,9 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 RdfPropChange::DataTypeChange(Arc::new(self.datatype_buffer.clone())),
-            ]));
+            ));
         };
 
         ui.label("Language:");
@@ -1671,9 +1679,9 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 RdfPropChange::LangTagChange(Arc::new(self.langtag_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -1684,9 +1692,9 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("View properties");
@@ -1847,42 +1855,40 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    for property in properties {
-                        match property {
-                            RdfPropChange::ContentChange(content) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![RdfPropChange::ContentChange(model.content.clone())],
-                                ));
-                                model.content = content.clone();
-                            }
-                            RdfPropChange::DataTypeChange(datatype) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![RdfPropChange::DataTypeChange(model.datatype.clone())],
-                                ));
-                                model.datatype = datatype.clone();
-                            }
-                            RdfPropChange::LangTagChange(langtag) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![RdfPropChange::LangTagChange(model.langtag.clone())],
-                                ));
-                                model.langtag = langtag.clone();
-                            }
-                            RdfPropChange::CommentChange(comment) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![RdfPropChange::CommentChange(model.comment.clone())],
-                                ));
-                                model.comment = comment.clone();
-                            }
-                            _ => {}
+                    match property {
+                        RdfPropChange::ContentChange(content) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                RdfPropChange::ContentChange(model.content.clone()),
+                            ));
+                            model.content = content.clone();
                         }
+                        RdfPropChange::DataTypeChange(datatype) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                RdfPropChange::DataTypeChange(model.datatype.clone()),
+                            ));
+                            model.datatype = datatype.clone();
+                        }
+                        RdfPropChange::LangTagChange(langtag) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                RdfPropChange::LangTagChange(model.langtag.clone()),
+                            ));
+                            model.langtag = langtag.clone();
+                        }
+                        RdfPropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                RdfPropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -2055,9 +2061,9 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 RdfPropChange::IriChange(Arc::new(self.temporaries.iri_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -2068,16 +2074,16 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 RdfPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         if ui.button("Switch source and destination").clicked()
             && let RdfTargettableElement::RdfNode(_) = &self.model.read().target {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 RdfPropChange::FlipMulticonnection(FlipMulticonnection {}),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -2088,26 +2094,24 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    RdfPropChange::IriChange(iri) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![RdfPropChange::IriChange(model.iri.clone())],
-                        ));
-                        model.iri = iri.clone();
-                    }
-                    RdfPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![RdfPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                RdfPropChange::IriChange(iri) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        RdfPropChange::IriChange(model.iri.clone()),
+                    ));
+                    model.iri = iri.clone();
                 }
+                RdfPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        RdfPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }

@@ -3,7 +3,7 @@ use super::demoofd_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -111,6 +111,19 @@ impl TryFrom<DemoOfdPropChange> for ColorChangeData {
         match value {
             DemoOfdPropChange::ColorChange(v) => Ok(v),
             _ => Err(()),
+        }
+    }
+}
+
+impl TryMerge for DemoOfdPropChange {
+    fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
+        match (self, newer) {
+            (Self::NameChange(_), Self::NameChange(newer)) => Some(Self::NameChange(newer.clone())),
+            (Self::EntityPropertiesChange(_), Self::EntityPropertiesChange(newer)) => Some(Self::EntityPropertiesChange(newer.clone())),
+            (Self::EventIdentifierChange(_), Self::EventIdentifierChange(newer)) => Some(Self::EventIdentifierChange(newer.clone())),
+            (Self::LinkMultiplicityChange(b1, _), Self::LinkMultiplicityChange(b2, newer)) if b1 == b2 => Some(Self::LinkMultiplicityChange(*b2, newer.clone())),
+            (Self::CommentChange(_), Self::CommentChange(newer)) => Some(Self::CommentChange(newer.clone())),
+            _ => None
         }
     }
 }
@@ -413,9 +426,9 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
-                    vec![DemoOfdPropChange::NameChange(Arc::new(
+                    DemoOfdPropChange::NameChange(Arc::new(
                         self.buffer.name.clone(),
-                    ))],
+                    )),
                 )
                 .into(),
             );
@@ -432,9 +445,9 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
-                    vec![DemoOfdPropChange::CommentChange(Arc::new(
+                    DemoOfdPropChange::CommentChange(Arc::new(
                         self.buffer.comment.clone(),
-                    ))],
+                    )),
                 )
                 .into(),
             );
@@ -447,33 +460,31 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    DemoOfdPropChange::NameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::NameChange(model.name.clone())],
-                        ));
-                        model.name = name.clone();
-                    }
-                    DemoOfdPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
-                        ));
-                        self.background_color = *color;
-                    }
-                    DemoOfdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                DemoOfdPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::NameChange(model.name.clone()),
+                    ));
+                    model.name = name.clone();
                 }
+                DemoOfdPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                    ));
+                    self.background_color = *color;
+                }
+                DemoOfdPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -1338,9 +1349,9 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -1351,9 +1362,9 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
     }
     fn apply_change(
@@ -1362,26 +1373,24 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    DemoOfdPropChange::NameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::NameChange(model.name.clone())],
-                        ));
-                        model.name = name.clone();
-                    }
-                    DemoOfdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                DemoOfdPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::NameChange(model.name.clone()),
+                    ));
+                    model.name = name.clone();
                 }
+                DemoOfdPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -1792,9 +1801,9 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Properties:");
@@ -1805,15 +1814,15 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::EntityPropertiesChange(Arc::new(self.properties_buffer.clone())),
-            ]));
+            ));
         }
 
         if ui.checkbox(&mut self.internal_buffer, "internal").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::EntityInternalChange(self.internal_buffer),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -1824,9 +1833,9 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("View properties");
@@ -2005,46 +2014,42 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    for property in properties {
-                        match property {
-                            DemoOfdPropChange::NameChange(name) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoOfdPropChange::NameChange(model.name.clone())],
-                                ));
-                                model.name = name.clone();
-                            }
-                            DemoOfdPropChange::EntityInternalChange(internal) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoOfdPropChange::EntityInternalChange(
-                                        model.internal,
-                                    )],
-                                ));
-                                model.internal = *internal;
-                            }
-                            DemoOfdPropChange::EntityPropertiesChange(properties) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoOfdPropChange::EntityPropertiesChange(
-                                        model.properties.clone(),
-                                    )],
-                                ));
-                                model.properties = properties.clone();
-                            }
-                            DemoOfdPropChange::CommentChange(comment) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
-                                ));
-                                model.comment = comment.clone();
-                            }
-                            _ => {}
+                    match property {
+                        DemoOfdPropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoOfdPropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
                         }
+                        DemoOfdPropChange::EntityInternalChange(internal) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoOfdPropChange::EntityInternalChange(model.internal),
+                            ));
+                            model.internal = *internal;
+                        }
+                        DemoOfdPropChange::EntityPropertiesChange(properties) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoOfdPropChange::EntityPropertiesChange(
+                                    model.properties.clone(),
+                                ),
+                            ));
+                            model.properties = properties.clone();
+                        }
+                        DemoOfdPropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoOfdPropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -2321,9 +2326,9 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     if ui
                         .selectable_value(&mut self.kind_buffer, value, value.char())
                         .clicked() {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                        commands.push(SensitiveCommand::PropertyChangeSelected(
                             DemoOfdPropChange::EventKindChange(self.kind_buffer),
-                        ]));
+                        ));
                     }
                 }
             });
@@ -2336,9 +2341,9 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::EventIdentifierChange(Arc::new(self.identifier_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Name:");
@@ -2349,9 +2354,9 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -2362,9 +2367,9 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("View properties");
@@ -2694,46 +2699,42 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 }
                 recurse!(self);
             }
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    for property in properties {
-                        match property {
-                            DemoOfdPropChange::EventKindChange(kind) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoOfdPropChange::EventKindChange(
-                                        model.kind,
-                                    )],
-                                ));
-                                model.kind = *kind;
-                            }
-                            DemoOfdPropChange::EventIdentifierChange(identifier) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoOfdPropChange::EventIdentifierChange(
-                                        model.identifier.clone(),
-                                    )],
-                                ));
-                                model.identifier = identifier.clone();
-                            }
-                            DemoOfdPropChange::NameChange(name) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoOfdPropChange::NameChange(model.name.clone())],
-                                ));
-                                model.name = name.clone();
-                            }
-                            DemoOfdPropChange::CommentChange(comment) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
-                                ));
-                                model.comment = comment.clone();
-                            }
-                            _ => {}
+                    match property {
+                        DemoOfdPropChange::EventKindChange(kind) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoOfdPropChange::EventKindChange(model.kind),
+                            ));
+                            model.kind = *kind;
                         }
+                        DemoOfdPropChange::EventIdentifierChange(identifier) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoOfdPropChange::EventIdentifierChange(
+                                    model.identifier.clone(),
+                                ),
+                            ));
+                            model.identifier = identifier.clone();
+                        }
+                        DemoOfdPropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoOfdPropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
+                        }
+                        DemoOfdPropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoOfdPropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        _ => {}
                     }
                 }
                 recurse!(self);
@@ -2923,11 +2924,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::NameChange(Arc::new(
                     self.temporaries.name_buffer.clone(),
                 )),
-            ]));
+            ));
         }
         ui.separator();
 
@@ -2939,11 +2940,11 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::LinkMultiplicityChange(false, Arc::new(
                     self.temporaries.domain_multiplicity_buffer.clone(),
                 )),
-            ]));
+            ));
         }
         ui.separator();
 
@@ -2955,18 +2956,18 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::LinkMultiplicityChange(true, Arc::new(
                     self.temporaries.range_multiplicity_buffer.clone(),
                 )),
-            ]));
+            ));
         }
         ui.separator();
 
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
-            ]));
+            ));
         }
         ui.separator();
 
@@ -2978,9 +2979,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -2991,46 +2992,44 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    DemoOfdPropChange::NameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::NameChange(
-                                model.name.clone(),
-                            )],
-                        ));
-                        model.name = name.clone();
-                    }
-                    DemoOfdPropChange::LinkMultiplicityChange(t, multiplicity) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::LinkMultiplicityChange(
-                                *t,
-                                if !t {
-                                    model.domain_multiplicity.clone()
-                                } else {
-                                    model.range_multiplicity.clone()
-                                }
-                            )],
-                        ));
-                        if !t {
-                            model.domain_multiplicity = multiplicity.clone();
-                        } else {
-                            model.range_multiplicity = multiplicity.clone();
-                        }
-                    }
-                    DemoOfdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                DemoOfdPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::NameChange(
+                            model.name.clone(),
+                        ),
+                    ));
+                    model.name = name.clone();
                 }
+                DemoOfdPropChange::LinkMultiplicityChange(t, multiplicity) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::LinkMultiplicityChange(
+                            *t,
+                            if !t {
+                                model.domain_multiplicity.clone()
+                            } else {
+                                model.range_multiplicity.clone()
+                            }
+                        ),
+                    ));
+                    if !t {
+                        model.domain_multiplicity = multiplicity.clone();
+                    } else {
+                        model.range_multiplicity = multiplicity.clone();
+                    }
+                }
+                DemoOfdPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -3200,9 +3199,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
         commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
-            ]));
+            ));
         }
         ui.separator();
 
@@ -3214,9 +3213,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -3227,19 +3226,17 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
         command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    DemoOfdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                DemoOfdPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
                 }
+                _ => {}
             }
         }
     }
@@ -3426,9 +3423,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
         }
 
         if ui.add_enabled(r.domain_elements.len() <= 1, egui::Button::new("Switch source and destination")).clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
-            ]));
+            ));
         }
         ui.separator();
 
@@ -3443,9 +3440,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
                     if ui
                         .selectable_value(&mut self.temporaries.is_generalization_buffer, value.0, value.1)
                         .clicked() {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                        commands.push(SensitiveCommand::PropertyChangeSelected(
                             DemoOfdPropChange::AggregationKindChange(self.temporaries.is_generalization_buffer),
-                        ]));
+                        ));
                     }
                 }
             });
@@ -3458,9 +3455,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -3471,26 +3468,24 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
         command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    DemoOfdPropChange::AggregationKindChange(is_generalization) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::AggregationKindChange(model.is_generalization)],
-                        ));
-                        model.is_generalization = *is_generalization;
-                    }
-                    DemoOfdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                DemoOfdPropChange::AggregationKindChange(is_generalization) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::AggregationKindChange(model.is_generalization),
+                    ));
+                    model.is_generalization = *is_generalization;
                 }
+                DemoOfdPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -3655,9 +3650,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
         commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
-            ]));
+            ));
         }
         ui.separator();
 
@@ -3669,9 +3664,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -3682,19 +3677,17 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
         command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    DemoOfdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                DemoOfdPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
                 }
+                _ => {}
             }
         }
     }
@@ -3849,9 +3842,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
         commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
-            ]));
+            ));
         }
         ui.separator();
 
@@ -3863,9 +3856,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -3876,19 +3869,17 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
         command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    DemoOfdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoOfdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                DemoOfdPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoOfdPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
                 }
+                _ => {}
             }
         }
     }

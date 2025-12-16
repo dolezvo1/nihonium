@@ -529,6 +529,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         &mut self,
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        affected_models: &mut HashSet<ModelUuid>,
     );
 
 
@@ -804,20 +805,27 @@ pub enum EventHandlingStatus {
     HandledByContainer, // = fully handled
 }
 
+/// Try merging a value with a newer one.
+/// For values with relative semantics (e.g. relative position change) this should generally be the sum of the two values.
+/// For values with absolute semantics (e.g. absolute position) this should generally return either the newer value or None.
+pub trait TryMerge {
+    fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized;
+}
+
 /// Selection sensitive command - not inherently repeatable
 #[derive(Clone, PartialEq, Debug)]
-pub enum SensitiveCommand<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> {
+pub enum SensitiveCommand<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> {
     MoveSelectedElements(egui::Vec2),
     ResizeSelectedElementsBy(egui::Align2, egui::Vec2),
     DeleteSelectedElements(/*including_models:*/ bool),
     CutSelectedElements,
     PasteClipboardElements,
     ArrangeSelected(Arrangement),
-    PropertyChangeSelected(Vec<PropChangeT>),
+    PropertyChangeSelected(PropChangeT),
     Insensitive(InsensitiveCommand<AddElementT, PropChangeT>)
 }
 
-impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<AddElementT, PropChangeT> {
+impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> SensitiveCommand<AddElementT, PropChangeT> {
     // TODO: I'm not sure whether this isn't actually the responsibility of the diagram itself
     fn to_selection_insensitive<F, G>(
         self,
@@ -850,7 +858,7 @@ impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> SensitiveCommand<Ad
     }
 }
 
-impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> From<InsensitiveCommand<AddElementT, PropChangeT>> for SensitiveCommand<AddElementT, PropChangeT> {
+impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> From<InsensitiveCommand<AddElementT, PropChangeT>> for SensitiveCommand<AddElementT, PropChangeT> {
     fn from(value: InsensitiveCommand<AddElementT, PropChangeT>) -> Self {
         Self::Insensitive(value)
     }
@@ -860,7 +868,7 @@ pub type BucketNoT = u8;
 pub type PositionNoT = u16;
 /// Selection insensitive command - inherently repeatable
 #[derive(Clone, PartialEq, Debug)]
-pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: Clone + Debug> {
+pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> {
     HighlightAll(bool, Highlight),
     HighlightSpecific(HashSet<ViewUuid>, bool, Highlight),
     SelectByDrag(egui::Rect),
@@ -874,10 +882,10 @@ pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: Clone + Deb
     ArrangeSpecificElements(HashSet<ViewUuid>, Arrangement),
     AddDependency(ViewUuid, /*bucket:*/ BucketNoT, /*model pos:*/ Option<PositionNoT>, AddElementT, /*into_model:*/ bool),
     RemoveDependency(ViewUuid, BucketNoT, ViewUuid, /*including_model:*/ bool),
-    PropertyChange(HashSet<ViewUuid>, Vec<PropChangeT>),
+    PropertyChange(HashSet<ViewUuid>, PropChangeT),
 }
 
-impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug>
+impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug>
     InsensitiveCommand<AddElementT, PropChangeT>
 {
     fn info_text(&self) -> Arc<String> {
@@ -907,10 +915,12 @@ impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug>
             }
         }
     }
+}
 
-    // for purposes of repeatability - keep only last relevant
-    fn merge(&self, other: &Self) -> Option<Self> {
-        match (self, other) {
+impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> TryMerge for InsensitiveCommand<AddElementT, PropChangeT>
+{
+    fn try_merge(&self, newer: &Self) -> Option<Self> {
+        match (self, newer) {
             (
                 InsensitiveCommand::MoveSpecificElements(uuids1, delta1),
                 InsensitiveCommand::MoveSpecificElements(uuids2, delta2),
@@ -927,24 +937,10 @@ impl<AddElementT: Clone + Debug, PropChangeT: Clone + Debug>
                 *delta1 + *delta2,
             )),
             (
-                InsensitiveCommand::PropertyChange(uuids1, changes1),
-                InsensitiveCommand::PropertyChange(uuids2, changes2),
-            ) if uuids1 == uuids2 => Some(InsensitiveCommand::PropertyChange(
-                uuids1.clone(),
-                changes2.iter().rev().chain(changes1.iter().rev()).fold(
-                    Vec::new(),
-                    |mut uniques, e| {
-                        if uniques
-                            .iter()
-                            .find(|u| std::mem::discriminant(*u) == std::mem::discriminant(e))
-                            .is_none()
-                        {
-                            uniques.push(e.clone());
-                        }
-                        uniques
-                    },
-                ),
-            )),
+                InsensitiveCommand::PropertyChange(uuids1, change1),
+                InsensitiveCommand::PropertyChange(uuids2, change2),
+            ) if uuids1 == uuids2 => change1.try_merge(change2)
+                .map(|e| InsensitiveCommand::PropertyChange(uuids1.clone(), e)),
             _ => None,
         }
     }
@@ -964,7 +960,7 @@ pub trait Domain: Sized + 'static {
     type QueryableT<'a>: Queryable<'a, Self>;
     type ToolT: Tool<Self>;
     type AddCommandElementT: From<Self::CommonElementViewT> + TryInto<Self::CommonElementViewT> + Clone + Debug;
-    type PropChangeT: From<ColorChangeData> + TryInto<ColorChangeData> + Clone + Debug;
+    type PropChangeT: From<ColorChangeData> + TryInto<ColorChangeData> + TryMerge + Clone + Debug;
 }
 
 pub trait ElementVisitor<T: ?Sized> {
@@ -1225,19 +1221,33 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         let view = self.views.get(view_uuid).unwrap();
         let mut w = view.write();
 
+        let mut affected_models = HashSet::new();
         let mut changed = false;
         for c in commands {
             let c = w.sensitive_command_to_insensitive(c);
             // TODO: transitive closure
             let mut undo_accumulator = Vec::new();
-            w.apply_command(&c, &mut undo_accumulator);
+            w.apply_command(&c, &mut undo_accumulator, &mut affected_models);
             if !undo_accumulator.is_empty() {
                 if !changed {
                     self.redo_stack.clear();
                 }
                 if push_to_undo_stack {
-                    // TODO: try combining with the undo stack item
-                    self.undo_stack.push((*view_uuid, c, undo_accumulator));
+                    'outer: {
+                        let unmerged = 'unmerged: {
+                            let Some(last) = self.undo_stack.last_mut().filter(|e| e.0 == *view_uuid) else {
+                                break 'unmerged (*view_uuid, c, undo_accumulator);
+                            };
+                            let Some(merged) = last.1.try_merge(&c) else {
+                                break 'unmerged (*view_uuid, c, undo_accumulator);
+                            };
+                            last.1 = merged;
+                            last.2.extend(undo_accumulator);
+                            break 'outer;
+                        };
+
+                        self.undo_stack.push(unmerged);
+                    }
                 }
                 changed = true;
             }
@@ -1595,6 +1605,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         let Some((original_view, original_command, undo_commands)) = self.undo_stack.pop() else {
             return;
         };
+        let redo_stack = std::mem::take(&mut self.redo_stack);
         self.apply_commands(
             &original_view,
             undo_commands
@@ -1603,6 +1614,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 .collect(),
             false,
         );
+        self.redo_stack = redo_stack;
         self.redo_stack.push((original_view, original_command));
     }
     fn redo_immediate(&mut self) {
@@ -2045,6 +2057,7 @@ impl<
         &mut self,
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
             InsensitiveCommand::HighlightAll(..)
@@ -2056,7 +2069,7 @@ impl<
             | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
             InsensitiveCommand::AddDependency(t, b, pos, element, into_model) => {
                 if *t == *self.uuid && *b == 0 {
-                    if let Ok(mut view) = element.clone().try_into()
+                    if let Ok(view) = element.clone().try_into()
                         && (!*into_model || self.adapter.insert_element(*b, *pos, view.model()).is_ok()){
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::RemoveDependency(
@@ -2113,7 +2126,7 @@ impl<
             }
             InsensitiveCommand::PasteSpecificElements(_, elements) => {
                 for element in elements {
-                    if let Ok(mut view) = element.clone().try_into()
+                    if let Ok(view) = element.clone().try_into()
                         && let Ok(_) = self.adapter.insert_element(0, None, view.model()) {
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
@@ -2138,9 +2151,8 @@ impl<
             }
         }
 
-        let mut dev_null = HashSet::new();
         self.owned_views.event_order_foreach_mut(|v| {
-            v.apply_command(&command, undo_accumulator, &mut dev_null);
+            v.apply_command(&command, undo_accumulator, affected_models);
         });
 
         let modifies_selection = match command {
@@ -2744,7 +2756,7 @@ impl<
                     slot,
                     color,
                 };
-                return vec![SensitiveCommand::PropertyChangeSelected(vec![ccd.into()])];
+                return vec![SensitiveCommand::PropertyChangeSelected(ccd.into())];
             }
             DiagramCommand::CopySelectedElements => {
                 // TODO: This should technically happen later, I think
@@ -2853,8 +2865,9 @@ impl<
         &mut self,
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
-        self.apply_command_inner(command, undo_accumulator);
+        self.apply_command_inner(command, undo_accumulator, affected_models);
     }
 
     fn draw_in(

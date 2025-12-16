@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -103,6 +103,18 @@ impl TryFrom<DemoCsdPropChange> for ColorChangeData {
         match value {
             DemoCsdPropChange::ColorChange(v) => Ok(v),
             _ => Err(()),
+        }
+    }
+}
+
+impl TryMerge for DemoCsdPropChange {
+    fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
+        match (self, newer) {
+            (Self::NameChange(_), Self::NameChange(newer)) => Some(Self::NameChange(newer.clone())),
+            (Self::IdentifierChange(_), Self::IdentifierChange(newer)) => Some(Self::IdentifierChange(newer.clone())),
+            (Self::LinkMultiplicityChange(_), Self::LinkMultiplicityChange(newer)) => Some(Self::LinkMultiplicityChange(newer.clone())),
+            (Self::CommentChange(_), Self::CommentChange(newer)) => Some(Self::CommentChange(newer.clone())),
+            _ => None
         }
     }
 }
@@ -319,7 +331,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
-                    vec![DemoCsdPropChange::NameChange(Arc::new(self.buffer.name.clone()))],
+                    DemoCsdPropChange::NameChange(Arc::new(self.buffer.name.clone())),
                 )
                 .into(),
             );
@@ -336,9 +348,9 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
-                    vec![DemoCsdPropChange::CommentChange(Arc::new(
+                    DemoCsdPropChange::CommentChange(Arc::new(
                         self.buffer.comment.clone(),
-                    ))],
+                    )),
                 )
                 .into(),
             );
@@ -351,33 +363,31 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    DemoCsdPropChange::NameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoCsdPropChange::NameChange(model.name.clone())],
-                        ));
-                        model.name = name.clone();
-                    }
-                    DemoCsdPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoCsdPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color })],
-                        ));
-                        self.background_color = *color;
-                    }
-                    DemoCsdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoCsdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                DemoCsdPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoCsdPropChange::NameChange(model.name.clone()),
+                    ));
+                    model.name = name.clone();
                 }
+                DemoCsdPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoCsdPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                    ));
+                    self.background_color = *color;
+                }
+                DemoCsdPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoCsdPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -966,9 +976,9 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -979,9 +989,9 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
     }
     fn apply_change(
@@ -990,26 +1000,24 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    DemoCsdPropChange::NameChange(name) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoCsdPropChange::NameChange(model.name.clone())],
-                        ));
-                        model.name = name.clone();
-                    }
-                    DemoCsdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoCsdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                DemoCsdPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoCsdPropChange::NameChange(model.name.clone()),
+                    ));
+                    model.name = name.clone();
                 }
+                DemoCsdPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoCsdPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }
@@ -1297,9 +1305,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Name:");
@@ -1310,9 +1318,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
-            ]));
+            ));
         }
 
         if ui
@@ -1322,23 +1330,23 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::TransactorSelfactivatingChange(
                     self.transaction_selfactivating_buffer,
                 ),
-            ]));
+            ));
         }
 
         if ui.checkbox(&mut self.internal_buffer, "Internal").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::TransactorInternalChange(self.internal_buffer),
-            ]));
+            ));
         }
 
         if ui.checkbox(&mut self.composite_buffer, "Composite").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::TransactorCompositeChange(self.composite_buffer),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -1349,9 +1357,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("View properties");
@@ -1788,64 +1796,62 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                     }
                 }
             }
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid()) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    for property in properties {
-                        match property {
-                            DemoCsdPropChange::IdentifierChange(identifier) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoCsdPropChange::IdentifierChange(
-                                        model.identifier.clone(),
-                                    )],
-                                ));
-                                model.identifier = identifier.clone();
-                            }
-                            DemoCsdPropChange::NameChange(name) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoCsdPropChange::NameChange(model.name.clone())],
-                                ));
-                                model.name = name.clone();
-                            }
-                            DemoCsdPropChange::TransactorSelfactivatingChange(value) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoCsdPropChange::TransactorSelfactivatingChange(
-                                        model.transaction_selfactivating,
-                                    )],
-                                ));
-                                model.transaction_selfactivating = *value;
-                            }
-                            DemoCsdPropChange::TransactorInternalChange(value) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoCsdPropChange::TransactorInternalChange(
-                                        model.internal,
-                                    )],
-                                ));
-                                model.internal = *value;
-                            }
-                            DemoCsdPropChange::TransactorCompositeChange(value) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoCsdPropChange::TransactorCompositeChange(
-                                        model.composite,
-                                    )],
-                                ));
-                                model.composite = *value;
-                            }
-                            DemoCsdPropChange::CommentChange(comment) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoCsdPropChange::CommentChange(model.comment.clone())],
-                                ));
-                                model.comment = comment.clone();
-                            }
-                            _ => {}
+                    match property {
+                        DemoCsdPropChange::IdentifierChange(identifier) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoCsdPropChange::IdentifierChange(
+                                    model.identifier.clone(),
+                                ),
+                            ));
+                            model.identifier = identifier.clone();
                         }
+                        DemoCsdPropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoCsdPropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
+                        }
+                        DemoCsdPropChange::TransactorSelfactivatingChange(value) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoCsdPropChange::TransactorSelfactivatingChange(
+                                    model.transaction_selfactivating,
+                                ),
+                            ));
+                            model.transaction_selfactivating = *value;
+                        }
+                        DemoCsdPropChange::TransactorInternalChange(value) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoCsdPropChange::TransactorInternalChange(
+                                    model.internal,
+                                ),
+                            ));
+                            model.internal = *value;
+                        }
+                        DemoCsdPropChange::TransactorCompositeChange(value) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoCsdPropChange::TransactorCompositeChange(
+                                    model.composite,
+                                ),
+                            ));
+                            model.composite = *value;
+                        }
+                        DemoCsdPropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoCsdPropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        _ => {}
                     }
                 }
 
@@ -2207,9 +2213,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                         .selectable_value(&mut self.kind_buffer, value, value.char())
                         .clicked()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                        commands.push(SensitiveCommand::PropertyChangeSelected(
                             DemoCsdPropChange::TransactionKindChange(self.kind_buffer),
-                        ]));
+                        ));
                     }
                 }
             });
@@ -2222,9 +2228,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Name:");
@@ -2235,15 +2241,15 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
-            ]));
+            ));
         }
 
         if ui.checkbox(&mut self.multiple_buffer, "Multiple:").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::TransactionMultipleChange(self.multiple_buffer),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -2254,9 +2260,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("View properties");
@@ -2440,55 +2446,53 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
-                    for property in properties {
-                        match property {
-                            DemoCsdPropChange::TransactionKindChange(kind) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoCsdPropChange::TransactionKindChange(
-                                        model.kind,
-                                    )],
-                                ));
-                                model.kind = *kind;
-                            }
-                            DemoCsdPropChange::IdentifierChange(identifier) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoCsdPropChange::IdentifierChange(
-                                        model.identifier.clone(),
-                                    )],
-                                ));
-                                model.identifier = identifier.clone();
-                            }
-                            DemoCsdPropChange::NameChange(name) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoCsdPropChange::NameChange(model.name.clone())],
-                                ));
-                                model.name = name.clone();
-                            }
-                            DemoCsdPropChange::TransactionMultipleChange(b) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoCsdPropChange::TransactionMultipleChange(
-                                        model.multiple,
-                                    )],
-                                ));
-                                model.multiple = *b;
-                            }
-                            DemoCsdPropChange::CommentChange(comment) => {
-                                undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                    std::iter::once(*self.uuid).collect(),
-                                    vec![DemoCsdPropChange::CommentChange(model.comment.clone())],
-                                ));
-                                model.comment = comment.clone();
-                            }
-                            _ => {}
+                    match property {
+                        DemoCsdPropChange::TransactionKindChange(kind) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoCsdPropChange::TransactionKindChange(
+                                    model.kind,
+                                ),
+                            ));
+                            model.kind = *kind;
                         }
+                        DemoCsdPropChange::IdentifierChange(identifier) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoCsdPropChange::IdentifierChange(
+                                    model.identifier.clone(),
+                                ),
+                            ));
+                            model.identifier = identifier.clone();
+                        }
+                        DemoCsdPropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoCsdPropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
+                        }
+                        DemoCsdPropChange::TransactionMultipleChange(b) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoCsdPropChange::TransactionMultipleChange(
+                                    model.multiple,
+                                ),
+                            ));
+                            model.multiple = *b;
+                        }
+                        DemoCsdPropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                DemoCsdPropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -2661,9 +2665,9 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
                         .selectable_value(&mut self.temporaries.link_type_buffer, value, value.char())
                         .clicked()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+                        commands.push(SensitiveCommand::PropertyChangeSelected(
                             DemoCsdPropChange::LinkTypeChange(self.temporaries.link_type_buffer),
-                        ]));
+                        ));
                     }
                 }
             });
@@ -2676,9 +2680,9 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::LinkMultiplicityChange(Arc::new(self.temporaries.multiplicity_buffer.clone())),
-            ]));
+            ));
         }
 
         ui.label("Comment:");
@@ -2689,9 +2693,9 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(vec![
+            commands.push(SensitiveCommand::PropertyChangeSelected(
                 DemoCsdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
-            ]));
+            ));
         }
 
         PropertiesStatus::Shown
@@ -2702,33 +2706,31 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) {
-        if let InsensitiveCommand::PropertyChange(_, properties) = command {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
-            for property in properties {
-                match property {
-                    DemoCsdPropChange::LinkTypeChange(link_type) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoCsdPropChange::LinkTypeChange(model.link_type)],
-                        ));
-                        model.link_type = *link_type;
-                    }
-                    DemoCsdPropChange::LinkMultiplicityChange(multiplicity) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoCsdPropChange::LinkMultiplicityChange(model.multiplicity.clone())],
-                        ));
-                        model.multiplicity = multiplicity.clone();
-                    }
-                    DemoCsdPropChange::CommentChange(comment) => {
-                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                            std::iter::once(*view_uuid).collect(),
-                            vec![DemoCsdPropChange::CommentChange(model.comment.clone())],
-                        ));
-                        model.comment = comment.clone();
-                    }
-                    _ => {}
+            match property {
+                DemoCsdPropChange::LinkTypeChange(link_type) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoCsdPropChange::LinkTypeChange(model.link_type),
+                    ));
+                    model.link_type = *link_type;
                 }
+                DemoCsdPropChange::LinkMultiplicityChange(multiplicity) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoCsdPropChange::LinkMultiplicityChange(model.multiplicity.clone()),
+                    ));
+                    model.multiplicity = multiplicity.clone();
+                }
+                DemoCsdPropChange::CommentChange(comment) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        DemoCsdPropChange::CommentChange(model.comment.clone()),
+                    ));
+                    model.comment = comment.clone();
+                }
+                _ => {}
             }
         }
     }

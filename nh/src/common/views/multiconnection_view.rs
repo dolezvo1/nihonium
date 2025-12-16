@@ -978,17 +978,15 @@ where
                     }
                 }
             }
-            InsensitiveCommand::PropertyChange(uuids, properties) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
-                    for property in properties {
-                        if let Ok(FlipMulticonnection {}) = property.try_into()
-                            && self.adapter.flip_multiconnection().is_ok() {
-                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
-                                std::iter::once(*self.uuid).collect(),
-                                vec![property.clone()],
-                            ));
-                            std::mem::swap(&mut self.sources, &mut self.targets);
-                        }
+                    if let Ok(FlipMulticonnection {}) = property.try_into()
+                        && self.adapter.flip_multiconnection().is_ok() {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            property.clone(),
+                        ));
+                        std::mem::swap(&mut self.sources, &mut self.targets);
                     }
                     self.adapter.apply_change(&self.uuid, command, undo_accumulator);
                     affected_models.insert(*self.adapter.model_uuid());
