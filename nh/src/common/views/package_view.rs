@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use eframe::{egui, epaint};
 
-use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{ColorBundle, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
+use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{ColorBundle, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
 
 
 pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
@@ -21,8 +21,9 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     }
     fn show_properties(
         &mut self,
+        q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>
     );
     fn apply_change(
         &self,
@@ -151,20 +152,20 @@ where
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
-        parent: &DomainT::QueryableT<'_>,
+        q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
         let child = self
             .owned_views
-            .event_order_find_mut(|v| v.show_properties(gdc, parent, ui, commands).to_non_default());
+            .event_order_find_mut(|v| v.show_properties(gdc, q, ui, commands).to_non_default());
 
         if let Some(child) = child {
             child
         } else if self.highlight.selected {
             ui.label("Model properties");
 
-            self.adapter.show_properties(ui, commands);
+            self.adapter.show_properties(q, ui, commands);
 
             ui.add_space(super::VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
             ui.label("View properties");
@@ -175,11 +176,11 @@ where
 
                     ui.label("x");
                     if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                        commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.bounds_rect.left(), 0.0)));
+                        commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.bounds_rect.left(), 0.0)));
                     }
                     ui.label("y");
                     if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                        commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.bounds_rect.top())));
+                        commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.bounds_rect.top())));
                     }
                     ui.end_row();
                 }
@@ -189,11 +190,11 @@ where
 
                     ui.label("width");
                     if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                        commands.push(SensitiveCommand::ResizeSelectedElementsBy(egui::Align2::LEFT_CENTER, egui::Vec2::new(x - self.bounds_rect.width(), 0.0)));
+                        commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), egui::Align2::LEFT_CENTER, egui::Vec2::new(x - self.bounds_rect.width(), 0.0)));
                     }
                     ui.label("height");
                     if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                        commands.push(SensitiveCommand::ResizeSelectedElementsBy(egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, y - self.bounds_rect.height())));
+                        commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, y - self.bounds_rect.height())));
                     }
                     ui.end_row();
                 }
@@ -343,12 +344,13 @@ where
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &DomainT::QueryableT<'_>,
         tool: &mut Option<DomainT::ToolT>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
         let k_status = self.owned_views.event_order_find_mut(|v| {
-            let s = v.handle_event(event, ehc, tool, element_setup_modal, commands);
+            let s = v.handle_event(event, ehc, q, tool, element_setup_modal, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*v.uuid(), s))
             } else {
@@ -447,12 +449,12 @@ where
                     let coerced_delta = coerced_pos - self.position();
 
                     if self.highlight.selected {
-                        commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                        commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                     } else {
                         commands.push(InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
-                        ).into());
+                        ));
                     }
                     EventHandlingStatus::HandledByElement
                 },
@@ -485,7 +487,7 @@ where
                     );
                     let coerced_delta = coerced_point - egui::Pos2::new(handle_x.1, handle_y.1);
 
-                    commands.push(SensitiveCommand::ResizeSelectedElementsBy(align, coerced_delta));
+                    commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), align, coerced_delta));
                     EventHandlingStatus::HandledByElement
                 },
                 None => EventHandlingStatus::NotHandled,

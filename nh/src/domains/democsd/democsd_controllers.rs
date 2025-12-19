@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -44,18 +44,27 @@ type LinkViewT = MulticonnectionView<DemoCsdDomain, DemoCsdLinkAdapter>;
 pub struct DemoCsdQueryable<'a> {
     models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
     flattened_views: &'a HashMap<ViewUuid, DemoCsdElementView>,
+    flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
 }
 
 impl<'a> Queryable<'a, DemoCsdDomain> for DemoCsdQueryable<'a> {
     fn new(
         models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
         flattened_views: &'a HashMap<ViewUuid, DemoCsdElementView>,
+        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
     ) -> Self {
-        Self { models_to_views, flattened_views }
+        Self { models_to_views, flattened_views, flattened_views_status }
     }
 
     fn get_view(&self, m: &ModelUuid) -> Option<DemoCsdElementView> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
+    }
+
+    fn selected_views(&self) -> HashSet<ViewUuid> {
+        self.flattened_views_status.iter()
+            .filter(|e| e.1.selected())
+            .map(|e| *e.0)
+            .collect()
     }
 }
 
@@ -340,7 +349,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) {
         ui.label("Name:");
         if ui
@@ -354,8 +363,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
                     DemoCsdPropChange::NameChange(Arc::new(self.buffer.name.clone())),
-                )
-                .into(),
+                ),
             );
         };
 
@@ -373,8 +381,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
                     DemoCsdPropChange::CommentChange(Arc::new(
                         self.buffer.comment.clone(),
                     )),
-                )
-                .into(),
+                ),
             );
         }
     }
@@ -458,8 +465,8 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         }
         ui.separator();
 
-        let (empty_a, empty_b) = (HashMap::new(), HashMap::new());
-        let empty_q = DemoCsdQueryable::new(&empty_a, &empty_b);
+        let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
+        let empty_q = DemoCsdQueryable::new(&empty_a, &empty_b, &empty_c);
         let mut icon_counter = 0;
         for cat in [
             &[
@@ -982,8 +989,9 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
     
     fn show_properties(
         &mut self,
+        q: &DemoCsdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>
     ) {
         ui.label("Name:");
         if ui
@@ -993,7 +1001,8 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -1006,7 +1015,8 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -1299,12 +1309,12 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
-        queryable: &DemoCsdQueryable,
+        q: &DemoCsdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> PropertiesStatus<DemoCsdDomain> {
         if let Some(child) = self.transaction_view.as_mut()
-                .and_then(|t| t.write().show_properties(gdc, queryable, ui, commands).to_non_default()) {
+                .and_then(|t| t.write().show_properties(gdc, q, ui, commands).to_non_default()) {
             return child;
         }
 
@@ -1322,7 +1332,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
@@ -1335,7 +1346,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -1347,7 +1359,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::TransactorSelfactivatingChange(
                     self.transaction_selfactivating_buffer,
                 ),
@@ -1355,13 +1368,15 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         }
 
         if ui.checkbox(&mut self.internal_buffer, "Internal").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::TransactorInternalChange(self.internal_buffer),
             ));
         }
 
         if ui.checkbox(&mut self.composite_buffer, "Composite").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::TransactorCompositeChange(self.composite_buffer),
             ));
         }
@@ -1374,7 +1389,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -1386,11 +1402,11 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -1574,14 +1590,15 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &DemoCsdQueryable,
         tool: &mut Option<NaiveDemoCsdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         let child = self
             .transaction_view
             .as_ref()
-            .map(|t| t.write().handle_event(event, ehc, tool, element_setup_modal, commands))
+            .map(|t| t.write().handle_event(event, ehc, q, tool, element_setup_modal, commands))
             .filter(|e| *e != EventHandlingStatus::NotHandled);
 
         match event {
@@ -1616,8 +1633,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                                         std::iter::once(*t.uuid()).collect(),
                                         true,
                                         Highlight::SELECTED,
-                                    )
-                                    .into(),
+                                    ),
                                 );
                             } else {
                                 commands.push(
@@ -1625,8 +1641,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                                         std::iter::once(*t.uuid()).collect(),
                                         !t.highlight.selected,
                                         Highlight::SELECTED,
-                                    )
-                                    .into(),
+                                    ),
                                 );
                             }
                             return EventHandlingStatus::HandledByContainer;
@@ -1669,7 +1684,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                                 self.position.y - 3.84 * canvas::CLASS_MIDDLE_FONT_SIZE,
                             );
 
-                            commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, new_e.into(), true).into());
+                            commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, new_e.into(), true));
                             if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                 *element_setup_modal = esm;
                             }
@@ -1697,14 +1712,13 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                 let coerced_delta = coerced_pos - self.min_shape().center();
                 
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid()).collect(),
                             coerced_delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
 
@@ -2207,9 +2221,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        _parent: &DemoCsdQueryable,
+        q: &DemoCsdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> PropertiesStatus<DemoCsdDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -2230,7 +2244,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                         .selectable_value(&mut self.kind_buffer, value, value.char())
                         .clicked()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             DemoCsdPropChange::TransactionKindChange(self.kind_buffer),
                         ));
                     }
@@ -2245,7 +2260,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
@@ -2258,13 +2274,15 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
 
         if ui.checkbox(&mut self.multiple_buffer, "Multiple:").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::TransactionMultipleChange(self.multiple_buffer),
             ));
         }
@@ -2277,7 +2295,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -2289,11 +2308,11 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -2360,9 +2379,10 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &DemoCsdQueryable,
         tool: &mut Option<NaiveDemoCsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             e if !self.min_shape().contains(*e.mouse_position()) => {
@@ -2385,14 +2405,13 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                     tool.add_section(self.model());
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
                         commands.push(
                             InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(*self.uuid).collect(),
                                 true,
                                 Highlight::SELECTED,
-                            )
-                            .into(),
+                            ),
                         );
                     } else {
                         commands.push(
@@ -2400,8 +2419,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                                 std::iter::once(*self.uuid).collect(),
                                 !self.highlight.selected,
                                 Highlight::SELECTED,
-                            )
-                            .into(),
+                            ),
                         );
                     }
                 }
@@ -2410,14 +2428,13 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             }
             InputEvent::Drag { delta, .. } if self.dragged => {
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
 
@@ -2666,8 +2683,9 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
 
     fn show_properties(
         &mut self,
+        q: &DemoCsdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>
     ) -> PropertiesStatus<DemoCsdDomain> {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("Type:")
@@ -2682,7 +2700,8 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
                         .selectable_value(&mut self.temporaries.link_type_buffer, value, value.char())
                         .clicked()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             DemoCsdPropChange::LinkTypeChange(self.temporaries.link_type_buffer),
                         ));
                     }
@@ -2697,7 +2716,8 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::LinkMultiplicityChange(Arc::new(self.temporaries.multiplicity_buffer.clone())),
             ));
         }
@@ -2710,7 +2730,8 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoCsdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }

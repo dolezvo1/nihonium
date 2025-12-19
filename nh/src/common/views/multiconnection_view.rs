@@ -2,7 +2,7 @@
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 use eframe::egui;
 
-use crate::{CustomModal, common::{canvas::{self, ArrowDataPos, Highlight}, controller::{BucketNoT, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}};
+use crate::{CustomModal, common::{canvas::{self, ArrowDataPos, Highlight}, controller::{BucketNoT, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}};
 
 #[derive(Clone)]
 pub struct ArrowData {
@@ -88,8 +88,9 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
 
     fn show_properties(
         &mut self,
+        q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>
     ) -> PropertiesStatus<DomainT>;
     fn apply_change(
         &self,
@@ -292,7 +293,7 @@ where
         gdc: &GlobalDrawingContext,
         q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -302,7 +303,7 @@ where
             q: &'a DomainT::QueryableT<'_>,
             lp: &'a LabelProvider,
             ui: &mut egui::Ui,
-            commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+            commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
             models: &'a [ModelUuid],
             views: &'a [Ending<DomainT::CommonElementViewT>],
             self_uuid: ViewUuid,
@@ -339,7 +340,7 @@ where
         ui.label("Targets:");
         display_endings_info::<DomainT>(q, &gdc.model_labels, ui, commands, self.adapter.target_uuids(), &self.targets, *self.uuid, 1);
 
-        return self.adapter.show_properties(ui, commands);
+        return self.adapter.show_properties(q, ui, commands);
     }
 
     fn draw_in(
@@ -505,9 +506,10 @@ where
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &DomainT::QueryableT<'_>,
         _tool: &mut Option<DomainT::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
         let segment_distance_threshold = 3.0 / ehc.ui_scale;
         let is_over = |a: egui::Pos2, b: egui::Pos2| -> bool {
@@ -716,7 +718,7 @@ where
                     .find(|e| e.0 == dragged_node.0).unwrap().1;
 
                 if self.selected_vertices.contains(&dragged_node.0) {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(InsensitiveCommand::MoveSpecificElements(
                         std::iter::once(dragged_node.0).collect(),

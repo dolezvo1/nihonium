@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -119,18 +119,27 @@ type CommentLinkViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassCommen
 pub struct UmlClassQueryable<'a, P: UmlClassProfile> {
     models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
     flattened_views: &'a HashMap<ViewUuid, UmlClassElementView<P>>,
+    flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
 }
 
 impl<'a, P: UmlClassProfile> Queryable<'a, UmlClassDomain<P>> for UmlClassQueryable<'a, P> {
     fn new(
         models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
         flattened_views: &'a HashMap<ViewUuid, UmlClassElementView<P>>,
+        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
     ) -> Self {
-        Self { models_to_views, flattened_views }
+        Self { models_to_views, flattened_views, flattened_views_status }
     }
 
     fn get_view(&self, m: &ModelUuid) -> Option<UmlClassElementView<P>> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
+    }
+
+    fn selected_views(&self) -> HashSet<ViewUuid> {
+        self.flattened_views_status.iter()
+            .filter(|e| e.1.selected())
+            .map(|e| *e.0)
+            .collect()
     }
 }
 
@@ -606,7 +615,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         ui.label("Name:");
         if ui
@@ -622,8 +631,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     UmlClassPropChange::NameChange(Arc::new(
                         self.buffer.name.clone(),
                     )),
-                )
-                .into(),
+                ),
             );
         }
 
@@ -641,8 +649,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     UmlClassPropChange::CommentChange(Arc::new(
                         self.buffer.comment.clone(),
                     )),
-                )
-                .into(),
+                ),
             );
         }
     }
@@ -726,8 +733,8 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         }
         ui.separator();
 
-        let (empty_a, empty_b) = (HashMap::new(), HashMap::new());
-        let empty_q = UmlClassQueryable::new(&empty_a, &empty_b);
+        let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
+        let empty_q = UmlClassQueryable::new(&empty_a, &empty_b, &empty_c);
         for (label, items) in self.placeholders.iter_mut() {
             egui::CollapsingHeader::new(label)
                 .default_open(true)
@@ -1604,8 +1611,9 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
 
     fn show_properties(
         &mut self,
+        q: &UmlClassQueryable<P>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) {
         ui.label("Name:");
         if ui
@@ -1615,7 +1623,8 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -1628,7 +1637,8 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -1919,9 +1929,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
-        _q: &UmlClassQueryable<P>,
+        q: &UmlClassQueryable<P>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -1937,7 +1947,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::InstanceName(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -1950,14 +1961,16 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::InstanceType(Arc::new(self.type_buffer.clone())),
             ));
         }
 
         ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
             ));
         }
@@ -1970,7 +1983,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::InstanceSlots(Arc::new(self.slots_buffer.clone())),
             ));
         }
@@ -1983,7 +1997,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -1995,11 +2010,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -2148,9 +2163,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &UmlClassQueryable<P>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -2211,14 +2227,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                 let coerced_delta = coerced_pos - self.bounds_rect.center();
 
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
 
@@ -2706,9 +2721,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -2716,7 +2731,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
 
         ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
             ));
         }
@@ -2729,7 +2745,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -2742,7 +2759,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::PropertyTypeChange(Arc::new(self.value_type_buffer.clone())),
             ));
         }
@@ -2755,7 +2773,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::PropertyMultiplicityChange(Arc::new(self.multiplicity_buffer.clone())),
             ));
         }
@@ -2768,7 +2787,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::PropertyDefaultValueChange(Arc::new(self.default_value_buffer.clone())),
             ));
         }
@@ -2785,7 +2805,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                     UFOption::Some(UmlClassVisibilityKind::Private),
                 ] {
                     if ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.name()).unwrap_or("Unspecified")).clicked() {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             UmlClassPropChange::VisibilityChange(e),
                         ));
                     }
@@ -2793,32 +2814,38 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             });
 
         if ui.checkbox(&mut self.is_static_buffer, "isStatic").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::IsStaticChange(self.is_static_buffer),
             ));
         }
         if ui.checkbox(&mut self.is_derived_buffer, "isDerived").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::IsDerivedChange(self.is_derived_buffer),
             ));
         }
         if ui.checkbox(&mut self.is_read_only_buffer, "isReadOnly").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::IsReadOnlyChange(self.is_read_only_buffer),
             ));
         }
         if ui.checkbox(&mut self.is_ordered_buffer, "isOrdered").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::IsOrderedChange(self.is_ordered_buffer),
             ));
         }
         if ui.checkbox(&mut self.is_unique_buffer, "isUnique").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::IsUniqueChange(self.is_unique_buffer),
             ));
         }
         if ui.checkbox(&mut self.is_id_buffer, "isID").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::IsIdChange(self.is_id_buffer),
             ));
         }
@@ -2840,9 +2867,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlClassDomain<P> as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        _commands: &mut Vec<SensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
+        _commands: &mut Vec<InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
@@ -3426,9 +3454,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -3436,7 +3464,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
 
         ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
             ));
         }
@@ -3449,7 +3478,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -3462,7 +3492,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::OperationParametersChange(Arc::new(self.parameters_buffer.clone())),
             ));
         }
@@ -3475,7 +3506,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::OperationReturnTypeChange(Arc::new(self.return_type_buffer.clone())),
             ));
         }
@@ -3492,7 +3524,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                     UFOption::Some(UmlClassVisibilityKind::Private),
                 ] {
                     if ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.name()).unwrap_or("Unspecified")).clicked() {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             UmlClassPropChange::VisibilityChange(e),
                         ));
                     }
@@ -3500,27 +3533,32 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             });
 
         if ui.checkbox(&mut self.is_static_buffer, "isStatic").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::IsStaticChange(self.is_static_buffer),
             ));
         }
         if ui.checkbox(&mut self.is_abstract_buffer, "isAbstract").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::IsAbstractChange(self.is_abstract_buffer),
             ));
         }
         if ui.checkbox(&mut self.is_query_buffer, "isQuery").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::IsQueryChange(self.is_query_buffer),
             ));
         }
         if ui.checkbox(&mut self.is_ordered_buffer, "isOrdered").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::IsOrderedChange(self.is_ordered_buffer),
             ));
         }
         if ui.checkbox(&mut self.is_unique_buffer, "isUnique").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::IsUniqueChange(self.is_unique_buffer),
             ));
         }
@@ -3542,9 +3580,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlClassDomain<P> as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        _commands: &mut Vec<SensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
+        _commands: &mut Vec<InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
@@ -4204,7 +4243,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         gdc: &GlobalDrawingContext,
         q: &UmlClassQueryable<P>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         let properties_status = self.properties_views.iter()
             .flat_map(|e| e.write().show_properties(gdc, q, ui, commands).to_non_default())
@@ -4223,7 +4262,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
         ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
             ));
         }
@@ -4236,7 +4276,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -4249,13 +4290,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::TemplateParametersChange(Arc::new(self.template_parameters_buffer.clone())),
             ));
         }
 
         if ui.checkbox(&mut self.is_abstract_buffer, "isAbstract").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::ClassAbstractChange(self.is_abstract_buffer),
             ));
         }
@@ -4268,7 +4311,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -4280,11 +4324,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -4510,9 +4554,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &UmlClassQueryable<P>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -4591,27 +4636,26 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 let child = self.properties_views.iter()
                     .map(|e| {
                         let mut w = e.write();
-                        (*w.uuid, w.highlight.selected, w.handle_event(event, ehc, tool, element_setup_modal, commands))
+                        (*w.uuid, w.highlight.selected, w.handle_event(event, ehc, q, tool, element_setup_modal, commands))
                     })
                     .find(|e| e.2 != EventHandlingStatus::NotHandled)
                     .or_else(|| self.operations_views.iter()
                         .map(|e| {
                             let mut w = e.write();
-                            (*w.uuid, w.highlight.selected, w.handle_event(event, ehc, tool, element_setup_modal, commands))
+                            (*w.uuid, w.highlight.selected, w.handle_event(event, ehc, q, tool, element_setup_modal, commands))
                         })
                         .find(|e| e.2 != EventHandlingStatus::NotHandled));
 
                 match child {
                     Some((uuid, selected, EventHandlingStatus::HandledByElement)) => {
                         if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                            commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                            commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
                             commands.push(
                                 InsensitiveCommand::HighlightSpecific(
                                     std::iter::once(uuid).collect(),
                                     true,
                                     Highlight::SELECTED,
-                                )
-                                .into(),
+                                ),
                             );
                         } else {
                             commands.push(
@@ -4619,8 +4663,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                     std::iter::once(uuid).collect(),
                                     !selected,
                                     Highlight::SELECTED,
-                                )
-                                .into(),
+                                ),
                             );
                         }
                         return EventHandlingStatus::HandledByContainer;
@@ -4641,7 +4684,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                             UmlClassElementView::ClassOperation(_) => 1,
                             _ => unreachable!()
                         };
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, b, None, view.into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, b, None, view.into(), true));
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -4672,14 +4715,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
 
@@ -5176,8 +5218,9 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
 
     fn show_properties(
         &mut self,
+        q: &UmlClassQueryable<P>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if ui.add_enabled(self.model.read().targets.len() <= 1, egui::Button::new("Add source")).clicked() {
             return PropertiesStatus::ToolRequest(
@@ -5209,24 +5252,28 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
         }
 
         if ui.add_enabled(true, egui::Button::new("Switch source and target")).clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ));
         }
 
         ui.label("Generalization set name:");
         if ui.text_edit_singleline(&mut self.temporaries.set_name_buffer).changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::SetNameChange(Arc::new(self.temporaries.set_name_buffer.clone())),
             ));
         }
         if ui.checkbox(&mut self.temporaries.set_is_covering_buffer, "isCovering").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::SetCoveringChange(self.temporaries.set_is_covering_buffer),
             ));
         }
         if ui.checkbox(&mut self.temporaries.set_is_disjoint_buffer, "isDisjoint").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::SetDisjointChange(self.temporaries.set_is_disjoint_buffer),
             ));
         }
@@ -5240,7 +5287,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
@@ -5492,12 +5540,14 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
 
     fn show_properties(
         &mut self,
+        q: &UmlClassQueryable<P>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         ui.label("Stereotype:");
         if self.temporaries.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::StereotypeChange(self.temporaries.stereotype_controller.get()),
             ));
         }
@@ -5510,7 +5560,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
@@ -5518,7 +5569,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
 
         ui.label("Target arrow open:");
         if ui.checkbox(&mut self.temporaries.target_arrow_open_buffer, "").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::DependencyArrowOpenChange(
                     self.temporaries.target_arrow_open_buffer,
                 ),
@@ -5527,7 +5579,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
         ui.separator();
 
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ));
         }
@@ -5541,7 +5594,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
@@ -5771,12 +5825,14 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
 
     fn show_properties(
         &mut self,
+        q: &UmlClassQueryable<P>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         ui.label("Stereotype:");
         if self.temporaries.stereotype_controller.show(ui) {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::StereotypeChange(self.temporaries.stereotype_controller.get()),
             ));
         }
@@ -5789,7 +5845,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
@@ -5803,7 +5860,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::LinkMultiplicityChange(false, Arc::new(
                     self.temporaries.source_multiplicity_buffer.clone(),
                 )),
@@ -5817,7 +5875,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::LinkRoleChange(false, Arc::new(
                     self.temporaries.source_role_buffer.clone(),
                 )),
@@ -5831,7 +5890,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::LinkReadingChange(false, Arc::new(
                     self.temporaries.source_reading_buffer.clone(),
                 )),
@@ -5850,7 +5910,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                         .selectable_value(&mut self.temporaries.source_navigability_buffer, sv, &*sv.name())
                         .changed()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             UmlClassPropChange::LinkNavigabilityChange(false, self.temporaries.source_navigability_buffer),
                         ));
                     }
@@ -5869,7 +5930,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                         .selectable_value(&mut self.temporaries.source_aggregation_buffer, sv, &*sv.name())
                         .changed()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             UmlClassPropChange::LinkAggregationChange(false, self.temporaries.source_aggregation_buffer),
                         ));
                     }
@@ -5885,7 +5947,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::LinkMultiplicityChange(true, Arc::new(
                     self.temporaries.target_multiplicity_buffer.clone(),
                 )),
@@ -5899,7 +5962,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::LinkRoleChange(true, Arc::new(
                     self.temporaries.target_role_buffer.clone(),
                 )),
@@ -5913,7 +5977,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::LinkReadingChange(true, Arc::new(
                     self.temporaries.target_reading_buffer.clone(),
                 )),
@@ -5932,7 +5997,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                         .selectable_value(&mut self.temporaries.target_navigability_buffer, sv, &*sv.name())
                         .changed()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             UmlClassPropChange::LinkNavigabilityChange(true, self.temporaries.target_navigability_buffer),
                         ));
                     }
@@ -5951,7 +6017,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                         .selectable_value(&mut self.temporaries.target_aggregation_buffer, sv, &*sv.name())
                         .changed()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             UmlClassPropChange::LinkAggregationChange(true, self.temporaries.target_aggregation_buffer),
                         ));
                     }
@@ -5960,7 +6027,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
         ui.separator();
 
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ));
         }
@@ -5974,7 +6042,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
@@ -6321,9 +6390,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
-        _q: &UmlClassQueryable<P>,
+        q: &UmlClassQueryable<P>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -6339,7 +6408,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.text_buffer.clone())),
             ));
         }
@@ -6351,11 +6421,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -6469,9 +6539,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &UmlClassQueryable<P>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -6518,14 +6589,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
 
@@ -6725,10 +6795,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassC
 
     fn show_properties(
         &mut self,
+        _q: &UmlClassQueryable<P>,
         _ui: &mut egui::Ui,
-        _commands: &mut Vec<SensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+        _commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
-        PropertiesStatus::Shown
+        PropertiesStatus::NotShown
     }
     fn apply_change(
         &self,

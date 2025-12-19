@@ -462,7 +462,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         response: &egui::Response,
         modifier_settings: ModifierSettings,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn cancel_tool(&mut self);
 
@@ -495,7 +495,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> Option<Box<dyn CustomModal>>;
     fn show_menubar_edit_options(
         &mut self,
@@ -519,11 +519,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     fn diagram_command_to_sensitives(
         &mut self,
         command: DiagramCommand,
-    ) -> Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>;
-    fn sensitive_command_to_insensitive(
-        &self,
-        command: SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-    ) -> InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>;
+    ) -> Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>;
     fn apply_command(
         &mut self,
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
@@ -818,57 +814,6 @@ pub trait TryMerge {
     fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized;
 }
 
-/// Selection sensitive command - not inherently repeatable
-#[derive(Clone, PartialEq, Debug)]
-pub enum SensitiveCommand<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> {
-    MoveSelectedElements(egui::Vec2),
-    ResizeSelectedElementsBy(egui::Align2, egui::Vec2),
-    DeleteSelectedElements(/*including_models:*/ bool),
-    CutSelectedElements,
-    PasteClipboardElements,
-    ArrangeSelected(Arrangement),
-    PropertyChangeSelected(PropChangeT),
-    Insensitive(InsensitiveCommand<AddElementT, PropChangeT>)
-}
-
-impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> SensitiveCommand<AddElementT, PropChangeT> {
-    // TODO: I'm not sure whether this isn't actually the responsibility of the diagram itself
-    fn to_selection_insensitive<F, G>(
-        self,
-        selected_elements: F,
-        clipboard_elements: G,
-    ) -> InsensitiveCommand<AddElementT, PropChangeT>
-    where
-        F: Fn() -> HashSet<ViewUuid>,
-        G: Fn() -> Vec<AddElementT>
-    {
-        use SensitiveCommand as SC;
-        use InsensitiveCommand as IC;
-        if let SC::Insensitive(inner) = self {
-            return inner;
-        }
-        if let SC::PasteClipboardElements = self {
-            return IC::PasteSpecificElements(ViewUuid::nil(), clipboard_elements());
-        }
-
-        let se = selected_elements();
-        match self {
-            SC::MoveSelectedElements(delta) => IC::MoveSpecificElements(se, delta),
-            SC::ResizeSelectedElementsBy(align, delta) => IC::ResizeSpecificElementsBy(se, align, delta),
-            SC::DeleteSelectedElements(including_models) => IC::DeleteSpecificElements(se, including_models),
-            SC::CutSelectedElements => IC::CutSpecificElements(se),
-            SC::ArrangeSelected(arr) => IC::ArrangeSpecificElements(se, arr),
-            SC::PropertyChangeSelected(changes) => IC::PropertyChange(se, changes),
-            SC::Insensitive(..) | SC::PasteClipboardElements => unreachable!(),
-        }
-    }
-}
-
-impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> From<InsensitiveCommand<AddElementT, PropChangeT>> for SensitiveCommand<AddElementT, PropChangeT> {
-    fn from(value: InsensitiveCommand<AddElementT, PropChangeT>) -> Self {
-        Self::Insensitive(value)
-    }
-}
 
 pub type BucketNoT = u8;
 pub type PositionNoT = u16;
@@ -1011,8 +956,10 @@ pub trait Queryable<'a, DomainT: Domain> {
     fn new(
         models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
         flattened_views: &'a HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
     ) -> Self;
     fn get_view(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT>;
+    fn selected_views(&self) -> HashSet<ViewUuid>;
 }
 
 pub trait Tool<DomainT: Domain> {
@@ -1101,7 +1048,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         _drawing_context: &GlobalDrawingContext,
         _q: &DomainT::QueryableT<'_>,
         _ui: &mut egui::Ui,
-        _commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        _commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
         PropertiesStatus::NotShown
     }
@@ -1119,9 +1066,10 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &DomainT::QueryableT<'_>,
         tool: &mut Option<DomainT::ToolT>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus;
     fn apply_command(
         &mut self,
@@ -1228,16 +1176,14 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
     fn apply_commands(
         &mut self,
         view_uuid: &ViewUuid,
-        commands: Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         push_to_undo_stack: bool,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         let view = self.views.get(view_uuid).unwrap();
 
         let mut changed = false;
-        for c in commands {
-            let mut c = view.write().sensitive_command_to_insensitive(c);
-
+        for mut c in commands {
             match c {
                 InsensitiveCommand::CutSpecificElements(ref mut uuids)
                 | InsensitiveCommand::DeleteSpecificElements(ref mut uuids, _) => {
@@ -1792,7 +1738,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn apply_property_change_fun(
         &mut self,
@@ -1918,7 +1864,7 @@ impl<
         modifier_settings: ModifierSettings,
         modifiers: ModifierKeys,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands_accumulator: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> bool {
         // Collect alignment guides
         self.temporaries.snap_manager = SnapManager::new(self.temporaries.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.temporaries.camera_scale));
@@ -1939,9 +1885,14 @@ impl<
             all_elements: &self.temporaries.flattened_views_status,
             snap_manager: &self.temporaries.snap_manager,
         };
+        let q = DomainT::QueryableT::new(
+            &self.temporaries.flattened_represented_models,
+            &self.temporaries.flattened_views,
+            &self.temporaries.flattened_views_status,
+        );
 
         let child = self.owned_views.event_order_find_mut(|v| {
-            let r = v.handle_event(event, &ehc, &mut self.temporaries.current_tool, element_setup_modal, &mut commands);
+            let r = v.handle_event(event, &ehc, &q, &mut self.temporaries.current_tool, element_setup_modal, &mut commands);
             if r != EventHandlingStatus::NotHandled {
                 let k = v.uuid();
                 Some((*k, match r {
@@ -2386,7 +2337,7 @@ impl<
         modifier_settings: ModifierSettings,
         // TODO: remove, handle as a command
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) {
         macro_rules! pos_to_abs {
             ($pos:expr) => {
@@ -2518,10 +2469,14 @@ impl<
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> Option<Box<dyn CustomModal>> {
         let req = 'req: {
-            let queryable = DomainT::QueryableT::new(&self.temporaries.flattened_represented_models, &self.temporaries.flattened_views);
+            let queryable = DomainT::QueryableT::new(
+                &self.temporaries.flattened_represented_models,
+                &self.temporaries.flattened_views,
+                &self.temporaries.flattened_views_status,
+            );
 
             let child = self
                 .owned_views
@@ -2744,7 +2699,13 @@ impl<
     fn diagram_command_to_sensitives(
         &mut self,
         command: DiagramCommand,
-    ) -> Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>> {
+    ) -> Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>> {
+        macro_rules! se {
+            () => {
+                self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect()
+            };
+        }
+
         match command {
             DiagramCommand::DropRedoStackAndLastChangeFlag => {
                 self.temporaries.last_change_flag = false;
@@ -2758,7 +2719,7 @@ impl<
                 return vec![
                     InsensitiveCommand::HighlightAll(true, Highlight::SELECTED).into(),
                     InsensitiveCommand::HighlightSpecific(
-                        self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
+                        se!(),
                         false,
                         Highlight::SELECTED,
                     ).into(),
@@ -2774,10 +2735,18 @@ impl<
 
                 return vec![
                     match command {
-                        DiagramCommand::DeleteSelectedElements(b) => SensitiveCommand::DeleteSelectedElements(b),
-                        DiagramCommand::CutSelectedElements => SensitiveCommand::CutSelectedElements,
-                        DiagramCommand::PasteClipboardElements => SensitiveCommand::PasteClipboardElements,
-                        DiagramCommand::ArrangeSelected(arr) => SensitiveCommand::ArrangeSelected(arr),
+                        DiagramCommand::DeleteSelectedElements(b) => InsensitiveCommand::DeleteSpecificElements(se!(), b),
+                        DiagramCommand::CutSelectedElements => InsensitiveCommand::CutSpecificElements(se!()),
+                        DiagramCommand::PasteClipboardElements => InsensitiveCommand::PasteSpecificElements(
+                            *self.uuid,
+                            Self::elements_deep_copy(
+                                None,
+                                |e| self.temporaries.flattened_views_status.contains_key(e),
+                                HashMap::new(),
+                                self.temporaries.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
+                            ).into_iter().map(|e| e.1.into()).collect(),
+                        ),
+                        DiagramCommand::ArrangeSelected(arr) => InsensitiveCommand::ArrangeSpecificElements(se!(), arr),
                         _ => unreachable!(),
                     }
                 ];
@@ -2787,7 +2756,7 @@ impl<
                     slot,
                     color,
                 };
-                return vec![SensitiveCommand::PropertyChangeSelected(ccd.into())];
+                return vec![InsensitiveCommand::PropertyChange(se!(), ccd.into())];
             }
             DiagramCommand::CopySelectedElements => {
                 // TODO: This should technically happen later, I think
@@ -2833,6 +2802,7 @@ impl<
                         let mut models_to_create_views_for = vec![model_uuid];
                         let mut pseudo_fv = self.temporaries.flattened_views.clone();
                         let mut pseudo_frm = self.temporaries.flattened_represented_models.clone();
+                        let mut pseudo_fvs = self.temporaries.flattened_views_status.clone();
 
                         loop {
                             let Some(model_uuid) = models_to_create_views_for.last().cloned() else {
@@ -2849,7 +2819,7 @@ impl<
                             };
 
                             let r = {
-                                let q = DomainT::QueryableT::new(&pseudo_frm, &pseudo_fv);
+                                let q = DomainT::QueryableT::new(&pseudo_frm, &pseudo_fv, &pseudo_fvs);
                                 self.adapter.create_new_view_for(&q, model.clone())
                             };
 
@@ -2857,6 +2827,7 @@ impl<
                                 Ok(new_view) => {
                                     pseudo_fv.insert(*new_view.uuid(), new_view.clone());
                                     pseudo_frm.insert(*model.uuid(), *new_view.uuid());
+                                    pseudo_fvs.insert(*new_view.uuid(), SelectionStatus::NotSelected);
                                     cmds.push(InsensitiveCommand::AddDependency(parent_view_uuid, 0, None, new_view.into(), false).into());
                                     models_to_create_views_for.pop();
                                 },
@@ -2877,20 +2848,6 @@ impl<
             }
         };
         vec![]
-    }
-    fn sensitive_command_to_insensitive(
-        &self,
-        command: SensitiveCommand<<DomainT as Domain>::AddCommandElementT, <DomainT as Domain>::PropChangeT>,
-    ) -> InsensitiveCommand<<DomainT as Domain>::AddCommandElementT, <DomainT as Domain>::PropChangeT> {
-        command.to_selection_insensitive(
-            || self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect(),
-            || Self::elements_deep_copy(
-                None,
-                |e| self.temporaries.flattened_views_status.contains_key(e),
-                HashMap::new(),
-                self.temporaries.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
-                ).into_iter().map(|e| e.1.into()).collect(),
-        )
     }
     fn apply_command(
         &mut self,
@@ -2913,7 +2870,11 @@ impl<
             None
         };
         let mut drawn_targetting = TargettingStatus::NotDrawn;
-        let queryable = DomainT::QueryableT::new(&self.temporaries.flattened_represented_models, &self.temporaries.flattened_views);
+        let queryable = DomainT::QueryableT::new(
+            &self.temporaries.flattened_represented_models,
+            &self.temporaries.flattened_views,
+            &self.temporaries.flattened_views_status,
+        );
 
         self.owned_views.draw_order_foreach_mut(|v|
             if v.draw_in(&queryable, context, canvas, &tool) == TargettingStatus::Drawn {

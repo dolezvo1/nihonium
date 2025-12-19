@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -45,18 +45,27 @@ type LinkViewT = MulticonnectionView<DemoPsdDomain, DemoPsdLinkAdapter>;
 pub struct DemoPsdQueryable<'a> {
     models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
     flattened_views: &'a HashMap<ViewUuid, DemoPsdElementView>,
+    flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
 }
 
 impl<'a> Queryable<'a, DemoPsdDomain> for DemoPsdQueryable<'a> {
     fn new(
         models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
         flattened_views: &'a HashMap<ViewUuid, DemoPsdElementView>,
+        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
     ) -> Self {
-        Self { models_to_views, flattened_views }
+        Self { models_to_views, flattened_views, flattened_views_status }
     }
 
     fn get_view(&self, m: &ModelUuid) -> Option<DemoPsdElementView> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
+    }
+
+    fn selected_views(&self) -> HashSet<ViewUuid> {
+        self.flattened_views_status.iter()
+            .filter(|e| e.1.selected())
+            .map(|e| *e.0)
+            .collect()
     }
 }
 
@@ -457,7 +466,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) {
         ui.label("Name:");
         if ui
@@ -471,8 +480,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
                     DemoPsdPropChange::NameChange(Arc::new(self.buffer.name.clone())),
-                )
-                .into(),
+                ),
             );
         };
 
@@ -490,8 +498,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                     DemoPsdPropChange::CommentChange(Arc::new(
                         self.buffer.comment.clone(),
                     )),
-                )
-                .into(),
+                ),
             );
         }
     }
@@ -575,8 +582,8 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         }
         ui.separator();
 
-        let (empty_a, empty_b) = (HashMap::new(), HashMap::new());
-        let empty_q = DemoPsdQueryable::new(&empty_a, &empty_b);
+        let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
+        let empty_q = DemoPsdQueryable::new(&empty_a, &empty_b, &empty_c);
         let mut icon_counter = 0;
         for cat in [
             &[
@@ -1068,8 +1075,9 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
 
     fn show_properties(
         &mut self,
+        q: &DemoPsdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>
     ) {
         ui.label("Name:");
         if ui
@@ -1079,7 +1087,8 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -1092,7 +1101,8 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -1486,7 +1496,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         gdc: &GlobalDrawingContext,
         q: &DemoPsdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
         // try before
         if let Some(child) = self.before_views.iter_mut()
@@ -1523,7 +1533,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         .selectable_value(&mut self.kind_buffer, value, value.char())
                         .clicked()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             DemoPsdPropChange::TransactionKindChange(self.kind_buffer),
                         ));
                     }
@@ -1538,7 +1549,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
@@ -1551,7 +1563,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -1564,7 +1577,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -1576,11 +1590,11 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position().x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position().x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position().y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position().y)));
             }
         });
 
@@ -1591,14 +1605,16 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
             ui.label("width");
             if ui.add(egui::DragValue::new(&mut width).range(Self::MIN_SIZE.x..=5000.0).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::ResizeSelectedElementsBy(
+                commands.push(InsensitiveCommand::ResizeSpecificElementsBy(
+                    q.selected_views(),
                     egui::Align2::LEFT_CENTER,
                     egui::Vec2::new(width - self.tx_outer_rectangle.width(), 0.0),
                 ));
             }
             ui.label("mark percentage");
             if ui.add(egui::DragValue::new(&mut mark_percentage).range(mark_deadzone..=(100.0-mark_deadzone)).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::PropertyChangeSelected(
+                commands.push(InsensitiveCommand::PropertyChange(
+                    q.selected_views(),
                     DemoPsdPropChange::TransactionPercentageChange(mark_percentage / 100.0),
                 ));
             }
@@ -1745,13 +1761,14 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &DemoPsdQueryable,
         tool: &mut Option<NaiveDemoPsdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> EventHandlingStatus {
         let child_status = self.before_views.iter_mut()
             .flat_map(|e| {
-                let s = e.view.handle_event(event, ehc, tool, element_setup_modal, commands);
+                let s = e.view.handle_event(event, ehc, q, tool, element_setup_modal, commands);
                 if s != EventHandlingStatus::NotHandled {
                     Some((*e.view.uuid(), s))
                 } else {
@@ -1761,7 +1778,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             .next();
         let child_status = child_status.or_else(|| self.p_act_view.as_ref().and_then(|e| {
             let mut w = e.write();
-            let s = w.handle_event(event, ehc, tool, element_setup_modal, commands);
+            let s = w.handle_event(event, ehc, q, tool, element_setup_modal, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*w.uuid(), s))
             } else {
@@ -1770,7 +1787,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         }));
         let child_status = child_status.or_else(|| self.after_views.iter_mut()
             .flat_map(|e| {
-                let s = e.view.handle_event(event, ehc, tool, element_setup_modal, commands);
+                let s = e.view.handle_event(event, ehc, q, tool, element_setup_modal, commands);
                 if s != EventHandlingStatus::NotHandled {
                     Some((*e.view.uuid(), s))
                 } else {
@@ -1803,14 +1820,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 match child_status {
                     Some((k, EventHandlingStatus::HandledByElement)) => {
                         if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                            commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                            commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
                             commands.push(
                                 InsensitiveCommand::HighlightSpecific(
                                     std::iter::once(k).collect(),
                                     true,
                                     Highlight::SELECTED,
-                                )
-                                .into(),
+                                ),
                             );
                         } else {
                             commands.push(
@@ -1818,8 +1834,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                     std::iter::once(k).collect(),
                                     !self.selected_direct_elements.contains(&k),
                                     Highlight::SELECTED,
-                                )
-                                .into(),
+                                ),
                             );
                         }
                         return EventHandlingStatus::HandledByContainer;
@@ -1894,14 +1909,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 let coerced_delta = coerced_pos - self.tx_outer_rectangle.center();
 
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
 
@@ -2518,9 +2532,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        _parent: &DemoPsdQueryable,
+        q: &DemoPsdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -2536,13 +2550,15 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
 
         if ui.checkbox(&mut self.internal_buffer, "Internal").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::StateInternalChange(self.internal_buffer),
             ));
         }
@@ -2555,7 +2571,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -2567,11 +2584,11 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -2591,9 +2608,10 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &DemoPsdQueryable,
         tool: &mut Option<NaiveDemoPsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
@@ -2612,14 +2630,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
 
@@ -2643,14 +2660,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                     tool.add_section(self.model.clone().into());
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
                         commands.push(
                             InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(*self.uuid).collect(),
                                 true,
                                 Highlight::SELECTED,
-                            )
-                            .into(),
+                            ),
                         );
                     } else {
                         commands.push(
@@ -2658,8 +2674,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                                 std::iter::once(*self.uuid).collect(),
                                 !self.highlight.selected,
                                 Highlight::SELECTED,
-                            )
-                            .into(),
+                            ),
                         );
                     }
                 }
@@ -2949,9 +2964,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        _parent: &DemoPsdQueryable,
+        q: &DemoPsdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -2967,13 +2982,15 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
 
         if ui.checkbox(&mut self.internal_buffer, "Internal").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::StateInternalChange(self.internal_buffer),
             ));
         }
@@ -2986,7 +3003,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -2998,11 +3016,11 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position().x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position().x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position().y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position().y)));
             }
         });
 
@@ -3022,9 +3040,10 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &DemoPsdQueryable,
         tool: &mut Option<NaiveDemoPsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
@@ -3043,14 +3062,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                 let coerced_delta = coerced_pos - self.bounds_rect.center();
 
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
 
@@ -3074,14 +3092,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                     tool.add_section(self.model.clone().into());
                 } else {
                     if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                        commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
                         commands.push(
                             InsensitiveCommand::HighlightSpecific(
                                 std::iter::once(*self.uuid).collect(),
                                 true,
                                 Highlight::SELECTED,
-                            )
-                            .into(),
+                            ),
                         );
                     } else {
                         commands.push(
@@ -3089,8 +3106,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                                 std::iter::once(*self.uuid).collect(),
                                 !self.highlight.selected,
                                 Highlight::SELECTED,
-                            )
-                            .into(),
+                            ),
                         );
                     }
                 }
@@ -3320,8 +3336,9 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
 
     fn show_properties(
         &mut self,
+        q: &DemoPsdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>
     ) -> PropertiesStatus<DemoPsdDomain> {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("Type:")
@@ -3335,7 +3352,8 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
                         .selectable_value(&mut self.temporaries.link_type_buffer, value, value.char())
                         .clicked()
                     {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             DemoPsdPropChange::LinkTypeChange(self.temporaries.link_type_buffer),
                         ));
                     }
@@ -3350,7 +3368,8 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::LinkMultiplicityChange(Arc::new(self.temporaries.multiplicity_buffer.clone())),
             ));
         }
@@ -3363,7 +3382,8 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoPsdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }

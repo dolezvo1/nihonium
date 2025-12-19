@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -36,18 +36,27 @@ type LinkViewT = MulticonnectionView<RdfDomain, RdfPredicateAdapter>;
 pub struct RdfQueryable<'a> {
     models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
     flattened_views: &'a HashMap<ViewUuid, RdfElementView>,
+    flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
 }
 
 impl<'a> Queryable<'a, RdfDomain> for RdfQueryable<'a> {
     fn new(
         models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
         flattened_views: &'a HashMap<ViewUuid, RdfElementView>,
+        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
     ) -> Self {
-        Self { models_to_views, flattened_views }
+        Self { models_to_views, flattened_views, flattened_views_status }
     }
 
     fn get_view(&self, m: &ModelUuid) -> Option<RdfElementView> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
+    }
+
+    fn selected_views(&self) -> HashSet<ViewUuid> {
+        self.flattened_views_status.iter()
+            .filter(|e| e.1.selected())
+            .map(|e| *e.0)
+            .collect()
     }
 }
 
@@ -329,7 +338,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
         ui.label("Name:");
         if ui
@@ -343,8 +352,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
                     RdfPropChange::NameChange(Arc::new(self.buffer.name.clone())),
-                )
-                .into(),
+                ),
             );
         };
 
@@ -362,8 +370,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
                     RdfPropChange::CommentChange(Arc::new(
                         self.buffer.comment.clone(),
                     )),
-                )
-                .into(),
+                ),
             );
         }
     }
@@ -447,8 +454,8 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         }
         ui.separator();
 
-        let (empty_a, empty_b) = (HashMap::new(), HashMap::new());
-        let empty_q = RdfQueryable::new(&empty_a, &empty_b);
+        let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
+        let empty_q = RdfQueryable::new(&empty_a, &empty_b, &empty_c);
         let mut icon_counter = 0;
         for cat in [
             &[
@@ -971,8 +978,9 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
 
     fn show_properties(
         &mut self,
+        q: &RdfQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>
+        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) {
         ui.label("IRI:");
         if ui
@@ -982,7 +990,8 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
             ));
         }
@@ -995,7 +1004,8 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -1191,9 +1201,9 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        _q: &RdfQueryable,
+        q: &RdfQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> PropertiesStatus<RdfDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -1209,7 +1219,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
             ));
         }
@@ -1222,7 +1233,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -1234,11 +1246,11 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -1312,9 +1324,10 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &RdfQueryable,
         tool: &mut Option<NaiveRdfTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -1365,14 +1378,13 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
                 EventHandlingStatus::HandledByElement
@@ -1653,9 +1665,9 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        _q: &RdfQueryable,
+        q: &RdfQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> PropertiesStatus<RdfDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -1671,7 +1683,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 RdfPropChange::ContentChange(Arc::new(self.content_buffer.clone())),
             ));
         }
@@ -1683,7 +1696,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 RdfPropChange::DataTypeChange(Arc::new(self.datatype_buffer.clone())),
             ));
         };
@@ -1696,7 +1710,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 RdfPropChange::LangTagChange(Arc::new(self.langtag_buffer.clone())),
             ));
         }
@@ -1709,7 +1724,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -1721,11 +1737,11 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -1776,9 +1792,10 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &RdfQueryable,
         tool: &mut Option<NaiveRdfTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -1819,14 +1836,13 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
 
@@ -2067,8 +2083,9 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
 
     fn show_properties(
         &mut self,
+        q: &RdfQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<RdfElementOrVertex, RdfPropChange>>
+        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) ->PropertiesStatus<RdfDomain> {
         ui.label("IRI:");
         if ui
@@ -2078,7 +2095,8 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 RdfPropChange::IriChange(Arc::new(self.temporaries.iri_buffer.clone())),
             ));
         }
@@ -2091,14 +2109,16 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 RdfPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
 
         if ui.button("Switch source and destination").clicked()
             && let RdfTargettableElement::RdfNode(_) = &self.model.read().target {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 RdfPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ));
         }

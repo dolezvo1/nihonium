@@ -3,7 +3,7 @@ use super::demoofd_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -49,18 +49,27 @@ type ExclusionViewT = MulticonnectionView<DemoOfdDomain, DemoOfdExclusionAdapter
 pub struct DemoOfdQueryable<'a> {
     models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
     flattened_views: &'a HashMap<ViewUuid, DemoOfdElementView>,
+    flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
 }
 
 impl<'a> Queryable<'a, DemoOfdDomain> for DemoOfdQueryable<'a> {
     fn new(
         models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
         flattened_views: &'a HashMap<ViewUuid, DemoOfdElementView>,
+        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
     ) -> Self {
-        Self { models_to_views, flattened_views }
+        Self { models_to_views, flattened_views, flattened_views_status }
     }
 
     fn get_view(&self, m: &ModelUuid) -> Option<DemoOfdElementView> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
+    }
+
+    fn selected_views(&self) -> HashSet<ViewUuid> {
+        self.flattened_views_status.iter()
+            .filter(|e| e.1.selected())
+            .map(|e| *e.0)
+            .collect()
     }
 }
 
@@ -435,7 +444,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
         ui.label("Name:");
         if ui
@@ -451,8 +460,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     DemoOfdPropChange::NameChange(Arc::new(
                         self.buffer.name.clone(),
                     )),
-                )
-                .into(),
+                ),
             );
         }
 
@@ -470,8 +478,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
                     DemoOfdPropChange::CommentChange(Arc::new(
                         self.buffer.comment.clone(),
                     )),
-                )
-                .into(),
+                ),
             );
         }
     }
@@ -555,8 +562,8 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         }
         ui.separator();
 
-        let (empty_a, empty_b) = (HashMap::new(), HashMap::new());
-        let empty_q = DemoOfdQueryable::new(&empty_a, &empty_b);
+        let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
+        let empty_q = DemoOfdQueryable::new(&empty_a, &empty_b, &empty_c);
         let mut icon_counter = 0;
         for cat in [
             &[
@@ -1355,8 +1362,9 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
 
     fn show_properties(
         &mut self,
+        q: &DemoOfdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) {
         ui.label("Name:");
         if ui
@@ -1366,7 +1374,8 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -1379,7 +1388,8 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -1800,9 +1810,9 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        _q: &DemoOfdQueryable,
+        q: &DemoOfdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> PropertiesStatus<DemoOfdDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -1818,7 +1828,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -1831,13 +1842,15 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::EntityPropertiesChange(Arc::new(self.properties_buffer.clone())),
             ));
         }
 
         if ui.checkbox(&mut self.internal_buffer, "internal").changed() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::EntityInternalChange(self.internal_buffer),
             ));
         }
@@ -1850,7 +1863,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -1862,11 +1876,11 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -1887,9 +1901,10 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &DemoOfdQueryable,
         tool: &mut Option<NaiveDemoOfdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -1978,14 +1993,13 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                 let coerced_delta = coerced_pos - self.min_shape().center();
 
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
 
@@ -2318,7 +2332,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         gdc: &GlobalDrawingContext,
         q: &DemoOfdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> PropertiesStatus<DemoOfdDomain> {
         if let Some(child) = self.specialization_view.as_mut()
                 .and_then(|t| t.write().show_properties(gdc, q, ui, commands).to_non_default()) {
@@ -2343,7 +2357,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     if ui
                         .selectable_value(&mut self.kind_buffer, value, value.char())
                         .clicked() {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             DemoOfdPropChange::EventKindChange(self.kind_buffer),
                         ));
                     }
@@ -2358,7 +2373,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::EventIdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
@@ -2371,7 +2387,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
@@ -2384,7 +2401,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
@@ -2396,11 +2414,11 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(SensitiveCommand::MoveSelectedElements(egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -2518,9 +2536,10 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        q: &DemoOfdQueryable,
         tool: &mut Option<NaiveDemoOfdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) if self.min_shape().contains(pos) => {
@@ -2538,7 +2557,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     if !self.specialization_view.is_some()
                         && let Some((DemoOfdElementView::EntityType(new_e), esm)) = tool.try_construct_view(self) {
                         new_e.write().position = self.position;
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, DemoOfdElementView::from(new_e).into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, DemoOfdElementView::from(new_e).into(), true));
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -2557,19 +2576,18 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             }
             InputEvent::Click(pos) if !self.min_shape().contains(pos) => {
                 if let UFOption::Some(s) = &self.specialization_view {
-                    let r = s.write().handle_event(event, ehc, tool, element_setup_modal, commands);
+                    let r = s.write().handle_event(event, ehc, q, tool, element_setup_modal, commands);
                     match r {
                         EventHandlingStatus::HandledByElement => {
                             let s = s.read();
                             if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                                commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
+                                commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED));
                                 commands.push(
                                     InsensitiveCommand::HighlightSpecific(
                                         std::iter::once(*s.uuid()).collect(),
                                         true,
                                         Highlight::SELECTED,
-                                    )
-                                    .into(),
+                                    ),
                                 );
                             } else {
                                 commands.push(
@@ -2577,8 +2595,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                                         std::iter::once(*s.uuid()).collect(),
                                         !s.highlight.selected,
                                         Highlight::SELECTED,
-                                    )
-                                    .into(),
+                                    ),
                                 );
                             }
                             EventHandlingStatus::HandledByContainer
@@ -2605,14 +2622,13 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(SensitiveCommand::MoveSelectedElements(coerced_delta));
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
                         InsensitiveCommand::MoveSpecificElements(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
-                        )
-                        .into(),
+                        ),
                     );
                 }
 
@@ -2621,7 +2637,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             _ => self
                 .specialization_view
                 .as_ref()
-                .map(|t| t.write().handle_event(event, ehc, tool, element_setup_modal, commands))
+                .map(|t| t.write().handle_event(event, ehc, q, tool, element_setup_modal, commands))
                 .unwrap_or(EventHandlingStatus::NotHandled)
         }
     }
@@ -2930,8 +2946,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
 
     fn show_properties(
         &mut self,
+        q: &DemoOfdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         ui.label("Name:");
         if ui
@@ -2941,7 +2958,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::NameChange(Arc::new(
                     self.temporaries.name_buffer.clone(),
                 )),
@@ -2957,7 +2975,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::LinkMultiplicityChange(false, Arc::new(
                     self.temporaries.domain_multiplicity_buffer.clone(),
                 )),
@@ -2973,7 +2992,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::LinkMultiplicityChange(true, Arc::new(
                     self.temporaries.range_multiplicity_buffer.clone(),
                 )),
@@ -2982,7 +3002,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         ui.separator();
 
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ));
         }
@@ -2996,7 +3017,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
@@ -3212,11 +3234,13 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
 
     fn show_properties(
         &mut self,
+        q: &DemoOfdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ));
         }
@@ -3230,7 +3254,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
@@ -3420,8 +3445,9 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
 
     fn show_properties(
         &mut self,
+        q: &DemoOfdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         let r = self.model.read();
 
@@ -3440,7 +3466,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
         }
 
         if ui.add_enabled(r.domain_elements.len() <= 1, egui::Button::new("Switch source and destination")).clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ));
         }
@@ -3457,7 +3484,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
                     if ui
                         .selectable_value(&mut self.temporaries.is_generalization_buffer, value.0, value.1)
                         .clicked() {
-                        commands.push(SensitiveCommand::PropertyChangeSelected(
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
                             DemoOfdPropChange::AggregationKindChange(self.temporaries.is_generalization_buffer),
                         ));
                     }
@@ -3472,7 +3500,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
@@ -3663,11 +3692,13 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
 
     fn show_properties(
         &mut self,
+        q: &DemoOfdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ));
         }
@@ -3681,7 +3712,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
@@ -3855,11 +3887,13 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
 
     fn show_properties(
         &mut self,
+        q: &DemoOfdQueryable,
         ui: &mut egui::Ui,
-        commands: &mut Vec<SensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         if ui.button("Switch source and destination").clicked() {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::FlipMulticonnection(FlipMulticonnection {}),
             ));
         }
@@ -3873,7 +3907,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
             )
             .changed()
         {
-            commands.push(SensitiveCommand::PropertyChangeSelected(
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
                 DemoOfdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
             ));
         }
