@@ -3,7 +3,7 @@ use super::demoofd_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -175,6 +175,28 @@ pub enum DemoOfdElementView {
     Aggregation(ERef<AggregationViewT>),
     Precedence(ERef<PrecedenceViewT>),
     Exclusion(ERef<ExclusionViewT>),
+}
+
+
+#[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct DemoOfdControllerAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<DemoOfdDiagram>,
+}
+
+impl ControllerAdapter<DemoOfdDomain> for DemoOfdControllerAdapter {
+    fn model(&self) -> ERef<DemoOfdDiagram> {
+        self.model.clone()
+    }
+    fn clone_with_model(&self, new_model: ERef<DemoOfdDiagram>) -> Self {
+        Self { model: new_model }
+    }
+    fn controller_type(&self) -> &'static str {
+        "demoofd"
+    }
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+        super::demoofd_models::transitive_closure(&self.model.read(), when_deleting)
+    }
 }
 
 
@@ -621,10 +643,6 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         let models = super::demoofd_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
     }
-
-    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
-        super::demoofd_models::transitive_closure(&self.model.read(), when_deleting)
-    }
 }
 
 fn new_controlller(
@@ -638,8 +656,7 @@ fn new_controlller(
         ERef::new(
             MultiDiagramController::new(
                 ControllerUuid::now_v7(),
-                "demoofd-diagram",
-                model.clone(),
+                DemoOfdControllerAdapter { model: model.clone() },
                 vec![
                     DiagramControllerGen2::new(
                         uuid.into(),
@@ -731,7 +748,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<MultiDiagramController<DemoOfdDomain, DiagramControllerGen2<DemoOfdDomain, DemoOfdDiagramAdapter>>>(&uuid)?)
+    Ok(d.get_entity::<MultiDiagramController<DemoOfdDomain, DemoOfdControllerAdapter, DiagramControllerGen2<DemoOfdDomain, DemoOfdDiagramAdapter>>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]

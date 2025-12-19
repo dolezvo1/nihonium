@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -217,6 +217,28 @@ impl Into<DemoPsdElement> for DemoPsdElementTargettingSection {
             DemoPsdElementTargettingSection::Act(inner) => inner.into(),
             DemoPsdElementTargettingSection::Link(inner) => inner.into(),
         }
+    }
+}
+
+
+#[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct DemoPsdControllerAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<DemoPsdDiagram>,
+}
+
+impl ControllerAdapter<DemoPsdDomain> for DemoPsdControllerAdapter {
+    fn model(&self) -> ERef<DemoPsdDiagram> {
+        self.model.clone()
+    }
+    fn clone_with_model(&self, new_model: ERef<DemoPsdDiagram>) -> Self {
+        Self { model: new_model }
+    }
+    fn controller_type(&self) -> &'static str {
+        "demopsd"
+    }
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+        super::demopsd_models::transitive_closure(&self.model.read(), when_deleting)
     }
 }
 
@@ -624,10 +646,6 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         let models = super::demopsd_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
     }
-
-    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
-        super::demopsd_models::transitive_closure(&self.model.read(), when_deleting)
-    }
 }
 
 fn new_controlller(
@@ -641,8 +659,7 @@ fn new_controlller(
         ERef::new(
             MultiDiagramController::new(
                 ControllerUuid::now_v7(),
-                "demopsd-diagram",
-                model.clone(),
+                DemoPsdControllerAdapter { model: model.clone() },
                 vec![
                     DiagramControllerGen2::new(
                         uuid.into(),
@@ -722,7 +739,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<MultiDiagramController<DemoPsdDomain, DiagramControllerGen2<DemoPsdDomain, DemoPsdDiagramAdapter>>>(&uuid)?)
+    Ok(d.get_entity::<MultiDiagramController<DemoPsdDomain, DemoPsdControllerAdapter, DiagramControllerGen2<DemoPsdDomain, DemoPsdDiagramAdapter>>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]

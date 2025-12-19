@@ -167,6 +167,15 @@ impl<T: View> OrderedViewRefs<T> {
         self.order.push(uuid);
     }
 
+    pub fn draw_order_foreach(&self, mut f: impl FnMut(&T)) {
+        for k in self.order.iter() {
+            if let Some(v) = self.views.get(k) {
+                let r = v.read();
+                f(&r);
+            }
+        }
+    }
+
     pub fn draw_order_foreach_mut(&mut self, mut f: impl FnMut(&mut T)) {
         for k in self.order.iter() {
             if let Some(v) = self.views.get(k) {

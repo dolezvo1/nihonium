@@ -4,7 +4,7 @@ use super::super::umlclass::{
 };
 use crate::{common::{
     controller::{
-        DiagramController, DiagramControllerGen2, ElementControllerGen2, InsensitiveCommand, MultiDiagramController, ProjectCommand, View
+        ControllerAdapter, DiagramController, DiagramControllerGen2, ElementControllerGen2, InsensitiveCommand, MultiDiagramController, ProjectCommand, View
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
@@ -53,6 +53,29 @@ impl UmlClassProfile for OntoUmlProfile {
         false
     }
 }
+
+
+#[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct OntoUmlControllerAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<UmlClassDiagram>,
+}
+
+impl ControllerAdapter<UmlClassDomain<OntoUmlProfile>> for OntoUmlControllerAdapter {
+    fn model(&self) -> ERef<UmlClassDiagram> {
+        self.model.clone()
+    }
+    fn clone_with_model(&self, new_model: ERef<UmlClassDiagram>) -> Self {
+        Self { model: new_model }
+    }
+    fn controller_type(&self) -> &'static str {
+        "umlclass-ontouml"
+    }
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+        super::super::umlclass::umlclass_models::transitive_closure(&self.model.read(), when_deleting)
+    }
+}
+
 
 #[derive(Clone)]
 pub struct UmlClassPlaceholderViews {
@@ -150,8 +173,7 @@ fn new_controlller(
         ERef::new(
             MultiDiagramController::new(
                 ControllerUuid::now_v7(),
-                "umlclass-diagram-ontouml",
-                model.clone(),
+                OntoUmlControllerAdapter { model: model.clone() },
                 vec![
                     DiagramControllerGen2::new(
                         uuid.into(),
@@ -266,7 +288,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<OntoUmlProfile>, DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>>>(&uuid)?)
+    Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<OntoUmlProfile>, OntoUmlControllerAdapter, DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>>>(&uuid)?)
 }
 
 #[derive(Clone, Default)]

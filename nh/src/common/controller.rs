@@ -516,7 +516,6 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         commands: &mut Vec<ProjectCommand>,
     );
 
-
     fn diagram_command_to_sensitives(
         &mut self,
         command: DiagramCommand,
@@ -532,6 +531,8 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         affected_models: &mut HashSet<ModelUuid>,
     );
 
+    fn extend_models_for(&self, views: &HashSet<ViewUuid>, models: &mut HashSet<ModelUuid>);
+    fn extend_views_for(&self, models: &HashSet<ModelUuid>, views: &mut HashSet<ViewUuid>);
 
     /// Create new view with a new model
     fn deep_copy(&self) -> ERef<Self>;
@@ -542,6 +543,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
 pub trait DiagramController: Any + NHContextSerialize {
     fn uuid(&self) -> Arc<ControllerUuid>;
     fn model_uuid(&self) -> Arc<ModelUuid>;
+    fn controller_type(&self) -> &'static str;
     fn view_uuids(&self) -> Vec<ViewUuid>;
     fn view_name(&self, uuid: &ViewUuid) -> Arc<String>;
 
@@ -571,6 +573,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         response: &egui::Response,
         modifier_settings: ModifierSettings,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        affected_models: &mut HashSet<ModelUuid>,
     );
 
     fn new_ui_canvas(
@@ -594,6 +597,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
+        affected_models: &mut HashSet<ModelUuid>,
     );
 
     fn show_toolbar(
@@ -607,7 +611,8 @@ pub trait DiagramController: Any + NHContextSerialize {
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-    ) -> (bool, Option<Box<dyn CustomModal>>);
+        affected_models: &mut HashSet<ModelUuid>,
+    ) -> Option<Box<dyn CustomModal>>;
     fn show_menubar_edit_options(
         &mut self,
         uuid: &ViewUuid,
@@ -646,10 +651,11 @@ pub trait DiagramController: Any + NHContextSerialize {
         &mut self,
         uuid: &ViewUuid,
         command: DiagramCommand,
+        affected_models: &mut HashSet<ModelUuid>,
     );
 
-    fn undo_immediate(&mut self);
-    fn redo_immediate(&mut self);
+    fn undo_immediate(&mut self, affected_models: &mut HashSet<ModelUuid>);
+    fn redo_immediate(&mut self, affected_models: &mut HashSet<ModelUuid>);
 
     /// Create new view with new model
     fn deep_copy(&self, uuid: &ViewUuid) -> (ViewUuid, ERef<dyn DiagramController>);
@@ -1159,16 +1165,25 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
 }
 
 
+pub trait ControllerAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + 'static {
+    fn model(&self) -> ERef<DomainT::DiagramModelT>;
+    fn clone_with_model(&self, new_model: ERef<DomainT::DiagramModelT>) -> Self;
+    fn controller_type(&self) -> &'static str;
+
+    /// Must return all ModelUuids that are to be deleted, including children of deleted containers
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid>;
+}
+
 #[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity, is_subset_with = Self::depends_on)]
-pub struct MultiDiagramController<DomainT: Domain, DiagramViewT>
+pub struct MultiDiagramController<DomainT: Domain, AdapterT: ControllerAdapter<DomainT>, DiagramViewT>
 where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
 {
     uuid: Arc<ControllerUuid>,
-    controller_type: String,
 
     #[nh_context_serde(entity)]
-    model: ERef<DomainT::DiagramModelT>,
+    adapter: AdapterT,
+
     #[nh_context_serde(entity)]
     views: OrderedViewRefs<DiagramViewT>,
 
@@ -1188,19 +1203,17 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
     tree_view_state: egui_ltreeview::TreeViewState<ModelUuid>,
 }
 
-impl<DomainT: Domain, DiagramViewT> MultiDiagramController<DomainT, DiagramViewT>
+impl<DomainT: Domain, AdapterT: ControllerAdapter<DomainT>, DiagramViewT> MultiDiagramController<DomainT, AdapterT, DiagramViewT>
 where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
 {
     pub fn new(
         uuid: ControllerUuid,
-        controller_type: &str,
-        model: ERef<DomainT::DiagramModelT>,
+        adapter: AdapterT,
         views: Vec<ERef<DiagramViewT>>,
     ) -> Self {
         Self {
             uuid: uuid.into(),
-            controller_type: controller_type.to_owned(),
-            model,
+            adapter,
             views: OrderedViewRefs::new(views),
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
@@ -1217,17 +1230,27 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         view_uuid: &ViewUuid,
         commands: Vec<SensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         push_to_undo_stack: bool,
-    ) -> bool {
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
         let view = self.views.get(view_uuid).unwrap();
-        let mut w = view.write();
 
-        let mut affected_models = HashSet::new();
         let mut changed = false;
         for c in commands {
-            let c = w.sensitive_command_to_insensitive(c);
-            // TODO: transitive closure
+            let mut c = view.write().sensitive_command_to_insensitive(c);
+
+            match c {
+                InsensitiveCommand::CutSpecificElements(ref mut uuids)
+                | InsensitiveCommand::DeleteSpecificElements(ref mut uuids, _) => {
+                    let mut original_models = HashSet::new();
+                    self.views.draw_order_foreach(|e| e.extend_models_for(&uuids, &mut original_models));
+                    let model_uuids = self.adapter.transitive_closure(original_models);
+                    self.views.draw_order_foreach(|e| e.extend_views_for(&model_uuids, uuids));
+                },
+                _ => {},
+            }
+
             let mut undo_accumulator = Vec::new();
-            w.apply_command(&c, &mut undo_accumulator, &mut affected_models);
+            view.write().apply_command(&c, &mut undo_accumulator, affected_models);
             if !undo_accumulator.is_empty() {
                 if !changed {
                     self.redo_stack.clear();
@@ -1252,14 +1275,10 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 changed = true;
             }
         }
-
-        // TODO: refresh buffers
-
-        changed
     }
 }
 
-impl<DomainT: Domain, DiagramViewT> Entity for MultiDiagramController<DomainT, DiagramViewT>
+impl<DomainT: Domain, AdapterT: ControllerAdapter<DomainT>, DiagramViewT> Entity for MultiDiagramController<DomainT, AdapterT, DiagramViewT>
 where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
 {
     fn tagged_uuid(&self) -> EntityUuid {
@@ -1267,7 +1286,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
     }
 }
 
-impl<DomainT: Domain, DiagramViewT> DiagramController for MultiDiagramController<DomainT, DiagramViewT>
+impl<DomainT: Domain, AdapterT: ControllerAdapter<DomainT>, DiagramViewT> DiagramController for MultiDiagramController<DomainT, AdapterT, DiagramViewT>
 where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
 {
     fn uuid(&self) -> Arc<ControllerUuid> {
@@ -1275,7 +1294,11 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
     }
 
     fn model_uuid(&self) -> Arc<ModelUuid> {
-        self.model.read().uuid()
+        self.adapter.model().read().uuid()
+    }
+
+    fn controller_type(&self) -> &'static str {
+        self.adapter.controller_type()
     }
 
     fn view_uuids(&self) -> Vec<ViewUuid> {
@@ -1410,7 +1433,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 model: PhantomData,
             };
 
-            self.model.read().accept(&mut hvv);
+            self.adapter.model().read().accept(&mut hvv);
 
             c = hvv.commands;
         });
@@ -1457,7 +1480,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 fn close_diagram(&mut self, _e: &ModelT) {}
             }
 
-            self.model.read().accept(&mut StateChangeVisitor {
+            self.adapter.model().read().accept(&mut StateChangeVisitor {
                 set_open: b,
                 state: &mut self.tree_view_state,
                 model: PhantomData,
@@ -1493,11 +1516,12 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         response: &egui::Response,
         modifier_settings: ModifierSettings,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         let view = self.views.get(uuid).unwrap();
         let mut commands = Vec::new();
         view.write().handle_input(ui, response, modifier_settings, element_setup_modal, &mut commands);
-        self.apply_commands(uuid, commands, true);
+        self.apply_commands(uuid, commands, true, affected_models);
     }
 
     fn cancel_tool(&mut self) {
@@ -1531,6 +1555,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
+        _affected_models: &mut HashSet<ModelUuid>,
     ) {
         let view = self.views.get(uuid).unwrap();
         view.write().context_menu(context, ui, commands);
@@ -1551,11 +1576,13 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-    ) -> (bool, Option<Box<dyn CustomModal>>) {
+        affected_models: &mut HashSet<ModelUuid>,
+    ) -> Option<Box<dyn CustomModal>> {
         let view = self.views.get(uuid).unwrap();
         let mut commands = Vec::new();
         let r = view.write().show_properties(context, ui, &mut commands);
-        (self.apply_commands(uuid, commands, true), r)
+        self.apply_commands(uuid, commands, true, affected_models);
+        r
     }
 
     fn show_menubar_edit_options(
@@ -1595,13 +1622,17 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         &mut self,
         uuid: &ViewUuid,
         command: DiagramCommand,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
         let view = self.views.get(uuid).unwrap();
         let commands = view.write().diagram_command_to_sensitives(command);
-        self.apply_commands(uuid, commands, true);
+        self.apply_commands(uuid, commands, true, affected_models);
     }
 
-    fn undo_immediate(&mut self) {
+    fn undo_immediate(
+        &mut self,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
         let Some((original_view, original_command, undo_commands)) = self.undo_stack.pop() else {
             return;
         };
@@ -1613,16 +1644,20 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 .map(|c| c.into())
                 .collect(),
             false,
+            affected_models,
         );
         self.redo_stack = redo_stack;
         self.redo_stack.push((original_view, original_command));
     }
-    fn redo_immediate(&mut self) {
+    fn redo_immediate(
+        &mut self,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
         let Some((original_view, redo_command)) = self.redo_stack.pop() else {
             return;
         };
         let redo_stack = std::mem::take(&mut self.redo_stack);
-        self.apply_commands(&original_view, vec![redo_command.into()], true);
+        self.apply_commands(&original_view, vec![redo_command.into()], true, affected_models);
         self.redo_stack = redo_stack;
     }
 
@@ -1701,8 +1736,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
             ERef::new(
                 Self::new(
                     ControllerUuid::now_v7().into(),
-                    &self.controller_type,
-                    new_view_model,
+                    self.adapter.clone_with_model(new_view_model),
                     vec![new_view],
                 )
             ),
@@ -1714,14 +1748,14 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         uuid: &ViewUuid,
     ) -> ViewUuid {
         let view = self.views.get(uuid).unwrap();
-        let new_view = view.read().deep_copy();
+        let new_view = view.read().shallow_copy();
         let new_view_uuid = *new_view.read().uuid();
         self.views.push(new_view_uuid, new_view);
         new_view_uuid
     }
 
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        self.model.read().full_text_search(acc);
+        self.adapter.model().read().full_text_search(acc);
     }
 }
 
@@ -1782,9 +1816,6 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
     fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
-
-    /// Must return all ModelUuids that are to be deleted, including children of deleted containers
-    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid>;
 }
 
 /// This is a generic DiagramController implementation.
@@ -2917,6 +2948,20 @@ impl<
 
             self.temporaries.snap_manager.draw_best(canvas, egui::Color32::BLUE, self.temporaries.last_interactive_canvas_rect);
         }
+    }
+
+    fn extend_views_for(&self, models: &HashSet<ModelUuid>, views: &mut HashSet<ViewUuid>) {
+        views.extend(
+            models.iter()
+                .flat_map(|e| self.temporaries.flattened_represented_models.get(e))
+        );
+    }
+    fn extend_models_for(&self, views: &HashSet<ViewUuid>, models: &mut HashSet<ModelUuid>) {
+        models.extend(
+            views.iter()
+                .flat_map(|e| self.temporaries.flattened_views.get(e))
+                .map(|e| *e.model_uuid())
+        );
     }
 
     fn deep_copy(&self) -> ERef<Self> {

@@ -246,6 +246,7 @@ struct NHContext {
     drawing_context: GlobalDrawingContext,
 
     unprocessed_commands: Vec<ProjectCommand>,
+    affected_models: HashSet<ModelUuid>,
     should_change_title: bool,
     has_unsaved_changes: bool,
 
@@ -989,12 +990,8 @@ impl NHContext {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((_t, c)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
 
-        let (changed, modal) = c.write().show_properties(last_focused_diagram, &self.drawing_context, ui);
-        if let Some(m) = modal {
+        if let Some(m) = c.write().show_properties(last_focused_diagram, &self.drawing_context, ui, &mut self.affected_models) {
             self.custom_modal = Some(m);
-        }
-        if changed {
-            self.set_has_unsaved_changes(true);
         }
     }
 
@@ -1559,19 +1556,19 @@ impl NHContext {
 
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(tab_uuid, &self.drawing_context, ui);
         response.context_menu(|ui| {
-            diagram_controller.context_menu(tab_uuid, &self.drawing_context, ui, &mut self.unprocessed_commands);
+            diagram_controller.context_menu(tab_uuid, &self.drawing_context, ui, &mut self.unprocessed_commands, &mut self.affected_models);
         });
 
         diagram_controller.draw_in(tab_uuid, &self.drawing_context, ui_canvas.as_mut(), pos);
         let shade_color = self.diagram_shades[t].1[self.selected_diagram_shades[t]];
         ui_canvas.draw_rectangle(egui::Rect::EVERYTHING, egui::CornerRadius::ZERO, shade_color, common::canvas::Stroke::NONE, Highlight::NONE);
 
-        let mut undo_accumulator = Vec::<Arc<String>>::new();
         diagram_controller.handle_input(
             tab_uuid,
             ui, &response,
             self.modifier_settings,
             &mut self.custom_modal,
+            &mut self.affected_models,
         );
 
         /*
@@ -1648,7 +1645,6 @@ impl Default for NHApp {
             (1, crate::domains::umlclass::umlclass_controllers::demo(1)),
         ] {
             let mut w = c.write();
-            let model_uuid = *w.model_uuid();
             w.refresh_all_buffers(&mut model_labels);
             hierarchy.push(HierarchyNode::Diagram(w.get(&view_uuid).unwrap()));
             drop(w);
@@ -1659,12 +1655,12 @@ impl Default for NHApp {
         }
 
         let mut diagram_deserializers = HashMap::new();
-        diagram_deserializers.insert("rdf-diagram".to_string(), (0, &crate::domains::rdf::rdf_controllers::deserializer as &DDes));
-        diagram_deserializers.insert("umlclass-diagram".to_string(), (1, &crate::domains::umlclass::umlclass_controllers::deserializer as &DDes));
-        diagram_deserializers.insert("democsd-diagram".to_string(), (2, &crate::domains::democsd::democsd_controllers::deserializer as &DDes));
-        diagram_deserializers.insert("umlclass-diagram-ontouml".to_string(), (3, &crate::domains::ontouml::ontouml_controllers::deserializer as &DDes));
-        diagram_deserializers.insert("demoofd-diagram".to_string(), (4, &crate::domains::demoofd::demoofd_controllers::deserializer as &DDes));
-        diagram_deserializers.insert("demopsd-diagram".to_string(), (5, &crate::domains::demopsd::demopsd_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("rdf".to_string(), (0, &crate::domains::rdf::rdf_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("umlclass".to_string(), (1, &crate::domains::umlclass::umlclass_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("democsd".to_string(), (2, &crate::domains::democsd::democsd_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("umlclass-ontouml".to_string(), (3, &crate::domains::ontouml::ontouml_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("demoofd".to_string(), (4, &crate::domains::demoofd::demoofd_controllers::deserializer as &DDes));
+        diagram_deserializers.insert("demopsd".to_string(), (5, &crate::domains::demopsd::demopsd_controllers::deserializer as &DDes));
 
         let mut dock_state = DockState::new(tabs);
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
@@ -1733,6 +1729,7 @@ impl Default for NHApp {
             },
             
             unprocessed_commands: Vec::new(),
+            affected_models: HashSet::new(),
             should_change_title: true,
             has_unsaved_changes: true,
             
@@ -1831,13 +1828,13 @@ impl NHApp {
     fn undo_immediate(&mut self) {
         let Some(e) = self.context.last_focused_diagram() else { return };
         self.switch_to_tab(&NHTab::Diagram { uuid: e.1 });
-        e.2.write().undo_immediate();
+        e.2.write().undo_immediate(&mut self.context.affected_models);
         self.context.set_has_unsaved_changes(true);
     }
     fn redo_immediate(&mut self) {
         let Some(e) = self.context.last_focused_diagram() else { return };
         self.switch_to_tab(&NHTab::Diagram { uuid: e.1 });
-        e.2.write().redo_immediate();
+        e.2.write().redo_immediate(&mut self.context.affected_models);
         self.context.set_has_unsaved_changes(true);
     }
 
@@ -2062,7 +2059,7 @@ impl eframe::App for NHApp {
         macro_rules! send_to_diagram {
             ($uuid:expr, $command:expr) => {
                 if let Some((_t, ac)) = self.context.diagram_controllers.get($uuid) {
-                    ac.write().apply_diagram_command($uuid, $command);
+                    ac.write().apply_diagram_command($uuid, $command, &mut self.context.affected_models);
                 }
             };
         }
@@ -2499,6 +2496,7 @@ impl eframe::App for NHApp {
                 },
                 CustomModalResult::CloseModified(model_uuid) => {
                     self.context.custom_modal = None;
+                    self.context.affected_models.insert(model_uuid);
                 },
             }
         }
@@ -2796,6 +2794,13 @@ impl eframe::App for NHApp {
                     }
                 }
             }
+        }
+
+        if !self.context.affected_models.is_empty() {
+            for (_, (_, c)) in &self.context.diagram_controllers {
+                c.write().refresh_buffers(&self.context.affected_models, &mut self.context.drawing_context.model_labels);
+            }
+            self.context.affected_models.clear();
         }
         
         CentralPanel::default()

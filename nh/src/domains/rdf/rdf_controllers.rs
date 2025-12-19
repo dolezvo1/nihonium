@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -147,6 +147,28 @@ pub enum RdfElementView {
     Literal(ERef<RdfLiteralView>),
     Node(ERef<RdfNodeView>),
     Predicate(ERef<LinkViewT>),
+}
+
+
+#[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct RdfControllerAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<RdfDiagram>,
+}
+
+impl ControllerAdapter<RdfDomain> for RdfControllerAdapter {
+    fn model(&self) -> ERef<RdfDiagram> {
+        self.model.clone()
+    }
+    fn clone_with_model(&self, new_model: ERef<RdfDiagram>) -> Self {
+        Self { model: new_model }
+    }
+    fn controller_type(&self) -> &'static str {
+        "rdf"
+    }
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+        super::rdf_models::transitive_closure(&self.model.read(), when_deleting)
+    }
 }
 
 
@@ -498,10 +520,6 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         let models = super::rdf_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
     }
-
-    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
-        super::rdf_models::transitive_closure(&self.model.read(), when_deleting)
-    }
 }
 
 fn new_controlller(
@@ -515,8 +533,7 @@ fn new_controlller(
         ERef::new(
             MultiDiagramController::new(
                 ControllerUuid::now_v7(),
-                "rdf-diagram",
-                model.clone(),
+                RdfControllerAdapter { model: model.clone() },
                 vec![
                     DiagramControllerGen2::new(
                         uuid.into(),
@@ -617,7 +634,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<MultiDiagramController<RdfDomain, DiagramControllerGen2<RdfDomain, RdfDiagramAdapter>>>(&uuid)?)
+    Ok(d.get_entity::<MultiDiagramController<RdfDomain, RdfControllerAdapter, DiagramControllerGen2<RdfDomain, RdfDiagramAdapter>>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]

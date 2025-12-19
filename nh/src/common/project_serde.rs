@@ -210,8 +210,14 @@ pub struct NHProjectSerialization {
     sources_root: String,
     new_diagram_no_counter: usize,
     hierarchy: Vec<NHProjectHierarchyNodeSerialization>,
-    controllers: Vec<ControllerUuid>,
+    controllers: Vec<NHControllerInfo>,
     global_colors: Vec<GlobalColorDTO>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct NHControllerInfo {
+    uuid: ControllerUuid,
+    controller_type: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -248,11 +254,11 @@ impl NHProjectSerialization {
         }
 
         let mut serializer = NHSerializer::new();
-        let mut unique_diagram_controllers = HashSet::new();
+        let mut unique_diagram_controllers = HashMap::new();
         for e in diagram_controllers.iter() {
             let r = e.1.1.read();
             r.serialize_into(&mut serializer)?;
-            unique_diagram_controllers.insert(*r.uuid());
+            unique_diagram_controllers.insert(*r.uuid(), r.controller_type().to_owned());
         }
         NHSerializer::write_all(serializer, wa)?;
 
@@ -272,8 +278,11 @@ impl NHProjectSerialization {
             new_diagram_no_counter,
             hierarchy: hierarchy.iter().map(|e| h(e, documents)).collect(),
             controllers: {
-                let mut controllers: Vec<_> = unique_diagram_controllers.into_iter().collect();
-                controllers.sort();
+                let mut controllers: Vec<_> = unique_diagram_controllers
+                    .into_iter()
+                    .map(|e| NHControllerInfo { uuid: e.0, controller_type: e.1 })
+                    .collect();
+                controllers.sort_by_key(|e| e.uuid);
                 controllers
             },
             global_colors,
@@ -331,20 +340,16 @@ impl NHProjectSerialization {
             l(e, &mut deserializer)?;
         }
         for e in &self.controllers {
-            deserializer.load_sources((*e).into())?;
+            deserializer.load_sources((*e).uuid.into())?;
         }
 
         // Instantiate all entities
         let mut top_level_controllers = HashMap::new();
         let mut top_level_views = HashMap::new();
         for e in &self.controllers {
-            let c = deserializer.source_controllers.get(e).unwrap();
-            let tt = c.get("controller_type")
-                .and_then(|e| e.as_str())
-                .ok_or_else(|| format!("controller '{:?}' is missing 'controller_type' or not a string", e))?;
-            let (type_no, dd) = diagram_deserializers.get(tt)
-                .ok_or_else(|| format!("deserializer for type '{}' not found", tt))?;
-            let controller = dd(*e, &mut deserializer)?;
+            let (type_no, dd) = diagram_deserializers.get(&e.controller_type)
+                .ok_or_else(|| format!("deserializer for type '{}' not found", e.controller_type))?;
+            let controller = dd(e.uuid, &mut deserializer)?;
             let r = controller.read();
             for e in r.view_uuids() {
                 top_level_controllers.insert(e, (*type_no, controller.clone()));

@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SensitiveCommand, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -286,6 +286,28 @@ pub enum UmlClassElementView<P: UmlClassProfile> {
     Association(ERef<AssociationViewT<P>>),
     Comment(ERef<UmlClassCommentView<P>>),
     CommentLink(ERef<CommentLinkViewT<P>>),
+}
+
+
+#[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct UmlClassControllerAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<UmlClassDiagram>,
+}
+
+impl ControllerAdapter<UmlClassDomain<UmlClassNullProfile>> for UmlClassControllerAdapter {
+    fn model(&self) -> ERef<UmlClassDiagram> {
+        self.model.clone()
+    }
+    fn clone_with_model(&self, new_model: ERef<UmlClassDiagram>) -> Self {
+        Self { model: new_model }
+    }
+    fn controller_type(&self) -> &'static str {
+        "umlclass"
+    }
+    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+        super::umlclass_models::transitive_closure(&self.model.read(), when_deleting)
+    }
 }
 
 
@@ -758,10 +780,6 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         let models = super::umlclass_models::fake_copy_diagram(&self.model.read());
         (self.clone(), models)
     }
-
-    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
-        super::umlclass_models::transitive_closure(&self.model.read(), when_deleting)
-    }
 }
 
 pub struct PlantUmlTab {
@@ -808,8 +826,7 @@ fn new_controlller(
         ERef::new(
             MultiDiagramController::new(
                 ControllerUuid::now_v7(),
-                "umlclass-diagram",
-                model.clone(),
+                UmlClassControllerAdapter { model: model.clone() },
                 vec![
                     DiagramControllerGen2::new(
                         uuid.into(),
@@ -1056,7 +1073,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<UmlClassNullProfile>, DiagramControllerGen2<UmlClassDomain<UmlClassNullProfile>, UmlClassDiagramAdapter<UmlClassNullProfile>>>>(&uuid)?)
+    Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<UmlClassNullProfile>, UmlClassControllerAdapter, DiagramControllerGen2<UmlClassDomain<UmlClassNullProfile>, UmlClassDiagramAdapter<UmlClassNullProfile>>>>(&uuid)?)
 }
 
 #[derive(Clone, Copy, PartialEq)]
