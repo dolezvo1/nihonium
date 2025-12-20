@@ -560,6 +560,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         uuid: &ViewUuid,
         gdc: &GlobalDrawingContext,
         ui: &mut egui::Ui,
+        affected_models: &mut HashSet<ModelUuid>,
     );
 
     fn handle_input(
@@ -821,9 +822,10 @@ pub type PositionNoT = u16;
 #[derive(Clone, PartialEq, Debug)]
 pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> {
     HighlightAll(bool, Highlight),
-    HighlightSpecific(HashSet<ViewUuid>, bool, Highlight),
     SelectByDrag(egui::Rect),
     MoveAllElements(egui::Vec2),
+
+    HighlightSpecific(HashSet<ViewUuid>, bool, Highlight),
     MoveSpecificElements(HashSet<ViewUuid>, egui::Vec2),
     ResizeSpecificElementsBy(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     ResizeSpecificElementsTo(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
@@ -1180,23 +1182,46 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         push_to_undo_stack: bool,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
-        let view = self.views.get(view_uuid).unwrap();
+        let view = self.views.get(view_uuid).cloned().unwrap();
 
         let mut changed = false;
         for mut c in commands {
-            match c {
-                InsensitiveCommand::CutSpecificElements(ref mut uuids)
-                | InsensitiveCommand::DeleteSpecificElements(ref mut uuids, _) => {
+            let extra_command = match c {
+                InsensitiveCommand::CutSpecificElements(_)
+                | InsensitiveCommand::DeleteSpecificElements(_, _) => {
+                    let into_model = matches!(c, InsensitiveCommand::CutSpecificElements(_)
+                                                 | InsensitiveCommand::DeleteSpecificElements(_, true));
+                    let (InsensitiveCommand::CutSpecificElements(ref mut uuids)
+                        | InsensitiveCommand::DeleteSpecificElements(ref mut uuids, _)) = c else { unreachable!() };
+
                     let mut original_models = HashSet::new();
                     self.views.draw_order_foreach(|e| e.extend_models_for(&uuids, &mut original_models));
                     let model_uuids = self.adapter.transitive_closure(original_models);
-                    self.views.draw_order_foreach(|e| e.extend_views_for(&model_uuids, uuids));
+                    view.write().extend_views_for(&model_uuids, uuids);
+                    if into_model {
+                        let mut residual_views = HashSet::new();
+                        self.views.draw_order_foreach(|e| if *e.uuid() != *view_uuid { e.extend_views_for(&model_uuids, &mut residual_views) });
+                        Some(InsensitiveCommand::DeleteSpecificElements(residual_views, false))
+                    } else {
+                        None
+                    }
                 },
-                _ => {},
-            }
+                _ => None,
+            };
 
             let mut undo_accumulator = Vec::new();
-            view.write().apply_command(&c, &mut undo_accumulator, affected_models);
+            if matches!(c, InsensitiveCommand::HighlightAll(_, _)
+                            | InsensitiveCommand::SelectByDrag(_)
+                            | InsensitiveCommand::MoveAllElements(_)) {
+                view.write().apply_command(&c, &mut undo_accumulator, affected_models);
+            } else {
+                self.views.draw_order_foreach_mut(|e| e.apply_command(&c, &mut undo_accumulator, affected_models));
+            }
+
+            if let Some(extra_command) = extra_command {
+                self.views.draw_order_foreach_mut(|e| e.apply_command(&extra_command, &mut undo_accumulator, affected_models));
+            }
+
             if !undo_accumulator.is_empty() {
                 if !changed {
                     self.redo_stack.clear();
@@ -1260,8 +1285,9 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         uuid: &ViewUuid,
         gdc: &GlobalDrawingContext,
         ui: &mut egui::Ui,
+        affected_models: &mut HashSet<ModelUuid>,
     ) {
-        let Some(view) = self.views.get(uuid) else {
+        let Some(view) = self.views.get(uuid).cloned() else {
             return;
         };
 
@@ -1433,7 +1459,10 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
             });
         }
 
-        // TODO: apply the command
+        if !c.is_empty() {
+            let c = c.into_iter().flat_map(|c| view.write().diagram_command_to_sensitives(c)).collect();
+            self.apply_commands(uuid, c, true, affected_models);
+        }
     }
 
     fn get(&self, uuid: &ViewUuid) -> Option<ERef<dyn DiagramView>> {
@@ -2170,7 +2199,7 @@ impl<
             new_adapter,
             Self::elements_deep_copy(
                 None,
-                |_| false,
+                |_| true,
                 models,
                 self.owned_views.iter_event_order_pairs().map(|e| (e.0, e.1.clone())),
             ).into_iter().map(|e| e.1).collect(),

@@ -936,7 +936,7 @@ impl NHContext {
     fn show_model_hierarchy(&mut self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some((_t, lfc)) = self.diagram_controllers.get(last_focused_diagram) else { return; };
-        lfc.write().show_model_hierarchy(last_focused_diagram, &self.drawing_context, ui);
+        lfc.write().show_model_hierarchy(last_focused_diagram, &self.drawing_context, ui, &mut self.affected_models);
     }
 
     fn show_search(&mut self, ui: &mut Ui) {
