@@ -174,8 +174,64 @@ impl ControllerAdapter<DemoCsdDomain> for DemoCsdControllerAdapter {
     fn controller_type(&self) -> &'static str {
         "democsd"
     }
+
     fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::democsd_models::transitive_closure(&self.model.read(), when_deleting)
+    }
+
+    fn insert_element(&mut self, parent: ModelUuid, element: DemoCsdElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
+        let mut w = self.model.write();
+        if *w.uuid == parent {
+            w.insert_element(b, p, element)
+                .map(|_| ())
+                .map_err(|_| ())
+        } else {
+            w.find_element(&parent)
+                .ok_or(())
+                .and_then(|mut e| e.0
+                    .insert_element(b, p, element)
+                    .map(|_| ())
+                    .map_err(|_| ())
+                )
+        }
+    }
+
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, DemoCsdElement, BucketNoT, PositionNoT)>) {
+        fn r(e: &DemoCsdElement, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, DemoCsdElement, BucketNoT, PositionNoT)>) {
+            match e {
+                DemoCsdElement::DemoCsdPackage(inner) => {
+                    let mut w = inner.write();
+                    for (idx, e) in w.contained_elements.iter().enumerate() {
+                        if uuids.contains(&e.uuid()) {
+                            undo.push((*w.uuid, e.clone(), 0, idx.try_into().unwrap()));
+                        } else {
+                            r(e, uuids, undo);
+                        }
+                    }
+                    w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+                },
+                DemoCsdElement::DemoCsdTransactor(inner) => {
+                    let mut w = inner.write();
+                    if let UFOption::Some(e) = &w.transaction
+                        && uuids.contains(&e.read().uuid) {
+                        undo.push((*w.uuid, e.clone().into(), 0, 0));
+                        w.transaction = UFOption::None;
+                    }
+                },
+                DemoCsdElement::DemoCsdTransaction(_)
+                | DemoCsdElement::DemoCsdLink(_) => {},
+            }
+        }
+
+        let mut w = self.model.write();
+        for (idx, e) in w.contained_elements.iter().enumerate() {
+            if uuids.contains(&e.uuid()) {
+                undo.push((*w.uuid, e.clone(), 0, idx.try_into().unwrap()));
+            } else {
+                r(e, uuids, undo);
+            }
+        }
+        w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
     }
 }
 
@@ -258,6 +314,10 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().name.clone()
+    }
+
+    fn get_element_pos_in(&self, parent: &ModelUuid, model_uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model.read().get_element_pos_in(parent, model_uuid)
     }
 
     fn create_new_view_for(
@@ -980,6 +1040,9 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         self.model.read().name.clone()
     }
 
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model.read().get_element_pos(uuid)
+    }
     fn insert_element(&mut self, position: Option<PositionNoT>, e: DemoCsdElement) -> Result<PositionNoT, ()> {
         self.model.write().insert_element(0, position, e).map_err(|_| ())
     }
@@ -1454,7 +1517,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         let [identifier_offset, name_offset] = [0.0, identifier_bounds.height()].map(|e| {
             egui::Vec2::new(
                 0.0,
-                e + if read.transaction.is_some() {
+                e + if self.transaction_view.is_some() {
                     tx_name_bounds.height() - 1.0 * canvas::CLASS_MIDDLE_FONT_SIZE
                 } else {
                     0.0
@@ -1467,7 +1530,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             .max(identifier_bounds.width())
             .max(name_bounds.width())
             .max(2.0 * radius);
-        let box_y_offset = if read.transaction.is_some() {
+        let box_y_offset = if self.transaction_view.is_some() {
             if read.transaction_selfactivating {
                 6.0
             } else {
@@ -1480,7 +1543,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             self.position - egui::Vec2::new(max_row / 2.0, box_y_offset),
             egui::Vec2::new(
                 max_row,
-                if read.transaction.is_some() {
+                if self.transaction_view.is_some() {
                     if read.transaction_selfactivating {
                         5.0
                     } else {
@@ -1778,50 +1841,57 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
-                if *v == *self.uuid && *into_model
+                if *v == *self.uuid
                     && self.transaction_view.as_ref().is_none()
-                    && let DemoCsdElementOrVertex::Element(DemoCsdElementView::Transaction(e)) = e
-                    && let Ok(_) = self.model.write().insert_element(*b, *pos, e.read().model.clone().into())
-                {
-                    undo_accumulator.push(InsensitiveCommand::RemoveDependency(
-                        *v,
-                        *b,
-                        *e.read().uuid,
-                        true,
-                    ));
-                    self.transaction_view = UFOption::Some(e.clone());
+                    && let DemoCsdElementOrVertex::Element(DemoCsdElementView::Transaction(e)) = e {
+                    let mut w = self.model.write();
+                    if let Some(_) = w.get_element_pos(&e.read().model_uuid()).map(|e| e.1)
+                        .or_else(|| if *into_model { w.insert_element(*b, *pos, e.read().model.clone().into()).ok() } else { None }) {
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                            *v,
+                            *b,
+                            *e.read().uuid,
+                            *into_model,
+                        ));
+                        if *into_model {
+                            affected_models.insert(*w.uuid);
+                        }
+                        self.transaction_view = UFOption::Some(e.clone());
+                    }
                 }
             }
             InsensitiveCommand::RemoveDependency(v, b, e, from_model) => {
-                if *v == *self.uuid && *b == 0 && *from_model
+                if *v == *self.uuid && *b == 0
                     && let Some(tx) = self.transaction_view.as_ref()
                     && *e == *tx.read().uuid {
-                    let model_uuid = tx.read().model_uuid();
+                    let model_uuid = *tx.read().model_uuid();
                     if let Some(_) = self.model.write().remove_element(&model_uuid) {
                         undo_accumulator.push(InsensitiveCommand::AddDependency(
                             *self.uuid,
                             0,
                             Some(0),
                             DemoCsdElementOrVertex::Element(tx.clone().into()),
-                            true,
+                            *from_model,
                         ));
+                        if *from_model {
+                            affected_models.insert(model_uuid);
+                        }
                         self.transaction_view = UFOption::None;
                     }
                 }
             }
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::DeleteSpecificElements(uuids, into_model) => {
-                if *into_model
-                    && let Some(e) = self.transaction_view.as_ref()
+            InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
+                if let Some(e) = self.transaction_view.as_ref()
                     && uuids.contains(&*e.read().uuid) {
                     let model_uuid = e.read().model_uuid();
-                    if let Some(_) = self.model.write().remove_element(&model_uuid) {
+                    if let Some(_) = self.model.write().get_element_pos(&model_uuid) {
                         undo_accumulator.push(InsensitiveCommand::AddDependency(
                             *self.uuid,
                             0,
                             Some(0),
                             DemoCsdElementOrVertex::Element(e.clone().into()),
-                            true,
+                            false,
                         ));
                         self.transaction_view = UFOption::None;
                     }

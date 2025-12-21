@@ -314,8 +314,17 @@ impl ControllerAdapter<UmlClassDomain<UmlClassNullProfile>> for UmlClassControll
     fn controller_type(&self) -> &'static str {
         "umlclass"
     }
+
     fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::umlclass_models::transitive_closure(&self.model.read(), when_deleting)
+    }
+
+    fn insert_element(&mut self, parent: ModelUuid, element: UmlClassElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
+        self.model.write().insert_element_into(parent, element, b, p)
+    }
+
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
+        self.model.write().delete_elements(uuids, undo)
     }
 }
 
@@ -428,6 +437,10 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().name.clone()
+    }
+
+    fn get_element_pos_in(&self, parent: &ModelUuid, model_uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model.read().get_element_pos_in(parent, model_uuid)
     }
 
     fn create_new_view_for(
@@ -1602,6 +1615,9 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         self.model.read().name.clone()
     }
 
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model.read().get_element_pos(uuid)
+    }
     fn insert_element(&mut self, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, ()> {
         self.model.write().insert_element(0, position, element).map_err(|_| ())
     }
@@ -4780,13 +4796,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         |e| {
                             let r = e.read();
                             if uuids.contains(&r.uuid)
-                                && let Some((b, pos)) = self.model.write().remove_element(&r.model_uuid()) {
+                                && let Some((b, pos)) = self.model.write().get_element_pos(&r.model_uuid()) {
                                 undo_accumulator.push(InsensitiveCommand::AddDependency(
                                     *self.uuid,
                                     b,
                                     Some(pos),
                                     UmlClassElementOrVertex::Element(e.clone().into()),
-                                    true,
+                                    false,
                                 ));
                                 removed_any = true;
                                 false
@@ -4799,13 +4815,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         |e| {
                             let r = e.read();
                             if uuids.contains(&r.uuid)
-                                && let Some((b, pos)) = self.model.write().remove_element(&r.model_uuid()){
+                                && let Some((b, pos)) = self.model.write().get_element_pos(&r.model_uuid()){
                                 undo_accumulator.push(InsensitiveCommand::AddDependency(
                                     *self.uuid,
                                     b,
                                     Some(pos),
                                     UmlClassElementOrVertex::Element(e.clone().into()),
-                                    true,
+                                    false,
                                 ));
                                 removed_any = true;
                                 false

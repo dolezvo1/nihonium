@@ -175,8 +175,17 @@ impl ControllerAdapter<RdfDomain> for RdfControllerAdapter {
     fn controller_type(&self) -> &'static str {
         "rdf"
     }
+
     fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::rdf_models::transitive_closure(&self.model.read(), when_deleting)
+    }
+
+    fn insert_element(&mut self, parent: ModelUuid, element: RdfElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
+        self.model.write().insert_element_into(parent, element, b, p)
+    }
+
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, RdfElement, BucketNoT, PositionNoT)>) {
+        self.model.write().delete_elements(uuids, undo)
     }
 }
 
@@ -250,6 +259,10 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().name.clone()
+    }
+
+    fn get_element_pos_in(&self, parent: &ModelUuid, model_uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model.read().get_element_pos_in(parent, model_uuid)
     }
 
     fn create_new_view_for(
@@ -969,6 +982,9 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         self.model.read().iri.clone()
     }
 
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model.read().get_element_pos(uuid)
+    }
     fn insert_element(&mut self, position: Option<PositionNoT>, element: RdfElement) -> Result<PositionNoT, ()> {
         self.model.write().insert_element(0, position, element).map_err(|_| ())
     }

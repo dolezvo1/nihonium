@@ -4,12 +4,12 @@ use super::super::umlclass::{
 };
 use crate::{common::{
     controller::{
-        ControllerAdapter, DiagramController, DiagramControllerGen2, ElementControllerGen2, InsensitiveCommand, MultiDiagramController, ProjectCommand, View
+        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, ElementControllerGen2, InsensitiveCommand, MultiDiagramController, PositionNoT, ProjectCommand, View
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
     uuid::{ControllerUuid, ModelUuid, ViewUuid},
-}, domains::ontouml::ontouml_models};
+}, domains::{ontouml::ontouml_models, umlclass::umlclass_models::UmlClassElement}};
 use eframe::egui;
 use std::{
     collections::HashSet,
@@ -71,8 +71,17 @@ impl ControllerAdapter<UmlClassDomain<OntoUmlProfile>> for OntoUmlControllerAdap
     fn controller_type(&self) -> &'static str {
         "umlclass-ontouml"
     }
+
     fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::super::umlclass::umlclass_models::transitive_closure(&self.model.read(), when_deleting)
+    }
+
+    fn insert_element(&mut self, parent: ModelUuid, element: UmlClassElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
+        self.model.write().insert_element_into(parent, element, b, p)
+    }
+
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
+        self.model.write().delete_elements(uuids, undo)
     }
 }
 

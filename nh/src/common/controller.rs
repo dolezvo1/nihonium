@@ -945,6 +945,9 @@ pub trait ContainerModel: Model {
     fn find_element(&self, _uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
         None
     }
+    fn get_element_pos(&self, _uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        None
+    }
     fn insert_element(&mut self, _bucket: BucketNoT, _position: Option<PositionNoT>, element: Self::ElementT) -> Result<PositionNoT, Self::ElementT> {
         Err(element)
     }
@@ -1122,6 +1125,9 @@ pub trait ControllerAdapter<DomainT: Domain>: serde::Serialize + NHContextSerial
 
     /// Must return all ModelUuids that are to be deleted, including children of deleted containers
     fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid>;
+
+    fn insert_element(&mut self, parent: ModelUuid, e: DomainT::CommonElementT, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()>;
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, DomainT::CommonElementT, BucketNoT, PositionNoT)>);
 }
 
 #[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
@@ -1143,6 +1149,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         ViewUuid,
         InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        Vec<(ModelUuid, DomainT::CommonElementT, BucketNoT, PositionNoT)>,
     )>,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
@@ -1186,30 +1193,31 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
 
         let mut changed = false;
         for mut c in commands {
-            let extra_command = match c {
+            let mut undo_accumulator = Vec::new();
+            let mut models_to_remove = HashSet::new();
+
+            match c {
                 InsensitiveCommand::CutSpecificElements(_)
                 | InsensitiveCommand::DeleteSpecificElements(_, _) => {
                     let into_model = matches!(c, InsensitiveCommand::CutSpecificElements(_)
                                                  | InsensitiveCommand::DeleteSpecificElements(_, true));
                     let (InsensitiveCommand::CutSpecificElements(ref mut uuids)
-                        | InsensitiveCommand::DeleteSpecificElements(ref mut uuids, _)) = c else { unreachable!() };
+                         | InsensitiveCommand::DeleteSpecificElements(ref mut uuids, _)) = c else { unreachable!() };
 
                     let mut original_models = HashSet::new();
                     self.views.draw_order_foreach(|e| e.extend_models_for(&uuids, &mut original_models));
                     let model_uuids = self.adapter.transitive_closure(original_models);
-                    view.write().extend_views_for(&model_uuids, uuids);
-                    if into_model {
-                        let mut residual_views = HashSet::new();
-                        self.views.draw_order_foreach(|e| if *e.uuid() != *view_uuid { e.extend_views_for(&model_uuids, &mut residual_views) });
-                        Some(InsensitiveCommand::DeleteSpecificElements(residual_views, false))
+
+                    if !into_model {
+                        view.write().extend_views_for(&model_uuids, uuids);
                     } else {
-                        None
+                        self.views.draw_order_foreach(|e| e.extend_views_for(&model_uuids, uuids));
+                        models_to_remove = model_uuids;
                     }
                 },
-                _ => None,
+                _ => {},
             };
 
-            let mut undo_accumulator = Vec::new();
             if matches!(c, InsensitiveCommand::HighlightAll(_, _)
                             | InsensitiveCommand::SelectByDrag(_)
                             | InsensitiveCommand::MoveAllElements(_)) {
@@ -1218,11 +1226,12 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 self.views.draw_order_foreach_mut(|e| e.apply_command(&c, &mut undo_accumulator, affected_models));
             }
 
-            if let Some(extra_command) = extra_command {
-                self.views.draw_order_foreach_mut(|e| e.apply_command(&extra_command, &mut undo_accumulator, affected_models));
+            let mut removed_models = Vec::new();
+            if !models_to_remove.is_empty() {
+                self.adapter.delete_elements(&models_to_remove, &mut removed_models);
             }
 
-            if !undo_accumulator.is_empty() {
+            if !undo_accumulator.is_empty() || !removed_models.is_empty() {
                 if !changed {
                     self.redo_stack.clear();
                 }
@@ -1230,13 +1239,14 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                     'outer: {
                         let unmerged = 'unmerged: {
                             let Some(last) = self.undo_stack.last_mut().filter(|e| e.0 == *view_uuid) else {
-                                break 'unmerged (*view_uuid, c, undo_accumulator);
+                                break 'unmerged (*view_uuid, c, undo_accumulator, removed_models);
                             };
                             let Some(merged) = last.1.try_merge(&c) else {
-                                break 'unmerged (*view_uuid, c, undo_accumulator);
+                                break 'unmerged (*view_uuid, c, undo_accumulator, removed_models);
                             };
                             last.1 = merged;
                             last.2.extend(undo_accumulator);
+                            last.3.extend(removed_models);
                             break 'outer;
                         };
 
@@ -1608,9 +1618,12 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         &mut self,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
-        let Some((original_view, original_command, undo_commands)) = self.undo_stack.pop() else {
+        let Some((original_view, original_command, undo_commands, removed_models)) = self.undo_stack.pop() else {
             return;
         };
+        for (parent, e, b, p) in removed_models {
+            let _ = self.adapter.insert_element(parent, e, b, Some(p));
+        }
         let redo_stack = std::mem::take(&mut self.redo_stack);
         self.apply_commands(
             &original_view,
@@ -1651,7 +1664,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
             }
             let _ = ui.add_enabled(false, button);
         } else {
-            for (ii, (_, c, _)) in self.undo_stack.iter().rev().enumerate() {
+            for (ii, (_, c, _, _)) in self.undo_stack.iter().rev().enumerate() {
                 let mut button = egui::Button::new(&*c.info_text());
                 if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
                     button = button.shortcut_text(shortcut_text);
@@ -1723,6 +1736,9 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         uuid: &ViewUuid,
     ) -> ViewUuid {
         let view = self.views.get(uuid).unwrap();
+
+        self.undo_stack.clear();
+
         let new_view = view.read().shallow_copy();
         let new_view_uuid = *new_view.read().uuid();
         self.views.push(new_view_uuid, new_view);
@@ -1743,12 +1759,17 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn find_element(&self, model_uuid: &ModelUuid) -> Option<(DomainT::CommonElementT, ModelUuid)> {
         self.model().read().find_element(model_uuid)
     }
+    fn get_element_pos(&self, model_uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model().read().get_element_pos(model_uuid)
+    }
+    fn get_element_pos_in(&self, parent: &ModelUuid, model_uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)>;
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DomainT::CommonElementT) -> Result<PositionNoT, DomainT::CommonElementT> {
         self.model().write().insert_element(bucket, position, element)
     }
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         self.model().write().remove_element(uuid)
     }
+
     fn create_new_view_for(
         &self,
         q: &DomainT::QueryableT<'_>,
@@ -2124,14 +2145,14 @@ impl<
                     .iter_event_order_pairs()
                     .filter(|e| uuids.contains(&e.0))
                 {
-                    let pos = if !from_model {
-                        None
-                    } else if let Some((_b, pos)) = self.adapter.remove_element(&element.model_uuid()) {
-                        Some(pos)
+                    let (b, pos) = if !from_model {
+                        (0, None)
+                    } else if let Some((b, pos)) = self.adapter.get_element_pos(&element.model_uuid()) {
+                        (b, Some(pos))
                     } else {
                         continue;
                     };
-                    undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid(), 0, pos, element.clone().into(), from_model));
+                    undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid(), b, pos, element.clone().into(), false));
                 }
                 self.owned_views.retain(|k, _v| !uuids.contains(k));
             }
@@ -2846,6 +2867,9 @@ impl<
                                 models_to_create_views_for.push(parent_uuid);
                                 continue;
                             };
+                            let Some((b, pos)) = self.adapter.get_element_pos_in(&parent_uuid, &model_uuid) else {
+                                unreachable!()
+                            };
 
                             let r = {
                                 let q = DomainT::QueryableT::new(&pseudo_frm, &pseudo_fv, &pseudo_fvs);
@@ -2857,7 +2881,7 @@ impl<
                                     pseudo_fv.insert(*new_view.uuid(), new_view.clone());
                                     pseudo_frm.insert(*model.uuid(), *new_view.uuid());
                                     pseudo_fvs.insert(*new_view.uuid(), SelectionStatus::NotSelected);
-                                    cmds.push(InsensitiveCommand::AddDependency(parent_view_uuid, 0, None, new_view.into(), false).into());
+                                    cmds.push(InsensitiveCommand::AddDependency(parent_view_uuid, b, Some(pos), new_view.into(), false).into());
                                     models_to_create_views_for.pop();
                                 },
                                 Err(mut prerequisites) => models_to_create_views_for.extend(prerequisites.drain()),

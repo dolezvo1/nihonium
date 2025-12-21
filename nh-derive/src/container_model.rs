@@ -63,6 +63,10 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
         Ok(e) => quote! { #e.find_element(uuid) },
         Err(e) => quote! { #e => None },
     }).collect::<Vec<_>>();
+    let arms_get_element_pos = arms_immutable.iter().map(|e| match e {
+        Ok(e) => quote! { #e.get_element_pos(uuid) },
+        Err(e) => quote! { #e => None },
+    }).collect::<Vec<_>>();
     let arms_insert_element = arms_mutable.iter().map(|e| match e {
         Ok(e) => quote! { #e.insert_element(bucket, position, element) },
         Err(e) => quote! { #e => Err(element) },
@@ -82,6 +86,12 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
             fn find_element(&self, uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
                 match self {
                     #(#arms_find_element),*
+                }
+            }
+
+            fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(crate::common::controller::BucketNoT, crate::common::controller::PositionNoT)> {
+                match self {
+                    #(#arms_get_element_pos),*
                 }
             }
 

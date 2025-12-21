@@ -368,6 +368,14 @@ impl DemoPsdDiagram {
             comment: Arc::new("".to_owned()),
         }
     }
+
+    pub fn get_element_pos_in(&self, parent: &ModelUuid, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        if *parent == *self.uuid {
+            self.get_element_pos(uuid)
+        } else {
+            self.find_element(parent).and_then(|e| e.0.get_element_pos(uuid))
+        }
+    }
 }
 
 impl Entity for DemoPsdDiagram {
@@ -402,6 +410,14 @@ impl ContainerModel for DemoPsdDiagram {
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
+            }
+        }
+        return None;
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
             }
         }
         return None;
@@ -492,6 +508,14 @@ impl ContainerModel for DemoPsdPackage {
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
+            }
+        }
+        return None;
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
             }
         }
         return None;
@@ -633,6 +657,22 @@ impl ContainerModel for DemoPsdTransaction {
             }
         }
         return None;
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.before.iter().enumerate() {
+            if *e.state.uuid() == *uuid {
+                return Some((if !e.executor {1} else {2}, idx.try_into().unwrap()));
+            }
+        }
+        if let UFOption::Some(e) = &self.p_act && *e.read().uuid == *uuid {
+            return Some((0, 0));
+        }
+        for (idx, e) in self.after.iter().enumerate() {
+            if *e.state.uuid() == *uuid {
+                return Some((if !e.executor {4} else {3}, idx.try_into().unwrap()));
+            }
+        }
+        None
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoPsdElement) -> Result<PositionNoT, DemoPsdElement> {
         if bucket == 0 {

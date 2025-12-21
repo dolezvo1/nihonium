@@ -203,8 +203,68 @@ impl ControllerAdapter<DemoOfdDomain> for DemoOfdControllerAdapter {
     fn controller_type(&self) -> &'static str {
         "demoofd"
     }
+
     fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::demoofd_models::transitive_closure(&self.model.read(), when_deleting)
+    }
+
+    fn insert_element(&mut self, parent: ModelUuid, element: DemoOfdElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
+        let mut w = self.model.write();
+        if *w.uuid == parent {
+            w.insert_element(b, p, element)
+                .map(|_| ())
+                .map_err(|_| ())
+        } else {
+            w.find_element(&parent)
+                .ok_or(())
+                .and_then(|mut e| e.0
+                    .insert_element(b, p, element)
+                    .map(|_| ())
+                    .map_err(|_| ())
+                )
+        }
+    }
+
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, DemoOfdElement, BucketNoT, PositionNoT)>) {
+        fn r(e: &DemoOfdElement, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, DemoOfdElement, BucketNoT, PositionNoT)>) {
+            match e {
+                DemoOfdElement::DemoOfdPackage(inner) => {
+                    let mut w = inner.write();
+                    for (idx, e) in w.contained_elements.iter().enumerate() {
+                        if uuids.contains(&e.uuid()) {
+                            undo.push((*w.uuid, e.clone(), 0, idx.try_into().unwrap()));
+                        } else {
+                            r(e, uuids, undo);
+                        }
+                    }
+                    w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+                },
+                DemoOfdElement::DemoOfdEntityType(_) => {},
+                DemoOfdElement::DemoOfdEventType(inner) => {
+                    let mut w = inner.write();
+                    if let UFOption::Some(e) = &w.specialization_entity_type
+                        && uuids.contains(&e.read().uuid) {
+                        undo.push((*w.uuid, e.clone().into(), 0, 0));
+                        w.specialization_entity_type = UFOption::None;
+                    }
+                },
+                DemoOfdElement::DemoOfdPropertyType(_)
+                | DemoOfdElement::DemoOfdSpecialization(_)
+                | DemoOfdElement::DemoOfdAggregation(_)
+                | DemoOfdElement::DemoOfdPrecedence(_)
+                | DemoOfdElement::DemoOfdExclusion(_) => {},
+            }
+        }
+
+        let mut w = self.model.write();
+        for (idx, e) in w.contained_elements.iter().enumerate() {
+            if uuids.contains(&e.uuid()) {
+                undo.push((*w.uuid, e.clone(), 0, idx.try_into().unwrap()));
+            } else {
+                r(e, uuids, undo);
+            }
+        }
+        w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
     }
 }
 
@@ -299,6 +359,10 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().name.clone()
+    }
+
+    fn get_element_pos_in(&self, parent: &ModelUuid, model_uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model.read().get_element_pos_in(parent, model_uuid)
     }
 
     fn create_new_view_for(
@@ -1353,6 +1417,9 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         self.model.read().name.clone()
     }
 
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model.read().get_element_pos(uuid)
+    }
     fn insert_element(&mut self, position: Option<PositionNoT>, e: DemoOfdElement) -> Result<PositionNoT, ()> {
         self.model.write().insert_element(0, position, e).map_err(|_| ())
     }
@@ -2713,9 +2780,33 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 }
                 recurse!(self);
             }
-            InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
-            InsensitiveCommand::DeleteSpecificElements(uuids, into_model) => {
+            InsensitiveCommand::RemoveDependency(v, b, e, from_model) => {
+                if *v == *self.uuid
+                    && let Some(sv) = self.specialization_view.as_ref() {
+                    let mut w = self.model.write();
+                    let (sv_uuid, sm_uuid) = (*sv.read().uuid, *sv.read().model_uuid());
+
+                    if *e == sv_uuid
+                        && (!*from_model || w.remove_element(&sm_uuid).is_some()) {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency(
+                            *self.uuid,
+                            *b,
+                            Some(0),
+                            DemoOfdElementView::from(sv.clone()).into(),
+                            *from_model,
+                        ));
+
+                        if *from_model {
+                            affected_models.insert(*w.uuid);
+                        }
+
+                        self.specialization_view = UFOption::None;
+                    }
+                }
+                recurse!(self);
+            }
+            InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
                 if let Some(e) = self.specialization_view.as_ref()
                     && uuids.contains(&*e.read().uuid) {
                     undo_accumulator.push(InsensitiveCommand::AddDependency(
@@ -2723,11 +2814,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                         0,
                         None,
                         DemoOfdElementOrVertex::Element(e.clone().into()),
-                        *into_model,
+                        false,
                     ));
-                    if *into_model {
-                        self.model.write().specialization_entity_type = UFOption::None;
-                    }
                     self.specialization_view = UFOption::None;
                 }
                 recurse!(self);

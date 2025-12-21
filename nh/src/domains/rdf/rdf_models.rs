@@ -367,6 +367,60 @@ impl RdfDiagram {
 
         collector.data
     }
+
+    pub fn get_element_pos_in(&self, parent: &ModelUuid, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        if *parent == *self.uuid {
+            self.get_element_pos(uuid)
+        } else {
+            self.find_element(parent).and_then(|e| e.0.get_element_pos(uuid))
+        }
+    }
+
+    pub fn insert_element_into(&mut self, parent: ModelUuid, element: RdfElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
+        if *self.uuid == parent {
+            self.insert_element(b, p, element)
+                .map(|_| ())
+                .map_err(|_| ())
+        } else {
+            self.find_element(&parent)
+                .ok_or(())
+                .and_then(|mut e| e.0
+                    .insert_element(b, p, element)
+                    .map(|_| ())
+                    .map_err(|_| ())
+                )
+        }
+    }
+
+    pub fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, RdfElement, BucketNoT, PositionNoT)>) {
+        fn r(e: &RdfElement, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, RdfElement, BucketNoT, PositionNoT)>) {
+            match e {
+                RdfElement::RdfGraph(inner) => {
+                    let mut w = inner.write();
+                    for (idx, e) in w.contained_elements.iter().enumerate() {
+                        if uuids.contains(&e.uuid()) {
+                            undo.push((*w.uuid, e.clone(), 0, idx.try_into().unwrap()));
+                        } else {
+                            r(e, uuids, undo);
+                        }
+                    }
+                    w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+                },
+                RdfElement::RdfLiteral(_)
+                | RdfElement::RdfNode(_)
+                | RdfElement::RdfPredicate(_) => {},
+            }
+        }
+
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if uuids.contains(&e.uuid()) {
+                undo.push((*self.uuid, e.clone(), 0, idx.try_into().unwrap()));
+            } else {
+                r(e, uuids, undo);
+            }
+        }
+        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+    }
 }
 
 impl Entity for RdfDiagram {
@@ -401,6 +455,14 @@ impl ContainerModel for RdfDiagram {
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
+            }
+        }
+        return None;
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
             }
         }
         return None;
@@ -491,6 +553,14 @@ impl ContainerModel for RdfGraph {
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
+            }
+        }
+        return None;
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
             }
         }
         return None;

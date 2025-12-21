@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use eframe::{egui, epaint};
 
-use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{ColorBundle, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
+use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{BucketNoT, ColorBundle, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
 
 
 pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
@@ -10,6 +10,7 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
 
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)>;
     fn insert_element(&mut self, position: Option<PositionNoT>, element: DomainT::CommonElementT) -> Result<PositionNoT, ()>;
     fn delete_element(&mut self, uuids: &ModelUuid) -> Option<PositionNoT>;
 
@@ -619,20 +620,20 @@ where
                     .iter_event_order_pairs()
                     .filter(|e| uuids.contains(&e.0))
                 {
-                    let pos = if !from_model {
-                        None
-                    } else if let Some(pos) = self.adapter.delete_element(&element.model_uuid()) {
-                        Some(pos)
+                    let (b, pos) = if !from_model {
+                        (0, None)
+                    } else if let Some((b, pos)) = self.adapter.get_element_pos(&element.model_uuid()) {
+                        (b, Some(pos))
                     } else {
                         continue;
                     };
 
                     undo_accumulator.push(InsensitiveCommand::AddDependency(
                         *self.uuid,
-                        0,
+                        b,
                         pos,
                         element.clone().into(),
-                        from_model,
+                        false,
                     ));
                 }
 
@@ -672,7 +673,25 @@ where
 
                 recurse!(self);
             }
-            InsensitiveCommand::RemoveDependency(..) => {
+            InsensitiveCommand::RemoveDependency(target, b, element, into_model) => {
+                if *target == *self.uuid && *b == 0 {
+                    if let Some(view) = self.owned_views.get(element)
+                        && let Some(pos) = self.adapter.delete_element(&view.model_uuid()) {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency(
+                            *self.uuid,
+                            *b,
+                            Some(pos),
+                            view.clone().into(),
+                            *into_model,
+                        ));
+
+                        if *into_model {
+                            affected_models.insert(*self.adapter.model_uuid());
+                        }
+
+                        self.owned_views.retain(|k, _v| *k != *element);
+                    }
+                }
                 recurse!(self);
             }
             InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {

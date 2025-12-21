@@ -295,6 +295,14 @@ impl DemoCsdDiagram {
             comment: Arc::new("".to_owned()),
         }
     }
+
+    pub fn get_element_pos_in(&self, parent: &ModelUuid, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        if *parent == *self.uuid {
+            self.get_element_pos(uuid)
+        } else {
+            self.find_element(parent).and_then(|e| e.0.get_element_pos(uuid))
+        }
+    }
 }
 
 impl Entity for DemoCsdDiagram {
@@ -329,6 +337,14 @@ impl ContainerModel for DemoCsdDiagram {
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
+            }
+        }
+        return None;
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
             }
         }
         return None;
@@ -420,6 +436,14 @@ impl ContainerModel for DemoCsdPackage {
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
+            }
+        }
+        return None;
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
             }
         }
         return None;
@@ -534,6 +558,13 @@ impl ContainerModel for DemoCsdTransactor {
     fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoCsdElement, ModelUuid)> {
         if let UFOption::Some(e) = &self.transaction && *e.read().uuid() == *uuid {
             Some((e.clone().into(), *self.uuid))
+        } else {
+            None
+        }
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        if let UFOption::Some(e) = &self.transaction && *e.read().uuid == *uuid {
+            Some((0, 0))
         } else {
             None
         }

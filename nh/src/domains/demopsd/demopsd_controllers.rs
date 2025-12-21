@@ -246,8 +246,81 @@ impl ControllerAdapter<DemoPsdDomain> for DemoPsdControllerAdapter {
     fn controller_type(&self) -> &'static str {
         "demopsd"
     }
+
     fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::demopsd_models::transitive_closure(&self.model.read(), when_deleting)
+    }
+
+    fn insert_element(&mut self, parent: ModelUuid, element: DemoPsdElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
+        let mut w = self.model.write();
+        if *w.uuid == parent {
+            w.insert_element(b, p, element)
+                .map(|_| ())
+                .map_err(|_| ())
+        } else {
+            w.find_element(&parent)
+                .ok_or(())
+                .and_then(|mut e| e.0
+                    .insert_element(b, p, element)
+                    .map(|_| ())
+                    .map_err(|_| ())
+                )
+        }
+    }
+
+    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, DemoPsdElement, BucketNoT, PositionNoT)>) {
+        fn r(e: &DemoPsdElement, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, DemoPsdElement, BucketNoT, PositionNoT)>) {
+            match e {
+                DemoPsdElement::DemoPsdPackage(inner) => {
+                    let mut w = inner.write();
+                    for (idx, e) in w.contained_elements.iter().enumerate() {
+                        if uuids.contains(&e.uuid()) {
+                            undo.push((*w.uuid, e.clone(), 0, idx.try_into().unwrap()));
+                        } else {
+                            r(e, uuids, undo);
+                        }
+                    }
+                    w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+                },
+                DemoPsdElement::DemoPsdTransaction(inner) => {
+                    let mut w = inner.write();
+                    for (idx, e) in w.before.iter().enumerate() {
+                        if uuids.contains(&e.state.uuid()) {
+                            undo.push((*w.uuid, e.state.clone().to_element(), if !e.executor { 1 } else { 2 }, idx.try_into().unwrap()));
+                        } else {
+                            r(&e.state.clone().to_element(), uuids, undo);
+                        }
+                    }
+                    w.before.retain(|e| !uuids.contains(&e.state.uuid()));
+                    if let UFOption::Some(e) = &w.p_act
+                        && uuids.contains(&e.read().uuid) {
+                        undo.push((*w.uuid, e.clone().into(), 0, 0));
+                        w.p_act = UFOption::None;
+                    }
+                    for (idx, e) in w.after.iter().enumerate() {
+                        if uuids.contains(&e.state.uuid()) {
+                            undo.push((*w.uuid, e.state.clone().to_element(), if !e.executor { 4 } else { 3 }, idx.try_into().unwrap()));
+                        } else {
+                            r(&e.state.clone().to_element(), uuids, undo);
+                        }
+                    }
+                    w.after.retain(|e| !uuids.contains(&e.state.uuid()));
+                },
+                DemoPsdElement::DemoPsdFact(_)
+                | DemoPsdElement::DemoPsdAct(_)
+                | DemoPsdElement::DemoPsdLink(_) => {},
+            }
+        }
+
+        let mut w = self.model.write();
+        for (idx, e) in w.contained_elements.iter().enumerate() {
+            if uuids.contains(&e.uuid()) {
+                undo.push((*w.uuid, e.clone(), 0, idx.try_into().unwrap()));
+            } else {
+                r(e, uuids, undo);
+            }
+        }
+        w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
     }
 }
 
@@ -328,6 +401,10 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
     }
     fn model_name(&self) -> Arc<String> {
         self.model.read().name.clone()
+    }
+
+    fn get_element_pos_in(&self, parent: &ModelUuid, model_uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model.read().get_element_pos_in(parent, model_uuid)
     }
 
     fn create_new_view_for(
@@ -1066,6 +1143,9 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         self.model.read().name.clone()
     }
 
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model.read().get_element_pos(uuid)
+    }
     fn insert_element(&mut self, position: Option<PositionNoT>, e: DemoPsdElement) -> Result<PositionNoT, ()> {
         self.model.write().insert_element(0, position, e).map_err(|_| ())
     }
@@ -2055,9 +2135,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 recurse!(self);
             }
 
-            InsensitiveCommand::DeleteSpecificElements(uuids, from_model) => {
-                if *from_model {
-                    let mut w = self.model.write();
+            InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
+                {
+                    let r = self.model.read();
 
                     if let Some(e) = self.p_act_view.as_ref()
                         && uuids.contains(&e.read().uuid) {
@@ -2066,20 +2146,19 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                             0,
                             None,
                             DemoPsdElementOrVertex::Element(e.clone().into()),
-                            true,
+                            false,
                         ));
-                        w.p_act = UFOption::None;
                         self.p_act_view = UFOption::None;
                     }
 
                     let mut closure = |e: &DemoPsdStateViewInfo| if uuids.contains(&e.view.uuid())
-                        && let Some((b, pos)) = w.remove_element(&e.view.model_uuid()) {
+                        && let Some((b, pos)) = r.get_element_pos(&e.view.model_uuid()) {
                             undo_accumulator.push(InsensitiveCommand::AddDependency(
                                 *self.uuid,
                                 b,
                                 Some(pos),
                                 DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
-                                true,
+                                false,
                             ));
                             false
                         } else { true };
@@ -2091,7 +2170,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
-                if *v == *self.uuid && *into_model {
+                if *v == *self.uuid {
                     let mut w = self.model.write();
                     if *b == 0 {
                         if self.p_act_view.as_ref().is_none()
@@ -2100,16 +2179,18 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                 *v,
                                 *b,
                                 *e.read().uuid,
-                                true,
+                                *into_model,
                             ));
-                            affected_models.insert(*e.read().model_uuid());
-                            w.p_act = UFOption::Some(e.read().model.clone());
+                            if *into_model {
+                                affected_models.insert(*e.read().model_uuid());
+                                w.p_act = UFOption::Some(e.read().model.clone());
+                            }
                             self.p_act_view = UFOption::Some(e.clone());
                         }
-                    } else {
-                        if let DemoPsdElementOrVertex::Element(e) = e
-                            && let Some(e) = e.clone().as_state_view()
-                            && let Ok(pos) = w.insert_element(*b, *pos, e.model()) {
+                    } else if let DemoPsdElementOrVertex::Element(e) = e
+                        && let Some(e) = e.clone().as_state_view() {
+                        if let Some(model_pos) = w.get_element_pos(&e.model_uuid()).map(|e| e.1)
+                            .or_else(|| if *into_model { w.insert_element(*b, *pos, e.model()).ok() } else { None }) {
                             let after = match b {
                                 1 | 2 => false,
                                 3 | 4 => true,
@@ -2125,14 +2206,33 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                 *v,
                                 *b,
                                 *e.uuid(),
-                                true,
+                                *into_model,
                             ));
-                            affected_models.insert(*e.model_uuid());
+                            if *into_model {
+                                affected_models.insert(*e.model_uuid());
+                            }
+
+                            let view_pos = |arr: &Vec<DemoPsdStateViewInfo>| {
+                                let mut view_pos: PositionNoT = 0;
+                                for e in arr {
+                                    let Some((_b, pos)) = w.get_element_pos(&e.view.model_uuid()) else {
+                                        unreachable!()
+                                    };
+                                    if pos < model_pos {
+                                        view_pos += 1;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                view_pos
+                            };
 
                             if !after {
-                                self.before_views.insert(pos.try_into().unwrap(), DemoPsdStateViewInfo { view: e, executor });
+                                let view_pos = view_pos(&self.before_views);
+                                self.before_views.insert(view_pos.try_into().unwrap(), DemoPsdStateViewInfo { view: e, executor });
                             } else {
-                                self.after_views.insert(pos.try_into().unwrap(), DemoPsdStateViewInfo { view: e, executor });
+                                let view_pos = view_pos(&self.after_views);
+                                self.after_views.insert(view_pos.try_into().unwrap(), DemoPsdStateViewInfo { view: e, executor });
                             }
                         }
                     }
@@ -2140,7 +2240,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 recurse!(self);
             }
             InsensitiveCommand::RemoveDependency(v, b, duuid, into_model) => {
-                if *v == *self.uuid && *into_model {
+                if *v == *self.uuid {
                     let mut w = self.model.write();
                     if *b == 0 {
                         if let Some(e) = self.p_act_view.as_ref()
@@ -2150,9 +2250,12 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                 *b,
                                 None,
                                 DemoPsdElementOrVertex::Element(e.clone().into()),
-                                true,
+                                *into_model,
                             ));
-                            w.p_act = UFOption::None;
+                            if *into_model {
+                                w.p_act = UFOption::None;
+                            }
+
                             self.p_act_view = UFOption::None;
                         }
                     } else {
@@ -2163,7 +2266,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                     b,
                                     Some(pos),
                                     DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
-                                    true,
+                                    *into_model,
                                 ));
                                 false
                             } else { true };

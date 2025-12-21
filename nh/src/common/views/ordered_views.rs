@@ -57,6 +57,10 @@ impl<T> OrderedViews<T> where T: View {
         self.draw_order.push(uuid);
     }
 
+    pub fn get(&self, uuid: &ViewUuid) -> Option<&T> {
+        self.views.get(uuid)
+    }
+
     pub fn retain(&mut self, mut f: impl FnMut(&ViewUuid, &T) -> bool) {
         let mut keep = HashSet::new();
         self.views.retain(|k, v| if f(k, v) { keep.insert(*k); true } else { false });

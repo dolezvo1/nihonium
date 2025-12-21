@@ -637,6 +637,84 @@ impl UmlClassDiagram {
 
         collector.plantuml_data
     }
+
+    pub fn get_element_pos_in(&self, parent: &ModelUuid, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        if *parent == *self.uuid {
+            self.get_element_pos(uuid)
+        } else {
+            self.find_element(parent).and_then(|e| e.0.get_element_pos(uuid))
+        }
+    }
+
+    pub fn insert_element_into(&mut self, parent: ModelUuid, element: UmlClassElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
+        if *self.uuid == parent {
+            self.insert_element(b, p, element)
+                .map(|_| ())
+                .map_err(|_| ())
+        } else {
+            self.find_element(&parent)
+                .ok_or(())
+                .and_then(|mut e| e.0
+                    .insert_element(b, p, element)
+                    .map(|_| ())
+                    .map_err(|_| ())
+                )
+        }
+    }
+
+    pub fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
+        fn r(e: &UmlClassElement, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
+            match e {
+                UmlClassElement::UmlClassPackage(inner) => {
+                    let mut w = inner.write();
+                    for (idx, e) in w.contained_elements.iter().enumerate() {
+                        if uuids.contains(&e.uuid()) {
+                            undo.push((*w.uuid, e.clone(), 0, idx.try_into().unwrap()));
+                        } else {
+                            r(e, uuids, undo);
+                        }
+                    }
+                    w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+                },
+                UmlClassElement::UmlClassInstance(_)
+                | UmlClassElement::UmlClassProperty(_)
+                | UmlClassElement::UmlClassOperation(_) => {},
+                UmlClassElement::UmlClass(inner) => {
+                    let mut w = inner.write();
+                    for (idx, e) in w.properties.iter().enumerate() {
+                        if uuids.contains(&e.read().uuid) {
+                            undo.push((*w.uuid, e.clone().into(), 0, idx.try_into().unwrap()));
+                        } else {
+                            r(&e.clone().into(), uuids, undo);
+                        }
+                    }
+                    w.properties.retain(|e| !uuids.contains(&e.read().uuid));
+                    for (idx, e) in w.operations.iter().enumerate() {
+                        if uuids.contains(&e.read().uuid) {
+                            undo.push((*w.uuid, e.clone().into(), 1, idx.try_into().unwrap()));
+                        } else {
+                            r(&e.clone().into(), uuids, undo);
+                        }
+                    }
+                    w.operations.retain(|e| !uuids.contains(&e.read().uuid));
+                }
+                UmlClassElement::UmlClassGeneralization(_)
+                | UmlClassElement::UmlClassDependency(_)
+                | UmlClassElement::UmlClassAssociation(_)
+                | UmlClassElement::UmlClassComment(_)
+                | UmlClassElement::UmlClassCommentLink(_) => {},
+            }
+        }
+
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if uuids.contains(&e.uuid()) {
+                undo.push((*self.uuid, e.clone(), 0, idx.try_into().unwrap()));
+            } else {
+                r(e, uuids, undo);
+            }
+        }
+        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+    }
 }
 
 impl Entity for UmlClassDiagram {
@@ -671,6 +749,14 @@ impl ContainerModel for UmlClassDiagram {
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
+            }
+        }
+        return None;
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
             }
         }
         return None;
@@ -761,6 +847,14 @@ impl ContainerModel for UmlClassPackage {
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
+            }
+        }
+        return None;
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
             }
         }
         return None;
@@ -1171,6 +1265,19 @@ impl ContainerModel for UmlClass {
         for e in &self.operations {
             if *e.read().uuid == *uuid {
                 return Some((e.clone().into(), *self.uuid));
+            }
+        }
+        None
+    }
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.properties.iter().enumerate() {
+            if *e.read().uuid == *uuid {
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        for (idx, e) in self.operations.iter().enumerate() {
+            if *e.read().uuid == *uuid {
+                return Some((1, idx.try_into().unwrap()));
             }
         }
         None
