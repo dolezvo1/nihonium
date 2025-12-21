@@ -1758,6 +1758,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
     }
 
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.set_current_diagrams(self.view_uuids());
         self.adapter.model().read().full_text_search(acc);
     }
 }

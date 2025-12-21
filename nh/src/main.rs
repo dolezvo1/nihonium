@@ -258,7 +258,7 @@ struct NHContext {
 
     search_query: String,
     search_error: String,
-    search_results: Vec<(ViewUuid, ModelUuid)>,
+    search_results: Vec<(ModelUuid, Vec<ViewUuid>)>,
 
     show_close_buttons: bool,
     show_add_buttons: bool,
@@ -954,9 +954,13 @@ impl NHContext {
                     self.search_error.clear();
                     let mut acc = crate::common::search::Searcher::new(r);
 
-                    // TODO: search only unique controllers
+                    let mut searched_controllers = HashSet::new();
                     for e in &self.diagram_controllers {
-                        e.1.1.read().full_text_search(&mut acc);
+                        let r = e.1.1.read();
+                        if !searched_controllers.contains(&*r.uuid()) {
+                            r.full_text_search(&mut acc);
+                            searched_controllers.insert(*r.uuid());
+                        }
                     }
 
                     self.search_results = acc.results();
@@ -968,15 +972,33 @@ impl NHContext {
             ui.colored_label(egui::Color32::RED, &self.search_error);
         }
 
-        for (d, m) in &self.search_results {
-            if ui.label(&*self.drawing_context.model_labels.get(m)).clicked() {
-                self.unprocessed_commands.push(ProjectCommand::OpenAndFocusDiagram(*d, None));
-                self.unprocessed_commands.extend_from_slice(&[
-                    DiagramCommand::HighlightAllElements(false, crate::common::canvas::Highlight::SELECTED),
-                    DiagramCommand::HighlightElement((*m).into(), true, crate::common::canvas::Highlight::SELECTED),
-                    DiagramCommand::PanToElement((*m).into(), true),
-                ].map(|e| SimpleProjectCommand::SpecificDiagramCommand(*d, e).into()));
+        for (m, ds) in &self.search_results {
+            macro_rules! focus_element_in {
+                ($diagram:expr, $element:expr) => {
+                    self.unprocessed_commands.push(ProjectCommand::OpenAndFocusDiagram(*$diagram, None));
+                    self.unprocessed_commands.extend_from_slice(&[
+                        DiagramCommand::HighlightAllElements(false, crate::common::canvas::Highlight::SELECTED),
+                        DiagramCommand::HighlightElement((*$element).into(), true, crate::common::canvas::Highlight::SELECTED),
+                        DiagramCommand::PanToElement((*$element).into(), true),
+                    ].map(|e| SimpleProjectCommand::SpecificDiagramCommand(*$diagram, e).into()));
+                };
             }
+
+            let l = ui.label(&*self.drawing_context.model_labels.get(m));
+            if l.clicked() {
+                if let Some(lfs) = &self.last_focused_diagram && ds.contains(lfs) {
+                    focus_element_in!(lfs, m);
+                } else if let Some(d) = ds.first() {
+                    focus_element_in!(d, m);
+                }
+            }
+            l.context_menu(|ui| {
+                for d in ds {
+                    if ui.label(format!("Jump to in '{}'", self.diagram_controllers.get(d).unwrap().1.read().view_name(d))).clicked() {
+                        focus_element_in!(d, m);
+                    }
+                }
+            });
         }
     }
 
