@@ -1828,13 +1828,13 @@ impl NHApp {
     fn undo_immediate(&mut self) {
         let Some(e) = self.context.last_focused_diagram() else { return };
         self.switch_to_tab(&NHTab::Diagram { uuid: e.1 });
-        e.2.write().undo_immediate(&mut self.context.affected_models);
+        e.2.write().undo_immediate(&mut self.context.unprocessed_commands, &mut self.context.affected_models);
         self.context.set_has_unsaved_changes(true);
     }
     fn redo_immediate(&mut self) {
         let Some(e) = self.context.last_focused_diagram() else { return };
         self.switch_to_tab(&NHTab::Diagram { uuid: e.1 });
-        e.2.write().redo_immediate(&mut self.context.affected_models);
+        e.2.write().redo_immediate(&mut self.context.unprocessed_commands, &mut self.context.affected_models);
         self.context.set_has_unsaved_changes(true);
     }
 

@@ -651,8 +651,16 @@ pub trait DiagramController: Any + NHContextSerialize {
         affected_models: &mut HashSet<ModelUuid>,
     );
 
-    fn undo_immediate(&mut self, affected_models: &mut HashSet<ModelUuid>);
-    fn redo_immediate(&mut self, affected_models: &mut HashSet<ModelUuid>);
+    fn undo_immediate(
+        &mut self,
+        commands: &mut Vec<ProjectCommand>,
+        affected_models: &mut HashSet<ModelUuid>,
+    );
+    fn redo_immediate(
+        &mut self,
+        commands: &mut Vec<ProjectCommand>,
+        affected_models: &mut HashSet<ModelUuid>,
+    );
 
     /// Create new view with new model
     fn deep_copy(&self, uuid: &ViewUuid) -> (ViewUuid, ERef<dyn DiagramController>);
@@ -1616,6 +1624,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
 
     fn undo_immediate(
         &mut self,
+        commands: &mut Vec<ProjectCommand>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         let Some((original_view, original_command, undo_commands, removed_models)) = self.undo_stack.pop() else {
@@ -1636,9 +1645,11 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         );
         self.redo_stack = redo_stack;
         self.redo_stack.push((original_view, original_command));
+        commands.push(ProjectCommand::OpenAndFocusDiagram(original_view, None));
     }
     fn redo_immediate(
         &mut self,
+        commands: &mut Vec<ProjectCommand>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         let Some((original_view, redo_command)) = self.redo_stack.pop() else {
@@ -1647,6 +1658,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         let redo_stack = std::mem::take(&mut self.redo_stack);
         self.apply_commands(&original_view, vec![redo_command.into()], true, affected_models);
         self.redo_stack = redo_stack;
+        commands.push(ProjectCommand::OpenAndFocusDiagram(original_view, None));
     }
 
     fn show_undo_stack(
