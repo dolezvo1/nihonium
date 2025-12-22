@@ -369,13 +369,16 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     fn label_for(&self, e: &DemoCsdElement) -> Arc<String> {
         match e {
             DemoCsdElement::DemoCsdPackage(inner) => {
-                inner.read().name.clone()
+                let r = inner.read();
+                Arc::new(format!("Package ({})", r.name))
             },
             DemoCsdElement::DemoCsdTransactor(inner) => {
-                inner.read().name.clone()
+                let r = inner.read();
+                Arc::new(format!("Transactor {} ({})", r.identifier, r.name))
             },
             DemoCsdElement::DemoCsdTransaction(inner) => {
-                inner.read().name.clone()
+                let r = inner.read();
+                Arc::new(format!("Transaction {} ({})", r.identifier, r.name))
             },
             DemoCsdElement::DemoCsdLink(inner) => {
                 Arc::new(inner.read().link_type.char().to_owned())

@@ -2114,7 +2114,7 @@ impl<
             | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
             InsensitiveCommand::AddDependency(t, b, pos, element, into_model) => {
                 if *t == *self.uuid && *b == 0 {
-                    if let Ok(view) = element.clone().try_into()
+                    if let Ok(mut view) = element.clone().try_into()
                         && (!*into_model || self.adapter.insert_element(*b, *pos, view.model()).is_ok()){
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::RemoveDependency(
@@ -2123,6 +2123,14 @@ impl<
                             uuid,
                             *into_model,
                         ));
+
+                        if *into_model {
+                            affected_models.insert(*self.adapter.model_uuid());
+                        }
+                        let mut model_transitives = HashMap::new();
+                        view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                        affected_models.extend(model_transitives.into_keys());
+
                         self.owned_views.push(uuid, view);
                     }
                 }

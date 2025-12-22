@@ -455,17 +455,17 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
     }
     fn label_for(&self, e: &DemoOfdElement) -> Arc<String> {
         match e {
-            DemoOfdElement::DemoOfdPackage(_inner) => {
-                Arc::new("Package".to_owned())
+            DemoOfdElement::DemoOfdPackage(inner) => {
+                Arc::new(format!("Package ({})", inner.read().name))
             }
             DemoOfdElement::DemoOfdEntityType(inner) => {
-                inner.read().name.clone()
+                Arc::new(format!("Entity ({})", inner.read().name))
             },
             DemoOfdElement::DemoOfdEventType(inner) => {
-                inner.read().name.clone()
+                Arc::new(format!("Event ({})", inner.read().name))
             },
-            DemoOfdElement::DemoOfdPropertyType(_inner) => {
-                Arc::new("Property".to_owned())
+            DemoOfdElement::DemoOfdPropertyType(inner) => {
+                Arc::new(format!("Property ({})", inner.read().name))
             },
             DemoOfdElement::DemoOfdSpecialization(_inner) => {
                 Arc::new("Specialization".to_owned())
