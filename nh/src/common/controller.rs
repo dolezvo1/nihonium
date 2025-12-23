@@ -1627,6 +1627,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         commands: &mut Vec<ProjectCommand>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
+        self.cancel_tool();
         let Some((original_view, original_command, undo_commands, removed_models)) = self.undo_stack.pop() else {
             return;
         };
@@ -1652,6 +1653,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         commands: &mut Vec<ProjectCommand>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
+        self.cancel_tool();
         let Some((original_view, redo_command)) = self.redo_stack.pop() else {
             return;
         };
