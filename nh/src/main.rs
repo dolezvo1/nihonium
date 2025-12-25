@@ -2098,12 +2098,13 @@ impl eframe::App for NHApp {
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             // Check diagram-handled shortcuts
             let interact_pos = ui.ctx().pointer_interact_pos();
+            let input_blocked = self.context.confirm_modal_reason.is_some() || self.context.custom_modal.is_some();
             ui.input(|is|
                 'outer: for e in is.events.iter() {
                     match e {
-                        egui::Event::Cut => send_to_focused_diagram!(DiagramCommand::CutSelectedElements),
-                        egui::Event::Copy => send_to_focused_diagram!(DiagramCommand::CopySelectedElements),
-                        egui::Event::Paste(_a) => send_to_focused_diagram!(DiagramCommand::PasteClipboardElements),
+                        egui::Event::Cut if !input_blocked => send_to_focused_diagram!(DiagramCommand::CutSelectedElements),
+                        egui::Event::Copy if !input_blocked => send_to_focused_diagram!(DiagramCommand::CopySelectedElements),
+                        egui::Event::Paste(_a) if !input_blocked => send_to_focused_diagram!(DiagramCommand::PasteClipboardElements),
                         egui::Event::Key { key, pressed, modifiers, .. } => {
                             if !pressed {continue;}
 
@@ -2126,6 +2127,8 @@ impl eframe::App for NHApp {
                                     }
                                 }
                             }
+
+                            if input_blocked {continue;}
 
                             'inner: for ksh in &self.context.shortcut_top_order {
                                 if !(modifiers.matches_logically(ksh.1.modifiers) && *key == ksh.1.logical_key) {
@@ -2155,7 +2158,7 @@ impl eframe::App for NHApp {
                             }
                         }
                         egui::Event::MouseWheel { unit, delta, modifiers }
-                            if modifiers.matches_logically(egui::Modifiers::COMMAND) => {
+                            if !input_blocked && modifiers.matches_logically(egui::Modifiers::COMMAND) => {
                             if let Some(pos) = &interact_pos
                                 && let Some(t) = self.tree.find_tab(&NHTab::Toolbar)
                                 && let Some(ln) = self.tree[t.0][t.1].get_leaf()
