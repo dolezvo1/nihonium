@@ -10,8 +10,8 @@ use crate::common::uuid::ControllerUuid;
 use crate::egui;
 use serde::{Deserialize, Serialize};
 
-use crate::common::controller::{ColorBundle, DiagramView, HierarchyNode};
-use crate::DDes;
+use crate::common::controller::{ColorBundle, HierarchyNode};
+use crate::CDes;
 
 use super::entity::EntityUuid;
 use super::eref::ERef;
@@ -235,7 +235,7 @@ impl NHProjectSerialization {
         new_diagram_no_counter: usize,
         hierarchy: &Vec<HierarchyNode>,
         global_colors: &ColorBundle,
-        diagram_controllers: &HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
+        diagram_controllers: &HashMap<ViewUuid, ERef<dyn DiagramController>>,
         documents: &HashMap<ViewUuid, (String, String)>,
     ) -> Result<(), NHSerializeError> {
         fn h(e: &HierarchyNode, d: &HashMap<ViewUuid, (String, String)>) -> NHProjectHierarchyNodeSerialization {
@@ -246,7 +246,7 @@ impl NHProjectSerialization {
                         name: (**name).clone(),
                         hierarchy: children.iter().map(|e| h(e, d)).collect(),
                     },
-                HierarchyNode::Diagram(inner) => NHProjectHierarchyNodeSerialization::Diagram { uuid: *inner.read().uuid() },
+                HierarchyNode::Diagram(uuid, _c) => NHProjectHierarchyNodeSerialization::Diagram { uuid: *uuid },
                 HierarchyNode::Document(uuid) => {
                     NHProjectHierarchyNodeSerialization::Document { uuid: *uuid, name: d.get(uuid).unwrap().0.clone() }
                 }
@@ -256,7 +256,7 @@ impl NHProjectSerialization {
         let mut serializer = NHSerializer::new();
         let mut unique_diagram_controllers = HashMap::new();
         for e in diagram_controllers.iter() {
-            let r = e.1.1.read();
+            let r = e.1.read();
             r.serialize_into(&mut serializer)?;
             unique_diagram_controllers.insert(*r.uuid(), r.controller_type().to_owned());
         }
@@ -307,10 +307,10 @@ impl NHProjectSerialization {
     pub fn deserialize_all(
         &self,
         ra: &mut dyn FSReadAbstraction,
-        diagram_deserializers: &HashMap<String, (usize, &'static DDes)>,
+        diagram_deserializers: &HashMap<String, &'static CDes>,
     ) -> Result<(
             Vec<HierarchyNode>,
-            HashMap<ViewUuid, (usize, ERef<dyn DiagramController>)>,
+            HashMap<ViewUuid, ERef<dyn DiagramController>>,
             HashMap<ViewUuid, (String, String)>,
         ),
         NHDeserializeError
@@ -345,35 +345,33 @@ impl NHProjectSerialization {
 
         // Instantiate all entities
         let mut top_level_controllers = HashMap::new();
-        let mut top_level_views = HashMap::new();
         for e in &self.controllers {
-            let (type_no, dd) = diagram_deserializers.get(&e.controller_type)
+            let dd = diagram_deserializers.get(&e.controller_type)
                 .ok_or_else(|| format!("deserializer for type '{}' not found", e.controller_type))?;
             let controller = dd(e.uuid, &mut deserializer)?;
             let r = controller.read();
             for e in r.view_uuids() {
-                top_level_controllers.insert(e, (*type_no, controller.clone()));
-                top_level_views.insert(e, r.get(&e).unwrap());
+                top_level_controllers.insert(e, controller.clone());
             }
         }
 
         fn h(
             e: &NHProjectHierarchyNodeSerialization,
             d: &mut NHDeserializer,
-            views: &HashMap<ViewUuid, ERef<dyn DiagramView>>,
+            tlc: &HashMap<ViewUuid, ERef<dyn DiagramController + 'static>>,
             docs: &mut HashMap<ViewUuid, (String, String)>,
-            dds: &HashMap<String, (usize, &'static DDes)>,
+            cds: &HashMap<String, &'static CDes>,
         ) -> Result<HierarchyNode, NHDeserializeError> {
             match e {
                 NHProjectHierarchyNodeSerialization::Folder { uuid, name, hierarchy }
                 => Ok(HierarchyNode::Folder(
                         *uuid, Arc::new((*name).clone()),
-                        hierarchy.iter().map(|e| h(e, d, views, docs, dds)).collect::<Result<Vec<_>, NHDeserializeError>>()?,
+                        hierarchy.iter().map(|e| h(e, d, tlc, docs, cds)).collect::<Result<Vec<_>, NHDeserializeError>>()?,
                     )),
                 NHProjectHierarchyNodeSerialization::Diagram { uuid }
                 => {
-                    let view = views.get(uuid).ok_or_else(|| format!("view '{:?}' not found", uuid))?;
-                    Ok(HierarchyNode::Diagram(view.clone()))
+                    let c = tlc.get(uuid).ok_or_else(|| format!("controller for '{:?}' not found", uuid))?;
+                    Ok(HierarchyNode::Diagram(*uuid, c.clone()))
                 }
                 NHProjectHierarchyNodeSerialization::Document { uuid, name }
                 => {
@@ -390,7 +388,7 @@ impl NHProjectSerialization {
         let mut documents = HashMap::new();
 
         for e in &self.hierarchy {
-            hierarchy.push(h(e, &mut deserializer, &top_level_views, &mut documents, diagram_deserializers)?);
+            hierarchy.push(h(e, &mut deserializer, &top_level_controllers, &mut documents, diagram_deserializers)?);
         }
 
         Ok((hierarchy, top_level_controllers, documents))

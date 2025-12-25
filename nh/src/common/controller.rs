@@ -113,8 +113,7 @@ pub enum ProjectCommand {
     OpenAndFocusDiagram(ViewUuid, Option<egui::Pos2>),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetNewDiagramNumber(u32),
-    AddNewDiagram(usize, (ViewUuid, ERef<dyn DiagramController>)),
-    CopyDiagram(ViewUuid, /*deep:*/ bool),
+    AddNewDiagram(/*parent:*/ViewUuid, ViewUuid, ERef<dyn DiagramController>),
     DeleteDiagram(ViewUuid),
 
     AddNewDocument(ViewUuid, String),
@@ -178,7 +177,7 @@ pub enum Arrangement {
 
 pub enum HierarchyNode {
     Folder(ViewUuid, /*name:*/ Arc<String>, /*children:*/ Vec<HierarchyNode>),
-    Diagram(ERef<dyn DiagramView>),
+    Diagram(ViewUuid, ERef<dyn DiagramController>),
     Document(ViewUuid),
 }
 
@@ -186,7 +185,7 @@ impl HierarchyNode {
     pub fn uuid(&self) -> ViewUuid {
         match self {
             Self::Folder(uuid, ..) => *uuid,
-            Self::Diagram(inner) => *inner.read().uuid(),
+            Self::Diagram(uuid, ..) => *uuid,
             Self::Document(uuid) => *uuid,
         }
     }
@@ -542,6 +541,7 @@ pub trait DiagramController: Any + NHContextSerialize {
     fn controller_type(&self) -> &'static str;
     fn view_uuids(&self) -> Vec<ViewUuid>;
     fn view_name(&self, uuid: &ViewUuid) -> Arc<String>;
+    fn set_view_name(&self, uuid: &ViewUuid, new_name: Arc<String>);
 
     fn get(&self, uuid: &ViewUuid) -> Option<ERef<dyn DiagramView>>;
     fn refresh_all_buffers(
@@ -662,10 +662,12 @@ pub trait DiagramController: Any + NHContextSerialize {
         affected_models: &mut HashSet<ModelUuid>,
     );
 
-    /// Create new view with new model
-    fn deep_copy(&self, uuid: &ViewUuid) -> (ViewUuid, ERef<dyn DiagramController>);
-    /// Create new view with the same model
-    fn shallow_copy(&mut self, uuid: &ViewUuid) -> ViewUuid;
+    fn show_duplication_menu(
+        &mut self,
+        gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+        uuid: &ViewUuid,
+    ) -> Option<(ViewUuid, Option<ERef<dyn DiagramController>>)>;
 
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher);
 }
@@ -1303,6 +1305,13 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         self.views.get(uuid).map(|e| e.read().view_name()).unwrap()
     }
 
+    fn set_view_name(&self, uuid: &ViewUuid, new_name: Arc<String>) {
+        let Some(view) = self.views.get(uuid).cloned() else {
+            return;
+        };
+        view.write().set_view_name(new_name);
+    }
+
     fn show_model_hierarchy(
         &mut self,
         uuid: &ViewUuid,
@@ -1730,38 +1739,43 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         }
     }
 
-    fn deep_copy(
-        &self,
-        uuid: &ViewUuid,
-    ) -> (ViewUuid, ERef<dyn DiagramController>) {
-        let view = self.views.get(uuid).unwrap();
-        let new_view = view.read().deep_copy();
-        let new_view_uuid = *new_view.read().uuid();
-        let new_view_model = new_view.read().model();
-        (
-            new_view_uuid,
-            ERef::new(
-                Self::new(
-                    ControllerUuid::now_v7().into(),
-                    self.adapter.clone_with_model(new_view_model),
-                    vec![new_view],
-                )
-            ),
-        )
-    }
-
-    fn shallow_copy(
+    fn show_duplication_menu(
         &mut self,
+        gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
         uuid: &ViewUuid,
-    ) -> ViewUuid {
-        let view = self.views.get(uuid).unwrap();
+    ) -> Option<(ViewUuid, Option<ERef<dyn DiagramController>>)> {
+        if ui.button(gdc.translate_0("nh-tab-projecthierarchy-duplicate")).clicked() {
+            let view = self.views.get(uuid).unwrap();
+            let new_view = view.read().deep_copy();
+            let new_view_uuid = *new_view.read().uuid();
+            let new_view_model = new_view.read().model();
+            return Some((
+                new_view_uuid,
+                Some(ERef::new(
+                    Self::new(
+                        ControllerUuid::now_v7().into(),
+                        self.adapter.clone_with_model(new_view_model),
+                        vec![new_view],
+                    )
+                )),
+            ));
+        }
+        if ui.button(gdc.translate_0("nh-tab-projecthierarchy-duplicateshallow")).clicked() {
+            let view = self.views.get(uuid).unwrap();
 
-        self.undo_stack.clear();
+            // TODO: make undoable
+            self.undo_stack.clear();
 
-        let new_view = view.read().shallow_copy();
-        let new_view_uuid = *new_view.read().uuid();
-        self.views.push(new_view_uuid, new_view);
-        new_view_uuid
+            let new_view = view.read().shallow_copy();
+            let new_view_uuid = *new_view.read().uuid();
+            self.views.push(new_view_uuid, new_view);
+            return Some((new_view_uuid, None));
+        }
+
+        // TODO: allow creation of new diagram with shared model
+
+        None
     }
 
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
