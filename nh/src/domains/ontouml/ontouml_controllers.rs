@@ -4,7 +4,7 @@ use super::super::umlclass::{
 };
 use crate::{common::{
     controller::{
-        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, ElementControllerGen2, InsensitiveCommand, MultiDiagramController, PositionNoT, ProjectCommand, View
+        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MultiDiagramController, PositionNoT, ProjectCommand, View
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
@@ -62,6 +62,8 @@ pub struct OntoUmlControllerAdapter {
 }
 
 impl ControllerAdapter<UmlClassDomain<OntoUmlProfile>> for OntoUmlControllerAdapter {
+    type DiagramViewT = DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>;
+
     fn model(&self) -> ERef<UmlClassDiagram> {
         self.model.clone()
     }
@@ -82,6 +84,18 @@ impl ControllerAdapter<UmlClassDomain<OntoUmlProfile>> for OntoUmlControllerAdap
 
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
         self.model.write().delete_elements(uuids, undo)
+    }
+
+    fn show_add_shared_diagram_menu(&self, _gdc: &GlobalDrawingContext, ui: &mut egui::Ui) -> Option<ERef<Self::DiagramViewT>> {
+        if ui.button("OntoUML Diagram").clicked() {
+            return Some(Self::DiagramViewT::new(
+                ViewUuid::now_v7().into(),
+                "New Shared OntoUML Diagram".to_owned().into(),
+                UmlClassDiagramAdapter::new(self.model.clone()),
+                vec![],
+            ));
+        }
+        None
     }
 }
 

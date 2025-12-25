@@ -165,6 +165,8 @@ pub struct DemoCsdControllerAdapter {
 }
 
 impl ControllerAdapter<DemoCsdDomain> for DemoCsdControllerAdapter {
+    type DiagramViewT = DiagramControllerGen2<DemoCsdDomain, DemoCsdDiagramAdapter>;
+
     fn model(&self) -> ERef<DemoCsdDiagram> {
         self.model.clone()
     }
@@ -232,6 +234,18 @@ impl ControllerAdapter<DemoCsdDomain> for DemoCsdControllerAdapter {
             }
         }
         w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+    }
+
+    fn show_add_shared_diagram_menu(&self, _gdc: &GlobalDrawingContext, ui: &mut egui::Ui) -> Option<ERef<Self::DiagramViewT>> {
+        if ui.button("DEMO CSD Diagram").clicked() {
+            return Some(Self::DiagramViewT::new(
+                ViewUuid::now_v7().into(),
+                "New Shared DEMO CSD Diagram".to_owned().into(),
+                DemoCsdDiagramAdapter::new(self.model.clone()),
+                vec![],
+            ));
+        }
+        None
     }
 }
 

@@ -73,7 +73,8 @@ nh-tab-projecthierarchy-open = Open
 nh-tab-projecthierarchy-rename = Rename
 nh-tab-projecthierarchy-delete = Delete
 nh-tab-projecthierarchy-duplicate = Duplicate
-nh-tab-projecthierarchy-duplicateshallow = Duplicate (shallow)
+nh-tab-projecthierarchy-duplicateshared = Duplicate with shared model
+nh-tab-projecthierarchy-addnewshareddiagram = Add new diagram with shared model
 
 nh-tab-modelhierarchy = Model Hierarchy
 nh-tab-modelhierarchy-jumpto = Jump to element

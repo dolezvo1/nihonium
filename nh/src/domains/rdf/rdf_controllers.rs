@@ -166,6 +166,8 @@ pub struct RdfControllerAdapter {
 }
 
 impl ControllerAdapter<RdfDomain> for RdfControllerAdapter {
+    type DiagramViewT = DiagramControllerGen2<RdfDomain, RdfDiagramAdapter>;
+
     fn model(&self) -> ERef<RdfDiagram> {
         self.model.clone()
     }
@@ -186,6 +188,18 @@ impl ControllerAdapter<RdfDomain> for RdfControllerAdapter {
 
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, RdfElement, BucketNoT, PositionNoT)>) {
         self.model.write().delete_elements(uuids, undo)
+    }
+
+    fn show_add_shared_diagram_menu(&self, _gdc: &GlobalDrawingContext, ui: &mut egui::Ui) -> Option<ERef<Self::DiagramViewT>> {
+        if ui.button("RDF Diagram").clicked() {
+            return Some(Self::DiagramViewT::new(
+                ViewUuid::now_v7().into(),
+                "New RDF Diagram".to_owned().into(),
+                RdfDiagramAdapter::new(self.model.clone()),
+                vec![],
+            ));
+        }
+        None
     }
 }
 

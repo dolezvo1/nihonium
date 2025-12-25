@@ -305,6 +305,8 @@ pub struct UmlClassControllerAdapter {
 }
 
 impl ControllerAdapter<UmlClassDomain<UmlClassNullProfile>> for UmlClassControllerAdapter {
+    type DiagramViewT = DiagramControllerGen2<UmlClassDomain<UmlClassNullProfile>, UmlClassDiagramAdapter<UmlClassNullProfile>>;
+
     fn model(&self) -> ERef<UmlClassDiagram> {
         self.model.clone()
     }
@@ -325,6 +327,18 @@ impl ControllerAdapter<UmlClassDomain<UmlClassNullProfile>> for UmlClassControll
 
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
         self.model.write().delete_elements(uuids, undo)
+    }
+
+    fn show_add_shared_diagram_menu(&self, _gdc: &GlobalDrawingContext, ui: &mut egui::Ui) -> Option<ERef<Self::DiagramViewT>> {
+        if ui.button("UML Class Diagram").clicked() {
+            return Some(Self::DiagramViewT::new(
+                ViewUuid::now_v7().into(),
+                "New Shared UML Class Diagram".to_owned().into(),
+                UmlClassDiagramAdapter::new(self.model.clone()),
+                vec![],
+            ));
+        }
+        None
     }
 }
 

@@ -194,6 +194,8 @@ pub struct DemoOfdControllerAdapter {
 }
 
 impl ControllerAdapter<DemoOfdDomain> for DemoOfdControllerAdapter {
+    type DiagramViewT = DiagramControllerGen2<DemoOfdDomain, DemoOfdDiagramAdapter>;
+
     fn model(&self) -> ERef<DemoOfdDiagram> {
         self.model.clone()
     }
@@ -265,6 +267,18 @@ impl ControllerAdapter<DemoOfdDomain> for DemoOfdControllerAdapter {
             }
         }
         w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+    }
+
+    fn show_add_shared_diagram_menu(&self, _gdc: &GlobalDrawingContext, ui: &mut egui::Ui) -> Option<ERef<Self::DiagramViewT>> {
+        if ui.button("DEMO OFD Diagram").clicked() {
+            return Some(Self::DiagramViewT::new(
+                ViewUuid::now_v7().into(),
+                "New Shared DEMO OFD Diagram".to_owned().into(),
+                DemoOfdDiagramAdapter::new(self.model.clone()),
+                vec![],
+            ));
+        }
+        None
     }
 }
 

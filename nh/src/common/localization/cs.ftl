@@ -73,7 +73,8 @@ nh-tab-projecthierarchy-open = Otevřít
 nh-tab-projecthierarchy-rename = Přejmenovat
 nh-tab-projecthierarchy-delete = Odstranit
 nh-tab-projecthierarchy-duplicate = Duplikovat
-nh-tab-projecthierarchy-duplicateshallow = Duplikovat (mělce)
+nh-tab-projecthierarchy-duplicateshared = Duplikovat se sdíleným modelem
+nh-tab-projecthierarchy-addnewshareddiagram = Přidat nový diagram se sdíleným modelem
 
 nh-tab-modelhierarchy = Hierarchie Modelu
 nh-tab-modelhierarchy-jumpto = Skočit k prvku

@@ -237,6 +237,8 @@ pub struct DemoPsdControllerAdapter {
 }
 
 impl ControllerAdapter<DemoPsdDomain> for DemoPsdControllerAdapter {
+    type DiagramViewT = DiagramControllerGen2<DemoPsdDomain, DemoPsdDiagramAdapter>;
+
     fn model(&self) -> ERef<DemoPsdDiagram> {
         self.model.clone()
     }
@@ -321,6 +323,18 @@ impl ControllerAdapter<DemoPsdDomain> for DemoPsdControllerAdapter {
             }
         }
         w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+    }
+
+    fn show_add_shared_diagram_menu(&self, _gdc: &GlobalDrawingContext, ui: &mut egui::Ui) -> Option<ERef<Self::DiagramViewT>> {
+        if ui.button("DEMO PSD Diagram").clicked() {
+            return Some(Self::DiagramViewT::new(
+                ViewUuid::now_v7().into(),
+                "New Shared DEMO PSD Diagram".to_owned().into(),
+                DemoPsdDiagramAdapter::new(self.model.clone()),
+                vec![],
+            ));
+        }
+        None
     }
 }
 

@@ -1134,6 +1134,8 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
 
 
 pub trait ControllerAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + 'static {
+    type DiagramViewT;
+
     fn model(&self) -> ERef<DomainT::DiagramModelT>;
     fn clone_with_model(&self, new_model: ERef<DomainT::DiagramModelT>) -> Self;
     fn controller_type(&self) -> &'static str;
@@ -1143,11 +1145,13 @@ pub trait ControllerAdapter<DomainT: Domain>: serde::Serialize + NHContextSerial
 
     fn insert_element(&mut self, parent: ModelUuid, e: DomainT::CommonElementT, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()>;
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, DomainT::CommonElementT, BucketNoT, PositionNoT)>);
+
+    fn show_add_shared_diagram_menu(&self, gdc: &GlobalDrawingContext, ui: &mut egui::Ui) -> Option<ERef<Self::DiagramViewT>>;
 }
 
 #[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity, is_subset_with = Self::depends_on)]
-pub struct MultiDiagramController<DomainT: Domain, AdapterT: ControllerAdapter<DomainT>, DiagramViewT>
+pub struct MultiDiagramController<DomainT: Domain, AdapterT: ControllerAdapter<DomainT, DiagramViewT = DiagramViewT>, DiagramViewT>
 where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
 {
     uuid: Arc<ControllerUuid>,
@@ -1175,7 +1179,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
     tree_view_state: egui_ltreeview::TreeViewState<ModelUuid>,
 }
 
-impl<DomainT: Domain, AdapterT: ControllerAdapter<DomainT>, DiagramViewT> MultiDiagramController<DomainT, AdapterT, DiagramViewT>
+impl<DomainT: Domain, AdapterT: ControllerAdapter<DomainT, DiagramViewT = DiagramViewT>, DiagramViewT> MultiDiagramController<DomainT, AdapterT, DiagramViewT>
 where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
 {
     pub fn new(
@@ -1274,7 +1278,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
     }
 }
 
-impl<DomainT: Domain, AdapterT: ControllerAdapter<DomainT>, DiagramViewT> Entity for MultiDiagramController<DomainT, AdapterT, DiagramViewT>
+impl<DomainT: Domain, AdapterT: ControllerAdapter<DomainT, DiagramViewT = DiagramViewT>, DiagramViewT> Entity for MultiDiagramController<DomainT, AdapterT, DiagramViewT>
 where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
 {
     fn tagged_uuid(&self) -> EntityUuid {
@@ -1282,7 +1286,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
     }
 }
 
-impl<DomainT: Domain, AdapterT: ControllerAdapter<DomainT>, DiagramViewT> DiagramController for MultiDiagramController<DomainT, AdapterT, DiagramViewT>
+impl<DomainT: Domain, AdapterT: ControllerAdapter<DomainT, DiagramViewT = DiagramViewT>, DiagramViewT> DiagramController for MultiDiagramController<DomainT, AdapterT, DiagramViewT>
 where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeserialize + 'static
 {
     fn uuid(&self) -> Arc<ControllerUuid> {
@@ -1761,7 +1765,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 )),
             ));
         }
-        if ui.button(gdc.translate_0("nh-tab-projecthierarchy-duplicateshallow")).clicked() {
+        if ui.button(gdc.translate_0("nh-tab-projecthierarchy-duplicateshared")).clicked() {
             let view = self.views.get(uuid).unwrap();
 
             // TODO: make undoable
@@ -1773,7 +1777,16 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
             return Some((new_view_uuid, None));
         }
 
-        // TODO: allow creation of new diagram with shared model
+        let response = ui.menu_button(gdc.translate_0("nh-tab-projecthierarchy-addnewshareddiagram"), |ui| {
+            ui.set_min_width(crate::MIN_MENU_WIDTH);
+
+            self.adapter.show_add_shared_diagram_menu(gdc, ui)
+        });
+        if let Some(new_diagram) = response.inner.flatten() {
+            let new_uuid = *new_diagram.read().uuid();
+            self.views.push(new_uuid, new_diagram);
+            return Some((new_uuid, None));
+        }
 
         None
     }
