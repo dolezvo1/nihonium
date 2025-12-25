@@ -850,29 +850,34 @@ impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug>
     InsensitiveCommand<AddElementT, PropChangeT>
 {
     fn info_text(&self) -> Arc<String> {
+        macro_rules! suffix {
+            ($container:expr) => {
+                if $container.len() == 1 { "" } else { "s" }
+            }
+        }
         match self {
             InsensitiveCommand::HighlightAll(..) | InsensitiveCommand::HighlightSpecific(..) | InsensitiveCommand::SelectByDrag(..) => {
                 Arc::new("Sorry, your undo stack is broken now :/".to_owned())
             }
-            InsensitiveCommand::DeleteSpecificElements(uuids, false) => Arc::new(format!("Delete {} elements from view", uuids.len())),
-            InsensitiveCommand::DeleteSpecificElements(uuids, true) => Arc::new(format!("Delete {} elements", uuids.len())),
+            InsensitiveCommand::DeleteSpecificElements(uuids, b) =>
+                Arc::new(format!("Delete {} element{}{}", uuids.len(), suffix!(uuids), if !b { " from view" } else { "" })),
             InsensitiveCommand::MoveSpecificElements(uuids, _delta) => {
-                Arc::new(format!("Move {} elements", uuids.len()))
+                Arc::new(format!("Move {} element{}", uuids.len(), suffix!(uuids)))
             }
             InsensitiveCommand::MoveAllElements(_delta) => {
                 Arc::new(format!("Move all elements"))
             }
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, _, _)
             | InsensitiveCommand::ResizeSpecificElementsTo(uuids, _, _) => {
-                Arc::new(format!("Resize {} elements", uuids.len()))
+                Arc::new(format!("Resize {} element{}", uuids.len(), suffix!(uuids)))
             }
-            InsensitiveCommand::CutSpecificElements(uuids) => Arc::new(format!("Cut {} elements", uuids.len())),
-            InsensitiveCommand::PasteSpecificElements(_, uuids) => Arc::new(format!("Paste {} elements", uuids.len())),
-            InsensitiveCommand::ArrangeSpecificElements(uuids, _) => Arc::new(format!("Arranged {} elements", uuids.len())),
-            InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..) => Arc::new(format!("Modify 1 element")),
+            InsensitiveCommand::CutSpecificElements(uuids) => Arc::new(format!("Cut {} element{}", uuids.len(), suffix!(uuids))),
+            InsensitiveCommand::PasteSpecificElements(_, elements) => Arc::new(format!("Paste {} element{}", elements.len(), suffix!(elements))),
+            InsensitiveCommand::ArrangeSpecificElements(uuids, _) => Arc::new(format!("Arranged {} element{}", uuids.len(), suffix!(uuids))),
+            InsensitiveCommand::AddDependency(.., b) => Arc::new(format!("Add 1 element{}", if !b { " into view" } else { "" })),
+            InsensitiveCommand::RemoveDependency(.., b) => Arc::new(format!("Remove 1 element{}", if !b { " from view" } else { "" })),
             InsensitiveCommand::PropertyChange(uuids, ..) => {
-                Arc::new(format!("Modify {} elements", uuids.len()))
+                Arc::new(format!("Modify {} element{}", uuids.len(), suffix!(uuids)))
             }
         }
     }
