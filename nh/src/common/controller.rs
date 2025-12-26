@@ -2213,13 +2213,19 @@ impl<
             }
             InsensitiveCommand::PasteSpecificElements(_, elements) => {
                 for element in elements {
-                    if let Ok(view) = element.clone().try_into()
+                    if let Ok(mut view) = element.clone().try_into()
                         && let Ok(_) = self.adapter.insert_element(0, None, view.model()) {
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                             std::iter::once(uuid).collect(),
                             true,
                         ));
+
+                        affected_models.insert(*self.adapter.model_uuid());
+                        let mut model_transitives = HashMap::new();
+                        view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                        affected_models.extend(model_transitives.into_keys());
+
                         self.owned_views.push(uuid, view);
                     }
                 }
