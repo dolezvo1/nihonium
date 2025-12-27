@@ -1466,7 +1466,7 @@ fn validate_undef(
 mod test {
     use uuid::uuid;
 
-    use crate::domains::umlclass::{umlclass_controllers::UmlClassLabelProvider, umlclass_models::{UmlClass, UmlClassAssociation}};
+    use crate::domains::umlclass::{umlclass_models::{UmlClass, UmlClassAssociation}};
 
     use super::*;
 
@@ -1533,7 +1533,7 @@ mod test {
 
     fn validate(elements: Vec<UmlClassElement>, check_errors: bool, check_antipatterns: bool) -> Vec<ValidationProblem> {
         let d = new_diagram(elements);
-        let vt = super::OntoUMLValidationTab::new(d, ERef::new(UmlClassLabelProvider::default()), ViewUuid::nil());
+        let vt = super::OntoUMLValidationTab::new(d, ViewUuid::nil());
         vt.validate(check_errors, check_antipatterns)
     }
 
