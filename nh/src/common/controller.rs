@@ -2844,23 +2844,24 @@ impl<
                     self.set_clipboard_from_selected();
                 }
 
-                return vec![
-                    match command {
-                        DiagramCommand::DeleteSelectedElements(b) => InsensitiveCommand::DeleteSpecificElements(se!(), b),
-                        DiagramCommand::CutSelectedElements => InsensitiveCommand::CutSpecificElements(se!()),
-                        DiagramCommand::PasteClipboardElements => InsensitiveCommand::PasteSpecificElements(
-                            *self.uuid,
-                            Self::elements_deep_copy(
-                                None,
-                                |e| self.temporaries.flattened_views_status.contains_key(e),
-                                HashMap::new(),
-                                self.temporaries.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
-                            ).into_iter().map(|e| e.1.into()).collect(),
-                        ),
-                        DiagramCommand::ArrangeSelected(arr) => InsensitiveCommand::ArrangeSpecificElements(se!(), arr),
+                return match command {
+                        DiagramCommand::DeleteSelectedElements(b) => vec![InsensitiveCommand::DeleteSpecificElements(se!(), b)],
+                        DiagramCommand::CutSelectedElements => vec![InsensitiveCommand::CutSpecificElements(se!())],
+                        DiagramCommand::PasteClipboardElements => vec![
+                            InsensitiveCommand::HighlightAll(false, canvas::Highlight::SELECTED),
+                            InsensitiveCommand::PasteSpecificElements(
+                                *self.uuid,
+                                Self::elements_deep_copy(
+                                    None,
+                                    |e| self.temporaries.flattened_views_status.contains_key(e),
+                                    HashMap::new(),
+                                    self.temporaries.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
+                                ).into_iter().map(|e| e.1.into()).collect(),
+                            ),
+                        ],
+                        DiagramCommand::ArrangeSelected(arr) => vec![InsensitiveCommand::ArrangeSpecificElements(se!(), arr)],
                         _ => unreachable!(),
-                    }
-                ];
+                    };
             }
             DiagramCommand::ColorSelected(slot, color) => {
                 let ccd = ColorChangeData {

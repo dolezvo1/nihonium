@@ -2077,11 +2077,15 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 if h.selected {
                     match set {
                         true => {
-                            // TODO: before
+                            for e in &self.before_views {
+                                self.selected_direct_elements.insert(*e.view.uuid());
+                            }
                             if let UFOption::Some(e) = &self.p_act_view {
                                 self.selected_direct_elements.insert(*e.read().uuid);
                             }
-                            // TODO: after
+                            for e in &self.after_views {
+                                self.selected_direct_elements.insert(*e.view.uuid());
+                            }
                         }
                         false => self.selected_direct_elements.clear(),
                     }
@@ -2095,15 +2099,25 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 }
 
                 if h.selected {
-                    // TODO: before
-                    if let UFOption::Some(e) = &self.p_act_view {
-                        let k = *e.read().uuid;
+                    for e in self.before_views.iter().filter(|e| uuids.contains(&e.view.uuid())) {
                         match set {
-                            true => self.selected_direct_elements.insert(k),
-                            false => self.selected_direct_elements.remove(&k),
+                            true => self.selected_direct_elements.insert(*e.view.uuid()),
+                            false => self.selected_direct_elements.remove(&e.view.uuid()),
                         };
                     }
-                    // TODO: after
+                    if let UFOption::Some(e) = &self.p_act_view
+                        && let r = e.read() && uuids.contains(&r.uuid) {
+                        match set {
+                            true => self.selected_direct_elements.insert(*r.uuid),
+                            false => self.selected_direct_elements.remove(&r.uuid),
+                        };
+                    }
+                    for e in self.after_views.iter().filter(|e| uuids.contains(&e.view.uuid())) {
+                        match set {
+                            true => self.selected_direct_elements.insert(*e.view.uuid()),
+                            false => self.selected_direct_elements.remove(&e.view.uuid()),
+                        };
+                    }
                 }
 
                 recurse!(self);
