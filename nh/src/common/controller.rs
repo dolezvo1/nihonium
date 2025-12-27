@@ -851,37 +851,53 @@ pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: TryMerge + 
 impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug>
     InsensitiveCommand<AddElementT, PropChangeT>
 {
-    fn info_text(&self) -> Arc<String> {
-        macro_rules! suffix {
-            ($container:expr) => {
-                if $container.len() == 1 { "" } else { "s" }
-            }
-        }
-        match self {
-            InsensitiveCommand::HighlightAll(..) | InsensitiveCommand::HighlightSpecific(..) | InsensitiveCommand::SelectByDrag(..) => {
-                Arc::new("Sorry, your undo stack is broken now :/".to_owned())
-            }
-            InsensitiveCommand::DeleteSpecificElements(uuids, b) =>
-                Arc::new(format!("Delete {} element{}{}", uuids.len(), suffix!(uuids), if !b { " from view" } else { "" })),
-            InsensitiveCommand::MoveSpecificElements(uuids, _delta) => {
-                Arc::new(format!("Move {} element{}", uuids.len(), suffix!(uuids)))
-            }
-            InsensitiveCommand::MoveAllElements(_delta) => {
-                Arc::new(format!("Move all elements"))
-            }
+    fn info_text<'a>(
+        &self,
+        gdc: &'a GlobalDrawingContext,
+        diagram_name: &str,
+    ) -> std::borrow::Cow<'a, str> {
+        let (msg, count) = match self {
+            InsensitiveCommand::DeleteSpecificElements(uuids, b) => if *b {
+                (gdc.fluent_bundle.get_message("nh-viewcommand-deleteelements").unwrap(), uuids.len())
+            } else {
+                (gdc.fluent_bundle.get_message("nh-viewcommand-deleteelementsfrom").unwrap(), uuids.len())
+            },
+            InsensitiveCommand::MoveSpecificElements(uuids, _delta)
+                => (gdc.fluent_bundle.get_message("nh-viewcommand-moveelements").unwrap(), uuids.len()),
+            InsensitiveCommand::MoveAllElements(_delta)
+                => (gdc.fluent_bundle.get_message("nh-viewcommand-moveallelements").unwrap(), 0),
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, _, _)
-            | InsensitiveCommand::ResizeSpecificElementsTo(uuids, _, _) => {
-                Arc::new(format!("Resize {} element{}", uuids.len(), suffix!(uuids)))
+            | InsensitiveCommand::ResizeSpecificElementsTo(uuids, _, _)
+                => (gdc.fluent_bundle.get_message("nh-viewcommand-resizeelements").unwrap(), uuids.len()),
+            InsensitiveCommand::CutSpecificElements(uuids)
+                => (gdc.fluent_bundle.get_message("nh-viewcommand-cutelements").unwrap(), uuids.len()),
+            InsensitiveCommand::PasteSpecificElements(_, elements)
+                => (gdc.fluent_bundle.get_message("nh-viewcommand-pasteelements").unwrap(), elements.len()),
+            InsensitiveCommand::ArrangeSpecificElements(uuids, _)
+                => (gdc.fluent_bundle.get_message("nh-viewcommand-arrangeelements").unwrap(), uuids.len()),
+            InsensitiveCommand::AddDependency(.., b) => if *b {
+                (gdc.fluent_bundle.get_message("nh-viewcommand-addelements").unwrap(), 1)
+            } else {
+                (gdc.fluent_bundle.get_message("nh-viewcommand-addelementsinto").unwrap(), 1)
+            },
+            InsensitiveCommand::RemoveDependency(.., b) => if *b {
+                (gdc.fluent_bundle.get_message("nh-viewcommand-removeelements").unwrap(), 1)
+            } else {
+                (gdc.fluent_bundle.get_message("nh-viewcommand-removeelementsfrom").unwrap(), 1)
+            },
+            InsensitiveCommand::PropertyChange(uuids, ..)
+                => (gdc.fluent_bundle.get_message("nh-viewcommand-modifyelements").unwrap(), uuids.len()),
+            InsensitiveCommand::HighlightAll(..) | InsensitiveCommand::HighlightSpecific(..) | InsensitiveCommand::SelectByDrag(..) => {
+                unreachable!()
             }
-            InsensitiveCommand::CutSpecificElements(uuids) => Arc::new(format!("Cut {} element{}", uuids.len(), suffix!(uuids))),
-            InsensitiveCommand::PasteSpecificElements(_, elements) => Arc::new(format!("Paste {} element{}", elements.len(), suffix!(elements))),
-            InsensitiveCommand::ArrangeSpecificElements(uuids, _) => Arc::new(format!("Arranged {} element{}", uuids.len(), suffix!(uuids))),
-            InsensitiveCommand::AddDependency(.., b) => Arc::new(format!("Add 1 element{}", if !b { " into view" } else { "" })),
-            InsensitiveCommand::RemoveDependency(.., b) => Arc::new(format!("Remove 1 element{}", if !b { " from view" } else { "" })),
-            InsensitiveCommand::PropertyChange(uuids, ..) => {
-                Arc::new(format!("Modify {} element{}", uuids.len(), suffix!(uuids)))
-            }
-        }
+        };
+
+        let pattern = msg.value().unwrap();
+        let mut args = fluent_bundle::FluentArgs::new();
+        args.set("count", count);
+        args.set("diagram", diagram_name);
+        let mut errors = Vec::new();
+        gdc.fluent_bundle.format_pattern(&pattern, Some(&args), &mut errors)
     }
 }
 
@@ -1690,14 +1706,14 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         let shortcut_text = gdc.shortcut_text(ui, DiagramCommand::UndoImmediate.into());
 
         if self.undo_stack.is_empty() {
-            let mut button = egui::Button::new("(nothing to undo)");
+            let mut button = egui::Button::new(gdc.translate_0("nh-edit-undo-nothingtoundo"));
             if let Some(shortcut_text) = shortcut_text {
                 button = button.shortcut_text(shortcut_text);
             }
             let _ = ui.add_enabled(false, button);
         } else {
-            for (ii, (_, c, _, _)) in self.undo_stack.iter().rev().enumerate() {
-                let mut button = egui::Button::new(&*c.info_text());
+            for (ii, (v, c, _, _)) in self.undo_stack.iter().rev().enumerate() {
+                let mut button = egui::Button::new(&*c.info_text(gdc, &self.views.get(v).unwrap().read().view_name()));
                 if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
                     button = button.shortcut_text(shortcut_text);
                 }
@@ -1721,14 +1737,14 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         let shortcut_text = gdc.shortcut_text(ui, DiagramCommand::RedoImmediate.into());
 
         if self.redo_stack.is_empty() {
-            let mut button = egui::Button::new("(nothing to redo)");
+            let mut button = egui::Button::new(gdc.translate_0("nh-edit-redo-nothingtoredo"));
             if let Some(shortcut_text) = shortcut_text {
                 button = button.shortcut_text(shortcut_text);
             }
             let _ = ui.add_enabled(false, button);
         } else {
-            for (ii, (_, c)) in self.redo_stack.iter().rev().enumerate() {
-                let mut button = egui::Button::new(&*c.info_text());
+            for (ii, (v, c)) in self.redo_stack.iter().rev().enumerate() {
+                let mut button = egui::Button::new(&*c.info_text(gdc, &self.views.get(v).unwrap().read().view_name()));
                 if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
                     button = button.shortcut_text(shortcut_text);
                 }
@@ -2748,11 +2764,11 @@ impl<
     }
     fn show_menubar_edit_options(
         &mut self,
-        _context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
-        if ui.button("Clear highlights").clicked() {
+        if ui.button(gdc.translate_0("nh-edit-clearhighlight")).clicked() {
             commands.push(SimpleProjectCommand::SpecificDiagramCommand(
                 *self.uuid,
                 DiagramCommand::HighlightAllElements(false, Highlight::ALL),

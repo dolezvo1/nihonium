@@ -27,7 +27,9 @@ nh-project-exit-confirm = Opravdu chcete ukončit program?
 
 nh-edit = Upravit
 nh-edit-undo = Zpět
+nh-edit-undo-nothingtoundo = (žádné akce k vrácení)
 nh-edit-redo = Znovu
+nh-edit-redo-nothingtoredo = (žádné akce k zopakování)
 nh-edit-cut = Vyjmout
 nh-edit-copy = Kopírovat
 nh-edit-paste = Vložit
@@ -88,3 +90,23 @@ nh-tab-properties = Vlastnosti
 nh-tab-diagram = Diagram
 nh-tab-document = Dokument
 nh-tab-customtab = Zvláštní karta
+
+
+pluralize-element = { $count ->
+   [one] { $count } prvek
+   [few] { $count } prvky
+  *[other] { $count } prvků
+}
+nh-viewcommand-deleteelements = Smazat { pluralize-element }
+nh-viewcommand-deleteelementsfrom = Smazat { pluralize-element } z '{ $diagram }'
+nh-viewcommand-moveelements = Přesunout { pluralize-element } v '{ $diagram }'
+nh-viewcommand-moveallelements = Přesunout všechny prvky v '{ $diagram }'
+nh-viewcommand-resizeelements = Transformovat { pluralize-element } v '{ $diagram }'
+nh-viewcommand-cutelements = Vyjmout { pluralize-element }
+nh-viewcommand-pasteelements = Vložit { pluralize-element }
+nh-viewcommand-arrangeelements = Uspořádat { pluralize-element } v '{ $diagram }'
+nh-viewcommand-addelements = Přidat { pluralize-element }
+nh-viewcommand-addelementsinto = Přidat { pluralize-element } do '{ $diagram }'
+nh-viewcommand-removeelements = Odstranit { pluralize-element }
+nh-viewcommand-removeelementsfrom = Odstranit { pluralize-element } z '{ $diagram }'
+nh-viewcommand-modifyelements = Upravit { pluralize-element }

@@ -27,7 +27,9 @@ nh-project-exit-confirm = Are you sure you want to exit?
 
 nh-edit = Edit
 nh-edit-undo = Undo
+nh-edit-undo-nothingtoundo = (nothing to undo)
 nh-edit-redo = Redo
+nh-edit-redo-nothingtoredo = (nothing to redo)
 nh-edit-cut = Cut
 nh-edit-copy = Copy
 nh-edit-paste = Paste
@@ -89,3 +91,21 @@ nh-tab-diagram = Diagram
 nh-tab-document = Document
 nh-tab-customtab = Custom Tab
 
+
+pluralize-element = { $count ->
+   [one] { $count } element
+  *[other] { $count } elements
+}
+nh-viewcommand-deleteelements = Delete { pluralize-element }
+nh-viewcommand-deleteelementsfrom = Delete { pluralize-element } from '{ $diagram }'
+nh-viewcommand-moveelements = Move { pluralize-element } in '{ $diagram }'
+nh-viewcommand-moveallelements = Move all elements in '{ $diagram }'
+nh-viewcommand-resizeelements = Resize { pluralize-element } in '{ $diagram }'
+nh-viewcommand-cutelements = Cut { pluralize-element }
+nh-viewcommand-pasteelements = Paste { pluralize-element }
+nh-viewcommand-arrangeelements = Arrange { pluralize-element } in '{ $diagram }'
+nh-viewcommand-addelements = Add { pluralize-element }
+nh-viewcommand-addelementsinto = Add { pluralize-element } to '{ $diagram }'
+nh-viewcommand-removeelements = Remove { pluralize-element }
+nh-viewcommand-removeelementsfrom = Remove { pluralize-element } from '{ $diagram }'
+nh-viewcommand-modifyelements = Modify { pluralize-element }
