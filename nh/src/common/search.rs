@@ -9,25 +9,36 @@ pub trait FullTextSearchable {
 
 
 pub struct Searcher {
-    current_diagrams: Vec<ViewUuid>,
     expr: ast::Expr,
-    found_matches: Vec<(ModelUuid, Vec<ViewUuid>)>,
+    current_component: ModelUuid,
+    current_found_matches: Vec<ModelUuid>,
+    completed_components: Vec<(ModelUuid, Vec<ModelUuid>, Vec<ViewUuid>)>
 }
 
 impl Searcher {
     pub fn new(expr: ast::Expr) -> Self {
         Self {
-            current_diagrams: Vec::new(),
             expr,
-            found_matches: Vec::new(),
+            current_component: ModelUuid::nil(),
+            current_found_matches: Vec::new(),
+            completed_components: Vec::new(),
         }
     }
 
-    pub fn set_current_diagrams(
+    pub fn open_component(
         &mut self,
-        uuids: Vec<ViewUuid>,
+        uuid: ModelUuid,
     ) {
-        self.current_diagrams = uuids;
+        self.current_component = uuid;
+    }
+    pub fn close_component(
+        &mut self,
+        views: Vec<ViewUuid>,
+    ) {
+        let cfm = std::mem::take(&mut self.current_found_matches);
+        if !cfm.is_empty() {
+            self.completed_components.push((self.current_component, cfm, views));
+        }
     }
 
     pub fn check_element(
@@ -36,12 +47,12 @@ impl Searcher {
         fields: &[&str],
     ) {
         if check(&self.expr, fields) {
-            self.found_matches.push((uuid, self.current_diagrams.clone()));
+            self.current_found_matches.push(uuid);
         }
     }
 
-    pub fn results(self) -> Vec<(ModelUuid, Vec<ViewUuid>)> {
-        self.found_matches
+    pub fn results(self) -> Vec<(ModelUuid, Vec<ModelUuid>, Vec<ViewUuid>)> {
+        self.completed_components
     }
 }
 

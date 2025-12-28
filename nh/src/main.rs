@@ -259,7 +259,7 @@ struct NHContext {
 
     search_query: String,
     search_error: String,
-    search_results: Vec<(ModelUuid, Vec<ViewUuid>)>,
+    search_results: Vec<(ModelUuid, Vec<ModelUuid>, Vec<ViewUuid>)>,
 
     show_close_buttons: bool,
     show_add_buttons: bool,
@@ -928,7 +928,7 @@ impl NHContext {
     }
 
     fn show_search(&mut self, ui: &mut Ui) {
-        if ui.text_edit_singleline(&mut self.search_query).changed() {
+        if ui.add_sized([ui.available_width(), 20.0], egui::TextEdit::singleline(&mut self.search_query)).changed() {
             if self.search_query.is_empty() {
                 self.search_results.clear();
                 return;
@@ -960,34 +960,58 @@ impl NHContext {
             ui.colored_label(egui::Color32::RED, &self.search_error);
         }
 
-        for (m, ds) in &self.search_results {
-            macro_rules! focus_element_in {
-                ($diagram:expr, $element:expr) => {
-                    self.unprocessed_commands.push(ProjectCommand::OpenAndFocusDiagram(*$diagram, None));
-                    self.unprocessed_commands.extend_from_slice(&[
-                        DiagramCommand::HighlightAllElements(false, crate::common::canvas::Highlight::SELECTED),
-                        DiagramCommand::HighlightElement((*$element).into(), true, crate::common::canvas::Highlight::SELECTED),
-                        DiagramCommand::PanToElement((*$element).into(), true),
-                    ].map(|e| SimpleProjectCommand::SpecificDiagramCommand(*$diagram, e).into()));
-                };
-            }
-
-            let l = ui.label(&*self.drawing_context.model_labels.get(m));
-            if l.clicked() {
-                if let Some(lfs) = &self.last_focused_diagram && ds.contains(lfs) {
-                    focus_element_in!(lfs, m);
-                } else if let Some(d) = ds.first() {
-                    focus_element_in!(d, m);
-                }
-            }
-            l.context_menu(|ui| {
-                for d in ds {
-                    if ui.label(format!("Jump to in '{}'", self.diagram_controllers.get(d).unwrap().read().view_name(d))).clicked() {
-                        focus_element_in!(d, m);
-                    }
-                }
-            });
+        macro_rules! focus_element_in {
+            ($diagram:expr, $element:expr) => {
+                self.unprocessed_commands.push(ProjectCommand::OpenAndFocusDiagram(*$diagram, None));
+                self.unprocessed_commands.extend_from_slice(&[
+                    DiagramCommand::HighlightAllElements(false, crate::common::canvas::Highlight::SELECTED),
+                    DiagramCommand::HighlightElement((*$element).into(), true, crate::common::canvas::Highlight::SELECTED),
+                    DiagramCommand::PanToElement((*$element).into(), true),
+                ].map(|e| SimpleProjectCommand::SpecificDiagramCommand(*$diagram, e).into()));
+            };
         }
+
+        egui_ltreeview::TreeView::new(egui::Id::new("search results")).show(ui, |builder| {
+            for (component, sr, diagrams) in &self.search_results {
+                builder.dir(*component, &*self.drawing_context.model_labels.get(component));
+                for e in sr {
+                    builder.node(
+                        egui_ltreeview::NodeBuilder::leaf(*e)
+                            .label(&*self.drawing_context.model_labels.get(e))
+                            .context_menu(|ui| {
+                                ui.set_min_width(MIN_MENU_WIDTH);
+
+                                if let Some(lfd) = &self.last_focused_diagram
+                                    && diagrams.contains(lfd)
+                                    && ui.button("Jump to in current diagram").clicked() {
+                                    focus_element_in!(lfd, e);
+                                }
+                                ui.menu_button("Jump to in", |ui| {
+                                    ui.set_min_width(MIN_MENU_WIDTH);
+
+                                    for d in diagrams {
+                                        if ui.button(&*self.diagram_controllers.get(d).unwrap().read().view_name(d)).clicked() {
+                                            focus_element_in!(d, e);
+                                        }
+                                    }
+                                });
+                                ui.menu_button("Create view in", |ui| {
+                                    ui.set_min_width(MIN_MENU_WIDTH);
+
+                                    for d in diagrams {
+                                        if ui.button(&*self.diagram_controllers.get(d).unwrap().read().view_name(d)).clicked() {
+                                            self.unprocessed_commands.push(
+                                                SimpleProjectCommand::SpecificDiagramCommand(*d, DiagramCommand::CreateViewFor(*e)).into()
+                                            );
+                                        }
+                                    }
+                                });
+                            })
+                    );
+                }
+                builder.close_dir();
+            }
+        });
     }
 
     fn show_toolbar(&self, ui: &mut Ui) {
@@ -1906,7 +1930,7 @@ fn new_project() -> Result<(), &'static str> {
     Ok(())
 }
 
-// TODO: remove when egui/#5138 is fixed
+/// TODO: remove when egui/#5138 is fixed
 pub const MIN_MENU_WIDTH: f32 = 250.0;
 
 impl eframe::App for NHApp {
