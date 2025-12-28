@@ -638,7 +638,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
 
         PropertiesStatus::Shown
     }
-    fn show_props_fun(
+    fn show_model_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,

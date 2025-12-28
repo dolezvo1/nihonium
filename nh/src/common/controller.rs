@@ -1848,7 +1848,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) -> PropertiesStatus<DomainT>;
-    fn show_props_fun(
+    fn show_model_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
@@ -2252,6 +2252,7 @@ impl<
             },
             InsensitiveCommand::PropertyChange(uuids, _property) => {
                 if uuids.is_empty() || uuids.contains(&*self.uuid) {
+                    affected_models.insert(*self.model_uuid());
                     self.adapter.apply_property_change_fun(
                         &self.uuid,
                         &command,
@@ -2631,7 +2632,7 @@ impl<
                 ui.add_space(super::views::VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
 
                 ui.label("Model properties:");
-                self.adapter.show_props_fun(&self.uuid, ui, commands);
+                self.adapter.show_model_props_fun(&self.uuid, ui, commands);
 
                 PropertiesStatus::Shown
             }
