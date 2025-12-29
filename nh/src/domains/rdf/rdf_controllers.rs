@@ -637,6 +637,14 @@ pub struct NaiveRdfTool {
     current_stage: RdfToolStage,
     result: PartialRdfElement,
     event_lock: bool,
+    is_spent: Option<bool>,
+}
+
+impl NaiveRdfTool {
+    fn spend(&mut self) {
+        self.result = PartialRdfElement::None;
+        self.is_spent = self.is_spent.map(|_| true);
+    }
 }
 
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
@@ -645,17 +653,23 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl Tool<RdfDomain> for NaiveRdfTool {
     type Stage = RdfToolStage;
 
-    fn new(initial_stage: RdfToolStage) -> Self {
+    fn new(initial_stage: RdfToolStage, repeat: bool) -> Self {
         Self {
             initial_stage,
             current_stage: initial_stage,
             result: PartialRdfElement::None,
             event_lock: false,
+            is_spent: if repeat { None } else { Some(false) },
         }
     }
-
     fn initial_stage(&self) -> RdfToolStage {
         self.initial_stage
+    }
+    fn repeats(&self) -> bool {
+        self.is_spent.is_none()
+    }
+    fn is_spent(&self) -> bool {
+        self.is_spent.is_some_and(|e| e)
     }
 
     fn targetting_for_section(&self, element: Option<RdfElement>) -> egui::Color32 {
@@ -793,7 +807,6 @@ impl Tool<RdfDomain> for NaiveRdfTool {
         match &self.result {
             PartialRdfElement::Some(x) => {
                 let x = x.clone();
-                self.result = PartialRdfElement::None;
                 let esm: Option<Box<dyn CustomModal>> = match &x {
                     RdfElementView::Literal(inner) => {
                         Some(Box::new(RdfLiteralSetupModal::from(&inner.read().model)))
@@ -804,9 +817,9 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     RdfElementView::Predicate(..)
                     | RdfElementView::Graph(..) => unreachable!(),
                 };
+                self.spend();
                 Some((x, esm))
             }
-            // TODO: check for source == dest case, set points?
             PartialRdfElement::Predicate {
                 source,
                 dest: Some(dest),
@@ -830,7 +843,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                         None
                     };
 
-                self.result = PartialRdfElement::None;
+                self.spend();
                 predicate_view
             }
             PartialRdfElement::Graph { a, b: Some(b) } => {
@@ -839,7 +852,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 let (graph_model, graph_view) =
                     new_rdf_graph("http://a-graph", egui::Rect::from_two_pos(*a, *b));
 
-                self.result = PartialRdfElement::None;
+                self.spend();
                 Some((graph_view.into(), Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(graph_model))))))
             }
             _ => None,
@@ -1317,6 +1330,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                     current_stage: RdfToolStage::PredicateEnd,
                     result: PartialRdfElement::Predicate { source: self.model.clone(), dest: None },
                     event_lock: true,
+                    is_spent: None,
                 });
 
                 EventHandlingStatus::HandledByElement

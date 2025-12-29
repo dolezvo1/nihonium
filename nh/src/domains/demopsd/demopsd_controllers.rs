@@ -798,6 +798,14 @@ pub struct NaiveDemoPsdTool {
     current_stage: DemoPsdToolStage,
     result: PartialDemoPsdElement,
     event_lock: bool,
+    is_spent: Option<bool>,
+}
+
+impl NaiveDemoPsdTool {
+    fn spend(&mut self) {
+        self.result = PartialDemoPsdElement::None;
+        self.is_spent = self.is_spent.map(|_| true);
+    }
 }
 
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
@@ -806,17 +814,23 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
     type Stage = DemoPsdToolStage;
 
-    fn new(initial_stage: DemoPsdToolStage) -> Self {
+    fn new(initial_stage: DemoPsdToolStage, repeat: bool) -> Self {
         Self {
             initial_stage,
             current_stage: initial_stage,
             result: PartialDemoPsdElement::None,
             event_lock: false,
+            is_spent: if repeat { None } else { Some(false) },
         }
     }
-
     fn initial_stage(&self) -> DemoPsdToolStage {
         self.initial_stage
+    }
+    fn repeats(&self) -> bool {
+        self.is_spent.is_none()
+    }
+    fn is_spent(&self) -> bool {
+        self.is_spent.is_some_and(|e| e)
     }
 
     fn targetting_for_section(&self, element: Option<DemoPsdElementTargettingSection>) -> egui::Color32 {
@@ -1001,7 +1015,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         match &self.result {
             PartialDemoPsdElement::Some(x) => {
                 let x = x.clone();
-                self.result = PartialDemoPsdElement::None;
+                self.spend();
                 let esm: Option<Box<dyn CustomModal>> = match &x {
                     DemoPsdElementView::Transaction(inner) => {
                         Some(Box::new(DemoPsdTransactionSetupModal::from(&inner.read().model)))
@@ -1033,8 +1047,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                         None,
                     );
 
-                    self.result = PartialDemoPsdElement::None;
-
+                    self.spend();
                     Some((link_view.into(), None))
                 } else {
                     None
@@ -1046,7 +1059,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 let (_package_model, package_view) =
                     new_demopsd_package("A package", egui::Rect::from_two_pos(*a, *b));
 
-                self.result = PartialDemoPsdElement::None;
+                self.spend();
                 Some((package_view.into(), None))
             }
             _ => None,

@@ -1001,8 +1001,10 @@ pub trait Queryable<'a, DomainT: Domain> {
 pub trait Tool<DomainT: Domain> {
     type Stage: Clone + PartialEq + 'static;
 
-    fn new(initial_stage: Self::Stage) -> Self;
+    fn new(initial_stage: Self::Stage, repeat: bool) -> Self;
     fn initial_stage(&self) -> Self::Stage;
+    fn repeats(&self) -> bool;
+    fn is_spent(&self) -> bool;
 
     fn targetting_for_section(&self, element: Option<DomainT::ViewTargettingSectionT>) -> egui::Color32;
     fn draw_status_hint(&self, q: &DomainT::QueryableT<'_>, canvas: &mut dyn NHCanvas, pos: egui::Pos2);
@@ -1986,10 +1988,6 @@ impl<
         // Handle events
         let mut commands = Vec::new();
 
-        if matches!(event, InputEvent::Click(_)) {
-            self.temporaries.current_tool.as_mut().map(|e| e.reset_event_lock());
-        }
-
         let ehc = EventHandlingContext {
             modifier_settings,
             modifiers,
@@ -2091,6 +2089,13 @@ impl<
                 handled
             },
         };
+
+        if matches!(event, InputEvent::Click(_)) {
+            if let Some(t) = &self.temporaries.current_tool && t.is_spent() {
+                self.temporaries.current_tool = None;
+            }
+            self.temporaries.current_tool.as_mut().map(|e| e.reset_event_lock());
+        }
 
         commands_accumulator.extend(commands.into_iter());
 
@@ -2632,11 +2637,28 @@ impl<
                     let width = ui.available_width();
                     for (stage, name, view) in items.iter_mut() {
                         let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(stage)));
+                        if let Some(t) = &self.temporaries.current_tool && t.initial_stage() == *stage {
+                            ui.painter().text(
+                                response.rect.right_bottom(),
+                                egui::Align2::RIGHT_BOTTOM,
+                                if t.repeats() { " ∞ " } else { " 1 " },
+                                egui::FontId::proportional(20.0),
+                                ui.style().visuals.text_color(),
+                            );
+                        }
+
                         if response.clicked() {
-                            if let Some(t) = &self.temporaries.current_tool && t.initial_stage() == *stage {
+                            if let Some(t) = &self.temporaries.current_tool && t.initial_stage() == *stage && t.repeats() {
                                 self.temporaries.current_tool = None;
                             } else {
-                                self.temporaries.current_tool = Some(DomainT::ToolT::new(stage.clone()));
+                                self.temporaries.current_tool = Some(DomainT::ToolT::new(stage.clone(), true));
+                            }
+                        }
+                        if response.secondary_clicked() {
+                            if let Some(t) = &self.temporaries.current_tool && t.initial_stage() == *stage && !t.repeats() {
+                                self.temporaries.current_tool = None;
+                            } else {
+                                self.temporaries.current_tool = Some(DomainT::ToolT::new(stage.clone(), false));
                             }
                         }
 

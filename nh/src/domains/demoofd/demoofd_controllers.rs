@@ -802,6 +802,14 @@ pub struct NaiveDemoOfdTool {
     current_stage: DemoOfdToolStage,
     result: PartialDemoOfdElement,
     event_lock: bool,
+    is_spent: Option<bool>,
+}
+
+impl NaiveDemoOfdTool {
+    fn spend(&mut self) {
+        self.result = PartialDemoOfdElement::None;
+        self.is_spent = self.is_spent.map(|_| true);
+    }
 }
 
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
@@ -810,17 +818,23 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
     type Stage = DemoOfdToolStage;
 
-    fn new(initial_stage: DemoOfdToolStage) -> Self {
+    fn new(initial_stage: DemoOfdToolStage, repeat: bool) -> Self {
         Self {
             initial_stage,
             current_stage: initial_stage,
             result: PartialDemoOfdElement::None,
             event_lock: false,
+            is_spent: if repeat { None } else { Some(false) },
         }
     }
-
     fn initial_stage(&self) -> Self::Stage {
         self.initial_stage
+    }
+    fn repeats(&self) -> bool {
+        self.is_spent.is_none()
+    }
+    fn is_spent(&self) -> bool {
+        self.is_spent.is_some_and(|e| e)
     }
 
     fn targetting_for_section(&self, element: Option<DemoOfdElement>) -> egui::Color32 {
@@ -1153,7 +1167,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     DemoOfdElementView::EntityType(inner) => Some(Box::new(DemoOfdEntityTypeSetupModal::from(&inner.read().model))),
                     _ => None,
                 };
-                self.result = PartialDemoOfdElement::None;
+
+                self.spend();
                 Some((x, esm))
             }
             PartialDemoOfdElement::Event { with_specialization, source, pos: Some(p) } => {
@@ -1170,7 +1185,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         new_demoofd_eventtype("01", "is started", (source.clone(), base_view), spec, *p);
 
                     let esm: Option<Box<dyn CustomModal>> = Some(Box::new(DemoOfdEventTypeSetupModal::from(&event_model)));
-                    self.result = PartialDemoOfdElement::None;
+
+                    self.spend();
                     Some((event_view.into(), esm))
                 } else {
                     None
@@ -1218,8 +1234,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         | LinkType::Exclusion => unreachable!()
                     };
 
-                    self.result = PartialDemoOfdElement::None;
-
+                    self.spend();
                     Some((link_view, None))
                 } else {
                     None
@@ -1254,8 +1269,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         LinkType::Exclusion => unreachable!()
                     };
 
-                    self.result = PartialDemoOfdElement::None;
-
+                    self.spend();
                     Some((link_view, None))
                 } else {
                     None
@@ -1290,8 +1304,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         }
                     };
 
-                    self.result = PartialDemoOfdElement::None;
-
+                    self.spend();
                     Some((link_view, None))
                 } else {
                     None
@@ -1303,7 +1316,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 let (_package_model, package_view) =
                     new_demoofd_package("A package", egui::Rect::from_two_pos(*a, *b));
 
-                self.result = PartialDemoOfdElement::None;
+                self.spend();
                 Some((package_view.into(), None))
             }
             _ => None,
@@ -1918,6 +1931,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                         pos: None,
                     },
                     event_lock: true,
+                    is_spent: None,
                 });
 
                 EventHandlingStatus::HandledByElement
@@ -1932,6 +1946,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                         pos: None,
                     },
                     event_lock: true,
+                    is_spent: None,
                 });
 
                 EventHandlingStatus::HandledByElement
@@ -1946,6 +1961,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                         dest: None,
                     },
                     event_lock: true,
+                    is_spent: None,
                 });
 
                 EventHandlingStatus::HandledByElement
@@ -3468,6 +3484,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
                         new_model: None,
                     },
                     event_lock: false,
+                    is_spent: None,
                 })
             );
         }

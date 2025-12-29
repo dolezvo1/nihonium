@@ -1103,6 +1103,14 @@ pub struct NaiveUmlClassTool<P: UmlClassProfile> {
     current_stage: UmlClassToolStage,
     result: PartialUmlClassElement<P>,
     event_lock: bool,
+    is_spent: Option<bool>,
+}
+
+impl<P: UmlClassProfile> NaiveUmlClassTool<P> {
+    fn spend(&mut self) {
+        self.result = PartialUmlClassElement::None;
+        self.is_spent = self.is_spent.map(|_| true);
+    }
 }
 
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
@@ -1111,17 +1119,23 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
     type Stage = UmlClassToolStage;
 
-    fn new(initial_stage: UmlClassToolStage) -> Self {
+    fn new(initial_stage: UmlClassToolStage, repeat: bool) -> Self {
         Self {
             initial_stage,
             current_stage: initial_stage,
             result: PartialUmlClassElement::None,
             event_lock: false,
+            is_spent: if repeat { None } else { Some(false) },
         }
     }
-
     fn initial_stage(&self) -> Self::Stage {
         self.initial_stage
+    }
+    fn repeats(&self) -> bool {
+        self.is_spent.is_none()
+    }
+    fn is_spent(&self) -> bool {
+        self.is_spent.is_some_and(|e| e)
     }
 
     fn targetting_for_section(&self, element: Option<UmlClassElement>) -> egui::Color32 {
@@ -1444,7 +1458,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     UmlClassElementView::ClassOperation(inner) => Some(Box::new(UmlClassOperationSetupModal::<P::ClassOperationStereotypeController>::from(&inner.read().model))),
                     _ => None,
                 };
-                self.result = PartialUmlClassElement::None;
+                self.spend();
                 Some((x, esm))
             }
             PartialUmlClassElement::Link {
@@ -1495,8 +1509,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         },
                     };
 
-                    self.result = PartialUmlClassElement::None;
-
+                    self.spend();
                     Some((link_view, None))
                 } else {
                     None
@@ -1516,8 +1529,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         (dest.clone(), dest_controller),
                     );
 
-                    self.result = PartialUmlClassElement::None;
-
+                    self.spend();
                     Some((link_view.into(), None))
                 } else {
                     None
@@ -1529,7 +1541,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 let (_package_model, package_view) =
                     new_umlclass_package("a package", egui::Rect::from_two_pos(*a, *b));
 
-                self.result = PartialUmlClassElement::None;
+                self.spend();
                 Some((package_view.into(), None))
             }
             _ => None,
@@ -2159,6 +2171,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                         dest: None,
                     },
                     event_lock: true,
+                    is_spent: None,
                 });
 
                 EventHandlingStatus::HandledByElement
@@ -4551,6 +4564,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         dest: None,
                     },
                     event_lock: true,
+                    is_spent: None,
                 });
 
                 EventHandlingStatus::HandledByElement
@@ -4561,6 +4575,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     current_stage: UmlClassToolStage::ClassProperty,
                     result: PartialUmlClassElement::None,
                     event_lock: false,
+                    is_spent: None,
                 });
 
                 if let Some(tool) = tool {
@@ -4582,6 +4597,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     current_stage: UmlClassToolStage::ClassOperation,
                     result: PartialUmlClassElement::None,
                     event_lock: false,
+                    is_spent: None,
                 });
 
                 if let Some(tool) = tool {
@@ -5198,6 +5214,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
                         new_model: None,
                     },
                     event_lock: false,
+                    is_spent: None,
                 })
             );
         }
@@ -5212,6 +5229,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
                         new_model: None,
                     },
                     event_lock: false,
+                    is_spent: None,
                 })
             );
         }

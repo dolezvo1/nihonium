@@ -692,6 +692,14 @@ pub struct NaiveDemoCsdTool {
     current_stage: DemoCsdToolStage,
     result: PartialDemoCsdElement,
     event_lock: bool,
+    is_spent: Option<bool>,
+}
+
+impl NaiveDemoCsdTool {
+    fn spend(&mut self) {
+        self.result = PartialDemoCsdElement::None;
+        self.is_spent = self.is_spent.map(|_| true);
+    }
 }
 
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
@@ -700,17 +708,23 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
     type Stage = DemoCsdToolStage;
 
-    fn new(initial_stage: DemoCsdToolStage) -> Self {
+    fn new(initial_stage: DemoCsdToolStage, repeat: bool) -> Self {
         Self {
             initial_stage,
             current_stage: initial_stage,
             result: PartialDemoCsdElement::None,
             event_lock: false,
+            is_spent: if repeat { None } else { Some(false) },
         }
     }
-
     fn initial_stage(&self) -> DemoCsdToolStage {
         self.initial_stage
+    }
+    fn repeats(&self) -> bool {
+        self.is_spent.is_none()
+    }
+    fn is_spent(&self) -> bool {
+        self.is_spent.is_some_and(|e| e)
     }
 
     fn targetting_for_section(&self, element: Option<DemoCsdElement>) -> egui::Color32 {
@@ -895,7 +909,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         match &self.result {
             PartialDemoCsdElement::Some(x) => {
                 let x = x.clone();
-                self.result = PartialDemoCsdElement::None;
+                self.spend();
                 let esm: Option<Box<dyn CustomModal>> = match &x {
                     DemoCsdElementView::Transactor(eref) => {
                         Some(Box::new(DemoCsdTransactorSetupModal::from(&eref.read().model)))
@@ -927,8 +941,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                         (target.clone(), target_view),
                     );
 
-                    self.result = PartialDemoCsdElement::None;
-
+                    self.spend();
                     Some((link_view.into(), None))
                 } else {
                     None
@@ -940,7 +953,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 let (_package_model, package_view) =
                     new_democsd_package("A package", egui::Rect::from_two_pos(*a, *b));
 
-                self.result = PartialDemoCsdElement::None;
+                self.spend();
                 Some((package_view.into(), None))
             }
             _ => None,
@@ -1659,6 +1672,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                             dest: None,
                         },
                         event_lock: true,
+                        is_spent: None,
                     });
 
                     return EventHandlingStatus::HandledByElement;
