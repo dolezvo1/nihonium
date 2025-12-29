@@ -304,7 +304,7 @@ struct DemoOfdDiagramBuffer {
 
 #[derive(Clone)]
 struct UmlClassPlaceholderViews {
-    views: [DemoOfdElementView; 8],
+    views: [(&'static str, Vec<(DemoOfdToolStage, &'static str, DemoOfdElementView)>); 3],
 }
 
 impl Default for UmlClassPlaceholderViews {
@@ -336,14 +336,20 @@ impl Default for UmlClassPlaceholderViews {
 
         Self {
             views: [
-                entity_2.1.into(),
-                event_view.into(),
-                prop_view.into(),
-                spec_view.into(),
-                aggr_view.into(),
-                prec_view.into(),
-                excl_view.into(),
-                package_view.into(),
+                ("Elements", vec![
+                    (DemoOfdToolStage::Entity, "Entity Type", entity_2.1.into()),
+                    (DemoOfdToolStage::EventStart { with_specialization: false }, "Event Type", event_view.into()),
+                ]),
+                ("Relationships", vec![
+                    (DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType }, "Property Type", prop_view.into()),
+                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Specialization }, "Specialization", spec_view.into()),
+                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Aggregation }, "Aggregation/Generalization", aggr_view.into()),
+                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Precedence }, "Precedence", prec_view.into()),
+                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Exclusion }, "Exclusion", excl_view.into()),
+                ]),
+                ("Other", vec![
+                    (DemoOfdToolStage::PackageStart, "Package", package_view.into()),
+                ]),
             ]
         }
     }
@@ -601,109 +607,10 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         self.buffer.comment = (*model.comment).clone();
     }
 
-    fn show_tool_palette(
-        &mut self,
-        tool: &mut Option<NaiveDemoOfdTool>,
-        drawing_context: &GlobalDrawingContext,
-        ui: &mut egui::Ui,
-    ) {
-        let button_height = drawing_context.tool_palette_item_height as f32;
-        let width = ui.available_width();
-        let selected_background_color = if ui.style().visuals.dark_mode {
-            egui::Color32::BLUE
-        } else {
-            egui::Color32::LIGHT_BLUE
-        };
-        let button_background_color = ui.style().visuals.extreme_bg_color;
-
-        let stage = tool.as_ref().map(|e| e.initial_stage());
-        let c = |s: DemoOfdToolStage| -> egui::Color32 {
-            if stage.is_some_and(|e| e == s) {
-                selected_background_color
-            } else {
-                button_background_color
-            }
-        };
-
-        if ui
-            .add_sized(
-                [width, button_height],
-                egui::Button::new("Select/Move").fill(if stage == None {
-                    selected_background_color
-                } else {
-                    button_background_color
-                }),
-            )
-            .clicked()
-        {
-            *tool = None;
-        }
-        ui.separator();
-
-        let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
-        let empty_q = DemoOfdQueryable::new(&empty_a, &empty_b, &empty_c);
-        let mut icon_counter = 0;
-        for cat in [
-            &[
-                (DemoOfdToolStage::Entity, "Entity Type"),
-                (DemoOfdToolStage::EventStart { with_specialization: false }, "Event Type"),
-            ][..],
-            &[
-                (
-                    DemoOfdToolStage::LinkStart {
-                        link_type: LinkType::PropertyType,
-                    },
-                    "Property Type",
-                ),
-                (
-                    DemoOfdToolStage::LinkStart {
-                        link_type: LinkType::Specialization,
-                    },
-                    "Specialization",
-                ),
-                (
-                    DemoOfdToolStage::LinkStart {
-                        link_type: LinkType::Aggregation,
-                    },
-                    "Aggregation/Generalization",
-                ),
-                (
-                    DemoOfdToolStage::LinkStart {
-                        link_type: LinkType::Precedence,
-                    },
-                    "Precedence",
-                ),
-                (
-                    DemoOfdToolStage::LinkStart {
-                        link_type: LinkType::Exclusion,
-                    },
-                    "Exclusion",
-                ),
-            ][..],
-            &[(DemoOfdToolStage::PackageStart, "Package")][..],
-        ] {
-            for (stage, name) in cat {
-                let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
-                if response.clicked() {
-                    if let Some(t) = &tool && t.initial_stage == *stage {
-                        *tool = None;
-                    } else {
-                        *tool = Some(NaiveDemoOfdTool::new(*stage));
-                    }
-                }
-
-                let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
-                let painter = ui.painter().with_clip_rect(icon_rect);
-                let mut mc = canvas::MeasuringCanvas::new(&painter);
-                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
-                let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
-                let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
-                c.clear(egui::Color32::GRAY);
-                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
-                icon_counter += 1;
-            }
-            ui.separator();
-        }
+    fn palette_iter_mut(&mut self) -> impl Iterator<
+        Item = (&str, &mut Vec<(DemoOfdToolStage, &'static str, DemoOfdElementView)>)
+    > {
+        self.placeholders.views.iter_mut().map(|e| (e.0, &mut e.1))
     }
 
     fn menubar_options_fun(
@@ -897,8 +804,13 @@ pub struct NaiveDemoOfdTool {
     event_lock: bool,
 }
 
-impl NaiveDemoOfdTool {
-    pub fn new(initial_stage: DemoOfdToolStage) -> Self {
+const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
+const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
+
+impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
+    type Stage = DemoOfdToolStage;
+
+    fn new(initial_stage: DemoOfdToolStage) -> Self {
         Self {
             initial_stage,
             current_stage: initial_stage,
@@ -906,13 +818,6 @@ impl NaiveDemoOfdTool {
             event_lock: false,
         }
     }
-}
-
-const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
-const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
-
-impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
-    type Stage = DemoOfdToolStage;
 
     fn initial_stage(&self) -> Self::Stage {
         self.initial_stage

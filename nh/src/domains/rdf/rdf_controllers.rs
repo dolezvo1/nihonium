@@ -1,5 +1,5 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
-use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
+use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
@@ -225,7 +225,7 @@ struct RdfDiagramBuffer {
 
 #[derive(Clone)]
 struct RdfPlaceholderViews {
-    views: [RdfElementView; 4],
+    views: [(&'static str, Vec<(RdfToolStage, &'static str, RdfElementView)>); 3],
 }
 
 impl Default for RdfPlaceholderViews {
@@ -240,11 +240,17 @@ impl Default for RdfPlaceholderViews {
 
         Self {
             views: [
-                literal.1,
-                node.1,
-                predicate_view.into(),
-                graph_view.into(),
-            ],
+                ("Elements", vec![
+                    (RdfToolStage::Literal, "Literal", literal.1),
+                    (RdfToolStage::Node, "Node", node.1),
+                ]),
+                ("Relationships", vec![
+                    (RdfToolStage::PredicateStart, "Predicate", predicate_view.into()),
+                ]),
+                ("Other", vec![
+                    (RdfToolStage::GraphStart, "Graph", graph_view.into()),
+                ]),
+            ]
         }
     }
 }
@@ -442,78 +448,10 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         self.buffer.comment = (*model.comment).clone();
     }
 
-    fn show_tool_palette(
-        &mut self,
-        tool: &mut Option<NaiveRdfTool>,
-        drawing_context: &GlobalDrawingContext,
-        ui: &mut egui::Ui,
-    ) {
-        let button_height = drawing_context.tool_palette_item_height as f32;
-        let width = ui.available_width();
-        let selected_background_color = if ui.style().visuals.dark_mode {
-            egui::Color32::BLUE
-        } else {
-            egui::Color32::LIGHT_BLUE
-        };
-        let button_background_color = ui.style().visuals.extreme_bg_color;
-
-        let stage = tool.as_ref().map(|e| e.initial_stage());
-        let c = |s: RdfToolStage| -> egui::Color32 {
-            if stage.is_some_and(|e| e == s) {
-                selected_background_color
-            } else {
-                button_background_color
-            }
-        };
-
-        if ui
-            .add_sized(
-                [width, button_height],
-                egui::Button::new("Select/Move").fill(if stage == None {
-                    selected_background_color
-                } else {
-                    button_background_color
-                }),
-            )
-            .clicked()
-        {
-            *tool = None;
-        }
-        ui.separator();
-
-        let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
-        let empty_q = RdfQueryable::new(&empty_a, &empty_b, &empty_c);
-        let mut icon_counter = 0;
-        for cat in [
-            &[
-                (RdfToolStage::Literal, "Literal"),
-                (RdfToolStage::Node, "Node"),
-                (RdfToolStage::PredicateStart, "Predicate"),
-            ][..],
-            &[(RdfToolStage::GraphStart, "Graph")][..],
-        ] {
-            for (stage, name) in cat {
-                let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
-                if response.clicked() {
-                    if let Some(t) = &tool && t.initial_stage == *stage {
-                        *tool = None;
-                    } else {
-                        *tool = Some(NaiveRdfTool::new(*stage));
-                    }
-                }
-
-                let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
-                let painter = ui.painter().with_clip_rect(icon_rect);
-                let mut mc = canvas::MeasuringCanvas::new(&painter);
-                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
-                let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
-                let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
-                c.clear(egui::Color32::GRAY);
-                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
-                icon_counter += 1;
-            }
-            ui.separator();
-        }
+    fn palette_iter_mut(&mut self) -> impl Iterator<
+        Item = (&str, &mut Vec<(RdfToolStage, &'static str, RdfElementView)>)
+    > {
+        self.placeholders.views.iter_mut().map(|e| (e.0, &mut e.1))
     }
 
     fn menubar_options_fun(
@@ -701,8 +639,13 @@ pub struct NaiveRdfTool {
     event_lock: bool,
 }
 
-impl NaiveRdfTool {
-    pub fn new(initial_stage: RdfToolStage) -> Self {
+const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
+const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
+
+impl Tool<RdfDomain> for NaiveRdfTool {
+    type Stage = RdfToolStage;
+
+    fn new(initial_stage: RdfToolStage) -> Self {
         Self {
             initial_stage,
             current_stage: initial_stage,
@@ -710,13 +653,6 @@ impl NaiveRdfTool {
             event_lock: false,
         }
     }
-}
-
-const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
-const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
-
-impl Tool<RdfDomain> for NaiveRdfTool {
-    type Stage = RdfToolStage;
 
     fn initial_stage(&self) -> RdfToolStage {
         self.initial_stage

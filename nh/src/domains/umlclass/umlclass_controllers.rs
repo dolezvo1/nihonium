@@ -721,73 +721,10 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         self.buffer.comment = (*model.comment).clone();
     }
 
-    fn show_tool_palette(
-        &mut self,
-        tool: &mut Option<NaiveUmlClassTool<P>>,
-        drawing_context: &GlobalDrawingContext,
-        ui: &mut egui::Ui,
-    ) {
-        let button_height = drawing_context.tool_palette_item_height as f32;
-        let width = ui.available_width();
-        let selected_background_color = if ui.style().visuals.dark_mode {
-            egui::Color32::BLUE
-        } else {
-            egui::Color32::LIGHT_BLUE
-        };
-        let button_background_color = ui.style().visuals.extreme_bg_color;
-
-        let stage = tool.as_ref().map(|e| e.initial_stage());
-        let c = |s: UmlClassToolStage| -> egui::Color32 {
-            if stage.is_some_and(|e| e == s) {
-                selected_background_color
-            } else {
-                button_background_color
-            }
-        };
-
-        if ui
-            .add_sized(
-                [width, button_height],
-                egui::Button::new("Select/Move").fill(if stage == None {
-                    selected_background_color
-                } else {
-                    button_background_color
-                }),
-            )
-            .clicked()
-        {
-            *tool = None;
-        }
-        ui.separator();
-
-        let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
-        let empty_q = UmlClassQueryable::new(&empty_a, &empty_b, &empty_c);
-        for (label, items) in self.placeholders.iter_mut() {
-            egui::CollapsingHeader::new(label)
-                .default_open(true)
-                .show(ui, |ui| {
-                    let width = ui.available_width();
-                    for (stage, name, view) in items.iter_mut() {
-                        let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
-                        if response.clicked() {
-                            if let Some(t) = &tool && t.initial_stage == *stage {
-                                *tool = None;
-                            } else {
-                                *tool = Some(NaiveUmlClassTool::new(*stage));
-                            }
-                        }
-
-                        let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
-                        let painter = ui.painter().with_clip_rect(icon_rect);
-                        let mut mc = canvas::MeasuringCanvas::new(&painter);
-                        view.draw_in(&empty_q, drawing_context, &mut mc, &None);
-                        let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
-                        let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
-                        c.clear(egui::Color32::GRAY);
-                        view.draw_in(&empty_q, drawing_context, &mut c, &None);
-                    }
-                });
-        }
+    fn palette_iter_mut(&mut self) -> impl Iterator<
+        Item = (&str, &mut Vec<(UmlClassToolStage, &'static str, UmlClassElementView<P>)>)
+    > {
+        self.placeholders.iter_mut()
     }
 
     fn menubar_options_fun(
@@ -1168,8 +1105,13 @@ pub struct NaiveUmlClassTool<P: UmlClassProfile> {
     event_lock: bool,
 }
 
-impl<P: UmlClassProfile> NaiveUmlClassTool<P> {
-    pub fn new(initial_stage: UmlClassToolStage) -> Self {
+const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
+const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
+
+impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
+    type Stage = UmlClassToolStage;
+
+    fn new(initial_stage: UmlClassToolStage) -> Self {
         Self {
             initial_stage,
             current_stage: initial_stage,
@@ -1177,13 +1119,6 @@ impl<P: UmlClassProfile> NaiveUmlClassTool<P> {
             event_lock: false,
         }
     }
-}
-
-const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
-const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
-
-impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
-    type Stage = UmlClassToolStage;
 
     fn initial_stage(&self) -> Self::Stage {
         self.initial_stage

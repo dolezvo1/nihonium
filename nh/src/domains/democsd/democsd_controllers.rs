@@ -271,7 +271,7 @@ struct DemoCsdDiagramBuffer {
 
 #[derive(Clone)]
 struct DemoCsdPlaceholderViews {
-    views: [DemoCsdElementView; 7],
+    views: [(&'static str, Vec<(DemoCsdToolStage, &'static str, DemoCsdElementView)>); 3],
 }
 
 impl Default for DemoCsdPlaceholderViews {
@@ -292,14 +292,20 @@ impl Default for DemoCsdPlaceholderViews {
 
         Self {
             views: [
-                client_view.into(),
-                actor_view.into(),
-                bank.1,
-                init_view.into(),
-                ints_view.into(),
-                inim_view.into(),
-                package_view.into(),
-            ],
+                ("Elements", vec![
+                    (DemoCsdToolStage::Client, "Client Role", client_view.into()),
+                    (DemoCsdToolStage::Transactor, "Actor Role", actor_view.into()),
+                    (DemoCsdToolStage::Bank, "Transaction Bank", bank.1.into()),
+                ]),
+                ("Relationships", vec![
+                    (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::InitiatorLink }, "Initiator Link", init_view.into()),
+                    (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::AccessLink }, "Access Link", ints_view.into()),
+                    (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::WaitLink }, "Wait Link", inim_view.into()),
+                ]),
+                ("Other", vec![
+                    (DemoCsdToolStage::PackageStart, "Package", package_view.into()),
+                ]),
+            ]
         }
     }
 }
@@ -503,98 +509,10 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         self.buffer.comment = (*model.comment).clone();
     }
 
-    fn show_tool_palette(
-        &mut self,
-        tool: &mut Option<NaiveDemoCsdTool>,
-        drawing_context: &GlobalDrawingContext,
-        ui: &mut egui::Ui,
-    ) {
-        let button_height = drawing_context.tool_palette_item_height as f32;
-        let width = ui.available_width();
-        let selected_background_color = if ui.style().visuals.dark_mode {
-            egui::Color32::BLUE
-        } else {
-            egui::Color32::LIGHT_BLUE
-        };
-        let button_background_color = ui.style().visuals.extreme_bg_color;
-
-        let stage = tool.as_ref().map(|e| e.initial_stage());
-        let c = |s: DemoCsdToolStage| -> egui::Color32 {
-            if stage.is_some_and(|e| e == s) {
-                selected_background_color
-            } else {
-                button_background_color
-            }
-        };
-
-        if ui
-            .add_sized(
-                [width, button_height],
-                egui::Button::new("Select/Move").fill(if stage == None {
-                    selected_background_color
-                } else {
-                    button_background_color
-                }),
-            )
-            .clicked()
-        {
-            *tool = None;
-        }
-        ui.separator();
-
-        let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
-        let empty_q = DemoCsdQueryable::new(&empty_a, &empty_b, &empty_c);
-        let mut icon_counter = 0;
-        for cat in [
-            &[
-                (DemoCsdToolStage::Client, "Client Role"),
-                (DemoCsdToolStage::Transactor, "Actor Role"),
-                (DemoCsdToolStage::Bank, "Transaction Bank"),
-            ][..],
-            &[
-                (
-                    DemoCsdToolStage::LinkStart {
-                        link_type: DemoCsdLinkType::InitiatorLink,
-                    },
-                    "Initiator Link",
-                ),
-                (
-                    DemoCsdToolStage::LinkStart {
-                        link_type: DemoCsdLinkType::AccessLink,
-                    },
-                    "Access Link",
-                ),
-                (
-                    DemoCsdToolStage::LinkStart {
-                        link_type: DemoCsdLinkType::WaitLink,
-                    },
-                    "Wait Link",
-                ),
-            ][..],
-            &[(DemoCsdToolStage::PackageStart, "Package")][..],
-        ] {
-            for (stage, name) in cat {
-                let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
-                if response.clicked() {
-                    if let Some(t) = &tool && t.initial_stage == *stage {
-                        *tool = None;
-                    } else {
-                        *tool = Some(NaiveDemoCsdTool::new(*stage));
-                    }
-                }
-
-                let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
-                let painter = ui.painter().with_clip_rect(icon_rect);
-                let mut mc = canvas::MeasuringCanvas::new(&painter);
-                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
-                let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
-                let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
-                c.clear(egui::Color32::GRAY);
-                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
-                icon_counter += 1;
-            }
-            ui.separator();
-        }
+    fn palette_iter_mut(&mut self) -> impl Iterator<
+        Item = (&str, &mut Vec<(DemoCsdToolStage, &'static str, DemoCsdElementView)>)
+    > {
+        self.placeholders.views.iter_mut().map(|e| (e.0, &mut e.1))
     }
 
     fn menubar_options_fun(
@@ -776,8 +694,13 @@ pub struct NaiveDemoCsdTool {
     event_lock: bool,
 }
 
-impl NaiveDemoCsdTool {
-    pub fn new(initial_stage: DemoCsdToolStage) -> Self {
+const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
+const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
+
+impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
+    type Stage = DemoCsdToolStage;
+
+    fn new(initial_stage: DemoCsdToolStage) -> Self {
         Self {
             initial_stage,
             current_stage: initial_stage,
@@ -785,13 +708,6 @@ impl NaiveDemoCsdTool {
             event_lock: false,
         }
     }
-}
-
-const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
-const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
-
-impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
-    type Stage = DemoCsdToolStage;
 
     fn initial_stage(&self) -> DemoCsdToolStage {
         self.initial_stage

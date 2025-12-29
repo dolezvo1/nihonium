@@ -999,8 +999,9 @@ pub trait Queryable<'a, DomainT: Domain> {
 }
 
 pub trait Tool<DomainT: Domain> {
-    type Stage: 'static;
+    type Stage: Clone + PartialEq + 'static;
 
+    fn new(initial_stage: Self::Stage) -> Self;
     fn initial_stage(&self) -> Self::Stage;
 
     fn targetting_for_section(&self, element: Option<DomainT::ViewTargettingSectionT>) -> egui::Color32;
@@ -1861,12 +1862,9 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn refresh_buffers(&mut self);
-    fn show_tool_palette(
-        &mut self,
-        tool: &mut Option<DomainT::ToolT>,
-        drawing_context: &GlobalDrawingContext,
-        ui: &mut egui::Ui,
-    );
+    fn palette_iter_mut(&mut self) -> impl Iterator<
+        Item = (&str, &mut Vec<(<<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage, &'static str, DomainT::CommonElementViewT)>)
+    >;
     fn menubar_options_fun(
         &self,
         view_uuid: &ViewUuid,
@@ -2589,10 +2587,70 @@ impl<
 
     fn show_toolbar(
         &mut self,
-        context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         ui: &mut egui::Ui,
     ) {
-        self.adapter.show_tool_palette(&mut self.temporaries.current_tool, context, ui);
+        let button_height = gdc.tool_palette_item_height as f32;
+        let width = ui.available_width();
+        let selected_background_color = if ui.style().visuals.dark_mode {
+            egui::Color32::BLUE
+        } else {
+            egui::Color32::LIGHT_BLUE
+        };
+        let button_background_color = ui.style().visuals.extreme_bg_color;
+
+        let stage = self.temporaries.current_tool.as_ref().map(|e| e.initial_stage());
+        let c = |s: &<<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage| -> egui::Color32 {
+            if stage.as_ref().is_some_and(|e| *e == *s) {
+                selected_background_color
+            } else {
+                button_background_color
+            }
+        };
+
+        if ui
+            .add_sized(
+                [width, button_height],
+                egui::Button::new("Select/Move").fill(if stage == None {
+                    selected_background_color
+                } else {
+                    button_background_color
+                }),
+            )
+            .clicked()
+        {
+            self.temporaries.current_tool = None;
+        }
+        ui.separator();
+
+        let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
+        let empty_q = DomainT::QueryableT::new(&empty_a, &empty_b, &empty_c);
+        for (label, items) in self.adapter.palette_iter_mut() {
+            egui::CollapsingHeader::new(label)
+                .default_open(true)
+                .show(ui, |ui| {
+                    let width = ui.available_width();
+                    for (stage, name, view) in items.iter_mut() {
+                        let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(stage)));
+                        if response.clicked() {
+                            if let Some(t) = &self.temporaries.current_tool && t.initial_stage() == *stage {
+                                self.temporaries.current_tool = None;
+                            } else {
+                                self.temporaries.current_tool = Some(DomainT::ToolT::new(stage.clone()));
+                            }
+                        }
+
+                        let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
+                        let painter = ui.painter().with_clip_rect(icon_rect);
+                        let mut mc = canvas::MeasuringCanvas::new(&painter);
+                        view.draw_in(&empty_q, gdc, &mut mc, &None);
+                        let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
+                        let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
+                        c.clear(egui::Color32::GRAY);
+                        view.draw_in(&empty_q, gdc, &mut c, &None);
+                    }
+                });
+        }
     }
     fn show_properties(
         &mut self,

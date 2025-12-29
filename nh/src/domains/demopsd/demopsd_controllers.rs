@@ -360,7 +360,7 @@ struct DemoPsdDiagramBuffer {
 
 #[derive(Clone)]
 struct DemoPsdPlaceholderViews {
-    views: [DemoPsdElementView; 6],
+    views: [(&'static str, Vec<(DemoPsdToolStage, &'static str, DemoPsdElementView)>); 3],
 }
 
 impl Default for DemoPsdPlaceholderViews {
@@ -380,13 +380,19 @@ impl Default for DemoPsdPlaceholderViews {
 
         Self {
             views: [
-                ta.1,
-                fact.1,
-                act.1,
-                response_view.into(),
-                wait_view.into(),
-                package_view.into(),
-            ],
+                ("Elements", vec![
+                    (DemoPsdToolStage::TransactionStart, "Transaction", ta.1),
+                    (DemoPsdToolStage::Fact, "Fact", fact.1),
+                    (DemoPsdToolStage::Act, "Act", act.1),
+                ]),
+                ("Relationships", vec![
+                    (DemoPsdToolStage::LinkStart { link_type: DemoPsdLinkType::ResponseLink }, "Response Link", response_view.into()),
+                    (DemoPsdToolStage::LinkStart { link_type: DemoPsdLinkType::WaitLink }, "Wait Link", wait_view.into()),
+                ]),
+                ("Other", vec![
+                    (DemoPsdToolStage::PackageStart, "Package", package_view.into()),
+                ]),
+            ]
         }
     }
 }
@@ -634,92 +640,10 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         self.buffer.comment = (*model.comment).clone();
     }
 
-    fn show_tool_palette(
-        &mut self,
-        tool: &mut Option<NaiveDemoPsdTool>,
-        drawing_context: &GlobalDrawingContext,
-        ui: &mut egui::Ui,
-    ) {
-        let button_height = drawing_context.tool_palette_item_height as f32;
-        let width = ui.available_width();
-        let selected_background_color = if ui.style().visuals.dark_mode {
-            egui::Color32::BLUE
-        } else {
-            egui::Color32::LIGHT_BLUE
-        };
-        let button_background_color = ui.style().visuals.extreme_bg_color;
-
-        let stage = tool.as_ref().map(|e| e.initial_stage());
-        let c = |s: DemoPsdToolStage| -> egui::Color32 {
-            if stage.is_some_and(|e| e == s) {
-                selected_background_color
-            } else {
-                button_background_color
-            }
-        };
-
-        if ui
-            .add_sized(
-                [width, button_height],
-                egui::Button::new("Select/Move").fill(if stage == None {
-                    selected_background_color
-                } else {
-                    button_background_color
-                }),
-            )
-            .clicked()
-        {
-            *tool = None;
-        }
-        ui.separator();
-
-        let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
-        let empty_q = DemoPsdQueryable::new(&empty_a, &empty_b, &empty_c);
-        let mut icon_counter = 0;
-        for cat in [
-            &[
-                (DemoPsdToolStage::TransactionStart, "Transaction"),
-                (DemoPsdToolStage::Fact, "Fact"),
-                (DemoPsdToolStage::Act, "Act"),
-            ][..],
-            &[
-                (
-                    DemoPsdToolStage::LinkStart {
-                        link_type: DemoPsdLinkType::ResponseLink,
-                    },
-                    "Response Link",
-                ),
-                (
-                    DemoPsdToolStage::LinkStart {
-                        link_type: DemoPsdLinkType::WaitLink,
-                    },
-                    "Wait Link",
-                ),
-            ][..],
-            &[(DemoPsdToolStage::PackageStart, "Package")][..],
-        ] {
-            for (stage, name) in cat {
-                let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(*stage)));
-                if response.clicked() {
-                    if let Some(t) = &tool && t.initial_stage == *stage {
-                        *tool = None;
-                    } else {
-                        *tool = Some(NaiveDemoPsdTool::new(*stage));
-                    }
-                }
-
-                let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
-                let painter = ui.painter().with_clip_rect(icon_rect);
-                let mut mc = canvas::MeasuringCanvas::new(&painter);
-                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut mc, &None);
-                let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
-                let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
-                c.clear(egui::Color32::GRAY);
-                self.placeholders.views[icon_counter].draw_in(&empty_q, drawing_context, &mut c, &None);
-                icon_counter += 1;
-            }
-            ui.separator();
-        }
+    fn palette_iter_mut(&mut self) -> impl Iterator<
+        Item = (&str, &mut Vec<(DemoPsdToolStage, &'static str, DemoPsdElementView)>)
+    > {
+        self.placeholders.views.iter_mut().map(|e| (e.0, &mut e.1))
     }
 
     fn menubar_options_fun(
@@ -876,8 +800,13 @@ pub struct NaiveDemoPsdTool {
     event_lock: bool,
 }
 
-impl NaiveDemoPsdTool {
-    pub fn new(initial_stage: DemoPsdToolStage) -> Self {
+const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
+const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
+
+impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
+    type Stage = DemoPsdToolStage;
+
+    fn new(initial_stage: DemoPsdToolStage) -> Self {
         Self {
             initial_stage,
             current_stage: initial_stage,
@@ -885,13 +814,6 @@ impl NaiveDemoPsdTool {
             event_lock: false,
         }
     }
-}
-
-const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
-const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(255, 0, 0, 31);
-
-impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
-    type Stage = DemoPsdToolStage;
 
     fn initial_stage(&self) -> DemoPsdToolStage {
         self.initial_stage
