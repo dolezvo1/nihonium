@@ -346,7 +346,7 @@ impl RdfDiagram {
                 let mut hm = HashMap::new();
                 hm.insert(
                     uuid::Uuid::now_v7(),
-                    ("all".to_owned(), "SELECT * WHERE { ?s ?p ?o }".to_owned()),
+                    ("all".to_owned(), "SELECT ?s ?p ?o WHERE { ?s ?p ?o }".to_owned()),
                 );
                 hm
             },

@@ -463,9 +463,9 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         // TODO: re-enable when sophia's getrandom dependency gets updated
         #[cfg(not(target_arch = "wasm32"))]
         {
-            if ui.button("Import RDF data").clicked() {
-                // TODO: import stuff
-            }
+            /* TODO: RDF import & export
+            if ui.button("Import RDF data").clicked() {}
+            */
             if ui.button("SPARQL Queries").clicked() {
                 let uuid = uuid::Uuid::now_v7();
                 commands.push(ProjectCommand::AddCustomTab(
