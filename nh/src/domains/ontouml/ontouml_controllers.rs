@@ -74,7 +74,7 @@ impl ControllerAdapter<UmlClassDomain<OntoUmlProfile>> for OntoUmlControllerAdap
         "umlclass-ontouml"
     }
 
-    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+    fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::super::umlclass::umlclass_models::transitive_closure(&self.model.read(), when_deleting)
     }
 

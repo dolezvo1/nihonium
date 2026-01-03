@@ -177,7 +177,7 @@ impl ControllerAdapter<DemoCsdDomain> for DemoCsdControllerAdapter {
         "democsd"
     }
 
-    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+    fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::democsd_models::transitive_closure(&self.model.read(), when_deleting)
     }
 

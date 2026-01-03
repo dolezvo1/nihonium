@@ -249,7 +249,7 @@ impl ControllerAdapter<DemoPsdDomain> for DemoPsdControllerAdapter {
         "demopsd"
     }
 
-    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+    fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::demopsd_models::transitive_closure(&self.model.read(), when_deleting)
     }
 

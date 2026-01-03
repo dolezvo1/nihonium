@@ -178,7 +178,7 @@ impl ControllerAdapter<RdfDomain> for RdfControllerAdapter {
         "rdf"
     }
 
-    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+    fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
         super::rdf_models::transitive_closure(&self.model.read(), when_deleting)
     }
 

@@ -527,6 +527,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
 
     fn extend_models_for(&self, views: &HashSet<ViewUuid>, models: &mut HashSet<ModelUuid>);
     fn get_view_for(&self, model: &ModelUuid) -> Option<ViewUuid>;
+    fn view_transitive_closure(&self, uuids: &mut HashSet<ViewUuid>);
 
     /// Create new view with a new model
     fn deep_copy(&self) -> ERef<Self>;
@@ -1123,6 +1124,9 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     );
+    fn delete_when(&self, _deleting: &HashSet<ViewUuid>) -> bool {
+        false
+    }
 
     // Create a deep copy, including the models
     fn deep_copy_walk(
@@ -1160,7 +1164,7 @@ pub trait ControllerAdapter<DomainT: Domain>: serde::Serialize + NHContextSerial
     fn controller_type(&self) -> &'static str;
 
     /// Must return all ModelUuids that are to be deleted, including children of deleted containers
-    fn transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid>;
+    fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid>;
 
     fn insert_element(&mut self, parent: ModelUuid, e: DomainT::CommonElementT, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()>;
     fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, DomainT::CommonElementT, BucketNoT, PositionNoT)>);
@@ -1250,7 +1254,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
 
                     match delete_kind {
                         DeleteKind::DeleteView => {
-                            let model_uuids = self.adapter.transitive_closure(original_models);
+                            let model_uuids = self.adapter.model_transitive_closure(original_models);
                             let r = view.read();
                             uuids.extend(model_uuids.iter().flat_map(|m| r.get_view_for(m)));
                         }
@@ -1264,15 +1268,15 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                                     });
                             });
                             models_to_remove.extend(original_models.iter().filter(|e| view_counts.get(*e).is_none_or(|e| e.len() <= 1)).copied());
-                            models_to_remove = self.adapter.transitive_closure(models_to_remove);
-                            // TODO: make this work even when views depend on deleted views
+                            models_to_remove = self.adapter.model_transitive_closure(models_to_remove);
                             self.views.draw_order_foreach(|v| uuids.extend(models_to_remove.iter().flat_map(|m| v.get_view_for(m))));
                         }
                         DeleteKind::DeleteAll => {
-                            models_to_remove = self.adapter.transitive_closure(original_models);
+                            models_to_remove = self.adapter.model_transitive_closure(original_models);
                             self.views.draw_order_foreach(|v| uuids.extend(models_to_remove.iter().flat_map(|m| v.get_view_for(m))));
                         }
                     }
+                    self.views.draw_order_foreach(|v| v.view_transitive_closure(uuids));
                 },
                 _ => {},
             };
@@ -3159,6 +3163,20 @@ impl<
     }
     fn get_view_for(&self, model: &ModelUuid) -> Option<ViewUuid> {
         self.temporaries.flattened_represented_models.get(model).copied()
+    }
+    fn view_transitive_closure(&self, uuids: &mut HashSet<ViewUuid>) {
+        let mut temp = HashSet::new();
+        loop {
+            for e in &self.temporaries.flattened_views {
+                if !uuids.contains(e.0) && e.1.delete_when(uuids) {
+                    temp.insert(*e.0);
+                }
+            }
+            if temp.is_empty() {
+                break;
+            }
+            uuids.extend(temp.drain());
+        }
     }
 
     fn deep_copy(&self) -> ERef<Self> {
