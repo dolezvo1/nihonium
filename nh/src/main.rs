@@ -1811,7 +1811,7 @@ impl Default for NHApp {
         context.drawing_context.shortcuts.insert(DiagramCommand::CutSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X));
         context.drawing_context.shortcuts.insert(DiagramCommand::CopySelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C));
         context.drawing_context.shortcuts.insert(DiagramCommand::PasteClipboardElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
-        context.drawing_context.shortcuts.insert(SimpleProjectCommand::DeleteSelectedElements(None), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
+        context.drawing_context.shortcuts.insert(DiagramCommand::DeleteSelectedElements(None).into(), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
 
         context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Plus));
         context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Plus));
@@ -2096,22 +2096,6 @@ impl eframe::App for NHApp {
             };
         }
 
-        macro_rules! send_to_diagram {
-            ($uuid:expr, $command:expr) => {
-                if let Some(ac) = self.context.diagram_controllers.get($uuid) {
-                    ac.write().apply_diagram_command($uuid, $command, &mut self.context.affected_models);
-                }
-            };
-        }
-
-        macro_rules! send_to_focused_diagram {
-            ($command:expr) => {
-                if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
-                    send_to_diagram!(uuid, $command);
-                }
-            };
-        }
-
         // Show ui
         TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
             // Check diagram-handled shortcuts
@@ -2120,9 +2104,18 @@ impl eframe::App for NHApp {
             ui.input(|is|
                 'outer: for e in is.events.iter() {
                     match e {
-                        egui::Event::Cut if !input_blocked => send_to_focused_diagram!(DiagramCommand::CutSelectedElements),
-                        egui::Event::Copy if !input_blocked => send_to_focused_diagram!(DiagramCommand::CopySelectedElements),
-                        egui::Event::Paste(_a) if !input_blocked => send_to_focused_diagram!(DiagramCommand::PasteClipboardElements),
+                        e @ (egui::Event::Cut
+                        | egui::Event::Copy
+                        | egui::Event::Paste(..)) if !input_blocked => {
+                            if matches!(self.tree.find_active_focused(), Some((_, NHTab::Diagram { .. }))) {
+                                commands.push(SimpleProjectCommand::from(match e {
+                                    egui::Event::Cut => DiagramCommand::CutSelectedElements,
+                                    egui::Event::Copy => DiagramCommand::CopySelectedElements,
+                                    egui::Event::Paste(_) => DiagramCommand::PasteClipboardElements,
+                                    _ => unreachable!(),
+                                }).into())
+                            }
+                        },
                         egui::Event::Key { key, pressed, modifiers, .. } => {
                             if !pressed {continue;}
 
@@ -2157,16 +2150,16 @@ impl eframe::App for NHApp {
                                     e @ SimpleProjectCommand::FocusedDiagramCommand(dc) => match dc {
                                         DiagramCommand::DropRedoStackAndLastChangeFlag
                                         | DiagramCommand::SetLastChangeFlag => unreachable!(),
-                                        DiagramCommand::UndoImmediate => {
+                                        DiagramCommand::UndoImmediate
+                                        | DiagramCommand::RedoImmediate
+                                        | DiagramCommand::DeleteSelectedElements(_)
+                                        | DiagramCommand::CutSelectedElements
+                                        | DiagramCommand::CopySelectedElements
+                                        | DiagramCommand::PasteClipboardElements => {
                                             if matches!(self.tree.find_active_focused(), Some((_, NHTab::Diagram { .. }))) {
-                                                self.undo_immediate()
+                                                commands.push(e.into())
                                             }
-                                        },
-                                        DiagramCommand::RedoImmediate => {
-                                            if matches!(self.tree.find_active_focused(), Some((_, NHTab::Diagram { .. }))) {
-                                                self.redo_immediate()
-                                            }
-                                        },
+                                        }
                                         _ => commands.push(e.into())
                                     },
                                     other => commands.push(other.into()),
@@ -2267,9 +2260,12 @@ impl eframe::App for NHApp {
 
                     ui.menu_button(translate!("nh-edit-delete"), |ui| {
                         ui.set_min_width(MIN_MENU_WIDTH);
-                        button!(ui, "nh-generic-deletemodel-view", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(false)));
-                        button!(ui, "nh-generic-deletemodel-modelif", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(false)));
-                        button!(ui, "nh-generic-deletemodel-all", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(true)));
+                        button!(ui, "nh-generic-deletemodel-view",
+                            SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(DeleteKind::DeleteView))));
+                        button!(ui, "nh-generic-deletemodel-modelif",
+                            SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(DeleteKind::DeleteModelIfOnlyView))));
+                        button!(ui, "nh-generic-deletemodel-all",
+                            SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(DeleteKind::DeleteAll))));
                     });
                     ui.separator();
 
@@ -2548,36 +2544,36 @@ impl eframe::App for NHApp {
             egui::Modal::new("Confirm Modal Window".into())
                 .show(ctx, |ui| {
 
-                    if let SimpleProjectCommand::DeleteSelectedElements(k) = confirm_reason {
+                    if let SimpleProjectCommand::FocusedDiagramCommand(DiagramCommand::DeleteSelectedElements(k)) = confirm_reason {
                         ui.label(translate!("nh-generic-deletemodel-title"));
 
-                        let mut b = k.is_some();
-                        if ui.checkbox(&mut b, translate!("nh-generic-dontaskagain")).changed() {
-                            self.context.confirm_modal_reason = Some(SimpleProjectCommand::DeleteSelectedElements(
-                                match b {
-                                    true => Some(DeleteKind::DeleteView),
+                        let mut dont_ask_again = k.is_some();
+                        if ui.checkbox(&mut dont_ask_again, translate!("nh-generic-dontaskagain")).changed() {
+                            self.context.confirm_modal_reason = Some(DiagramCommand::DeleteSelectedElements(
+                                match dont_ask_again {
+                                    true => Some(Default::default()),
                                     false => None,
                                 }
-                            ));
+                            ).into());
                         }
 
                         ui.horizontal(|ui| {
                             if ui.button(translate!("nh-generic-deletemodel-view")).clicked() {
-                                commands.push(SimpleProjectCommand::DeleteSelectedElements(Some(DeleteKind::DeleteView)).into());
+                                commands.push(SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(DeleteKind::DeleteView))).into());
                                 if k.is_some() {
                                     self.context.modifier_settings.default_delete_kind = Some(DeleteKind::DeleteView);
                                 }
                                 self.context.confirm_modal_reason = None;
                             }
                             if ui.button(translate!("nh-generic-deletemodel-modelif")).clicked() {
-                                commands.push(SimpleProjectCommand::DeleteSelectedElements(Some(DeleteKind::DeleteModelIfOnlyView)).into());
+                                commands.push(SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(DeleteKind::DeleteModelIfOnlyView))).into());
                                 if k.is_some() {
                                     self.context.modifier_settings.default_delete_kind = Some(DeleteKind::DeleteModelIfOnlyView);
                                 }
                                 self.context.confirm_modal_reason = None;
                             }
                             if ui.button(translate!("nh-generic-deletemodel-all")).clicked() {
-                                commands.push(SimpleProjectCommand::DeleteSelectedElements(Some(DeleteKind::DeleteAll)).into());
+                                commands.push(SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(DeleteKind::DeleteAll))).into());
                                 if k.is_some() {
                                     self.context.modifier_settings.default_delete_kind = Some(DeleteKind::DeleteAll);
                                 }
@@ -2643,31 +2639,38 @@ impl eframe::App for NHApp {
                 });
         }
 
+        macro_rules! send_to_diagram {
+            ($uuid:expr, $command:expr) => {
+                if let Some(ac) = self.context.diagram_controllers.get($uuid) {
+                    ac.write().apply_diagram_command($uuid, $command, &mut self.context.affected_models);
+                }
+            };
+        }
+
+        macro_rules! send_to_focused_diagram {
+            ($command:expr) => {
+                if let Some((_, NHTab::Diagram { uuid })) = self.tree.find_active_focused() {
+                    send_to_diagram!(uuid, $command);
+                }
+            };
+        }
+
         for c in commands {
             match c {
                 ProjectCommand::SimpleProjectCommand(spc) => match spc {
                     SimpleProjectCommand::FocusedDiagramCommand(dc) => match dc {
                         DiagramCommand::UndoImmediate => self.undo_immediate(),
                         DiagramCommand::RedoImmediate => self.redo_immediate(),
+                        DiagramCommand::DeleteSelectedElements(k) => match k.or(self.context.modifier_settings.default_delete_kind) {
+                            None => {
+                                self.context.confirm_modal_reason = Some(DiagramCommand::DeleteSelectedElements(None).into());
+                            },
+                            otherwise => send_to_focused_diagram!(DiagramCommand::DeleteSelectedElements(otherwise)),
+                        }
                         dc => send_to_focused_diagram!(dc),
                     },
                     SimpleProjectCommand::SpecificDiagramCommand(v, dc) => {
                         send_to_diagram!(&v, dc);
-                    }
-                    SimpleProjectCommand::DeleteSelectedElements(k) => match k.or(self.context.modifier_settings.default_delete_kind) {
-                        None => {
-                            self.context.confirm_modal_reason = Some(SimpleProjectCommand::DeleteSelectedElements(None));
-                        },
-                        Some(k) => match k {
-                            DeleteKind::DeleteView => {
-                                send_to_focused_diagram!(DiagramCommand::DeleteSelectedElements(false))
-                            },
-                            // TODO: implement delete model if only view
-                            DeleteKind::DeleteModelIfOnlyView
-                            | DeleteKind::DeleteAll => {
-                                send_to_focused_diagram!(DiagramCommand::DeleteSelectedElements(true))
-                            },
-                        },
                     }
                     SimpleProjectCommand::SwapTopLanguages => {
                         if self.context.languages_order.len() > 1 {

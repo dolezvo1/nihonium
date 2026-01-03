@@ -132,7 +132,6 @@ impl From<SimpleProjectCommand> for ProjectCommand {
 pub enum SimpleProjectCommand {
     FocusedDiagramCommand(DiagramCommand),
     SpecificDiagramCommand(ViewUuid, DiagramCommand),
-    DeleteSelectedElements(Option<DeleteKind>),
     OpenProject(bool),
     SaveProject,
     SaveProjectAs,
@@ -154,7 +153,7 @@ pub enum DiagramCommand {
     UndoImmediate,
     RedoImmediate,
     InvertSelection,
-    DeleteSelectedElements(/*including_models:*/ bool),
+    DeleteSelectedElements(Option<DeleteKind>),
     CutSelectedElements,
     CopySelectedElements,
     PasteClipboardElements,
@@ -691,8 +690,9 @@ pub enum TargettingStatus {
     Drawn,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Debug)]
 pub enum DeleteKind {
+    #[default]
     DeleteView,
     DeleteModelIfOnlyView,
     DeleteAll,
@@ -2573,9 +2573,9 @@ impl<
         ui.menu_button(gdc.translate_0("nh-edit-delete"), |ui| {
             ui.set_min_width(crate::MIN_MENU_WIDTH);
 
-            button!(ui, "nh-generic-deletemodel-view", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(false)));
-            button!(ui, "nh-generic-deletemodel-modelif", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(true)));
-            button!(ui, "nh-generic-deletemodel-all", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(true)));
+            button!(ui, "nh-generic-deletemodel-view", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(DeleteKind::DeleteView))));
+            button!(ui, "nh-generic-deletemodel-modelif", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(DeleteKind::DeleteModelIfOnlyView))));
+            button!(ui, "nh-generic-deletemodel-all", SimpleProjectCommand::from(DiagramCommand::DeleteSelectedElements(Some(DeleteKind::DeleteAll))));
         });
         ui.separator();
 
@@ -2943,7 +2943,8 @@ impl<
                 }
 
                 return match command {
-                        DiagramCommand::DeleteSelectedElements(b) => vec![InsensitiveCommand::DeleteSpecificElements(se!(), b)],
+                        DiagramCommand::DeleteSelectedElements(b)
+                            => vec![InsensitiveCommand::DeleteSpecificElements(se!(), b.is_some_and(|e| e != DeleteKind::DeleteView))],
                         DiagramCommand::CutSelectedElements => vec![InsensitiveCommand::CutSpecificElements(se!())],
                         DiagramCommand::PasteClipboardElements => vec![
                             InsensitiveCommand::HighlightAll(false, canvas::Highlight::SELECTED),
