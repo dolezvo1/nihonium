@@ -449,6 +449,18 @@ pub fn fake_copy_diagram(d: &UmlClassDiagram) -> HashMap<ModelUuid, UmlClassElem
                     into.insert(*e.uuid(), e.clone());
                 }
             },
+            UmlClassElement::UmlClass(inner) => {
+                let model = inner.read();
+
+                for e in &model.properties {
+                    walk(&e.clone().into(), into);
+                    into.insert(*e.read().uuid, e.clone().into());
+                }
+                for e in &model.operations {
+                    walk(&e.clone().into(), into);
+                    into.insert(*e.read().uuid, e.clone().into());
+                }
+            }
             _ => {},
         }
     }
@@ -482,7 +494,12 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                 UmlClassElement::UmlClass(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-
+                        for e in &r.properties {
+                            enumerate(&e.clone().into(), when_deleting);
+                        }
+                        for e in &r.operations {
+                            enumerate(&e.clone().into(), when_deleting);
+                        }
                     } else {
                         for e in &r.properties {
                             walk(&e.clone().into(), when_deleting);

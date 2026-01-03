@@ -2,7 +2,7 @@
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 use eframe::egui;
 
-use crate::{CustomModal, common::{canvas::{self, ArrowDataPos, Highlight}, controller::{BucketNoT, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}};
+use crate::{CustomModal, common::{canvas::{self, ArrowDataPos, Highlight}, controller::{BucketNoT, ContainerGen2, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}};
 
 #[derive(Clone)]
 pub struct ArrowData {
@@ -917,7 +917,7 @@ where
 
                             undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                                 std::iter::once(id).collect(),
-                                false,
+                                DeleteKind::DeleteView,
                             ));
                         } else {
                             macro_rules! insert_vertex {
@@ -930,7 +930,7 @@ where
                                                 undo_accumulator.push(
                                                     InsensitiveCommand::DeleteSpecificElements(
                                                         std::iter::once(id).collect(),
-                                                        false,
+                                                        DeleteKind::DeleteView,
                                                     ),
                                                 );
                                                 return;

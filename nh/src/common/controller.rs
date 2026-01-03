@@ -526,7 +526,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     );
 
     fn extend_models_for(&self, views: &HashSet<ViewUuid>, models: &mut HashSet<ModelUuid>);
-    fn extend_views_for(&self, models: &HashSet<ModelUuid>, views: &mut HashSet<ViewUuid>);
+    fn get_view_for(&self, model: &ModelUuid) -> Option<ViewUuid>;
 
     /// Create new view with a new model
     fn deep_copy(&self) -> ERef<Self>;
@@ -839,7 +839,7 @@ pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: TryMerge + 
     MoveSpecificElements(HashSet<ViewUuid>, egui::Vec2),
     ResizeSpecificElementsBy(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     ResizeSpecificElementsTo(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
-    DeleteSpecificElements(HashSet<ViewUuid>, /*including_models:*/ bool),
+    DeleteSpecificElements(HashSet<ViewUuid>, DeleteKind),
     CutSpecificElements(HashSet<ViewUuid>),
     PasteSpecificElements(ViewUuid, Vec<AddElementT>),
     ArrangeSpecificElements(HashSet<ViewUuid>, Arrangement),
@@ -857,10 +857,10 @@ impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug>
         diagram_name: &str,
     ) -> std::borrow::Cow<'a, str> {
         let (msg, count) = match self {
-            InsensitiveCommand::DeleteSpecificElements(uuids, b) => if *b {
-                (gdc.fluent_bundle.get_message("nh-viewcommand-deleteelements").unwrap(), uuids.len())
-            } else {
+            InsensitiveCommand::DeleteSpecificElements(uuids, b) => if *b == DeleteKind::DeleteView {
                 (gdc.fluent_bundle.get_message("nh-viewcommand-deleteelementsfrom").unwrap(), uuids.len())
+            } else {
+                (gdc.fluent_bundle.get_message("nh-viewcommand-deleteelements").unwrap(), uuids.len())
             },
             InsensitiveCommand::MoveSpecificElements(uuids, _delta)
                 => (gdc.fluent_bundle.get_message("nh-viewcommand-moveelements").unwrap(), uuids.len()),
@@ -1237,20 +1237,41 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
             match c {
                 InsensitiveCommand::CutSpecificElements(_)
                 | InsensitiveCommand::DeleteSpecificElements(_, _) => {
-                    let into_model = matches!(c, InsensitiveCommand::CutSpecificElements(_)
-                                                 | InsensitiveCommand::DeleteSpecificElements(_, true));
+                    let delete_kind = match c {
+                        InsensitiveCommand::CutSpecificElements(_) => DeleteKind::DeleteAll,
+                        InsensitiveCommand::DeleteSpecificElements(_, k) => k,
+                        _ => unreachable!(),
+                    };
                     let (InsensitiveCommand::CutSpecificElements(ref mut uuids)
                          | InsensitiveCommand::DeleteSpecificElements(ref mut uuids, _)) = c else { unreachable!() };
 
                     let mut original_models = HashSet::new();
                     self.views.draw_order_foreach(|e| e.extend_models_for(&uuids, &mut original_models));
-                    let model_uuids = self.adapter.transitive_closure(original_models);
 
-                    if !into_model {
-                        view.write().extend_views_for(&model_uuids, uuids);
-                    } else {
-                        self.views.draw_order_foreach(|e| e.extend_views_for(&model_uuids, uuids));
-                        models_to_remove = model_uuids;
+                    match delete_kind {
+                        DeleteKind::DeleteView => {
+                            let model_uuids = self.adapter.transitive_closure(original_models);
+                            let r = view.read();
+                            uuids.extend(model_uuids.iter().flat_map(|m| r.get_view_for(m)));
+                        }
+                        DeleteKind::DeleteModelIfOnlyView => {
+                            let mut view_counts = HashMap::<ModelUuid, Vec<ViewUuid>>::new();
+
+                            self.views.draw_order_foreach(|v| {
+                                original_models.iter()
+                                    .for_each(|m| if let Some(v2) = v.get_view_for(m) {
+                                        view_counts.entry(*m).or_default().push(v2);
+                                    });
+                            });
+                            models_to_remove.extend(original_models.iter().filter(|e| view_counts.get(*e).is_none_or(|e| e.len() <= 1)).copied());
+                            models_to_remove = self.adapter.transitive_closure(models_to_remove);
+                            // TODO: make this work even when views depend on deleted views
+                            self.views.draw_order_foreach(|v| uuids.extend(models_to_remove.iter().flat_map(|m| v.get_view_for(m))));
+                        }
+                        DeleteKind::DeleteAll => {
+                            models_to_remove = self.adapter.transitive_closure(original_models);
+                            self.views.draw_order_foreach(|v| uuids.extend(models_to_remove.iter().flat_map(|m| v.get_view_for(m))));
+                        }
                     }
                 },
                 _ => {},
@@ -2210,17 +2231,18 @@ impl<
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, _)
             | InsensitiveCommand::CutSpecificElements(uuids) => {
-                let from_model = matches!(
-                    command,
-                    InsensitiveCommand::DeleteSpecificElements(_, true) | InsensitiveCommand::CutSpecificElements(..)
-                );
+                let delete_kind = match command {
+                    InsensitiveCommand::CutSpecificElements(..) => DeleteKind::DeleteAll,
+                    InsensitiveCommand::DeleteSpecificElements(_, k) => *k,
+                    _ => unreachable!(),
+                };
 
                 for (_uuid, element) in self
                     .owned_views
                     .iter_event_order_pairs()
                     .filter(|e| uuids.contains(&e.0))
                 {
-                    let (b, pos) = if !from_model {
+                    let (b, pos) = if delete_kind == DeleteKind::DeleteView {
                         (0, None)
                     } else if let Some((b, pos)) = self.adapter.get_element_pos(&element.model_uuid()) {
                         (b, Some(pos))
@@ -2238,7 +2260,7 @@ impl<
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
                             std::iter::once(uuid).collect(),
-                            true,
+                            DeleteKind::DeleteAll,
                         ));
 
                         affected_models.insert(*self.adapter.model_uuid());
@@ -2944,7 +2966,7 @@ impl<
 
                 return match command {
                         DiagramCommand::DeleteSelectedElements(b)
-                            => vec![InsensitiveCommand::DeleteSpecificElements(se!(), b.is_some_and(|e| e != DeleteKind::DeleteView))],
+                            => vec![InsensitiveCommand::DeleteSpecificElements(se!(), b.unwrap_or_default())],
                         DiagramCommand::CutSelectedElements => vec![InsensitiveCommand::CutSpecificElements(se!())],
                         DiagramCommand::PasteClipboardElements => vec![
                             InsensitiveCommand::HighlightAll(false, canvas::Highlight::SELECTED),
@@ -3056,7 +3078,10 @@ impl<
             DiagramCommand::DeleteViewFor(model_uuid, including_model) => {
                 if let Some(view_uuid) = self.temporaries.flattened_represented_models.get(&model_uuid) {
                     return vec![
-                        InsensitiveCommand::DeleteSpecificElements(std::iter::once(*view_uuid).collect(), including_model).into(),
+                        InsensitiveCommand::DeleteSpecificElements(
+                            std::iter::once(*view_uuid).collect(),
+                            if !including_model { DeleteKind::DeleteView } else { DeleteKind::DeleteAll },
+                        ).into(),
                     ];
                 }
             }
@@ -3125,18 +3150,15 @@ impl<
         }
     }
 
-    fn extend_views_for(&self, models: &HashSet<ModelUuid>, views: &mut HashSet<ViewUuid>) {
-        views.extend(
-            models.iter()
-                .flat_map(|e| self.temporaries.flattened_represented_models.get(e))
-        );
-    }
     fn extend_models_for(&self, views: &HashSet<ViewUuid>, models: &mut HashSet<ModelUuid>) {
         models.extend(
             views.iter()
                 .flat_map(|e| self.temporaries.flattened_views.get(e))
                 .map(|e| *e.model_uuid())
         );
+    }
+    fn get_view_for(&self, model: &ModelUuid) -> Option<ViewUuid> {
+        self.temporaries.flattened_represented_models.get(model).copied()
     }
 
     fn deep_copy(&self) -> ERef<Self> {

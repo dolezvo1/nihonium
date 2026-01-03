@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -4754,8 +4754,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
-            InsensitiveCommand::DeleteSpecificElements(uuids, into_model) => {
-                if *into_model {
+            InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
+                if *delete_kind != DeleteKind::DeleteView {
                     let mut removed_any = false;
                     self.properties_views.retain(
                         |e| {
@@ -4808,6 +4808,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     let mut w = self.model.write();
                     if let UmlClassElementOrVertex::Element(e) = e
                         && let Ok(pos) = w.insert_element(*b, *pos, e.model()) {
+                        let mut model_transitives = HashMap::new();
+                        e.clone().head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                        affected_models.extend(model_transitives.into_keys());
+
                         match e {
                             UmlClassElementView::ClassProperty(inner) => {
                                 self.properties_views.insert(pos.try_into().unwrap(), inner.clone());

@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use eframe::{egui, epaint};
 
-use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{BucketNoT, ColorBundle, ContainerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
+use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{BucketNoT, ColorBundle, ContainerGen2, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
 
 
 pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
@@ -611,16 +611,18 @@ where
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, _)
             | InsensitiveCommand::CutSpecificElements(uuids) => {
-                let from_model = matches!(
-                    command,
-                    InsensitiveCommand::DeleteSpecificElements(_, true) | InsensitiveCommand::CutSpecificElements(..)
-                );
+                let delete_kind = match command {
+                    InsensitiveCommand::CutSpecificElements(..) => DeleteKind::DeleteAll,
+                    InsensitiveCommand::DeleteSpecificElements(_, k) => *k,
+                    _ => unreachable!(),
+                };
+
                 for (_uuid, element) in self
                     .owned_views
                     .iter_event_order_pairs()
                     .filter(|e| uuids.contains(&e.0))
                 {
-                    let (b, pos) = if !from_model {
+                    let (b, pos) = if delete_kind == DeleteKind::DeleteView {
                         (0, None)
                     } else if let Some((b, pos)) = self.adapter.get_element_pos(&element.model_uuid()) {
                         (b, Some(pos))
