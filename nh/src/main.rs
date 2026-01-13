@@ -2,6 +2,7 @@
 // hide console window on Windows in release
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::any::Any;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -231,6 +232,7 @@ struct NHContext {
     diagram_deserializers: HashMap<String, &'static CDes>,
     new_diagram_no: u32,
     documents: HashMap<ViewUuid, (String, String)>,
+    clipboard: Vec<Box<dyn Any>>,
     pub custom_tabs: HashMap<uuid::Uuid, Arc<RwLock<dyn CustomTab>>>,
     custom_modal: Option<Box<dyn CustomModal>>,
 
@@ -1744,6 +1746,7 @@ impl Default for NHApp {
             diagram_deserializers,
             new_diagram_no,
             documents,
+            clipboard: Vec::new(),
             custom_tabs: HashMap::new(),
             custom_modal: None,
             
@@ -2642,7 +2645,7 @@ impl eframe::App for NHApp {
         macro_rules! send_to_diagram {
             ($uuid:expr, $command:expr) => {
                 if let Some(ac) = self.context.diagram_controllers.get($uuid) {
-                    ac.write().apply_diagram_command($uuid, $command, &mut self.context.affected_models);
+                    ac.write().apply_diagram_command($uuid, $command, &mut self.context.clipboard, &mut self.context.affected_models);
                 }
             };
         }

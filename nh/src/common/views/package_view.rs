@@ -609,20 +609,13 @@ where
 
                 recurse!(self);
             }
-            InsensitiveCommand::DeleteSpecificElements(uuids, _)
-            | InsensitiveCommand::CutSpecificElements(uuids) => {
-                let delete_kind = match command {
-                    InsensitiveCommand::CutSpecificElements(..) => DeleteKind::DeleteAll,
-                    InsensitiveCommand::DeleteSpecificElements(_, k) => *k,
-                    _ => unreachable!(),
-                };
-
+            InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
                 for (_uuid, element) in self
                     .owned_views
                     .iter_event_order_pairs()
                     .filter(|e| uuids.contains(&e.0))
                 {
-                    let (b, pos) = if delete_kind == DeleteKind::DeleteView {
+                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
                         (0, None)
                     } else if let Some((b, pos)) = self.adapter.get_element_pos(&element.model_uuid()) {
                         (b, Some(pos))

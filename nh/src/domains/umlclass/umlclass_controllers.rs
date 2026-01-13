@@ -2252,7 +2252,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
@@ -2887,7 +2886,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
@@ -3600,7 +3598,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
@@ -4801,8 +4798,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     }
                 }
             }
-            InsensitiveCommand::CutSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
                 if *v == *self.uuid && *into_model {
                     let mut w = self.model.write();
@@ -6623,7 +6619,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)

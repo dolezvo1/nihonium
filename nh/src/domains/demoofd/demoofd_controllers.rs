@@ -2042,7 +2042,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
@@ -2691,7 +2690,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
                 if *v == *self.uuid

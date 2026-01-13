@@ -2130,8 +2130,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 }
                 recurse!(self);
             }
-            InsensitiveCommand::CutSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
                 if *v == *self.uuid {
                     let mut w = self.model.write();
@@ -2782,7 +2781,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
@@ -3214,7 +3212,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)

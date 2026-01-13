@@ -517,6 +517,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     fn diagram_command_to_sensitives(
         &mut self,
         command: DiagramCommand,
+        clipboard: &mut Vec<Box<dyn Any>>,
     ) -> Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>;
     fn apply_command(
         &mut self,
@@ -648,6 +649,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         &mut self,
         uuid: &ViewUuid,
         command: DiagramCommand,
+        clipboard: &mut Vec<Box<dyn Any>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
 
@@ -841,7 +843,6 @@ pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: TryMerge + 
     ResizeSpecificElementsBy(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     ResizeSpecificElementsTo(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     DeleteSpecificElements(HashSet<ViewUuid>, DeleteKind),
-    CutSpecificElements(HashSet<ViewUuid>),
     PasteSpecificElements(ViewUuid, Vec<AddElementT>),
     ArrangeSpecificElements(HashSet<ViewUuid>, Arrangement),
     AddDependency(ViewUuid, /*bucket:*/ BucketNoT, /*model pos:*/ Option<PositionNoT>, AddElementT, /*into_model:*/ bool),
@@ -870,8 +871,6 @@ impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug>
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, _, _)
             | InsensitiveCommand::ResizeSpecificElementsTo(uuids, _, _)
                 => (gdc.fluent_bundle.get_message("nh-viewcommand-resizeelements").unwrap(), uuids.len()),
-            InsensitiveCommand::CutSpecificElements(uuids)
-                => (gdc.fluent_bundle.get_message("nh-viewcommand-cutelements").unwrap(), uuids.len()),
             InsensitiveCommand::PasteSpecificElements(_, elements)
                 => (gdc.fluent_bundle.get_message("nh-viewcommand-pasteelements").unwrap(), elements.len()),
             InsensitiveCommand::ArrangeSpecificElements(uuids, _)
@@ -1239,16 +1238,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
             let mut models_to_remove = HashSet::new();
 
             match c {
-                InsensitiveCommand::CutSpecificElements(_)
-                | InsensitiveCommand::DeleteSpecificElements(_, _) => {
-                    let delete_kind = match c {
-                        InsensitiveCommand::CutSpecificElements(_) => DeleteKind::DeleteAll,
-                        InsensitiveCommand::DeleteSpecificElements(_, k) => k,
-                        _ => unreachable!(),
-                    };
-                    let (InsensitiveCommand::CutSpecificElements(ref mut uuids)
-                         | InsensitiveCommand::DeleteSpecificElements(ref mut uuids, _)) = c else { unreachable!() };
-
+                InsensitiveCommand::DeleteSpecificElements(ref mut uuids, delete_kind) => {
                     let mut original_models = HashSet::new();
                     self.views.draw_order_foreach(|e| e.extend_models_for(&uuids, &mut original_models));
 
@@ -1540,7 +1530,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         }
 
         if !c.is_empty() {
-            let c = c.into_iter().flat_map(|c| view.write().diagram_command_to_sensitives(c)).collect();
+            let c = c.into_iter().flat_map(|c| view.write().diagram_command_to_sensitives(c, &mut Vec::new())).collect();
             self.apply_commands(uuid, c, true, affected_models);
         }
     }
@@ -1677,10 +1667,11 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         &mut self,
         uuid: &ViewUuid,
         command: DiagramCommand,
+        clipboard: &mut Vec<Box<dyn Any>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         let view = self.views.get(uuid).unwrap();
-        let commands = view.write().diagram_command_to_sensitives(command);
+        let commands = view.write().diagram_command_to_sensitives(command, clipboard);
         self.apply_commands(uuid, commands, true, affected_models);
     }
 
@@ -1927,7 +1918,6 @@ struct DiagramControllerGen2Temporaries<DomainT: Domain> {
     flattened_views: HashMap<ViewUuid, DomainT::CommonElementViewT>,
     flattened_views_status: HashMap<ViewUuid, SelectionStatus>,
     flattened_represented_models: HashMap<ModelUuid, ViewUuid>,
-    clipboard_elements: HashMap<ViewUuid, DomainT::CommonElementViewT>,
     _layers: Vec<bool>,
 
     camera_offset: egui::Pos2,
@@ -1948,7 +1938,6 @@ impl<DomainT: Domain> Default for DiagramControllerGen2Temporaries<DomainT> {
             flattened_views: Default::default(),
             flattened_views_status: Default::default(),
             flattened_represented_models: Default::default(),
-            clipboard_elements: Default::default(),
             _layers: Default::default(),
             camera_offset: Default::default(),
             camera_scale: 1.0,
@@ -2127,14 +2116,14 @@ impl<
         handled
     }
 
-    fn set_clipboard_from_selected(&mut self) {
+    fn set_clipboard_from_selected(&self, clipboard: &mut Vec<Box<dyn Any>>) {
         let selected = self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect();
-        self.temporaries.clipboard_elements = Self::elements_deep_copy(
+        *clipboard = Self::elements_deep_copy(
             Some(&selected),
             |_| false,
             HashMap::new(),
             self.owned_views.iter_event_order_pairs().map(|e| (e.0, e.1.clone())),
-        );
+        ).into_values().map(|e| Box::new(e) as Box<dyn Any>).collect();
     }
 
     fn elements_deep_copy<VI>(
@@ -2233,20 +2222,13 @@ impl<
                     self.owned_views.retain(|k, _v| *k != *elm);
                 }
             }
-            InsensitiveCommand::DeleteSpecificElements(uuids, _)
-            | InsensitiveCommand::CutSpecificElements(uuids) => {
-                let delete_kind = match command {
-                    InsensitiveCommand::CutSpecificElements(..) => DeleteKind::DeleteAll,
-                    InsensitiveCommand::DeleteSpecificElements(_, k) => *k,
-                    _ => unreachable!(),
-                };
-
+            InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
                 for (_uuid, element) in self
                     .owned_views
                     .iter_event_order_pairs()
                     .filter(|e| uuids.contains(&e.0))
                 {
-                    let (b, pos) = if delete_kind == DeleteKind::DeleteView {
+                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
                         (0, None)
                     } else if let Some((b, pos)) = self.adapter.get_element_pos(&element.model_uuid()) {
                         (b, Some(pos))
@@ -2257,22 +2239,24 @@ impl<
                 }
                 self.owned_views.retain(|k, _v| !uuids.contains(k));
             }
-            InsensitiveCommand::PasteSpecificElements(_, elements) => {
-                for element in elements {
-                    if let Ok(mut view) = element.clone().try_into()
-                        && let Ok(_) = self.adapter.insert_element(0, None, view.model()) {
-                        let uuid = *view.uuid();
-                        undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
-                            std::iter::once(uuid).collect(),
-                            DeleteKind::DeleteAll,
-                        ));
+            InsensitiveCommand::PasteSpecificElements(target, elements) => {
+                if *target == *self.uuid {
+                    for element in elements {
+                        if let Ok(mut view) = element.clone().try_into()
+                            && let Ok(_) = self.adapter.insert_element(0, None, view.model()) {
+                            let uuid = *view.uuid();
+                            undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
+                                std::iter::once(uuid).collect(),
+                                DeleteKind::DeleteAll,
+                            ));
 
-                        affected_models.insert(*self.adapter.model_uuid());
-                        let mut model_transitives = HashMap::new();
-                        view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
-                        affected_models.extend(model_transitives.into_keys());
+                            affected_models.insert(*self.adapter.model_uuid());
+                            let mut model_transitives = HashMap::new();
+                            view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                            affected_models.extend(model_transitives.into_keys());
 
-                        self.owned_views.push(uuid, view);
+                            self.owned_views.push(uuid, view);
+                        }
                     }
                 }
             }
@@ -2300,7 +2284,6 @@ impl<
             | InsensitiveCommand::HighlightSpecific(..)
             | InsensitiveCommand::SelectByDrag(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => true,
             InsensitiveCommand::MoveSpecificElements(..)
             | InsensitiveCommand::MoveAllElements(..)
@@ -2934,6 +2917,7 @@ impl<
     fn diagram_command_to_sensitives(
         &mut self,
         command: DiagramCommand,
+        clipboard: &mut Vec<Box<dyn Any>>,
     ) -> Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>> {
         macro_rules! se {
             () => {
@@ -2965,22 +2949,26 @@ impl<
             | DiagramCommand::PasteClipboardElements
             | DiagramCommand::ArrangeSelected(_) => {
                 if matches!(command, DiagramCommand::CutSelectedElements) {
-                    self.set_clipboard_from_selected();
+                    self.set_clipboard_from_selected(clipboard);
                 }
 
                 return match command {
                         DiagramCommand::DeleteSelectedElements(b)
                             => vec![InsensitiveCommand::DeleteSpecificElements(se!(), b.unwrap_or_default())],
-                        DiagramCommand::CutSelectedElements => vec![InsensitiveCommand::CutSpecificElements(se!())],
+                        DiagramCommand::CutSelectedElements
+                            => vec![InsensitiveCommand::DeleteSpecificElements(se!(), DeleteKind::DeleteAll)],
                         DiagramCommand::PasteClipboardElements => vec![
                             InsensitiveCommand::HighlightAll(false, canvas::Highlight::SELECTED),
                             InsensitiveCommand::PasteSpecificElements(
                                 *self.uuid,
                                 Self::elements_deep_copy(
                                     None,
-                                    |e| self.temporaries.flattened_views_status.contains_key(e),
+                                    |_| true,
                                     HashMap::new(),
-                                    self.temporaries.clipboard_elements.iter().map(|e| (*e.0, e.1.clone())),
+                                    clipboard.iter()
+                                        .filter_map(|e| if let Some(e) = e.downcast_ref::<DomainT::CommonElementViewT>() {
+                                            Some((*e.uuid(), e.clone()))
+                                        } else { None }),
                                 ).into_iter().map(|e| e.1.into()).collect(),
                             ),
                         ],
@@ -2996,8 +2984,7 @@ impl<
                 return vec![InsensitiveCommand::PropertyChange(se!(), ccd.into())];
             }
             DiagramCommand::CopySelectedElements => {
-                // TODO: This should technically happen later, I think
-                self.set_clipboard_from_selected();
+                self.set_clipboard_from_selected(clipboard);
             },
             DiagramCommand::HighlightAllElements(set, h) => {
                 return vec![InsensitiveCommand::HighlightAll(set, h).into()];

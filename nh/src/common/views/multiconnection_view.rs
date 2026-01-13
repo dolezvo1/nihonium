@@ -799,7 +799,6 @@ where
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids, _) => {

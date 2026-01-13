@@ -1785,7 +1785,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
                 if *v == *self.uuid
@@ -2492,7 +2491,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::CutSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
