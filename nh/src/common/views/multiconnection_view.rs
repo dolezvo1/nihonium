@@ -776,8 +776,9 @@ where
                     }
                 }
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = all_pts_mut!(self).find(|p| !rect.contains(p.1)).is_none();
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || all_pts_mut!(self).find(|p| !rect.contains(p.1)).is_none();
             }
             InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.uuid) => {
                 for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {

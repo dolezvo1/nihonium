@@ -1388,8 +1388,9 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                     self.highlight = self.highlight.combine(*set, *h);
                 }
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
@@ -1846,8 +1847,9 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                     self.highlight = self.highlight.combine(*set, *h);
                 }
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}

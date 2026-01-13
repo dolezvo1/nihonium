@@ -1762,8 +1762,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                 }
                 recurse!(self);
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
                 recurse!(self);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, delta)
@@ -2475,8 +2476,9 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                     self.highlight = self.highlight.combine(*set, *h);
                 }
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}

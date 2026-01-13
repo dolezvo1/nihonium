@@ -2236,8 +2236,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                     self.highlight = self.highlight.combine(*set, *h);
                 }
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
@@ -2878,8 +2879,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                     self.highlight = self.highlight.combine(*set, *h);
                 }
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(..)
             | InsensitiveCommand::MoveAllElements(..)
@@ -3590,8 +3592,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                     self.highlight = self.highlight.combine(*set, *h);
                 }
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(..)
             | InsensitiveCommand::MoveAllElements(..)
@@ -4735,8 +4738,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 }
                 recurse!(self);
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
                 recurse!(self);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
@@ -6603,8 +6607,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                     self.highlight = self.highlight.combine(*set, *h);
                 }
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}

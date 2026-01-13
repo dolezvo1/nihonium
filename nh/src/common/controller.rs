@@ -835,7 +835,7 @@ pub type PositionNoT = u16;
 #[derive(Clone, PartialEq, Debug)]
 pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> {
     HighlightAll(bool, Highlight),
-    SelectByDrag(egui::Rect),
+    SelectByDrag(egui::Rect, bool),
     MoveAllElements(egui::Vec2),
 
     HighlightSpecific(HashSet<ViewUuid>, bool, Highlight),
@@ -1271,8 +1271,8 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 _ => {},
             };
 
-            if matches!(c, InsensitiveCommand::HighlightAll(_, _)
-                            | InsensitiveCommand::SelectByDrag(_)
+            if matches!(c, InsensitiveCommand::HighlightAll(..)
+                            | InsensitiveCommand::SelectByDrag(..)
                             | InsensitiveCommand::MoveAllElements(_)) {
                 view.write().apply_command(&c, &mut undo_accumulator, affected_models);
             } else {
@@ -2058,7 +2058,10 @@ impl<
             InputEvent::Drag{ delta, ..} => {
                 if let Some((a,b)) = self.temporaries.select_by_drag {
                     self.temporaries.select_by_drag = Some((a, b + delta));
-                    commands.push(InsensitiveCommand::SelectByDrag(egui::Rect::from_two_pos(a, b + delta)).into());
+                    commands.push(InsensitiveCommand::SelectByDrag(
+                        egui::Rect::from_two_pos(a, b + delta),
+                        ehc.modifier_settings.hold_selection.is_some_and(|e| ehc.modifiers.is_superset_of(e)),
+                    ).into());
                 }
                 true
             }

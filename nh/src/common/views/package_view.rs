@@ -565,8 +565,9 @@ where
 
                 recurse!(self);
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
 
                 recurse!(self);
             }

@@ -2057,8 +2057,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
                 recurse!(self);
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
                 recurse!(self);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid) => {
@@ -2765,8 +2766,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                     self.highlight = self.highlight.combine(*set, *h);
                 }
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
@@ -3196,8 +3198,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                     self.highlight = self.highlight.combine(*set, *h);
                 }
             }
-            InsensitiveCommand::SelectByDrag(rect) => {
-                self.highlight.selected = self.min_shape().contained_within(*rect);
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
