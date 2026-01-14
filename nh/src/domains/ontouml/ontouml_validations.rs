@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::{Arc, RwLockReadGuard}};
 
 use eframe::egui;
 
-use crate::{CustomTab, common::{canvas::Highlight, controller::{DiagramCommand, GlobalDrawingContext, Model, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, domains::{ontouml::ontouml_models, umlclass::umlclass_models::{UmlClass, UmlClassClassifier, UmlClassGeneralization}}};
+use crate::{CustomTab, common::{canvas::Highlight, controller::{DiagramCommand, GlobalDrawingContext, Model, ProjectCommand, SimpleProjectCommand}, eref::ERef, uuid::{ModelUuid, ViewUuid}}, domains::{ontouml::ontouml_models, umlclass::umlclass_models::{UmlClass, UmlClassAssociable, UmlClassGeneralization}}};
 use super::super::umlclass::umlclass_models::{UmlClassDiagram, UmlClassElement};
 
 pub struct OntoUMLValidationTab {
@@ -221,7 +221,7 @@ impl OntoUMLValidationTab {
                                     text: format!("«characterization» must have multiplicities of 1..1 and at least 1..*"),
                                 });
                             }
-                            if let UmlClassClassifier::UmlClass(t) = &m.target {
+                            if let UmlClassAssociable::UmlClass(t) = &m.target {
                                 let t = t.read();
                                 let e = element_infos.entry(*t.uuid).or_default();
 
@@ -246,7 +246,7 @@ impl OntoUMLValidationTab {
                                 });
                             }
 
-                            if let UmlClassClassifier::UmlClass(s) = &m.source {
+                            if let UmlClassAssociable::UmlClass(s) = &m.source {
                                 let s = s.read();
                                 if s.stereotype.as_str() != ontouml_models::QUALITY {
                                     problems.push(ValidationProblem::Error {
@@ -257,7 +257,7 @@ impl OntoUMLValidationTab {
                                 }
                             }
 
-                            if let UmlClassClassifier::UmlClass(t) = &m.target {
+                            if let UmlClassAssociable::UmlClass(t) = &m.target {
                                 let t = t.read();
                                 if t.stereotype.as_str() !=ontouml_models::QUALITY && t.stereotype.as_str() != ontouml_models::MODE {
                                     problems.push(ValidationProblem::Error {
@@ -288,7 +288,7 @@ impl OntoUMLValidationTab {
                                 });
                             }
 
-                            if let UmlClassClassifier::UmlClass(s) = &m.source {
+                            if let UmlClassAssociable::UmlClass(s) = &m.source {
                                 let s = s.read();
                                 if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
                                     problems.push(ValidationProblem::Error {
@@ -299,7 +299,7 @@ impl OntoUMLValidationTab {
                                 }
                             }
 
-                            if let UmlClassClassifier::UmlClass(t) = &m.target {
+                            if let UmlClassAssociable::UmlClass(t) = &m.target {
                                 let t = t.read();
                                 if t.stereotype.as_str() != ontouml_models::COLLECTIVE {
                                     problems.push(ValidationProblem::Error {
@@ -320,7 +320,7 @@ impl OntoUMLValidationTab {
                                 });
                             }
 
-                            if let UmlClassClassifier::UmlClass(s) = &m.source {
+                            if let UmlClassAssociable::UmlClass(s) = &m.source {
                                 let s = s.read();
                                 if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
                                     problems.push(ValidationProblem::Error {
@@ -341,7 +341,7 @@ impl OntoUMLValidationTab {
                                 });
                             }
 
-                            if let UmlClassClassifier::UmlClass(t) = &m.target {
+                            if let UmlClassAssociable::UmlClass(t) = &m.target {
                                 let t = t.read();
                                 if t.stereotype.as_str() != ontouml_models::QUANTITY {
                                     problems.push(ValidationProblem::Error {
@@ -362,7 +362,7 @@ impl OntoUMLValidationTab {
                                 });
                             }
 
-                            if let UmlClassClassifier::UmlClass(s) = &m.source {
+                            if let UmlClassAssociable::UmlClass(s) = &m.source {
                                 let s = s.read();
                                 if s.stereotype.as_str() != ontouml_models::QUANTITY {
                                     problems.push(ValidationProblem::Error {
@@ -373,7 +373,7 @@ impl OntoUMLValidationTab {
                                 }
                             }
 
-                            if let UmlClassClassifier::UmlClass(t) = &m.target {
+                            if let UmlClassAssociable::UmlClass(t) = &m.target {
                                 let t = t.read();
                                 if t.stereotype.as_str() != ontouml_models::QUANTITY {
                                     problems.push(ValidationProblem::Error {
@@ -1079,10 +1079,11 @@ fn validate_binover(
         ) -> bool {
             a == b || is_subtype_of(infos, a, b)
         }
-        fn is_nonprovider_sortal(c: &UmlClassClassifier) -> bool {
+        fn is_nonprovider_sortal(c: &UmlClassAssociable) -> bool {
             match c {
-                UmlClassClassifier::UmlClassObject(_) => false,
-                UmlClassClassifier::UmlClass(inner) => {
+                UmlClassAssociable::UmlClassObject(_)
+                | UmlClassAssociable::UmlUseCase(_) => false,
+                UmlClassAssociable::UmlClass(inner) => {
                     [
                         ontouml_models::SUBKIND,
                         ontouml_models::ROLE,
@@ -1091,26 +1092,29 @@ fn validate_binover(
                 },
             }
         }
-        fn is_relator(c: &UmlClassClassifier) -> bool {
+        fn is_relator(c: &UmlClassAssociable) -> bool {
             match c {
-                UmlClassClassifier::UmlClassObject(_) => false,
-                UmlClassClassifier::UmlClass(inner) => {
+                UmlClassAssociable::UmlClassObject(_)
+                | UmlClassAssociable::UmlUseCase(_) => false,
+                UmlClassAssociable::UmlClass(inner) => {
                     &*inner.read().stereotype == ontouml_models::RELATOR
                 },
             }
         }
-        fn is_mode(c: &UmlClassClassifier) -> bool {
+        fn is_mode(c: &UmlClassAssociable) -> bool {
             match c {
-                UmlClassClassifier::UmlClassObject(_) => false,
-                UmlClassClassifier::UmlClass(inner) => {
+                UmlClassAssociable::UmlClassObject(_)
+                | UmlClassAssociable::UmlUseCase(_) => false,
+                UmlClassAssociable::UmlClass(inner) => {
                     &*inner.read().stereotype == ontouml_models::MODE
                 },
             }
         }
-        fn is_mixin(c: &UmlClassClassifier) -> bool {
+        fn is_mixin(c: &UmlClassAssociable) -> bool {
             match c {
-                UmlClassClassifier::UmlClassObject(_) => false,
-                UmlClassClassifier::UmlClass(inner) => {
+                UmlClassAssociable::UmlClassObject(_)
+                | UmlClassAssociable::UmlUseCase(_) => false,
+                UmlClassAssociable::UmlClass(inner) => {
                     [
                         ontouml_models::CATEGORY,
                         ontouml_models::PHASE_MIXIN,
@@ -1314,20 +1318,20 @@ fn validate_relators(
             UmlClassElement::UmlClassAssociation(inner) => {
                 let r = inner.read();
                 if *r.stereotype == ontouml_models::MEDIATION {
-                    if let UmlClassClassifier::UmlClass(s) = &r.source
+                    if let UmlClassAssociable::UmlClass(s) = &r.source
                         && is_relator(&infos, *s.read().uuid) {
                         infos.entry(*r.target.uuid()).or_default().associated_relators.push(*s.read().uuid);
                     }
-                    if let UmlClassClassifier::UmlClass(t) = &r.target
+                    if let UmlClassAssociable::UmlClass(t) = &r.target
                         && is_relator(&infos, *t.read().uuid) {
                         infos.entry(*r.source.uuid()).or_default().associated_relators.push(*t.read().uuid);
                     }
 
-                    if let UmlClassClassifier::UmlClass(s) = &r.source
+                    if let UmlClassAssociable::UmlClass(s) = &r.source
                         && is_rigid(&s.read().stereotype) {
                         infos.entry(*r.target.uuid()).or_default().has_associated_rigids = true;
                     }
-                    if let UmlClassClassifier::UmlClass(t) = &r.target
+                    if let UmlClassAssociable::UmlClass(t) = &r.target
                         && is_rigid(&t.read().stereotype) {
                         infos.entry(*r.source.uuid()).or_default().has_associated_rigids = true;
                     }
@@ -1507,8 +1511,8 @@ mod test {
     fn new_association(
         id: u32,
         stereotype: &'static str,
-        source: UmlClassClassifier,
-        target: UmlClassClassifier,
+        source: UmlClassAssociable,
+        target: UmlClassAssociable,
     ) -> ERef<UmlClassAssociation> {
         ERef::new(
             UmlClassAssociation::new(

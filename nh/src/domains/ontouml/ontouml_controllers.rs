@@ -126,16 +126,16 @@ impl Default for UmlClassPlaceholderViews {
             (ontouml_models::MODE, "Mode", "Intention", false),
             (ontouml_models::QUALITY, "Quality", "Height", false),
         ] {
-            let (_c, c_view) = new_umlclass_class(name, stereotype, is_abstract, Vec::new(), Vec::new(), egui::Pos2::ZERO);
+            let (_c, c_view) = new_umlclass_class(name, stereotype, is_abstract, Vec::new(), Vec::new(), egui::Pos2::ZERO, false);
             c_view.write().refresh_buffers();
             classes.push(
-                (UmlClassToolStage::Class { name, stereotype }, label, c_view.into()),
+                (UmlClassToolStage::Class { name, stereotype, render_as_stick_figure: false }, label, c_view.into()),
             );
         }
 
         let mut relationships = Vec::new();
-        let dummy1 = new_umlclass_class("dummy1", ontouml_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0));
-        let dummy2 = new_umlclass_class("dummy1", ontouml_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0));
+        let dummy1 = new_umlclass_class("dummy1", ontouml_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0), false);
+        let dummy2 = new_umlclass_class("dummy2", ontouml_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0), false);
         let (_gen, gen_view) = new_umlclass_generalization(None, (dummy1.0.clone(), dummy1.1.clone().into()), (dummy2.0.clone(), dummy2.1.clone().into()));
         relationships.push(
             (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
@@ -221,13 +221,13 @@ pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let (animal_model, animal_view) = new_umlclass_class("Animal", ontouml_models::KIND, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 200.0));
-    let (temp_model, temp_view) = new_umlclass_class("Body Temperature", ontouml_models::QUALITY, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 200.0));
-    let (human_model, human_view) = new_umlclass_class("Human", ontouml_models::SUBKIND, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 350.0));
-    let (alive_model, alive_view) = new_umlclass_class("Alive", ontouml_models::PHASE, false, Vec::new(), Vec::new(), egui::Pos2::new(550.0, 160.0));
-    let (dead_model, dead_view) = new_umlclass_class("Dead", ontouml_models::PHASE, false, Vec::new(), Vec::new(), egui::Pos2::new(550.0, 250.0));
-    let (spouse_model, spouse_view) = new_umlclass_class("Spouse", ontouml_models::ROLE, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 500.0));
-    let (marriage_model, marriage_view) = new_umlclass_class("Marriage", ontouml_models::RELATOR, false, Vec::new(), Vec::new(), egui::Pos2::new(550.0, 500.0));
+    let (animal_model, animal_view) = new_umlclass_class("Animal", ontouml_models::KIND, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 200.0), false);
+    let (temp_model, temp_view) = new_umlclass_class("Body Temperature", ontouml_models::QUALITY, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 200.0), false);
+    let (human_model, human_view) = new_umlclass_class("Human", ontouml_models::SUBKIND, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 350.0), false);
+    let (alive_model, alive_view) = new_umlclass_class("Alive", ontouml_models::PHASE, false, Vec::new(), Vec::new(), egui::Pos2::new(550.0, 160.0), false);
+    let (dead_model, dead_view) = new_umlclass_class("Dead", ontouml_models::PHASE, false, Vec::new(), Vec::new(), egui::Pos2::new(550.0, 250.0), false);
+    let (spouse_model, spouse_view) = new_umlclass_class("Spouse", ontouml_models::ROLE, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 500.0), false);
+    let (marriage_model, marriage_view) = new_umlclass_class("Marriage", ontouml_models::RELATOR, false, Vec::new(), Vec::new(), egui::Pos2::new(550.0, 500.0), false);
 
     let (gen_phase_model, gen_phase_view) = new_umlclass_generalization(
         Some((ViewUuid::now_v7(), egui::Pos2::new(480.0, 200.0))),

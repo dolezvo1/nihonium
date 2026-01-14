@@ -198,6 +198,7 @@ pub enum UmlClassElement {
     UmlClass(ERef<UmlClass>),
     UmlClassProperty(ERef<UmlClassProperty>),
     UmlClassOperation(ERef<UmlClassOperation>),
+    UmlUseCase(ERef<UmlUseCase>),
     UmlClassGeneralization(ERef<UmlClassGeneralization>),
     UmlClassDependency(ERef<UmlClassDependency>),
     UmlClassAssociation(ERef<UmlClassAssociation>),
@@ -208,16 +209,18 @@ pub enum UmlClassElement {
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
-pub enum UmlClassClassifier {
+pub enum UmlClassAssociable {
     UmlClassObject(ERef<UmlClassInstance>),
     UmlClass(ERef<UmlClass>),
+    UmlUseCase(ERef<UmlUseCase>),
 }
 
 impl UmlClassElement {
-    pub fn as_classifier(&self) -> Option<UmlClassClassifier> {
+    pub fn as_associable(&self) -> Option<UmlClassAssociable> {
         match self {
             UmlClassElement::UmlClassInstance(inner) => Some(inner.clone().into()),
             UmlClassElement::UmlClass(inner) => Some(inner.clone().into()),
+            UmlClassElement::UmlUseCase(inner) => Some(inner.clone().into()),
             UmlClassElement::UmlClassPackage(..)
             | UmlClassElement::UmlClassProperty(..)
             | UmlClassElement::UmlClassOperation(..)
@@ -235,7 +238,8 @@ impl UmlClassElement {
             UmlClassElement::UmlClassInstance(inner) => visitor.visit_object(&inner.read()),
             UmlClassElement::UmlClass(inner) => visitor.visit_class(&inner.read()),
             UmlClassElement::UmlClassProperty(..)
-            | UmlClassElement::UmlClassOperation(..) => unreachable!(),
+            | UmlClassElement::UmlClassOperation(..)
+            | UmlClassElement::UmlUseCase(..) => unreachable!(),
             UmlClassElement::UmlClassGeneralization(inner) => visitor.visit_generalization(&inner.read()),
             UmlClassElement::UmlClassDependency(inner) => visitor.visit_dependency(&inner.read()),
             UmlClassElement::UmlClassAssociation(inner) => visitor.visit_association(&inner.read()),
@@ -279,6 +283,7 @@ impl FullTextSearchable for UmlClassElement {
             UmlClassElement::UmlClass(inner) => inner.read().full_text_search(acc),
             UmlClassElement::UmlClassProperty(inner) => inner.read().full_text_search(acc),
             UmlClassElement::UmlClassOperation(inner) => inner.read().full_text_search(acc),
+            UmlClassElement::UmlUseCase(inner) => inner.read().full_text_search(acc),
             UmlClassElement::UmlClassGeneralization(inner) => inner.read().full_text_search(acc),
             UmlClassElement::UmlClassDependency(inner) => inner.read().full_text_search(acc),
             UmlClassElement::UmlClassAssociation(inner) => inner.read().full_text_search(acc),
@@ -318,7 +323,10 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
             }
             UmlClassElement::UmlClassOperation(inner) => {
                 inner.read().clone_with(*new_uuid).into()
-            }
+            },
+            UmlClassElement::UmlUseCase(inner) => {
+                UmlClassElement::UmlUseCase(inner.read().clone_with(*new_uuid))
+            },
             UmlClassElement::UmlClassGeneralization(inner) => {
                 UmlClassElement::UmlClassGeneralization(inner.read().clone_with(*new_uuid))
             },
@@ -359,7 +367,10 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 }
             },
             UmlClassElement::UmlClassInstance(..)
-            | UmlClassElement::UmlClass(..) => {},
+            | UmlClassElement::UmlClass(..)
+            | UmlClassElement::UmlClassProperty(..)
+            | UmlClassElement::UmlClassOperation(..)
+            | UmlClassElement::UmlUseCase(..) => {},
             UmlClassElement::UmlClassGeneralization(inner) => {
                 let mut model = inner.write();
 
@@ -376,17 +387,15 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                     }
                 }
             },
-            UmlClassElement::UmlClassProperty(..)
-            | UmlClassElement::UmlClassOperation(..) => {}
             UmlClassElement::UmlClassDependency(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.source.uuid();
-                if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_classifier()) {
+                if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_associable()) {
                     model.source = s;
                 }
                 let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_classifier()) {
+                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_associable()) {
                     model.target = t;
                 }
             }
@@ -394,11 +403,11 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 let mut model = inner.write();
 
                 let source_uuid = *model.source.uuid();
-                if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_classifier()) {
+                if let Some(s) = all_models.get(&source_uuid).and_then(|e| e.as_associable()) {
                     model.source = s;
                 }
                 let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_classifier()) {
+                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_associable()) {
                     model.target = t;
                 }
             },
@@ -490,7 +499,8 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                 },
                 UmlClassElement::UmlClassInstance(..)
                 | UmlClassElement::UmlClassProperty(..)
-                | UmlClassElement::UmlClassOperation(..) => {},
+                | UmlClassElement::UmlClassOperation(..)
+                | UmlClassElement::UmlUseCase(..) => {},
                 UmlClassElement::UmlClass(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
@@ -531,7 +541,8 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                 UmlClassElement::UmlClassInstance(..)
                 | UmlClassElement::UmlClass(..)
                 | UmlClassElement::UmlClassProperty(..)
-                | UmlClassElement::UmlClassOperation(..) => {},
+                | UmlClassElement::UmlClassOperation(..)
+                | UmlClassElement::UmlUseCase(..) => {},
                 UmlClassElement::UmlClassGeneralization(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
@@ -599,7 +610,8 @@ fn enumerate(e: &UmlClassElement, into: &mut HashSet<ModelUuid>) {
                 enumerate(&e.clone().into(), into);
             }
         },
-        UmlClassElement::UmlClassGeneralization(..)
+        UmlClassElement::UmlUseCase(..)
+        | UmlClassElement::UmlClassGeneralization(..)
         | UmlClassElement::UmlClassDependency(..)
         | UmlClassElement::UmlClassAssociation(..)
         | UmlClassElement::UmlClassComment(..)
@@ -715,7 +727,8 @@ impl UmlClassDiagram {
                     }
                     w.operations.retain(|e| !uuids.contains(&e.read().uuid));
                 }
-                UmlClassElement::UmlClassGeneralization(_)
+                UmlClassElement::UmlUseCase(_)
+                | UmlClassElement::UmlClassGeneralization(_)
                 | UmlClassElement::UmlClassDependency(_)
                 | UmlClassElement::UmlClassAssociation(_)
                 | UmlClassElement::UmlClassComment(_)
@@ -1354,6 +1367,70 @@ impl FullTextSearchable for UmlClass {
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
+pub struct UmlUseCase {
+    pub uuid: Arc<ModelUuid>,
+    pub name: Arc<String>,
+    pub stereotype: Arc<String>,
+    pub is_abstract: bool,
+
+    pub comment: Arc<String>,
+}
+
+impl UmlUseCase {
+    pub fn new(
+        uuid: ModelUuid,
+        name: String,
+        stereotype: String,
+        is_abstract: bool,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            name: Arc::new(name),
+            stereotype: Arc::new(stereotype),
+            is_abstract,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            name: self.name.clone(),
+            stereotype: self.stereotype.clone(),
+            is_abstract: self.is_abstract,
+            comment: self.comment.clone(),
+        })
+    }
+}
+
+impl Entity for UmlUseCase {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for UmlUseCase {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for UmlUseCase {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.name,
+                &self.stereotype,
+                &self.comment,
+            ],
+        );
+    }
+}
+
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
 pub struct UmlClassGeneralization {
     pub uuid: Arc<ModelUuid>,
     #[nh_context_serde(entity)]
@@ -1483,9 +1560,9 @@ pub struct UmlClassDependency {
     pub stereotype: Arc<String>,
     pub name: Arc<String>,
     #[nh_context_serde(entity)]
-    pub source: UmlClassClassifier,
+    pub source: UmlClassAssociable,
     #[nh_context_serde(entity)]
-    pub target: UmlClassClassifier,
+    pub target: UmlClassAssociable,
     pub target_arrow_open: bool,
 
     pub comment: Arc<String>,
@@ -1496,8 +1573,8 @@ impl UmlClassDependency {
         uuid: ModelUuid,
         stereotype: String,
         name: String,
-        source: UmlClassClassifier,
-        target: UmlClassClassifier,
+        source: UmlClassAssociable,
+        target: UmlClassAssociable,
         target_arrow_open: bool,
     ) -> Self {
         Self {
@@ -1596,14 +1673,14 @@ pub struct UmlClassAssociation {
     pub stereotype: Arc<String>,
     pub name: Arc<String>,
     #[nh_context_serde(entity)]
-    pub source: UmlClassClassifier,
+    pub source: UmlClassAssociable,
     pub source_label_multiplicity: Arc<String>,
     pub source_label_role: Arc<String>,
     pub source_label_reading: Arc<String>,
     pub source_navigability: UmlClassAssociationNavigability,
     pub source_aggregation: UmlClassAssociationAggregation,
     #[nh_context_serde(entity)]
-    pub target: UmlClassClassifier,
+    pub target: UmlClassAssociable,
     pub target_label_multiplicity: Arc<String>,
     pub target_label_role: Arc<String>,
     pub target_label_reading: Arc<String>,
@@ -1618,8 +1695,8 @@ impl UmlClassAssociation {
         uuid: ModelUuid,
         stereotype: String,
         name: String,
-        source: UmlClassClassifier,
-        target: UmlClassClassifier,
+        source: UmlClassAssociable,
+        target: UmlClassAssociable,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),

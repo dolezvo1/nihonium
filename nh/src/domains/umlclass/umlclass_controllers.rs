@@ -1,5 +1,5 @@
 use super::umlclass_models::{
-    UmlClass, UmlClassDiagram, UmlClassElement, UmlClassGeneralization, UmlClassPackage, UmlClassCommentLink, UmlClassAssociation, UmlClassClassifier, UmlClassComment, UmlClassInstance, UmlClassAssociationAggregation, UmlClassAssociationNavigability, UmlClassDependency,
+    UmlClass, UmlClassDiagram, UmlClassElement, UmlClassGeneralization, UmlClassPackage, UmlClassCommentLink, UmlClassAssociation, UmlClassAssociable, UmlClassComment, UmlClassInstance, UmlClassAssociationAggregation, UmlClassAssociationNavigability, UmlClassDependency,
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
@@ -12,7 +12,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::domains::umlclass::umlclass_models::{UmlClassVisibilityKind, UmlClassOperation, UmlClassProperty};
+use crate::domains::umlclass::umlclass_models::{UmlClassOperation, UmlClassProperty, UmlClassVisibilityKind, UmlUseCase};
 use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
 use std::collections::HashSet;
@@ -44,6 +44,7 @@ pub trait UmlClassProfile: Default + Clone + Send + Sync + 'static {
     type ClassStereotypeController: StereotypeController = UnrestrictedStereotypeController;
     type ClassPropertyStereotypeController: StereotypeController = UnrestrictedStereotypeController;
     type ClassOperationStereotypeController: StereotypeController = UnrestrictedStereotypeController;
+    type UseCaseStereotypeController: StereotypeController = UnrestrictedStereotypeController;
     type DependencyStereotypeController: StereotypeController = UnrestrictedStereotypeController;
     type AssociationStereotypeController: StereotypeController = UnrestrictedStereotypeController;
 
@@ -63,6 +64,9 @@ pub trait UmlClassProfile: Default + Clone + Send + Sync + 'static {
         ui.separator();
     }
 
+    fn allows_class_rendering_as_stick_figure() -> bool {
+        false
+    }
     fn allows_class_properties() -> bool {
         true
     }
@@ -290,6 +294,7 @@ pub enum UmlClassElementView<P: UmlClassProfile> {
     Class(ERef<UmlClassView<P>>),
     ClassProperty(ERef<UmlClassPropertyView<P>>),
     ClassOperation(ERef<UmlClassOperationView<P>>),
+    UseCase(ERef<UmlUseCaseView<P>>),
     Generalization(ERef<GeneralizationViewT<P>>),
     Dependency(ERef<DependencyViewT<P>>),
     Association(ERef<AssociationViewT<P>>),
@@ -371,11 +376,11 @@ impl Default for UmlClassNullPalette {
     fn default() -> Self {
         let (_instance, instance_view) = new_umlclass_instance("o", "Type", "", "", egui::Pos2::ZERO);
         instance_view.write().refresh_buffers();
-        let (class_m, class_view) = new_umlclass_class("ClassName", "class", false, Vec::new(), Vec::new(), egui::Pos2::ZERO);
+        let (class_m, class_view) = new_umlclass_class("ClassName", "class", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, false);
         class_view.write().refresh_buffers();
         let class_1 = (class_m.clone(), class_view.clone().into());
         let class_2 = (class_m.clone().into(), class_view.into());
-        let (d, dv) = new_umlclass_class("dummy", "class", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0));
+        let (d, dv) = new_umlclass_class("dummy", "class", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0), false);
         let dummy_1 = (d.clone(), dv.clone().into());
         let dummy_2 = (d.clone().into(), dv.into());
 
@@ -401,7 +406,7 @@ impl Default for UmlClassNullPalette {
             views: [
                 ("Elements", vec![
                     (UmlClassToolStage::Instance, "Instance", instance_view.into()),
-                    (UmlClassToolStage::Class { name: "ClassName", stereotype: "class" }, "Class", class_2.1),
+                    (UmlClassToolStage::Class { name: "ClassName", stereotype: "class", render_as_stick_figure: false }, "Class", class_2.1),
                     (UmlClassToolStage::ClassProperty, "Property", property_view.into()),
                     (UmlClassToolStage::ClassOperation, "Operation", operation_view.into()),
                 ]),
@@ -486,12 +491,17 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 };
 
                 UmlClassElementView::from(
-                    new_umlclass_class_view(inner, properties_views, operations_views, egui::Pos2::ZERO)
+                    new_umlclass_class_view(inner, properties_views, operations_views, egui::Pos2::ZERO, false)
                 )
             },
             UmlClassElement::UmlClassProperty(..)
             | UmlClassElement::UmlClassOperation(..) => {
                 unreachable!()
+            },
+            UmlClassElement::UmlUseCase(inner) => {
+                UmlClassElementView::from(
+                    new_uml_usecase_view(inner, egui::Pos2::ZERO)
+                )
             }
             UmlClassElement::UmlClassGeneralization(inner) => {
                 let m = inner.read();
@@ -570,10 +580,18 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             },
             UmlClassElement::UmlClassProperty(inner) => {
                 inner.read().name.clone()
-            }
+            },
             UmlClassElement::UmlClassOperation(inner) => {
                 inner.read().name.clone()
-            }
+            },
+            UmlClassElement::UmlUseCase(inner) => {
+                let r = inner.read();
+                if r.stereotype.is_empty() {
+                    r.name.clone()
+                } else {
+                    Arc::new(format!("{} «{}»", r.name, r.stereotype))
+                }
+            },
             UmlClassElement::UmlClassGeneralization(inner) => {
                 let r = inner.read();
                 let s = if r.set_name.is_empty() {
@@ -846,6 +864,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         af_operations(true),
         egui::Pos2::new(200.0, 150.0),
+        false,
     );
 
     let (class_cfx, class_cfx_view) = new_umlclass_class(
@@ -855,6 +874,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         af_operations(false),
         egui::Pos2::new(100.0, 250.0),
+        false,
     );
 
     let (class_cfy, class_cfy_view) = new_umlclass_class(
@@ -864,6 +884,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         af_operations(false),
         egui::Pos2::new(300.0, 250.0),
+        false,
     );
 
     let (realization_cfx, realization_cfx_view) = new_umlclass_dependency(
@@ -889,6 +910,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         Vec::new(),
         egui::Pos2::new(300.0, 50.0),
+        false,
     );
 
     let (usage_client_af, usage_client_af_view) = new_umlclass_dependency(
@@ -906,6 +928,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         Vec::new(),
         egui::Pos2::new(450.0, 150.0),
+        false,
     );
 
     let (usage_client_producta, usage_client_producta_view) =
@@ -924,6 +947,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         Vec::new(),
         egui::Pos2::new(650.0, 150.0),
+        false,
     );
 
     let (usage_client_productb, usage_client_productb_view) =
@@ -940,14 +964,14 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         let m = new_umlclass_operation(UFOption::Some(UmlClassVisibilityKind::Public), "move", "", "", "");
         vec![d, m]
     };
-    let (shape_model, shape_view) = new_umlclass_class("Shape", "entity", true, Vec::new(), shape_operations, egui::Pos2::new(200.0, 400.0));
-    let (polygon_model, polygon_view) = new_umlclass_class("Polygon", "entity", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 550.0));
+    let (shape_model, shape_view) = new_umlclass_class("Shape", "entity", true, Vec::new(), shape_operations, egui::Pos2::new(200.0, 400.0), false);
+    let (polygon_model, polygon_view) = new_umlclass_class("Polygon", "entity", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 550.0), false);
     let circle_properties = {
         let r = new_umlclass_property(UFOption::Some(UmlClassVisibilityKind::Private), "radius", "float", "", "", "");
         let c = new_umlclass_property(UFOption::Some(UmlClassVisibilityKind::Private), "center", "Point", "", "", "");
         vec![r, c]
     };
-    let (circle_model, circle_view) = new_umlclass_class("Circle", "entity", false, circle_properties, Vec::new(), egui::Pos2::new(300.0, 550.0));
+    let (circle_model, circle_view) = new_umlclass_class("Circle", "entity", false, circle_properties, Vec::new(), egui::Pos2::new(300.0, 550.0), false);
     let (gen_model, gen_view) = new_umlclass_generalization(
         Some((ViewUuid::now_v7(), egui::Pos2::new(200.0, 490.0))),
         (polygon_model.clone(), polygon_view.clone().into()),
@@ -966,7 +990,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         let y = new_umlclass_property(UFOption::Some(UmlClassVisibilityKind::Private), "y", "float", "", "", "");
         vec![x, y]
     };
-    let (point_model, point_view) = new_umlclass_class("Point", "struct", false, point_properties, Vec::new(), egui::Pos2::new(100.0, 700.0));
+    let (point_model, point_view) = new_umlclass_class("Point", "struct", false, point_properties, Vec::new(), egui::Pos2::new(100.0, 700.0), false);
     let (point_assoc_model, point_assoc_view) = new_umlclass_association(
         "", "", None,
         (polygon_model.clone().into(), polygon_view.clone().into()),
@@ -1062,9 +1086,10 @@ pub enum LinkType {
 #[derive(Clone, Copy, PartialEq)]
 pub enum UmlClassToolStage {
     Instance,
-    Class { name: &'static str, stereotype: &'static str },
+    Class { name: &'static str, stereotype: &'static str, render_as_stick_figure: bool },
     ClassProperty,
     ClassOperation,
+    UseCase { name: &'static str, stereotype: &'static str },
     LinkStart { link_type: LinkType },
     LinkEnd,
     LinkAddEnding { source: bool },
@@ -1080,8 +1105,8 @@ enum PartialUmlClassElement<P: UmlClassProfile> {
     Some(UmlClassElementView<P>),
     Link {
         link_type: LinkType,
-        source: UmlClassClassifier,
-        dest: Option<UmlClassClassifier>,
+        source: UmlClassAssociable,
+        dest: Option<UmlClassAssociable>,
     },
     LinkEnding {
         source: bool,
@@ -1140,24 +1165,10 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
 
     fn targetting_for_section(&self, element: Option<UmlClassElement>) -> egui::Color32 {
         match element {
-            None => match self.current_stage {
+            None | Some(UmlClassElement::UmlClassPackage(..)) => match self.current_stage {
                 UmlClassToolStage::Instance
                 | UmlClassToolStage::Class { .. }
-                | UmlClassToolStage::Comment
-                | UmlClassToolStage::PackageStart
-                | UmlClassToolStage::PackageEnd => TARGETTABLE_COLOR,
-                UmlClassToolStage::ClassProperty
-                | UmlClassToolStage::ClassOperation
-                | UmlClassToolStage::LinkStart { .. }
-                | UmlClassToolStage::LinkEnd
-                | UmlClassToolStage::LinkAddEnding { .. }
-                | UmlClassToolStage::CommentLinkStart | UmlClassToolStage::CommentLinkEnd => {
-                    NON_TARGETTABLE_COLOR
-                }
-            },
-            Some(UmlClassElement::UmlClassPackage(..)) => match self.current_stage {
-                UmlClassToolStage::Instance
-                | UmlClassToolStage::Class { .. }
+                | UmlClassToolStage::UseCase { .. }
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
@@ -1177,6 +1188,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::ClassProperty
                 | UmlClassToolStage::ClassOperation
+                | UmlClassToolStage::UseCase { .. }
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
@@ -1199,6 +1211,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 }
                 UmlClassToolStage::Instance
                 | UmlClassToolStage::Class { .. }
+                | UmlClassToolStage::UseCase { .. }
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
@@ -1206,6 +1219,23 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             },
             Some(UmlClassElement::UmlClassProperty(..)
                 | UmlClassElement::UmlClassOperation(..)) => NON_TARGETTABLE_COLOR,
+            Some(UmlClassElement::UmlUseCase(..)) => match self.current_stage {
+                UmlClassToolStage::Instance
+                | UmlClassToolStage::Class { .. }
+                | UmlClassToolStage::ClassProperty
+                | UmlClassToolStage::ClassOperation
+                | UmlClassToolStage::UseCase { .. }
+                | UmlClassToolStage::PackageStart
+                | UmlClassToolStage::PackageEnd
+                | UmlClassToolStage::Comment
+                | UmlClassToolStage::CommentLinkStart
+                | UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }
+                | UmlClassToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
+
+                UmlClassToolStage::LinkStart { .. }
+                | UmlClassToolStage::LinkEnd
+                | UmlClassToolStage::CommentLinkEnd => TARGETTABLE_COLOR
+            },
             Some(UmlClassElement::UmlClassComment(..)) => match self.current_stage {
                 UmlClassToolStage::CommentLinkStart => {
                     TARGETTABLE_COLOR
@@ -1217,6 +1247,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::ClassProperty
                 | UmlClassToolStage::ClassOperation
+                | UmlClassToolStage::UseCase { .. }
                 | UmlClassToolStage::PackageStart
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
@@ -1288,10 +1319,15 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.result = PartialUmlClassElement::Some(object_view.into());
                 self.event_lock = true;
             }
-            (UmlClassToolStage::Class { name, stereotype }, _) => {
+            (UmlClassToolStage::Class { name, stereotype, render_as_stick_figure }, _) => {
                 let (_class_model, class_view) =
-                    new_umlclass_class(name, stereotype, false, Vec::new(), Vec::new(), pos);
+                    new_umlclass_class(name, stereotype, false, Vec::new(), Vec::new(), pos, render_as_stick_figure);
                 self.result = PartialUmlClassElement::Some(class_view.into());
+                self.event_lock = true;
+            }
+            (UmlClassToolStage::UseCase { name, stereotype }, _) => {
+                let (_usecase_model, usecase_view) = new_uml_usecase(name, stereotype, false, pos);
+                self.result = PartialUmlClassElement::Some(usecase_view.into());
                 self.event_lock = true;
             }
             (UmlClassToolStage::PackageStart, _) => {
@@ -1335,7 +1371,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             }
             UmlClassElement::UmlClassInstance(inner) => {
                 match (self.current_stage, &mut self.result) {
-                    (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None) => {
+                    (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None)
+                        if link_type != LinkType::Generalization => {
                         self.result = PartialUmlClassElement::Link {
                             link_type,
                             source: inner.into(),
@@ -1411,6 +1448,35 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             }
             UmlClassElement::UmlClassProperty(..)
             | UmlClassElement::UmlClassOperation(..) => {}
+            UmlClassElement::UmlUseCase(inner) => {
+                match (self.current_stage, &mut self.result) {
+                    (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None)
+                        if link_type != LinkType::Generalization => {
+                        self.result = PartialUmlClassElement::Link {
+                            link_type,
+                            source: inner.into(),
+                            dest: None,
+                        };
+                        self.current_stage = UmlClassToolStage::LinkEnd;
+                        self.event_lock = true;
+                    }
+                    (
+                        UmlClassToolStage::LinkEnd,
+                        PartialUmlClassElement::Link { dest, .. },
+                    ) => {
+                        *dest = Some(inner.into());
+                        self.event_lock = true;
+                    }
+                    (
+                        UmlClassToolStage::CommentLinkEnd,
+                        PartialUmlClassElement::CommentLink { dest, .. },
+                    ) => {
+                        *dest = Some(inner.into());
+                        self.event_lock = true;
+                    }
+                    _ => {}
+                }
+            }
             UmlClassElement::UmlClassComment(inner) => {
                 match (self.current_stage, &mut self.result) {
                     (UmlClassToolStage::CommentLinkStart, PartialUmlClassElement::None) => {
@@ -1478,7 +1544,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
 
                     let link_view = match link_type {
                         LinkType::Generalization => {
-                            if let (UmlClassClassifier::UmlClass(source), UmlClassClassifier::UmlClass(dest)) = (source, dest) {
+                            if let (UmlClassAssociable::UmlClass(source), UmlClassAssociable::UmlClass(dest)) = (source, dest) {
                                 new_umlclass_generalization(
                                     None,
                                     (source.clone(), source_controller),
@@ -3822,6 +3888,7 @@ pub fn new_umlclass_class<P: UmlClassProfile>(
     properties: Vec<(ERef<UmlClassProperty>, ERef<UmlClassPropertyView<P>>)>,
     operations: Vec<(ERef<UmlClassOperation>, ERef<UmlClassOperationView<P>>)>,
     position: egui::Pos2,
+    render_as_stick_figure: bool,
 ) -> (ERef<UmlClass>, ERef<UmlClassView<P>>) {
     let class_model = ERef::new(UmlClass::new(
         ModelUuid::now_v7(),
@@ -3837,6 +3904,7 @@ pub fn new_umlclass_class<P: UmlClassProfile>(
         properties.iter().map(|e| e.1.clone()).collect(),
         operations.iter().map(|e| e.1.clone()).collect(),
         position,
+        render_as_stick_figure,
     );
 
     (class_model, class_view)
@@ -3846,6 +3914,7 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
     properties_views: Vec<ERef<UmlClassPropertyView<P>>>,
     operations_views: Vec<ERef<UmlClassOperationView<P>>>,
     position: egui::Pos2,
+    render_as_stick_figure: bool,
 ) -> ERef<UmlClassView<P>> {
     let m = model.read();
     ERef::new(UmlClassView {
@@ -3867,6 +3936,7 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color: MGlobalColor::None,
 
+        render_as_stick_figure,
         suppress_template_parameters: false,
         suppress_properties: false,
         suppress_operations: false,
@@ -3964,6 +4034,7 @@ pub struct UmlClassView<P: UmlClassProfile> {
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
 
+    render_as_stick_figure: bool,
     suppress_template_parameters: bool,
     suppress_properties: bool,
     suppress_operations: bool,
@@ -4319,6 +4390,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
         }
 
+        if P::allows_class_rendering_as_stick_figure() {
+            ui.checkbox(&mut self.render_as_stick_figure, "render as stick figure");
+        }
         ui.checkbox(&mut self.suppress_template_parameters, "suppress template parameters");
         ui.checkbox(&mut self.suppress_properties, "suppress properties");
         ui.checkbox(&mut self.suppress_operations, "suppress operations");
@@ -4358,115 +4432,133 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
         let read = self.model.read();
         let child_status = RwLock::new(TargettingStatus::NotDrawn);
-        let mut body = Vec::<(egui::Vec2, Box<dyn Fn(&mut dyn canvas::NHCanvas, egui::Pos2)>)>::new();
-        if !self.suppress_properties && !self.properties_views.is_empty() {
-            body.push((
-                rect_union_fold(self.properties_views.iter().map(|e| e.read().bounding_box())).size(),
-                Box::new(|c, at| {
-                    self.properties_views.iter().fold(at, |s, e| {
-                        let r = e.write().draw_inner(s, q, context, c, tool);
-                        if r.1 != TargettingStatus::NotDrawn {
-                            *child_status.write().unwrap() = r.1;
-                        }
-                        r.0.left_bottom()
-                    });
-                })
-            ));
-        }
-        if !self.suppress_operations && !self.operations_views.is_empty() {
-            body.push((
-                rect_union_fold(self.operations_views.iter().map(|e| e.read().bounding_box())).size(),
-                Box::new(|c, at| {
-                    self.operations_views.iter().fold(at, |s, e| {
-                        let r = e.write().draw_inner(s, q, context, c, tool);
-                        if r.1 != TargettingStatus::NotDrawn {
-                            *child_status.write().unwrap() = r.1;
-                        }
-                        r.0.left_bottom()
-                    });
-                })
-            ));
-        }
-        if self.comment_indication == CommentIndication::TextCompartment && !read.comment.is_empty() {
-            let comment = read.comment.clone();
-            body.push((
-                canvas.measure_text(self.position, egui::Align2::LEFT_TOP, &*read.comment, canvas::CLASS_ITEM_FONT_SIZE).size(),
-                Box::new(move |c, at| {
-                    c.draw_text(at, egui::Align2::LEFT_TOP, &*comment, canvas::CLASS_ITEM_FONT_SIZE, egui::Color32::BLACK);
-                })
-            ));
-        }
+        let body_color = context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE);
 
-        self.bounds_rect = draw_uml_class(
-            canvas,
-            self.position,
-            self.stereotype_in_guillemets.clone(),
-            &read.name,
-            None,
-            read.is_abstract,
-            &body,
-            context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
-            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
-        );
-
-        if !self.suppress_template_parameters && !read.template_parameters.is_empty() {
-            let text_bounds = canvas.measure_text(
-                self.bounds_rect.right_top(),
-                egui::Align2::CENTER_CENTER,
-                &read.template_parameters,
-                canvas::CLASS_TOP_FONT_SIZE,
-            ).expand(2.0);
-            canvas.draw_rectangle(
-                text_bounds,
-                egui::CornerRadius::ZERO,
-                context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
-                canvas::Stroke::new_dotted(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
+        if self.render_as_stick_figure {
+            let p = self.position;
+            let s = canvas::Stroke::new_solid(1.0, egui::Color32::BLACK);
+            let h = self.highlight;
+            canvas.draw_ellipse(p - egui::Vec2::new(0.0, 20.0), egui::Vec2::splat(10.0), body_color, s, h);
+            canvas.draw_line([p - egui::Vec2::new(20.0, 4.0), p - egui::Vec2::new(-20.0, 4.0)], s, h); // hands
+            canvas.draw_line([p - egui::Vec2::new(0.0, 10.0), p - egui::Vec2::new(0.0, -8.0)], s, h); // torso
+            canvas.draw_line([p - egui::Vec2::new(16.0, -28.0), p - egui::Vec2::new(0.0, -8.0)], s, h); // / leg
+            canvas.draw_line([p - egui::Vec2::new(-16.0, -28.0), p - egui::Vec2::new(0.0, -8.0)], s, h); // \ leg
+            self.bounds_rect = egui::Rect::from_min_max(p - egui::Vec2::new(20.0, 30.0), p + egui::Vec2::new(20.0, 28.0));
             canvas.draw_text(
-                self.bounds_rect.right_top(),
-                egui::Align2::CENTER_CENTER,
-                &read.template_parameters,
-                canvas::CLASS_TOP_FONT_SIZE,
-                egui::Color32::BLACK,
+                p - egui::Vec2::new(0.0, -28.0), egui::Align2::CENTER_TOP,
+                &read.name, canvas::CLASS_MIDDLE_FONT_SIZE, egui::Color32::BLACK,
             );
-        }
-
-        // Draw buttons
-        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            let b1 = self.association_button_rect(ui_scale);
-            canvas.draw_rectangle(
-                b1,
-                egui::CornerRadius::ZERO,
-                egui::Color32::WHITE,
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
-            canvas.draw_text(b1.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
-
-            if P::allows_class_properties() {
-                let b2 = self.property_button_rect(ui_scale);
-                canvas.draw_rectangle(
-                    b2,
-                    egui::CornerRadius::ZERO,
-                    egui::Color32::WHITE,
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
-                canvas.draw_text(b2.center(), egui::Align2::CENTER_CENTER, "P", 14.0 / ui_scale, egui::Color32::BLACK);
+        } else {
+            let mut body = Vec::<(egui::Vec2, Box<dyn Fn(&mut dyn canvas::NHCanvas, egui::Pos2)>)>::new();
+            if !self.suppress_properties && !self.properties_views.is_empty() {
+                body.push((
+                    rect_union_fold(self.properties_views.iter().map(|e| e.read().bounding_box())).size(),
+                    Box::new(|c, at| {
+                        self.properties_views.iter().fold(at, |s, e| {
+                            let r = e.write().draw_inner(s, q, context, c, tool);
+                            if r.1 != TargettingStatus::NotDrawn {
+                                *child_status.write().unwrap() = r.1;
+                            }
+                            r.0.left_bottom()
+                        });
+                    })
+                ));
+            }
+            if !self.suppress_operations && !self.operations_views.is_empty() {
+                body.push((
+                    rect_union_fold(self.operations_views.iter().map(|e| e.read().bounding_box())).size(),
+                    Box::new(|c, at| {
+                        self.operations_views.iter().fold(at, |s, e| {
+                            let r = e.write().draw_inner(s, q, context, c, tool);
+                            if r.1 != TargettingStatus::NotDrawn {
+                                *child_status.write().unwrap() = r.1;
+                            }
+                            r.0.left_bottom()
+                        });
+                    })
+                ));
+            }
+            if self.comment_indication == CommentIndication::TextCompartment && !read.comment.is_empty() {
+                let comment = read.comment.clone();
+                body.push((
+                    canvas.measure_text(self.position, egui::Align2::LEFT_TOP, &*read.comment, canvas::CLASS_ITEM_FONT_SIZE).size(),
+                    Box::new(move |c, at| {
+                        c.draw_text(at, egui::Align2::LEFT_TOP, &*comment, canvas::CLASS_ITEM_FONT_SIZE, egui::Color32::BLACK);
+                    })
+                ));
             }
 
-            if P::allows_class_operations() {
-                let b3 = self.operation_button_rect(ui_scale);
+            self.bounds_rect = draw_uml_class(
+                canvas,
+                self.position,
+                self.stereotype_in_guillemets.clone(),
+                &read.name,
+                None,
+                read.is_abstract,
+                &body,
+                body_color,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                self.highlight,
+            );
+
+            if !self.suppress_template_parameters && !read.template_parameters.is_empty() {
+                let text_bounds = canvas.measure_text(
+                    self.bounds_rect.right_top(),
+                    egui::Align2::CENTER_CENTER,
+                    &read.template_parameters,
+                    canvas::CLASS_TOP_FONT_SIZE,
+                ).expand(2.0);
                 canvas.draw_rectangle(
-                    b3,
+                    text_bounds,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_dotted(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(
+                    self.bounds_rect.right_top(),
+                    egui::Align2::CENTER_CENTER,
+                    &read.template_parameters,
+                    canvas::CLASS_TOP_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
+            }
+
+            // Draw buttons
+            if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+                let b1 = self.association_button_rect(ui_scale);
+                canvas.draw_rectangle(
+                    b1,
                     egui::CornerRadius::ZERO,
                     egui::Color32::WHITE,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-                canvas.draw_text(b3.center(), egui::Align2::CENTER_CENTER, "O", 14.0 / ui_scale, egui::Color32::BLACK);
+                canvas.draw_text(b1.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
+
+                if P::allows_class_properties() {
+                    let b2 = self.property_button_rect(ui_scale);
+                    canvas.draw_rectangle(
+                        b2,
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::WHITE,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                    canvas.draw_text(b2.center(), egui::Align2::CENTER_CENTER, "P", 14.0 / ui_scale, egui::Color32::BLACK);
+                }
+
+                if P::allows_class_operations() {
+                    let b3 = self.operation_button_rect(ui_scale);
+                    canvas.draw_rectangle(
+                        b3,
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::WHITE,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                    canvas.draw_text(b3.center(), egui::Align2::CENTER_CENTER, "O", 14.0 / ui_scale, egui::Color32::BLACK);
+                }
             }
         }
 
@@ -4516,7 +4608,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     self.bounds_rect,
                     egui::CornerRadius::ZERO,
                     t.targetting_for_section(Some(self.model())),
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Stroke::new_solid(if self.render_as_stick_figure {
+                        0.0
+                    } else {
+                        1.0
+                    }, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
                 TargettingStatus::Drawn
@@ -5052,6 +5148,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             position: self.position,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
+            render_as_stick_figure: self.render_as_stick_figure,
             suppress_template_parameters: self.suppress_template_parameters,
             suppress_properties: self.suppress_properties,
             suppress_operations: self.suppress_operations,
@@ -5079,6 +5176,493 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 *e = new_operation.clone();
             }
         }
+    }
+}
+
+
+pub fn new_uml_usecase<P: UmlClassProfile>(
+    name: &str,
+    stereotype: &str,
+    is_abstract: bool,
+    position: egui::Pos2,
+) -> (ERef<UmlUseCase>, ERef<UmlUseCaseView<P>>) {
+    let usecase_model = ERef::new(UmlUseCase::new(
+        ModelUuid::now_v7(),
+        name.to_owned(),
+        stereotype.to_owned(),
+        is_abstract,
+    ));
+    let usecase_view = new_uml_usecase_view(
+        usecase_model.clone(),
+        position,
+    );
+
+    (usecase_model, usecase_view)
+}
+pub fn new_uml_usecase_view<P: UmlClassProfile>(
+    model: ERef<UmlUseCase>,
+    position: egui::Pos2,
+) -> ERef<UmlUseCaseView<P>> {
+    let m = model.read();
+    ERef::new(UmlUseCaseView {
+        uuid: ViewUuid::now_v7().into(),
+        model: model.clone(),
+
+        stereotype_in_guillemets: None,
+        stereotype_controller: Default::default(),
+        name_buffer: (*m.name).clone(),
+        is_abstract_buffer: m.is_abstract,
+        comment_buffer: (*m.comment).clone(),
+
+        dragged_shape: None,
+        highlight: canvas::Highlight::NONE,
+        position,
+        bounds_radius: egui::Vec2::ZERO,
+        background_color: MGlobalColor::None,
+
+        _profile: PhantomData,
+    })
+}
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlUseCaseView<P: UmlClassProfile> {
+    uuid: Arc<ViewUuid>,
+    #[nh_context_serde(entity)]
+    pub model: ERef<UmlUseCase>,
+
+    #[nh_context_serde(skip_and_default)]
+    stereotype_in_guillemets: Option<Arc<String>>,
+    #[nh_context_serde(skip_and_default)]
+    stereotype_controller: P::UseCaseStereotypeController,
+    #[nh_context_serde(skip_and_default)]
+    name_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    is_abstract_buffer: bool,
+    #[nh_context_serde(skip_and_default)]
+    comment_buffer: String,
+
+    #[nh_context_serde(skip_and_default)]
+    dragged_shape: Option<NHShape>,
+    #[nh_context_serde(skip_and_default)]
+    highlight: canvas::Highlight,
+    pub position: egui::Pos2,
+    pub bounds_radius: egui::Vec2,
+    background_color: MGlobalColor,
+
+    #[nh_context_serde(skip_and_default)]
+    _profile: PhantomData<P>,
+}
+
+impl<P: UmlClassProfile> Entity for UmlUseCaseView<P> {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl<P: UmlClassProfile> View for UmlUseCaseView<P> {
+    fn uuid(&self) -> Arc<ViewUuid> {
+        self.uuid.clone()
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+}
+
+impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlUseCaseView<P> {
+    fn model(&self) -> UmlClassElement {
+        self.model.clone().into()
+    }
+
+    fn min_shape(&self) -> NHShape {
+        NHShape::Ellipse {
+            position: self.position,
+            bounds_radius: self.bounds_radius,
+        }
+    }
+
+    fn position(&self) -> egui::Pos2 {
+        self.position
+    }
+}
+
+impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlUseCaseView<P> {}
+
+impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCaseView<P> {
+    fn show_properties(
+        &mut self,
+        gdc: &GlobalDrawingContext,
+        q: &UmlClassQueryable<P>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+    ) -> PropertiesStatus<UmlClassDomain<P>> {
+        if !self.highlight.selected {
+            return PropertiesStatus::NotShown;
+        }
+
+        ui.label("Model properties");
+
+        ui.label("Stereotype:");
+        if self.stereotype_controller.show(ui) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
+            ));
+        }
+
+        ui.label("Name:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.name_buffer),
+            )
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+            ));
+        }
+
+        if ui.checkbox(&mut self.is_abstract_buffer, "isAbstract").changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::ClassAbstractChange(self.is_abstract_buffer),
+            ));
+        }
+
+        ui.label("Comment:");
+        if ui
+            .add_sized(
+                (ui.available_width(), 20.0),
+                egui::TextEdit::multiline(&mut self.comment_buffer),
+            )
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+            ));
+        }
+
+        ui.label("View properties");
+
+        ui.horizontal(|ui| {
+            let egui::Pos2 { mut x, mut y } = self.position;
+
+            ui.label("x");
+            if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+            }
+            ui.label("y");
+            if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+            }
+        });
+
+        ui.label("Background color:");
+        if crate::common::controller::mglobalcolor_edit_button(
+            &gdc.global_colors,
+            ui,
+            &mut self.background_color,
+        ) {
+            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+        }
+
+        PropertiesStatus::Shown
+    }
+
+    fn draw_in(
+        &mut self,
+        _q: &UmlClassQueryable<P>,
+        context: &GlobalDrawingContext,
+        canvas: &mut dyn NHCanvas,
+        tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
+    ) -> TargettingStatus {
+        // Draw shape and text
+        let name_bounds = canvas.measure_text(
+            self.position,
+            egui::Align2::CENTER_CENTER,
+            &self.name_buffer,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+        );
+        let mut text_bounds = name_bounds;
+        if let Some(s) = &self.stereotype_in_guillemets {
+            let stereotype_bounds = canvas.measure_text(
+                name_bounds.center_top(),
+                egui::Align2::CENTER_BOTTOM,
+                &s,
+                canvas::CLASS_TOP_FONT_SIZE,
+            );
+            text_bounds = text_bounds.union(stereotype_bounds);
+        }
+
+        self.bounds_radius = text_bounds.size() / 1.5;
+
+        canvas.draw_ellipse(
+            self.position,
+            self.bounds_radius,
+            context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.highlight,
+        );
+
+        canvas.draw_text(
+            self.position,
+            egui::Align2::CENTER_CENTER,
+            &self.name_buffer,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+        if let Some(s) = &self.stereotype_in_guillemets {
+            canvas.draw_text(
+                name_bounds.center_top(),
+                egui::Align2::CENTER_BOTTOM,
+                &s,
+                canvas::CLASS_TOP_FONT_SIZE,
+                egui::Color32::BLACK,
+            );
+        }
+
+        // Draw targetting ellipse
+        if let Some(t) = tool
+            .as_ref()
+            .filter(|e| self.min_shape().contains(e.0))
+            .map(|e| e.1)
+        {
+            canvas.draw_ellipse(
+                self.position,
+                self.bounds_radius,
+                t.targetting_for_section(Some(self.model())),
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            TargettingStatus::Drawn
+        } else {
+            TargettingStatus::NotDrawn
+        }
+    }
+
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        ehc: &EventHandlingContext,
+        q: &UmlClassQueryable<P>,
+        tool: &mut Option<NaiveUmlClassTool<P>>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+    ) -> EventHandlingStatus {
+        match event {
+            InputEvent::MouseDown(pos) => {
+                if !self.min_shape().contains(pos) {
+                    return EventHandlingStatus::NotHandled
+                }
+
+                self.dragged_shape = Some(self.min_shape());
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::MouseUp(_) => {
+                if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            }
+            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
+                if let Some(tool) = tool {
+                    tool.add_section(self.model());
+                }
+
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
+                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
+                self.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.highlight.selected {
+                    ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        !ehc.all_elements
+                            .get(e)
+                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    })
+                } else {
+                    ehc.snap_manager
+                        .coerce(translated_real_shape, |e| *e != *self.uuid)
+                };
+                let coerced_delta = coerced_pos - self.position;
+
+                if self.highlight.selected {
+                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
+                } else {
+                    commands.push(
+                        InsensitiveCommand::MoveSpecificElements(
+                            std::iter::once(*self.uuid).collect(),
+                            coerced_delta,
+                        ),
+                    );
+                }
+
+                EventHandlingStatus::HandledByElement
+            }
+            _ => EventHandlingStatus::NotHandled,
+        }
+    }
+
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
+        match command {
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
+            }
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
+                if uuids.contains(&*self.uuid) {
+                    self.highlight = self.highlight.combine(*set, *h);
+                }
+            }
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
+            }
+            InsensitiveCommand::MoveSpecificElements(uuids, _)
+                if !uuids.contains(&*self.uuid) => {}
+            InsensitiveCommand::MoveSpecificElements(_, delta)
+            | InsensitiveCommand::MoveAllElements(delta) => {
+                self.position += *delta;
+                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                    std::iter::once(*self.uuid).collect(),
+                    -*delta,
+                ));
+            }
+            InsensitiveCommand::ResizeSpecificElementsBy(..)
+            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            | InsensitiveCommand::DeleteSpecificElements(..)
+            | InsensitiveCommand::PasteSpecificElements(..)
+            | InsensitiveCommand::AddDependency(..)
+            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            InsensitiveCommand::PropertyChange(uuids, property) => {
+                if uuids.contains(&*self.uuid) {
+                    affected_models.insert(*self.model.read().uuid);
+                    let mut model = self.model.write();
+                    match property {
+                        UmlClassPropChange::StereotypeChange(stereotype) => {
+                            if !self.stereotype_controller.is_valid(&stereotype) {
+                                return;
+                            }
+
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::StereotypeChange(
+                                    model.stereotype.clone(),
+                                ),
+                            ));
+                            model.stereotype = stereotype.clone();
+                        }
+                        UmlClassPropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
+                        }
+                        UmlClassPropChange::ClassAbstractChange(is_abstract) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::ClassAbstractChange(
+                                    model.is_abstract,
+                                ),
+                            ));
+                            model.is_abstract = *is_abstract;
+                        }
+                        UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                            ));
+                            self.background_color = *color;
+                        }
+                        UmlClassPropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+
+        self.stereotype_in_guillemets = if model.stereotype.is_empty() {
+            None
+        } else {
+            Some(format!("«{}»", model.stereotype).into())
+        };
+
+        self.stereotype_controller.refresh(&*model.stereotype);
+        self.name_buffer = (*model.name).clone();
+        self.is_abstract_buffer = model.is_abstract;
+        self.comment_buffer = (*model.comment).clone();
+    }
+
+    fn head_count(
+        &mut self,
+        _flattened_views: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+    }
+
+    fn deep_copy_clone(
+        &self,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
+        c: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
+        m: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) {
+        let old_model = self.model.read();
+
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
+        } else {
+            (*self.uuid, *old_model.uuid)
+        };
+
+        let modelish = if let Some(UmlClassElement::UmlUseCase(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(model_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        let cloneish = ERef::new(Self {
+            uuid: view_uuid.into(),
+            model: modelish,
+            stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
+            stereotype_controller: self.stereotype_controller.clone(),
+            name_buffer: self.name_buffer.clone(),
+            is_abstract_buffer: self.is_abstract_buffer,
+            comment_buffer: self.comment_buffer.clone(),
+            dragged_shape: None,
+            highlight: self.highlight,
+            position: self.position,
+            bounds_radius: self.bounds_radius,
+            background_color: self.background_color,
+            _profile: PhantomData,
+        });
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
     }
 }
 
@@ -5438,8 +6022,8 @@ pub fn new_umlclass_dependency<P: UmlClassProfile>(
     name: &str,
     target_arrow_open: bool,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (UmlClassClassifier, UmlClassElementView<P>),
-    target: (UmlClassClassifier, UmlClassElementView<P>),
+    source: (UmlClassAssociable, UmlClassElementView<P>),
+    target: (UmlClassAssociable, UmlClassElementView<P>),
 ) -> (ERef<UmlClassDependency>, ERef<DependencyViewT<P>>) {
     let link_model = ERef::new(UmlClassDependency::new(
         ModelUuid::now_v7(),
@@ -5700,11 +6284,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
         let mut model = self.model.write();
 
         let source_uuid = *model.source.uuid();
-        if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.as_classifier()) {
+        if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.as_associable()) {
             model.source = new_source;
         }
         let target_uuid = *model.target.uuid();
-        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.as_classifier()) {
+        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.as_associable()) {
             model.target = new_target;
         }
     }
@@ -5715,8 +6299,8 @@ pub fn new_umlclass_association<P: UmlClassProfile>(
     stereotype: &str,
     name: &str,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-    source: (UmlClassClassifier, UmlClassElementView<P>),
-    target: (UmlClassClassifier, UmlClassElementView<P>),
+    source: (UmlClassAssociable, UmlClassElementView<P>),
+    target: (UmlClassAssociable, UmlClassElementView<P>),
 ) -> (ERef<UmlClassAssociation>, ERef<AssociationViewT<P>>) {
     let link_model = ERef::new(UmlClassAssociation::new(
         ModelUuid::now_v7(),
@@ -6275,11 +6859,11 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
         let mut model = self.model.write();
 
         let source_uuid = *model.source.uuid();
-        if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.as_classifier()) {
+        if let Some(new_source) = m.get(&source_uuid).and_then(|e| e.as_associable()) {
             model.source = new_source;
         }
         let target_uuid = *model.target.uuid();
-        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.as_classifier()) {
+        if let Some(new_target) = m.get(&target_uuid).and_then(|e| e.as_associable()) {
             model.target = new_target;
         }
     }

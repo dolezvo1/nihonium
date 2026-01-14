@@ -363,6 +363,10 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
                     crate::domains::umlclass::umlclass_controllers::new as DiagramF,
                 ),
                 (
+                    "Use Case diagram",
+                    crate::domains::usecase::usecase_controllers::new as DiagramF,
+                ),
+                (
                     "OntoUML diagram",
                     crate::domains::ontouml::ontouml_controllers::new as DiagramF,
                 ),
@@ -406,6 +410,10 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
                 (
                     "UML Class diagram",
                     crate::domains::umlclass::umlclass_controllers::demo as DiagramF,
+                ),
+                (
+                    "Use Case diagram",
+                    crate::domains::usecase::usecase_controllers::demo as DiagramF,
                 ),
                 (
                     "OntoUML diagram",
@@ -1692,12 +1700,13 @@ impl Default for NHApp {
         }
 
         let mut diagram_deserializers = HashMap::new();
-        diagram_deserializers.insert("rdf".to_string(), &crate::domains::rdf::rdf_controllers::deserializer as &CDes);
         diagram_deserializers.insert("umlclass".to_string(), &crate::domains::umlclass::umlclass_controllers::deserializer as &CDes);
-        diagram_deserializers.insert("democsd".to_string(), &crate::domains::democsd::democsd_controllers::deserializer as &CDes);
+        diagram_deserializers.insert("umlclass-usecase".to_string(), &crate::domains::usecase::usecase_controllers::deserializer as &CDes);
         diagram_deserializers.insert("umlclass-ontouml".to_string(), &crate::domains::ontouml::ontouml_controllers::deserializer as &CDes);
+        diagram_deserializers.insert("democsd".to_string(), &crate::domains::democsd::democsd_controllers::deserializer as &CDes);
         diagram_deserializers.insert("demoofd".to_string(), &crate::domains::demoofd::demoofd_controllers::deserializer as &CDes);
         diagram_deserializers.insert("demopsd".to_string(), &crate::domains::demopsd::demopsd_controllers::deserializer as &CDes);
+        diagram_deserializers.insert("rdf".to_string(), &crate::domains::rdf::rdf_controllers::deserializer as &CDes);
 
         let mut dock_state = DockState::new(tabs);
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
@@ -1725,12 +1734,13 @@ impl Default for NHApp {
 
         let mut diagram_shades = HashMap::new();
         diagram_shades.insert("umlclass", ("UML Class".to_owned(), vec![egui::Color32::TRANSPARENT]));
+        diagram_shades.insert("umlclass-usecase", ("Use Case".to_owned(), vec![egui::Color32::TRANSPARENT]));
         diagram_shades.insert("umlclass-ontouml", ("OntoUML".to_owned(), vec![egui::Color32::TRANSPARENT]));
         diagram_shades.insert("democsd", ("DEMO Coordination Structure Diagram".to_owned(), vec![egui::Color32::TRANSPARENT]));
         diagram_shades.insert("demopsd", ("DEMO Project Structure Diagram".to_owned(), vec![egui::Color32::TRANSPARENT]));
         diagram_shades.insert("demoofd", ("DEMO Object Fact Diagram".to_owned(), vec![egui::Color32::TRANSPARENT]));
         diagram_shades.insert("rdf", ("RDF".to_owned(), vec![egui::Color32::TRANSPARENT]));
-        let diagram_shades_order = vec!["umlclass", "umlclass-ontouml", "democsd", "demopsd", "demoofd", "rdf"];
+        let diagram_shades_order = vec!["umlclass", "umlclass-usecase", "umlclass-ontouml", "democsd", "demopsd", "demoofd", "rdf"];
         
         let selected_diagram_shades = diagram_shades_order.iter().map(|e| (*e, 0)).collect();
         let languages_order = common::fluent::AVAILABLE_LANGUAGES.iter().map(|e| e.0.clone()).collect();
