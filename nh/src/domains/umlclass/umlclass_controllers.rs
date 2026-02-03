@@ -4982,33 +4982,39 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             }
             InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
-                if *v == *self.uuid && *into_model {
+                if *v == *self.uuid && let UmlClassElementOrVertex::Element(e) = e {
                     let mut w = self.model.write();
-                    if let UmlClassElementOrVertex::Element(e) = e
-                        && let Ok(pos) = w.insert_element(*b, *pos, e.model()) {
-                        let mut model_transitives = HashMap::new();
-                        e.clone().head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
-                        affected_models.extend(model_transitives.into_keys());
+                    let view_insert_pos = if !*into_model {
+                        pos.and_then(|e| e.try_into().ok()).unwrap_or(usize::max_value())
+                    } else {
+                        let Ok(pos) = w.insert_element(*b, *pos, e.model()) else {
+                            return
+                        };
+                        pos.into()
+                    };
 
-                        match e {
-                            UmlClassElementView::ClassProperty(inner) => {
-                                self.properties_views.insert(pos.try_into().unwrap(), inner.clone());
-                            },
-                            UmlClassElementView::ClassOperation(inner) => {
-                                self.operations_views.insert(pos.try_into().unwrap(), inner.clone());
-                            },
-                            _ => return,
-                        }
+                    let mut model_transitives = HashMap::new();
+                    e.clone().head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                    affected_models.extend(model_transitives.into_keys());
 
-                        let uuid = *e.uuid();
-                        undo_accumulator.push(InsensitiveCommand::RemoveDependency(
-                            *self.uuid,
-                            *b,
-                            uuid,
-                            true,
-                        ));
-                        affected_models.insert(*w.uuid);
+                    match e {
+                        UmlClassElementView::ClassProperty(inner) => {
+                            self.properties_views.insert(view_insert_pos, inner.clone());
+                        },
+                        UmlClassElementView::ClassOperation(inner) => {
+                            self.operations_views.insert(view_insert_pos, inner.clone());
+                        },
+                        _ => return,
                     }
+
+                    let uuid = *e.uuid();
+                    undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                        *self.uuid,
+                        *b,
+                        uuid,
+                        *into_model,
+                    ));
+                    affected_models.insert(*w.uuid);
                 }
             }
             InsensitiveCommand::RemoveDependency(v, b, element, from_model) => {
