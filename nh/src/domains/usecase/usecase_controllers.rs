@@ -10,7 +10,7 @@ use crate::{common::{
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
     uuid::{ControllerUuid, ModelUuid, ViewUuid},
-}, domains::{umlclass::{umlclass_controllers::{new_uml_usecase, new_umlclass_dependency}, umlclass_models::UmlClassElement}, usecase::usecase_models}};
+}, domains::{umlclass::{umlclass_controllers::{UmlClassRenderStyle, new_uml_usecase, new_umlclass_dependency}, umlclass_models::UmlClassElement}, usecase::usecase_models}};
 use eframe::egui;
 use std::{
     collections::HashSet,
@@ -100,14 +100,14 @@ pub struct UmlClassPlaceholderViews {
 impl Default for UmlClassPlaceholderViews {
     fn default() -> Self {
         let mut classes = Vec::new();
-        let (_actor, actor_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::ZERO, true);
+        let (_actor, actor_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::StickFigure);
         classes.push(
-            (UmlClassToolStage::Class { name: "Customer", stereotype: usecase_models::ACTOR, render_as_stick_figure: true }, "Actor", actor_view.into())
+            (UmlClassToolStage::Class { name: "Customer", stereotype: usecase_models::ACTOR, render_style: UmlClassRenderStyle::StickFigure }, "Actor", actor_view.into())
         );
-        let (_class, class_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::ZERO, false);
+        let (_class, class_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
         class_view.write().refresh_buffers();
         classes.push(
-            (UmlClassToolStage::Class { name: "Customer", stereotype: usecase_models::ACTOR, render_as_stick_figure: false }, "Class Actor", class_view.into())
+            (UmlClassToolStage::Class { name: "Customer", stereotype: usecase_models::ACTOR, render_style: UmlClassRenderStyle::Class }, "Class Actor", class_view.into())
         );
         let (_usecase, usecase_view) = new_uml_usecase("Registration", usecase_models::NONE, false, egui::Pos2::ZERO);
         usecase_view.write().refresh_buffers();
@@ -117,8 +117,8 @@ impl Default for UmlClassPlaceholderViews {
 
 
         let mut relationships = Vec::new();
-        let dummy1 = new_umlclass_class("dummy1", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0), false);
-        let dummy2 = new_umlclass_class("dummy2", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0), false);
+        let dummy1 = new_umlclass_class("dummy1", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0), UmlClassRenderStyle::Class);
+        let dummy2 = new_umlclass_class("dummy2", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0), UmlClassRenderStyle::Class);
         {
             let (_gen, gen_view) = new_umlclass_generalization(None, (dummy1.0.clone(), dummy1.1.clone().into()), (dummy2.0.clone(), dummy2.1.clone().into()));
             relationships.push(
@@ -205,10 +205,12 @@ pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let (customer_model, customer_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 200.0), true);
-    let (bank_model, bank_view) = new_umlclass_class("Bank Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 300.0), false);
-    let (usecase_model, usecase_view) = new_uml_usecase("Registration", usecase_models::NONE, false, egui::Pos2::new(450.0, 200.0));
+    let (customer_model, customer_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 200.0), UmlClassRenderStyle::StickFigure);
+    let (bank_model, bank_view) = new_umlclass_class("Bank Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 400.0), UmlClassRenderStyle::Class);
+    let (usecase_model, usecase_view) = new_uml_usecase("Registration", usecase_models::NONE, false, egui::Pos2::new(550.0, 200.0));
 
+    let (gen_model, gen_view) = new_umlclass_generalization(None, (bank_model.clone(), bank_view.clone().into()), (customer_model.clone(), customer_view.clone().into()));
+    let (assoc_model, assoc_view) = new_umlclass_association("", "", None, (customer_model.clone().into(), customer_view.clone().into()), (usecase_model.clone().into(), usecase_view.clone().into()));
 
     let name = format!("Demo Use Case diagram {}", no);
     let diagram = ERef::new(UmlClassDiagram::new(
@@ -218,6 +220,8 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             customer_model.into(),
             bank_model.into(),
             usecase_model.into(),
+            gen_model.into(),
+            assoc_model.into(),
         ],
     ));
     new_controlller(
@@ -227,6 +231,8 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             customer_view.into(),
             bank_view.into(),
             usecase_view.into(),
+            gen_view.into(),
+            assoc_view.into(),
         ],
     )
 }

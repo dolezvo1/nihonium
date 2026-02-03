@@ -202,6 +202,7 @@ pub enum UmlClassElement {
     UmlClassGeneralization(ERef<UmlClassGeneralization>),
     UmlClassDependency(ERef<UmlClassDependency>),
     UmlClassAssociation(ERef<UmlClassAssociation>),
+    UmlUseCaseGeneralization(ERef<UmlUseCaseGeneralization>),
     UmlClassComment(ERef<UmlClassComment>),
     UmlClassCommentLink(ERef<UmlClassCommentLink>),
 }
@@ -213,6 +214,14 @@ pub enum UmlClassAssociable {
     UmlClassObject(ERef<UmlClassInstance>),
     UmlClass(ERef<UmlClass>),
     UmlUseCase(ERef<UmlUseCase>),
+}
+
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
+#[model(default_passthrough = "eref")]
+#[nh_context_serde(uuid_type = ModelUuid)]
+pub enum UmlGeneralization {
+    ClassGeneralization(ERef<UmlClassGeneralization>),
+    UseCaseGeneralization(ERef<UmlUseCaseGeneralization>),
 }
 
 impl UmlClassElement {
@@ -227,6 +236,7 @@ impl UmlClassElement {
             | UmlClassElement::UmlClassGeneralization(..)
             | UmlClassElement::UmlClassDependency(..)
             | UmlClassElement::UmlClassAssociation(..)
+            | UmlClassElement::UmlUseCaseGeneralization(..)
             | UmlClassElement::UmlClassComment(..)
             | UmlClassElement::UmlClassCommentLink(..) => None,
         }
@@ -243,6 +253,7 @@ impl UmlClassElement {
             UmlClassElement::UmlClassGeneralization(inner) => visitor.visit_generalization(&inner.read()),
             UmlClassElement::UmlClassDependency(inner) => visitor.visit_dependency(&inner.read()),
             UmlClassElement::UmlClassAssociation(inner) => visitor.visit_association(&inner.read()),
+            UmlClassElement::UmlUseCaseGeneralization(..) => unreachable!(),
             UmlClassElement::UmlClassComment(inner) => visitor.visit_comment(&inner.read()),
             UmlClassElement::UmlClassCommentLink(inner) => visitor.visit_commentlink(&inner.read()),
         }
@@ -287,6 +298,7 @@ impl FullTextSearchable for UmlClassElement {
             UmlClassElement::UmlClassGeneralization(inner) => inner.read().full_text_search(acc),
             UmlClassElement::UmlClassDependency(inner) => inner.read().full_text_search(acc),
             UmlClassElement::UmlClassAssociation(inner) => inner.read().full_text_search(acc),
+            UmlClassElement::UmlUseCaseGeneralization(inner) => inner.read().full_text_search(acc),
             UmlClassElement::UmlClassComment(inner) => inner.read().full_text_search(acc),
             UmlClassElement::UmlClassCommentLink(inner) => inner.read().full_text_search(acc),
         }
@@ -336,6 +348,9 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
             UmlClassElement::UmlClassAssociation(inner) => {
                 UmlClassElement::UmlClassAssociation(inner.read().clone_with(*new_uuid))
             },
+            UmlClassElement::UmlUseCaseGeneralization(inner) => {
+                UmlClassElement::UmlUseCaseGeneralization(inner.read().clone_with(*new_uuid))
+            }
             UmlClassElement::UmlClassComment(inner) => {
                 let model = inner.read();
 
@@ -409,6 +424,22 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 let target_uuid = *model.target.uuid();
                 if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_associable()) {
                     model.target = t;
+                }
+            },
+            UmlClassElement::UmlUseCaseGeneralization(inner) => {
+                let mut model = inner.write();
+
+                for e in model.sources.iter_mut() {
+                    let sid = *e.read().uuid;
+                    if let Some(UmlClassElement::UmlUseCase(s)) = all_models.get(&sid) {
+                        *e = s.clone();
+                    }
+                }
+                for e in model.targets.iter_mut() {
+                    let tid = *e.read().uuid;
+                    if let Some(UmlClassElement::UmlUseCase(t)) = all_models.get(&tid) {
+                        *e = t.clone();
+                    }
                 }
             },
             UmlClassElement::UmlClassComment(..) => {},
@@ -522,6 +553,7 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                 UmlClassElement::UmlClassGeneralization(..)
                 | UmlClassElement::UmlClassDependency(..)
                 | UmlClassElement::UmlClassAssociation(..)
+                | UmlClassElement::UmlUseCaseGeneralization(..)
                 | UmlClassElement::UmlClassComment(..)
                 | UmlClassElement::UmlClassCommentLink(..) => {},
             }
@@ -564,6 +596,14 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.uuid())
                             || when_deleting.contains(&r.target.uuid())) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
+                UmlClassElement::UmlUseCaseGeneralization(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (r.sources.iter().all(|e| when_deleting.contains(&e.read().uuid))
+                            || r.targets.iter().all(|e| when_deleting.contains(&e.read().uuid))) {
                         also_delete.insert(*r.uuid);
                     }
                 },
@@ -614,6 +654,7 @@ fn enumerate(e: &UmlClassElement, into: &mut HashSet<ModelUuid>) {
         | UmlClassElement::UmlClassGeneralization(..)
         | UmlClassElement::UmlClassDependency(..)
         | UmlClassElement::UmlClassAssociation(..)
+        | UmlClassElement::UmlUseCaseGeneralization(..)
         | UmlClassElement::UmlClassComment(..)
         | UmlClassElement::UmlClassCommentLink(..) => {},
     }
@@ -731,6 +772,7 @@ impl UmlClassDiagram {
                 | UmlClassElement::UmlClassGeneralization(_)
                 | UmlClassElement::UmlClassDependency(_)
                 | UmlClassElement::UmlClassAssociation(_)
+                | UmlClassElement::UmlUseCaseGeneralization(_)
                 | UmlClassElement::UmlClassComment(_)
                 | UmlClassElement::UmlClassCommentLink(_) => {},
             }
@@ -1762,6 +1804,130 @@ impl FullTextSearchable for UmlClassAssociation {
                 &self.uuid.to_string(),
                 &self.stereotype,
                 &self.name,
+                &self.comment,
+            ],
+        );
+    }
+}
+
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlUseCaseGeneralization {
+    pub uuid: Arc<ModelUuid>,
+    #[nh_context_serde(entity)]
+    pub sources: Vec<ERef<UmlUseCase>>,
+    #[nh_context_serde(entity)]
+    pub targets: Vec<ERef<UmlUseCase>>,
+
+    pub set_name: Arc<String>,
+    pub set_is_covering: bool,
+    pub set_is_disjoint: bool,
+
+    pub comment: Arc<String>,
+}
+
+impl UmlUseCaseGeneralization {
+    pub fn new(
+        uuid: ModelUuid,
+        sources: Vec<ERef<UmlUseCase>>,
+        targets: Vec<ERef<UmlUseCase>>,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            sources,
+            targets,
+
+            set_name: Arc::new("".to_owned()),
+            set_is_covering: false,
+            set_is_disjoint: false,
+
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            sources: self.sources.clone(),
+            targets: self.targets.clone(),
+
+            set_name: self.set_name.clone(),
+            set_is_covering: self.set_is_covering,
+            set_is_disjoint: self.set_is_disjoint,
+
+            comment: self.comment.clone(),
+        })
+    }
+    pub fn flip_multiconnection(&mut self) {
+        std::mem::swap(&mut self.sources, &mut self.targets);
+    }
+}
+
+impl Entity for UmlUseCaseGeneralization {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for UmlUseCaseGeneralization {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+impl ContainerModel for UmlUseCaseGeneralization {
+    type ElementT = UmlClassElement;
+
+    fn find_element(&self, _uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
+        None
+    }
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
+        if bucket > 1 {
+            return Err(element);
+        }
+
+        let UmlClassElement::UmlUseCase(c) = element else {
+            return Err(element);
+        };
+
+        if bucket == 0 {
+            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.sources.len());
+            self.sources.insert(pos, c);
+            Ok(pos.try_into().unwrap())
+        } else {
+            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.targets.len());
+            self.targets.insert(pos, c);
+            Ok(pos.try_into().unwrap())
+        }
+    }
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        if self.sources.len() > 1 {
+            for (idx, e) in self.sources.iter().enumerate() {
+                if *e.read().uuid == *uuid {
+                    self.sources.remove(idx);
+                    return Some((0, idx.try_into().unwrap()));
+                }
+            }
+        }
+        if self.targets.len() > 1 {
+            for (idx, e) in self.targets.iter().enumerate() {
+                if *e.read().uuid == *uuid {
+                    self.targets.remove(idx);
+                    return Some((1, idx.try_into().unwrap()));
+                }
+            }
+        }
+        None
+    }
+}
+
+impl FullTextSearchable for UmlUseCaseGeneralization {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.set_name,
                 &self.comment,
             ],
         );
