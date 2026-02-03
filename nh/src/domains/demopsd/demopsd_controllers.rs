@@ -707,45 +707,56 @@ pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let fact = new_demopsd_fact("TK04/ac", false, egui::Pos2::new(375.0, 300.0));
-    let act = new_demopsd_act("", false, egui::Pos2::new(200.0, 400.0));
+    let fact1 = new_demopsd_fact("", false, egui::Pos2::new(100.0, 100.0));
+    let act1 = new_demopsd_act("rq", true, egui::Pos2::ZERO);
+    let fact2 = new_demopsd_fact("TK04/ac", false, egui::Pos2::new(375.0, 400.0));
+    let act2 = new_demopsd_act("", false, egui::Pos2::new(200.0, 500.0));
+
+    let response_link = new_demopsd_link(
+        DemoPsdLinkType::ResponseLink,
+        (fact1.0.clone(), fact1.1.clone().into()),
+        (act1.0.clone(), act1.1.clone().into()),
+        None,
+    );
     let wait_link = new_demopsd_link(
         DemoPsdLinkType::WaitLink,
-        (fact.0.clone(), fact.1.clone().into()),
-        (act.0.clone(), act.1.clone().into()),
-        Some((ViewUuid::now_v7(), egui::Pos2::new(300.0, 300.0))),
+        (fact2.0.clone(), fact2.1.clone().into()),
+        (act2.0.clone(), act2.1.clone().into()),
+        Some((ViewUuid::now_v7(), egui::Pos2::new(300.0, 400.0))),
     );
 
     let (tx01, tx01_view) = new_demopsd_transaction(
         "01", "usufruct case concluding",
-        vec![], None, vec![],
-        egui::Pos2::new(200.0, 100.0), 350.0,
+        vec![(false, act1.0.clone().into(), act1.1.clone().into())], None, vec![],
+        egui::Pos2::new(200.0, 200.0), 350.0,
     );
     let (tx02, tx02_view) = new_demopsd_transaction(
         "02", "resource seizing",
         vec![], None, vec![],
-        egui::Pos2::new(100.0, 200.0), 150.0,
+        egui::Pos2::new(100.0, 300.0), 150.0,
     );
     let (tx03, tx03_view) = new_demopsd_transaction(
         "03", "resource releasing",
-        vec![], Some(act.clone()), vec![],
-        egui::Pos2::new(300.0, 200.0), 150.0,
+        vec![], Some(act2.clone()), vec![],
+        egui::Pos2::new(300.0, 300.0), 150.0,
     );
-
-    // TODO: states
 
     let models = vec![
         tx01.into(),
         tx02.into(),
         tx03.into(),
-        fact.0.into(),
+        fact1.0.into(),
+        fact2.0.into(),
+        response_link.0.into(),
         wait_link.0.into(),
     ];
     let views = vec![
         tx01_view.into(),
         tx02_view.into(),
         tx03_view.into(),
-        fact.1.into(),
+        fact1.1.into(),
+        fact2.1.into(),
+        response_link.1.into(),
         wait_link.1.into(),
     ];
 
@@ -1784,6 +1795,19 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         }
 
         TargettingStatus::NotDrawn
+    }
+    fn collect_allignment(&mut self, am: &mut SnapManager) {
+        am.add_shape(*self.uuid(), self.min_shape());
+
+        for e in self.before_views.iter_mut() {
+            e.view.collect_allignment(am);
+        }
+        if let UFOption::Some(e) = &mut self.p_act_view {
+            e.write().collect_allignment(am);
+        }
+        for e in self.after_views.iter_mut() {
+            e.view.collect_allignment(am);
+        }
     }
 
     fn handle_event(
