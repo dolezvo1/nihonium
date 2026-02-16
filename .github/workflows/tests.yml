@@ -1,0 +1,21 @@
+name: Run tests
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+
+jobs:
+  run_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test

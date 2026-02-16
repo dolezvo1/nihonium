@@ -28,6 +28,8 @@ jobs:
           rustup target add wasm32-unknown-unknown
       - name: Rust Cache # cache the rust build artefacts
         uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test
       - name: Download and install Trunk binary
         run: wget -qO- https://github.com/thedodd/trunk/releases/latest/download/trunk-x86_64-unknown-linux-gnu.tar.gz | tar -xzf-
       - name: Build # build
