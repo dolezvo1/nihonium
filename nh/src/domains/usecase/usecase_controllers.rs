@@ -5,7 +5,7 @@ use super::super::umlclass::{
 };
 use crate::{common::{
     controller::{
-        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, ElementControllerGen2, GlobalDrawingContext, MultiDiagramController, PositionNoT, ProjectCommand,
+        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, MultiDiagramController, PositionNoT, ProjectCommand
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
@@ -162,8 +162,8 @@ impl Default for UmlClassPlaceholderViews {
 }
 
 impl UmlClassPalette<UseCaseProfile> for UmlClassPlaceholderViews {
-    fn iter_mut(&mut self) -> impl Iterator<Item = (&str, &mut Vec<(UmlClassToolStage, &'static str, UmlClassElementView<UseCaseProfile>)>)> {
-        self.views.iter_mut().map(|e| (e.0, &mut e.1))
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<UseCaseProfile>)>)> {
+        self.views.iter_mut()
     }
 }
 
@@ -241,5 +241,10 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
     Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<UseCaseProfile>, OntoUmlControllerAdapter, DiagramControllerGen2<UmlClassDomain<UseCaseProfile>, UmlClassDiagramAdapter<UseCaseProfile>>>>(&uuid)?)
 }
 
-pub use super::super::umlclass::umlclass_controllers::default_settings;
-pub use super::super::umlclass::umlclass_controllers::settings_function;
+pub fn default_settings() -> Box<dyn DiagramSettings> {
+    super::super::umlclass::umlclass_controllers::default_settings_helper::<UseCaseProfile>()
+}
+
+pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
+    super::super::umlclass::umlclass_controllers::settings_function_helper::<UseCaseProfile>(gdc, ui, s);
+}

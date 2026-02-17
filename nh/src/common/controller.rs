@@ -836,6 +836,10 @@ pub trait TryMerge {
 
 
 pub trait DiagramSettings: Any {}
+pub trait DiagramSettings2<DomainT: Domain>: DiagramSettings {
+    fn palette_for_each_mut<F>(&self, f: F)
+        where F: FnMut(&mut (&'static str, Vec<(<<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage, &'static str, DomainT::CommonElementViewT)>));
+}
 
 
 pub type BucketNoT = u8;
@@ -946,7 +950,7 @@ pub struct ColorChangeData {
 }
 
 pub trait Domain: Sized + 'static {
-    type SettingsT: DiagramSettings;
+    type SettingsT: DiagramSettings2<Self>;
     type CommonElementT: Model + VisitableElement + Clone;
     type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT> + NHContextSerialize + NHContextDeserialize + VisitableDiagram + FullTextSearchable;
     type CommonElementViewT: ElementControllerGen2<Self> + serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone;
@@ -1894,9 +1898,6 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn refresh_buffers(&mut self);
-    fn palette_iter_mut(&mut self) -> impl Iterator<
-        Item = (&str, &mut Vec<(<<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage, &'static str, DomainT::CommonElementViewT)>)
-    >;
     fn menubar_options_fun(
         &self,
         view_uuid: &ViewUuid,
@@ -2659,8 +2660,9 @@ impl<
 
         let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
         let empty_q = DomainT::QueryableT::new(&empty_a, &empty_b, &empty_c);
-        for (label, items) in self.adapter.palette_iter_mut() {
-            egui::CollapsingHeader::new(label)
+
+        settings.palette_for_each_mut(|(label, items)| {
+            egui::CollapsingHeader::new(*label)
                 .default_open(true)
                 .show(ui, |ui| {
                     let width = ui.available_width();
@@ -2701,7 +2703,7 @@ impl<
                         view.draw_in(&empty_q, gdc, settings, &mut c, &None);
                     }
                 });
-        }
+        });
     }
     fn show_properties(
         &mut self,

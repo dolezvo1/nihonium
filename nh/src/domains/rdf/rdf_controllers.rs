@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -11,6 +11,7 @@ use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::{CustomModal, CustomModalResult};
 use eframe::egui;
+use std::any::Any;
 use std::collections::HashSet;
 use std::{
     collections::HashMap,
@@ -213,47 +214,12 @@ pub struct RdfDiagramAdapter {
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     buffer: RdfDiagramBuffer,
-    #[serde(skip)]
-    #[nh_context_serde(skip_and_default)]
-    placeholders: RdfPlaceholderViews,
 }
 
 #[derive(Clone, Default)]
 struct RdfDiagramBuffer {
     name: String,
     comment: String,
-}
-
-#[derive(Clone)]
-struct RdfPlaceholderViews {
-    views: [(&'static str, Vec<(RdfToolStage, &'static str, RdfElementView)>); 3],
-}
-
-impl Default for RdfPlaceholderViews {
-    fn default() -> Self {
-        let (literal, literal_view) = new_rdf_literal("Eric Miller", "http://www.w3.org/2001/XMLSchema#string", "en", egui::Pos2::new(100.0, 75.0));
-        let literal = (literal.into(), literal_view.into());
-        let (node, node_view) = new_rdf_node("http://iri", egui::Pos2::ZERO);
-        let node = (node, node_view.into());
-        let (_predicate, predicate_view) = new_rdf_predicate("http://iri", node.clone(), literal.clone());
-
-        let (_graph, graph_view) = new_rdf_graph("http://graph", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-
-        Self {
-            views: [
-                ("Elements", vec![
-                    (RdfToolStage::Literal, "Literal", literal.1),
-                    (RdfToolStage::Node, "Node", node.1),
-                ]),
-                ("Relationships", vec![
-                    (RdfToolStage::PredicateStart, "Predicate", predicate_view.into()),
-                ]),
-                ("Other", vec![
-                    (RdfToolStage::GraphStart, "Graph", graph_view.into()),
-                ]),
-            ]
-        }
-    }
 }
 
 impl RdfDiagramAdapter {
@@ -266,7 +232,6 @@ impl RdfDiagramAdapter {
                 name: (*m.name).clone(),
                 comment: (*m.comment).clone(),
             },
-            placeholders: Default::default(),
         }
     }
 }
@@ -449,12 +414,6 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         self.buffer.comment = (*model.comment).clone();
     }
 
-    fn palette_iter_mut(&mut self) -> impl Iterator<
-        Item = (&str, &mut Vec<(RdfToolStage, &'static str, RdfElementView)>)
-    > {
-        self.placeholders.views.iter_mut().map(|e| (e.0, &mut e.1))
-    }
-
     fn menubar_options_fun(
         &self,
         _view_uuid: &ViewUuid,
@@ -610,14 +569,71 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
     Ok(d.get_entity::<MultiDiagramController<RdfDomain, RdfControllerAdapter, DiagramControllerGen2<RdfDomain, RdfDiagramAdapter>>>(&uuid)?)
 }
 
-pub struct RdfSettings {}
-impl DiagramSettings for RdfSettings {}
-
-pub fn default_settings() -> Box<dyn DiagramSettings> {
-    Box::new(RdfSettings {})
+#[derive(Clone)]
+struct RdfPlaceholderViews {
+    views: [(&'static str, Vec<(RdfToolStage, &'static str, RdfElementView)>); 3],
 }
 
-pub fn settings_function(_gdc: &mut GlobalDrawingContext, _ui: &mut egui::Ui, _s: &mut Box<dyn DiagramSettings>) {}
+impl Default for RdfPlaceholderViews {
+    fn default() -> Self {
+        let (literal, literal_view) = new_rdf_literal("Eric Miller", "http://www.w3.org/2001/XMLSchema#string", "en", egui::Pos2::new(100.0, 75.0));
+        let literal = (literal.into(), literal_view.into());
+        let (node, node_view) = new_rdf_node("http://iri", egui::Pos2::ZERO);
+        let node = (node, node_view.into());
+        let (_predicate, predicate_view) = new_rdf_predicate("http://iri", node.clone(), literal.clone());
+
+        let (_graph, graph_view) = new_rdf_graph("http://graph", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+
+        Self {
+            views: [
+                ("Elements", vec![
+                    (RdfToolStage::Literal, "Literal", literal.1),
+                    (RdfToolStage::Node, "Node", node.1),
+                ]),
+                ("Relationships", vec![
+                    (RdfToolStage::PredicateStart, "Predicate", predicate_view.into()),
+                ]),
+                ("Other", vec![
+                    (RdfToolStage::GraphStart, "Graph", graph_view.into()),
+                ]),
+            ]
+        }
+    }
+}
+
+pub struct RdfSettings {
+    placeholders: RwLock<RdfPlaceholderViews>,
+}
+impl DiagramSettings for RdfSettings {}
+impl DiagramSettings2<RdfDomain> for RdfSettings {
+    fn palette_for_each_mut<F>(&self, f: F)
+        where F: FnMut(&mut (&'static str, Vec<(RdfToolStage, &'static str, RdfElementView)>))
+    {
+        self.placeholders.write().unwrap().views.iter_mut().for_each(f);
+    }
+}
+
+pub fn default_settings() -> Box<dyn DiagramSettings> {
+    Box::new(RdfSettings {
+        placeholders: Default::default(),
+    })
+}
+
+pub fn settings_function(_gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
+    let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<RdfSettings>() else { return; };
+
+    ui.label("Toolbar items");
+    egui_ltreeview::TreeView::new(ui.id().with("toolbar items"))
+        .show(ui, |b| {
+            for (label, elements) in s.placeholders.write().unwrap().views.iter_mut() {
+                b.dir(*label, *label);
+                for (_s, l, _v) in elements {
+                    b.leaf(*l, *l);
+                }
+                b.close_dir();
+            }
+        });
+}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum RdfToolStage {

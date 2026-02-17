@@ -4,7 +4,7 @@ use super::super::umlclass::{
 };
 use crate::{common::{
     controller::{
-        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MultiDiagramController, PositionNoT, ProjectCommand, View
+        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MultiDiagramController, PositionNoT, ProjectCommand, View
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
@@ -180,8 +180,8 @@ impl Default for UmlClassPlaceholderViews {
 }
 
 impl UmlClassPalette<OntoUmlProfile> for UmlClassPlaceholderViews {
-    fn iter_mut(&mut self) -> impl Iterator<Item = (&str, &mut Vec<(UmlClassToolStage, &'static str, UmlClassElementView<OntoUmlProfile>)>)> {
-        self.views.iter_mut().map(|e| (e.0, &mut e.1))
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<OntoUmlProfile>)>)> {
+        self.views.iter_mut()
     }
 }
 
@@ -314,8 +314,13 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
     Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<OntoUmlProfile>, OntoUmlControllerAdapter, DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>>>(&uuid)?)
 }
 
-pub use super::super::umlclass::umlclass_controllers::default_settings;
-pub use super::super::umlclass::umlclass_controllers::settings_function;
+pub fn default_settings() -> Box<dyn DiagramSettings> {
+    super::super::umlclass::umlclass_controllers::default_settings_helper::<OntoUmlProfile>()
+}
+
+pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
+    super::super::umlclass::umlclass_controllers::settings_function_helper::<OntoUmlProfile>(gdc, ui, s);
+}
 
 #[derive(Clone, Default)]
 pub struct OntoUmlClassStereotypeController {

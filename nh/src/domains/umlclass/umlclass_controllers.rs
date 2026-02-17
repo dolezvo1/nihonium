@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -25,9 +25,9 @@ use std::{
 };
 
 pub trait UmlClassPalette<P: UmlClassProfile>: Default + Clone {
-    fn iter_mut(&mut self) -> impl Iterator<
-        Item = (&str, &mut Vec<(UmlClassToolStage, &'static str, UmlClassElementView<P>)>)
-    >;
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<
+        Item = &'a mut (&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<P>)>)
+    > + 'a;
 }
 
 pub trait StereotypeController: Default + Clone + Send + Sync + 'static {
@@ -105,7 +105,7 @@ pub struct UmlClassDomain<P: UmlClassProfile> {
     _profile: PhantomData<P>,
 }
 impl<P: UmlClassProfile> Domain for UmlClassDomain<P> {
-    type SettingsT = UmlClassSettings;
+    type SettingsT = UmlClassSettings<P>;
     type CommonElementT = UmlClassElement;
     type DiagramModelT = UmlClassDiagram;
     type CommonElementViewT = UmlClassElementView<P>;
@@ -362,7 +362,7 @@ pub struct UmlClassDiagramAdapter<P: UmlClassProfile> {
     buffer: UmlClassDiagramBuffer,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
-    placeholders: P::Palette,
+    profile: PhantomData<P>,
 }
 
 #[derive(Clone, Default)]
@@ -431,8 +431,8 @@ impl Default for UmlClassNullPalette {
 }
 
 impl UmlClassPalette<UmlClassNullProfile> for UmlClassNullPalette {
-    fn iter_mut(&mut self) -> impl Iterator<Item = (&str, &mut Vec<(UmlClassToolStage, &'static str, UmlClassElementView<UmlClassNullProfile>)>)> {
-        self.views.iter_mut().map(|e| (e.0, &mut e.1))
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<UmlClassNullProfile>)>)> {
+        self.views.iter_mut()
     }
 }
 
@@ -446,7 +446,7 @@ impl<P: UmlClassProfile> UmlClassDiagramAdapter<P> {
                 name: (*m.name).clone(),
                 comment: (*m.comment).clone(),
             },
-            placeholders: Default::default(),
+            profile: PhantomData,
         }
     }
 }
@@ -761,12 +761,6 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         let model = self.model.read();
         self.buffer.name = (*model.name).clone();
         self.buffer.comment = (*model.comment).clone();
-    }
-
-    fn palette_iter_mut(&mut self) -> impl Iterator<
-        Item = (&str, &mut Vec<(UmlClassToolStage, &'static str, UmlClassElementView<P>)>)
-    > {
-        self.placeholders.iter_mut()
     }
 
     fn menubar_options_fun(
@@ -1112,20 +1106,45 @@ impl CommentIndication {
     }
 }
 
-pub struct UmlClassSettings {
+pub struct UmlClassSettings<P: UmlClassProfile> {
     comment_indication: CommentIndication,
+    placeholders: RwLock<P::Palette>,
 }
 
-impl DiagramSettings for UmlClassSettings {}
+impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {}
+impl<P: UmlClassProfile> DiagramSettings2<UmlClassDomain<P>> for UmlClassSettings<P> {
+    fn palette_for_each_mut<F>(&self, f: F)
+        where F: FnMut(&mut (&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<P>)>))
+    {
+        self.placeholders.write().unwrap().iter_mut().for_each(f);
+    }
+}
 
-pub fn default_settings() -> Box<dyn DiagramSettings> {
+pub fn default_settings_helper<P: UmlClassProfile>() -> Box<UmlClassSettings<P>> {
     Box::new(UmlClassSettings {
         comment_indication: CommentIndication::Icon,
+        placeholders: Default::default(),
     })
 }
 
-pub fn settings_function(_gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
-    let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<UmlClassSettings>() else { return; };
+pub fn default_settings() -> Box<dyn DiagramSettings> {
+    default_settings_helper::<UmlClassNullProfile>()
+}
+
+pub fn settings_function_helper<P: UmlClassProfile>(_gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
+    let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<UmlClassSettings<P>>() else { return; };
+
+    ui.label("Toolbar items");
+    egui_ltreeview::TreeView::new(ui.id().with("toolbar items"))
+        .show(ui, |b| {
+            for (label, elements) in s.placeholders.write().unwrap().iter_mut() {
+                b.dir(*label, *label);
+                for (_s, l, _v) in elements {
+                    b.leaf(*l, *l);
+                }
+                b.close_dir();
+            }
+        });
 
     ui.label("Comment indication");
     egui::ComboBox::from_id_salt("comment indication")
@@ -1135,6 +1154,10 @@ pub fn settings_function(_gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: 
                 ui.selectable_value(&mut s.comment_indication, e, e.char());
             }
         });
+}
+
+pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
+    settings_function_helper::<UmlClassNullProfile>(gdc, ui, s);
 }
 
 
@@ -2180,7 +2203,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         &mut self,
         _: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
-        _settings: &UmlClassSettings,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
@@ -2782,7 +2805,7 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
         at: egui::Pos2,
         _q: &UmlClassQueryable<P>,
         _gdc: &GlobalDrawingContext,
-        _settings: &UmlClassSettings,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> (egui::Rect, TargettingStatus) {
@@ -3006,7 +3029,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
-        settings: &UmlClassSettings,
+        settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
     ) -> TargettingStatus {
@@ -3512,7 +3535,7 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
         at: egui::Pos2,
         _q: &UmlClassQueryable<P>,
         _gdc: &GlobalDrawingContext,
-        _settings: &UmlClassSettings,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> (egui::Rect, TargettingStatus) {
@@ -3721,7 +3744,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
-        settings: &UmlClassSettings,
+        settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
     ) -> TargettingStatus {
@@ -4515,7 +4538,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         &mut self,
         q: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
-        settings: &UmlClassSettings,
+        settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
@@ -5486,7 +5509,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         &mut self,
         _q: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
-        _settings: &UmlClassSettings,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
@@ -7456,7 +7479,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         &mut self,
         _: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
-        _settings: &UmlClassSettings,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {

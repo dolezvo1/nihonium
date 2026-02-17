@@ -3,7 +3,7 @@ use super::demoofd_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -15,7 +15,9 @@ use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeseria
 use crate::domains::demoofd::demoofd_models::{DemoOfdAggregation, DemoOfdExclusion, DemoOfdPrecedence, DemoOfdSpecialization, DemoOfdType};
 use crate::{CustomModal, CustomModalResult};
 use eframe::egui;
+use std::any::Any;
 use std::collections::HashSet;
+use std::sync::RwLock;
 use std::{
     collections::HashMap,
     fmt::{Debug, Formatter},
@@ -292,68 +294,12 @@ pub struct DemoOfdDiagramAdapter {
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
     buffer: DemoOfdDiagramBuffer,
-    #[serde(skip)]
-    #[nh_context_serde(skip_and_default)]
-    placeholders: UmlClassPlaceholderViews,
 }
 
 #[derive(Clone, Default)]
 struct DemoOfdDiagramBuffer {
     name: String,
     comment: String,
-}
-
-#[derive(Clone)]
-struct UmlClassPlaceholderViews {
-    views: [(&'static str, Vec<(DemoOfdToolStage, &'static str, DemoOfdElementView)>); 3],
-}
-
-impl Default for UmlClassPlaceholderViews {
-    fn default() -> Self {
-        let (entity_m, entity_view) = new_demoofd_entitytype("MEMBERSHIP", "", true, egui::Pos2::ZERO);
-        let (event, event_view) = new_demoofd_eventtype(
-            "01", "is started",
-            (entity_m.clone(), entity_view.clone().into()),
-            None, egui::Pos2::new(100.0, 0.0),
-        );
-        let entity_2 = (entity_m.clone().into(), entity_view.into());
-        let (d, dv) = new_demoofd_entitytype("dummy", "", false, egui::Pos2::new(100.0, 75.0));
-        let (dummy_event, dummy_event_view) = new_demoofd_eventtype(
-            "01", "is started",
-            entity_2.clone(),
-            None, egui::Pos2::new(200.0, 50.0),
-        );
-
-        let (prop, prop_view) = new_demoofd_propertytype("", None, entity_2.clone(), (d.clone(), dv.clone().into()));
-        prop.write().domain_multiplicity = Arc::new("".to_owned());
-        prop.write().range_multiplicity = Arc::new("".to_owned());
-        prop_view.write().refresh_buffers();
-        let (_spec, spec_view) = new_demoofd_specialization(None, entity_2.clone(), (d.clone(), dv.clone().into()));
-        let (_aggr, aggr_view) = new_demoofd_aggregation(None, entity_2.clone(), (d.clone(), dv.clone().into()));
-        let (_prec, prec_view) = new_demoofd_precedence(None, (event.clone(), event_view.clone().into()), (dummy_event.clone(), dummy_event_view.clone().into()));
-        let (_excl, excl_view) = new_demoofd_exclusion(None, (event.clone().into(), event_view.clone().into()), (dummy_event.clone().into(), dummy_event_view.clone().into()));
-
-        let (_package, package_view) = new_demoofd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-
-        Self {
-            views: [
-                ("Elements", vec![
-                    (DemoOfdToolStage::Entity, "Entity Type", entity_2.1.into()),
-                    (DemoOfdToolStage::EventStart { with_specialization: false }, "Event Type", event_view.into()),
-                ]),
-                ("Relationships", vec![
-                    (DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType }, "Property Type", prop_view.into()),
-                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Specialization }, "Specialization", spec_view.into()),
-                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Aggregation }, "Aggregation/Generalization", aggr_view.into()),
-                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Precedence }, "Precedence", prec_view.into()),
-                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Exclusion }, "Exclusion", excl_view.into()),
-                ]),
-                ("Other", vec![
-                    (DemoOfdToolStage::PackageStart, "Package", package_view.into()),
-                ]),
-            ]
-        }
-    }
 }
 
 impl DemoOfdDiagramAdapter {
@@ -366,7 +312,6 @@ impl DemoOfdDiagramAdapter {
                 name: (*m.name).clone(),
                 comment: (*m.comment).clone(),
             },
-            placeholders: Default::default(),
         }
     }
 }
@@ -608,12 +553,6 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         self.buffer.comment = (*model.comment).clone();
     }
 
-    fn palette_iter_mut(&mut self) -> impl Iterator<
-        Item = (&str, &mut Vec<(DemoOfdToolStage, &'static str, DemoOfdElementView)>)
-    > {
-        self.placeholders.views.iter_mut().map(|e| (e.0, &mut e.1))
-    }
-
     fn menubar_options_fun(
         &self,
         _view_uuid: &ViewUuid,
@@ -744,14 +683,92 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
     Ok(d.get_entity::<MultiDiagramController<DemoOfdDomain, DemoOfdControllerAdapter, DiagramControllerGen2<DemoOfdDomain, DemoOfdDiagramAdapter>>>(&uuid)?)
 }
 
-pub struct DemoOfdSettings {}
-impl DiagramSettings for DemoOfdSettings {}
-
-pub fn default_settings() -> Box<dyn DiagramSettings> {
-    Box::new(DemoOfdSettings {})
+#[derive(Clone)]
+struct DemoOfdPlaceholderViews {
+    views: [(&'static str, Vec<(DemoOfdToolStage, &'static str, DemoOfdElementView)>); 3],
 }
 
-pub fn settings_function(_gdc: &mut GlobalDrawingContext, _ui: &mut egui::Ui, _s: &mut Box<dyn DiagramSettings>) {}
+impl Default for DemoOfdPlaceholderViews {
+    fn default() -> Self {
+        let (entity_m, entity_view) = new_demoofd_entitytype("MEMBERSHIP", "", true, egui::Pos2::ZERO);
+        let (event, event_view) = new_demoofd_eventtype(
+            "01", "is started",
+            (entity_m.clone(), entity_view.clone().into()),
+            None, egui::Pos2::new(100.0, 0.0),
+        );
+        let entity_2 = (entity_m.clone().into(), entity_view.into());
+        let (d, dv) = new_demoofd_entitytype("dummy", "", false, egui::Pos2::new(100.0, 75.0));
+        let (dummy_event, dummy_event_view) = new_demoofd_eventtype(
+            "01", "is started",
+            entity_2.clone(),
+            None, egui::Pos2::new(200.0, 50.0),
+        );
+
+        let (prop, prop_view) = new_demoofd_propertytype("", None, entity_2.clone(), (d.clone(), dv.clone().into()));
+        prop.write().domain_multiplicity = Arc::new("".to_owned());
+        prop.write().range_multiplicity = Arc::new("".to_owned());
+        prop_view.write().refresh_buffers();
+        let (_spec, spec_view) = new_demoofd_specialization(None, entity_2.clone(), (d.clone(), dv.clone().into()));
+        let (_aggr, aggr_view) = new_demoofd_aggregation(None, entity_2.clone(), (d.clone(), dv.clone().into()));
+        let (_prec, prec_view) = new_demoofd_precedence(None, (event.clone(), event_view.clone().into()), (dummy_event.clone(), dummy_event_view.clone().into()));
+        let (_excl, excl_view) = new_demoofd_exclusion(None, (event.clone().into(), event_view.clone().into()), (dummy_event.clone().into(), dummy_event_view.clone().into()));
+
+        let (_package, package_view) = new_demoofd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+
+        Self {
+            views: [
+                ("Elements", vec![
+                    (DemoOfdToolStage::Entity, "Entity Type", entity_2.1.into()),
+                    (DemoOfdToolStage::EventStart { with_specialization: false }, "Event Type", event_view.into()),
+                ]),
+                ("Relationships", vec![
+                    (DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType }, "Property Type", prop_view.into()),
+                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Specialization }, "Specialization", spec_view.into()),
+                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Aggregation }, "Aggregation/Generalization", aggr_view.into()),
+                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Precedence }, "Precedence", prec_view.into()),
+                    (DemoOfdToolStage::LinkStart { link_type: LinkType::Exclusion }, "Exclusion", excl_view.into()),
+                ]),
+                ("Other", vec![
+                    (DemoOfdToolStage::PackageStart, "Package", package_view.into()),
+                ]),
+            ]
+        }
+    }
+}
+
+pub struct DemoOfdSettings {
+    placeholders: RwLock<DemoOfdPlaceholderViews>,
+}
+impl DiagramSettings for DemoOfdSettings {}
+impl DiagramSettings2<DemoOfdDomain> for DemoOfdSettings {
+    fn palette_for_each_mut<F>(&self, f: F)
+        where F: FnMut(&mut (&'static str, Vec<(DemoOfdToolStage, &'static str, DemoOfdElementView)>))
+    {
+        self.placeholders.write().unwrap().views.iter_mut().for_each(f);
+    }
+}
+
+pub fn default_settings() -> Box<dyn DiagramSettings> {
+    Box::new(DemoOfdSettings {
+        placeholders: Default::default(),
+    })
+}
+
+pub fn settings_function(_gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
+    let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<DemoOfdSettings>() else { return; };
+
+    ui.label("Toolbar items");
+    egui_ltreeview::TreeView::new(ui.id().with("toolbar items"))
+        .show(ui, |b| {
+            for (label, elements) in s.placeholders.write().unwrap().views.iter_mut() {
+                b.dir(*label, *label);
+                for (_s, l, _v) in elements {
+                    b.leaf(*l, *l);
+                }
+                b.close_dir();
+            }
+        });
+}
 
 
 #[derive(Clone, Copy, PartialEq)]
