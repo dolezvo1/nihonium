@@ -27,7 +27,7 @@ mod domains;
 
 use crate::common::eref::ERef;
 use crate::common::canvas::{Highlight, MeasuringCanvas, SVGCanvas};
-use crate::common::controller::{ColorBundle, DeleteKind, DiagramCommand, DiagramController, LabelProvider, ModifierKeys, ModifierSettings, TOOL_PALETTE_MAX_HEIGHT, TOOL_PALETTE_MIN_HEIGHT};
+use crate::common::controller::{ColorBundle, DeleteKind, DiagramCommand, DiagramController, DiagramSettings, LabelProvider, ModifierKeys, ModifierSettings, TOOL_PALETTE_MAX_HEIGHT, TOOL_PALETTE_MIN_HEIGHT};
 use crate::common::project_serde::{FSRawReader, FSRawWriter, FSReadAbstraction, FSWriteAbstraction, ZipFSReader, ZipFSWriter};
 
 /// Adds a widget with a label next to it, can be given an extra parameter in order to show a hover text
@@ -214,6 +214,7 @@ impl CustomModal for ErrorModal {
 }
 
 type CDes = dyn Fn(ControllerUuid, &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError>;
+type DSF = dyn Fn(&mut GlobalDrawingContext, &mut egui::Ui, &mut Box<dyn DiagramSettings>);
 
 enum FileIOOperation {
     Open(FileHandle),
@@ -239,8 +240,10 @@ struct NHContext {
     pub style: Option<Style>,
     zoom_factor: f32,
     zoom_with_keyboard: bool,
-    diagram_shades: HashMap<&'static str, (String, Vec<egui::Color32>)>,
-    diagram_shades_order: Vec<&'static str>,
+    diagram_type_order: Vec<(&'static str, &'static str)>,
+    diagram_settings: HashMap<&'static str, Box<dyn DiagramSettings>>,
+    diagram_settings_functions: HashMap<&'static str, &'static DSF>,
+    diagram_shades: HashMap<&'static str, Vec<egui::Color32>>,
     selected_diagram_shades: HashMap<&'static str, usize>,
     selected_language: usize,
     languages_order: Vec<unic_langid::LanguageIdentifier>,
@@ -1027,7 +1030,9 @@ impl NHContext {
     fn show_toolbar(&self, ui: &mut Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some(c) = self.diagram_controllers.get(last_focused_diagram) else { return; };
-        c.write().show_toolbar(last_focused_diagram, &self.drawing_context, ui);
+        let ctype = c.read().controller_type();
+        let Some(s) = self.diagram_settings.get(ctype) else { return; };
+        c.write().show_toolbar(last_focused_diagram, &self.drawing_context, s, ui);
     }
 
     fn show_properties(&mut self, ui: &mut Ui) {
@@ -1453,15 +1458,25 @@ impl NHContext {
         });
         
         ui.collapsing("Diagram shades", |ui| {
-            for ctype in &self.diagram_shades_order {
-                if let Some((name, values)) = self.diagram_shades.get_mut(ctype) {
+            for (ctype, ctypename) in &self.diagram_type_order {
+                if let Some(values) = self.diagram_shades.get_mut(ctype) {
                     ui.horizontal(|ui| {
-                        ui.label(&*name);
+                        ui.label(&**ctypename);
                         egui::widgets::color_picker::color_edit_button_srgba(
                             ui,
                             values.first_mut().unwrap(),
                             egui::widgets::color_picker::Alpha::OnlyBlend
                         );
+                    });
+                }
+            }
+        });
+
+        ui.collapsing("Diagram specific settings", |ui| {
+            for (ctype, ctypename) in &self.diagram_type_order {
+                if let (Some(s), Some(f)) = (self.diagram_settings.get_mut(ctype), self.diagram_settings_functions.get(ctype)) {
+                    ui.collapsing(&**ctypename, |ui| {
+                        f(&mut self.drawing_context, ui, s);
                     });
                 }
             }
@@ -1600,14 +1615,15 @@ impl NHContext {
         let Some(v) = self.diagram_controllers.get(tab_uuid).cloned() else { return; };
         let mut diagram_controller = v.write();
         let ctype = diagram_controller.controller_type();
+        let Some(settings) = self.diagram_settings.get(ctype) else { return; };
 
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(tab_uuid, &self.drawing_context, ui);
         response.context_menu(|ui| {
             diagram_controller.context_menu(tab_uuid, &self.drawing_context, ui, &mut self.unprocessed_commands, &mut self.affected_models);
         });
 
-        diagram_controller.draw_in(tab_uuid, &self.drawing_context, ui_canvas.as_mut(), pos);
-        let shade_color = self.diagram_shades[ctype].1[self.selected_diagram_shades[ctype]];
+        diagram_controller.draw_in(tab_uuid, &self.drawing_context, settings, ui_canvas.as_mut(), pos);
+        let shade_color = self.diagram_shades[ctype][self.selected_diagram_shades[ctype]];
         ui_canvas.draw_rectangle(egui::Rect::EVERYTHING, egui::CornerRadius::ZERO, shade_color, common::canvas::Stroke::NONE, Highlight::NONE);
 
         diagram_controller.handle_input(
@@ -1732,17 +1748,34 @@ impl Default for NHApp {
             .split_below(b, 0.7, vec![NHTab::Toolbar]);
         open_unique_tabs.insert(NHTab::Toolbar);
 
-        let mut diagram_shades = HashMap::new();
-        diagram_shades.insert("umlclass", ("UML Class".to_owned(), vec![egui::Color32::TRANSPARENT]));
-        diagram_shades.insert("umlclass-usecase", ("Use Case".to_owned(), vec![egui::Color32::TRANSPARENT]));
-        diagram_shades.insert("umlclass-ontouml", ("OntoUML".to_owned(), vec![egui::Color32::TRANSPARENT]));
-        diagram_shades.insert("democsd", ("DEMO Coordination Structure Diagram".to_owned(), vec![egui::Color32::TRANSPARENT]));
-        diagram_shades.insert("demopsd", ("DEMO Project Structure Diagram".to_owned(), vec![egui::Color32::TRANSPARENT]));
-        diagram_shades.insert("demoofd", ("DEMO Object Fact Diagram".to_owned(), vec![egui::Color32::TRANSPARENT]));
-        diagram_shades.insert("rdf", ("RDF".to_owned(), vec![egui::Color32::TRANSPARENT]));
-        let diagram_shades_order = vec!["umlclass", "umlclass-usecase", "umlclass-ontouml", "democsd", "demopsd", "demoofd", "rdf"];
-        
-        let selected_diagram_shades = diagram_shades_order.iter().map(|e| (*e, 0)).collect();
+
+        let diagram_type_order = vec![
+            ("umlclass", "UML Class"),
+            ("umlclass-usecase", "Use Case"),
+            ("umlclass-ontouml", "OntoUML"),
+            ("democsd", "DEMO Coordination Structure Diagram"),
+            ("demopsd", "DEMO Project Structure Diagram"),
+            ("demoofd", "DEMO Object Fact Diagram"),
+            ("rdf", "RDF"),
+        ];
+        let (diagram_settings, diagram_settings_functions) = [
+            ("umlclass", crate::domains::umlclass::umlclass_controllers::default_settings(),
+                &crate::domains::umlclass::umlclass_controllers::settings_function as &DSF),
+            ("umlclass-usecase", crate::domains::usecase::usecase_controllers::default_settings(),
+                &crate::domains::usecase::usecase_controllers::settings_function as &DSF),
+            ("umlclass-ontouml", crate::domains::ontouml::ontouml_controllers::default_settings(),
+                &crate::domains::ontouml::ontouml_controllers::settings_function as &DSF),
+            ("democsd", crate::domains::democsd::democsd_controllers::default_settings(),
+                &crate::domains::democsd::democsd_controllers::settings_function as &DSF),
+            ("demopsd", crate::domains::demopsd::demopsd_controllers::default_settings(),
+                &crate::domains::demopsd::demopsd_controllers::settings_function as &DSF),
+            ("demoofd", crate::domains::demoofd::demoofd_controllers::default_settings(),
+                &crate::domains::demoofd::demoofd_controllers::settings_function as &DSF),
+            ("rdf", crate::domains::rdf::rdf_controllers::default_settings(),
+                &crate::domains::rdf::rdf_controllers::settings_function as &DSF),
+        ].into_iter().map(|e| ((e.0, e.1), (e.0, e.2))).collect();
+        let diagram_shades = diagram_type_order.iter().map(|e| (e.0, vec![egui::Color32::TRANSPARENT])).collect();
+        let selected_diagram_shades = diagram_type_order.iter().map(|e| (e.0, 0)).collect();
         let languages_order = common::fluent::AVAILABLE_LANGUAGES.iter().map(|e| e.0.clone()).collect();
         let fluent_bundle = common::fluent::create_fluent_bundle(&languages_order)
             .expect("Could not establish base FluentBundle");
@@ -1763,8 +1796,10 @@ impl Default for NHApp {
             style: None,
             zoom_factor: 1.0,
             zoom_with_keyboard: false,
+            diagram_type_order,
+            diagram_settings,
+            diagram_settings_functions,
             diagram_shades,
-            diagram_shades_order,
             selected_diagram_shades,
             selected_language: 0,
             languages_order,
@@ -2299,9 +2334,11 @@ impl eframe::App for NHApp {
                     ui.set_min_width(MIN_MENU_WIDTH);
 
                     let Some((v, c)) = self.context.last_focused_diagram() else { return; };
+                    let ctype = c.read().controller_type();
+                    let Some(s) = self.context.diagram_settings.get(ctype) else { return; };
                     let mut c = c.write();
 
-                    c.show_menubar_view_options(&v, &self.context.drawing_context, ui, &mut commands);
+                    c.show_menubar_view_options(&v, &self.context.drawing_context, s, ui, &mut commands);
                 });
 
                 ui.menu_button(translate!("nh-diagram"), |ui| {
@@ -2391,6 +2428,8 @@ impl eframe::App for NHApp {
         // SVG export options modal
         let mut hide_svg_export_modal = false;
         if let Some((v, c, fh, background, gridlines, highlight, padding_x, padding_y)) = self.context.svg_export_menu.as_mut() {
+            let ctype = c.read().controller_type();
+            let Some(s) = self.context.diagram_settings.get(ctype) else { return; };
             let mut controller = c.write();
             
             egui::containers::Window::new("SVG export options").show(ctx, |ui| {
@@ -2415,7 +2454,7 @@ impl eframe::App for NHApp {
                     // Measure the diagram
                     let mut measuring_canvas =
                             MeasuringCanvas::new(ui.painter());
-                    controller.draw_in(v, &self.context.drawing_context, &mut measuring_canvas, None);
+                    controller.draw_in(v, &self.context.drawing_context, s, &mut measuring_canvas, None);
                     let diagram_bounds = measuring_canvas.bounds();
                     drop(measuring_canvas);
                     
@@ -2472,7 +2511,7 @@ impl eframe::App for NHApp {
                             Some((50.0, egui::Color32::from_rgb(220, 220, 220))),
                         );
                     }
-                    controller.draw_in(v, &self.context.drawing_context, &mut ui_canvas, None);
+                    controller.draw_in(v, &self.context.drawing_context, s, &mut ui_canvas, None);
                 }
 
                 ui.separator();
@@ -2485,7 +2524,7 @@ impl eframe::App for NHApp {
                     if ui.button("OK").clicked() {
                         let mut measuring_canvas =
                             MeasuringCanvas::new(ui.painter());
-                        controller.draw_in(v, &self.context.drawing_context, &mut measuring_canvas, None);
+                        controller.draw_in(v, &self.context.drawing_context, s, &mut measuring_canvas, None);
 
                         let canvas_offset = -1.0 * measuring_canvas.bounds().min
                             + egui::Vec2::new(*padding_x, *padding_y);
@@ -2512,7 +2551,7 @@ impl eframe::App for NHApp {
                                 common::canvas::Highlight::NONE,
                             );
                         }
-                        controller.draw_in(v, &self.context.drawing_context, &mut svg_canvas, None);
+                        controller.draw_in(v, &self.context.drawing_context, s, &mut svg_canvas, None);
 
                         let fh = fh.take().unwrap();
                         match svg_canvas.into_bytes() {

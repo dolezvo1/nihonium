@@ -3,7 +3,7 @@ use super::demoofd_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -29,6 +29,7 @@ use super::super::demo::{
 
 pub struct DemoOfdDomain;
 impl Domain for DemoOfdDomain {
+    type SettingsT = DemoOfdSettings;
     type CommonElementT = DemoOfdElement;
     type DiagramModelT = DemoOfdDiagram;
     type CommonElementViewT = DemoOfdElementView;
@@ -742,6 +743,16 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
     Ok(d.get_entity::<MultiDiagramController<DemoOfdDomain, DemoOfdControllerAdapter, DiagramControllerGen2<DemoOfdDomain, DemoOfdDiagramAdapter>>>(&uuid)?)
 }
+
+pub struct DemoOfdSettings {}
+impl DiagramSettings for DemoOfdSettings {}
+
+pub fn default_settings() -> Box<dyn DiagramSettings> {
+    Box::new(DemoOfdSettings {})
+}
+
+pub fn settings_function(_gdc: &mut GlobalDrawingContext, _ui: &mut egui::Ui, _s: &mut Box<dyn DiagramSettings>) {}
+
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum LinkType {
@@ -1632,6 +1643,7 @@ impl DemoOfdEntityView {
         &mut self,
         _q: &DemoOfdQueryable,
         _gdc: &GlobalDrawingContext,
+        _settings: &DemoOfdSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoOfdTool)>,
         event: Option<(NHShape, egui::Rect)>,
@@ -1890,10 +1902,11 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         &mut self,
         q: &DemoOfdQueryable,
         context: &GlobalDrawingContext,
+        settings: &DemoOfdSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoOfdTool)>,
     ) -> TargettingStatus {
-        self.draw_inner(q, context, canvas, tool, None)
+        self.draw_inner(q, context, settings, canvas, tool, None)
     }
 
     fn handle_event(
@@ -2431,6 +2444,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         &mut self,
         q: &DemoOfdQueryable,
         context: &GlobalDrawingContext,
+        settings: &DemoOfdSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoOfdTool)>,
     ) -> TargettingStatus {
@@ -2444,7 +2458,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         );
 
         let child_status = if let UFOption::Some(s) = &self.specialization_view {
-            s.write().draw_inner(q, context, canvas, tool, Some((self.min_shape(), name_pos)))
+            s.write().draw_inner(q, context, settings, canvas, tool, Some((self.min_shape(), name_pos)))
         } else {
             TargettingStatus::NotDrawn
         };

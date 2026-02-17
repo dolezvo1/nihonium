@@ -314,6 +314,9 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
     Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<OntoUmlProfile>, OntoUmlControllerAdapter, DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>>>(&uuid)?)
 }
 
+pub use super::super::umlclass::umlclass_controllers::default_settings;
+pub use super::super::umlclass::umlclass_controllers::settings_function;
+
 #[derive(Clone, Default)]
 pub struct OntoUmlClassStereotypeController {
     display_string: String,

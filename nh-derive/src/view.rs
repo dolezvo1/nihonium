@@ -71,7 +71,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
     let arms_controller_for = arms_immutable.iter().map(|e| quote! { #e.controller_for(uuid) }).collect::<Vec<_>>();
 
     let arms_show_properties = arms_mutable.iter().map(|e| quote! { #e.show_properties(gdc, q, ui, commands) }).collect::<Vec<_>>();
-    let arms_draw_in = arms_mutable.iter().map(|e| quote! { #e.draw_in(q, context, canvas, tool) }).collect::<Vec<_>>();
+    let arms_draw_in = arms_mutable.iter().map(|e| quote! { #e.draw_in(q, context, settings, canvas, tool) }).collect::<Vec<_>>();
     let arms_collect_alignment = arms_mutable.iter().map(|e| quote! { #e.collect_allignment(am) }).collect::<Vec<_>>();
     let arms_handle_event = arms_mutable.iter().map(|e| quote! { #e.handle_event(event, ehc, q, tool, element_setup_modal, commands) }).collect::<Vec<_>>();
     let arms_apply_command = arms_mutable.iter().map(|e| quote! { #e.apply_command(command, undo_accumulator, affected_models) }).collect::<Vec<_>>();
@@ -156,6 +156,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
                 &mut self,
                 q: &<#domain as crate::common::controller::Domain> :: QueryableT<'_>,
                 context: &GlobalDrawingContext,
+                settings: &<#domain as crate::common::controller::Domain> :: SettingsT,
                 canvas: &mut dyn canvas::NHCanvas,
                 tool: &Option<(egui::Pos2, &<#domain as crate::common::controller::Domain> :: ToolT)>,
             ) -> TargettingStatus {

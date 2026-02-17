@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -20,6 +20,7 @@ use std::{
 
 pub struct RdfDomain;
 impl Domain for RdfDomain {
+    type SettingsT = RdfSettings;
     type CommonElementT = RdfElement;
     type DiagramModelT = RdfDiagram;
     type CommonElementViewT = RdfElementView;
@@ -608,6 +609,15 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
     Ok(d.get_entity::<MultiDiagramController<RdfDomain, RdfControllerAdapter, DiagramControllerGen2<RdfDomain, RdfDiagramAdapter>>>(&uuid)?)
 }
+
+pub struct RdfSettings {}
+impl DiagramSettings for RdfSettings {}
+
+pub fn default_settings() -> Box<dyn DiagramSettings> {
+    Box::new(RdfSettings {})
+}
+
+pub fn settings_function(_gdc: &mut GlobalDrawingContext, _ui: &mut egui::Ui, _s: &mut Box<dyn DiagramSettings>) {}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum RdfToolStage {
@@ -1239,6 +1249,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         &mut self,
         _q: &RdfQueryable,
         _gdc: &GlobalDrawingContext,
+        _settings: &RdfSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {
@@ -1732,6 +1743,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         &mut self,
         _q: &RdfQueryable,
         _gdc: &GlobalDrawingContext,
+        _settings: &RdfSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveRdfTool)>,
     ) -> TargettingStatus {

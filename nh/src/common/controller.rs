@@ -473,6 +473,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     fn draw_in(
         &mut self,
         context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>,
     );
@@ -487,6 +488,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     fn show_toolbar(
         &mut self,
         context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         ui: &mut egui::Ui,
     );
     fn show_properties(
@@ -504,6 +506,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
     fn show_menubar_view_options(
         &mut self,
         context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     );
@@ -585,6 +588,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>,
     );
@@ -602,6 +606,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         ui: &mut egui::Ui,
     );
     fn show_properties(
@@ -622,6 +627,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     );
@@ -829,6 +835,9 @@ pub trait TryMerge {
 }
 
 
+pub trait DiagramSettings: Any {}
+
+
 pub type BucketNoT = u8;
 pub type PositionNoT = u16;
 /// Selection insensitive command - inherently repeatable
@@ -937,6 +946,7 @@ pub struct ColorChangeData {
 }
 
 pub trait Domain: Sized + 'static {
+    type SettingsT: DiagramSettings;
     type CommonElementT: Model + VisitableElement + Clone;
     type DiagramModelT: ContainerModel<ElementT = Self::CommonElementT> + NHContextSerialize + NHContextDeserialize + VisitableDiagram + FullTextSearchable;
     type CommonElementViewT: ElementControllerGen2<Self> + serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone;
@@ -1095,6 +1105,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         &mut self,
         _: &DomainT::QueryableT<'_>,
         context: &GlobalDrawingContext,
+        settings: &DomainT::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus;
@@ -1587,11 +1598,12 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>,
     ) {
         let view = self.views.get(uuid).unwrap();
-        view.write().draw_in(context, canvas, mouse_pos);
+        view.write().draw_in(context, settings, canvas, mouse_pos);
     }
 
     fn context_menu(
@@ -1610,10 +1622,11 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         ui: &mut egui::Ui,
     ) {
         let view = self.views.get(uuid).unwrap();
-        view.write().show_toolbar(context, ui);
+        view.write().show_toolbar(context, settings, ui);
     }
 
     fn show_properties(
@@ -1645,11 +1658,12 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         ui: &mut egui::Ui,
         commands: &mut Vec<ProjectCommand>,
     ) {
         let view = self.views.get(uuid).unwrap();
-        view.write().show_menubar_view_options(context, ui, commands);
+        view.write().show_menubar_view_options(context, settings, ui, commands);
     }
 
     fn show_menubar_diagram_options(
@@ -2605,8 +2619,11 @@ impl<
     fn show_toolbar(
         &mut self,
         gdc: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         ui: &mut egui::Ui,
     ) {
+        let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<DomainT::SettingsT>() else { return; };
+
         let button_height = gdc.tool_palette_item_height as f32;
         let width = ui.available_width();
         let selected_background_color = if ui.style().visuals.dark_mode {
@@ -2677,11 +2694,11 @@ impl<
                         let icon_rect = egui::Rect::from_min_size(response.rect.min, egui::Vec2::splat(button_height));
                         let painter = ui.painter().with_clip_rect(icon_rect);
                         let mut mc = canvas::MeasuringCanvas::new(&painter);
-                        view.draw_in(&empty_q, gdc, &mut mc, &None);
+                        view.draw_in(&empty_q, gdc, settings, &mut mc, &None);
                         let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
                         let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
                         c.clear(egui::Color32::GRAY);
-                        view.draw_in(&empty_q, gdc, &mut c, &None);
+                        view.draw_in(&empty_q, gdc, settings, &mut c, &None);
                     }
                 });
         }
@@ -2872,6 +2889,7 @@ impl<
     fn show_menubar_view_options(
         &mut self,
         context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) {
@@ -2896,7 +2914,7 @@ impl<
             const PADDING: egui::Vec2 = egui::Vec2::splat(10.0);
 
             let mut mc = canvas::MeasuringCanvas::new(ui.painter());
-            self.draw_in(context, &mut mc, None);
+            self.draw_in(context, settings, &mut mc, None);
 
             let rect = mc.bounds();
             let ratio = self.temporaries.last_interactive_canvas_rect.size() * self.temporaries.camera_scale / (rect.size() + PADDING);
@@ -3094,9 +3112,12 @@ impl<
     fn draw_in(
         &mut self,
         context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
         canvas: &mut dyn NHCanvas,
         mouse_pos: Option<egui::Pos2>
     ) {
+        let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<DomainT::SettingsT>() else { return; };
+
         let tool = if let (Some(pos), Some(stage)) = (mouse_pos, self.temporaries.current_tool.as_ref()) {
             Some((pos, stage))
         } else {
@@ -3110,7 +3131,7 @@ impl<
         );
 
         self.owned_views.draw_order_foreach_mut(|v|
-            if v.draw_in(&queryable, context, canvas, &tool) == TargettingStatus::Drawn {
+            if v.draw_in(&queryable, context, settings, canvas, &tool) == TargettingStatus::Drawn {
                 drawn_targetting = TargettingStatus::Drawn;
             }
         );
@@ -3126,7 +3147,7 @@ impl<
                         canvas::Highlight::NONE,
                     );
                     self.owned_views.draw_order_foreach_mut(|v| {
-                        v.draw_in(&queryable, context, canvas, &Some((pos, tool)));
+                        v.draw_in(&queryable, context, settings, canvas, &Some((pos, tool)));
                     });
                 }
                 tool.draw_status_hint(&queryable, canvas, pos);

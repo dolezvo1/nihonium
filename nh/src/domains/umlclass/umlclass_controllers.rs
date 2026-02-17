@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -15,6 +15,7 @@ use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeseria
 use crate::domains::umlclass::umlclass_models::{UmlClassOperation, UmlClassProperty, UmlClassVisibilityKind, UmlGeneralization, UmlUseCase, UmlUseCaseGeneralization};
 use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
+use std::any::Any;
 use std::collections::HashSet;
 use std::marker::PhantomData;
 use std::{
@@ -104,6 +105,7 @@ pub struct UmlClassDomain<P: UmlClassProfile> {
     _profile: PhantomData<P>,
 }
 impl<P: UmlClassProfile> Domain for UmlClassDomain<P> {
+    type SettingsT = UmlClassSettings;
     type CommonElementT = UmlClassElement;
     type DiagramModelT = UmlClassDiagram;
     type CommonElementViewT = UmlClassElementView<P>;
@@ -1092,6 +1094,49 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
     Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<UmlClassNullProfile>, UmlClassControllerAdapter, DiagramControllerGen2<UmlClassDomain<UmlClassNullProfile>, UmlClassDiagramAdapter<UmlClassNullProfile>>>>(&uuid)?)
 }
+
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum CommentIndication {
+    None,
+    Icon,
+    TextCompartment,
+}
+
+impl CommentIndication {
+    fn char(&self) -> &'static str {
+        match self {
+            CommentIndication::None => "None",
+            CommentIndication::Icon => "Icon",
+            CommentIndication::TextCompartment => "Text Compartment",
+        }
+    }
+}
+
+pub struct UmlClassSettings {
+    comment_indication: CommentIndication,
+}
+
+impl DiagramSettings for UmlClassSettings {}
+
+pub fn default_settings() -> Box<dyn DiagramSettings> {
+    Box::new(UmlClassSettings {
+        comment_indication: CommentIndication::Icon,
+    })
+}
+
+pub fn settings_function(_gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
+    let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<UmlClassSettings>() else { return; };
+
+    ui.label("Comment indication");
+    egui::ComboBox::from_id_salt("comment indication")
+        .selected_text(s.comment_indication.char())
+        .show_ui(ui, |ui| {
+            for e in [CommentIndication::None, CommentIndication::Icon, CommentIndication::TextCompartment] {
+                ui.selectable_value(&mut s.comment_indication, e, e.char());
+            }
+        });
+}
+
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum LinkType {
@@ -2135,6 +2180,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         &mut self,
         _: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
+        _settings: &UmlClassSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
@@ -2736,6 +2782,7 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
         at: egui::Pos2,
         _q: &UmlClassQueryable<P>,
         _gdc: &GlobalDrawingContext,
+        _settings: &UmlClassSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> (egui::Rect, TargettingStatus) {
@@ -2959,10 +3006,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
+        settings: &UmlClassSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
     ) -> TargettingStatus {
-        self.draw_inner(self.bounds_rect.left_top(), q, context, canvas, tool).1
+        self.draw_inner(self.bounds_rect.left_top(), q, context, settings, canvas, tool).1
     }
 
     fn handle_event(
@@ -3464,6 +3512,7 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
         at: egui::Pos2,
         _q: &UmlClassQueryable<P>,
         _gdc: &GlobalDrawingContext,
+        _settings: &UmlClassSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> (egui::Rect, TargettingStatus) {
@@ -3672,10 +3721,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
+        settings: &UmlClassSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
     ) -> TargettingStatus {
-        self.draw_inner(self.bounds_rect.left_top(), q, context, canvas, tool).1
+        self.draw_inner(self.bounds_rect.left_top(), q, context, settings, canvas, tool).1
     }
 
     fn handle_event(
@@ -3998,7 +4048,6 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
         suppress_template_parameters: false,
         suppress_properties: false,
         suppress_operations: false,
-        comment_indication: CommentIndication::Icon,
 
         _profile: PhantomData,
     })
@@ -4111,27 +4160,9 @@ pub struct UmlClassView<P: UmlClassProfile> {
     suppress_template_parameters: bool,
     suppress_properties: bool,
     suppress_operations: bool,
-    comment_indication: CommentIndication,
 
     #[nh_context_serde(skip_and_default)]
     _profile: PhantomData<P>,
-}
-
-#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum CommentIndication {
-    None,
-    Icon,
-    TextCompartment,
-}
-
-impl CommentIndication {
-    fn char(&self) -> &'static str {
-        match self {
-            CommentIndication::None => "None",
-            CommentIndication::Icon => "Icon",
-            CommentIndication::TextCompartment => "Text Compartment",
-        }
-    }
 }
 
 impl<P: UmlClassProfile> UmlClassView<P> {
@@ -4477,15 +4508,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         ui.checkbox(&mut self.suppress_properties, "suppress properties");
         ui.checkbox(&mut self.suppress_operations, "suppress operations");
 
-        ui.label("Comment indication");
-        egui::ComboBox::from_id_salt("comment indication")
-            .selected_text(self.comment_indication.char())
-            .show_ui(ui, |ui| {
-                for e in [CommentIndication::None, CommentIndication::Icon, CommentIndication::TextCompartment] {
-                    ui.selectable_value(&mut self.comment_indication, e, e.char());
-                }
-            });
-
         PropertiesStatus::Shown
     }
 
@@ -4493,6 +4515,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         &mut self,
         q: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
+        settings: &UmlClassSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
@@ -4535,7 +4558,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     rect_union_fold(self.properties_views.iter().map(|e| e.read().bounding_box())).size(),
                     Box::new(|c, at| {
                         self.properties_views.iter().fold(at, |s, e| {
-                            let r = e.write().draw_inner(s, q, context, c, tool);
+                            let r = e.write().draw_inner(s, q, context, settings, c, tool);
                             if r.1 != TargettingStatus::NotDrawn {
                                 *child_status.write().unwrap() = r.1;
                             }
@@ -4549,7 +4572,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     rect_union_fold(self.operations_views.iter().map(|e| e.read().bounding_box())).size(),
                     Box::new(|c, at| {
                         self.operations_views.iter().fold(at, |s, e| {
-                            let r = e.write().draw_inner(s, q, context, c, tool);
+                            let r = e.write().draw_inner(s, q, context, settings, c, tool);
                             if r.1 != TargettingStatus::NotDrawn {
                                 *child_status.write().unwrap() = r.1;
                             }
@@ -4558,7 +4581,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     })
                 ));
             }
-            if self.comment_indication == CommentIndication::TextCompartment && !read.comment.is_empty() {
+            if settings.comment_indication == CommentIndication::TextCompartment && !read.comment.is_empty() {
                 let comment = read.comment.clone();
                 body.push((
                     canvas.measure_text(self.position, egui::Align2::LEFT_TOP, &*read.comment, canvas::CLASS_ITEM_FONT_SIZE).size(),
@@ -4643,7 +4666,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         }
 
         if canvas.ui_scale().is_some() {
-            if self.comment_indication == CommentIndication::Icon && !read.comment.is_empty() {
+            if settings.comment_indication == CommentIndication::Icon && !read.comment.is_empty() {
                 canvas.draw_polygon(
                     {
                         let b = self.bounds_rect.left_top() + egui::Vec2::splat(2.5);
@@ -5240,7 +5263,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             suppress_template_parameters: self.suppress_template_parameters,
             suppress_properties: self.suppress_properties,
             suppress_operations: self.suppress_operations,
-            comment_indication: self.comment_indication,
             _profile: PhantomData,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
@@ -5464,6 +5486,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         &mut self,
         _q: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
+        _settings: &UmlClassSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
@@ -7433,6 +7456,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         &mut self,
         _: &UmlClassQueryable<P>,
         context: &GlobalDrawingContext,
+        _settings: &UmlClassSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {

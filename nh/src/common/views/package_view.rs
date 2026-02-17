@@ -210,6 +210,7 @@ where
         &mut self,
         q: &DomainT::QueryableT<'_>,
         context: &GlobalDrawingContext,
+        settings: &DomainT::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus {
@@ -294,7 +295,7 @@ where
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
         self.owned_views.draw_order_foreach_mut(|v|
-            if v.draw_in(q, context, canvas, &tool) == TargettingStatus::Drawn {
+            if v.draw_in(q, context, settings, canvas, &tool) == TargettingStatus::Drawn {
                 drawn_child_targetting = TargettingStatus::Drawn;
             }
         );
@@ -322,7 +323,7 @@ where
                     );
 
                     self.owned_views.draw_order_foreach_mut(|v| {
-                        v.draw_in(q, context, canvas, &tool);
+                        v.draw_in(q, context, settings, canvas, &tool);
                     });
 
                     TargettingStatus::Drawn

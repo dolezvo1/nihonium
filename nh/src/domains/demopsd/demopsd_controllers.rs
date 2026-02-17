@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -29,6 +29,7 @@ use super::super::demo::{
 
 pub struct DemoPsdDomain;
 impl Domain for DemoPsdDomain {
+    type SettingsT = DemoPsdSettings;
     type CommonElementT = DemoPsdElement;
     type DiagramModelT = DemoPsdDiagram;
     type CommonElementViewT = DemoPsdElementView;
@@ -190,14 +191,15 @@ impl DemoPsdStateView {
         &mut self,
         q: &DemoPsdQueryable,
         context: &GlobalDrawingContext,
+        settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
         pos: egui::Pos2,
         text_align: egui::Align2,
     ) -> TargettingStatus {
         match self {
-            DemoPsdStateView::Fact(inner) => inner.write().draw_inner(q, context, canvas, tool, pos, text_align),
-            DemoPsdStateView::Act(inner) => inner.write().draw_inner(q, context, canvas, tool, pos, text_align),
+            DemoPsdStateView::Fact(inner) => inner.write().draw_inner(q, context, settings, canvas, tool, pos, text_align),
+            DemoPsdStateView::Act(inner) => inner.write().draw_inner(q, context, settings, canvas, tool, pos, text_align),
         }
     }
 }
@@ -774,6 +776,15 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
     Ok(d.get_entity::<MultiDiagramController<DemoPsdDomain, DemoPsdControllerAdapter, DiagramControllerGen2<DemoPsdDomain, DemoPsdDiagramAdapter>>>(&uuid)?)
 }
+
+pub struct DemoPsdSettings {}
+impl DiagramSettings for DemoPsdSettings {}
+
+pub fn default_settings() -> Box<dyn DiagramSettings> {
+    Box::new(DemoPsdSettings {})
+}
+
+pub fn settings_function(_gdc: &mut GlobalDrawingContext, _ui: &mut egui::Ui, _s: &mut Box<dyn DiagramSettings>) {}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum DemoPsdToolStage {
@@ -1666,6 +1677,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         &mut self,
         q: &DemoPsdQueryable,
         context: &GlobalDrawingContext,
+        settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
     ) -> TargettingStatus {
@@ -1735,7 +1747,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             };
 
             child_targetting_drawn |= e.view.draw_inner(
-                q, context, canvas, tool,
+                q, context, settings, canvas, tool,
                 egui::Pos2::new(self.tx_outer_rectangle.min.x + width_before * idx / spaces_count, pos_y),
                 align,
             ) == TargettingStatus::Drawn;
@@ -1743,7 +1755,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         // draw P-act
         if let UFOption::Some(e) = &self.p_act_view {
             child_targetting_drawn |= e.write().draw_inner(
-                q, context, canvas, tool,
+                q, context, settings, canvas, tool,
                 egui::Pos2::new(tx_mark_center.x, self.tx_outer_rectangle.max.y),
                 egui::Align2::LEFT_TOP,
             ) == TargettingStatus::Drawn;
@@ -1759,7 +1771,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             };
 
             child_targetting_drawn |= e.view.draw_inner(
-                q, context, canvas, tool,
+                q, context, settings, canvas, tool,
                 egui::Pos2::new(tx_mark_center.x + Self::MIN_SIZE.x / 2.0 + width_after * idx / spaces_count, pos_y),
                 align,
             ) == TargettingStatus::Drawn;
@@ -2527,6 +2539,7 @@ impl DemoPsdFactView {
         &mut self,
         _q: &DemoPsdQueryable,
         _gdc: &GlobalDrawingContext,
+        _settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
         pos: egui::Pos2,
@@ -2688,10 +2701,11 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         &mut self,
         q: &DemoPsdQueryable,
         context: &GlobalDrawingContext,
+        settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
     ) -> TargettingStatus {
-        self.draw_inner(q, context, canvas, tool, self.position, egui::Align2::LEFT_CENTER)
+        self.draw_inner(q, context, settings, canvas, tool, self.position, egui::Align2::LEFT_CENTER)
     }
 
     fn handle_event(
@@ -2960,6 +2974,7 @@ impl DemoPsdActView {
         &mut self,
         _q: &DemoPsdQueryable,
         _gdc: &GlobalDrawingContext,
+        _settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
         pos: egui::Pos2,
@@ -3120,10 +3135,11 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         &mut self,
         q: &DemoPsdQueryable,
         context: &GlobalDrawingContext,
+        settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoPsdTool)>,
     ) -> TargettingStatus {
-        self.draw_inner(q, context, canvas, tool, self.bounds_rect.center(), egui::Align2::LEFT_CENTER)
+        self.draw_inner(q, context, settings, canvas, tool, self.bounds_rect.center(), egui::Align2::LEFT_CENTER)
     }
 
     fn handle_event(

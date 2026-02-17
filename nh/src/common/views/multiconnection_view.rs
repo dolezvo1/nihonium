@@ -347,6 +347,7 @@ where
         &mut self,
         _: &DomainT::QueryableT<'_>,
         _context: &GlobalDrawingContext,
+        _settings: &DomainT::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus {

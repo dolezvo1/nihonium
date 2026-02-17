@@ -240,3 +240,6 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
     Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<UseCaseProfile>, OntoUmlControllerAdapter, DiagramControllerGen2<UmlClassDomain<UseCaseProfile>, UmlClassDiagramAdapter<UseCaseProfile>>>>(&uuid)?)
 }
+
+pub use super::super::umlclass::umlclass_controllers::default_settings;
+pub use super::super::umlclass::umlclass_controllers::settings_function;

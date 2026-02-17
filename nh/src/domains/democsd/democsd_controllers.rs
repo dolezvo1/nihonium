@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -28,6 +28,7 @@ use super::super::demo::{
 
 pub struct DemoCsdDomain;
 impl Domain for DemoCsdDomain {
+    type SettingsT = DemoCsdSettings;
     type CommonElementT = DemoCsdElement;
     type DiagramModelT = DemoCsdDiagram;
     type CommonElementViewT = DemoCsdElementView;
@@ -661,6 +662,15 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
     Ok(d.get_entity::<MultiDiagramController<DemoCsdDomain, DemoCsdControllerAdapter, DiagramControllerGen2<DemoCsdDomain, DemoCsdDiagramAdapter>>>(&uuid)?)
 }
+
+pub struct DemoCsdSettings {}
+impl DiagramSettings for DemoCsdSettings {}
+
+pub fn default_settings() -> Box<dyn DiagramSettings> {
+    Box::new(DemoCsdSettings {})
+}
+
+pub fn settings_function(_gdc: &mut GlobalDrawingContext, _ui: &mut egui::Ui, _s: &mut Box<dyn DiagramSettings>) {}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum DemoCsdToolStage {
@@ -1435,6 +1445,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         &mut self,
         queryable: &DemoCsdQueryable,
         context: &GlobalDrawingContext,
+        settings: &DemoCsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoCsdTool)>,
     ) -> TargettingStatus {
@@ -1548,7 +1559,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
         // If tx is present, draw it 4 rows above the position
         if let UFOption::Some(t) = &self.transaction_view {
-            let res = t.write().draw_in(queryable, context, canvas, &tool);
+            let res = t.write().draw_in(queryable, context, settings, canvas, &tool);
             if res == TargettingStatus::Drawn {
                 return TargettingStatus::Drawn;
             }
@@ -2339,6 +2350,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         &mut self,
         _q: &DemoCsdQueryable,
         _gdc: &GlobalDrawingContext,
+        _settings: &DemoCsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveDemoCsdTool)>,
     ) -> TargettingStatus {
