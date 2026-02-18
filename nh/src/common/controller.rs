@@ -835,10 +835,128 @@ pub trait TryMerge {
 }
 
 
+pub struct ToolPalette<S, V> {
+    elements: Vec<(uuid::Uuid, &'static str, Vec<(uuid::Uuid, S, &'static str, V)>)>
+}
+
+impl<S, V> ToolPalette<S, V> {
+    pub fn new(elements: Vec<(&'static str, Vec<(S, &'static str, V)>)>) -> Self {
+        let elements = elements.into_iter()
+            .map(|e| (uuid::Uuid::now_v7(), e.0, e.1.into_iter().map(|e| (uuid::Uuid::now_v7(), e.0, e.1, e.2)).collect()))
+            .collect();
+        Self {
+            elements
+        }
+    }
+
+    pub fn for_each_mut<F>(&mut self, f: F)
+        where F: FnMut(&mut (uuid::Uuid, &'static str, Vec<(uuid::Uuid, S, &'static str, V)>)) {
+        self.elements.iter_mut().for_each(f);
+    }
+
+    pub fn show_treeview(&mut self, _gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui) {
+        #[derive(Clone, Eq, Hash, PartialEq)]
+        enum Element {
+            Root,
+            Group(uuid::Uuid),
+            Tool(uuid::Uuid),
+        }
+
+        let (_r, a) = egui_ltreeview::TreeView::new(ui.id().with("toolbar items"))
+            .show(ui, |b| {
+                b.dir(Element::Root, "Toolbar items");
+                for (gid, l1, elements) in &self.elements {
+                    b.dir(Element::Group(*gid), *l1);
+                    for (tid, _s, l2, _v) in elements {
+                        b.leaf(Element::Tool(*tid), *l2);
+                    }
+                    b.close_dir();
+                }
+                b.close_dir();
+            });
+        for e in a {
+            if let egui_ltreeview::Action::Move(e) = e {
+                let egui_ltreeview::DragAndDrop { source, target, position, .. } = e;
+                let position = match position {
+                    egui_ltreeview::DirPosition::First => egui_ltreeview::DirPosition::First,
+                    egui_ltreeview::DirPosition::Last => egui_ltreeview::DirPosition::Last,
+                    egui_ltreeview::DirPosition::Before(e) => match e {
+                        Element::Root => continue,
+                        Element::Group(e) | Element::Tool(e) => egui_ltreeview::DirPosition::Before(e),
+                    },
+                    egui_ltreeview::DirPosition::After(e) => match e {
+                        Element::Root => continue,
+                        Element::Group(e) | Element::Tool(e) => egui_ltreeview::DirPosition::After(e),
+                    },
+                };
+
+                for src in source {
+                    match src {
+                        Element::Root => continue,
+                        Element::Group(src) => {
+                            self.move_group(src, position);
+                        },
+                        Element::Tool(src) => {
+                            let Element::Group(target) = target else { continue; };
+                            self.move_tool(src, target, position);
+                        },
+                    }
+                }
+            }
+        }
+    }
+
+    fn move_group(&mut self, src: uuid::Uuid, pos: egui_ltreeview::DirPosition<uuid::Uuid>) {
+        let Some(g) = self.elements.iter().position(|e| e.0 == src).map(|p| self.elements.remove(p)) else { return; };
+        let pos = match pos {
+            DirPosition::First => 0,
+            DirPosition::Last => self.elements.len(),
+            DirPosition::After(g2)
+            | DirPosition::Before(g2) => {
+                let idx_bonus = match pos {
+                    DirPosition::After(_) => 1,
+                    DirPosition::Before(_) => 0,
+                    _ => unreachable!(),
+                };
+
+                self.elements.iter().position(|e| e.0 == g2 || e.2.iter().find(|e| e.0 == g2).is_some()).unwrap() + idx_bonus
+            },
+        };
+        self.elements.insert(pos, g);
+    }
+    fn move_tool(&mut self, src: uuid::Uuid, target: uuid::Uuid, pos: egui_ltreeview::DirPosition<uuid::Uuid>) {
+        let mut t = None;
+        for (_, _, elements) in self.elements.iter_mut() {
+            if let Some(pos) = elements.iter().position(|e| e.0 == src) {
+                t = Some(elements.remove(pos));
+                break;
+            }
+        }
+        let Some(t) = t else { return; };
+
+        let (_, _, elements) = self.elements.iter_mut().find(|e| e.0 == target).unwrap();
+        let pos = match pos {
+            DirPosition::First => 0,
+            DirPosition::Last => elements.len(),
+            DirPosition::After(t2)
+            | DirPosition::Before(t2) => {
+                let idx_bonus = match pos {
+                    DirPosition::After(_) => 1,
+                    DirPosition::Before(_) => 0,
+                    _ => unreachable!(),
+                };
+
+                elements.iter().position(|e| e.0 == t2).unwrap() + idx_bonus
+            },
+        };
+        elements.insert(pos, t);
+    }
+}
+
 pub trait DiagramSettings: Any {}
 pub trait DiagramSettings2<DomainT: Domain>: DiagramSettings {
     fn palette_for_each_mut<F>(&self, f: F)
-        where F: FnMut(&mut (&'static str, Vec<(<<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage, &'static str, DomainT::CommonElementViewT)>));
+        where F: FnMut(&mut (uuid::Uuid, &'static str, Vec<(uuid::Uuid, <<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage, &'static str, DomainT::CommonElementViewT)>));
 }
 
 
@@ -2661,12 +2779,12 @@ impl<
         let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
         let empty_q = DomainT::QueryableT::new(&empty_a, &empty_b, &empty_c);
 
-        settings.palette_for_each_mut(|(label, items)| {
+        settings.palette_for_each_mut(|(_gid, label, items)| {
             egui::CollapsingHeader::new(*label)
                 .default_open(true)
                 .show(ui, |ui| {
                     let width = ui.available_width();
-                    for (stage, name, view) in items.iter_mut() {
+                    for (_tid, stage, name, view) in items.iter_mut() {
                         let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(stage)));
                         if let Some(t) = &self.temporaries.current_tool && t.initial_stage() == *stage {
                             ui.painter().text(

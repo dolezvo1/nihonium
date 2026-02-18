@@ -1,7 +1,7 @@
 
 use super::super::umlclass::{
         umlclass_models::UmlClassDiagram,
-        umlclass_controllers::{LinkType, UmlClassDiagramAdapter, UmlClassDomain, UmlClassElementView, UmlClassPalette, UmlClassProfile, UmlClassToolStage, new_umlclass_association, new_umlclass_class, new_umlclass_comment, new_umlclass_commentlink, new_umlclass_generalization, new_umlclass_package},
+        umlclass_controllers::{LinkType, UmlClassDiagramAdapter, UmlClassDomain, UmlClassElementView, UmlClassProfile, UmlClassToolStage, new_umlclass_association, new_umlclass_class, new_umlclass_comment, new_umlclass_commentlink, new_umlclass_generalization, new_umlclass_package},
 };
 use crate::{common::{
     controller::{
@@ -21,8 +21,6 @@ use std::{
 #[derive(Clone, Default)]
 pub struct UseCaseProfile;
 impl UmlClassProfile for UseCaseProfile {
-    type Palette = UmlClassPlaceholderViews;
-
     fn menubar_options_fun(
         _model: &ERef<UmlClassDiagram>,
         _view_uuid: &ViewUuid,
@@ -90,83 +88,6 @@ impl ControllerAdapter<UmlClassDomain<UseCaseProfile>> for OntoUmlControllerAdap
         None
     }
 }
-
-
-#[derive(Clone)]
-pub struct UmlClassPlaceholderViews {
-    views: [(&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<UseCaseProfile>)>); 3],
-}
-
-impl Default for UmlClassPlaceholderViews {
-    fn default() -> Self {
-        let mut classes = Vec::new();
-        let (_actor, actor_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::StickFigure);
-        classes.push(
-            (UmlClassToolStage::Class { name: "Customer", stereotype: usecase_models::ACTOR, render_style: UmlClassRenderStyle::StickFigure }, "Actor", actor_view.into())
-        );
-        let (_class, class_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
-        class_view.write().refresh_buffers();
-        classes.push(
-            (UmlClassToolStage::Class { name: "Customer", stereotype: usecase_models::ACTOR, render_style: UmlClassRenderStyle::Class }, "Class Actor", class_view.into())
-        );
-        let (_usecase, usecase_view) = new_uml_usecase("Registration", usecase_models::NONE, false, egui::Pos2::ZERO);
-        usecase_view.write().refresh_buffers();
-        classes.push(
-            (UmlClassToolStage::UseCase { name: "Registration", stereotype: usecase_models::NONE }, "Use case", usecase_view.into())
-        );
-
-
-        let mut relationships = Vec::new();
-        let dummy1 = new_umlclass_class("dummy1", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0), UmlClassRenderStyle::Class);
-        let dummy2 = new_umlclass_class("dummy2", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0), UmlClassRenderStyle::Class);
-        {
-            let (_gen, gen_view) = new_umlclass_generalization(None, (dummy1.0.clone(), dummy1.1.clone().into()), (dummy2.0.clone(), dummy2.1.clone().into()));
-            relationships.push(
-                (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
-            );
-        }
-        {
-            let (m, m_view) = new_umlclass_association("", "", None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
-            m.write().source_label_multiplicity = Arc::new("".to_owned());
-            m.write().target_label_multiplicity = Arc::new("".to_owned());
-            m_view.write().refresh_buffers();
-            relationships.push(
-                (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } }, "Association", m_view.into()),
-            );
-        }
-        for (stereotype, label) in [(usecase_models::EXTEND, "Extend"), (usecase_models::INCLUDE, "Include")] {
-            let (_d, d_view) = new_umlclass_dependency(stereotype, "", true, None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
-            relationships.push(
-                (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype } }, label, d_view.into()),
-            );
-        }
-
-
-        let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-        let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
-        let comment = (comment, comment_view.into());
-        let commentlink = new_umlclass_commentlink(None, comment.clone(), (dummy2.0.clone().into(), dummy2.1.clone().into()));
-
-        Self {
-            views: [
-                ("Classes", classes),
-                ("Relationships", relationships),
-                ("Other", vec![
-                    (UmlClassToolStage::PackageStart, "Package", package_view.into()),
-                    (UmlClassToolStage::Comment, "Comment", comment.1),
-                    (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
-                ]),
-            ]
-        }
-    }
-}
-
-impl UmlClassPalette<UseCaseProfile> for UmlClassPlaceholderViews {
-    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<UseCaseProfile>)>)> {
-        self.views.iter_mut()
-    }
-}
-
 
 
 fn new_controlller(
@@ -242,7 +163,65 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    super::super::umlclass::umlclass_controllers::default_settings_helper::<UseCaseProfile>()
+    let mut classes = Vec::new();
+    let (_actor, actor_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::StickFigure);
+    classes.push(
+        (UmlClassToolStage::Class { name: "Customer", stereotype: usecase_models::ACTOR, render_style: UmlClassRenderStyle::StickFigure }, "Actor", actor_view.into())
+    );
+    let (_class, class_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
+    class_view.write().refresh_buffers();
+    classes.push(
+        (UmlClassToolStage::Class { name: "Customer", stereotype: usecase_models::ACTOR, render_style: UmlClassRenderStyle::Class }, "Class Actor", class_view.into())
+    );
+    let (_usecase, usecase_view) = new_uml_usecase("Registration", usecase_models::NONE, false, egui::Pos2::ZERO);
+    usecase_view.write().refresh_buffers();
+    classes.push(
+        (UmlClassToolStage::UseCase { name: "Registration", stereotype: usecase_models::NONE }, "Use case", usecase_view.into())
+    );
+
+
+    let mut relationships = Vec::new();
+    let dummy1 = new_umlclass_class("dummy1", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0), UmlClassRenderStyle::Class);
+    let dummy2 = new_umlclass_class("dummy2", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0), UmlClassRenderStyle::Class);
+    {
+        let (_gen, gen_view) = new_umlclass_generalization(None, (dummy1.0.clone(), dummy1.1.clone().into()), (dummy2.0.clone(), dummy2.1.clone().into()));
+        relationships.push(
+            (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
+        );
+    }
+    {
+        let (m, m_view) = new_umlclass_association("", "", None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
+        m.write().source_label_multiplicity = Arc::new("".to_owned());
+        m.write().target_label_multiplicity = Arc::new("".to_owned());
+        m_view.write().refresh_buffers();
+        relationships.push(
+            (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } }, "Association", m_view.into()),
+        );
+    }
+    for (stereotype, label) in [(usecase_models::EXTEND, "Extend"), (usecase_models::INCLUDE, "Include")] {
+        let (_d, d_view) = new_umlclass_dependency(stereotype, "", true, None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
+        relationships.push(
+            (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype } }, label, d_view.into()),
+        );
+    }
+
+
+    let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+    let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
+    let comment = (comment, comment_view.into());
+    let commentlink = new_umlclass_commentlink(None, comment.clone(), (dummy2.0.clone().into(), dummy2.1.clone().into()));
+
+    let palette_items = vec![
+        ("Classes", classes),
+        ("Relationships", relationships),
+        ("Other", vec![
+            (UmlClassToolStage::PackageStart, "Package", package_view.into()),
+            (UmlClassToolStage::Comment, "Comment", comment.1),
+            (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
+        ]),
+    ];
+
+    super::super::umlclass::umlclass_controllers::default_settings_helper::<UseCaseProfile>(palette_items)
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {

@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -615,79 +615,58 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
 }
 
 
-#[derive(Clone)]
-struct DemoCsdPlaceholderViews {
-    views: [(&'static str, Vec<(DemoCsdToolStage, &'static str, DemoCsdElementView)>); 3],
-}
-
-impl Default for DemoCsdPlaceholderViews {
-    fn default() -> Self {
-        let (client, client_view) = new_democsd_transactor("CTAR01", "Client", false, true, None, false, egui::Pos2::ZERO);
-        let (_actor, actor_view) = {
-            let tx = new_democsd_transaction("TK01", "Transaction", false, egui::Pos2::ZERO, true);
-            new_democsd_transactor("AR01", "Transactor", true, false, Some(tx), false, egui::Pos2::ZERO)
-        };
-        let (bank, bank_view) = new_democsd_transaction("TK01", "Bank", false, egui::Pos2::new(100.0, 75.0), false);
-        let bank = (bank, bank_view.into());
-
-        let (_init, init_view) = new_democsd_link(DemoCsdLinkType::InitiatorLink, (client.clone(), client_view.clone().into()), bank.clone());
-        let (_ints, ints_view) = new_democsd_link(DemoCsdLinkType::AccessLink, (client.clone(), client_view.clone().into()), bank.clone());
-        let (_inim, inim_view) = new_democsd_link(DemoCsdLinkType::WaitLink, (client.clone(), client_view.clone().into()), bank.clone());
-
-        let (_package, package_view) = new_democsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-
-        Self {
-            views: [
-                ("Elements", vec![
-                    (DemoCsdToolStage::Client, "Client Role", client_view.into()),
-                    (DemoCsdToolStage::Transactor, "Actor Role", actor_view.into()),
-                    (DemoCsdToolStage::Bank, "Transaction Bank", bank.1.into()),
-                ]),
-                ("Relationships", vec![
-                    (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::InitiatorLink }, "Initiator Link", init_view.into()),
-                    (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::AccessLink }, "Access Link", ints_view.into()),
-                    (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::WaitLink }, "Wait Link", inim_view.into()),
-                ]),
-                ("Other", vec![
-                    (DemoCsdToolStage::PackageStart, "Package", package_view.into()),
-                ]),
-            ]
-        }
-    }
-}
-
 pub struct DemoCsdSettings {
-    placeholders: RwLock<DemoCsdPlaceholderViews>,
+    palette: RwLock<ToolPalette<DemoCsdToolStage, DemoCsdElementView>>,
 }
 impl DiagramSettings for DemoCsdSettings {}
 impl DiagramSettings2<DemoCsdDomain> for DemoCsdSettings {
     fn palette_for_each_mut<F>(&self, f: F)
-        where F: FnMut(&mut (&'static str, Vec<(DemoCsdToolStage, &'static str, DemoCsdElementView)>))
+        where F: FnMut(&mut (uuid::Uuid, &'static str, Vec<(uuid::Uuid, DemoCsdToolStage, &'static str, DemoCsdElementView)>))
     {
-        self.placeholders.write().unwrap().views.iter_mut().for_each(f);
+        self.palette.write().unwrap().for_each_mut(f);
     }
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
+    let (client, client_view) = new_democsd_transactor("CTAR01", "Client", false, true, None, false, egui::Pos2::ZERO);
+    let (_actor, actor_view) = {
+        let tx = new_democsd_transaction("TK01", "Transaction", false, egui::Pos2::ZERO, true);
+        new_democsd_transactor("AR01", "Transactor", true, false, Some(tx), false, egui::Pos2::ZERO)
+    };
+    let (bank, bank_view) = new_democsd_transaction("TK01", "Bank", false, egui::Pos2::new(100.0, 75.0), false);
+    let bank = (bank, bank_view.into());
+
+    let (_init, init_view) = new_democsd_link(DemoCsdLinkType::InitiatorLink, (client.clone(), client_view.clone().into()), bank.clone());
+    let (_ints, ints_view) = new_democsd_link(DemoCsdLinkType::AccessLink, (client.clone(), client_view.clone().into()), bank.clone());
+    let (_inim, inim_view) = new_democsd_link(DemoCsdLinkType::WaitLink, (client.clone(), client_view.clone().into()), bank.clone());
+
+    let (_package, package_view) = new_democsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+
+    let palette_items = vec![
+        ("Elements", vec![
+            (DemoCsdToolStage::Client, "Client Role", client_view.into()),
+            (DemoCsdToolStage::Transactor, "Actor Role", actor_view.into()),
+            (DemoCsdToolStage::Bank, "Transaction Bank", bank.1.into()),
+        ]),
+        ("Relationships", vec![
+            (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::InitiatorLink }, "Initiator Link", init_view.into()),
+            (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::AccessLink }, "Access Link", ints_view.into()),
+            (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::WaitLink }, "Wait Link", inim_view.into()),
+        ]),
+        ("Other", vec![
+            (DemoCsdToolStage::PackageStart, "Package", package_view.into()),
+        ]),
+    ];
+
     Box::new(DemoCsdSettings {
-        placeholders: Default::default(),
+        palette: RwLock::new(ToolPalette::new(palette_items)),
     })
 }
 
-pub fn settings_function(_gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
+pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<DemoCsdSettings>() else { return; };
 
-    ui.label("Toolbar items");
-    egui_ltreeview::TreeView::new(ui.id().with("toolbar items"))
-        .show(ui, |b| {
-            for (label, elements) in s.placeholders.write().unwrap().views.iter_mut() {
-                b.dir(*label, *label);
-                for (_s, l, _v) in elements {
-                    b.leaf(*l, *l);
-                }
-                b.close_dir();
-            }
-        });
+    s.palette.write().unwrap().show_treeview(gdc, ui);
 }
 
 #[derive(Clone, Copy, PartialEq)]

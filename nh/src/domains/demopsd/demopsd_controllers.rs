@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
@@ -730,77 +730,57 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
     Ok(d.get_entity::<MultiDiagramController<DemoPsdDomain, DemoPsdControllerAdapter, DiagramControllerGen2<DemoPsdDomain, DemoPsdDiagramAdapter>>>(&uuid)?)
 }
 
-#[derive(Clone)]
-struct DemoPsdPlaceholderViews {
-    views: [(&'static str, Vec<(DemoPsdToolStage, &'static str, DemoPsdElementView)>); 3],
-}
-
-impl Default for DemoPsdPlaceholderViews {
-    fn default() -> Self {
-        let (ta, ta_view) = new_demopsd_transaction("01", "", vec![], None, vec![], egui::Pos2::new(100.0, 75.0), 200.0);
-        let ta = (ta, ta_view.into());
-
-        let (fact, fact_view) = new_demopsd_fact("rq", true, egui::Pos2::ZERO);
-        let fact = (fact, fact_view.into());
-        let (act, act_view) = new_demopsd_act("rq", true, egui::Pos2::new(100.0, 75.0));
-        let act = (act, act_view.into());
-
-        let (_response, response_view) = new_demopsd_link(DemoPsdLinkType::ResponseLink, fact.clone(), act.clone(), None);
-        let (_wait, wait_view) = new_demopsd_link(DemoPsdLinkType::WaitLink, fact.clone(), act.clone(), None);
-
-        let (_package, package_view) = new_demopsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-
-        Self {
-            views: [
-                ("Elements", vec![
-                    (DemoPsdToolStage::TransactionStart, "Transaction", ta.1),
-                    (DemoPsdToolStage::Fact, "Fact", fact.1),
-                    (DemoPsdToolStage::Act, "Act", act.1),
-                ]),
-                ("Relationships", vec![
-                    (DemoPsdToolStage::LinkStart { link_type: DemoPsdLinkType::ResponseLink }, "Response Link", response_view.into()),
-                    (DemoPsdToolStage::LinkStart { link_type: DemoPsdLinkType::WaitLink }, "Wait Link", wait_view.into()),
-                ]),
-                ("Other", vec![
-                    (DemoPsdToolStage::PackageStart, "Package", package_view.into()),
-                ]),
-            ]
-        }
-    }
-}
 
 pub struct DemoPsdSettings {
-    placeholders: RwLock<DemoPsdPlaceholderViews>,
+    palette: RwLock<ToolPalette<DemoPsdToolStage, DemoPsdElementView>>,
 }
 impl DiagramSettings for DemoPsdSettings {}
 impl DiagramSettings2<DemoPsdDomain> for DemoPsdSettings {
     fn palette_for_each_mut<F>(&self, f: F)
-        where F: FnMut(&mut (&'static str, Vec<(DemoPsdToolStage, &'static str, DemoPsdElementView)>))
+        where F: FnMut(&mut (uuid::Uuid, &'static str, Vec<(uuid::Uuid, DemoPsdToolStage, &'static str, DemoPsdElementView)>))
     {
-        self.placeholders.write().unwrap().views.iter_mut().for_each(f);
+        self.palette.write().unwrap().for_each_mut(f);
     }
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
+    let (ta, ta_view) = new_demopsd_transaction("01", "", vec![], None, vec![], egui::Pos2::new(100.0, 75.0), 200.0);
+    let ta = (ta, ta_view.into());
+
+    let (fact, fact_view) = new_demopsd_fact("rq", true, egui::Pos2::ZERO);
+    let fact = (fact, fact_view.into());
+    let (act, act_view) = new_demopsd_act("rq", true, egui::Pos2::new(100.0, 75.0));
+    let act = (act, act_view.into());
+
+    let (_response, response_view) = new_demopsd_link(DemoPsdLinkType::ResponseLink, fact.clone(), act.clone(), None);
+    let (_wait, wait_view) = new_demopsd_link(DemoPsdLinkType::WaitLink, fact.clone(), act.clone(), None);
+
+    let (_package, package_view) = new_demopsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+
+    let palette_items = vec![
+        ("Elements", vec![
+            (DemoPsdToolStage::TransactionStart, "Transaction", ta.1),
+            (DemoPsdToolStage::Fact, "Fact", fact.1),
+            (DemoPsdToolStage::Act, "Act", act.1),
+        ]),
+        ("Relationships", vec![
+            (DemoPsdToolStage::LinkStart { link_type: DemoPsdLinkType::ResponseLink }, "Response Link", response_view.into()),
+            (DemoPsdToolStage::LinkStart { link_type: DemoPsdLinkType::WaitLink }, "Wait Link", wait_view.into()),
+        ]),
+        ("Other", vec![
+            (DemoPsdToolStage::PackageStart, "Package", package_view.into()),
+        ]),
+    ];
+
     Box::new(DemoPsdSettings {
-        placeholders: Default::default(),
+        palette: RwLock::new(ToolPalette::new(palette_items)),
     })
 }
 
-pub fn settings_function(_gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
+pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<DemoPsdSettings>() else { return; };
 
-    ui.label("Toolbar items");
-    egui_ltreeview::TreeView::new(ui.id().with("toolbar items"))
-        .show(ui, |b| {
-            for (label, elements) in s.placeholders.write().unwrap().views.iter_mut() {
-                b.dir(*label, *label);
-                for (_s, l, _v) in elements {
-                    b.leaf(*l, *l);
-                }
-                b.close_dir();
-            }
-        });
+    s.palette.write().unwrap().show_treeview(gdc, ui);
 }
 
 #[derive(Clone, Copy, PartialEq)]

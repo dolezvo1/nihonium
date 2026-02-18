@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -24,12 +24,6 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-pub trait UmlClassPalette<P: UmlClassProfile>: Default + Clone {
-    fn iter_mut<'a>(&'a mut self) -> impl Iterator<
-        Item = &'a mut (&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<P>)>)
-    > + 'a;
-}
-
 pub trait StereotypeController: Default + Clone + Send + Sync + 'static {
     fn show(&mut self, ui: &mut egui::Ui) -> bool;
     fn get(&mut self) -> Arc<String>;
@@ -40,7 +34,6 @@ pub trait StereotypeController: Default + Clone + Send + Sync + 'static {
 }
 
 pub trait UmlClassProfile: Default + Clone + Send + Sync + 'static {
-    type Palette: UmlClassPalette<Self>;
     type InstanceStereotypeController: StereotypeController = UnrestrictedStereotypeController;
     type ClassStereotypeController: StereotypeController = UnrestrictedStereotypeController;
     type ClassPropertyStereotypeController: StereotypeController = UnrestrictedStereotypeController;
@@ -97,9 +90,7 @@ impl StereotypeController for UnrestrictedStereotypeController {
 
 #[derive(Clone, Default)]
 pub struct UmlClassNullProfile;
-impl UmlClassProfile for UmlClassNullProfile {
-    type Palette = UmlClassNullPalette;
-}
+impl UmlClassProfile for UmlClassNullProfile {}
 
 pub struct UmlClassDomain<P: UmlClassProfile> {
     _profile: PhantomData<P>,
@@ -369,71 +360,6 @@ pub struct UmlClassDiagramAdapter<P: UmlClassProfile> {
 struct UmlClassDiagramBuffer {
     name: String,
     comment: String,
-}
-
-#[derive(Clone)]
-pub struct UmlClassNullPalette {
-    views: [(&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<UmlClassNullProfile>)>); 3],
-}
-
-impl Default for UmlClassNullPalette {
-    fn default() -> Self {
-        let (_instance, instance_view) = new_umlclass_instance("o", "Type", "", "", egui::Pos2::ZERO);
-        instance_view.write().refresh_buffers();
-        let (class_m, class_view) = new_umlclass_class("ClassName", "class", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
-        class_view.write().refresh_buffers();
-        let class_1 = (class_m.clone(), class_view.clone().into());
-        let class_2 = (class_m.clone().into(), class_view.into());
-        let (d, dv) = new_umlclass_class("dummy", "class", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0), UmlClassRenderStyle::Class);
-        let dummy_1 = (d.clone(), dv.clone().into());
-        let dummy_2 = (d.clone().into(), dv.into());
-
-        let (_property, property_view) = new_umlclass_property(UFOption::None, "property", "Type", "", "", "");
-        property_view.write().refresh_buffers();
-        let (_operation, operation_view) = new_umlclass_operation(UFOption::None, "operation", "", "ReturnType", "");
-        operation_view.write().refresh_buffers();
-
-        let (_gen, gen_view) = new_umlclass_generalization(None, class_1, dummy_1);
-        let (assoc, assoc_view) = new_umlclass_association("", "", None, class_2.clone(), dummy_2.clone());
-        assoc.write().source_label_multiplicity = Arc::new("".to_owned());
-        assoc.write().target_label_multiplicity = Arc::new("".to_owned());
-        assoc_view.write().refresh_buffers();
-        let (_intreal, intreal_view) = new_umlclass_dependency("", "", false, None, class_2.clone(), dummy_2.clone());
-        let (_usage, usage_view) = new_umlclass_dependency("use", "", true, None, class_2.clone(), dummy_2.clone());
-
-        let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-        let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
-        let comment = (comment, comment_view.into());
-        let commentlink = new_umlclass_commentlink(None, comment.clone(), (class_m.into(), class_2.1.clone()));
-
-        Self {
-            views: [
-                ("Elements", vec![
-                    (UmlClassToolStage::Instance, "Instance", instance_view.into()),
-                    (UmlClassToolStage::Class { name: "ClassName", stereotype: "class", render_style: UmlClassRenderStyle::Class }, "Class", class_2.1),
-                    (UmlClassToolStage::ClassProperty, "Property", property_view.into()),
-                    (UmlClassToolStage::ClassOperation, "Operation", operation_view.into()),
-                ]),
-                ("Relationships", vec![
-                    (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
-                    (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } }, "Association", assoc_view.into()),
-                    (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: false, stereotype: "", } }, "IntReal", intreal_view.into()),
-                    (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype: "use", } }, "Usage", usage_view.into()),
-                ]),
-                ("Other", vec![
-                    (UmlClassToolStage::PackageStart, "Package", package_view.into()),
-                    (UmlClassToolStage::Comment, "Comment", comment.1),
-                    (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
-                ]),
-            ]
-        }
-    }
-}
-
-impl UmlClassPalette<UmlClassNullProfile> for UmlClassNullPalette {
-    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<UmlClassNullProfile>)>)> {
-        self.views.iter_mut()
-    }
 }
 
 impl<P: UmlClassProfile> UmlClassDiagramAdapter<P> {
@@ -1108,43 +1034,83 @@ impl CommentIndication {
 
 pub struct UmlClassSettings<P: UmlClassProfile> {
     comment_indication: CommentIndication,
-    placeholders: RwLock<P::Palette>,
+    palette: RwLock<ToolPalette<UmlClassToolStage, UmlClassElementView<P>>>,
 }
 
 impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {}
 impl<P: UmlClassProfile> DiagramSettings2<UmlClassDomain<P>> for UmlClassSettings<P> {
     fn palette_for_each_mut<F>(&self, f: F)
-        where F: FnMut(&mut (&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<P>)>))
+        where F: FnMut(&mut (uuid::Uuid, &'static str, Vec<(uuid::Uuid, UmlClassToolStage, &'static str, UmlClassElementView<P>)>))
     {
-        self.placeholders.write().unwrap().iter_mut().for_each(f);
+        self.palette.write().unwrap().for_each_mut(f);
     }
 }
 
-pub fn default_settings_helper<P: UmlClassProfile>() -> Box<UmlClassSettings<P>> {
+pub fn default_settings_helper<P: UmlClassProfile>(
+    palette_items: Vec<(&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<P>)>)>,
+) -> Box<UmlClassSettings<P>> {
     Box::new(UmlClassSettings {
         comment_indication: CommentIndication::Icon,
-        placeholders: Default::default(),
+        palette: RwLock::new(ToolPalette::new(palette_items)),
     })
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    default_settings_helper::<UmlClassNullProfile>()
+    let (_instance, instance_view) = new_umlclass_instance("o", "Type", "", "", egui::Pos2::ZERO);
+    instance_view.write().refresh_buffers();
+    let (class_m, class_view) = new_umlclass_class("ClassName", "class", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
+    class_view.write().refresh_buffers();
+    let class_1 = (class_m.clone(), class_view.clone().into());
+    let class_2 = (class_m.clone().into(), class_view.into());
+    let (d, dv) = new_umlclass_class("dummy", "class", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0), UmlClassRenderStyle::Class);
+    let dummy_1 = (d.clone(), dv.clone().into());
+    let dummy_2 = (d.clone().into(), dv.into());
+
+    let (_property, property_view) = new_umlclass_property(UFOption::None, "property", "Type", "", "", "");
+    property_view.write().refresh_buffers();
+    let (_operation, operation_view) = new_umlclass_operation(UFOption::None, "operation", "", "ReturnType", "");
+    operation_view.write().refresh_buffers();
+
+    let (_gen, gen_view) = new_umlclass_generalization(None, class_1, dummy_1);
+    let (assoc, assoc_view) = new_umlclass_association("", "", None, class_2.clone(), dummy_2.clone());
+    assoc.write().source_label_multiplicity = Arc::new("".to_owned());
+    assoc.write().target_label_multiplicity = Arc::new("".to_owned());
+    assoc_view.write().refresh_buffers();
+    let (_intreal, intreal_view) = new_umlclass_dependency("", "", false, None, class_2.clone(), dummy_2.clone());
+    let (_usage, usage_view) = new_umlclass_dependency("use", "", true, None, class_2.clone(), dummy_2.clone());
+
+    let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+    let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
+    let comment = (comment, comment_view.into());
+    let commentlink = new_umlclass_commentlink(None, comment.clone(), (class_m.into(), class_2.1.clone()));
+
+    let palette_items = vec![
+        ("Elements", vec![
+            (UmlClassToolStage::Instance, "Instance", instance_view.into()),
+            (UmlClassToolStage::Class { name: "ClassName", stereotype: "class", render_style: UmlClassRenderStyle::Class }, "Class", class_2.1),
+            (UmlClassToolStage::ClassProperty, "Property", property_view.into()),
+            (UmlClassToolStage::ClassOperation, "Operation", operation_view.into()),
+        ]),
+        ("Relationships", vec![
+            (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
+            (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } }, "Association", assoc_view.into()),
+            (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: false, stereotype: "", } }, "IntReal", intreal_view.into()),
+            (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype: "use", } }, "Usage", usage_view.into()),
+        ]),
+        ("Other", vec![
+            (UmlClassToolStage::PackageStart, "Package", package_view.into()),
+            (UmlClassToolStage::Comment, "Comment", comment.1),
+            (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
+        ]),
+    ];
+
+    default_settings_helper::<UmlClassNullProfile>(palette_items)
 }
 
-pub fn settings_function_helper<P: UmlClassProfile>(_gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
+pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<UmlClassSettings<P>>() else { return; };
 
-    ui.label("Toolbar items");
-    egui_ltreeview::TreeView::new(ui.id().with("toolbar items"))
-        .show(ui, |b| {
-            for (label, elements) in s.placeholders.write().unwrap().iter_mut() {
-                b.dir(*label, *label);
-                for (_s, l, _v) in elements {
-                    b.leaf(*l, *l);
-                }
-                b.close_dir();
-            }
-        });
+    s.palette.write().unwrap().show_treeview(gdc, ui);
 
     ui.label("Comment indication");
     egui::ComboBox::from_id_salt("comment indication")

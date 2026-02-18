@@ -1,6 +1,6 @@
 use super::super::umlclass::{
         umlclass_models::UmlClassDiagram,
-        umlclass_controllers::{LinkType, PlantUmlTab, UmlClassDiagramAdapter, UmlClassDomain, UmlClassElementView, UmlClassPalette, UmlClassProfile, UmlClassToolStage, StereotypeController, UmlClassElementOrVertex, new_umlclass_association, new_umlclass_class, new_umlclass_comment, new_umlclass_commentlink, new_umlclass_generalization, new_umlclass_package},
+        umlclass_controllers::{LinkType, PlantUmlTab, UmlClassDiagramAdapter, UmlClassDomain, UmlClassElementView, UmlClassProfile, UmlClassToolStage, StereotypeController, UmlClassElementOrVertex, new_umlclass_association, new_umlclass_class, new_umlclass_comment, new_umlclass_commentlink, new_umlclass_generalization, new_umlclass_package},
 };
 use crate::{common::{
     controller::{
@@ -19,7 +19,6 @@ use std::{
 #[derive(Clone, Default)]
 pub struct OntoUmlProfile;
 impl UmlClassProfile for OntoUmlProfile {
-    type Palette = UmlClassPlaceholderViews;
     type ClassStereotypeController = OntoUmlClassStereotypeController;
     type AssociationStereotypeController = OntoUmlAssociationStereotypeController;
 
@@ -99,91 +98,6 @@ impl ControllerAdapter<UmlClassDomain<OntoUmlProfile>> for OntoUmlControllerAdap
     }
 }
 
-
-#[derive(Clone)]
-pub struct UmlClassPlaceholderViews {
-    views: [(&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<OntoUmlProfile>)>); 3],
-}
-
-impl Default for UmlClassPlaceholderViews {
-    fn default() -> Self {
-        let mut classes = Vec::new();
-        for (stereotype, label, name, is_abstract) in [
-            // Sortals
-            (ontouml_models::KIND, "Kind", "Animal", false),
-            (ontouml_models::SUBKIND, "Subkind", "Human", false),
-            (ontouml_models::PHASE, "Phase", "Adult", false),
-            (ontouml_models::ROLE, "Role", "Married", false),
-            (ontouml_models::COLLECTIVE, "Collective", "Forest", false),
-            (ontouml_models::QUANTITY, "Quantity", "Petroleum", false),
-            (ontouml_models::RELATOR, "Relator", "Subscription", false),
-            // Nonsortals
-            (ontouml_models::CATEGORY, "Category", "Living thing", true),
-            (ontouml_models::PHASE_MIXIN, "Phase Mixin", "Broken", true),
-            (ontouml_models::ROLE_MIXIN, "Role Mixin", "Customer", true),
-            (ontouml_models::MIXIN, "Mixin", "Luxury good", true),
-            // Aspects
-            (ontouml_models::MODE, "Mode", "Intention", false),
-            (ontouml_models::QUALITY, "Quality", "Height", false),
-        ] {
-            let (_c, c_view) = new_ontouml_class(name, stereotype, is_abstract, egui::Pos2::ZERO);
-            c_view.write().refresh_buffers();
-            classes.push(
-                (UmlClassToolStage::Class { name, stereotype, render_style: UmlClassRenderStyle::Class }, label, c_view.into()),
-            );
-        }
-
-        let mut relationships = Vec::new();
-        let dummy1 = new_ontouml_class("dummy1", ontouml_models::NONE, false, egui::Pos2::new(100.0, 75.0));
-        let dummy2 = new_ontouml_class("dummy2", ontouml_models::NONE, false, egui::Pos2::new(200.0, 150.0));
-        let (_gen, gen_view) = new_umlclass_generalization(None, (dummy1.0.clone(), dummy1.1.clone().into()), (dummy2.0.clone(), dummy2.1.clone().into()));
-        relationships.push(
-            (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
-        );
-        for (stereotype, label) in [
-            (ontouml_models::FORMAL, "Formal"),
-            (ontouml_models::MEDIATION, "Mediation"),
-            (ontouml_models::CHARACTERIZATION, "Characterization"),
-            (ontouml_models::STRUCTURATION, "Structuration"),
-            (ontouml_models::COMPONENT_OF, "ComponentOf"),
-            (ontouml_models::CONTAINMENT, "Containment"),
-            (ontouml_models::MEMBER_OF, "MemberOf"),
-            (ontouml_models::SUBCOLLECTION_OF, "SubcollectionOf"),
-            (ontouml_models::SUBQUANTITY_OF, "SubquantityOf"),
-        ] {
-            let (m, m_view) = new_umlclass_association(stereotype, "", None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
-            m.write().source_label_multiplicity = Arc::new("".to_owned());
-            m.write().target_label_multiplicity = Arc::new("".to_owned());
-            m_view.write().refresh_buffers();
-            relationships.push(
-                (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype } }, label, m_view.into()),
-            );
-        }
-
-        let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-        let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
-        let comment = (comment, comment_view.into());
-        let commentlink = new_umlclass_commentlink(None, comment.clone(), (dummy2.0.clone().into(), dummy2.1.clone().into()));
-
-        Self {
-            views: [
-                ("Classes", classes),
-                ("Relationships", relationships),
-                ("Other", vec![
-                    (UmlClassToolStage::PackageStart, "Package", package_view.into()),
-                    (UmlClassToolStage::Comment, "Comment", comment.1),
-                    (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
-                ]),
-            ]
-        }
-    }
-}
-
-impl UmlClassPalette<OntoUmlProfile> for UmlClassPlaceholderViews {
-    fn iter_mut(&mut self) -> impl Iterator<Item = &mut (&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<OntoUmlProfile>)>)> {
-        self.views.iter_mut()
-    }
-}
 
 fn new_controlller(
     model: ERef<UmlClassDiagram>,
@@ -315,7 +229,75 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    super::super::umlclass::umlclass_controllers::default_settings_helper::<OntoUmlProfile>()
+    let mut classes = Vec::new();
+    for (stereotype, label, name, is_abstract) in [
+        // Sortals
+        (ontouml_models::KIND, "Kind", "Animal", false),
+        (ontouml_models::SUBKIND, "Subkind", "Human", false),
+        (ontouml_models::PHASE, "Phase", "Adult", false),
+        (ontouml_models::ROLE, "Role", "Married", false),
+        (ontouml_models::COLLECTIVE, "Collective", "Forest", false),
+        (ontouml_models::QUANTITY, "Quantity", "Petroleum", false),
+        (ontouml_models::RELATOR, "Relator", "Subscription", false),
+        // Nonsortals
+        (ontouml_models::CATEGORY, "Category", "Living thing", true),
+        (ontouml_models::PHASE_MIXIN, "Phase Mixin", "Broken", true),
+        (ontouml_models::ROLE_MIXIN, "Role Mixin", "Customer", true),
+        (ontouml_models::MIXIN, "Mixin", "Luxury good", true),
+        // Aspects
+        (ontouml_models::MODE, "Mode", "Intention", false),
+        (ontouml_models::QUALITY, "Quality", "Height", false),
+    ] {
+        let (_c, c_view) = new_ontouml_class(name, stereotype, is_abstract, egui::Pos2::ZERO);
+        c_view.write().refresh_buffers();
+        classes.push(
+            (UmlClassToolStage::Class { name, stereotype, render_style: UmlClassRenderStyle::Class }, label, c_view.into()),
+        );
+    }
+
+    let mut relationships = Vec::new();
+    let dummy1 = new_ontouml_class("dummy1", ontouml_models::NONE, false, egui::Pos2::new(100.0, 75.0));
+    let dummy2 = new_ontouml_class("dummy2", ontouml_models::NONE, false, egui::Pos2::new(200.0, 150.0));
+    let (_gen, gen_view) = new_umlclass_generalization(None, (dummy1.0.clone(), dummy1.1.clone().into()), (dummy2.0.clone(), dummy2.1.clone().into()));
+    relationships.push(
+        (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
+    );
+    for (stereotype, label) in [
+        (ontouml_models::FORMAL, "Formal"),
+        (ontouml_models::MEDIATION, "Mediation"),
+        (ontouml_models::CHARACTERIZATION, "Characterization"),
+        (ontouml_models::STRUCTURATION, "Structuration"),
+        (ontouml_models::COMPONENT_OF, "ComponentOf"),
+        (ontouml_models::CONTAINMENT, "Containment"),
+        (ontouml_models::MEMBER_OF, "MemberOf"),
+        (ontouml_models::SUBCOLLECTION_OF, "SubcollectionOf"),
+        (ontouml_models::SUBQUANTITY_OF, "SubquantityOf"),
+    ] {
+        let (m, m_view) = new_umlclass_association(stereotype, "", None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
+        m.write().source_label_multiplicity = Arc::new("".to_owned());
+        m.write().target_label_multiplicity = Arc::new("".to_owned());
+        m_view.write().refresh_buffers();
+        relationships.push(
+            (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype } }, label, m_view.into()),
+        );
+    }
+
+    let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+    let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
+    let comment = (comment, comment_view.into());
+    let commentlink = new_umlclass_commentlink(None, comment.clone(), (dummy2.0.clone().into(), dummy2.1.clone().into()));
+
+    let palette_items = vec![
+        ("Classes", classes),
+        ("Relationships", relationships),
+        ("Other", vec![
+            (UmlClassToolStage::PackageStart, "Package", package_view.into()),
+            (UmlClassToolStage::Comment, "Comment", comment.1),
+            (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
+        ]),
+    ];
+
+    super::super::umlclass::umlclass_controllers::default_settings_helper::<OntoUmlProfile>(palette_items)
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
