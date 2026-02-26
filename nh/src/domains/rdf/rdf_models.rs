@@ -529,6 +529,14 @@ impl RdfGraph {
             comment: Arc::new("".to_owned()),
         }
     }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            iri: self.iri.clone(),
+            contained_elements: self.contained_elements.clone(),
+            comment: self.comment.clone(),
+        })
+    }
 }
 
 impl Entity for RdfGraph {
@@ -624,6 +632,15 @@ impl RdfLiteral {
             comment: Arc::new("".to_owned()),
         }
     }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            content: self.content.clone(),
+            datatype: self.datatype.clone(),
+            langtag: self.langtag.clone(),
+            comment: self.comment.clone(),
+        })
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn term_repr(&self) -> SimpleTerm<'static> {
@@ -692,6 +709,13 @@ impl RdfNode {
             comment: Arc::new("".to_owned()),
         }
     }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            iri: self.iri.clone(),
+            comment: self.comment.clone(),
+        })
+    }
 
     #[cfg(not(target_arch = "wasm32"))]
     fn term_repr(&self) -> SimpleTerm<'static> {
@@ -752,6 +776,15 @@ impl RdfPredicate {
             target,
             comment: Arc::new("".to_owned()),
         }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            iri: self.iri.clone(),
+            source: self.source.clone(),
+            target: self.target.clone(),
+            comment: self.comment.clone(),
+        })
     }
 }
 

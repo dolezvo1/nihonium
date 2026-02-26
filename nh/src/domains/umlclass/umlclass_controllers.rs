@@ -1821,7 +1821,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         let model = if let Some(UmlClassElement::UmlClassPackage(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(UmlClassPackage::new(new_uuid, (*old_model.name).clone(), old_model.contained_elements.clone()));
+            let modelish = old_model.clone_with(new_uuid);
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };

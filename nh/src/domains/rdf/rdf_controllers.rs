@@ -1038,7 +1038,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         let model = if let Some(RdfElement::RdfGraph(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(RdfGraph::new(new_uuid, (*old_model.iri).clone(), old_model.contained_elements.clone()));
+            let modelish = old_model.clone_with(new_uuid);
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -1475,7 +1475,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         let modelish = if let Some(RdfElement::RdfNode(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(RdfNode::new(model_uuid, (*old_model.iri).clone()));
+            let modelish = old_model.clone_with(model_uuid);
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -1951,7 +1951,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         let modelish = if let Some(RdfElement::RdfLiteral(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(RdfLiteral::new(model_uuid, (*old_model.content).clone(), (*old_model.datatype).clone(), (*old_model.langtag).clone()));
+            let modelish = old_model.clone_with(model_uuid);
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -2172,7 +2172,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         let model = if let Some(RdfElement::RdfPredicate(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(RdfPredicate::new(new_uuid, (*old_model.iri).clone(), old_model.source.clone(), old_model.target.clone()));
+            let modelish = old_model.clone_with(new_uuid);
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };

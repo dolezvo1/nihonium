@@ -1197,8 +1197,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         let model = if let Some(DemoPsdElement::DemoPsdPackage(m)) = m.get(&model_uuid) {
             m.clone()
         } else {
-            let model = self.model.read();
-            let model = ERef::new(DemoPsdPackage::new(new_uuid, (*model.name).clone(), model.contained_elements.clone()));
+            let model = self.model.read().clone_with(new_uuid);
             m.insert(model_uuid, model.clone().into());
             model
         };

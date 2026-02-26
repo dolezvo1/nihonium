@@ -412,6 +412,14 @@ impl DemoCsdPackage {
             comment: Arc::new("".to_owned()),
         }
     }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            name: self.name.clone(),
+            contained_elements: self.contained_elements.clone(),
+            comment: self.comment.clone(),
+        })
+    }
 }
 
 impl Entity for DemoCsdPackage {
