@@ -358,7 +358,7 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
     ui.menu_button(gdc.translate_0("nh-project-addnewdiagram"), |ui| {
         ui.set_min_width(MIN_MENU_WIDTH);
 
-        ui.menu_button("UML Class", |ui| {
+        ui.menu_button("UML", |ui| {
             ui.set_min_width(MIN_MENU_WIDTH);
             for (label, fun) in [
                 (
@@ -369,14 +369,19 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
                     "Use Case diagram",
                     crate::domains::usecase::usecase_controllers::new as DiagramF,
                 ),
-                (
-                    "OntoUML diagram",
-                    crate::domains::ontouml::ontouml_controllers::new as DiagramF,
-                ),
             ] {
                 diagram_button!(ui, label, fun);
             }
         });
+
+        for (label, fun) in [
+            (
+                "OntoUML UFO-A diagram",
+                crate::domains::ontouml::ontouml_controllers::new as DiagramF,
+            ),
+        ] {
+            diagram_button!(ui, label, fun);
+        }
 
         ui.menu_button("DEMO", |ui| {
             ui.set_min_width(MIN_MENU_WIDTH);
@@ -407,7 +412,7 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
     ui.menu_button(gdc.translate_0("nh-project-adddemodiagram"), |ui| {
         ui.set_min_width(MIN_MENU_WIDTH);
 
-        ui.menu_button("UML Class", |ui| {
+        ui.menu_button("UML", |ui| {
             ui.set_min_width(MIN_MENU_WIDTH);
             for (label, fun) in [
                 (
@@ -418,14 +423,19 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
                     "Use Case diagram",
                     crate::domains::usecase::usecase_controllers::demo as DiagramF,
                 ),
-                (
-                    "OntoUML diagram",
-                    crate::domains::ontouml::ontouml_controllers::demo as DiagramF,
-                ),
             ] {
                 diagram_button!(ui, label, fun);
             }
         });
+
+        for (label, fun) in [
+            (
+                "OntoUML UFO-A diagram",
+                crate::domains::ontouml::ontouml_controllers::demo as DiagramF,
+            ),
+        ] {
+            diagram_button!(ui, label, fun);
+        }
 
         ui.menu_button("DEMO", |ui| {
             ui.set_min_width(MIN_MENU_WIDTH);

@@ -6298,7 +6298,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
                 UmlClassPropChange::NameChange(name) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
-                        UmlClassPropChange::StereotypeChange(
+                        UmlClassPropChange::NameChange(
                             model.name.clone(),
                         ),
                     ));
@@ -6746,7 +6746,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                 UmlClassPropChange::NameChange(name) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
-                        UmlClassPropChange::StereotypeChange(
+                        UmlClassPropChange::NameChange(
                             model.name.clone(),
                         ),
                     ));
