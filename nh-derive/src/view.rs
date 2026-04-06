@@ -199,7 +199,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
             }
             fn head_count(
                 &mut self,
-                flattened_views: &mut HashMap<ViewUuid, <#domain as crate::common::controller::Domain> :: CommonElementViewT>,
+                flattened_views: &mut HashMap<ViewUuid, (<#domain as crate::common::controller::Domain> :: CommonElementViewT, ViewUuid)>,
                 flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
                 flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
             ) {

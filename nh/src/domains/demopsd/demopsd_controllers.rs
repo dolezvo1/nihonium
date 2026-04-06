@@ -2276,7 +2276,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, DemoPsdElementView>,
+        flattened_views: &mut HashMap<ViewUuid, (DemoPsdElementView, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -2286,16 +2286,16 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         let mut flattened_status_temp = HashMap::new();
         for e in &mut self.before_views {
             e.view.head_count(flattened_views, &mut flattened_status_temp, flattened_represented_models);
-            flattened_views.insert(*e.view.uuid(), e.view.clone().as_element_view());
+            flattened_views.insert(*e.view.uuid(), (e.view.clone().as_element_view(), *self.uuid));
         }
         if let UFOption::Some(e) = &self.p_act_view {
             let mut w = e.write();
             w.head_count(flattened_views, &mut flattened_status_temp, flattened_represented_models);
-            flattened_views.insert(*w.uuid(), e.clone().into());
+            flattened_views.insert(*w.uuid(), (e.clone().into(), *self.uuid));
         }
         for e in &mut self.after_views {
             e.view.head_count(flattened_views, &mut flattened_status_temp, flattened_represented_models);
-            flattened_views.insert(*e.view.uuid(), e.view.clone().as_element_view());
+            flattened_views.insert(*e.view.uuid(), (e.view.clone().as_element_view(), *self.uuid));
         }
 
         flattened_status_temp.iter().for_each(|e| {
@@ -2775,7 +2775,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, DemoPsdElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, (DemoPsdElementView, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -3195,7 +3195,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, DemoPsdElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, (DemoPsdElementView, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {

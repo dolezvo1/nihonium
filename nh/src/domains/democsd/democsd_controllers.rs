@@ -1842,7 +1842,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        flattened_views: &mut HashMap<ViewUuid, (DemoCsdElementView, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -1861,7 +1861,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                 });
             }
 
-            flattened_views.insert(*tx_l.uuid(), tx.clone().into());
+            flattened_views.insert(*tx_l.uuid(), (tx.clone().into(), *self.uuid));
         }
     }
     
@@ -2472,7 +2472,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, DemoCsdElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, (DemoCsdElementView, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {

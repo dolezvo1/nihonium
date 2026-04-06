@@ -2033,7 +2033,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, DemoOfdElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, (DemoOfdElementView, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -2722,7 +2722,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, DemoOfdElementView>,
+        flattened_views: &mut HashMap<ViewUuid, (DemoOfdElementView, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -2741,7 +2741,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 });
             }
 
-            flattened_views.insert(*sl.uuid(), s.clone().into());
+            flattened_views.insert(*sl.uuid(), (s.clone().into(), *self.uuid));
         }
     }
     fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {

@@ -1381,7 +1381,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, RdfElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, (RdfElementView, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -1829,7 +1829,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, RdfElementView>,
+        _flattened_views: &mut HashMap<ViewUuid, (RdfElementView, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {

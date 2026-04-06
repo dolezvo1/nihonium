@@ -1124,7 +1124,7 @@ pub trait Queryable<'a, DomainT: Domain> {
     // TODO: This is actually not a very good idea. Constructor should only be required where instantiated.
     fn new(
         models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-        flattened_views: &'a HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        flattened_views: &'a HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
         flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
     ) -> Self;
     fn get_view(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT>;
@@ -1133,21 +1133,21 @@ pub trait Queryable<'a, DomainT: Domain> {
 
 pub struct GenericQueryable<'a, DomainT: Domain> {
     models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-    flattened_views: &'a HashMap<ViewUuid, DomainT::CommonElementViewT>,
+    flattened_views: &'a HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
     flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
 }
 
 impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, DomainT> {
     fn new(
         models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-        flattened_views: &'a HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        flattened_views: &'a HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
         flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
     ) -> Self {
         Self { models_to_views, flattened_views, flattened_views_status }
     }
 
     fn get_view(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
-        self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
+        self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).map(|e| e.0.clone())
     }
 
     fn selected_views(&self) -> HashSet<ViewUuid> {
@@ -1280,7 +1280,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
     fn refresh_buffers(&mut self);
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        flattened_views: &mut HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     );
@@ -2076,7 +2076,7 @@ pub struct DiagramControllerGen2<
 struct DiagramControllerGen2Temporaries<DomainT: Domain> {
     name_buffer: String,
 
-    flattened_views: HashMap<ViewUuid, DomainT::CommonElementViewT>,
+    flattened_views: HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
     flattened_views_status: HashMap<ViewUuid, SelectionStatus>,
     flattened_represented_models: HashMap<ModelUuid, ViewUuid>,
     _layers: Vec<bool>,
@@ -2241,7 +2241,7 @@ impl<
 
                 let mut tool = self.temporaries.current_tool.take();
                 if let Some((t, target_id, dependency_id)) = tool.as_mut().and_then(|e| e.try_additional_dependency()) {
-                    if let (Some(target_view_id), Some(dependency_view))
+                    if let (Some(target_view_id), Some((dependency_view, _)))
                         = (self.temporaries.flattened_represented_models.get(&target_id),
                             self.temporaries.flattened_represented_models.get(&dependency_id)
                             .and_then(|e| self.temporaries.flattened_views.get(e))) {
@@ -2325,7 +2325,7 @@ impl<
             )
         );
         for (k, v) in self.owned_views.iter_event_order_pairs() {
-            self.temporaries.flattened_views.insert(k, v.clone());
+            self.temporaries.flattened_views.insert(k, (v.clone(), *self.uuid));
         }
         self.temporaries.flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
     }
@@ -2545,7 +2545,7 @@ impl<
 
         for mk in affected_models.iter() {
             if let Some(vk) = self.temporaries.flattened_represented_models.get(mk)
-                && let Some(v) = self.temporaries.flattened_views.get_mut(vk) {
+                && let Some((v, _)) = self.temporaries.flattened_views.get_mut(vk) {
                 v.refresh_buffers();
                 lp.insert(*v.model_uuid(), self.adapter.label_for(&v.model()));
             }
@@ -2588,7 +2588,7 @@ impl<
         // Refresh buffers
         self.temporaries.name_buffer = (*self.name).clone();
 
-        for v in self.temporaries.flattened_views.values_mut() {
+        for (v, _) in self.temporaries.flattened_views.values_mut() {
             v.refresh_buffers();
         }
         self.adapter.refresh_buffers();
@@ -3169,7 +3169,7 @@ impl<
                     EntityUuid::View(view_uuid) => Some(view_uuid),
                     EntityUuid::Controller(_) => return vec![],
                 };
-                if let Some(v) = view_uuid.and_then(|e| self.temporaries.flattened_views.get(&e)) {
+                if let Some((v, _)) = view_uuid.and_then(|e| self.temporaries.flattened_views.get(&e)) {
                     let bb = v.bounding_box();
                     if force || !self.temporaries.last_interactive_canvas_rect.contains_rect(bb) {
                         self.temporaries.camera_scale = 1.0;
@@ -3214,7 +3214,7 @@ impl<
 
                             match r {
                                 Ok(new_view) => {
-                                    pseudo_fv.insert(*new_view.uuid(), new_view.clone());
+                                    pseudo_fv.insert(*new_view.uuid(), (new_view.clone(), parent_view_uuid));
                                     pseudo_frm.insert(*model.uuid(), *new_view.uuid());
                                     pseudo_fvs.insert(*new_view.uuid(), SelectionStatus::NotSelected);
                                     cmds.push(InsensitiveCommand::AddDependency(parent_view_uuid, b, Some(pos), new_view.into(), false).into());
@@ -3310,7 +3310,7 @@ impl<
         models.extend(
             views.iter()
                 .flat_map(|e| self.temporaries.flattened_views.get(e))
-                .map(|e| *e.model_uuid())
+                .map(|(v, _)| *v.model_uuid())
         );
     }
     fn get_view_for(&self, model: &ModelUuid) -> Option<ViewUuid> {
@@ -3319,9 +3319,9 @@ impl<
     fn view_transitive_closure(&self, uuids: &mut HashSet<ViewUuid>) {
         let mut temp = HashSet::new();
         loop {
-            for e in &self.temporaries.flattened_views {
-                if !uuids.contains(e.0) && e.1.delete_when(uuids) {
-                    temp.insert(*e.0);
+            for (k, (v, _)) in &self.temporaries.flattened_views {
+                if !uuids.contains(k) && v.delete_when(uuids) {
+                    temp.insert(*k);
                 }
             }
             if temp.is_empty() {
@@ -3347,6 +3347,6 @@ impl<
     DiagramAdapterT: DiagramAdapter<DomainT>
 > ContainerGen2<DomainT> for DiagramControllerGen2<DomainT, DiagramAdapterT> {
     fn controller_for(&self, uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
-        self.temporaries.flattened_represented_models.get(uuid).and_then(|e| self.temporaries.flattened_views.get(e)).cloned()
+        self.temporaries.flattened_represented_models.get(uuid).and_then(|e| self.temporaries.flattened_views.get(e)).map(|e| e.0.clone())
     }
 }

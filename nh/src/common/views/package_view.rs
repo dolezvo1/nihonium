@@ -714,7 +714,7 @@ where
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        flattened_views: &mut HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -733,7 +733,7 @@ where
         }
 
         self.owned_views.event_order_foreach_mut(|v| {
-            flattened_views.insert(*v.uuid(), v.clone());
+            flattened_views.insert(*v.uuid(), (v.clone(), *self.uuid));
         });
     }
 

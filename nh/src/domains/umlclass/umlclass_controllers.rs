@@ -2414,7 +2414,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
+        _flattened_views: &mut HashMap<ViewUuid, (UmlClassElementView<P>, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -3126,7 +3126,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
     }
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, <UmlClassDomain<P> as Domain>::CommonElementViewT>,
+        _flattened_views: &mut HashMap<ViewUuid, (<UmlClassDomain<P> as Domain>::CommonElementViewT, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -3789,7 +3789,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
     }
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, <UmlClassDomain<P> as Domain>::CommonElementViewT>,
+        _flattened_views: &mut HashMap<ViewUuid, (<UmlClassDomain<P> as Domain>::CommonElementViewT, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -5016,7 +5016,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
     fn head_count(
         &mut self,
-        flattened_views: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
+        flattened_views: &mut HashMap<ViewUuid, (UmlClassElementView<P>, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -5026,12 +5026,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         for e in &self.properties_views {
             let mut w = e.write();
             w.head_count(flattened_views, flattened_views_status, flattened_represented_models);
-            flattened_views.insert(*w.uuid(), e.clone().into());
+            flattened_views.insert(*w.uuid(), (e.clone().into(), *self.uuid));
         }
         for e in &self.operations_views {
             let mut w = e.write();
             w.head_count(flattened_views, flattened_views_status, flattened_represented_models);
-            flattened_views.insert(*w.uuid(), e.clone().into());
+            flattened_views.insert(*w.uuid(), (e.clone().into(), *self.uuid));
         }
     }
 
@@ -5549,7 +5549,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
+        _flattened_views: &mut HashMap<ViewUuid, (UmlClassElementView<P>, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
@@ -7417,7 +7417,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, UmlClassElementView<P>>,
+        _flattened_views: &mut HashMap<ViewUuid, (UmlClassElementView<P>, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {

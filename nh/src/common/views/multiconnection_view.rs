@@ -1003,7 +1003,7 @@ where
 
     fn head_count(
         &mut self,
-        _flattened_views: &mut HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        _flattened_views: &mut HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
         flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
         flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
     ) {
