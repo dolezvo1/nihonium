@@ -1752,8 +1752,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
-            ($self:ident) => {
-                if let UFOption::Some(t) = &$self.transaction_view {
+            () => {
+                if let UFOption::Some(t) = &self.transaction_view {
                     t.write().apply_command(command, undo_accumulator, affected_models);
                 }
             };
@@ -1761,18 +1761,18 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
                 self.highlight = self.highlight.combine(*set, *h);
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid()) {
                     self.highlight = self.highlight.combine(*set, *h);
                 }
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::MoveSpecificElements(uuids, delta)
                 if !uuids.contains(&*self.uuid())
@@ -1910,7 +1910,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                     }
                 }
 
-                recurse!(self);
+                recurse!();
             }
         }
     }

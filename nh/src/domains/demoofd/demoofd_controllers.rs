@@ -2662,8 +2662,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
-            ($self:ident) => {
-                if let UFOption::Some(s) = &$self.specialization_view {
+            () => {
+                if let UFOption::Some(s) = &self.specialization_view {
                     s.write().apply_command(command, undo_accumulator, affected_models);
                 }
             };
@@ -2671,18 +2671,18 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
                 self.highlight = self.highlight.combine(*set, *h);
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
                     self.highlight = self.highlight.combine(*set, *h);
                 }
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::MoveSpecificElements(uuids, delta)
                 if !uuids.contains(&*self.uuid())
@@ -2724,7 +2724,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
                     self.specialization_view = UFOption::Some(e.clone());
                 }
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::RemoveDependency(v, b, e, from_model) => {
                 if *v == *self.uuid
@@ -2749,7 +2749,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                         self.specialization_view = UFOption::None;
                     }
                 }
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
@@ -2764,7 +2764,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     ));
                     self.specialization_view = UFOption::None;
                 }
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
@@ -2804,7 +2804,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                         _ => {}
                     }
                 }
-                recurse!(self);
+                recurse!();
             }
         }
     }

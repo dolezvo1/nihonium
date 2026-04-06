@@ -4909,10 +4909,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
-            ($self:expr) => {
-                $self.properties_views.iter()
+            () => {
+                self.properties_views.iter()
                     .for_each(|e| e.write().apply_command(command, undo_accumulator, affected_models));
-                $self.operations_views.iter()
+                self.operations_views.iter()
                     .for_each(|e| e.write().apply_command(command, undo_accumulator, affected_models));
             };
         }
@@ -4920,18 +4920,18 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         match command {
             InsensitiveCommand::HighlightAll(set, h) => {
                 self.highlight = self.highlight.combine(*set, *h);
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
                     self.highlight = self.highlight.combine(*set, *h);
                 }
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
@@ -5139,7 +5139,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     }
                 }
 
-                recurse!(self);
+                recurse!();
             }
         }
     }

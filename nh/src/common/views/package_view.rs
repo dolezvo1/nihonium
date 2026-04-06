@@ -504,8 +504,8 @@ where
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
-            ($self:ident) => {
-                $self.owned_views.event_order_foreach_mut(|v|
+            () => {
+                self.owned_views.event_order_foreach_mut(|v|
                     v.apply_command(command, undo_accumulator, affected_models)
                 );
             };
@@ -548,7 +548,7 @@ where
                         false => self.selected_direct_elements.clear(),
                     }
                 }
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
@@ -564,16 +564,16 @@ where
                     }
                 }
 
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
 
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid) => {
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
                 self.bounds_rect.set_center(self.position() + *delta);
@@ -590,7 +590,7 @@ where
                     resize_by!(align, delta);
                 }
 
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::ResizeSpecificElementsTo(uuids, align, size) => {
                 if uuids.contains(&self.uuid) {
@@ -609,7 +609,7 @@ where
                     resize_by!(align, egui::Vec2::new(x, y));
                 }
 
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
                 for (_uuid, element) in self
@@ -636,14 +636,14 @@ where
 
                 self.owned_views.retain(|k, _v| !uuids.contains(k));
 
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::PasteSpecificElements(target, _elements) => {
                 if *target == *self.uuid {
                     todo!("undo = delete")
                 }
 
-                recurse!(self);
+                recurse!();
             },
             InsensitiveCommand::AddDependency(target, b, pos, element, into_model) => {
                 if *target == *self.uuid && *b == 0 {
@@ -668,7 +668,7 @@ where
                     }
                 }
 
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::RemoveDependency(target, b, element, into_model) => {
                 if *target == *self.uuid && *b == 0 {
@@ -689,7 +689,7 @@ where
                         self.owned_views.retain(|k, _v| *k != *element);
                     }
                 }
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {
                 self.owned_views.apply_arrangement(uuids, *arr);
@@ -704,7 +704,7 @@ where
                     affected_models.insert(*self.adapter.model_uuid());
                 }
 
-                recurse!(self);
+                recurse!();
             }
         }
     }

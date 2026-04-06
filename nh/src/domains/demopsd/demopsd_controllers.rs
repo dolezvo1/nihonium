@@ -1993,7 +1993,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
-            ($self:ident) => {
+            () => {
                 for e in &mut self.before_views {
                     e.view.apply_command(
                         command,
@@ -2058,7 +2058,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                     }
                 }
 
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
                 if uuids.contains(&*self.uuid) {
@@ -2087,15 +2087,15 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                     }
                 }
 
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid) => {
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::MoveSpecificElements(_, delta)
             | InsensitiveCommand::MoveAllElements(delta) => {
@@ -2110,7 +2110,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 if uuids.contains(&self.uuid) {
                     resize_by!(align, delta);
                 }
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::ResizeSpecificElementsTo(uuids, align, size) => {
                 if uuids.contains(&self.uuid) {
@@ -2128,7 +2128,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
                     resize_by!(align, egui::Vec2::new(x, y));
                 }
-                recurse!(self);
+                recurse!();
             }
 
             InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
@@ -2161,7 +2161,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                     self.before_views.retain(&mut closure);
                     self.after_views.retain(&mut closure);
                 }
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
@@ -2232,7 +2232,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         }
                     }
                 }
-                recurse!(self);
+                recurse!();
             }
             InsensitiveCommand::RemoveDependency(v, b, duuid, into_model) => {
                 if *v == *self.uuid {
@@ -2272,7 +2272,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         };
                     }
                 }
-                recurse!(self);
+                recurse!();
             }
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -2327,7 +2327,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         _ => {}
                     }
                 }
-                recurse!(self);
+                recurse!();
             }
         }
     }

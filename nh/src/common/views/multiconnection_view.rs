@@ -739,13 +739,13 @@ where
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! all_pts_mut {
-            ($self:ident) => {
-                $self
+            () => {
+                self
                     .center_point
                     .as_mut()
                     .into_iter()
-                    .chain($self.sources.iter_mut().map(|e| e.points.iter_mut()).flatten())
-                    .chain($self.targets.iter_mut().map(|e| e.points.iter_mut()).flatten())
+                    .chain(self.sources.iter_mut().map(|e| e.points.iter_mut()).flatten())
+                    .chain(self.targets.iter_mut().map(|e| e.points.iter_mut()).flatten())
             };
         }
         match command {
@@ -755,7 +755,7 @@ where
                     match set {
                         false => self.selected_vertices.clear(),
                         true => {
-                            for p in all_pts_mut!(self) {
+                            for p in all_pts_mut!() {
                                 self.selected_vertices.insert(p.0);
                             }
                         }
@@ -770,7 +770,7 @@ where
                     match set {
                         false => self.selected_vertices.retain(|e| !uuids.contains(e)),
                         true => {
-                            for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {
+                            for p in all_pts_mut!().filter(|e| uuids.contains(&e.0)) {
                                 self.selected_vertices.insert(p.0);
                             }
                         }
@@ -779,10 +779,10 @@ where
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected =
-                    (self.highlight.selected && *retain) || all_pts_mut!(self).find(|p| !rect.contains(p.1)).is_none();
+                    (self.highlight.selected && *retain) || all_pts_mut!().find(|p| !rect.contains(p.1)).is_none();
             }
             InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.uuid) => {
-                for p in all_pts_mut!(self).filter(|e| uuids.contains(&e.0)) {
+                for p in all_pts_mut!().filter(|e| uuids.contains(&e.0)) {
                     p.1 += *delta;
                     undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                         std::iter::once(p.0).collect(),
@@ -791,7 +791,7 @@ where
                 }
             }
             InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
-                for p in all_pts_mut!(self) {
+                for p in all_pts_mut!() {
                     p.1 += *delta;
                     undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
                         std::iter::once(p.0).collect(),
@@ -833,8 +833,8 @@ where
                 }
 
                 macro_rules! delete_vertices {
-                    ($self:ident, $v:ident) => {
-                        for e in $self.$v.iter_mut() {
+                    ($v:ident) => {
+                        for e in self.$v.iter_mut() {
                             // 2-windows over vertices
                             let mut iter = e.points.iter().peekable();
                             while let Some(a) = iter.next() {
@@ -860,8 +860,8 @@ where
                         }
                     };
                 }
-                delete_vertices!(self, sources);
-                delete_vertices!(self, targets);
+                delete_vertices!(sources);
+                delete_vertices!(targets);
 
                 // Handle dependencies being deleted
                 let mut rtin = |e: &Ending<DomainT::CommonElementViewT>| if uuids.contains(&e.element.uuid()) {
@@ -922,11 +922,11 @@ where
                             ));
                         } else {
                             macro_rules! insert_vertex {
-                                ($self:ident, $v:ident, $b:expr) => {
-                                    for (idx1, e) in $self.$v.iter_mut().enumerate() {
+                                ($v:ident, $b:expr) => {
+                                    for (idx1, e) in self.$v.iter_mut().enumerate() {
                                         for (idx2, p) in e.points.iter().enumerate() {
                                             if p.0 == after {
-                                                $self.point_to_origin.insert(id, ($b, idx1));
+                                                self.point_to_origin.insert(id, ($b, idx1));
                                                 e.points.insert(idx2 + 1, (id, position));
                                                 undo_accumulator.push(
                                                     InsensitiveCommand::DeleteSpecificElements(
@@ -940,8 +940,8 @@ where
                                     }
                                 };
                             }
-                            insert_vertex!(self, sources, false);
-                            insert_vertex!(self, targets, true);
+                            insert_vertex!(sources, false);
+                            insert_vertex!(targets, true);
                         }
                     }
                 }
