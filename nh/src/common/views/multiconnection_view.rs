@@ -324,7 +324,7 @@ where
                         }
                     } else {
                         if ui.button("Add to view").clicked() {
-                            if let Some(v) = q.get_view(model_uuid) {
+                            if let Some(v) = q.get_view_for(model_uuid) {
                                 commands.push(InsensitiveCommand::AddDependency(self_uuid, b, None, v.into(), false).into());
                             }
                         }

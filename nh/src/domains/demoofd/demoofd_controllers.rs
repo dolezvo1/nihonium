@@ -327,7 +327,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
             DemoOfdElement::DemoOfdEventType(inner) => {
                 let m = inner.read();
                 let bid = *m.base_entity_type.read().uuid;
-                let Some(base_view) = q.get_view(&bid) else {
+                let Some(base_view) = q.get_view_for(&bid) else {
                     return Err(HashSet::from([bid]));
                 };
                 DemoOfdElementView::from(
@@ -337,7 +337,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
             DemoOfdElement::DemoOfdPropertyType(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.domain_element.read().uuid, *m.range_element.read().uuid);
-                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([sid, tid])),
                 };
@@ -348,7 +348,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
             DemoOfdElement::DemoOfdSpecialization(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.domain_element.read().uuid, *m.range_element.read().uuid);
-                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([sid, tid])),
                 };
@@ -358,8 +358,8 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
             },
             DemoOfdElement::DemoOfdAggregation(inner) => {
                 let m = inner.read();
-                let (Some(sv), Some(tv)) = (m.domain_elements.iter().map(|e| q.get_view(&e.read().uuid)).collect(),
-                                            q.get_view(&m.range_element.read().uuid)) else {
+                let (Some(sv), Some(tv)) = (m.domain_elements.iter().map(|e| q.get_view_for(&e.read().uuid)).collect(),
+                                            q.get_view_for(&m.range_element.read().uuid)) else {
                     return Err(m.domain_elements.iter().map(|e| *e.read().uuid)
                         .chain(std::iter::once(*m.range_element.read().uuid)).collect())
                 };
@@ -370,7 +370,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
             DemoOfdElement::DemoOfdPrecedence(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.domain_element.read().uuid, *m.range_element.read().uuid);
-                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([sid, tid])),
                 };
@@ -381,7 +381,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
             DemoOfdElement::DemoOfdExclusion(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.domain_element.uuid(), *m.range_element.uuid());
-                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([sid, tid])),
                 };
@@ -904,7 +904,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
     fn draw_status_hint(&self, q: &<DemoOfdDomain as Domain>::QueryableT<'_>, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
         match &self.result {
             PartialDemoOfdElement::Event { source, .. } => {
-                if let Some(source_view) = q.get_view(&*source.read().uuid) {
+                if let Some(source_view) = q.get_view_for(&*source.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -913,7 +913,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
             }
             PartialDemoOfdElement::EntityLink { source, .. } => {
-                if let Some(source_view) = q.get_view(&*source.read().uuid) {
+                if let Some(source_view) = q.get_view_for(&*source.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -922,7 +922,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
             }
             PartialDemoOfdElement::AggregationEnding { gen_model, .. } => {
-                if let Some(source_view) = q.get_view(&*gen_model.read().uuid) {
+                if let Some(source_view) = q.get_view_for(&*gen_model.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -931,7 +931,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
             }
             PartialDemoOfdElement::EventLink { source, .. } => {
-                if let Some(source_view) = q.get_view(&*source.read().uuid) {
+                if let Some(source_view) = q.get_view_for(&*source.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -940,7 +940,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
             }
             PartialDemoOfdElement::TypeLink { source, .. } => {
-                if let Some(source_view) = q.get_view(&*source.uuid()) {
+                if let Some(source_view) = q.get_view_for(&*source.uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1126,7 +1126,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
 
     fn try_construct_view(
         &mut self,
-        into: &dyn ContainerGen2<DemoOfdDomain>,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
+        into: &ViewUuid,
     ) -> Option<(DemoOfdElementView, Option<Box<dyn CustomModal>>)> {
         match &self.result {
             PartialDemoOfdElement::Some(x) => {
@@ -1141,7 +1142,9 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             }
             PartialDemoOfdElement::Event { with_specialization, source, pos: Some(p) } => {
                 let base_uuid = *source.read().uuid;
-                if let Some(base_view) = into.controller_for(&base_uuid) {
+                if let Some(base_view) = q.get_view_for(&base_uuid)
+                    && q.is_contained(&base_view.uuid(), into)
+                {
                     self.current_stage = DemoOfdToolStage::EventStart { with_specialization: *with_specialization };
 
                     let spec = if *with_specialization {
@@ -1167,10 +1170,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 ..
             } => {
                 let (source_uuid, target_uuid) = (*source.read().uuid, *dest.read().uuid);
-                if let (Some(source_controller), Some(dest_controller)) = (
-                    into.controller_for(&source_uuid),
-                    into.controller_for(&target_uuid),
-                ) {
+                if let (Some(source_view), Some(dest_view)) = (
+                    q.get_view_for(&source_uuid),
+                    q.get_view_for(&target_uuid),
+                ) && q.is_contained(&source_view.uuid(), into)
+                  && q.is_contained(&dest_view.uuid(), into)
+                {
                     self.current_stage = DemoOfdToolStage::LinkStart {
                         link_type: *link_type,
                     };
@@ -1180,22 +1185,22 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                             new_demoofd_propertytype(
                                 "",
                                 None,
-                                (source.clone(), source_controller),
-                                (dest.clone(), dest_controller),
+                                (source.clone(), source_view),
+                                (dest.clone(), dest_view),
                             ).1.into()
                         },
                         LinkType::Specialization => {
                             new_demoofd_specialization(
                                 None,
-                                (source.clone(), source_controller),
-                                (dest.clone(), dest_controller),
+                                (source.clone(), source_view),
+                                (dest.clone(), dest_view),
                             ).1.into()
                         },
                         LinkType::Aggregation => {
                             new_demoofd_aggregation(
                                 None,
-                                (source.clone(), source_controller),
-                                (dest.clone(), dest_controller),
+                                (source.clone(), source_view),
+                                (dest.clone(), dest_view),
                             ).1.into()
                         }
                         LinkType::Precedence
@@ -1215,10 +1220,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 ..
             } => {
                 let (source_uuid, target_uuid) = (*source.read().uuid, *dest.read().uuid);
-                if let (Some(source_controller), Some(dest_controller)) = (
-                    into.controller_for(&source_uuid),
-                    into.controller_for(&target_uuid),
-                ) {
+                if let (Some(source_view), Some(dest_view)) = (
+                    q.get_view_for(&source_uuid),
+                    q.get_view_for(&target_uuid),
+                ) && q.is_contained(&source_view.uuid(), into)
+                  && q.is_contained(&dest_view.uuid(), into)
+                {
                     self.current_stage = DemoOfdToolStage::LinkStart {
                         link_type: *link_type,
                     };
@@ -1230,8 +1237,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         LinkType::Precedence => {
                             new_demoofd_precedence(
                                 None,
-                                (source.clone(), source_controller),
-                                (dest.clone(), dest_controller),
+                                (source.clone(), source_view),
+                                (dest.clone(), dest_view),
                             ).1.into()
                         }
                         LinkType::Exclusion => unreachable!()
@@ -1250,10 +1257,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 ..
             } => {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
-                if let (Some(source_controller), Some(dest_controller)) = (
-                    into.controller_for(&source_uuid),
-                    into.controller_for(&target_uuid),
-                ) {
+                if let (Some(source_view), Some(dest_view)) = (
+                    q.get_view_for(&source_uuid),
+                    q.get_view_for(&target_uuid),
+                ) && q.is_contained(&source_view.uuid(), into)
+                  && q.is_contained(&dest_view.uuid(), into)
+                {
                     self.current_stage = DemoOfdToolStage::LinkStart {
                         link_type: *link_type,
                     };
@@ -1266,8 +1275,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         LinkType::Exclusion => {
                             new_demoofd_exclusion(
                                 None,
-                                (source.clone(), source_controller),
-                                (dest.clone(), dest_controller),
+                                (source.clone(), source_view),
+                                (dest.clone(), dest_view),
                             ).1.into()
                         }
                     };
@@ -2472,7 +2481,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     tool.add_section(self.model());
 
                     if !self.specialization_view.is_some()
-                        && let Some((DemoOfdElementView::EntityType(new_e), esm)) = tool.try_construct_view(self) {
+                        && let Some((DemoOfdElementView::EntityType(new_e), esm)) = tool.try_construct_view(q, &self.uuid) {
                         new_e.write().position = self.position;
                         commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, DemoOfdElementView::from(new_e).into(), true));
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {

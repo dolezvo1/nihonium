@@ -301,7 +301,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
             DemoCsdElement::DemoCsdLink(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.read().uuid());
-                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
@@ -755,7 +755,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 link_type,
                 ..
             } => {
-                if let Some(source_view) = q.get_view(&source.read().uuid()) {
+                if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke {
@@ -871,7 +871,8 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
 
     fn try_construct_view(
         &mut self,
-        into: &dyn ContainerGen2<DemoCsdDomain>,
+        q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
+        into: &ViewUuid,
     ) -> Option<(DemoCsdElementView, Option<Box<dyn CustomModal>>)> {
         match &self.result {
             PartialDemoCsdElement::Some(x) => {
@@ -897,9 +898,11 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             } => {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *target.read().uuid());
                 if let (Some(source_view), Some(target_view)) = (
-                    into.controller_for(&source_uuid),
-                    into.controller_for(&target_uuid),
-                ) {
+                    q.get_view_for(&source_uuid),
+                    q.get_view_for(&target_uuid),
+                ) && q.is_contained(&source_view.uuid(), into)
+                  && q.is_contained(&target_view.uuid(), into)
+                {
                     self.current_stage = self.initial_stage;
 
                     let (_link_model, link_view) = new_democsd_link(
@@ -1619,7 +1622,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
                     if self.transaction_view.as_ref().is_none() {
                         tool.add_position(*event.mouse_position());
-                        if let Some((new_e, esm)) = tool.try_construct_view(self)
+                        if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid)
                             && let DemoCsdElementView::Transaction(ref tx) = new_e {
                             tx.write().position = egui::Pos2::new(
                                 self.position.x,

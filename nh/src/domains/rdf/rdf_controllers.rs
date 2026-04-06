@@ -252,7 +252,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
             RdfElement::RdfPredicate(rw_lock) => {
                 let m = rw_lock.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
-                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
@@ -677,7 +677,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
     fn draw_status_hint(&self, q: &<RdfDomain as Domain>::QueryableT<'_>, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
         match &self.result {
             PartialRdfElement::Predicate { source, .. } => {
-                if let Some(source_view) = q.get_view(&source.read().uuid()) {
+                if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
@@ -768,7 +768,8 @@ impl Tool<RdfDomain> for NaiveRdfTool {
 
     fn try_construct_view(
         &mut self,
-        into: &dyn ContainerGen2<RdfDomain>,
+        q: &<RdfDomain as Domain>::QueryableT<'_>,
+        into: &ViewUuid,
     ) -> Option<(RdfElementView, Option<Box<dyn CustomModal>>)> {
         match &self.result {
             PartialRdfElement::Some(x) => {
@@ -793,11 +794,15 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             } => {
                 self.current_stage = RdfToolStage::PredicateStart;
 
+                let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.uuid());
                 let predicate_view: Option<(_, Option<Box<dyn CustomModal>>)> =
                     if let (Some(source_controller), Some(dest_controller)) = (
-                        into.controller_for(&source.read().uuid()),
-                        into.controller_for(&dest.uuid()),
-                    ) {
+                        q.get_view_for(&source_uuid),
+                        q.get_view_for(&target_uuid),
+                    ) && q.is_contained(&source_controller.uuid(), into)
+                      && q.is_contained(&dest_controller.uuid(), into)
+                      && q.are_siblings(&source_controller.uuid(), &dest_controller.uuid())
+                    {
                         let (predicate_model, predicate_view) = new_rdf_predicate(
                             "http://www.w3.org/2000/10/swap/pim/contact#fullName",
                             (source.clone(), source_controller),

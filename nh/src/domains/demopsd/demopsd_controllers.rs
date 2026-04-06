@@ -411,7 +411,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
             DemoPsdElement::DemoPsdLink(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.read().uuid());
-                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
@@ -891,7 +891,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 link_type,
                 ..
             } => {
-                if let Some(source_view) = q.get_view(&source.read().uuid()) {
+                if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke {
@@ -989,7 +989,8 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
 
     fn try_construct_view(
         &mut self,
-        into: &dyn ContainerGen2<DemoPsdDomain>,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
+        into: &ViewUuid,
     ) -> Option<(DemoPsdElementView, Option<Box<dyn CustomModal>>)> {
         match &self.result {
             PartialDemoPsdElement::Some(x) => {
@@ -1014,9 +1015,11 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             } => {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *target.read().uuid());
                 if let (Some(source_view), Some(target_view)) = (
-                    into.controller_for(&source_uuid),
-                    into.controller_for(&target_uuid),
-                ) {
+                    q.get_view_for(&source_uuid),
+                    q.get_view_for(&target_uuid),
+                ) && q.is_contained(&source_view.uuid(), into)
+                  && q.is_contained(&target_view.uuid(), into)
+                {
                     self.current_stage = self.initial_stage;
 
                     let (_link_model, link_view) = new_demopsd_link(
@@ -1843,7 +1846,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
                     if self.p_act_view.as_ref().is_none() || quadrant != egui::Align2::CENTER_CENTER {
                         tool.add_position(pos);
-                        if let Some((new_e, esm)) = tool.try_construct_view(self) {
+                        if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid) {
                             if (quadrant == egui::Align2::CENTER_CENTER
                                 && !self.model.read().p_act.is_some()
                                 && matches!(new_e, DemoPsdElementView::Act(_)))

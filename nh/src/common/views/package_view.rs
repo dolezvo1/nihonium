@@ -410,7 +410,7 @@ where
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.adapter.model_section());
 
-                    if let Some((new_e, esm)) = tool.try_construct_view(self) {
+                    if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid) {
                         commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, new_e.into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;

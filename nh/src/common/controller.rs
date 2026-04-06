@@ -1127,7 +1127,11 @@ pub trait Queryable<'a, DomainT: Domain> {
         flattened_views: &'a HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
         flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
     ) -> Self;
-    fn get_view(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT>;
+
+    fn is_contained(&self, v: &ViewUuid, within: &ViewUuid) -> bool;
+    fn are_siblings(&self, a: &ViewUuid, b: &ViewUuid) -> bool;
+
+    fn get_view_for(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT>;
     fn selected_views(&self) -> HashSet<ViewUuid>;
 }
 
@@ -1146,7 +1150,25 @@ impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, Domain
         Self { models_to_views, flattened_views, flattened_views_status }
     }
 
-    fn get_view(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
+    fn is_contained(&self, v: &ViewUuid, within: &ViewUuid) -> bool {
+        let mut v = *v;
+        loop {
+            let Some((_, parent)) = self.flattened_views.get(&v) else {
+                return false;
+            };
+            if parent == within {
+                return true;
+            }
+            v = *parent;
+        }
+    }
+    fn are_siblings(&self, a: &ViewUuid, b: &ViewUuid) -> bool {
+        self.flattened_views.get(a)
+            .and_then(|(_, pa)| self.flattened_views.get(b).map(|(_, pb)| pa == pb))
+            .unwrap_or(false)
+    }
+
+    fn get_view_for(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).map(|e| e.0.clone())
     }
 
@@ -1175,7 +1197,8 @@ pub trait Tool<DomainT: Domain> {
     fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)>;
     fn try_construct_view(
         &mut self,
-        into: &dyn ContainerGen2<DomainT>,
+        q: &DomainT::QueryableT<'_>,
+        into: &ViewUuid,
     ) -> Option<(DomainT::CommonElementViewT, Option<Box<dyn CustomModal>>)>;
 
     fn reset_event_lock(&mut self);
@@ -2249,7 +2272,7 @@ impl<
                         handled = true;
                     };
                 }
-                if let Some((new_e, esm)) = tool.as_mut().and_then(|e| e.try_construct_view(self)) {
+                if let Some((new_e, esm)) = tool.as_mut().and_then(|e| e.try_construct_view(&q, &self.uuid)) {
                     commands.push(InsensitiveCommand::AddDependency(
                         *self.uuid(),
                         0,

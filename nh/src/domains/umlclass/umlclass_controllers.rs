@@ -409,8 +409,8 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             }
             UmlClassElement::UmlClassGeneralization(inner) => {
                 let m = inner.read();
-                let (Some(sv), Some(tv)) = (m.sources.iter().map(|e| q.get_view(&e.read().uuid)).collect(),
-                                            m.targets.iter().map(|e| q.get_view(&e.read().uuid)).collect()) else {
+                let (Some(sv), Some(tv)) = (m.sources.iter().map(|e| q.get_view_for(&e.read().uuid)).collect(),
+                                            m.targets.iter().map(|e| q.get_view_for(&e.read().uuid)).collect()) else {
                     return Err(m.sources.iter().map(|e| *e.read().uuid)
                         .chain(m.targets.iter().map(|e| *e.read().uuid)).collect())
                 };
@@ -421,7 +421,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             UmlClassElement::UmlClassDependency(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.uuid(), m.target.uuid());
-                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
@@ -432,7 +432,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             UmlClassElement::UmlClassAssociation(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.uuid(), m.target.uuid());
-                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
@@ -442,8 +442,8 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             },
             UmlClassElement::UmlUseCaseGeneralization(inner) => {
                 let m = inner.read();
-                let (Some(sv), Some(tv)) = (m.sources.iter().map(|e| q.get_view(&e.read().uuid)).collect(),
-                                            m.targets.iter().map(|e| q.get_view(&e.read().uuid)).collect()) else {
+                let (Some(sv), Some(tv)) = (m.sources.iter().map(|e| q.get_view_for(&e.read().uuid)).collect(),
+                                            m.targets.iter().map(|e| q.get_view_for(&e.read().uuid)).collect()) else {
                     return Err(m.sources.iter().map(|e| *e.read().uuid)
                         .chain(m.targets.iter().map(|e| *e.read().uuid)).collect())
                 };
@@ -459,7 +459,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             UmlClassElement::UmlClassCommentLink(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
-                let (source_view, target_view) = match (q.get_view(&sid), q.get_view(&tid)) {
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
@@ -1291,7 +1291,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 source,
                 ..
             } => {
-                if let Some(source_view) = q.get_view(&source.uuid()) {
+                if let Some(source_view) = q.get_view_for(&source.uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1300,7 +1300,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 }
             }
             PartialUmlClassElement::LinkEnding { gen_model, .. } => {
-                if let Some(view) = q.get_view(&gen_model.uuid()) {
+                if let Some(view) = q.get_view_for(&gen_model.uuid()) {
                     canvas.draw_line(
                         [pos, view.position()],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1312,7 +1312,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 source,
                 ..
             } => {
-                if let Some(source_view) = q.get_view(&source.read().uuid()) {
+                if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
@@ -1558,7 +1558,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
 
     fn try_construct_view(
         &mut self,
-        into: &dyn ContainerGen2<UmlClassDomain<P>>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
+        into: &ViewUuid,
     ) -> Option<(UmlClassElementView<P>, Option<Box<dyn CustomModal>>)> {
         match &self.result {
             PartialUmlClassElement::Some(x) => {
@@ -1580,10 +1581,12 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 ..
             } => {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
-                if let (Some(source_controller), Some(dest_controller)) = (
-                    into.controller_for(&source_uuid),
-                    into.controller_for(&target_uuid),
-                ) {
+                if let (Some(source_view), Some(target_view)) = (
+                    q.get_view_for(&source_uuid),
+                    q.get_view_for(&target_uuid),
+                ) && q.is_contained(&source_view.uuid(), into)
+                  && q.is_contained(&target_view.uuid(), into)
+                {
                     self.current_stage = UmlClassToolStage::LinkStart {
                         link_type: *link_type,
                     };
@@ -1593,14 +1596,14 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                             if let (UmlClassAssociable::UmlClass(source), UmlClassAssociable::UmlClass(dest)) = (source, dest) {
                                 new_umlclass_generalization(
                                     None,
-                                    (source.clone(), source_controller),
-                                    (dest.clone(), dest_controller),
+                                    (source.clone(), source_view),
+                                    (dest.clone(), target_view),
                                 ).1.into()
                             } else if let (UmlClassAssociable::UmlUseCase(source), UmlClassAssociable::UmlUseCase(dest)) = (source, dest) {
                                 new_uml_usecasegeneralization(
                                     None,
-                                    (source.clone(), source_controller),
-                                    (dest.clone(), dest_controller),
+                                    (source.clone(), source_view),
+                                    (dest.clone(), target_view),
                                 ).1.into()
                             } else {
                                 return None;
@@ -1612,8 +1615,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                                 "",
                                 *target_arrow_open,
                                 None,
-                                (source.clone(), source_controller),
-                                (dest.clone(), dest_controller),
+                                (source.clone(), source_view),
+                                (dest.clone(), target_view),
                             ).1.into()
                         },
                         LinkType::Association { stereotype } => {
@@ -1621,8 +1624,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                                 *stereotype,
                                 "",
                                 None,
-                                (source.clone(), source_controller),
-                                (dest.clone(), dest_controller),
+                                (source.clone(), source_view),
+                                (dest.clone(), target_view),
                             ).1.into()
                         },
                     };
@@ -1635,16 +1638,18 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             }
             PartialUmlClassElement::CommentLink { source, dest: Some(dest) } => {
                 let source_uuid = *source.read().uuid();
-                if let (Some(source_controller), Some(dest_controller)) = (
-                    into.controller_for(&source_uuid),
-                    into.controller_for(&dest.uuid()),
-                ) {
+                if let (Some(source_view), Some(target_view)) = (
+                    q.get_view_for(&source_uuid),
+                    q.get_view_for(&dest.uuid()),
+                ) && q.is_contained(&source_view.uuid(), into)
+                  && q.is_contained(&target_view.uuid(), into)
+                {
                     self.current_stage = UmlClassToolStage::CommentLinkStart;
 
                     let (_link_model, link_view) = new_umlclass_commentlink(
                         None,
-                        (source.clone(), source_controller),
-                        (dest.clone(), dest_controller),
+                        (source.clone(), source_view),
+                        (dest.clone(), target_view),
                     );
 
                     self.spend();
@@ -4618,7 +4623,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
-                    if let Some((view, esm)) = tool.try_construct_view(self)
+                    if let Some((view, esm)) = tool.try_construct_view(q, &self.uuid)
                         && matches!(view, UmlClassElementView::ClassProperty(_)) {
                         commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, view.into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
@@ -4640,7 +4645,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
-                    if let Some((view, esm)) = tool.try_construct_view(self)
+                    if let Some((view, esm)) = tool.try_construct_view(q, &self.uuid)
                         && matches!(view, UmlClassElementView::ClassOperation(_)) {
                         commands.push(InsensitiveCommand::AddDependency(*self.uuid, 1, None, view.into(), true).into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
@@ -4696,7 +4701,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
 
-                    if let Some((view, esm)) = tool.try_construct_view(self)
+                    if let Some((view, esm)) = tool.try_construct_view(q, &self.uuid)
                         && matches!(view, UmlClassElementView::ClassProperty(_) | UmlClassElementView::ClassOperation(_)) {
                         let b = match view {
                             UmlClassElementView::ClassProperty(_) => 0,
