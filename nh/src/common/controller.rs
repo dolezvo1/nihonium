@@ -1131,6 +1131,33 @@ pub trait Queryable<'a, DomainT: Domain> {
     fn selected_views(&self) -> HashSet<ViewUuid>;
 }
 
+pub struct GenericQueryable<'a, DomainT: Domain> {
+    models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
+    flattened_views: &'a HashMap<ViewUuid, DomainT::CommonElementViewT>,
+    flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
+}
+
+impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, DomainT> {
+    fn new(
+        models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
+        flattened_views: &'a HashMap<ViewUuid, DomainT::CommonElementViewT>,
+        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
+    ) -> Self {
+        Self { models_to_views, flattened_views, flattened_views_status }
+    }
+
+    fn get_view(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
+        self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
+    }
+
+    fn selected_views(&self) -> HashSet<ViewUuid> {
+        self.flattened_views_status.iter()
+            .filter(|e| e.1.selected())
+            .map(|e| *e.0)
+            .collect()
+    }
+}
+
 pub trait Tool<DomainT: Domain> {
     type Stage: Clone + PartialEq + 'static;
 

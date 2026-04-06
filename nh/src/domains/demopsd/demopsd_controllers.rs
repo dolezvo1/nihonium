@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -37,7 +37,7 @@ impl Domain for DemoPsdDomain {
     type DiagramModelT = DemoPsdDiagram;
     type CommonElementViewT = DemoPsdElementView;
     type ViewTargettingSectionT = DemoPsdElementTargettingSection;
-    type QueryableT<'a> = DemoPsdQueryable<'a>;
+    type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveDemoPsdTool;
     type AddCommandElementT = DemoPsdElementOrVertex;
     type PropChangeT = DemoPsdPropChange;
@@ -45,33 +45,6 @@ impl Domain for DemoPsdDomain {
 
 type PackageViewT = PackageView<DemoPsdDomain, DemoPsdPackageAdapter>;
 type LinkViewT = MulticonnectionView<DemoPsdDomain, DemoPsdLinkAdapter>;
-
-pub struct DemoPsdQueryable<'a> {
-    models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-    flattened_views: &'a HashMap<ViewUuid, DemoPsdElementView>,
-    flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
-}
-
-impl<'a> Queryable<'a, DemoPsdDomain> for DemoPsdQueryable<'a> {
-    fn new(
-        models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-        flattened_views: &'a HashMap<ViewUuid, DemoPsdElementView>,
-        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
-    ) -> Self {
-        Self { models_to_views, flattened_views, flattened_views_status }
-    }
-
-    fn get_view(&self, m: &ModelUuid) -> Option<DemoPsdElementView> {
-        self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
-    }
-
-    fn selected_views(&self) -> HashSet<ViewUuid> {
-        self.flattened_views_status.iter()
-            .filter(|e| e.1.selected())
-            .map(|e| *e.0)
-            .collect()
-    }
-}
 
 #[derive(Clone)]
 pub enum DemoPsdPropChange {
@@ -192,7 +165,7 @@ impl DemoPsdStateView {
 
     fn draw_inner(
         &mut self,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
@@ -391,7 +364,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
 
     fn create_new_view_for(
         &self,
-        q: &DemoPsdQueryable<'_>,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         element: DemoPsdElement,
     ) -> Result<DemoPsdElementView, HashSet<ModelUuid>> {
         let v = match element {
@@ -904,7 +877,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             Some(TS::Link(..)) => todo!(),
         }
     }
-    fn draw_status_hint(&self, q: &DemoPsdQueryable, canvas: &mut dyn canvas::NHCanvas, pos: egui::Pos2) {
+    fn draw_status_hint(&self, q: &<DemoPsdDomain as Domain>::QueryableT<'_>, canvas: &mut dyn canvas::NHCanvas, pos: egui::Pos2) {
         match &self.result {
             PartialDemoPsdElement::TransactionStart { start_pos } => {
                 canvas.draw_line(
@@ -1110,7 +1083,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
 
     fn show_properties(
         &mut self,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>
     ) {
@@ -1514,7 +1487,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
@@ -1623,7 +1596,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
     }
     fn draw_in(
         &mut self,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
@@ -1774,7 +1747,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
@@ -2485,7 +2458,7 @@ impl DemoPsdFactView {
 
     fn draw_inner(
         &mut self,
-        _q: &DemoPsdQueryable,
+        _q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         _gdc: &GlobalDrawingContext,
         _settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
@@ -2583,7 +2556,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
@@ -2633,7 +2606,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
     }
     fn draw_in(
         &mut self,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
@@ -2646,7 +2619,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
@@ -2906,7 +2879,7 @@ impl DemoPsdActView {
 
     fn draw_inner(
         &mut self,
-        _q: &DemoPsdQueryable,
+        _q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         _gdc: &GlobalDrawingContext,
         _settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
@@ -3003,7 +2976,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
@@ -3053,7 +3026,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
     }
     fn draw_in(
         &mut self,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &DemoPsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
@@ -3066,7 +3039,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
@@ -3362,7 +3335,7 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
 
     fn show_properties(
         &mut self,
-        q: &DemoPsdQueryable,
+        q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>
     ) -> PropertiesStatus<DemoPsdDomain> {

@@ -3,7 +3,7 @@ use super::demoofd_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
@@ -37,7 +37,7 @@ impl Domain for DemoOfdDomain {
     type DiagramModelT = DemoOfdDiagram;
     type CommonElementViewT = DemoOfdElementView;
     type ViewTargettingSectionT = DemoOfdElement;
-    type QueryableT<'a> = DemoOfdQueryable<'a>;
+    type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveDemoOfdTool;
     type AddCommandElementT = DemoOfdElementOrVertex;
     type PropChangeT = DemoOfdPropChange;
@@ -49,33 +49,6 @@ type SpecializationViewT = MulticonnectionView<DemoOfdDomain, DemoOfdSpecializat
 type AggregationViewT = MulticonnectionView<DemoOfdDomain, DemoOfdAggregationAdapter>;
 type PrecedenceViewT = MulticonnectionView<DemoOfdDomain, DemoOfdPrecedenceAdapter>;
 type ExclusionViewT = MulticonnectionView<DemoOfdDomain, DemoOfdExclusionAdapter>;
-
-pub struct DemoOfdQueryable<'a> {
-    models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-    flattened_views: &'a HashMap<ViewUuid, DemoOfdElementView>,
-    flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
-}
-
-impl<'a> Queryable<'a, DemoOfdDomain> for DemoOfdQueryable<'a> {
-    fn new(
-        models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-        flattened_views: &'a HashMap<ViewUuid, DemoOfdElementView>,
-        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
-    ) -> Self {
-        Self { models_to_views, flattened_views, flattened_views_status }
-    }
-
-    fn get_view(&self, m: &ModelUuid) -> Option<DemoOfdElementView> {
-        self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
-    }
-
-    fn selected_views(&self) -> HashSet<ViewUuid> {
-        self.flattened_views_status.iter()
-            .filter(|e| e.1.selected())
-            .map(|e| *e.0)
-            .collect()
-    }
-}
 
 #[derive(Clone)]
 pub enum DemoOfdPropChange {
@@ -334,7 +307,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
 
     fn create_new_view_for(
         &self,
-        q: &DemoOfdQueryable<'_>,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         element: DemoOfdElement,
     ) -> Result<DemoOfdElementView, HashSet<ModelUuid>> {
         let v = match element {
@@ -928,7 +901,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 | DemoOfdElement::DemoOfdExclusion(..)) => todo!(),
         }
     }
-    fn draw_status_hint(&self, q: &DemoOfdQueryable, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
+    fn draw_status_hint(&self, q: &<DemoOfdDomain as Domain>::QueryableT<'_>, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
         match &self.result {
             PartialDemoOfdElement::Event { source, .. } => {
                 if let Some(source_view) = q.get_view(&*source.read().uuid) {
@@ -1356,7 +1329,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
 
     fn show_properties(
         &mut self,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) {
@@ -1611,7 +1584,7 @@ impl DemoOfdEntityView {
 
     fn draw_inner(
         &mut self,
-        _q: &DemoOfdQueryable,
+        _q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         _gdc: &GlobalDrawingContext,
         _settings: &DemoOfdSettings,
         canvas: &mut dyn NHCanvas,
@@ -1791,7 +1764,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> PropertiesStatus<DemoOfdDomain> {
@@ -1849,7 +1822,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
 
     fn draw_in(
         &mut self,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &DemoOfdSettings,
         canvas: &mut dyn NHCanvas,
@@ -1862,7 +1835,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoOfdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
@@ -2294,7 +2267,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> PropertiesStatus<DemoOfdDomain> {
@@ -2370,7 +2343,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
     fn draw_in(
         &mut self,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &DemoOfdSettings,
         canvas: &mut dyn NHCanvas,
@@ -2480,7 +2453,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoOfdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
@@ -2914,7 +2887,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
 
     fn show_properties(
         &mut self,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
@@ -3174,7 +3147,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
 
     fn show_properties(
         &mut self,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
@@ -3378,7 +3351,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
 
     fn show_properties(
         &mut self,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
@@ -3619,7 +3592,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
 
     fn show_properties(
         &mut self,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
@@ -3807,7 +3780,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
 
     fn show_properties(
         &mut self,
-        q: &DemoOfdQueryable,
+        q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {

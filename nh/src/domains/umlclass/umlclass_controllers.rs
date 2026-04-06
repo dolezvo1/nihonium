@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
@@ -102,7 +102,7 @@ impl<P: UmlClassProfile> Domain for UmlClassDomain<P> {
     type DiagramModelT = UmlClassDiagram;
     type CommonElementViewT = UmlClassElementView<P>;
     type ViewTargettingSectionT = UmlClassElement;
-    type QueryableT<'a> = UmlClassQueryable<'a, P>;
+    type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveUmlClassTool<P>;
     type AddCommandElementT = UmlClassElementOrVertex<P>;
     type PropChangeT = UmlClassPropChange;
@@ -114,33 +114,6 @@ type DependencyViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassDepende
 type AssociationViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassAssocationAdapter<P>>;
 type UseCaseGeneralizationViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlUseCaseGeneralizationAdapter>;
 type CommentLinkViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassCommentLinkAdapter>;
-
-pub struct UmlClassQueryable<'a, P: UmlClassProfile> {
-    models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-    flattened_views: &'a HashMap<ViewUuid, UmlClassElementView<P>>,
-    flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
-}
-
-impl<'a, P: UmlClassProfile> Queryable<'a, UmlClassDomain<P>> for UmlClassQueryable<'a, P> {
-    fn new(
-        models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-        flattened_views: &'a HashMap<ViewUuid, UmlClassElementView<P>>,
-        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
-    ) -> Self {
-        Self { models_to_views, flattened_views, flattened_views_status }
-    }
-
-    fn get_view(&self, m: &ModelUuid) -> Option<UmlClassElementView<P>> {
-        self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
-    }
-
-    fn selected_views(&self) -> HashSet<ViewUuid> {
-        self.flattened_views_status.iter()
-            .filter(|e| e.1.selected())
-            .map(|e| *e.0)
-            .collect()
-    }
-}
 
 #[derive(Clone)]
 pub enum UmlClassPropChange {
@@ -395,7 +368,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
 
     fn create_new_view_for(
         &self,
-        q: &UmlClassQueryable<'_, P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         element: UmlClassElement,
     ) -> Result<UmlClassElementView<P>, HashSet<ModelUuid>> {
         let v = match element {
@@ -1312,7 +1285,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassElement::UmlClassCommentLink(..)) => todo!(),
         }
     }
-    fn draw_status_hint(&self, q: &UmlClassQueryable<P>,  canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
+    fn draw_status_hint(&self, q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,  canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
         match &self.result {
             PartialUmlClassElement::Link {
                 source,
@@ -1733,7 +1706,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
 
     fn show_properties(
         &mut self,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) {
@@ -2037,7 +2010,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -2112,7 +2085,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
     fn draw_in(
         &mut self,
-        _: &UmlClassQueryable<P>,
+        _: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
@@ -2244,7 +2217,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
@@ -2714,7 +2687,7 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
     fn draw_inner(
         &mut self,
         at: egui::Pos2,
-        _q: &UmlClassQueryable<P>,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _gdc: &GlobalDrawingContext,
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
@@ -3416,7 +3389,7 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
     fn draw_inner(
         &mut self,
         at: egui::Pos2,
-        _q: &UmlClassQueryable<P>,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _gdc: &GlobalDrawingContext,
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
@@ -4279,7 +4252,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -4377,7 +4350,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
     fn draw_in(
         &mut self,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
@@ -4597,7 +4570,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
@@ -5266,7 +5239,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -5334,7 +5307,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
 
     fn draw_in(
         &mut self,
-        _q: &UmlClassQueryable<P>,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
@@ -5408,7 +5381,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
@@ -5748,7 +5721,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
 
     fn show_properties(
         &mut self,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -6065,7 +6038,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
 
     fn show_properties(
         &mut self,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -6336,7 +6309,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
 
     fn show_properties(
         &mut self,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -6874,7 +6847,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
 
     fn show_properties(
         &mut self,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -7167,7 +7140,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
@@ -7213,7 +7186,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
 
     fn draw_in(
         &mut self,
-        _: &UmlClassQueryable<P>,
+        _: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
@@ -7310,7 +7283,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &UmlClassQueryable<P>,
+        q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
@@ -7566,7 +7539,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassC
 
     fn show_properties(
         &mut self,
-        _q: &UmlClassQueryable<P>,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {

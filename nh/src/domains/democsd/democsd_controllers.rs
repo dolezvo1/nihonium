@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -36,7 +36,7 @@ impl Domain for DemoCsdDomain {
     type DiagramModelT = DemoCsdDiagram;
     type CommonElementViewT = DemoCsdElementView;
     type ViewTargettingSectionT = DemoCsdElement;
-    type QueryableT<'a> = DemoCsdQueryable<'a>;
+    type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveDemoCsdTool;
     type AddCommandElementT = DemoCsdElementOrVertex;
     type PropChangeT = DemoCsdPropChange;
@@ -44,33 +44,6 @@ impl Domain for DemoCsdDomain {
 
 type PackageViewT = PackageView<DemoCsdDomain, DemoCsdPackageAdapter>;
 type LinkViewT = MulticonnectionView<DemoCsdDomain, DemoCsdLinkAdapter>;
-
-pub struct DemoCsdQueryable<'a> {
-    models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-    flattened_views: &'a HashMap<ViewUuid, DemoCsdElementView>,
-    flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
-}
-
-impl<'a> Queryable<'a, DemoCsdDomain> for DemoCsdQueryable<'a> {
-    fn new(
-        models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-        flattened_views: &'a HashMap<ViewUuid, DemoCsdElementView>,
-        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
-    ) -> Self {
-        Self { models_to_views, flattened_views, flattened_views_status }
-    }
-
-    fn get_view(&self, m: &ModelUuid) -> Option<DemoCsdElementView> {
-        self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
-    }
-
-    fn selected_views(&self) -> HashSet<ViewUuid> {
-        self.flattened_views_status.iter()
-            .filter(|e| e.1.selected())
-            .map(|e| *e.0)
-            .collect()
-    }
-}
 
 #[derive(Clone)]
 pub enum DemoCsdPropChange {
@@ -301,7 +274,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
 
     fn create_new_view_for(
         &self,
-        q: &DemoCsdQueryable<'_>,
+        q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         element: DemoCsdElement,
     ) -> Result<DemoCsdElementView, HashSet<ModelUuid>> {
         let v = match element {
@@ -775,7 +748,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             Some(DemoCsdElement::DemoCsdLink(..)) => todo!(),
         }
     }
-    fn draw_status_hint(&self, q: &DemoCsdQueryable, canvas: &mut dyn canvas::NHCanvas, pos: egui::Pos2) {
+    fn draw_status_hint(&self, q: &<DemoCsdDomain as Domain>::QueryableT<'_>, canvas: &mut dyn canvas::NHCanvas, pos: egui::Pos2) {
         match &self.result {
             PartialDemoCsdElement::Link {
                 source,
@@ -992,7 +965,7 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
     
     fn show_properties(
         &mut self,
-        q: &DemoCsdQueryable,
+        q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>
     ) {
@@ -1297,7 +1270,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
     fn show_properties(
         &mut self,
         gdc: &GlobalDrawingContext,
-        q: &DemoCsdQueryable,
+        q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> PropertiesStatus<DemoCsdDomain> {
@@ -1391,7 +1364,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
     fn draw_in(
         &mut self,
-        queryable: &DemoCsdQueryable,
+        queryable: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &DemoCsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
@@ -1558,7 +1531,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &DemoCsdQueryable,
+        q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoCsdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
@@ -2197,7 +2170,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        q: &DemoCsdQueryable,
+        q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> PropertiesStatus<DemoCsdDomain> {
@@ -2275,7 +2248,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
     }
     fn draw_in(
         &mut self,
-        _q: &DemoCsdQueryable,
+        _q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         _gdc: &GlobalDrawingContext,
         _settings: &DemoCsdSettings,
         canvas: &mut dyn canvas::NHCanvas,
@@ -2335,7 +2308,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &DemoCsdQueryable,
+        q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoCsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
@@ -2639,7 +2612,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
 
     fn show_properties(
         &mut self,
-        q: &DemoCsdQueryable,
+        q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>
     ) -> PropertiesStatus<DemoCsdDomain> {

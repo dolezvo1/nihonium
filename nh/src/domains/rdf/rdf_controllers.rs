@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -27,7 +27,7 @@ impl Domain for RdfDomain {
     type DiagramModelT = RdfDiagram;
     type CommonElementViewT = RdfElementView;
     type ViewTargettingSectionT = RdfElement;
-    type QueryableT<'a> = RdfQueryable<'a>;
+    type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveRdfTool;
     type AddCommandElementT = RdfElementOrVertex;
     type PropChangeT = RdfPropChange;
@@ -35,33 +35,6 @@ impl Domain for RdfDomain {
 
 type PackageViewT = PackageView<RdfDomain, RdfGraphAdapter>;
 type LinkViewT = MulticonnectionView<RdfDomain, RdfPredicateAdapter>;
-
-pub struct RdfQueryable<'a> {
-    models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-    flattened_views: &'a HashMap<ViewUuid, RdfElementView>,
-    flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
-}
-
-impl<'a> Queryable<'a, RdfDomain> for RdfQueryable<'a> {
-    fn new(
-        models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
-        flattened_views: &'a HashMap<ViewUuid, RdfElementView>,
-        flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
-    ) -> Self {
-        Self { models_to_views, flattened_views, flattened_views_status }
-    }
-
-    fn get_view(&self, m: &ModelUuid) -> Option<RdfElementView> {
-        self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).cloned()
-    }
-
-    fn selected_views(&self) -> HashSet<ViewUuid> {
-        self.flattened_views_status.iter()
-            .filter(|e| e.1.selected())
-            .map(|e| *e.0)
-            .collect()
-    }
-}
 
 #[derive(Clone)]
 pub enum RdfPropChange {
@@ -254,7 +227,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
 
     fn create_new_view_for(
         &self,
-        q: &RdfQueryable<'_>,
+        q: &<RdfDomain as Domain>::QueryableT<'_>,
         element: RdfElement,
     ) -> Result<RdfElementView, HashSet<ModelUuid>> {
         let v = match element {
@@ -701,7 +674,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             Some(RdfElement::RdfPredicate(..)) => todo!(),
         }
     }
-    fn draw_status_hint(&self, q: &RdfQueryable, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
+    fn draw_status_hint(&self, q: &<RdfDomain as Domain>::QueryableT<'_>, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
         match &self.result {
             PartialRdfElement::Predicate { source, .. } => {
                 if let Some(source_view) = q.get_view(&source.read().uuid()) {
@@ -950,7 +923,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
 
     fn show_properties(
         &mut self,
-        q: &RdfQueryable,
+        q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) {
@@ -1159,7 +1132,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        q: &RdfQueryable,
+        q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> PropertiesStatus<RdfDomain> {
@@ -1202,7 +1175,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     }
     fn draw_in(
         &mut self,
-        _q: &RdfQueryable,
+        _q: &<RdfDomain as Domain>::QueryableT<'_>,
         _gdc: &GlobalDrawingContext,
         _settings: &RdfSettings,
         canvas: &mut dyn NHCanvas,
@@ -1269,7 +1242,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &RdfQueryable,
+        q: &<RdfDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveRdfTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
@@ -1611,7 +1584,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     fn show_properties(
         &mut self,
         _gdc: &GlobalDrawingContext,
-        q: &RdfQueryable,
+        q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) -> PropertiesStatus<RdfDomain> {
@@ -1668,7 +1641,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
 
     fn draw_in(
         &mut self,
-        _q: &RdfQueryable,
+        _q: &<RdfDomain as Domain>::QueryableT<'_>,
         _gdc: &GlobalDrawingContext,
         _settings: &RdfSettings,
         canvas: &mut dyn NHCanvas,
@@ -1711,7 +1684,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &RdfQueryable,
+        q: &<RdfDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveRdfTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
@@ -2002,7 +1975,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
 
     fn show_properties(
         &mut self,
-        q: &RdfQueryable,
+        q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) ->PropertiesStatus<RdfDomain> {
