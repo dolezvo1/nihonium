@@ -2,7 +2,7 @@
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 use eframe::egui;
 
-use crate::{CustomModal, common::{canvas::{self, ArrowDataPos, Highlight}, controller::{BucketNoT, ContainerGen2, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}};
+use crate::{CustomModal, common::{canvas::{self, ArrowDataPos, Highlight}, controller::{BucketNoT, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}};
 
 #[derive(Clone)]
 pub struct ArrowData {
@@ -279,8 +279,6 @@ where
         }
     }
 }
-
-impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> ContainerGen2<DomainT> for MulticonnectionView<DomainT, AdapterT> {}
 
 impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> ElementControllerGen2<DomainT> for MulticonnectionView<DomainT, AdapterT>
 where

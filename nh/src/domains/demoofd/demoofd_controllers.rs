@@ -3,7 +3,7 @@ use super::demoofd_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
@@ -1767,8 +1767,6 @@ impl ElementController<DemoOfdElement> for DemoOfdEntityView {
     }
 }
 
-impl ContainerGen2<DemoOfdDomain> for DemoOfdEntityView {}
-
 impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
     fn show_properties(
         &mut self,
@@ -2269,8 +2267,6 @@ impl ElementController<DemoOfdElement> for DemoOfdEventView {
         self.position
     }
 }
-
-impl ContainerGen2<DemoOfdDomain> for DemoOfdEventView {}
 
 impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
     fn show_properties(

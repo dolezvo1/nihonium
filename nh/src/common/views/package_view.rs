@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use eframe::{egui, epaint};
 
-use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{BucketNoT, ColorBundle, ContainerGen2, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
+use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{BucketNoT, ColorBundle, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
 
 
 pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
@@ -135,14 +135,6 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementController<Domai
 
     fn position(&self) -> egui::Pos2 {
         self.bounds_rect.center()
-    }
-}
-
-impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ContainerGen2<DomainT> for PackageView<DomainT, AdapterT> {
-    fn controller_for(&self, uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
-        // TODO: store views by model uuids?
-        self.owned_views.iter_event_order_pairs().find(|(_, v)| *v.model_uuid() == *uuid).map(|(_, v)| v.clone())
-            .or_else(|| self.owned_views.iter_event_order_pairs().flat_map(|(_, v)| v.controller_for(uuid)).next())
     }
 }
 

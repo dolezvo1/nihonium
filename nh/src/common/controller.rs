@@ -1204,11 +1204,6 @@ pub trait Tool<DomainT: Domain> {
     fn reset_event_lock(&mut self);
 }
 
-pub trait ContainerGen2<DomainT: Domain> {
-    fn controller_for(&self, _uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
-        None
-    }
-}
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum SelectionStatus {
@@ -1264,7 +1259,7 @@ impl<DomainT: Domain> PropertiesStatus<DomainT> {
     }
 }
 
-pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::CommonElementT> + NHContextSerialize + ContainerGen2<DomainT> + Send + Sync {
+pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::CommonElementT> + NHContextSerialize + Send + Sync {
     fn show_properties(
         &mut self,
         _drawing_context: &GlobalDrawingContext,
@@ -3362,14 +3357,5 @@ impl<
     fn shallow_copy(&self) -> ERef<Self> {
         let (new_adapter, models) = self.adapter.fake_copy();
         self.some_kind_of_copy(new_adapter, models)
-    }
-}
-
-impl<
-    DomainT: Domain,
-    DiagramAdapterT: DiagramAdapter<DomainT>
-> ContainerGen2<DomainT> for DiagramControllerGen2<DomainT, DiagramAdapterT> {
-    fn controller_for(&self, uuid: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
-        self.temporaries.flattened_represented_models.get(uuid).and_then(|e| self.temporaries.flattened_views.get(e)).map(|e| e.0.clone())
     }
 }

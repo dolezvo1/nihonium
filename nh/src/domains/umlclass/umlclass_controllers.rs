@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
@@ -2009,8 +2009,6 @@ impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassInstance
     }
 }
 
-impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassInstanceView<P> {}
-
 impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassInstanceView<P> {
     fn show_properties(
         &mut self,
@@ -2776,8 +2774,6 @@ impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassProperty
     }
 }
 
-impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassPropertyView<P> {}
-
 impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPropertyView<P> {
     fn show_properties(
         &mut self,
@@ -3483,8 +3479,6 @@ impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassOperatio
     }
 }
 
-impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassOperationView<P> {}
-
 impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOperationView<P> {
     fn show_properties(
         &mut self,
@@ -4084,22 +4078,6 @@ impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassView<P> 
 
     fn position(&self) -> egui::Pos2 {
         self.position
-    }
-}
-
-impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassView<P> {
-    fn controller_for(&self, uuid: &ModelUuid) -> Option<UmlClassElementView<P>> {
-        for e in &self.properties_views {
-            if *uuid == *e.read().model_uuid() {
-                return Some(e.clone().into());
-            }
-        }
-        for e in &self.operations_views {
-            if *uuid == *e.read().model_uuid() {
-                return Some(e.clone().into());
-            }
-        }
-        None
     }
 }
 
@@ -5237,8 +5215,6 @@ impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlUseCaseView<P
         self.position
     }
 }
-
-impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlUseCaseView<P> {}
 
 impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCaseView<P> {
     fn show_properties(
@@ -7138,8 +7114,6 @@ impl<P: UmlClassProfile> ElementController<UmlClassElement> for UmlClassCommentV
         self.position
     }
 }
-
-impl<P: UmlClassProfile> ContainerGen2<UmlClassDomain<P>> for UmlClassCommentView<P> {}
 
 impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCommentView<P> {
     fn show_properties(

@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -1258,17 +1258,6 @@ impl ElementController<DemoCsdElement> for DemoCsdTransactorView {
     }
 }
 
-impl ContainerGen2<DemoCsdDomain> for DemoCsdTransactorView {
-    fn controller_for(&self, uuid: &ModelUuid) -> Option<DemoCsdElementView> {
-        match &self.transaction_view {
-            UFOption::Some(t) if *uuid == *t.read().model_uuid() => {
-                Some(t.clone().into())
-            }
-            _ => None,
-        }
-    }
-}
-
 impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
     fn show_properties(
         &mut self,
@@ -2098,8 +2087,6 @@ impl ElementController<DemoCsdElement> for DemoCsdTransactionView {
         self.position
     }
 }
-
-impl ContainerGen2<DemoCsdDomain> for DemoCsdTransactionView {}
 
 
 const TX_MULTIPLE_OFFSET: egui::Vec2 = egui::Vec2::new(5.0, 0.0);

@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -1131,8 +1131,6 @@ impl ElementController<RdfElement> for RdfNodeView {
     }
 }
 
-impl ContainerGen2<RdfDomain> for RdfNodeView {}
-
 impl ElementControllerGen2<RdfDomain> for RdfNodeView {
     fn show_properties(
         &mut self,
@@ -1582,8 +1580,6 @@ impl ElementController<RdfElement> for RdfLiteralView {
         self.position
     }
 }
-
-impl ContainerGen2<RdfDomain> for RdfLiteralView {}
 
 impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
     fn show_properties(

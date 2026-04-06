@@ -68,8 +68,6 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
     let arms_bounding_box = arms_immutable.iter().map(|e| quote! { #e.bounding_box() }).collect::<Vec<_>>();
     let arms_position = arms_immutable.iter().map(|e| quote! { #e.position() }).collect::<Vec<_>>();
 
-    let arms_controller_for = arms_immutable.iter().map(|e| quote! { #e.controller_for(uuid) }).collect::<Vec<_>>();
-
     let arms_show_properties = arms_mutable.iter().map(|e| quote! { #e.show_properties(gdc, q, ui, commands) }).collect::<Vec<_>>();
     let arms_draw_in = arms_mutable.iter().map(|e| quote! { #e.draw_in(q, context, settings, canvas, tool) }).collect::<Vec<_>>();
     let arms_collect_alignment = arms_mutable.iter().map(|e| quote! { #e.collect_allignment(am) }).collect::<Vec<_>>();
@@ -128,14 +126,6 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
             fn position(&self) -> egui::Pos2 {
                 match self {
                     #(#arms_position),*
-                }
-            }
-        }
-
-        impl #impl_generics ContainerGen2<#domain> for #ident #type_generics #where_clause {
-            fn controller_for(&self, uuid: &ModelUuid) -> Option<<#domain as crate::common::controller::Domain> :: CommonElementViewT> {
-                match self {
-                    #(#arms_controller_for),*
                 }
             }
         }

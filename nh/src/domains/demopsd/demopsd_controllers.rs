@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -1480,12 +1480,6 @@ impl ElementController<DemoPsdElement> for DemoPsdTransactionView {
     }
 }
 
-impl ContainerGen2<DemoPsdDomain> for DemoPsdTransactionView {
-    fn controller_for(&self, _uuid: &ModelUuid) -> Option<<DemoPsdDomain as Domain>::CommonElementViewT> {
-        None
-    }
-}
-
 impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
     fn show_properties(
         &mut self,
@@ -2553,8 +2547,6 @@ impl ElementController<DemoPsdElement> for DemoPsdFactView {
     }
 }
 
-impl ContainerGen2<DemoPsdDomain> for DemoPsdFactView {}
-
 impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
     fn show_properties(
         &mut self,
@@ -2972,8 +2964,6 @@ impl ElementController<DemoPsdElement> for DemoPsdActView {
         self.bounds_rect.center()
     }
 }
-
-impl ContainerGen2<DemoPsdDomain> for DemoPsdActView {}
 
 impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
     fn show_properties(
