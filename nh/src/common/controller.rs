@@ -1,5 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape, UiCanvas};
 use crate::common::search::FullTextSearchable;
+use crate::common::ui_ext::UiExt;
 use crate::common::uuid::ControllerUuid;
 use crate::common::views::ordered_views::OrderedViewRefs;
 use crate::{CustomModal, CustomModalResult, CustomTab};
@@ -2843,14 +2844,7 @@ impl<
                 child
             } else {
                 ui.label("View properties:");
-                ui.label("Name:");
-                if ui
-                    .add_sized(
-                        (ui.available_width(), 20.0),
-                        egui::TextEdit::singleline(&mut self.temporaries.name_buffer),
-                    )
-                    .changed()
-                {
+                if ui.labeled_text_edit_singleline("Name:", &mut self.temporaries.name_buffer).changed() {
                     self.name = Arc::new(self.temporaries.name_buffer.clone());
                 }
                 match self.adapter.show_view_props_fun(context, ui) {

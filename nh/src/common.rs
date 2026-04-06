@@ -8,3 +8,4 @@ pub mod ufoption;
 pub mod entity;
 pub mod eref;
 pub mod search;
+pub mod ui_ext;

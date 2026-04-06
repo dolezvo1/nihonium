@@ -2,6 +2,7 @@ use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
     BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
+use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
@@ -526,14 +527,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) {
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.buffer.name),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Name:", &mut self.buffer.name).changed() {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
@@ -542,14 +536,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
             );
         };
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.buffer.comment),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.buffer.comment).changed() {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
@@ -1127,28 +1114,14 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>
     ) {
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.name_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -1588,42 +1561,21 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 }
             });
 
-        ui.label("Identifier:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.identifier_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Identifier:", &mut self.identifier_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
             ));
         }
 
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.name_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -2641,14 +2593,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
 
         ui.label("Model properties");
 
-        ui.label("Identifier:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.identifier_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Identifier:", &mut self.identifier_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
@@ -2662,14 +2607,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -3075,14 +3013,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
 
         ui.label("Model properties");
 
-        ui.label("Identifier:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.identifier_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Identifier:", &mut self.identifier_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::IdentifierChange(Arc::new(self.identifier_buffer.clone())),
@@ -3096,14 +3027,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -3462,28 +3386,14 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
                 }
             });
 
-        ui.label("Multiplicity:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.multiplicity_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Multiplicity:", &mut self.temporaries.multiplicity_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::LinkMultiplicityChange(Arc::new(self.temporaries.multiplicity_buffer.clone())),
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),

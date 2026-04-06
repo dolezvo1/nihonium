@@ -6,6 +6,7 @@ use crate::common::controller::{
     BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
+use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MULTICONNECTION_SOURCE_BUCKET, MULTICONNECTION_TARGET_BUCKET, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
@@ -612,14 +613,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.buffer.name),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Name:", &mut self.buffer.name).changed() {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
@@ -630,14 +624,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             );
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.buffer.comment),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.buffer.comment).changed() {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
@@ -1750,28 +1737,14 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) {
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.name_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -2074,28 +2047,14 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
         ui.label("Model properties");
 
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.name_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::InstanceName(Arc::new(self.name_buffer.clone())),
             ));
         }
 
-        ui.label("Type:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.type_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Type:", &mut self.type_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::InstanceType(Arc::new(self.type_buffer.clone())),
@@ -2110,28 +2069,14 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             ));
         }
 
-        ui.label("Slots:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.slots_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Slots:", &mut self.slots_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::InstanceSlots(Arc::new(self.slots_buffer.clone())),
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -2875,56 +2820,28 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             ));
         }
 
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.name_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
 
-        ui.label("Type:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.value_type_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Type:", &mut self.value_type_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::PropertyTypeChange(Arc::new(self.value_type_buffer.clone())),
             ));
         }
 
-        ui.label("Multiplicity:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.multiplicity_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Multiplicity:", &mut self.multiplicity_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::PropertyMultiplicityChange(Arc::new(self.multiplicity_buffer.clone())),
             ));
         }
 
-        ui.label("Default value:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.default_value_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Default value:", &mut self.default_value_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::PropertyDefaultValueChange(Arc::new(self.default_value_buffer.clone())),
@@ -3610,42 +3527,21 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             ));
         }
 
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.name_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
 
-        ui.label("Parameters:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.parameters_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Parameters:", &mut self.parameters_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::OperationParametersChange(Arc::new(self.parameters_buffer.clone())),
             ));
         }
 
-        ui.label("Return type:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.return_type_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Return type:", &mut self.return_type_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::OperationReturnTypeChange(Arc::new(self.return_type_buffer.clone())),
@@ -4410,28 +4306,14 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             ));
         }
 
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.name_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
 
-        ui.label("Template parameters:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.template_parameters_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Template parameters:", &mut self.template_parameters_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::TemplateParametersChange(Arc::new(self.template_parameters_buffer.clone())),
@@ -4445,14 +4327,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -5409,14 +5284,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             ));
         }
 
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.name_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
@@ -5430,14 +5298,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -5950,14 +5811,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
         }
         ui.separator();
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
@@ -6223,14 +6077,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
             ));
         }
 
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.name_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Name:", &mut self.temporaries.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
@@ -6257,14 +6104,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
         }
         ui.separator();
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
@@ -6508,14 +6348,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             ));
         }
 
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.name_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Name:", &mut self.temporaries.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
@@ -6523,14 +6356,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
         }
         ui.separator();
 
-        ui.label("Source multiplicity:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.source_multiplicity_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Source multiplicity:", &mut self.temporaries.source_multiplicity_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::LinkMultiplicityChange(false, Arc::new(
@@ -6538,14 +6364,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                 )),
             ));
         }
-        ui.label("Source role:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.source_role_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Source role:", &mut self.temporaries.source_role_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::LinkRoleChange(false, Arc::new(
@@ -6553,14 +6372,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                 )),
             ));
         }
-        ui.label("Source reading:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.source_reading_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Source reading:", &mut self.temporaries.source_reading_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::LinkReadingChange(false, Arc::new(
@@ -6610,14 +6422,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
             });
         ui.separator();
 
-        ui.label("Target multiplicity:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.target_multiplicity_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Target multiplicity:", &mut self.temporaries.target_multiplicity_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::LinkMultiplicityChange(true, Arc::new(
@@ -6625,14 +6430,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                 )),
             ));
         }
-        ui.label("Target role:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.target_role_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Target role:", &mut self.temporaries.target_role_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::LinkRoleChange(true, Arc::new(
@@ -6640,14 +6438,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
                 )),
             ));
         }
-        ui.label("Target reading:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.temporaries.target_reading_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Target reading:", &mut self.temporaries.target_reading_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::LinkReadingChange(true, Arc::new(
@@ -6705,14 +6496,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
         }
         ui.separator();
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
@@ -7153,14 +6937,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
         }
         ui.separator();
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
@@ -7400,14 +7177,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
 
         ui.label("Model properties");
 
-        ui.label("Text:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.text_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Text:", &mut self.text_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.text_buffer.clone())),

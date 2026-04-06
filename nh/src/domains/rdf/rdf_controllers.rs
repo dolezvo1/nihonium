@@ -3,6 +3,7 @@ use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
     BucketNoT, ColorBundle, ColorChangeData, ContainerGen2, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
+use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
@@ -339,14 +340,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
     ) {
-        ui.label("Name:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.buffer.name),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Name:", &mut self.buffer.name).changed() {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
@@ -355,14 +349,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
             );
         };
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.buffer.comment),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.buffer.comment).changed() {
             commands.push(
                 InsensitiveCommand::PropertyChange(
                     std::iter::once(*view_uuid).collect(),
@@ -967,28 +954,14 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) {
-        ui.label("IRI:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.iri_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("IRI:", &mut self.iri_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -1196,28 +1169,14 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
 
         ui.label("Model properties");
 
-        ui.label("IRI:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.iri_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("IRI:", &mut self.iri_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 RdfPropChange::IriChange(Arc::new(self.iri_buffer.clone())),
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -1662,55 +1621,27 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
 
         ui.label("Model properties");
 
-        ui.label("Content:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.content_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Content:", &mut self.content_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 RdfPropChange::ContentChange(Arc::new(self.content_buffer.clone())),
             ));
         }
-        ui.label("Datatype:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.datatype_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Datatype:", &mut self.datatype_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 RdfPropChange::DataTypeChange(Arc::new(self.datatype_buffer.clone())),
             ));
         };
 
-        ui.label("Language:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::singleline(&mut self.langtag_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("Language:", &mut self.langtag_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 RdfPropChange::LangTagChange(Arc::new(self.langtag_buffer.clone())),
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 RdfPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -2075,28 +2006,14 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>
     ) ->PropertiesStatus<RdfDomain> {
-        ui.label("IRI:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.temporaries.iri_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_singleline("IRI:", &mut self.temporaries.iri_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 RdfPropChange::IriChange(Arc::new(self.temporaries.iri_buffer.clone())),
             ));
         }
 
-        ui.label("Comment:");
-        if ui
-            .add_sized(
-                (ui.available_width(), 20.0),
-                egui::TextEdit::multiline(&mut self.temporaries.comment_buffer),
-            )
-            .changed()
-        {
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 RdfPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
