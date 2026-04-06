@@ -2771,11 +2771,23 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             modelish
         };
 
+        let specialization_view = match &self.specialization_view {
+            UFOption::None => UFOption::None,
+            UFOption::Some(s) => {
+                s.read().deep_copy_clone(uuid_present, &mut HashMap::new(), c, m);
+                if let Some(DemoOfdElementView::EntityType(e)) = c.get(&s.read().uuid) {
+                    UFOption::Some(e.clone())
+                } else {
+                    UFOption::None
+                }
+            },
+        };
+
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
             base_entity_type: self.base_entity_type.clone(),
-            specialization_view: self.specialization_view.clone(),
+            specialization_view,
             kind_buffer: self.kind_buffer,
             identifier_buffer: self.identifier_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
@@ -2787,6 +2799,27 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
+    }
+
+    fn deep_copy_relink(
+        &mut self,
+        c: &HashMap<ViewUuid, <DemoOfdDomain as Domain>::CommonElementViewT>,
+        m: &HashMap<ModelUuid, <DemoOfdDomain as Domain>::CommonElementT>,
+    ) {
+        let mut w = self.model.write();
+        let base_model_uuid = *w.base_entity_type.read().uuid;
+        let base_view_uuid = *self.base_entity_type.uuid();
+        if let (Some(DemoOfdElement::DemoOfdEntityType(new_base_model)), Some(new_base_view))
+            = (m.get(&base_model_uuid), c.get(&base_view_uuid)) {
+            w.base_entity_type = new_base_model.clone();
+            self.base_entity_type = new_base_view.clone();
+        }
+        if let UFOption::Some(spec) = &w.specialization_entity_type {
+            let spec_uuid = *spec.read().uuid;
+            if let Some(DemoOfdElement::DemoOfdEntityType(new_spec)) = m.get(&spec_uuid) {
+                w.specialization_entity_type = UFOption::Some(new_spec.clone());
+            }
+        }
     }
 }
 
