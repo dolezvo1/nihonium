@@ -2708,7 +2708,10 @@ impl<
 
         // Handle diagram zoom
         if response.hovered() {
-            let scroll_delta = ui.input(|i| i.raw_scroll_delta);
+            let scroll_delta = ui.input(|i| i.events.iter().filter_map(|e| match e {
+                egui::Event::MouseWheel { delta, .. } => Some(*delta),
+                _ => None,
+            }).fold(egui::Vec2::ZERO, |a, b| a + b));
 
             let factor = if scroll_delta.y > 0.0 && self.temporaries.camera_scale < 10.0 {
                 1.5

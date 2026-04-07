@@ -14,11 +14,11 @@ use common::controller::{Arrangement, GlobalDrawingContext, HierarchyNode, Proje
 use common::project_serde::{NHSerializeError, NHDeserializer, NHDeserializeError};
 use common::uuid::{ModelUuid, ViewUuid, ControllerUuid};
 use eframe::egui::{
-    self, vec2, CentralPanel, Frame, Slider, TopBottomPanel, Ui, ViewportBuilder, WidgetText,
+    self, vec2, CentralPanel, Frame, Slider, ViewportBuilder, WidgetText,
 };
 
 use egui_dock::tab_viewer::OnCloseResponse;
-use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, Style, SurfaceIndex, TabViewer};
+use egui_dock::{AllowedSplits, DockArea, DockState, NodeIndex, NodePath, Style, SurfaceIndex, TabViewer};
 use egui_ltreeview::{NodeBuilder, TreeView, TreeViewState};
 use rfd::FileHandle;
 
@@ -299,7 +299,7 @@ impl TabViewer for NHContext {
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui, tab: &mut Self::Tab) {
+    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
         match tab {
             NHTab::RecentlyUsed => {
                 // TODO: show recently used projects
@@ -323,10 +323,9 @@ impl TabViewer for NHContext {
 
     fn context_menu(
         &mut self,
-        ui: &mut Ui,
+        ui: &mut egui::Ui,
         _tab: &mut Self::Tab,
-        _surface: SurfaceIndex,
-        _node: NodeIndex,
+        _node: NodePath,
     ) {
         ui.label("This is a tab context menu");
     }
@@ -338,7 +337,7 @@ impl TabViewer for NHContext {
 }
 
 
-fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui: &mut Ui, commands: &mut Vec<ProjectCommand>) {
+fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
     macro_rules! diagram_button {
         ($ui:expr, $label:expr, $fun:expr) => {
             if $ui.button($label).clicked() {
@@ -643,7 +642,7 @@ impl NHContext {
         self.shortcut_top_order.sort_by(|a, b| weight(&b.1).cmp(&weight(&a.1)));
     }
 
-    fn show_project_hierarchy(&mut self, ui: &mut Ui) {
+    fn show_project_hierarchy(&mut self, ui: &mut egui::Ui) {
         macro_rules! translate {
             ($msg_name:expr) => {
                 self.drawing_context.translate_0($msg_name)
@@ -944,13 +943,13 @@ impl NHContext {
         self.unprocessed_commands.extend(commands.into_iter());
     }
 
-    fn show_model_hierarchy(&mut self, ui: &mut Ui) {
+    fn show_model_hierarchy(&mut self, ui: &mut egui::Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some(lfc) = self.diagram_controllers.get(last_focused_diagram) else { return; };
         lfc.write().show_model_hierarchy(last_focused_diagram, &self.drawing_context, ui, &mut self.affected_models);
     }
 
-    fn show_search(&mut self, ui: &mut Ui) {
+    fn show_search(&mut self, ui: &mut egui::Ui) {
         if ui.add_sized([ui.available_width(), 20.0], egui::TextEdit::singleline(&mut self.search_query)).changed() {
             if self.search_query.is_empty() {
                 self.search_results.clear();
@@ -1037,7 +1036,7 @@ impl NHContext {
         });
     }
 
-    fn show_toolbar(&self, ui: &mut Ui) {
+    fn show_toolbar(&self, ui: &mut egui::Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some(c) = self.diagram_controllers.get(last_focused_diagram) else { return; };
         let ctype = c.read().controller_type();
@@ -1045,7 +1044,7 @@ impl NHContext {
         c.write().show_toolbar(last_focused_diagram, &self.drawing_context, s, ui);
     }
 
-    fn show_properties(&mut self, ui: &mut Ui) {
+    fn show_properties(&mut self, ui: &mut egui::Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some(c) = self.diagram_controllers.get(last_focused_diagram) else { return; };
 
@@ -1054,7 +1053,7 @@ impl NHContext {
         }
     }
 
-    fn show_settings_tab(&mut self, ui: &mut Ui) {
+    fn show_settings_tab(&mut self, ui: &mut egui::Ui) {
         ui.heading("Settings");
 
         if ui.button("Switch light/dark theme").clicked() {
@@ -1064,7 +1063,7 @@ impl NHContext {
             };
             ui.ctx().set_theme(new_theme);
             ui.ctx().set_visuals(new_visuals);
-            self.style = Some(Style::from_egui(&ui.ctx().style()));
+            self.style = Some(Style::from_egui(&ui.ctx().global_style()));
         }
 
         ui.collapsing("DockArea Options", |ui| {
@@ -1194,7 +1193,7 @@ impl NHContext {
 
             ui.separator();
 
-            fn tab_style_editor_ui(ui: &mut Ui, tab_style: &mut egui_dock::TabInteractionStyle) {
+            fn tab_style_editor_ui(ui: &mut egui::Ui, tab_style: &mut egui_dock::TabInteractionStyle) {
                 ui.separator();
 
                 ui.label("Rounding");
@@ -1548,7 +1547,7 @@ impl NHContext {
                 ui.label("Shift");
                 ui.end_row();
 
-                fn row(ui: &mut Ui, name: &str, m: &mut Option<ModifierKeys>) {
+                fn row(ui: &mut egui::Ui, name: &str, m: &mut Option<ModifierKeys>) {
                     let mut b = m.is_some();
                     if ui.checkbox(&mut b, "").changed() {
                         *m = match b {
@@ -1621,7 +1620,7 @@ impl NHContext {
     }
     
     // In general it should draw first and handle input second, right?
-    fn show_diagram_tab(&mut self, tab_uuid: &ViewUuid, ui: &mut Ui) {
+    fn show_diagram_tab(&mut self, tab_uuid: &ViewUuid, ui: &mut egui::Ui) {
         let Some(v) = self.diagram_controllers.get(tab_uuid).cloned() else { return; };
         let mut diagram_controller = v.write();
         let ctype = diagram_controller.controller_type();
@@ -1665,7 +1664,7 @@ impl NHContext {
         */
     }
 
-    fn show_document_tab(&mut self, uuid: &ViewUuid, ui: &mut Ui) {
+    fn show_document_tab(&mut self, uuid: &ViewUuid, ui: &mut egui::Ui) {
         let c = self.documents.get_mut(uuid).unwrap();
         if ui.add_sized(ui.available_size(), egui::TextEdit::multiline(&mut c.1)).changed() {
             c.0 = c.1.lines().next().unwrap_or("empty document").to_owned();
@@ -1673,7 +1672,7 @@ impl NHContext {
         }
     }
 
-    fn show_custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut Ui) {
+    fn show_custom_tab(&mut self, tab_uuid: &uuid::Uuid, ui: &mut egui::Ui) {
         let x = self.custom_tabs.get(tab_uuid).map(|e| e.clone()).unwrap();
         let mut custom_tab = x.write().unwrap();
         custom_tab.show(&self.drawing_context, ui, &mut self.unprocessed_commands);
@@ -1888,8 +1887,8 @@ impl Default for NHApp {
 macro_rules! push_tab_to_best {
     ($self:expr, $tab:expr) => {
         if let Some(lfd_uuid) = &$self.context.last_focused_diagram
-            && let Some((si, ni, _ti)) = $self.tree.find_tab(&NHTab::Diagram { uuid: *lfd_uuid }) {
-            $self.tree.set_focused_node_and_surface((si, ni));
+            && let Some(tab_path) = $self.tree.find_tab(&NHTab::Diagram { uuid: *lfd_uuid }) {
+            $self.tree.set_focused_node_and_surface(tab_path.node_path());
             $self.tree.push_to_focused_leaf($tab);
         } else {
             let mut current_largest_leaf = None;
@@ -1898,14 +1897,14 @@ macro_rules! push_tab_to_best {
                 let leaf_node_area = ln.viewport.area();
                 if current_max_area.is_none_or(|e| leaf_node_area > e) {
                     if let Some(tab) = ln.tabs.get(ln.active.0)
-                        && let Some((si, ni, _ti)) = $self.tree.find_tab(tab) {
-                        current_largest_leaf = Some((si, ni));
+                        && let Some(tab_path) = $self.tree.find_tab(tab) {
+                        current_largest_leaf = Some(tab_path.node_path());
                         current_max_area = Some(leaf_node_area);
                     }
                 }
             }
-            if let Some((si, ni)) = current_largest_leaf {
-                $self.tree.set_focused_node_and_surface((si, ni));
+            if let Some(node_path) = current_largest_leaf {
+                $self.tree.set_focused_node_and_surface(node_path);
             }
 
             $self.tree[SurfaceIndex::main()].push_to_focused_leaf($tab);
@@ -1916,7 +1915,7 @@ macro_rules! push_tab_to_best {
 impl NHApp {
     fn switch_to_tab(&mut self, tab: &NHTab) {
         let Some(t) = self.tree.find_tab(&tab) else { return; };
-        self.tree.set_active_tab(t);
+        let _ = self.tree.set_active_tab(t);
     }
 
     fn undo_immediate(&mut self) {
@@ -1992,7 +1991,7 @@ fn new_project() -> Result<(), &'static str> {
 pub const MIN_MENU_WIDTH: f32 = 250.0;
 
 impl eframe::App for NHApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         while let Ok(e) = self.context.file_io_channel.1.try_recv() {
             fn get_project_path(fh: &FileHandle) -> PathBuf {
                 #[cfg(not(target_arch = "wasm32"))]
@@ -2045,7 +2044,7 @@ impl eframe::App for NHApp {
         }
 
         // Set context state
-        ctx.options_mut(|op| {
+        ui.options_mut(|op| {
             op.zoom_factor = self.context.zoom_factor;
             op.zoom_with_keyboard = self.context.zoom_with_keyboard;
         });
@@ -2053,8 +2052,8 @@ impl eframe::App for NHApp {
         let mut commands = vec![];
 
         // Check for exit request, cancel if unsaved changes
-        if ctx.input(|i| i.viewport().close_requested()) && self.context.has_unsaved_changes {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        if ui.input(|i| i.viewport().close_requested()) && self.context.has_unsaved_changes {
+            ui.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             commands.push(SimpleProjectCommand::Exit(false).into());
         }
 
@@ -2063,10 +2062,10 @@ impl eframe::App for NHApp {
             macro_rules! push_tab_to_cursor {
                 ($self:expr, $tab:expr, $pos:expr) => {
                     if let Some(t) = $self.tree.find_tab(&$tab)
-                        && let egui_dock::Node::Leaf(ln) = &$self.tree[t.0][t.1]
+                        && let Ok(egui_dock::Node::Leaf(ln)) = &$self.tree.node(t.node_path())
                         && ln.rect.contains($pos) {
-                        $self.tree.set_focused_node_and_surface((t.0, t.1));
-                        $self.tree.set_active_tab(t);
+                        $self.tree.set_focused_node_and_surface(t.node_path());
+                        let _ = $self.tree.set_active_tab(t);
                     } else {
                         $self.tree.retain_tabs(|e| *e != $tab);
                         let mut it = $self.tree.iter_leaves();
@@ -2075,8 +2074,8 @@ impl eframe::App for NHApp {
                                 && let Some(tab) = ln.tabs.get(ln.active.0)
                                 && let Some(t) = $self.tree.find_tab(tab) {
                                     drop(it);
-                                    $self.tree.set_focused_node_and_surface((t.0, t.1));
-                                    $self.tree[t.0].push_to_focused_leaf($tab);
+                                    $self.tree.set_focused_node_and_surface(t.node_path());
+                                    $self.tree[t.surface].push_to_focused_leaf($tab);
                                     break;
                             }
                         }
@@ -2091,8 +2090,8 @@ impl eframe::App for NHApp {
                         push_tab_to_cursor!(self, target_tab, pos);
                     } else {
                         if let Some(t) = self.tree.find_tab(&target_tab) {
-                            self.tree.set_focused_node_and_surface((t.0, t.1));
-                            self.tree.set_active_tab(t);
+                            self.tree.set_focused_node_and_surface(t.node_path());
+                            let _ = self.tree.set_active_tab(t);
                         } else {
                             push_tab_to_best!(self, target_tab);
                         }
@@ -2104,8 +2103,8 @@ impl eframe::App for NHApp {
                         push_tab_to_cursor!(self, target_tab, pos);
                     } else {
                         if let Some(t) = self.tree.find_tab(&target_tab) {
-                            self.tree.set_focused_node_and_surface((t.0, t.1));
-                            self.tree.set_active_tab(t);
+                            self.tree.set_focused_node_and_surface(t.node_path());
+                            let _ = self.tree.set_active_tab(t);
                         } else {
                             push_tab_to_best!(self, target_tab);
                         }
@@ -2123,7 +2122,7 @@ impl eframe::App for NHApp {
         // Set window title depending on the project path
         if self.context.should_change_title {
             let modified = if self.context.has_unsaved_changes { "*" } else { "" };
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+            ui.send_viewport_cmd(egui::ViewportCommand::Title(
                 if let Some(project_path) = &self.context.project_path {
                     format!("Nihonium{} - {}", modified, project_path.to_string_lossy())
                 } else {
@@ -2155,7 +2154,7 @@ impl eframe::App for NHApp {
         }
 
         // Show ui
-        TopBottomPanel::top("egui_dock::MenuBar").show(ctx, |ui| {
+        egui::Panel::top("egui_dock::MenuBar").show_inside(ui, |ui| {
             // Check diagram-handled shortcuts
             let interact_pos = ui.ctx().pointer_interact_pos();
             let input_blocked = self.context.confirm_modal_reason.is_some() || self.context.custom_modal.is_some();
@@ -2226,12 +2225,12 @@ impl eframe::App for NHApp {
                                 break 'outer;
                             }
                         }
-                        egui::Event::MouseWheel { unit, delta, modifiers }
+                        egui::Event::MouseWheel { unit, delta, modifiers, .. }
                             if !input_blocked && modifiers.matches_logically(egui::Modifiers::COMMAND) => {
                             if let Some(pos) = &interact_pos
                                 && let Some(t) = self.tree.find_tab(&NHTab::Toolbar)
-                                && let Some(ln) = self.tree[t.0][t.1].get_leaf()
-                                && ln.active == t.2
+                                && let Ok(ln) = self.tree.leaf(t.node_path())
+                                && ln.active == t.tab
                                 && ln.viewport.contains(*pos)
                             {
                                 let delta: f32 = match unit {
@@ -2442,7 +2441,7 @@ impl eframe::App for NHApp {
             let Some(s) = self.context.diagram_settings.get(ctype) else { return; };
             let mut controller = c.write();
             
-            egui::containers::Window::new("SVG export options").show(ctx, |ui| {
+            egui::containers::Window::new("SVG export options").show(ui.ctx(), |ui| {
                 // Change options
                 ui.checkbox(background, "Solid background");
                 ui.checkbox(gridlines, "Gridlines");
@@ -2582,7 +2581,7 @@ impl eframe::App for NHApp {
 
         if let Some(element_setup_modal) = self.context.custom_modal.as_mut() {
             let result = egui::Modal::new("Custom Modal".into())
-                .show(ctx,
+                .show(ui.ctx(),
                     |ui| element_setup_modal.show(
                         &mut self.context.drawing_context,
                         ui,
@@ -2604,7 +2603,7 @@ impl eframe::App for NHApp {
 
         if let Some(confirm_reason) = self.context.confirm_modal_reason.clone() {
             egui::Modal::new("Confirm Modal Window".into())
-                .show(ctx, |ui| {
+                .show(ui.ctx(), |ui| {
 
                     if let SimpleProjectCommand::FocusedDiagramCommand(DiagramCommand::DeleteSelectedElements(k)) = confirm_reason {
                         ui.label(translate!("nh-generic-deletemodel-title"));
@@ -2902,8 +2901,8 @@ impl eframe::App for NHApp {
         CentralPanel::default()
             // When displaying a DockArea in another UI, it looks better
             // to set inner margins to 0.
-            .frame(Frame::central_panel(&ctx.style()).inner_margin(0.))
-            .show(ctx, |ui| {
+            .frame(Frame::central_panel(&ui.style()).inner_margin(0.))
+            .show_inside(ui, |ui| {
                 let style = self
                     .context
                     .style
@@ -2924,7 +2923,7 @@ impl eframe::App for NHApp {
     }
 }
 
-fn corner_radius_ui(ui: &mut Ui, corner_radius: &mut egui::CornerRadius) {
+fn corner_radius_ui(ui: &mut egui::Ui, corner_radius: &mut egui::CornerRadius) {
     labeled_widget!(ui, Slider::new(&mut corner_radius.nw, 0..=15), "North-West");
     labeled_widget!(ui, Slider::new(&mut corner_radius.ne, 0..=15), "North-East");
     labeled_widget!(ui, Slider::new(&mut corner_radius.sw, 0..=15), "South-West");

@@ -1054,6 +1054,7 @@ impl NHCanvas for UiCanvas {
         self.painter.add(eframe::epaint::EllipseShape {
             center: self.sc_tr(position),
             radius: radius * self.camera_scale,
+            angle: 0.0,
             fill: color,
             stroke,
         });
