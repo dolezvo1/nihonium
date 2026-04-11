@@ -2679,7 +2679,7 @@ impl<
                 _ => {}
             })
         );
-        if response.dragged_by(egui::PointerButton::Primary) {
+        if response.dragged_by(egui::PointerButton::Primary) && ui.input(|i| i.multi_touch().is_none()) {
             if let Some(old_pos) = self.temporaries.last_unhandled_mouse_pos {
                 let delta = response.drag_delta() / self.temporaries.camera_scale;
                 self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifier_settings, modifiers, element_setup_modal, commands);
@@ -2707,29 +2707,40 @@ impl<
         }
 
         // Handle diagram zoom
-        if response.hovered() {
-            let scroll_delta = ui.input(|i| i.events.iter().filter_map(|e| match e {
-                egui::Event::MouseWheel { delta, .. } => Some(*delta),
-                _ => None,
-            }).fold(egui::Vec2::ZERO, |a, b| a + b));
-
-            let factor = if scroll_delta.y > 0.0 && self.temporaries.camera_scale < 10.0 {
-                1.5
-            } else if scroll_delta.y < 0.0 && self.temporaries.camera_scale > 0.01 {
-                0.66
-            } else {
-                0.0
-            };
-
-            if factor != 0.0 {
-                if let Some(cursor_pos) = ui.ctx().pointer_interact_pos() {
+        if response.hovered()
+            && let Some(cursor_pos) = ui.ctx().pointer_interact_pos() {
+            macro_rules! apply_zoom {
+                ($factor:expr, $cursor_pos:expr) => {
                     let old_factor = self.temporaries.camera_scale;
-                    self.temporaries.camera_scale *= factor;
+                    self.temporaries.camera_scale *= $factor;
                     self.temporaries.camera_offset -=
-                        ((cursor_pos - self.temporaries.camera_offset - response.rect.min.to_vec2())
-                            / old_factor)
-                            * (self.temporaries.camera_scale - old_factor);
-                }
+                        (($cursor_pos - self.temporaries.camera_offset - response.rect.min.to_vec2()) / old_factor)
+                        * (self.temporaries.camera_scale - old_factor);
+                };
+            }
+
+            ui.input(|i| i.events.iter().for_each(|e| match e {
+                egui::Event::MouseWheel { delta, .. } => {
+                    let factor = if delta.y > 0.0 && self.temporaries.camera_scale < 10.0 {
+                        1.5
+                    } else if delta.y < 0.0 && self.temporaries.camera_scale > 0.01 {
+                        0.66
+                    } else {
+                        0.0
+                    };
+
+                    if factor != 0.0 {
+                        apply_zoom!(factor, cursor_pos);
+                    }
+                },
+                _ => {},
+            }));
+
+            if ui.input(|i| i.multi_touch().is_some()) {
+                ui.input(|i| {
+                    apply_zoom!(i.zoom_delta(), cursor_pos);
+                    self.temporaries.camera_offset += self.temporaries.camera_scale * i.translation_delta();
+                });
             }
         }
     }
