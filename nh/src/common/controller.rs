@@ -2736,12 +2736,12 @@ impl<
                 _ => {},
             }));
 
-            if ui.input(|i| i.multi_touch().is_some()) {
-                ui.input(|i| {
-                    apply_zoom!(i.zoom_delta(), cursor_pos);
-                    self.temporaries.camera_offset += self.temporaries.camera_scale * i.translation_delta();
-                });
-            }
+            ui.input(|i| {
+                if let Some(mti) = i.multi_touch() {
+                    apply_zoom!(i.zoom_delta(), mti.center_pos);
+                    self.temporaries.camera_offset += i.translation_delta();
+                }
+            });
         }
     }
     fn cancel_tool(&mut self) {
