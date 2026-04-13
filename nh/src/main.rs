@@ -365,6 +365,10 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
                     crate::domains::umlclass::umlclass_controllers::new as DiagramF,
                 ),
                 (
+                    "UML Sequence diagram",
+                    crate::domains::umlsequence::umlsequence_controllers::new as DiagramF,
+                ),
+                (
                     "Use Case diagram",
                     crate::domains::usecase::usecase_controllers::new as DiagramF,
                 ),
@@ -417,6 +421,10 @@ fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui
                 (
                     "UML Class diagram",
                     crate::domains::umlclass::umlclass_controllers::demo as DiagramF,
+                ),
+                (
+                    "UML Sequence diagram",
+                    crate::domains::umlsequence::umlsequence_controllers::demo as DiagramF,
                 ),
                 (
                     "Use Case diagram",
@@ -1726,6 +1734,7 @@ impl Default for NHApp {
 
         let mut diagram_deserializers = HashMap::new();
         diagram_deserializers.insert("umlclass".to_string(), &crate::domains::umlclass::umlclass_controllers::deserializer as &CDes);
+        diagram_deserializers.insert("umlsequence".to_string(), &crate::domains::umlsequence::umlsequence_controllers::deserializer as &CDes);
         diagram_deserializers.insert("umlclass-usecase".to_string(), &crate::domains::usecase::usecase_controllers::deserializer as &CDes);
         diagram_deserializers.insert("umlclass-ontouml".to_string(), &crate::domains::ontouml::ontouml_controllers::deserializer as &CDes);
         diagram_deserializers.insert("democsd".to_string(), &crate::domains::democsd::democsd_controllers::deserializer as &CDes);
@@ -1760,6 +1769,7 @@ impl Default for NHApp {
 
         let diagram_type_order = vec![
             ("umlclass", "UML Class"),
+            ("umlsequence", "UML Sequence"),
             ("umlclass-usecase", "Use Case"),
             ("umlclass-ontouml", "OntoUML"),
             ("democsd", "DEMO Coordination Structure Diagram"),
@@ -1770,6 +1780,8 @@ impl Default for NHApp {
         let (diagram_settings, diagram_settings_functions) = [
             ("umlclass", crate::domains::umlclass::umlclass_controllers::default_settings(),
                 &crate::domains::umlclass::umlclass_controllers::settings_function as &DSF),
+            ("umlsequence", crate::domains::umlsequence::umlsequence_controllers::default_settings(),
+                &crate::domains::umlsequence::umlsequence_controllers::settings_function as &DSF),
             ("umlclass-usecase", crate::domains::usecase::usecase_controllers::default_settings(),
                 &crate::domains::usecase::usecase_controllers::settings_function as &DSF),
             ("umlclass-ontouml", crate::domains::ontouml::ontouml_controllers::default_settings(),

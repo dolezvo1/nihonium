@@ -1271,7 +1271,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
     }
     fn draw_in(
         &mut self,
-        _: &DomainT::QueryableT<'_>,
+        _q: &DomainT::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &DomainT::SettingsT,
         canvas: &mut dyn NHCanvas,
@@ -1295,6 +1295,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
+    /// Refresh view's fields from model (recursing over children is unnecessary)
     fn refresh_buffers(&mut self);
     fn head_count(
         &mut self,

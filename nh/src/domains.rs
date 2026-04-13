@@ -6,3 +6,4 @@ pub mod rdf;
 pub mod ontouml;
 pub mod umlclass;
 pub mod usecase;
+pub mod umlsequence;

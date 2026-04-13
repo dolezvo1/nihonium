@@ -424,8 +424,9 @@ impl NHShape {
 }
 
 // TODO: circle, embedded circle (ArchiMate)
-#[derive(Copy, Clone, PartialEq, Debug)]
+#[derive(Copy, Clone, PartialEq, Debug, Default)]
 pub enum ArrowheadType {
+    #[default]
     None,
     OpenTriangle,
     EmptyTriangle,
@@ -553,8 +554,9 @@ impl ArrowheadType {
 }
 
 // TODO: double, squiggly
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Default)]
 pub enum LineType {
+    #[default]
     Solid,
     Dashed,
     Dotted,
