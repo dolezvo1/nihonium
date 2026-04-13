@@ -607,7 +607,7 @@ pub struct NaiveRdfTool {
 }
 
 impl NaiveRdfTool {
-    fn spend(&mut self) {
+    fn try_spend(&mut self) {
         self.result = PartialRdfElement::None;
         self.is_spent = self.is_spent.map(|_| true);
     }
@@ -784,7 +784,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     RdfElementView::Predicate(..)
                     | RdfElementView::Graph(..) => unreachable!(),
                 };
-                self.spend();
+                self.try_spend();
                 Some((x, esm))
             }
             PartialRdfElement::Predicate {
@@ -814,7 +814,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                         None
                     };
 
-                self.spend();
+                self.try_spend();
                 predicate_view
             }
             PartialRdfElement::Graph { a, b: Some(b) } => {
@@ -823,7 +823,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 let (graph_model, graph_view) =
                     new_rdf_graph("http://a-graph", egui::Rect::from_two_pos(*a, *b));
 
-                self.spend();
+                self.try_spend();
                 Some((graph_view.into(), Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(graph_model))))))
             }
             _ => None,

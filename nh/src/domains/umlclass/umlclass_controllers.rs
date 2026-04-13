@@ -1148,7 +1148,7 @@ pub struct NaiveUmlClassTool<P: UmlClassProfile> {
 }
 
 impl<P: UmlClassProfile> NaiveUmlClassTool<P> {
-    fn spend(&mut self) {
+    fn try_spend(&mut self) {
         self.result = PartialUmlClassElement::None;
         self.is_spent = self.is_spent.map(|_| true);
     }
@@ -1571,7 +1571,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     UmlClassElementView::ClassOperation(inner) => Some(Box::new(UmlClassOperationSetupModal::<P::ClassOperationStereotypeController>::from(&inner.read().model))),
                     _ => None,
                 };
-                self.spend();
+                self.try_spend();
                 Some((x, esm))
             }
             PartialUmlClassElement::Link {
@@ -1630,7 +1630,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         },
                     };
 
-                    self.spend();
+                    self.try_spend();
                     Some((link_view, None))
                 } else {
                     None
@@ -1652,7 +1652,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         (dest.clone(), target_view),
                     );
 
-                    self.spend();
+                    self.try_spend();
                     Some((link_view.into(), None))
                 } else {
                     None
@@ -1664,7 +1664,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 let (_package_model, package_view) =
                     new_umlclass_package("a package", egui::Rect::from_two_pos(*a, *b));
 
-                self.spend();
+                self.try_spend();
                 Some((package_view.into(), None))
             }
             _ => None,

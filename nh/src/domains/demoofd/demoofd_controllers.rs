@@ -774,7 +774,7 @@ pub struct NaiveDemoOfdTool {
 }
 
 impl NaiveDemoOfdTool {
-    fn spend(&mut self) {
+    fn try_spend(&mut self) {
         self.result = PartialDemoOfdElement::None;
         self.is_spent = self.is_spent.map(|_| true);
     }
@@ -1137,7 +1137,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     _ => None,
                 };
 
-                self.spend();
+                self.try_spend();
                 Some((x, esm))
             }
             PartialDemoOfdElement::Event { with_specialization, source, pos: Some(p) } => {
@@ -1157,7 +1157,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
 
                     let esm: Option<Box<dyn CustomModal>> = Some(Box::new(DemoOfdEventTypeSetupModal::from(&event_model)));
 
-                    self.spend();
+                    self.try_spend();
                     Some((event_view.into(), esm))
                 } else {
                     None
@@ -1207,7 +1207,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         | LinkType::Exclusion => unreachable!()
                     };
 
-                    self.spend();
+                    self.try_spend();
                     Some((link_view, None))
                 } else {
                     None
@@ -1244,7 +1244,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         LinkType::Exclusion => unreachable!()
                     };
 
-                    self.spend();
+                    self.try_spend();
                     Some((link_view, None))
                 } else {
                     None
@@ -1281,7 +1281,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         }
                     };
 
-                    self.spend();
+                    self.try_spend();
                     Some((link_view, None))
                 } else {
                     None
@@ -1293,7 +1293,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 let (_package_model, package_view) =
                     new_demoofd_package("A package", egui::Rect::from_two_pos(*a, *b));
 
-                self.spend();
+                self.try_spend();
                 Some((package_view.into(), None))
             }
             _ => None,

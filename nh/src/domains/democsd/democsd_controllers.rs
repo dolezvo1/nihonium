@@ -663,7 +663,7 @@ pub struct NaiveDemoCsdTool {
 }
 
 impl NaiveDemoCsdTool {
-    fn spend(&mut self) {
+    fn try_spend(&mut self) {
         self.result = PartialDemoCsdElement::None;
         self.is_spent = self.is_spent.map(|_| true);
     }
@@ -877,7 +877,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         match &self.result {
             PartialDemoCsdElement::Some(x) => {
                 let x = x.clone();
-                self.spend();
+                self.try_spend();
                 let esm: Option<Box<dyn CustomModal>> = match &x {
                     DemoCsdElementView::Transactor(eref) => {
                         Some(Box::new(DemoCsdTransactorSetupModal::from(&eref.read().model)))
@@ -911,7 +911,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                         (target.clone(), target_view),
                     );
 
-                    self.spend();
+                    self.try_spend();
                     Some((link_view.into(), None))
                 } else {
                     None
@@ -923,7 +923,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 let (_package_model, package_view) =
                     new_democsd_package("A package", egui::Rect::from_two_pos(*a, *b));
 
-                self.spend();
+                self.try_spend();
                 Some((package_view.into(), None))
             }
             _ => None,

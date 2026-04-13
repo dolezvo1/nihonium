@@ -737,7 +737,7 @@ pub struct NaiveUmlSequenceTool {
 }
 
 impl NaiveUmlSequenceTool {
-    fn spend(&mut self) {
+    fn try_spend(&mut self) {
         self.result = PartialUmlSequenceElement::None;
         self.is_spent = self.is_spent.map(|_| true);
     }
@@ -942,7 +942,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
         match &self.result {
             PartialUmlSequenceElement::Some(x) => {
                 let x = x.clone();
-                self.spend();
+                self.try_spend();
                 Some((x, None))
             }
             PartialUmlSequenceElement::Diagram { a, b: Some(b), .. } => {
@@ -951,7 +951,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 let (_diagram_model, diagram_view) =
                     new_umlsequence_diagram("Diagram", Vec::new(), Vec::new(), egui::Rect::from_two_pos(*a, *b));
 
-                self.spend();
+                self.try_spend();
                 Some((diagram_view.into(), None))
             }
             PartialUmlSequenceElement::CombinedFragment {
@@ -978,7 +978,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         vec![section],
                     ).1.into();
 
-                    self.spend();
+                    self.try_spend();
                     Some((link_view, None))
                 } else {
                     None
@@ -1011,7 +1011,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         },
                     };
 
-                    self.spend();
+                    self.try_spend();
                     Some((link_view, None))
                 } else {
                     None
@@ -1031,7 +1031,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         (dest.clone(), target_view),
                     );
 
-                    self.spend();
+                    self.try_spend();
                     Some((link_view.into(), None))
                 } else {
                     None

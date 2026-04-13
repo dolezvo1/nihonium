@@ -781,7 +781,7 @@ pub struct NaiveDemoPsdTool {
 }
 
 impl NaiveDemoPsdTool {
-    fn spend(&mut self) {
+    fn try_spend(&mut self) {
         self.result = PartialDemoPsdElement::None;
         self.is_spent = self.is_spent.map(|_| true);
     }
@@ -995,7 +995,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         match &self.result {
             PartialDemoPsdElement::Some(x) => {
                 let x = x.clone();
-                self.spend();
+                self.try_spend();
                 let esm: Option<Box<dyn CustomModal>> = match &x {
                     DemoPsdElementView::Transaction(inner) => {
                         Some(Box::new(DemoPsdTransactionSetupModal::from(&inner.read().model)))
@@ -1029,7 +1029,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                         None,
                     );
 
-                    self.spend();
+                    self.try_spend();
                     Some((link_view.into(), None))
                 } else {
                     None
@@ -1041,7 +1041,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 let (_package_model, package_view) =
                     new_demopsd_package("A package", egui::Rect::from_two_pos(*a, *b));
 
-                self.spend();
+                self.try_spend();
                 Some((package_view.into(), None))
             }
             _ => None,
