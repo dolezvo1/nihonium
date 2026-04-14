@@ -563,7 +563,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     ]);
     let (combined_fragment_model, combined_fragment_view) = new_umlsequence_combinedfragment(
         UmlSequenceCombinedFragmentKind::Alt, "",
-        [*user_model.read().uuid, *service1_model.read().uuid].into_iter().collect(),
+        [*user_model.read().uuid, *service1_model.read().uuid, *service2_model.read().uuid].into_iter().collect(),
         vec![
             (combined_fragment_section1_model.into(), combined_fragment_section1_view.into()),
             (combined_fragment_section2_model.into(), combined_fragment_section2_view.into()),
@@ -609,10 +609,13 @@ impl DiagramSettings2<UmlSequenceDomain> for UmlSequenceSettings {
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let (_, diagram_view) = new_umlsequence_diagram("Diagram", Vec::new(), Vec::new(), egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(100.0, 75.0)));
+    diagram_view.write().refresh_buffers();
     let (_, combined_fragment_view) = {
-        let section = new_umlsequence_combinedfragmentsection("no errors", Vec::new()).into();
-        new_umlsequence_combinedfragment(UmlSequenceCombinedFragmentKind::Opt, "", HashSet::new(), vec![section])
+        let section = new_umlsequence_combinedfragmentsection("no errors", Vec::new());
+        section.1.write().refresh_buffers();
+        new_umlsequence_combinedfragment(UmlSequenceCombinedFragmentKind::Opt, "", HashSet::new(), vec![section.into()])
     };
+    combined_fragment_view.write().refresh_buffers();
     let (lifeline_model1, lifeline_view1) = new_umlsequence_lifeline("User", "", UmlSequenceLifelineRenderStyle::StickFigure);
     let (lifeline_model2, lifeline_view2) = new_umlsequence_lifeline("Service", "", UmlSequenceLifelineRenderStyle::Object);
     lifeline_view2.write().bounds_rect = egui::Rect::from_x_y_ranges(150.0..=150.0, 0.0..=0.0);
@@ -1100,6 +1103,7 @@ pub struct UmlSequenceDiagramView {
 
 #[derive(Clone, Default)]
 struct UmlSequenceDiagramViewTemporaries {
+    display_text: String,
     name_buffer: String,
     comment_buffer: String,
 
@@ -1324,18 +1328,49 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             self.temporaries.highlight,
         );
 
-        canvas.draw_text(
-            self.bounds_rect.center_top(),
-            egui::Align2::CENTER_TOP,
-            &r.name,
-            canvas::CLASS_MIDDLE_FONT_SIZE,
-            egui::Color32::BLACK,
-        );
+        let mut drawn_child_targetting = TargettingStatus::NotDrawn;
+
+        macro_rules! draw_children {
+            () => {
+                let lifelines_no = self.lifeline_views.len();
+                let sliver_x = self.bounds_rect.width() / lifelines_no as f32 / 2.0;
+                let max_object_height = self.lifeline_views.iter()
+                    .map(|v| v.read().min_shape().bounding_box().height())
+                    .max_by(|l, r| l.partial_cmp(r).unwrap())
+                    .unwrap_or(0.0);
+                let lifelines_y = self.bounds_rect.top() + max_object_height + canvas::CLASS_MIDDLE_FONT_SIZE;
+                for (idx, v) in self.lifeline_views.iter().enumerate() {
+                    let x = self.bounds_rect.min.x + (2 * idx + 1) as f32 * sliver_x;
+                    v.write().draw_inner(egui::Pos2::new(x, lifelines_y), self.bounds_rect.max.y, q, context, settings, canvas, tool);
+                }
+
+                const PADDING_Y: f32 = 2.0;
+                let theoretical_height = PADDING_Y + self.horizontal_element_views.iter().map(|v| v.theoretical_height()).sum::<f32>();
+                let sliver_y = (self.bounds_rect.height() - 2.0 * max_object_height) / theoretical_height;
+                let mut counter_y = self.bounds_rect.min.y + 2.0 * max_object_height + PADDING_Y * sliver_y;
+                for v in self.horizontal_element_views.iter_mut() {
+                    counter_y = v.draw_inner(&self.lifeline_views, (counter_y, sliver_y), q, context, settings, canvas, tool).max.y;
+                }
+            };
+        }
+        draw_children!();
+
+        // Draw top left pentagon
+        const PENTAGON_PADDING: f32 = 4.0;
+        let pentagon_bg = egui::Color32::WHITE;
+        let left_top_pentagon_rect = canvas.measure_text(self.bounds_rect.left_top() + egui::Vec2::splat(PENTAGON_PADDING), egui::Align2::LEFT_TOP, &self.temporaries.display_text, canvas::CLASS_MIDDLE_FONT_SIZE).expand(PENTAGON_PADDING);
+        canvas.draw_polygon([
+            left_top_pentagon_rect.left_top(), left_top_pentagon_rect.right_top(),
+            left_top_pentagon_rect.right_bottom() - egui::Vec2::new(0.0, PENTAGON_PADDING),
+            left_top_pentagon_rect.right_bottom() - egui::Vec2::new(PENTAGON_PADDING, 0.0),
+            left_top_pentagon_rect.left_bottom(),
+        ].to_vec(), pentagon_bg, canvas::Stroke::new_solid(1.0, egui::Color32::BLACK), self.temporaries.highlight);
+        canvas.draw_text(self.bounds_rect.left_top() + egui::Vec2::splat(PENTAGON_PADDING), egui::Align2::LEFT_TOP, &self.temporaries.display_text,
+            canvas::CLASS_MIDDLE_FONT_SIZE, egui::Color32::BLACK);
 
         // Draw resize/drag handles
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.temporaries.highlight.selected) {
             let handle_size = self.handle_size(ui_scale);
-            //compile_error!("icons")
             for (h, c) in [
                 (self.bounds_rect.left_top(), "↖"),
                 (self.bounds_rect.center_top(), "^"),
@@ -1392,33 +1427,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 canvas::Highlight::NONE,
             );
         }
-
-        let mut drawn_child_targetting = TargettingStatus::NotDrawn;
-
-        macro_rules! draw_children {
-            () => {
-                let lifelines_no = self.lifeline_views.len();
-                let sliver_x = self.bounds_rect.width() / lifelines_no as f32 / 2.0;
-                let max_object_height = self.lifeline_views.iter()
-                    .map(|v| v.read().min_shape().bounding_box().height())
-                    .max_by(|l, r| l.partial_cmp(r).unwrap())
-                    .unwrap_or(0.0);
-                let lifelines_y = self.bounds_rect.top() + max_object_height + canvas::CLASS_MIDDLE_FONT_SIZE;
-                for (idx, v) in self.lifeline_views.iter().enumerate() {
-                    let x = self.bounds_rect.min.x + (2 * idx + 1) as f32 * sliver_x;
-                    v.write().draw_inner(egui::Pos2::new(x, lifelines_y), self.bounds_rect.max.y, q, context, settings, canvas, tool);
-                }
-
-                const PADDING_Y: f32 = 1.0;
-                let theoretical_height = PADDING_Y + self.horizontal_element_views.iter().map(|v| v.theoretical_height()).sum::<f32>();
-                let sliver_y = (self.bounds_rect.height() - 2.0 * max_object_height) / theoretical_height;
-                let mut counter_y = self.bounds_rect.min.y + 2.0 * max_object_height + PADDING_Y * sliver_y;
-                for v in self.horizontal_element_views.iter_mut() {
-                    counter_y = v.draw_inner(&self.lifeline_views, (counter_y, sliver_y), q, context, settings, canvas, tool).max.y;
-                }
-            };
-        }
-        draw_children!();
 
         if canvas.ui_scale().is_some() {
             if self.temporaries.dragged_type_and_shape.is_some() {
@@ -1965,11 +1973,27 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 recurse!();
             }
             InsensitiveCommand::ArrangeSpecificElements(_uuids, _arr) => {},
-            InsensitiveCommand::PropertyChange(uuids, _property) => {
+            InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
-                    let mut w = self.model.write();
-                    todo!("apply_change");
-                    affected_models.insert(*w.uuid);
+                    let mut model = self.model.write();
+                    affected_models.insert(*model.uuid);
+                    match property {
+                        UmlSequencePropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlSequencePropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
+                        }
+                        UmlSequencePropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlSequencePropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        _ => {}
+                    }
                 }
 
                 recurse!();
@@ -1979,6 +2003,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
     fn refresh_buffers(&mut self) {
         let r = self.model.read();
 
+        self.temporaries.display_text = format!("sd: {}", r.name);
         self.temporaries.name_buffer = (*r.name).clone();
         self.temporaries.comment_buffer = (*r.comment).clone();
     }
@@ -2143,6 +2168,7 @@ pub fn new_umlsequence_combinedfragment_view(
             model: model.clone(),
             sections,
             bounds_rect: egui::Rect::ZERO,
+            left_top_pentagon_rect: egui::Rect::ZERO,
             background_color: MGlobalColor::None,
             temporaries: Default::default(),
         }
@@ -2159,6 +2185,7 @@ pub struct UmlSequenceCombinedFragmentView {
     sections: Vec<ERef<UmlSequenceCombinedFragmentSectionView>>,
 
     pub bounds_rect: egui::Rect,
+    left_top_pentagon_rect: egui::Rect,
     background_color: MGlobalColor,
     #[nh_context_serde(skip_and_default)]
     temporaries: UmlSequenceCombinedFragmentViewTemporaries
@@ -2216,9 +2243,6 @@ impl UmlSequenceCombinedFragmentView {
             spanned_lifeline_views.last().map(|e| e.read().bounds_rect.center().x).unwrap_or(0.0),
         );
 
-        canvas.draw_text(egui::Pos2::new(self.bounds_rect.min.x + 2.0, pos_y + 2.0), egui::Align2::LEFT_TOP, &self.temporaries.display_text,
-            canvas::CLASS_MIDDLE_FONT_SIZE, egui::Color32::BLACK);
-
         let mut section_offsets = vec![pos_y];
         let mut acc = egui::Rect::from_min_size(egui::Pos2::new(span_x.0, pos_y), egui::Vec2::ZERO);
         for e in self.sections.iter_mut() {
@@ -2256,6 +2280,19 @@ impl UmlSequenceCombinedFragmentView {
             egui::Color32::TRANSPARENT, canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.temporaries.highlight,
         );
+
+        // Draw top left pentagon
+        const PENTAGON_PADDING: f32 = 4.0;
+        let pentagon_bg = egui::Color32::WHITE;
+        self.left_top_pentagon_rect = canvas.measure_text(egui::Pos2::new(self.bounds_rect.min.x + PENTAGON_PADDING, pos_y + PENTAGON_PADDING), egui::Align2::LEFT_TOP, &self.temporaries.display_text, canvas::CLASS_MIDDLE_FONT_SIZE).expand(PENTAGON_PADDING);
+        canvas.draw_polygon([
+            self.left_top_pentagon_rect.left_top(), self.left_top_pentagon_rect.right_top(),
+            self.left_top_pentagon_rect.right_bottom() - egui::Vec2::new(0.0, PENTAGON_PADDING),
+            self.left_top_pentagon_rect.right_bottom() - egui::Vec2::new(PENTAGON_PADDING, 0.0),
+            self.left_top_pentagon_rect.left_bottom(),
+        ].to_vec(), pentagon_bg, canvas::Stroke::new_solid(1.0, egui::Color32::BLACK), self.temporaries.highlight);
+        canvas.draw_text(egui::Pos2::new(self.bounds_rect.min.x + PENTAGON_PADDING, pos_y + PENTAGON_PADDING), egui::Align2::LEFT_TOP, &self.temporaries.display_text,
+            canvas::CLASS_MIDDLE_FONT_SIZE, egui::Color32::BLACK);
 
         // Draw buttons
         if self.temporaries.highlight.selected && let Some(ui_scale) = canvas.ui_scale() {
@@ -2306,12 +2343,9 @@ impl UmlSequenceCombinedFragmentView {
 
                 EventHandlingStatus::HandledByElement
             }
-            /*
-            TODO:
-            InputEvent::Click(pos) if self.left_top_pentagon().contains(pos) {
-
+            InputEvent::Click(pos) if self.left_top_pentagon_rect.contains(pos) => {
+                EventHandlingStatus::HandledByElement
             }
-            */
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
                 let spanned_lifeline_views = self.spanned_lifeline_views(lifeline_views);
                 let k_status = self.sections.iter()
@@ -2756,6 +2790,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
             sections: new_sections,
 
             bounds_rect: self.bounds_rect.clone(),
+            left_top_pentagon_rect: self.left_top_pentagon_rect.clone(),
             background_color: self.background_color.clone(),
             temporaries: self.temporaries.clone(),
         });
@@ -2840,14 +2875,14 @@ struct UmlSequenceCombinedFragmentSectionViewTemporaries {
 
 impl UmlSequenceCombinedFragmentSectionView {
     const SECTION_PADDING_X: f32 = 20.0;
-    const SECTION_EMPTY_SIZE_Y: f32 = 10.0;
-    const SECTION_NONEMPTY_PADDING_Y: f32 = 1.0;
+    const SECTION_EMPTY_SIZE_Y: f32 = 4.0;
+    const SECTION_PADDING_Y: f32 = 2.0;
 
     fn theoretical_height(&self) -> f32 {
         if self.horizontal_element_views.is_empty() {
-            Self::SECTION_EMPTY_SIZE_Y
+            Self::SECTION_PADDING_Y + Self::SECTION_EMPTY_SIZE_Y
         } else {
-            Self::SECTION_NONEMPTY_PADDING_Y + self.horizontal_element_views.iter().map(|v| v.theoretical_height()).sum::<f32>()
+            Self::SECTION_PADDING_Y + self.horizontal_element_views.iter().map(|v| v.theoretical_height()).sum::<f32>()
         }
     }
 
@@ -2871,13 +2906,13 @@ impl UmlSequenceCombinedFragmentSectionView {
                 TargettingStatus::NotDrawn,
                 egui::Rect::from_two_pos(
                     egui::Pos2::new(min_lifeline_x - Self::SECTION_PADDING_X, pos_y),
-                    egui::Pos2::new(max_lifeline_x + Self::SECTION_PADDING_X, pos_y + Self::SECTION_EMPTY_SIZE_Y * scale_y),
+                    egui::Pos2::new(max_lifeline_x + Self::SECTION_PADDING_X, pos_y + (Self::SECTION_PADDING_Y + Self::SECTION_EMPTY_SIZE_Y) * scale_y),
                 ),
             )
         } else {
             let mut acc = egui::Rect::from_min_max(
                 egui::Pos2::new(min_lifeline_x, pos_y),
-                egui::Pos2::new(max_lifeline_x, pos_y + Self::SECTION_NONEMPTY_PADDING_Y * scale_y),
+                egui::Pos2::new(max_lifeline_x, pos_y + Self::SECTION_PADDING_Y * scale_y),
             );
             for e in self.horizontal_element_views.iter_mut() {
                 acc = acc.union(e.draw_inner(lifeline_views, (acc.max.y, scale_y), q, context, settings, canvas, tool));
@@ -4103,6 +4138,7 @@ struct UmlSequenceMessageTemporaries {
     target_uuids: Vec<ModelUuid>,
     state_invariant_in_curly_brackets: String,
 
+    display_text: String,
     name_buffer: String,
     synchronicity_kind_buffer: UmlSequenceMessageSynchronicityKind,
     lifecycle_kind_buffer: UmlSequenceMessageLifecycleKind,
@@ -4113,7 +4149,7 @@ struct UmlSequenceMessageTemporaries {
 }
 
 impl UmlSequenceMessageView {
-    const MESSAGE_SPACING: f32 = 10.0;
+    const MESSAGE_SPACING: f32 = 4.0;
 
     fn theoretical_height(&self) -> f32 {
         Self::MESSAGE_SPACING
@@ -4164,7 +4200,7 @@ impl UmlSequenceMessageView {
         canvas.draw_text(
             (start + second.to_vec2()) / 2.0,
             egui::Align2::CENTER_BOTTOM,
-            &self.temporaries.name_buffer,
+            &self.temporaries.display_text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
@@ -4437,6 +4473,19 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         self.temporaries.target_uuids.clear();
         self.temporaries.target_uuids.push(*model.target.read().uuid());
 
+        self.temporaries.display_text = match model.lifecycle {
+            UmlSequenceMessageLifecycleKind::None => (*model.name).clone(),
+            UmlSequenceMessageLifecycleKind::Create => if model.name.is_empty() {
+                format!("«create»")
+            } else {
+                format!("«create»\n{}", model.name)
+            },
+            UmlSequenceMessageLifecycleKind::Delete => if model.name.is_empty() {
+                format!("«destroy»")
+            } else {
+                format!("«destroy»\n{}", model.name)
+            },
+        };
         self.temporaries.state_invariant_in_curly_brackets = if model.state_invariant.is_empty() {
             "".to_owned()
         } else {
