@@ -1130,6 +1130,8 @@ pub trait Queryable<'a, DomainT: Domain> {
 
     fn is_contained(&self, v: &ViewUuid, within: &ViewUuid) -> bool;
     fn are_siblings(&self, a: &ViewUuid, b: &ViewUuid) -> bool;
+    fn find_parent<P>(&self, child: &ViewUuid, predicate: P) -> Option<(ViewUuid, DomainT::CommonElementViewT)>
+        where P: FnMut(&ViewUuid, &DomainT::CommonElementViewT) -> bool;
 
     fn get_view_for(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT>;
     fn selected_views(&self) -> HashSet<ViewUuid>;
@@ -1166,6 +1168,18 @@ impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, Domain
         self.flattened_views.get(a)
             .and_then(|(_, pa)| self.flattened_views.get(b).map(|(_, pb)| pa == pb))
             .unwrap_or(false)
+    }
+    fn find_parent<P>(&self, child: &ViewUuid, mut predicate: P) -> Option<(ViewUuid, DomainT::CommonElementViewT)>
+        where P: FnMut(&ViewUuid, &DomainT::CommonElementViewT) -> bool,
+    {
+        let mut v = self.flattened_views.get(child)?.1;
+        loop {
+            let (parent, parent2) = self.flattened_views.get(&v)?;
+            if predicate(&v, parent) {
+                return Some((v, parent.clone()));
+            }
+            v = *parent2;
+        }
     }
 
     fn get_view_for(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT> {

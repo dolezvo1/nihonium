@@ -7,14 +7,14 @@ use crate::common::controller::{
     BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
-use crate::common::views::package_view::{PackageAdapter, PackageDragType};
+use crate::common::views::package_view::PackageDragType;
 use crate::common::views::multiconnection_view::{ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::domains::umlsequence::umlsequence_models::{UmlSequenceCombinedFragmentKind, UmlSequenceCombinedFragmentSection, UmlSequenceDiagramBoard, UmlSequenceMessageLifecycleKind, UmlSequenceMessageSynchronicityKind};
-use crate::{CustomModal, CustomTab};
+use crate::CustomModal;
 use eframe::{egui, epaint};
 use std::any::Any;
 use std::collections::HashSet;
@@ -317,7 +317,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
         let v = match element {
             UmlSequenceElement::Diagram(inner) => {
                 // TODO: Diagram elements cannot currently be instantiated at the same time? :/
-                let r = inner.read();
+                // let r = inner.read();
                 new_umlsequence_diagram_view(inner.clone(), Vec::new(), Vec::new(), egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0)).into()
             },
             UmlSequenceElement::CombinedFragment(inner) => {
@@ -338,7 +338,6 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 new_umlsequence_combinedfragmentsection_view(inner.clone(), horizontal_element_views?).into()
             },
             UmlSequenceElement::Lifeline(inner) => {
-                let r = inner.read();
                 new_umlsequence_lifeline_view(inner.clone(), UmlSequenceLifelineRenderStyle::Object).into()
             },
             UmlSequenceElement::Message(inner) => {
@@ -490,9 +489,9 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
 
     fn menubar_options_fun(
         &self,
-        view_uuid: &ViewUuid,
-        ui: &mut egui::Ui,
-        commands: &mut Vec<ProjectCommand>,
+        _view_uuid: &ViewUuid,
+        _ui: &mut egui::Ui,
+        _commands: &mut Vec<ProjectCommand>,
     ) {}
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, UmlSequenceElement>) {
@@ -744,46 +743,6 @@ impl NaiveUmlSequenceTool {
         self.result = PartialUmlSequenceElement::None;
         self.is_spent = self.is_spent.map(|_| true);
     }
-    fn add_horizontal_element_position(&mut self, into: ViewUuid, pos: Option<PositionNoT>, lifeline: ERef<UmlSequenceLifeline>) {
-        if self.event_lock {
-            return;
-        }
-
-        match (self.current_stage, &mut self.result) {
-            (UmlSequenceToolStage::LinkStart { link_type }, PartialUmlSequenceElement::None) => {
-                self.result = PartialUmlSequenceElement::Link {
-                    link_type,
-                    source: lifeline,
-                    dest: None,
-                };
-                self.current_stage = UmlSequenceToolStage::LinkEnd;
-                self.event_lock = true;
-            },
-            (
-                UmlSequenceToolStage::LinkEnd,
-                PartialUmlSequenceElement::Link { dest, .. },
-            ) => {
-                *dest = Some(lifeline);
-                self.event_lock = true;
-            }
-            (UmlSequenceToolStage::CombinedFragmentStart { kind }, PartialUmlSequenceElement::None) => {
-                self.result = PartialUmlSequenceElement::CombinedFragment {
-                    kind,
-                    source: lifeline,
-                    dest: None,
-                };
-                self.current_stage = UmlSequenceToolStage::CombinedFragmentEnd;
-                self.event_lock = true;
-            },
-            (UmlSequenceToolStage::CombinedFragmentEnd, PartialUmlSequenceElement::CombinedFragment { dest, .. },) => {
-                *dest = Some(lifeline);
-                self.event_lock = true;
-            },
-            _ => {},
-        }
-
-        self.event_lock = true;
-    }
 }
 
 const TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultiplied(0, 255, 0, 31);
@@ -842,10 +801,24 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 source,
                 ..
             } => {
-                // TODO: correctly indicate message position
                 if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
                     canvas.draw_line(
-                        [source_view.position(), pos],
+                        [egui::Pos2::new(source_view.position().x, pos.y), pos],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            PartialUmlSequenceElement::CombinedFragment {
+                source,
+                ..
+            } => {
+                if let Some(source_view) = q.get_view_for(&source.read().uuid()) {
+                    canvas.draw_rectangle(
+                        egui::Rect::from_two_pos(egui::Pos2::new(source_view.position().x, pos.y), pos)
+                            .expand(UmlSequenceCombinedFragmentSectionView::SECTION_PADDING_X / 2.0),
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::TRANSPARENT,
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
@@ -915,7 +888,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
         }
 
         match element {
-            UmlSequenceElement::CombinedFragment(inner) => {
+            UmlSequenceElement::CombinedFragment(_inner) => {
                 match (self.current_stage, &mut self.result) {
                     (
                         UmlSequenceToolStage::CombinedFragmentSection,
@@ -926,6 +899,40 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         );
                         self.event_lock = true;
                     }
+                    _ => {}
+                }
+            },
+            UmlSequenceElement::Lifeline(inner) => {
+                match (self.current_stage, &mut self.result) {
+                    (UmlSequenceToolStage::LinkStart { link_type }, PartialUmlSequenceElement::None) => {
+                        self.result = PartialUmlSequenceElement::Link {
+                            link_type,
+                            source: inner,
+                            dest: None,
+                        };
+                        self.current_stage = UmlSequenceToolStage::LinkEnd;
+                        self.event_lock = true;
+                    },
+                    (
+                        UmlSequenceToolStage::LinkEnd,
+                        PartialUmlSequenceElement::Link { dest, .. },
+                    ) => {
+                        *dest = Some(inner);
+                        self.event_lock = true;
+                    }
+                    (UmlSequenceToolStage::CombinedFragmentStart { kind }, PartialUmlSequenceElement::None) => {
+                        self.result = PartialUmlSequenceElement::CombinedFragment {
+                            kind,
+                            source: inner,
+                            dest: None,
+                        };
+                        self.current_stage = UmlSequenceToolStage::CombinedFragmentEnd;
+                        self.event_lock = true;
+                    },
+                    (UmlSequenceToolStage::CombinedFragmentEnd, PartialUmlSequenceElement::CombinedFragment { dest, .. },) => {
+                        *dest = Some(inner);
+                        self.event_lock = true;
+                    },
                     _ => {}
                 }
             }
@@ -940,7 +947,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
     fn try_construct_view(
         &mut self,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
-        into: &ViewUuid,
+        _into: &ViewUuid,
     ) -> Option<(UmlSequenceElementView, Option<Box<dyn CustomModal>>)> {
         match &self.result {
             PartialUmlSequenceElement::Some(x) => {
@@ -967,11 +974,9 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 if let (Some(source_view), Some(target_view)) = (
                     q.get_view_for(&source_uuid),
                     q.get_view_for(&target_uuid),
-                ) {
+                ) && q.find_parent(&source_view.uuid(), |_, e| matches!(e, UmlSequenceElementView::Diagram(_))).map(|e| e.0)
+                    == q.find_parent(&target_view.uuid(), |_, e| matches!(e, UmlSequenceElementView::Diagram(_))).map(|e| e.0) {
                     self.current_stage = self.initial_stage;
-
-                    let source_x = source_view.min_shape().center().x;
-                    let dest_x = target_view.min_shape().center().x;
 
                     let section = new_umlsequence_combinedfragmentsection("", Vec::new()).into();
                     let link_view = new_umlsequence_combinedfragment(
@@ -997,13 +1002,14 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 if let (Some(source_view), Some(target_view)) = (
                     q.get_view_for(&source_uuid),
                     q.get_view_for(&target_uuid),
-                ) {
+                ) && q.find_parent(&source_view.uuid(), |_, e| matches!(e, UmlSequenceElementView::Diagram(_))).map(|e| e.0)
+                    == q.find_parent(&target_view.uuid(), |_, e| matches!(e, UmlSequenceElementView::Diagram(_))).map(|e| e.0) {
                     self.current_stage = self.initial_stage;
 
                     let link_view = match link_type {
-                        LinkType::Message { synchronicity_kind, is_return, name: stereotype } => {
+                        LinkType::Message { synchronicity_kind, is_return, name } => {
                             new_umlsequence_message(
-                                "",
+                                name,
                                 "",
                                 *synchronicity_kind,
                                 UmlSequenceMessageLifecycleKind::None,
@@ -1073,10 +1079,9 @@ pub fn new_umlsequence_diagram_view(
     horizontal_element_views: Vec<UmlSequenceHorizontalElementView>,
     bounds_rect: egui::Rect,
 ) -> ERef<UmlSequenceDiagramView> {
-    let m = model.read();
     ERef::new(UmlSequenceDiagramView {
         uuid: ViewUuid::now_v7().into(),
-        model: model.clone(),
+        model,
         lifeline_views,
         horizontal_element_views,
         temporaries: Default::default(),
@@ -1114,7 +1119,7 @@ struct UmlSequenceDiagramViewTemporaries {
 }
 
 impl UmlSequenceDiagramView {
-    const MIN_SIZE: egui::Vec2 = egui::Vec2::splat(50.0);
+    const MIN_SIZE: egui::Vec2 = egui::Vec2::new(100.0, 200.0);
 
     fn handle_size(&self, ui_scale: f32) -> f32 {
         10.0_f32
@@ -1317,9 +1322,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
     ) -> TargettingStatus {
-        // Draw shape and text
-        let r = self.model.read();
-
         canvas.draw_rectangle(
             self.bounds_rect,
             egui::CornerRadius::ZERO,
@@ -1328,7 +1330,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             self.temporaries.highlight,
         );
 
-        let mut drawn_child_targetting = TargettingStatus::NotDrawn;
+        let drawn_child_targetting = TargettingStatus::NotDrawn;
 
         macro_rules! draw_children {
             () => {
@@ -1578,7 +1580,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
                     if let Some(h) = &horizontal_place {
-                        tool.add_horizontal_element_position(*self.uuid, h.0, h.1.clone());
+                        tool.add_section(h.1.clone().into());
                     }
 
                     if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid) {
@@ -1692,13 +1694,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         }
         macro_rules! resize_by {
             ($align:expr, $delta:expr) => {
-                let min_delta_x = 40.0 - self.bounds_rect.width();
+                let min_delta_x = Self::MIN_SIZE.x - self.bounds_rect.width();
                 let (left, right) = match $align.x() {
                     egui::Align::Min => (0.0, $delta.x.max(min_delta_x)),
                     egui::Align::Center => (0.0, 0.0),
                     egui::Align::Max => ((-$delta.x).max(min_delta_x), 0.0),
                 };
-                let min_delta_y = 20.0 - self.bounds_rect.height();
+                let min_delta_y = Self::MIN_SIZE.y - self.bounds_rect.height();
                 let (top, bottom) = match $align.y() {
                     egui::Align::Min => (0.0, $delta.y.max(min_delta_y)),
                     egui::Align::Center => (0.0, 0.0),
@@ -1857,7 +1859,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
                     if *b == 0
-                        && let Ok(UmlSequenceElementView::Lifeline(mut view)) = element.clone().try_into() {
+                        && let Ok(UmlSequenceElementView::Lifeline(view)) = element.clone().try_into() {
                         let mut vw = view.write();
                         if let Some(model_pos) = w.get_element_pos(&vw.model_uuid()).map(|e| e.1)
                             .or_else(|| if *into_model { w.insert_element(*b, *pos, vw.model()).ok() } else { None }) {
@@ -2161,11 +2163,10 @@ pub fn new_umlsequence_combinedfragment_view(
     model: ERef<UmlSequenceCombinedFragment>,
     sections: Vec<ERef<UmlSequenceCombinedFragmentSectionView>>,
 ) -> ERef<UmlSequenceCombinedFragmentView> {
-    let m = model.read();
     ERef::new(
         UmlSequenceCombinedFragmentView {
             uuid: ViewUuid::now_v7().into(),
-            model: model.clone(),
+            model,
             sections,
             bounds_rect: egui::Rect::ZERO,
             left_top_pentagon_rect: egui::Rect::ZERO,
@@ -2502,14 +2503,14 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
 
     fn handle_event(
         &mut self,
-        event: InputEvent,
-        ehc: &EventHandlingContext,
-        q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
-        tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
+        _event: InputEvent,
+        _ehc: &EventHandlingContext,
+        _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
+        _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _commands: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
     ) -> EventHandlingStatus {
-        todo!()
+        unreachable!()
     }
 
     fn apply_command(
@@ -2836,11 +2837,10 @@ pub fn new_umlsequence_combinedfragmentsection_view(
     model: ERef<UmlSequenceCombinedFragmentSection>,
     horizontal_element_views: Vec<UmlSequenceHorizontalElementView>,
 ) -> ERef<UmlSequenceCombinedFragmentSectionView> {
-    let m = model.read();
     ERef::new(
         UmlSequenceCombinedFragmentSectionView {
             uuid: ViewUuid::now_v7().into(),
-            model: model.clone(),
+            model,
             horizontal_element_views,
             bounds_rect: egui::Rect::ZERO,
             background_color: MGlobalColor::None,
@@ -2991,7 +2991,7 @@ impl UmlSequenceCombinedFragmentSectionView {
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
                     if let Some(h) = &horizontal_place {
-                        tool.add_horizontal_element_position(*self.uuid, h.0, h.1.clone());
+                        tool.add_section(h.1.clone().into());
                     }
 
                     if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid) {
@@ -3164,14 +3164,14 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
 
     fn handle_event(
         &mut self,
-        event: InputEvent,
-        ehc: &EventHandlingContext,
-        q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
-        tool: &mut Option<NaiveUmlSequenceTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        _event: InputEvent,
+        _ehc: &EventHandlingContext,
+        _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
+        _tool: &mut Option<NaiveUmlSequenceTool>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> EventHandlingStatus {
-        todo!()
+        unreachable!()
     }
 
     fn apply_command(
@@ -3535,9 +3535,9 @@ impl UmlSequenceLifelineView {
         &mut self,
         pos: egui::Pos2,
         max_y: f32,
-        q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
+        _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
-        settings: &UmlSequenceSettings,
+        _settings: &UmlSequenceSettings,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
     ) -> TargettingStatus {
@@ -3708,7 +3708,7 @@ pub fn draw_simple_uml_class<'a>(
     highlight: canvas::Highlight,
 ) -> egui::Rect {
     // Measure phase
-    let (offsets, global_offset, max_width, rect) = {
+    let (offsets, global_offset, rect) = {
         let mut offsets = vec![0.0];
         let mut max_width: f32 = 0.0;
 
@@ -3760,7 +3760,6 @@ pub fn draw_simple_uml_class<'a>(
         (
             offsets,
             global_offset,
-            max_width,
             rect,
         )
     };
@@ -3799,7 +3798,6 @@ pub fn draw_simple_uml_class<'a>(
                 canvas::CLASS_BOTTOM_FONT_SIZE,
                 egui::Color32::BLACK,
             );
-            offset_counter += 1;
         }
     }
 
@@ -3886,10 +3884,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
+        _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
@@ -4033,7 +4031,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
             modelish
         };
 
-        let mut cloneish = ERef::new(Self {
+        let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
             stereotype_in_guillemets: self.stereotype_in_guillemets.clone(),
@@ -4100,11 +4098,10 @@ pub fn new_umlsequence_message_view(
     source: UmlSequenceElementView,
     target: UmlSequenceElementView,
 ) -> ERef<UmlSequenceMessageView> {
-    let m = model.read();
     ERef::new(
         UmlSequenceMessageView {
             uuid: ViewUuid::now_v7().into(),
-            model: model.clone(),
+            model,
             source,
             target,
             bounds_rect: egui::Rect::ZERO,
@@ -4157,11 +4154,11 @@ impl UmlSequenceMessageView {
     fn draw_inner(
         &mut self,
         (pos_y, scale_y): (f32, f32),
-        q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
-        context: &GlobalDrawingContext,
-        settings: &UmlSequenceSettings,
+        _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &UmlSequenceSettings,
         canvas: &mut dyn canvas::NHCanvas,
-        tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
+        _tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
     ) -> egui::Rect {
         let s = canvas::Stroke {
             width: 1.0,
@@ -4355,11 +4352,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
     fn handle_event(
         &mut self,
         event: InputEvent,
-        ehc: &EventHandlingContext,
-        q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
-        tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
+        _ehc: &EventHandlingContext,
+        _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
+        _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _commands: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.bounds_rect.expand(5.0).contains(pos) => EventHandlingStatus::HandledByElement,
@@ -4434,6 +4431,14 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
                             ),
                         ));
                         model.state_invariant = invariant.clone();
+                    }
+                    UmlSequencePropChange::FlipMulticonnection(_) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            UmlSequencePropChange::FlipMulticonnection(FlipMulticonnection { }),
+                        ));
+                        std::mem::swap(&mut self.source, &mut self.target);
+                        model.flip_multiconnection();
                     }
                     UmlSequencePropChange::CommentChange(comment) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -4714,7 +4719,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
         &mut self,
         _: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
-        settings: &UmlSequenceSettings,
+        _settings: &UmlSequenceSettings,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
     ) -> TargettingStatus {
@@ -4811,7 +4816,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
         ehc: &EventHandlingContext,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
-        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> EventHandlingStatus {
         match event {
@@ -4975,7 +4980,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
             modelish
         };
 
-        let mut cloneish = ERef::new(Self {
+        let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
             text_buffer: self.text_buffer.clone(),
@@ -5010,11 +5015,10 @@ pub fn new_umlsequence_commentlink_view(
     source: UmlSequenceElementView,
     target: UmlSequenceElementView,
 ) -> ERef<CommentLinkViewT> {
-    let m = model.read();
     MulticonnectionView::new(
         ViewUuid::now_v7().into(),
         UmlSequenceCommentLinkAdapter {
-            model: model.clone(),
+            model,
             temporaries: Default::default(),
         },
         vec![Ending::new(source)],
@@ -5066,17 +5070,17 @@ impl MulticonnectionAdapter<UmlSequenceDomain> for UmlSequenceCommentLinkAdapter
 
     fn show_properties(
         &mut self,
-        q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
-        ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>
+        _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
+        _ui: &mut egui::Ui,
+        _commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>
     ) -> PropertiesStatus<UmlSequenceDomain> {
         PropertiesStatus::Shown
     }
     fn apply_change(
         &self,
-        view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        _view_uuid: &ViewUuid,
+        _command: &InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>,
+        _undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) {}
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
