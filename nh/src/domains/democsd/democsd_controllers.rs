@@ -966,7 +966,7 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         self.model.write().remove_element(uuid).map(|e| e.1)
     }
     
-    fn show_properties(
+    fn show_model_properties(
         &mut self,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
@@ -986,8 +986,15 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
             ));
         }
     }
+    fn show_color_property(
+        &mut self,
+        _context: &GlobalDrawingContext,
+        _ui: &mut egui::Ui,
+    ) -> PropertiesStatus<DemoCsdDomain> {
+        PropertiesStatus::Shown
+    }
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,

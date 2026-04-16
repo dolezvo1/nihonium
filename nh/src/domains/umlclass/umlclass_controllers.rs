@@ -1709,6 +1709,7 @@ pub fn new_umlclass_package_view<P: UmlClassProfile>(
         ViewUuid::now_v7().into(),
         UmlClassPackageAdapter {
             model: model.clone(),
+            background_color: MGlobalColor::None,
             display_text: Arc::new("".to_owned()),
             name_buffer: (*m.name).clone(),
             stereotype_buffer: (*m.stereotype).clone(),
@@ -1725,6 +1726,7 @@ pub fn new_umlclass_package_view<P: UmlClassProfile>(
 pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassPackage>,
+    background_color: MGlobalColor,
 
     #[nh_context_serde(skip_and_default)]
     display_text: Arc<String>,
@@ -1762,6 +1764,9 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
+    fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
+        global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE)
+    }
     fn draw_label_or_get_text(
         &self,
         bounds_rect: egui::Rect,
@@ -1802,7 +1807,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         }
     }
 
-    fn show_properties(
+    fn show_model_properties(
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
@@ -1843,8 +1848,24 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             ));
         }
     }
+    fn show_color_property(
+        &mut self,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) -> PropertiesStatus<UmlClassDomain<P>> {
+        ui.label("Background color:");
+        if crate::common::controller::mglobalcolor_edit_button(
+            &context.global_colors,
+            ui,
+            &mut self.background_color,
+        ) {
+            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+        }
+
+        PropertiesStatus::Shown
+    }
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
@@ -1879,6 +1900,13 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                         UmlClassPropChange::CommentChange(model.comment.clone()),
                     ));
                     model.comment = comment.clone();
+                }
+                UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                    ));
+                    self.background_color = *color;
                 }
                 _ => {}
             }
@@ -1915,6 +1943,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
 
         Self {
             model,
+            background_color: self.background_color.clone(),
             display_text: self.display_text.clone(),
             stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),

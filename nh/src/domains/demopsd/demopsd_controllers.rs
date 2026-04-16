@@ -1084,7 +1084,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         self.model.write().remove_element(uuids).map(|e| e.1)
     }
 
-    fn show_properties(
+    fn show_model_properties(
         &mut self,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
@@ -1104,8 +1104,15 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
             ));
         }
     }
+    fn show_color_property(
+        &mut self,
+        _context: &GlobalDrawingContext,
+        _ui: &mut egui::Ui,
+    ) -> PropertiesStatus<DemoPsdDomain> {
+        PropertiesStatus::Shown
+    }
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,

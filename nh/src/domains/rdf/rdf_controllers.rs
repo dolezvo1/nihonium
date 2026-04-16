@@ -895,10 +895,44 @@ impl CustomModal for RdfIriBasedSetupModal {
     }
 }
 
+
+fn new_rdf_graph(
+    iri: &str,
+    bounds_rect: egui::Rect,
+) -> (ERef<RdfGraph>, ERef<PackageViewT>) {
+    let graph_model = ERef::new(RdfGraph::new(
+        ModelUuid::now_v7(),
+        iri.to_owned(),
+        Vec::new(),
+    ));
+    let graph_view = new_rdf_graph_view(graph_model.clone(), bounds_rect);
+
+    (graph_model, graph_view)
+}
+fn new_rdf_graph_view(
+    model: ERef<RdfGraph>,
+    bounds_rect: egui::Rect,
+) -> ERef<PackageViewT> {
+    let m = model.read();
+    PackageView::new(
+        ViewUuid::now_v7().into(),
+        RdfGraphAdapter {
+            model: model.clone(),
+            background_color: MGlobalColor::None,
+            iri_buffer: (*m.iri).clone(),
+            comment_buffer: (*m.comment).clone(),
+        },
+        Vec::new(),
+        bounds_rect,
+    )
+}
+
 #[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 pub struct RdfGraphAdapter {
     #[nh_context_serde(entity)]
     model: ERef<RdfGraph>,
+    background_color: MGlobalColor,
+
     #[nh_context_serde(skip_and_default)]
     iri_buffer: String,
     #[nh_context_serde(skip_and_default)]
@@ -926,7 +960,11 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
-    fn show_properties(
+    fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
+        global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE)
+    }
+
+    fn show_model_properties(
         &mut self,
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
@@ -946,8 +984,24 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
             ));
         }
     }
+    fn show_color_property(
+        &mut self,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) -> PropertiesStatus<RdfDomain> {
+        ui.label("Background color:");
+        if crate::common::controller::mglobalcolor_edit_button(
+            &context.global_colors,
+            ui,
+            &mut self.background_color,
+        ) {
+            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+        }
+
+        PropertiesStatus::Shown
+    }
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
@@ -968,6 +1022,13 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
                         RdfPropChange::CommentChange(model.comment.clone()),
                     ));
                     model.comment = comment.clone();
+                }
+                RdfPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        RdfPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                    ));
+                    self.background_color = *color;
                 }
                 _ => {}
             }
@@ -993,7 +1054,12 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
-        Self { model, iri_buffer: self.iri_buffer.clone(), comment_buffer: self.comment_buffer.clone() }
+        Self {
+            model,
+            background_color: self.background_color.clone(),
+            iri_buffer: self.iri_buffer.clone(),
+            comment_buffer: self.comment_buffer.clone(),
+        }
     }
 
     fn deep_copy_finish(
@@ -1009,35 +1075,6 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
     }
 }
 
-fn new_rdf_graph(
-    iri: &str,
-    bounds_rect: egui::Rect,
-) -> (ERef<RdfGraph>, ERef<PackageViewT>) {
-    let graph_model = ERef::new(RdfGraph::new(
-        ModelUuid::now_v7(),
-        iri.to_owned(),
-        Vec::new(),
-    ));
-    let graph_view = new_rdf_graph_view(graph_model.clone(), bounds_rect);
-
-    (graph_model, graph_view)
-}
-fn new_rdf_graph_view(
-    model: ERef<RdfGraph>,
-    bounds_rect: egui::Rect,
-) -> ERef<PackageViewT> {
-    let m = model.read();
-    PackageView::new(
-        ViewUuid::now_v7().into(),
-        RdfGraphAdapter {
-            model: model.clone(),
-            iri_buffer: (*m.iri).clone(),
-            comment_buffer: (*m.comment).clone()
-        },
-        Vec::new(),
-        bounds_rect,
-    )
-}
 
 fn new_rdf_node(
     iri: &str,

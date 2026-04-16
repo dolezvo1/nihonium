@@ -1336,7 +1336,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
-    fn show_properties(
+    fn show_model_properties(
         &mut self,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
@@ -1356,8 +1356,15 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
             ));
         }
     }
+    fn show_color_property(
+        &mut self,
+        _context: &GlobalDrawingContext,
+        _ui: &mut egui::Ui,
+    ) -> PropertiesStatus<DemoOfdDomain> {
+        PropertiesStatus::Shown
+    }
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,

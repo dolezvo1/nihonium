@@ -31,14 +31,20 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     ) -> Option<Arc<String>> {
         Some(self.model_name())
     }
-    fn show_properties(
+
+    fn show_model_properties(
         &mut self,
         q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>
+        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
+    fn show_color_property(
+        &mut self,
+        context: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) -> PropertiesStatus<DomainT>;
     fn apply_change(
-        &self,
+        &mut self,
         view_uuid: &ViewUuid,
         command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
         undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
@@ -169,7 +175,7 @@ where
         } else if self.highlight.selected {
             ui.label("Model properties");
 
-            self.adapter.show_properties(q, ui, commands);
+            self.adapter.show_model_properties(q, ui, commands);
 
             ui.add_space(super::VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
             ui.label("View properties");
@@ -204,7 +210,7 @@ where
                 }
             });
 
-            PropertiesStatus::Shown
+            self.adapter.show_color_property(gdc, ui)
         } else {
             PropertiesStatus::NotShown
         }
