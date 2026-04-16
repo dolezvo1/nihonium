@@ -9,7 +9,7 @@ use crate::{common::{
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
     uuid::{ControllerUuid, ModelUuid, ViewUuid},
-}, domains::{ontouml::ontouml_models, umlclass::{umlclass_controllers::{UmlClassRenderStyle, UmlClassView}, umlclass_models::{UmlClass, UmlClassElement}}}};
+}, domains::{ontouml::ontouml_models, umlclass::{umlclass_controllers::{UmlClassRenderStyle, UmlClassView}, umlclass_models::{UmlClass, UmlClassElement, UmlClassPackageKind}}}};
 use eframe::egui;
 use std::{
     collections::HashSet,
@@ -282,7 +282,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         );
     }
 
-    let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+    let (_package, package_view) = new_umlclass_package("a package", "", UmlClassPackageKind::Package, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+    package_view.write().refresh_buffers();
     let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
     let comment = (comment, comment_view.into());
     let commentlink = new_umlclass_commentlink(None, comment.clone(), (dummy2.0.clone().into(), dummy2.1.clone().into()));
@@ -291,7 +292,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ("Classes", classes),
         ("Relationships", relationships),
         ("Other", vec![
-            (UmlClassToolStage::PackageStart, "Package", package_view.into()),
+            (UmlClassToolStage::PackageStart { name: "a package", stereotype: "", kind: UmlClassPackageKind::Package }, "Package", package_view.into()),
             (UmlClassToolStage::Comment, "Comment", comment.1),
             (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
         ]),

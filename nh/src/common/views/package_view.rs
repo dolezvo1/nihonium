@@ -20,6 +20,17 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn foreground_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::BLACK
     }
+    fn draw_label_or_get_text(
+        &self,
+        _bounds_rect: egui::Rect,
+        _q: &DomainT::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &DomainT::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
+    ) -> Option<Arc<String>> {
+        Some(self.model_name())
+    }
     fn show_properties(
         &mut self,
         q: &DomainT::QueryableT<'_>,
@@ -215,13 +226,15 @@ where
             self.highlight,
         );
 
-        canvas.draw_text(
-            self.bounds_rect.center_top(),
-            egui::Align2::CENTER_TOP,
-            &self.adapter.model_name(),
-            canvas::CLASS_MIDDLE_FONT_SIZE,
-            self.adapter.foreground_color(&context.global_colors),
-        );
+        if let Some(label) = self.adapter.draw_label_or_get_text(self.bounds_rect, q, context, settings, canvas, tool) {
+            canvas.draw_text(
+                self.bounds_rect.center_top(),
+                egui::Align2::CENTER_TOP,
+                &label,
+                canvas::CLASS_MIDDLE_FONT_SIZE,
+                self.adapter.foreground_color(&context.global_colors),
+            );
+        }
 
         // Draw resize/drag handles
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {

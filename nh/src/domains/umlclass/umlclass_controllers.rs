@@ -13,7 +13,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::domains::umlclass::umlclass_models::{UmlClassOperation, UmlClassProperty, UmlClassVisibilityKind, UmlGeneralization, UmlUseCase, UmlUseCaseGeneralization};
+use crate::domains::umlclass::umlclass_models::{UmlClassOperation, UmlClassPackageKind, UmlClassProperty, UmlClassVisibilityKind, UmlGeneralization, UmlUseCase, UmlUseCaseGeneralization};
 use crate::{CustomModal, CustomModalResult, CustomTab};
 use eframe::egui;
 use std::any::Any;
@@ -154,6 +154,8 @@ pub enum UmlClassPropChange {
     LinkRoleChange(/*target?*/ bool, Arc<String>),
     LinkReadingChange(/*target?*/ bool, Arc<String>),
     FlipMulticonnection(FlipMulticonnection),
+
+    PackageKindChange(UmlClassPackageKind),
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
@@ -1039,7 +1041,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let (_intreal, intreal_view) = new_umlclass_dependency("", "", false, None, class_2.clone(), dummy_2.clone());
     let (_usage, usage_view) = new_umlclass_dependency("use", "", true, None, class_2.clone(), dummy_2.clone());
 
-    let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+    let (_package, package_view) = new_umlclass_package("a package", "", UmlClassPackageKind::Package, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+    package_view.write().refresh_buffers();
     let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
     let comment = (comment, comment_view.into());
     let commentlink = new_umlclass_commentlink(None, comment.clone(), (class_m.into(), class_2.1.clone()));
@@ -1058,7 +1061,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype: "use", } }, "Usage", usage_view.into()),
         ]),
         ("Other", vec![
-            (UmlClassToolStage::PackageStart, "Package", package_view.into()),
+            (UmlClassToolStage::PackageStart { name: "a package", stereotype: "", kind: UmlClassPackageKind::Package }, "Package", package_view.into()),
             (UmlClassToolStage::Comment, "Comment", comment.1),
             (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
         ]),
@@ -1109,7 +1112,7 @@ pub enum UmlClassToolStage {
     LinkStart { link_type: LinkType },
     LinkEnd,
     LinkAddEnding { source: bool },
-    PackageStart,
+    PackageStart { name: &'static str, stereotype: &'static str, kind: UmlClassPackageKind },
     PackageEnd,
     Comment,
     CommentLinkStart,
@@ -1130,6 +1133,9 @@ enum PartialUmlClassElement<P: UmlClassProfile> {
         new_model: Option<ModelUuid>,
     },
     Package {
+        name: &'static str,
+        stereotype: &'static str,
+        kind: UmlClassPackageKind,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
@@ -1185,7 +1191,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 UmlClassToolStage::Instance
                 | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::UseCase { .. }
-                | UmlClassToolStage::PackageStart
+                | UmlClassToolStage::PackageStart { .. }
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
                 | UmlClassToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
@@ -1205,7 +1211,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::ClassProperty
                 | UmlClassToolStage::ClassOperation
                 | UmlClassToolStage::UseCase { .. }
-                | UmlClassToolStage::PackageStart
+                | UmlClassToolStage::PackageStart { .. }
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
                 | UmlClassToolStage::CommentLinkStart
@@ -1226,7 +1232,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 UmlClassToolStage::Instance
                 | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::UseCase { .. }
-                | UmlClassToolStage::PackageStart
+                | UmlClassToolStage::PackageStart { .. }
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
                 | UmlClassToolStage::CommentLinkStart => NON_TARGETTABLE_COLOR,
@@ -1246,7 +1252,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::ClassProperty
                 | UmlClassToolStage::ClassOperation
                 | UmlClassToolStage::UseCase { .. }
-                | UmlClassToolStage::PackageStart
+                | UmlClassToolStage::PackageStart { .. }
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
                 | UmlClassToolStage::CommentLinkStart => NON_TARGETTABLE_COLOR,
@@ -1273,7 +1279,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::ClassProperty
                 | UmlClassToolStage::ClassOperation
                 | UmlClassToolStage::UseCase { .. }
-                | UmlClassToolStage::PackageStart
+                | UmlClassToolStage::PackageStart { .. }
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment
                 | UmlClassToolStage::CommentLinkEnd => NON_TARGETTABLE_COLOR,
@@ -1356,8 +1362,9 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.result = PartialUmlClassElement::Some(usecase_view.into());
                 self.event_lock = true;
             }
-            (UmlClassToolStage::PackageStart, _) => {
+            (UmlClassToolStage::PackageStart { name, stereotype, kind }, _) => {
                 self.result = PartialUmlClassElement::Package {
+                    name, stereotype, kind,
                     a: pos,
                     b: None,
                 };
@@ -1658,11 +1665,11 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     None
                 }
             }
-            PartialUmlClassElement::Package { a, b: Some(b), .. } => {
-                self.current_stage = UmlClassToolStage::PackageStart;
+            PartialUmlClassElement::Package { name, stereotype, kind, a, b: Some(b) } => {
+                self.current_stage = self.initial_stage;
 
                 let (_package_model, package_view) =
-                    new_umlclass_package("a package", egui::Rect::from_two_pos(*a, *b));
+                    new_umlclass_package(*name, *stereotype, *kind, egui::Rect::from_two_pos(*a, *b));
 
                 self.try_spend();
                 Some((package_view.into(), None))
@@ -1675,12 +1682,58 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
     }
 }
 
+
+pub fn new_umlclass_package<P: UmlClassProfile>(
+    name: &str,
+    stereotype: &str,
+    kind: UmlClassPackageKind,
+    bounds_rect: egui::Rect,
+) -> (ERef<UmlClassPackage>, ERef<PackageViewT<P>>) {
+    let package_model = ERef::new(UmlClassPackage::new(
+        ModelUuid::now_v7(),
+        name.to_owned(),
+        stereotype.to_owned(),
+        kind,
+        Vec::new(),
+    ));
+    let package_view = new_umlclass_package_view(package_model.clone(), bounds_rect);
+
+    (package_model, package_view)
+}
+pub fn new_umlclass_package_view<P: UmlClassProfile>(
+    model: ERef<UmlClassPackage>,
+    bounds_rect: egui::Rect,
+) -> ERef<PackageViewT<P>> {
+    let m = model.read();
+    PackageView::new(
+        ViewUuid::now_v7().into(),
+        UmlClassPackageAdapter {
+            model: model.clone(),
+            display_text: Arc::new("".to_owned()),
+            name_buffer: (*m.name).clone(),
+            stereotype_buffer: (*m.stereotype).clone(),
+            kind_buffer: m.kind.clone(),
+            comment_buffer: (*m.comment).clone(),
+            _profile: PhantomData,
+        },
+        Vec::new(),
+        bounds_rect,
+    )
+}
+
 #[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     model: ERef<UmlClassPackage>,
+
+    #[nh_context_serde(skip_and_default)]
+    display_text: Arc<String>,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    stereotype_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    kind_buffer: UmlClassPackageKind,
     #[nh_context_serde(skip_and_default)]
     comment_buffer: String,
 
@@ -1709,18 +1762,79 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
+    fn draw_label_or_get_text(
+        &self,
+        bounds_rect: egui::Rect,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
+        context: &GlobalDrawingContext,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
+        canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
+    ) -> Option<Arc<String>> {
+        match self.kind_buffer {
+            UmlClassPackageKind::Package => {
+                const PADDING: f32 = 4.0;
+                let background_color = self.background_color(&context.global_colors);
+                let foreground_color = self.foreground_color(&context.global_colors);
+                let r = canvas.measure_text(
+                    bounds_rect.left_top() + egui::Vec2::new(PADDING, -PADDING),
+                    egui::Align2::LEFT_BOTTOM,
+                    &self.display_text,
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                );
+                canvas.draw_rectangle(
+                    r.expand(PADDING),
+                    egui::CornerRadius::ZERO,
+                    background_color,
+                    canvas::Stroke::new_solid(1.0, foreground_color),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(
+                    bounds_rect.left_top() + egui::Vec2::new(PADDING, -PADDING),
+                    egui::Align2::LEFT_BOTTOM,
+                    &self.display_text,
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    foreground_color,
+                );
+                None
+            },
+            UmlClassPackageKind::Boundary => Some(self.display_text.clone()),
+        }
+    }
+
     fn show_properties(
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) {
+        if ui.labeled_text_edit_singleline("Stereotype:", &mut self.stereotype_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+            ));
+        }
+
         if ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+
+        ui.label("Package kind:");
+        egui::ComboBox::from_id_salt("package kind")
+            .selected_text(self.kind_buffer.char())
+            .show_ui(ui, |ui| {
+                for e in [UmlClassPackageKind::Package, UmlClassPackageKind::Boundary] {
+                    if ui.selectable_value(&mut self.kind_buffer, e, e.char()).clicked() {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            UmlClassPropChange::PackageKindChange(self.kind_buffer),
+                        ));
+                    }
+                }
+            });
 
         if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -1738,12 +1852,26 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
             match property {
+                UmlClassPropChange::StereotypeChange(stereotype) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::StereotypeChange(model.stereotype.clone()),
+                    ));
+                    model.stereotype = stereotype.clone();
+                }
                 UmlClassPropChange::NameChange(name) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
                         UmlClassPropChange::NameChange(model.name.clone()),
                     ));
                     model.name = name.clone();
+                }
+                UmlClassPropChange::PackageKindChange(kind) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlClassPropChange::PackageKindChange(model.kind),
+                    ));
+                    model.kind = kind.clone();
                 }
                 UmlClassPropChange::CommentChange(comment) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
@@ -1758,7 +1886,15 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
+
+        self.display_text = if model.stereotype.is_empty() {
+            model.name.clone()
+        } else {
+            format!("«{}» {}", model.stereotype, model.name).into()
+        };
+        self.stereotype_buffer = (*model.stereotype).clone();
         self.name_buffer = (*model.name).clone();
+        self.kind_buffer = model.kind;
         self.comment_buffer = (*model.comment).clone();
     }
 
@@ -1779,7 +1915,10 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
 
         Self {
             model,
+            display_text: self.display_text.clone(),
+            stereotype_buffer: self.stereotype_buffer.clone(),
             name_buffer: self.name_buffer.clone(),
+            kind_buffer: self.kind_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
             _profile: PhantomData,
         }
@@ -1796,37 +1935,6 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             }
         }
     }
-}
-
-pub fn new_umlclass_package<P: UmlClassProfile>(
-    name: &str,
-    bounds_rect: egui::Rect,
-) -> (ERef<UmlClassPackage>, ERef<PackageViewT<P>>) {
-    let package_model = ERef::new(UmlClassPackage::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        Vec::new(),
-    ));
-    let package_view = new_umlclass_package_view(package_model.clone(), bounds_rect);
-
-    (package_model, package_view)
-}
-pub fn new_umlclass_package_view<P: UmlClassProfile>(
-    model: ERef<UmlClassPackage>,
-    bounds_rect: egui::Rect,
-) -> ERef<PackageViewT<P>> {
-    let m = model.read();
-    PackageView::new(
-        ViewUuid::now_v7().into(),
-        UmlClassPackageAdapter {
-            model: model.clone(),
-            name_buffer: (*m.name).clone(),
-            comment_buffer: (*m.comment).clone(),
-            _profile: PhantomData,
-        },
-        Vec::new(),
-        bounds_rect,
-    )
 }
 
 

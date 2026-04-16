@@ -10,7 +10,7 @@ use crate::{common::{
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
     uuid::{ControllerUuid, ModelUuid, ViewUuid},
-}, domains::{umlclass::{umlclass_controllers::{UmlClassRenderStyle, new_uml_usecase, new_umlclass_dependency}, umlclass_models::UmlClassElement}, usecase::usecase_models}};
+}, domains::{umlclass::{umlclass_controllers::{UmlClassRenderStyle, new_uml_usecase, new_umlclass_dependency}, umlclass_models::{UmlClassElement, UmlClassPackageKind}}, usecase::usecase_models}};
 use eframe::egui;
 use std::{
     collections::HashSet,
@@ -206,7 +206,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     }
 
 
-    let (_package, package_view) = new_umlclass_package("a package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+    let (_boundary, boundary_view) = new_umlclass_package("Boundary", "", UmlClassPackageKind::Boundary, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
+    boundary_view.write().refresh_buffers();
     let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
     let comment = (comment, comment_view.into());
     let commentlink = new_umlclass_commentlink(None, comment.clone(), (dummy2.0.clone().into(), dummy2.1.clone().into()));
@@ -215,7 +216,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ("Classes", classes),
         ("Relationships", relationships),
         ("Other", vec![
-            (UmlClassToolStage::PackageStart, "Package", package_view.into()),
+            (UmlClassToolStage::PackageStart { name: "Boundary", stereotype: "", kind: UmlClassPackageKind::Boundary }, "Boundary", boundary_view.into()),
             (UmlClassToolStage::Comment, "Comment", comment.1),
             (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
         ]),

@@ -315,6 +315,8 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 let new_model = UmlClassPackage {
                     uuid: new_uuid,
                     name: model.name.clone(),
+                    stereotype: model.stereotype.clone(),
+                    kind: model.kind.clone(),
                     contained_elements: model.contained_elements.iter().map(|e| {
                         let new_model = walk(e, into);
                         into.insert(*e.uuid(), new_model.clone());
@@ -871,11 +873,29 @@ impl FullTextSearchable for UmlClassDiagram {
 }
 
 
+#[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub enum UmlClassPackageKind {
+    #[default]
+    Package,
+    Boundary,
+}
+
+impl UmlClassPackageKind {
+    pub fn char(&self) -> &'static str {
+        match self {
+            UmlClassPackageKind::Package => "Package",
+            UmlClassPackageKind::Boundary => "Boundary",
+        }
+    }
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassPackage {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
+    pub stereotype: Arc<String>,
+    pub kind: UmlClassPackageKind,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<UmlClassElement>,
 
@@ -886,11 +906,15 @@ impl UmlClassPackage {
     pub fn new(
         uuid: ModelUuid,
         name: String,
+        stereotype: String,
+        kind: UmlClassPackageKind,
         contained_elements: Vec<UmlClassElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
+            stereotype: Arc::new(stereotype),
+            kind,
             contained_elements,
             comment: Arc::new("".to_owned()),
         }
@@ -899,6 +923,8 @@ impl UmlClassPackage {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
             name: self.name.clone(),
+            stereotype: self.stereotype.clone(),
+            kind: self.kind.clone(),
             contained_elements: self.contained_elements.clone(),
             comment: self.comment.clone(),
         })
@@ -966,6 +992,8 @@ impl FullTextSearchable for UmlClassPackage {
             &[
                 &self.uuid.to_string(),
                 &self.name,
+                &self.stereotype,
+                self.kind.char(),
                 &self.comment,
             ],
         );
