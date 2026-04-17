@@ -195,7 +195,7 @@ impl UmlSequenceHorizontalElementView {
         settings: &UmlSequenceSettings,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
-    ) -> egui::Rect {
+    ) -> (TargettingStatus, egui::Rect) {
         match self {
             UmlSequenceHorizontalElementView::CombinedFragment(inner) => inner.write().draw_inner(lifeline_views, pos_and_scale_y, q, context, settings, canvas, tool),
             UmlSequenceHorizontalElementView::Message(inner) => inner.write().draw_inner(pos_and_scale_y, q, context, settings, canvas, tool),
@@ -1330,7 +1330,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             self.temporaries.highlight,
         );
 
-        let drawn_child_targetting = TargettingStatus::NotDrawn;
+        let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
         macro_rules! draw_children {
             () => {
@@ -1343,7 +1343,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 let lifelines_y = self.bounds_rect.top() + max_object_height + canvas::CLASS_MIDDLE_FONT_SIZE;
                 for (idx, v) in self.lifeline_views.iter().enumerate() {
                     let x = self.bounds_rect.min.x + (2 * idx + 1) as f32 * sliver_x;
-                    v.write().draw_inner(egui::Pos2::new(x, lifelines_y), self.bounds_rect.max.y, q, context, settings, canvas, tool);
+                    let t = v.write().draw_inner(egui::Pos2::new(x, lifelines_y), self.bounds_rect.max.y, q, context, settings, canvas, tool);
+                    #[allow(unused)]
+                    if t != TargettingStatus::NotDrawn {
+                        drawn_child_targetting = t;
+                    }
                 }
 
                 const PADDING_Y: f32 = 2.0;
@@ -1351,7 +1355,12 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 let sliver_y = (self.bounds_rect.height() - 2.0 * max_object_height) / theoretical_height;
                 let mut counter_y = self.bounds_rect.min.y + 2.0 * max_object_height + PADDING_Y * sliver_y;
                 for v in self.horizontal_element_views.iter_mut() {
-                    counter_y = v.draw_inner(&self.lifeline_views, (counter_y, sliver_y), q, context, settings, canvas, tool).max.y;
+                    let (t, r) = v.draw_inner(&self.lifeline_views, (counter_y, sliver_y), q, context, settings, canvas, tool);
+                    #[allow(unused)]
+                    if t != TargettingStatus::NotDrawn {
+                        drawn_child_targetting = t;
+                    }
+                    counter_y = r.max.y;
                 }
             };
         }
@@ -2237,21 +2246,25 @@ impl UmlSequenceCombinedFragmentView {
         settings: &UmlSequenceSettings,
         canvas: &mut dyn canvas::NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
-    ) -> egui::Rect {
+    ) -> (TargettingStatus, egui::Rect) {
         let spanned_lifeline_views = self.spanned_lifeline_views(lifeline_views);
         let span_x = (
             spanned_lifeline_views.first().map(|e| e.read().bounds_rect.center().x).unwrap_or(0.0),
             spanned_lifeline_views.last().map(|e| e.read().bounds_rect.center().x).unwrap_or(0.0),
         );
 
+        let mut drawn_child_targetting = TargettingStatus::NotDrawn;
         let mut section_offsets = vec![pos_y];
         let mut acc = egui::Rect::from_min_size(egui::Pos2::new(span_x.0, pos_y), egui::Vec2::ZERO);
         for e in self.sections.iter_mut() {
-            let r = e.write().draw_inner(
+            let (t, r) = e.write().draw_inner(
                 spanned_lifeline_views,
                 span_x,
                 (acc.max.y, scale_y),
-                q, context, settings, canvas, tool).1;
+                q, context, settings, canvas, tool);
+            if t != TargettingStatus::NotDrawn {
+                drawn_child_targetting = t;
+            }
             section_offsets.push(r.max.y);
             acc = acc.union(r);
         }
@@ -2308,7 +2321,10 @@ impl UmlSequenceCombinedFragmentView {
             canvas.draw_text(b1.center(), egui::Align2::CENTER_CENTER, "+", 14.0 / ui_scale, egui::Color32::BLACK);
         }
 
-        self.bounds_rect.with_max_y(self.bounds_rect.max.y + Self::COMBINED_FRAGMENT_MARGIN_BOTTOM * scale_y)
+        (
+            drawn_child_targetting,
+            self.bounds_rect.with_max_y(self.bounds_rect.max.y + Self::COMBINED_FRAGMENT_MARGIN_BOTTOM * scale_y),
+        )
     }
 
     fn handle_event_inner(
@@ -2910,15 +2926,20 @@ impl UmlSequenceCombinedFragmentSectionView {
                 ),
             )
         } else {
+            let mut drawn_child_targetting = TargettingStatus::NotDrawn;
             let mut acc = egui::Rect::from_min_max(
                 egui::Pos2::new(min_lifeline_x, pos_y),
                 egui::Pos2::new(max_lifeline_x, pos_y + Self::SECTION_PADDING_Y * scale_y),
             );
             for e in self.horizontal_element_views.iter_mut() {
-                acc = acc.union(e.draw_inner(lifeline_views, (acc.max.y, scale_y), q, context, settings, canvas, tool));
+                let (t, r) = e.draw_inner(lifeline_views, (acc.max.y, scale_y), q, context, settings, canvas, tool);
+                if t != TargettingStatus::NotDrawn {
+                    drawn_child_targetting = t;
+                }
+                acc = acc.union(r);
             }
             (
-                TargettingStatus::NotDrawn,
+                drawn_child_targetting,
                 acc.expand2(egui::Vec2::new(Self::SECTION_PADDING_X, 0.0)),
             )
         };
@@ -4159,7 +4180,7 @@ impl UmlSequenceMessageView {
         _settings: &UmlSequenceSettings,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
-    ) -> egui::Rect {
+    ) -> (TargettingStatus, egui::Rect) {
         let s = canvas::Stroke {
             width: 1.0,
             color: egui::Color32::BLACK,
@@ -4214,10 +4235,11 @@ impl UmlSequenceMessageView {
         } else {
             (target_x, source_x - target_x)
         };
-        egui::Rect::from_min_size(
+        let r = egui::Rect::from_min_size(
             egui::Pos2::new(lifeline_min_x, pos_y),
             egui::Vec2::new(lifeline_diff_x, scale_y * Self::MESSAGE_SPACING),
-        )
+        );
+        (TargettingStatus::NotDrawn, r)
     }
 }
 
