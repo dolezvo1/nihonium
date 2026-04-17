@@ -23,13 +23,14 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn draw_label_or_get_text(
         &self,
         _bounds_rect: egui::Rect,
+        _highlight: canvas::Highlight,
         _q: &DomainT::QueryableT<'_>,
         _context: &GlobalDrawingContext,
         _settings: &DomainT::SettingsT,
         _canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
-    ) -> Option<Arc<String>> {
-        Some(self.model_name())
+    ) -> Result<egui::Rect, Arc<String>> {
+        Err(self.model_name())
     }
 
     fn show_model_properties(
@@ -85,6 +86,7 @@ pub struct PackageView<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> {
     dragged_type_and_shape: Option<(PackageDragType, egui::Rect)>,
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
+    label_rect: egui::Rect,
     bounds_rect: egui::Rect,
 }
 
@@ -105,6 +107,7 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
 
                 dragged_type_and_shape: None,
                 highlight: canvas::Highlight::NONE,
+                label_rect: egui::Rect::NOTHING,
                 bounds_rect,
             }
         )
@@ -121,6 +124,14 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
                 .max((self.bounds_rect.center().x + self.bounds_rect.right()) / 2.0),
             self.bounds_rect.top()
         )
+    }
+
+    fn contains_pos(&self, pos: egui::Pos2) -> bool {
+        self.label_rect.contains(pos) || self.bounds_rect.contains(pos)
+    }
+    fn contained_within(&self, rect: &egui::Rect) -> bool {
+        rect.contains_rect(self.bounds_rect)
+        && (self.label_rect == egui::Rect::NOTHING || rect.contains_rect(self.label_rect))
     }
 }
 
@@ -232,14 +243,18 @@ where
             self.highlight,
         );
 
-        if let Some(label) = self.adapter.draw_label_or_get_text(self.bounds_rect, q, context, settings, canvas, tool) {
-            canvas.draw_text(
-                self.bounds_rect.center_top(),
-                egui::Align2::CENTER_TOP,
-                &label,
-                canvas::CLASS_MIDDLE_FONT_SIZE,
-                self.adapter.foreground_color(&context.global_colors),
-            );
+        match self.adapter.draw_label_or_get_text(self.bounds_rect, self.highlight, q, context, settings, canvas, tool) {
+            Ok(r) => self.label_rect = r,
+            Err(label) => {
+                self.label_rect = egui::Rect::NOTHING;
+                canvas.draw_text(
+                    self.bounds_rect.center_top(),
+                    egui::Align2::CENTER_TOP,
+                    &label,
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    self.adapter.foreground_color(&context.global_colors),
+                );
+            },
         }
 
         // Draw resize/drag handles
@@ -413,7 +428,7 @@ where
                 }
             }
             InputEvent::Click(pos) => {
-                if !self.min_shape().contains(pos) {
+                if !self.contains_pos(pos) {
                     return k_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled);
                 }
 
@@ -579,7 +594,7 @@ where
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.highlight.selected =
-                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
+                    (self.highlight.selected && *retain) || self.contained_within(rect);
 
                 recurse!();
             }
@@ -790,6 +805,7 @@ where
             selected_direct_elements: self.selected_direct_elements.clone(),
             dragged_type_and_shape: None,
             highlight: self.highlight,
+            label_rect: self.label_rect,
             bounds_rect: self.bounds_rect,
         });
         tlc.insert(view_uuid, cloneish.clone().into());

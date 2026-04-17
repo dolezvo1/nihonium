@@ -1770,12 +1770,13 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
     fn draw_label_or_get_text(
         &self,
         bounds_rect: egui::Rect,
+        highlight: canvas::Highlight,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
         _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
-    ) -> Option<Arc<String>> {
+    ) -> Result<egui::Rect, Arc<String>> {
         match self.kind_buffer {
             UmlClassPackageKind::Package => {
                 const PADDING: f32 = 4.0;
@@ -1792,7 +1793,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                     egui::CornerRadius::ZERO,
                     background_color,
                     canvas::Stroke::new_solid(1.0, foreground_color),
-                    canvas::Highlight::NONE,
+                    highlight,
                 );
                 canvas.draw_text(
                     bounds_rect.left_top() + egui::Vec2::new(PADDING, -PADDING),
@@ -1801,9 +1802,9 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
                     canvas::CLASS_MIDDLE_FONT_SIZE,
                     foreground_color,
                 );
-                None
+                Ok(r.expand(PADDING))
             },
-            UmlClassPackageKind::Boundary => Some(self.display_text.clone()),
+            UmlClassPackageKind::Boundary => Err(self.display_text.clone()),
         }
     }
 
