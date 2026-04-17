@@ -15,6 +15,7 @@ pub enum UmlSequenceElement {
     CombinedFragmentSection(ERef<UmlSequenceCombinedFragmentSection>),
     Lifeline(ERef<UmlSequenceLifeline>),
     Message(ERef<UmlSequenceMessage>),
+    Ref(ERef<UmlSequenceRef>),
     Comment(ERef<UmlSequenceComment>),
     CommentLink(ERef<UmlSequenceCommentLink>),
 }
@@ -24,6 +25,7 @@ impl UmlSequenceElement {
         match &self {
             UmlSequenceElement::CombinedFragment(inner) => Some(inner.clone().into()),
             UmlSequenceElement::Message(inner) => Some(inner.clone().into()),
+            UmlSequenceElement::Ref(inner) => Some(inner.clone().into()),
             UmlSequenceElement::Diagram(..)
             | UmlSequenceElement::CombinedFragmentSection(..)
             | UmlSequenceElement::Lifeline(..)
@@ -73,6 +75,7 @@ impl FullTextSearchable for UmlSequenceElement {
             UmlSequenceElement::CombinedFragmentSection(inner) => inner.read().full_text_search(acc),
             UmlSequenceElement::Lifeline(inner) => inner.read().full_text_search(acc),
             UmlSequenceElement::Message(inner) => inner.read().full_text_search(acc),
+            UmlSequenceElement::Ref(inner) => inner.read().full_text_search(acc),
             UmlSequenceElement::Comment(inner) => inner.read().full_text_search(acc),
             UmlSequenceElement::CommentLink(inner) => inner.read().full_text_search(acc),
         }
@@ -154,6 +157,7 @@ pub fn deep_copy_diagram(d: &UmlSequenceDiagramBoard) -> (ERef<UmlSequenceDiagra
             UmlSequenceElement::Message(inner) => {
                 inner.read().clone_with(*new_uuid).into()
             },
+            UmlSequenceElement::Ref(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlSequenceElement::Comment(inner) => {
                 inner.read().clone_with(*new_uuid).into()
             }
@@ -199,6 +203,7 @@ pub fn deep_copy_diagram(d: &UmlSequenceDiagramBoard) -> (ERef<UmlSequenceDiagra
                     model.target = t.clone();
                 }
             },
+            UmlSequenceElement::Ref(..) => {},
             UmlSequenceElement::Comment(..) => {},
             UmlSequenceElement::CommentLink(inner) => {
                 let mut model = inner.write();
@@ -321,6 +326,7 @@ pub fn transitive_closure(d: &UmlSequenceDiagramBoard, mut when_deleting: HashSe
             },
             UmlSequenceElement::Lifeline(..)
             | UmlSequenceElement::Message(..)
+            | UmlSequenceElement::Ref(..)
             | UmlSequenceElement::Comment(..)
             | UmlSequenceElement::CommentLink(..) => {},
         }
@@ -361,7 +367,8 @@ pub fn transitive_closure(d: &UmlSequenceDiagramBoard, mut when_deleting: HashSe
                         also_delete.insert(*r.uuid);
                     }
                 },
-                UmlSequenceElement::Comment(..) => {},
+                UmlSequenceElement::Ref(..)
+                | UmlSequenceElement::Comment(..) => {},
                 UmlSequenceElement::CommentLink(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
@@ -408,6 +415,7 @@ fn enumerate(e: &UmlSequenceElement, into: &mut HashSet<ModelUuid>) {
         }
         UmlSequenceElement::Lifeline(..)
         | UmlSequenceElement::Message(..)
+        | UmlSequenceElement::Ref(..)
         | UmlSequenceElement::Comment(..)
         | UmlSequenceElement::CommentLink(..) => {},
     }
@@ -422,13 +430,15 @@ pub enum UmlSequenceHorizontalElement {
     #[container_model(passthrough = "eref")]
     CombinedFragment(ERef<UmlSequenceCombinedFragment>),
     Message(ERef<UmlSequenceMessage>),
+    Ref(ERef<UmlSequenceRef>),
 }
 
 impl UmlSequenceHorizontalElement {
     pub fn to_element(self) -> UmlSequenceElement {
         match self {
-            UmlSequenceHorizontalElement::CombinedFragment(inner) => UmlSequenceElement::CombinedFragment(inner),
-            UmlSequenceHorizontalElement::Message(inner) => UmlSequenceElement::Message(inner),
+            UmlSequenceHorizontalElement::CombinedFragment(inner) => inner.into(),
+            UmlSequenceHorizontalElement::Message(inner) => inner.into(),
+            UmlSequenceHorizontalElement::Ref(inner) => inner.into(),
         }
     }
 }
@@ -532,6 +542,7 @@ impl UmlSequenceDiagramBoard {
                 },
                 UmlSequenceElement::Lifeline(..)
                 | UmlSequenceElement::Message(..)
+                | UmlSequenceElement::Ref(..)
                 | UmlSequenceElement::Comment(..)
                 | UmlSequenceElement::CommentLink(..) => {},
             }
@@ -1250,6 +1261,59 @@ impl FullTextSearchable for UmlSequenceCombinedFragmentSection {
     }
 }
 
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlSequenceRef {
+    pub uuid: Arc<ModelUuid>,
+    pub text: Arc<String>,
+    pub horizontal_span: HashSet<ModelUuid>,
+}
+
+impl UmlSequenceRef {
+    pub fn new(
+        uuid: ModelUuid,
+        text: String,
+        horizontal_span: HashSet<ModelUuid>,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            text: Arc::new(text),
+            horizontal_span,
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            text: self.text.clone(),
+            horizontal_span: self.horizontal_span.clone(),
+        })
+    }
+}
+
+impl Entity for UmlSequenceRef {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for UmlSequenceRef {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+impl FullTextSearchable for UmlSequenceRef {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.text,
+            ],
+        );
+    }
+}
 
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
