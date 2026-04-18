@@ -391,7 +391,7 @@ fn add_project_element_block(
                         });
                     for e in actions {
                         if let egui_ltreeview::Action::SetSelected(items) = e {
-                            self.selected_diagram = items[0];
+                            self.selected_diagram = items.get(0).map_or("", |e| *e);
                         }
                     }
 
