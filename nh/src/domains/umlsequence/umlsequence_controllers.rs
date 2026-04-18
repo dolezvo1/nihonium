@@ -4123,28 +4123,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
 }
 
 
-pub fn message_label_format(lifecycle: UmlSequenceMessageLifecycleKind, name: &str) -> Option<Arc<String>> {
-    if lifecycle == UmlSequenceMessageLifecycleKind::None && name.is_empty() {
-        None
-    } else {
-        let mut label = match lifecycle {
-            UmlSequenceMessageLifecycleKind::None => "".to_owned(),
-            UmlSequenceMessageLifecycleKind::Create => "«create»\n".to_owned(),
-            UmlSequenceMessageLifecycleKind::Delete => "«destroy»\n".to_owned(),
-        };
-        if !name.is_empty() {
-            label.push_str(name);
-            label.push_str("\n");
-        }
-        let newlines_count = label.chars().filter(|e| *e == '\n').count();
-        for _ in 1..newlines_count {
-            label.push_str("\n");
-        }
-        Some(label.into())
-    }
-}
-
-
 pub fn new_umlsequence_message(
     name: &str,
     state_invariant: &str,
@@ -4555,16 +4533,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
 
         self.temporaries.display_text = match model.lifecycle {
             UmlSequenceMessageLifecycleKind::None => (*model.name).clone(),
-            UmlSequenceMessageLifecycleKind::Create => if model.name.is_empty() {
-                format!("«create»")
-            } else {
-                format!("«create»\n{}", model.name)
-            },
-            UmlSequenceMessageLifecycleKind::Delete => if model.name.is_empty() {
-                format!("«destroy»")
-            } else {
-                format!("«destroy»\n{}", model.name)
-            },
+            UmlSequenceMessageLifecycleKind::Create => format!("«create»\n{}", model.name).trim().to_string(),
+            UmlSequenceMessageLifecycleKind::Delete => format!("«destroy»\n{}", model.name).trim().to_string(),
         };
         self.temporaries.state_invariant_in_curly_brackets = if model.state_invariant.is_empty() {
             "".to_owned()
