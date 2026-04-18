@@ -21,6 +21,19 @@ pub enum UmlSequenceElement {
 }
 
 impl UmlSequenceElement {
+    pub fn as_standalone(&self) -> Option<UmlSequenceStandaloneElement> {
+        match &self {
+            UmlSequenceElement::Diagram(inner) => Some(inner.clone().into()),
+            UmlSequenceElement::Comment(inner) => Some(inner.clone().into()),
+            UmlSequenceElement::CombinedFragment(..)
+            | UmlSequenceElement::CombinedFragmentSection(..)
+            | UmlSequenceElement::Lifeline(..)
+            | UmlSequenceElement::Message(..)
+            | UmlSequenceElement::Ref(..)
+            | UmlSequenceElement::CommentLink(..) => None,
+        }
+    }
+
     pub fn as_horizontal(&self) -> Option<UmlSequenceHorizontalElement> {
         match &self {
             UmlSequenceElement::CombinedFragment(inner) => Some(inner.clone().into()),
@@ -221,24 +234,24 @@ pub fn deep_copy_diagram(d: &UmlSequenceDiagramBoard) -> (ERef<UmlSequenceDiagra
     }
 
     let mut all_models = HashMap::new();
-    let mut new_diagrams = Vec::new();
-    for e in &d.diagrams {
-        let new_model = walk(&e.clone().into(), &mut all_models);
-        if let UmlSequenceElement::Diagram(new_model) = new_model {
-            all_models.insert(*e.read().uuid(), new_model.clone().into());
-            new_diagrams.push(new_model);
+    let mut new_elements = Vec::new();
+    for e in &d.elements {
+        let new_model = walk(&e.clone().to_element(), &mut all_models);
+        if let Some(new_model) = new_model.as_standalone() {
+            all_models.insert(*e.uuid(), new_model.clone().to_element());
+            new_elements.push(new_model);
         } else {
-            new_diagrams.push(e.clone());
+            new_elements.push(e.clone());
         }
     }
-    for e in new_diagrams.iter_mut() {
-        relink(&mut e.clone().into(), &all_models);
+    for e in new_elements.iter_mut() {
+        relink(&mut e.clone().to_element(), &all_models);
     }
 
     let new_diagram = UmlSequenceDiagramBoard {
         uuid: ModelUuid::now_v7().into(),
         name: d.name.clone(),
-        diagrams: new_diagrams,
+        elements: new_elements,
         comment: d.comment.clone(),
     };
     (ERef::new(new_diagram), all_models)
@@ -280,9 +293,9 @@ pub fn fake_copy_diagram(d: &UmlSequenceDiagramBoard) -> HashMap<ModelUuid, UmlS
     }
 
     let mut all_models = HashMap::new();
-    for e in &d.diagrams {
-        walk(&e.clone().into(), &mut all_models);
-        all_models.insert(*e.read().uuid(), e.clone().into());
+    for e in &d.elements {
+        walk(&e.clone().to_element(), &mut all_models);
+        all_models.insert(*e.uuid(), e.clone().to_element());
     }
 
     all_models
@@ -332,8 +345,8 @@ pub fn transitive_closure(d: &UmlSequenceDiagramBoard, mut when_deleting: HashSe
         }
     }
 
-    for e in &d.diagrams {
-        walk(&e.clone().into(), &mut when_deleting);
+    for e in &d.elements {
+        walk(&e.clone().to_element(), &mut when_deleting);
     }
 
     let mut also_delete = HashSet::new();
@@ -379,8 +392,8 @@ pub fn transitive_closure(d: &UmlSequenceDiagramBoard, mut when_deleting: HashSe
                 },
             }
         }
-        for e in &d.diagrams {
-            walk(&e.clone().into(), &when_deleting, &mut also_delete);
+        for e in &d.elements {
+            walk(&e.clone().to_element(), &when_deleting, &mut also_delete);
         }
         if also_delete.is_empty() {
             break;
@@ -426,6 +439,35 @@ fn enumerate(e: &UmlSequenceElement, into: &mut HashSet<ModelUuid>) {
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = UmlSequenceElement, default_passthrough = "none")]
 #[nh_context_serde(uuid_type = ModelUuid)]
+pub enum UmlSequenceStandaloneElement {
+    #[container_model(passthrough = "eref")]
+    Diagram(ERef<UmlSequenceDiagram>),
+    Comment(ERef<UmlSequenceComment>),
+}
+
+impl UmlSequenceStandaloneElement {
+    pub fn to_element(self) -> UmlSequenceElement {
+        match self {
+            UmlSequenceStandaloneElement::Diagram(inner) => inner.into(),
+            UmlSequenceStandaloneElement::Comment(inner) => inner.into(),
+        }
+    }
+}
+
+impl FullTextSearchable for UmlSequenceStandaloneElement {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        match self {
+            UmlSequenceStandaloneElement::Diagram(inner) => inner.read().full_text_search(acc),
+            UmlSequenceStandaloneElement::Comment(inner) => inner.read().full_text_search(acc),
+        }
+    }
+}
+
+
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[model(default_passthrough = "eref")]
+#[container_model(element_type = UmlSequenceElement, default_passthrough = "none")]
+#[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlSequenceHorizontalElement {
     #[container_model(passthrough = "eref")]
     CombinedFragment(ERef<UmlSequenceCombinedFragment>),
@@ -451,7 +493,7 @@ pub struct UmlSequenceDiagramBoard {
     pub name: Arc<String>,
 
     #[nh_context_serde(entity)]
-    pub diagrams: Vec<ERef<UmlSequenceDiagram>>,
+    pub elements: Vec<UmlSequenceStandaloneElement>,
 
     pub comment: Arc<String>,
 }
@@ -460,12 +502,12 @@ impl UmlSequenceDiagramBoard {
     pub fn new(
         uuid: ModelUuid,
         name: String,
-        diagrams: Vec<ERef<UmlSequenceDiagram>>,
+        elements: Vec<UmlSequenceStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
-            diagrams,
+            elements,
             comment: Arc::new("".to_owned()),
         }
     }
@@ -549,14 +591,14 @@ impl UmlSequenceDiagramBoard {
         }
 
 
-        for (idx, e) in self.diagrams.iter().enumerate() {
-            if uuids.contains(&e.read().uuid()) {
-                undo.push((*self.uuid, e.clone().into(), 0, idx.try_into().unwrap()));
+        for (idx, e) in self.elements.iter().enumerate() {
+            if uuids.contains(&e.uuid()) {
+                undo.push((*self.uuid, e.clone().to_element(), 0, idx.try_into().unwrap()));
             } else {
-                r(&e.clone().into(), uuids, undo);
+                r(&e.clone().to_element(), uuids, undo);
             }
         }
-        self.diagrams.retain(|e| !uuids.contains(&e.read().uuid()));
+        self.elements.retain(|e| !uuids.contains(&e.uuid()));
     }
 }
 
@@ -575,8 +617,8 @@ impl Model for UmlSequenceDiagramBoard {
 impl VisitableDiagram for UmlSequenceDiagramBoard {
     fn accept(&self, v: &mut dyn DiagramVisitor<Self>) {
         v.open_diagram(self);
-        for e in &self.diagrams {
-            UmlSequenceElement::from(e.clone()).accept(v);
+        for e in &self.elements {
+            e.clone().to_element().accept(v);
         }
         v.close_diagram(self);
     }
@@ -586,11 +628,11 @@ impl ContainerModel for UmlSequenceDiagramBoard {
     type ElementT = UmlSequenceElement;
 
     fn find_element(&self, uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
-        for e in &self.diagrams {
-            if *e.read().uuid == *uuid {
-                return Some((e.clone().into(), *self.uuid));
+        for e in &self.elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone().to_element(), *self.uuid));
             }
-            if let Some(e) = e.read().find_element(uuid) {
+            if let Some(e) = e.find_element(uuid) {
                 return Some(e);
             }
         }
@@ -598,8 +640,8 @@ impl ContainerModel for UmlSequenceDiagramBoard {
     }
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.diagrams.iter().enumerate() {
-            if *e.read().uuid == *uuid {
+        for (idx, e) in self.elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
                 return Some((0, idx.try_into().unwrap()));
             }
         }
@@ -610,19 +652,19 @@ impl ContainerModel for UmlSequenceDiagramBoard {
         if bucket != 0 {
             return Err(element);
         }
-        let UmlSequenceElement::Diagram(element) = element else {
+        let Some(element) = element.as_standalone() else {
             return Err(element);
         };
 
-        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.diagrams.len());
-        self.diagrams.insert(pos, element);
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.elements.len());
+        self.elements.insert(pos, element);
         Ok(pos.try_into().unwrap())
     }
 
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        for (idx, e) in self.diagrams.iter().enumerate() {
-            if *e.read().uuid == *uuid {
-                self.diagrams.remove(idx);
+        for (idx, e) in self.elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.elements.remove(idx);
                 return Some((0, idx.try_into().unwrap()));
             }
         }
@@ -641,8 +683,8 @@ impl FullTextSearchable for UmlSequenceDiagramBoard {
             ],
         );
 
-        for e in &self.diagrams {
-            e.read().full_text_search(acc);
+        for e in &self.elements {
+            e.full_text_search(acc);
         }
     }
 }

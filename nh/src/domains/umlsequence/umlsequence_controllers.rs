@@ -359,7 +359,9 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
             UmlSequenceElement::Ref(inner) => {
                 new_umlsequence_ref_view(inner.clone()).into()
             },
-            UmlSequenceElement::Comment(inner) => todo!(),
+            UmlSequenceElement::Comment(inner) => {
+                new_umlsequence_comment_view(inner, egui::Pos2::ZERO).into()
+            },
             UmlSequenceElement::CommentLink(inner) => todo!(),
         };
 
@@ -807,7 +809,8 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
         match element {
             None => match self.current_stage {
                 UmlSequenceToolStage::DiagramStart
-                | UmlSequenceToolStage::DiagramEnd => TARGETTABLE_COLOR,
+                | UmlSequenceToolStage::DiagramEnd
+                | UmlSequenceToolStage::Comment => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
             Some(UmlSequenceElement::Diagram(_)) => match self.current_stage {
@@ -913,7 +916,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (UmlSequenceToolStage::Comment, _) => {
+            (UmlSequenceToolStage::Comment, PartialUmlSequenceElement::None) => {
                 let (_comment_model, comment_view) =
                     new_umlsequence_comment("a comment", pos);
                 self.result = PartialUmlSequenceElement::Some(comment_view.into());
