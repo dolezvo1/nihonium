@@ -2904,12 +2904,21 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn midpoint_label(&self) -> Option<Arc<String>> {
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<DemoOfdDomain as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<DemoOfdDomain as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
         let r = self.model.read();
         if r.name.is_empty() {
-            None
+            Ok(())
         } else {
-            Some(r.name.clone())
+            Err(r.name.clone())
         }
     }
 
@@ -3169,8 +3178,17 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn midpoint_label(&self) -> Option<Arc<String>> {
-        None
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<DemoOfdDomain as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<DemoOfdDomain as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        Ok(())
     }
 
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
@@ -3357,8 +3375,17 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn midpoint_label(&self) -> Option<Arc<String>> {
-        None
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<DemoOfdDomain as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<DemoOfdDomain as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        Ok(())
     }
 
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
@@ -3614,8 +3641,17 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn midpoint_label(&self) -> Option<Arc<String>> {
-        None
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<DemoOfdDomain as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<DemoOfdDomain as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        Ok(())
     }
 
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
@@ -3802,8 +3838,50 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
         self.model.read().uuid.clone()
     }
 
-    fn midpoint_label(&self) -> Option<Arc<String>> {
-        Some(self.temporaries.midpoint_label.clone())
+    fn draw_center_or_get_label(
+        &self,
+        center: egui::Pos2,
+        highlight: canvas::Highlight,
+        _q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<DemoOfdDomain as Domain>::SettingsT,
+        canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<DemoOfdDomain as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        canvas.draw_ellipse(
+            center,
+            egui::Vec2::new(10.0, 10.0),
+            egui::Color32::WHITE,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            highlight,
+        );
+        const X_RADIUS: f32 = 5.0;
+        canvas.draw_line(
+            [
+                center - egui::Vec2::splat(X_RADIUS),
+                center + egui::Vec2::splat(X_RADIUS),
+            ],
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            canvas::Highlight::NONE,
+        );
+        canvas.draw_line(
+            [
+                center + egui::Vec2::new(X_RADIUS, -X_RADIUS),
+                center - egui::Vec2::new(X_RADIUS, -X_RADIUS),
+            ],
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            canvas::Highlight::NONE,
+        );
+
+        canvas.draw_ellipse_proximity(
+            center,
+            egui::Vec2::new(1.0, 1.0),
+            egui::Color32::BLACK,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            canvas::MULTICONNECTION_HANDLE_PROXIMITY,
+            Highlight::NONE,
+        );
+        Ok(())
     }
 
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {

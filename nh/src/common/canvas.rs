@@ -708,6 +708,7 @@ pub struct ArrowDataPos<'a> {
     pub arrowhead_type: ArrowheadType,
 }
 
+pub const MULTICONNECTION_HANDLE_PROXIMITY: f32 = 20.0;
 pub trait NHCanvas {
     // These functions are must haves
     /// None if not interactive
@@ -771,7 +772,6 @@ pub trait NHCanvas {
         sources: Vec<ArrowDataPos<'a>>,
         destinations: Vec<ArrowDataPos<'a>>,
         central_point: (ViewUuid, egui::Pos2),
-        mid_label: Option<&str>,
         highlight: Highlight,
     ) {
         fn a<'a>(
@@ -815,19 +815,19 @@ pub trait NHCanvas {
 
                 self.draw_line([u, v], ls, highlight);
 
-                const HANDLE_PROXIMITY: f32 = 20.0;
-
+                // Draw drag handle in the middle of a segment
                 if !central_point.0.is_nil() {
                     self.draw_ellipse_proximity(
                         (if first { fp } else { u } + v.to_vec2()) / 2.0,
                         egui::Vec2::new(1.0, 1.0),
                         egui::Color32::BLACK,
                         Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        HANDLE_PROXIMITY,
+                        MULTICONNECTION_HANDLE_PROXIMITY,
                         Highlight::NONE,
                     );
                 }
 
+                // Draw drag handle at the end of the segment
                 if selected_vertices.contains(&v_uuid) {
                     self.draw_ellipse(
                         v,
@@ -842,25 +842,13 @@ pub trait NHCanvas {
                         egui::Vec2::new(1.0, 1.0),
                         egui::Color32::BLACK,
                         Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        HANDLE_PROXIMITY,
+                        MULTICONNECTION_HANDLE_PROXIMITY,
                         Highlight::NONE,
                     );
                 }
 
                 first = false;
             }
-        }
-
-        // TODO: Blur the line around center to make the mid label more readable?
-        //       Alternatively labels could have an angle to fit it better.
-        if let Some(mid_label) = mid_label {
-            self.draw_text(
-                central_point.1,
-                egui::Align2::CENTER_CENTER,
-                mid_label,
-                CLASS_MIDDLE_FONT_SIZE,
-                egui::Color32::BLACK,
-            );
         }
     }
 }

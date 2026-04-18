@@ -5785,8 +5785,20 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
         self.model.read().uuid.clone()
     }
 
-    fn midpoint_label(&self) -> Option<Arc<String>> {
-        self.temporaries.midpoint_label.clone()
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        match self.temporaries.midpoint_label.clone() {
+            None => Ok(()),
+            Some(label) => Err(label),
+        }
     }
 
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
@@ -6134,8 +6146,20 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
         self.model.read().uuid.clone()
     }
 
-    fn midpoint_label(&self) -> Option<Arc<String>> {
-        self.temporaries.midpoint_label.clone()
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        match self.temporaries.midpoint_label.clone() {
+            None => Ok(()),
+            Some(label) => Err(label),
+        }
     }
 
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
@@ -6405,8 +6429,20 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
         self.model.read().uuid.clone()
     }
 
-    fn midpoint_label(&self) -> Option<Arc<String>> {
-        self.temporaries.midpoint_label.clone()
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        match self.temporaries.midpoint_label.clone() {
+            None => Ok(()),
+            Some(label) => Err(label),
+        }
     }
 
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
@@ -6911,8 +6947,20 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
         self.model.read().uuid.clone()
     }
 
-    fn midpoint_label(&self) -> Option<Arc<String>> {
-        self.temporaries.midpoint_label.clone()
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        match self.temporaries.midpoint_label.clone() {
+            None => Ok(()),
+            Some(label) => Err(label),
+        }
     }
 
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
@@ -7638,8 +7686,17 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassC
         self.model.read().uuid.clone()
     }
 
-    fn midpoint_label(&self) -> Option<Arc<String>> {
-        None
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlClassDomain<P> as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        Ok(())
     }
 
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {

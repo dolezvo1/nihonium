@@ -3321,8 +3321,17 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
         &self.temporaries.arrow_data
     }
 
-    fn midpoint_label(&self) -> Option<Arc<String>> {
-        Some(self.model.read().multiplicity.clone())
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<DemoPsdDomain as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<DemoPsdDomain as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        Err(self.model.read().multiplicity.clone())
     }
 
     fn source_uuids(&self) -> &[ModelUuid] {

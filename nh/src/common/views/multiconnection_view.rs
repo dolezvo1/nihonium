@@ -66,7 +66,18 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
     fn foreground_color(&self) -> egui::Color32 {
         egui::Color32::BLACK
     }
-    fn midpoint_label(&self) -> Option<Arc<String>> { None }
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &DomainT::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &DomainT::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        Ok(())
+    }
     fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData>;
     fn source_uuids(&self) -> &[ModelUuid];
     fn target_uuids(&self) -> &[ModelUuid];
@@ -343,11 +354,11 @@ where
 
     fn draw_in(
         &mut self,
-        _: &DomainT::QueryableT<'_>,
-        _context: &GlobalDrawingContext,
-        _settings: &DomainT::SettingsT,
+        q: &DomainT::QueryableT<'_>,
+        context: &GlobalDrawingContext,
+        settings: &DomainT::SettingsT,
         canvas: &mut dyn canvas::NHCanvas,
-        _tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
+        tool: &Option<(egui::Pos2, &DomainT::ToolT)>,
     ) -> TargettingStatus {
         let center_point = if let UFOption::Some(center_point) = &self.center_point {
             center_point.1
@@ -369,8 +380,13 @@ where
         //canvas.draw_ellipse((self.source_points[0][0].1 + self.dest_points[0][0].1.to_vec2()) / 2.0, egui::Vec2::splat(5.0), egui::Color32::BROWN, canvas::Stroke::new_solid(1.0, egui::Color32::BROWN), canvas::Highlight::NONE);
 
         let ad = self.adapter.arrow_data();
-        let midpoint_label = self.adapter.midpoint_label();
-
+        let central_point = match &self.center_point {
+            UFOption::Some(point) => *point,
+            UFOption::None => (
+                ViewUuid::nil(),
+                (self.sources[0].points[0].1 + self.targets[0].points[0].1.to_vec2()) / 2.0,
+            ),
+        };
         canvas.draw_multiconnection(
             &self.selected_vertices,
             self.sources.iter().map(|e| {
@@ -397,16 +413,32 @@ where
                     arrowhead_type: d.arrowhead_type,
                 }
             }).collect(),
-            match &self.center_point {
-                UFOption::Some(point) => *point,
-                UFOption::None => (
-                    ViewUuid::nil(),
-                    (self.sources[0].points[0].1 + self.targets[0].points[0].1.to_vec2()) / 2.0,
-                ),
-            },
-            midpoint_label.as_ref().map(|e| e.as_str()),
+            central_point,
             self.highlight,
         );
+
+        match self.adapter.draw_center_or_get_label(
+            central_point.1,
+            self.highlight,
+            q,
+            context,
+            settings,
+            canvas,
+            tool,
+        ) {
+            Ok(_) => {},
+            Err(label) => {
+                // TODO: Blur the line around center to make the mid label more readable?
+                //       Alternatively labels could have an angle to fit it better.
+                canvas.draw_text(
+                    central_point.1,
+                    egui::Align2::CENTER_CENTER,
+                    &label,
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
+            },
+        }
 
         fn draw_arrow_data(canvas: &mut dyn canvas::NHCanvas, shape: canvas::NHShape, shape_intersect: egui::Pos2, next_point: egui::Pos2, data: &ArrowData) {
             fn draw_small_labels(canvas: &mut dyn canvas::NHCanvas, bounds: canvas::NHShape, pos: egui::Pos2, labels: [Option<&str>; 2]) {
