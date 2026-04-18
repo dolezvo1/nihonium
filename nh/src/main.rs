@@ -337,139 +337,131 @@ impl TabViewer for NHContext {
 }
 
 
-fn add_project_element_block(gdc: &GlobalDrawingContext, new_diagram_no: u32, ui: &mut egui::Ui, commands: &mut Vec<ProjectCommand>) {
-    macro_rules! diagram_button {
-        ($ui:expr, $label:expr, $fun:expr) => {
-            if $ui.button($label).clicked() {
-                let (uuid, c) = $fun(new_diagram_no);
-                commands.push(ProjectCommand::SetNewDiagramNumber(new_diagram_no + 1));
-                commands.push(ProjectCommand::AddNewDiagram(ViewUuid::nil(), uuid, c));
-                $ui.close();
-            }
-        }
-    }
-
+fn add_project_element_block(
+    gdc: &GlobalDrawingContext,
+    new_diagram_no: u32,
+    ui: &mut egui::Ui,
+    modal: &mut Option<Box<dyn CustomModal>>,
+    commands: &mut Vec<ProjectCommand>,
+) {
     if ui.button(gdc.translate_0("nh-project-addnewdocument")).clicked() {
         commands.push(ProjectCommand::AddNewDocument(ViewUuid::now_v7(), "New Document".to_owned()));
     }
 
-    type DiagramF = fn(u32) -> (ViewUuid, ERef<dyn DiagramController + 'static>);
-    ui.menu_button(gdc.translate_0("nh-project-addnewdiagram"), |ui| {
-        ui.set_min_width(MIN_MENU_WIDTH);
+    if ui.button(gdc.translate_0("nh-project-addnewdiagram")).clicked() {
+        type DiagramF = fn(u32) -> (ViewUuid, ERef<dyn DiagramController + 'static>);
+        struct DiagramData {
+            description: &'static str,
+            constructors: Vec<(&'static str, DiagramF)>
+        }
+        struct Modal {
+            new_diagram_no: u32,
+            diagram_data: HashMap<&'static str, DiagramData>,
+            selected_diagram: &'static str,
+            selected_constructor: usize,
+        }
+        impl CustomModal for Modal {
+            fn show(
+                &mut self,
+                gdc: &mut GlobalDrawingContext,
+                ui: &mut egui::Ui,
+                commands: &mut Vec<ProjectCommand>,
+            ) -> CustomModalResult {
+                let mut result = CustomModalResult::KeepOpen;
 
-        ui.menu_button("UML", |ui| {
-            ui.set_min_width(MIN_MENU_WIDTH);
-            for (label, fun) in [
-                (
-                    "UML Class diagram",
-                    crate::domains::umlclass::umlclass_controllers::new as DiagramF,
-                ),
-                (
-                    "UML Sequence diagram",
-                    crate::domains::umlsequence::umlsequence_controllers::new as DiagramF,
-                ),
-                (
-                    "Use Case diagram",
-                    crate::domains::usecase::usecase_controllers::new as DiagramF,
-                ),
-            ] {
-                diagram_button!(ui, label, fun);
+                ui.columns(2, |columns| {
+                    let (_, actions) = egui_ltreeview::TreeView::new(columns[0].make_persistent_id("new diagram modal hierarchy"))
+                        .allow_multi_selection(false)
+                        .show(&mut columns[0], |builder| {
+                            builder.dir("uml", "UML");
+                            builder.leaf("umlclass", "Class diagram");
+                            builder.leaf("umlsequence", "Sequence diagram");
+                            builder.leaf("umlclass-usecase", "Use case diagram");
+                            builder.close_dir();
+
+                            builder.leaf("umlclass-ontouml", "OntoUML UFO-A diagram");
+
+                            builder.dir("demo", "DEMO");
+                            builder.leaf("democsd", "Coordination Structure Diagram");
+                            builder.leaf("demopsd", "Process Structure Diagram");
+                            builder.leaf("demoofd", "Object Fact Diagram");
+                            builder.close_dir();
+
+                            builder.leaf("rdf", "RDF diagram");
+                        });
+                    for e in actions {
+                        if let egui_ltreeview::Action::SetSelected(items) = e {
+                            self.selected_diagram = items[0];
+                        }
+                    }
+
+                    columns[1].vertical(|ui| {
+                        if let Some(dd) = self.diagram_data.get(self.selected_diagram) {
+                            ui.label(dd.description);
+                            ui.separator();
+
+                            for (idx, e) in dd.constructors.iter().enumerate() {
+                                ui.radio_value(&mut self.selected_constructor, idx, e.0);
+                            }
+                            ui.separator();
+
+                            ui.horizontal(|ui| {
+                                if ui.add_enabled(
+                                    self.selected_constructor < dd.constructors.len(),
+                                    egui::Button::new(gdc.translate_0("nh-project-addnewdiagramadd")),
+                                ).clicked() {
+                                    let (uuid, c) = dd.constructors[self.selected_constructor].1(self.new_diagram_no);
+                                    commands.push(ProjectCommand::SetNewDiagramNumber(self.new_diagram_no + 1));
+                                    commands.push(ProjectCommand::AddNewDiagram(ViewUuid::nil(), uuid, c));
+                                    result = CustomModalResult::CloseUnmodified;
+                                }
+                                if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
+                                    result = CustomModalResult::CloseUnmodified;
+                                }
+                            });
+                        }
+                    });
+                });
+
+                result
             }
-        });
-
-        for (label, fun) in [
-            (
-                "OntoUML UFO-A diagram",
-                crate::domains::ontouml::ontouml_controllers::new as DiagramF,
-            ),
-        ] {
-            diagram_button!(ui, label, fun);
         }
 
-        ui.menu_button("DEMO", |ui| {
-            ui.set_min_width(MIN_MENU_WIDTH);
-            for (label, fun) in [
-                (
-                    "Coordination Structure Diagram",
-                    crate::domains::democsd::democsd_controllers::new as DiagramF,
-                ),
-                (
-                    "Process Structure Diagram",
-                    crate::domains::demopsd::demopsd_controllers::new as DiagramF,
-                ),
-                (
-                    "Object Fact Diagram",
-                    crate::domains::demoofd::demoofd_controllers::new as DiagramF,
-                ),
-            ] {
-                diagram_button!(ui, label, fun);
-            }
-        });
-
-        for (label, fun) in [
-            ("RDF diagram", crate::domains::rdf::rdf_controllers::new as DiagramF),
-        ] {
-            diagram_button!(ui, label, fun);
-        }
-    });
-    ui.menu_button(gdc.translate_0("nh-project-adddemodiagram"), |ui| {
-        ui.set_min_width(MIN_MENU_WIDTH);
-
-        ui.menu_button("UML", |ui| {
-            ui.set_min_width(MIN_MENU_WIDTH);
-            for (label, fun) in [
-                (
-                    "UML Class diagram",
-                    crate::domains::umlclass::umlclass_controllers::demo as DiagramF,
-                ),
-                (
-                    "UML Sequence diagram",
-                    crate::domains::umlsequence::umlsequence_controllers::demo as DiagramF,
-                ),
-                (
-                    "Use Case diagram",
-                    crate::domains::usecase::usecase_controllers::demo as DiagramF,
-                ),
-            ] {
-                diagram_button!(ui, label, fun);
-            }
-        });
-
-        for (label, fun) in [
-            (
-                "OntoUML UFO-A diagram",
-                crate::domains::ontouml::ontouml_controllers::demo as DiagramF,
-            ),
-        ] {
-            diagram_button!(ui, label, fun);
-        }
-
-        ui.menu_button("DEMO", |ui| {
-            ui.set_min_width(MIN_MENU_WIDTH);
-            for (label, fun) in [
-                (
-                    "Coordination Structure Diagram",
-                    crate::domains::democsd::democsd_controllers::demo as DiagramF,
-                ),
-                (
-                    "Process Structure Diagram",
-                    crate::domains::demopsd::demopsd_controllers::demo as DiagramF,
-                ),
-                (
-                    "Object Fact Diagram",
-                    crate::domains::demoofd::demoofd_controllers::demo as DiagramF,
-                ),
-            ] {
-                diagram_button!(ui, label, fun);
-            }
-        });
-
-        for (label, fun) in [
-            ("RDF diagram", crate::domains::rdf::rdf_controllers::demo as DiagramF),
-        ] {
-            diagram_button!(ui, label, fun);
-        }
-    });
+        let mut diagram_data = HashMap::new();
+        diagram_data.insert("umlclass", DiagramData { description: "UML Class diagram (classes, objects, packages, etc.)", constructors: vec![
+            ("empty", crate::domains::umlclass::umlclass_controllers::new as DiagramF),
+            ("demo", crate::domains::umlclass::umlclass_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("umlsequence", DiagramData { description: "UML Sequence diagram (lifelines, messages, etc.)", constructors: vec![
+            ("empty", crate::domains::umlsequence::umlsequence_controllers::new as DiagramF),
+            ("demo", crate::domains::umlsequence::umlsequence_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("umlclass-usecase", DiagramData { description: "Use case diagram (users, use cases, etc.)", constructors: vec![
+            ("empty", crate::domains::usecase::usecase_controllers::new as DiagramF),
+            ("demo", crate::domains::usecase::usecase_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("umlclass-ontouml", DiagramData { description: "OntoUML UFO-A diagram (UML Class diagram profile for modelling of ontological concepts)", constructors: vec![
+            ("empty", crate::domains::ontouml::ontouml_controllers::new as DiagramF),
+            ("demo", crate::domains::ontouml::ontouml_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("democsd", DiagramData { description: "Coordination Structure Diagram", constructors: vec![
+            ("empty", crate::domains::democsd::democsd_controllers::new as DiagramF),
+            ("demo", crate::domains::democsd::democsd_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("demopsd", DiagramData { description: "Process Structure Diagram", constructors: vec![
+            ("empty", crate::domains::demopsd::demopsd_controllers::new as DiagramF),
+            ("demo", crate::domains::demopsd::demopsd_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("demoofd", DiagramData { description: "Object Fact Diagram", constructors: vec![
+            ("empty", crate::domains::demoofd::demoofd_controllers::new as DiagramF),
+            ("demo", crate::domains::demoofd::demoofd_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("rdf", DiagramData { description: "Resource Description Framework", constructors: vec![
+            ("empty", crate::domains::rdf::rdf_controllers::new as DiagramF),
+            ("demo", crate::domains::rdf::rdf_controllers::demo as DiagramF),
+        ] });
+        *modal = Some(Box::new(Modal { new_diagram_no, diagram_data, selected_diagram: "", selected_constructor: 0 }));
+    }
     ui.separator();
 }
 
@@ -685,6 +677,7 @@ impl NHContext {
             hn: &HierarchyNode,
             docs: &HashMap<ViewUuid, (String, String)>,
             cma: &mut Option<ContextMenuAction>,
+            modal: &mut Option<Box<dyn CustomModal>>,
             commands: &mut Vec<ProjectCommand>,
         ) {
             match hn {
@@ -705,7 +698,7 @@ impl NHContext {
                                     ui.close();
                                 }
 
-                                add_project_element_block(gdc, new_diagram_no, ui, commands);
+                                add_project_element_block(gdc, new_diagram_no, ui, modal, commands);
 
                                 if ui.button(gdc.translate_0("nh-tab-projecthierarchy-collapsechildren")).clicked() {
                                     *cma = Some(ContextMenuAction::CollapseAt(Some(true), true, *uuid));
@@ -729,7 +722,7 @@ impl NHContext {
                     );
 
                     for c in children {
-                        hierarchy(builder, gdc, new_diagram_no, c, docs, cma, commands);
+                        hierarchy(builder, gdc, new_diagram_no, c, docs, cma, modal, commands);
                     }
 
                     builder.close_dir();
@@ -752,7 +745,7 @@ impl NHContext {
                                     ui.close();
                                 }
 
-                                add_project_element_block(gdc, new_diagram_no, ui, commands);
+                                add_project_element_block(gdc, new_diagram_no, ui, modal, commands);
 
                                 if let Some((new_uuid, new_c)) = c.write().show_duplication_menu(gdc, ui, uuid) {
                                     let new_c = new_c.unwrap_or_else(|| c.clone());
@@ -789,7 +782,7 @@ impl NHContext {
                                     ui.close();
                                 }
 
-                                add_project_element_block(gdc, new_diagram_no, ui, commands);
+                                add_project_element_block(gdc, new_diagram_no, ui, modal, commands);
 
                                 if ui.button(gdc.translate_0("nh-tab-projecthierarchy-duplicate")).clicked() {
                                     commands.push(ProjectCommand::DuplicateDocument(*uuid));
@@ -821,7 +814,12 @@ impl NHContext {
                     ui,
                     &mut self.tree_view_state,
                     |builder| {
-                        hierarchy(builder, &self.drawing_context, self.new_diagram_no, &self.project_hierarchy, &self.documents, &mut context_menu_action, &mut commands);
+                        hierarchy(
+                            builder,
+                            &self.drawing_context, self.new_diagram_no,
+                            &self.project_hierarchy, &self.documents,
+                            &mut context_menu_action, &mut self.custom_modal, &mut commands,
+                        );
                     }
                 );
 
@@ -2283,7 +2281,10 @@ impl eframe::App for NHApp {
                     });
                     ui.separator();
 
-                    add_project_element_block(&self.context.drawing_context, self.context.new_diagram_no, ui, &mut commands);
+                    add_project_element_block(
+                        &self.context.drawing_context, self.context.new_diagram_no, ui,
+                        &mut self.context.custom_modal, &mut commands,
+                    );
 
                     #[cfg(not(target_arch = "wasm32"))]
                     button!(ui, "nh-project-save", SimpleProjectCommand::SaveProject);
