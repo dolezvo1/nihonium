@@ -394,6 +394,7 @@ fn add_project_element_block(
                             builder.leaf("demoofd", "Object Fact Diagram");
                             builder.close_dir();
 
+                            builder.leaf("network", "Network diagram");
                             builder.leaf("rdf", "RDF diagram");
                         });
                     for e in actions {
@@ -462,6 +463,10 @@ fn add_project_element_block(
         diagram_data.insert("demoofd", DiagramData { description: "Object Fact Diagram", constructors: vec![
             ("empty", crate::domains::demoofd::demoofd_controllers::new as DiagramF),
             ("demo", crate::domains::demoofd::demoofd_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("network", DiagramData { description: "Network diagram", constructors: vec![
+            ("empty", crate::domains::network::network_controllers::new as DiagramF),
+            ("demo", crate::domains::network::network_controllers::demo as DiagramF),
         ] });
         diagram_data.insert("rdf", DiagramData { description: "Resource Description Framework", constructors: vec![
             ("empty", crate::domains::rdf::rdf_controllers::new as DiagramF),
@@ -1745,6 +1750,7 @@ impl Default for NHApp {
         diagram_deserializers.insert("democsd".to_string(), &crate::domains::democsd::democsd_controllers::deserializer as &CDes);
         diagram_deserializers.insert("demoofd".to_string(), &crate::domains::demoofd::demoofd_controllers::deserializer as &CDes);
         diagram_deserializers.insert("demopsd".to_string(), &crate::domains::demopsd::demopsd_controllers::deserializer as &CDes);
+        diagram_deserializers.insert("network".to_string(), &crate::domains::network::network_controllers::deserializer as &CDes);
         diagram_deserializers.insert("rdf".to_string(), &crate::domains::rdf::rdf_controllers::deserializer as &CDes);
 
         let mut dock_state = DockState::new(tabs);
@@ -1780,6 +1786,7 @@ impl Default for NHApp {
             ("democsd", "DEMO Coordination Structure Diagram"),
             ("demopsd", "DEMO Project Structure Diagram"),
             ("demoofd", "DEMO Object Fact Diagram"),
+            ("network", "Network diagram"),
             ("rdf", "RDF"),
         ];
         let (diagram_settings, diagram_settings_functions) = [
@@ -1797,6 +1804,8 @@ impl Default for NHApp {
                 &crate::domains::demopsd::demopsd_controllers::settings_function as &DSF),
             ("demoofd", crate::domains::demoofd::demoofd_controllers::default_settings(),
                 &crate::domains::demoofd::demoofd_controllers::settings_function as &DSF),
+            ("network", crate::domains::network::network_controllers::default_settings(),
+                &crate::domains::network::network_controllers::settings_function as &DSF),
             ("rdf", crate::domains::rdf::rdf_controllers::default_settings(),
                 &crate::domains::rdf::rdf_controllers::settings_function as &DSF),
         ].into_iter().map(|e| ((e.0, e.1), (e.0, e.2))).collect();

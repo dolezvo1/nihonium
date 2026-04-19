@@ -3,6 +3,7 @@ pub mod democsd;
 pub mod demoofd;
 pub mod demopsd;
 pub mod rdf;
+pub mod network;
 pub mod ontouml;
 pub mod umlclass;
 pub mod usecase;
