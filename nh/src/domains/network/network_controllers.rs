@@ -1143,11 +1143,11 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         const INNER_SIZE: egui::Vec2 = egui::Vec2::new(40.0, 40.0);
         const OUTER_SIZE: egui::Vec2 = egui::Vec2::new(50.0, 50.0);
         // Draw shape and text
-        // TODO: replace with icons
+        let inner_rect = egui::Rect::from_center_size(self.position, INNER_SIZE);
         canvas.draw_rectangle(
-            egui::Rect::from_center_size(self.position, INNER_SIZE),
+            inner_rect,
             egui::CornerRadius::ZERO,
-            egui::Color32::LIGHT_BLUE,
+            egui::Color32::TRANSPARENT,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
@@ -1159,6 +1159,321 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             egui::Color32::BLACK,
         );
         self.bounds_rect = egui::Rect::from_center_size(self.position, OUTER_SIZE);
+
+        // draw icons based on kind
+        match self.kind_buffer {
+            NetworkNodeKind::Cloud => {
+                const SIZE: egui::Vec2 = egui::Vec2::new(15.0, 8.0);
+                const SHAPE_COLOR: egui::Color32 = egui::Color32::from_rgb(0xD0, 0xED, 0xEB);
+                let stroke = canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT);
+                canvas.draw_rectangle(
+                    inner_rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::WHITE.gamma_multiply(0.5),
+                    stroke,
+                    canvas::Highlight::NONE
+                );
+                canvas.draw_ellipse(
+                    self.position + egui::Vec2::new(-5.0, -5.0),
+                    egui::Vec2::new(10.0, 10.0),
+                    SHAPE_COLOR,
+                    stroke,
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_ellipse(
+                    self.position + egui::Vec2::new(5.0, -5.0),
+                    egui::Vec2::new(5.0, 5.0),
+                    SHAPE_COLOR,
+                    stroke,
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_ellipse(
+                    self.position + egui::Vec2::new(5.0, 5.0),
+                    SIZE,
+                    SHAPE_COLOR,
+                    stroke,
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_ellipse(
+                    self.position + egui::Vec2::new(-5.0, 5.0),
+                    SIZE,
+                    SHAPE_COLOR,
+                    stroke,
+                    canvas::Highlight::NONE,
+                );
+            },
+            NetworkNodeKind::Firewall => {
+                for e in 0..7 {
+                    let r = egui::Rect::from_center_size(
+                        inner_rect.center_top() + egui::Vec2::new(0.0, 5.0 + e as f32 * 5.0),
+                        egui::Vec2::new(20.0, 5.0),
+                    );
+                    canvas.draw_rectangle(
+                        r,
+                        egui::CornerRadius::ZERO,
+                        egui::Color32::RED,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE
+                    );
+                    let modifier = if e % 2 == 0 { egui::Vec2::new(-5.0, 0.0) } else { egui::Vec2::new(5.0, 0.0) };
+                    canvas.draw_line(
+                        [r.center_top() + modifier, r.center_bottom() + modifier],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE
+                    );
+                }
+            },
+            NetworkNodeKind::Router => {
+                const COLOR: egui::Color32 = egui::Color32::from_rgb(0x08, 0xb8, 0xdb);
+                canvas.draw_ellipse(
+                    self.position,
+                    egui::Vec2::splat(19.0),
+                    COLOR,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(
+                    self.position,
+                    egui::Align2::CENTER_BOTTOM,
+                    "↘ ↗",
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::WHITE,
+                );
+                canvas.draw_text(
+                    self.position,
+                    egui::Align2::CENTER_TOP,
+                    "↙ ↖",
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::WHITE,
+                );
+            },
+            NetworkNodeKind::Switch => {
+                const COLOR: egui::Color32 = egui::Color32::from_rgb(0x08, 0xb8, 0xdb);
+                canvas.draw_rectangle(
+                    egui::Rect::from_center_size(self.position, egui::Vec2::splat(38.0)),
+                    egui::CornerRadius::ZERO,
+                    COLOR,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(
+                    self.position,
+                    egui::Align2::CENTER_BOTTOM,
+                    "↗↗",
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::WHITE,
+                );
+                canvas.draw_text(
+                    self.position,
+                    egui::Align2::CENTER_TOP,
+                    "↙↙",
+                    canvas::CLASS_MIDDLE_FONT_SIZE,
+                    egui::Color32::WHITE,
+                );
+            },
+            NetworkNodeKind::Server => {
+                canvas.draw_polygon(
+                    [
+                        self.position + egui::Vec2::new(-18.0, -18.0),
+                        self.position + egui::Vec2::new(10.0, -18.0),
+                        self.position + egui::Vec2::new(18.0, -8.0),
+                        self.position + egui::Vec2::new(-10.0, -8.0),
+                    ].to_vec(),
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        self.position + egui::Vec2::new(-10.0, -8.0),
+                        self.position + egui::Vec2::new(18.0, -8.0),
+                        self.position + egui::Vec2::new(18.0, 18.0),
+                        self.position + egui::Vec2::new(-10.0, 18.0),
+                    ].to_vec(),
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        self.position + egui::Vec2::new(-10.0, -8.0),
+                        self.position + egui::Vec2::new(-10.0, 18.0),
+                        self.position + egui::Vec2::new(-18.0, 8.0),
+                        self.position + egui::Vec2::new(-18.0, -18.0),
+                    ].to_vec(),
+                    egui::Color32::GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            },
+            NetworkNodeKind::Workstation => {
+                let screen_rect = egui::Rect::from_center_size(
+                    self.position,
+                    egui::Vec2::new(32.0, 18.0),
+                );
+                canvas.draw_rectangle(
+                    screen_rect.expand(2.0),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    screen_rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::LIGHT_BLUE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        screen_rect.center_bottom() + egui::Vec2::new(-8.0, 10.0),
+                        screen_rect.center_bottom() + egui::Vec2::new(-4.0, 2.0),
+                        screen_rect.center_bottom() + egui::Vec2::new(4.0, 2.0),
+                        screen_rect.center_bottom() + egui::Vec2::new(8.0, 10.0),
+                    ].to_vec(),
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            },
+            NetworkNodeKind::Laptop => {
+                let screen_rect = egui::Rect::from_two_pos(
+                    self.position + egui::Vec2::new(-13.0, -13.0),
+                    self.position + egui::Vec2::new(13.0, -2.0),
+                );
+                canvas.draw_rectangle(
+                    screen_rect.expand(2.0),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    screen_rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::LIGHT_BLUE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        inner_rect.left_bottom() + egui::Vec2::new(2.0, -2.0),
+                        screen_rect.left_bottom() + egui::Vec2::new(-2.0, 2.0),
+                        screen_rect.right_bottom() + egui::Vec2::new(2.0, 2.0),
+                        inner_rect.right_bottom() + egui::Vec2::new(-2.0, -2.0),
+                    ].to_vec(),
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            },
+            NetworkNodeKind::Tablet => {
+                let screen_rect = egui::Rect::from_center_size(
+                    self.position,
+                    egui::Vec2::new(32.0, 18.0),
+                );
+                canvas.draw_rectangle(
+                    screen_rect.expand(2.0),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    screen_rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::LIGHT_BLUE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            },
+            NetworkNodeKind::CellularPhone => {
+                let screen_rect = egui::Rect::from_center_size(
+                    self.position,
+                    egui::Vec2::new(18.0, 32.0),
+                );
+                canvas.draw_rectangle(
+                    screen_rect.expand(2.0),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    screen_rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::LIGHT_BLUE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            },
+            NetworkNodeKind::UsbDrive => {
+                canvas.draw_rectangle(
+                    egui::Rect::from_two_pos(
+                        self.position + egui::Vec2::new(-8.0, -18.0),
+                        self.position + egui::Vec2::new(8.0, 8.0),
+                    ),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::DARK_BLUE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    egui::Rect::from_two_pos(
+                        self.position + egui::Vec2::new(-5.0, 8.0),
+                        self.position + egui::Vec2::new(5.0, 18.0),
+                    ),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    egui::Rect::from_two_pos(
+                        self.position + egui::Vec2::new(-3.0, 12.0),
+                        self.position + egui::Vec2::new(-1.0, 14.0),
+                    ),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::BLACK,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    egui::Rect::from_two_pos(
+                        self.position + egui::Vec2::new(1.0, 12.0),
+                        self.position + egui::Vec2::new(3.0, 14.0),
+                    ),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::BLACK,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            },
+            NetworkNodeKind::OpticalMedia => {
+                canvas.draw_ellipse(
+                    self.position,
+                    inner_rect.size() / 2.0,
+                    egui::Color32::LIGHT_YELLOW,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_ellipse(
+                    self.position,
+                    inner_rect.size() / 4.0,
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_ellipse(
+                    self.position,
+                    inner_rect.size() / 8.0,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            },
+        }
 
         // Draw targetting rectangle
         if let Some(t) = tool
