@@ -433,7 +433,9 @@ pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 
 pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (internet, internet_view) = new_network_node("Cloud", NetworkNodeKind::Cloud, egui::Pos2::new(200.0, 200.0));
-    let (workstation, workstation_view) = new_network_node("Workstation", NetworkNodeKind::Workstation, egui::Pos2::new(400.0, 200.0));
+    let (router, router_view) = new_network_node("Router", NetworkNodeKind::Router, egui::Pos2::new(300.0, 400.0));
+    let (swtch, swtch_view) = new_network_node("Switch", NetworkNodeKind::Switch, egui::Pos2::new(400.0, 200.0));
+    let (workstation, workstation_view) = new_network_node("Workstation", NetworkNodeKind::Workstation, egui::Pos2::new(500.0, 400.0));
     let (user, user_view) = new_network_user("User", NetworkUserKind::Normal, egui::Pos2::new(600.0, 200.0));
 
     let name = format!("Demo Network diagram {}", no);
@@ -442,12 +444,16 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         name.clone(),
         vec![
             internet.into(),
+            router.into(),
+            swtch.into(),
             workstation.into(),
             user.into(),
         ],
     ));
     new_controlller(diagram, name, vec![
         internet_view.into(),
+        router_view.into(),
+        swtch_view.into(),
         workstation_view.into(),
         user_view.into(),
     ])
@@ -473,8 +479,16 @@ impl DiagramSettings2<NetworkDomain> for NetworkSettings {
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let (node_model, node_view) = new_network_node("Workstation", NetworkNodeKind::Workstation, egui::Pos2::new(100.0, 75.0));
     let node = (node_model.into(), node_view.into());
+    let (_laptop_model, laptop_view) = new_network_node("Laptop", NetworkNodeKind::Laptop, egui::Pos2::ZERO);
+    let (_router_model, router_view) = new_network_node("Router", NetworkNodeKind::Router, egui::Pos2::ZERO);
+    let (_switch_model, switch_view) = new_network_node("Switch", NetworkNodeKind::Switch, egui::Pos2::ZERO);
+
     let (user_model, user_view) = new_network_user("User", NetworkUserKind::Normal, egui::Pos2::ZERO);
     let user = (user_model.into(), user_view.into());
+    let (_developer_model, developer_view) = new_network_user("Developer", NetworkUserKind::Developer, egui::Pos2::ZERO);
+    let (_audit_model, audit_view) = new_network_user("Audit", NetworkUserKind::Audit, egui::Pos2::ZERO);
+    let (_blackhat_model, blackhat_view) = new_network_user("Black Hat", NetworkUserKind::BlackHat, egui::Pos2::ZERO);
+
     let (_association, association_view) = new_network_association(user.clone(), node.clone());
 
     let (_container, container_view) = new_network_container(
@@ -485,10 +499,16 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
     let palette_items = vec![
         ("Nodes", vec![
-            (NetworkToolStage::Node, "Node", node.1),
+            (NetworkToolStage::Node { name: "Workstation", kind: NetworkNodeKind::Workstation }, "Workstation", node.1),
+            (NetworkToolStage::Node { name: "Laptop", kind: NetworkNodeKind::Laptop }, "Laptop", laptop_view.into()),
+            (NetworkToolStage::Node { name: "Router", kind: NetworkNodeKind::Router }, "Router", router_view.into()),
+            (NetworkToolStage::Node { name: "Switch", kind: NetworkNodeKind::Switch }, "Switch", switch_view.into()),
         ]),
         ("Users", vec![
-            (NetworkToolStage::User, "User", user.1),
+            (NetworkToolStage::User { name: "User", kind: NetworkUserKind::Normal }, "User", user.1),
+            (NetworkToolStage::User { name: "Developer", kind: NetworkUserKind::Developer }, "Developer", developer_view.into()),
+            (NetworkToolStage::User { name: "Audit", kind: NetworkUserKind::Audit }, "Audit", audit_view.into()),
+            (NetworkToolStage::User { name: "Black Hat", kind: NetworkUserKind::BlackHat }, "Black Hat", blackhat_view.into()),
         ]),
         ("Relationships", vec![
             (NetworkToolStage::AssociationStart, "Association", association_view.into()),
@@ -512,8 +532,8 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum NetworkToolStage {
-    Node,
-    User,
+    Node { name: &'static str, kind: NetworkNodeKind },
+    User { name: &'static str, kind: NetworkUserKind },
     AssociationStart,
     AssociationEnd,
     ContainerStart,
@@ -577,16 +597,16 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
     fn targetting_for_section(&self, element: Option<NetworkElement>) -> egui::Color32 {
         match element {
             None => match self.current_stage {
-                NetworkToolStage::Node
-                | NetworkToolStage::User
+                NetworkToolStage::Node { .. }
+                | NetworkToolStage::User { .. }
                 | NetworkToolStage::ContainerStart
                 | NetworkToolStage::ContainerEnd
                 | NetworkToolStage::Comment => TARGETTABLE_COLOR,
                 NetworkToolStage::AssociationStart | NetworkToolStage::AssociationEnd => NON_TARGETTABLE_COLOR,
             },
             Some(NetworkElement::Container(..)) => match self.current_stage {
-                NetworkToolStage::Node
-                | NetworkToolStage::User
+                NetworkToolStage::Node { .. }
+                | NetworkToolStage::User { .. }
                 | NetworkToolStage::Comment => TARGETTABLE_COLOR,
                 NetworkToolStage::AssociationStart
                 | NetworkToolStage::AssociationEnd
@@ -596,8 +616,8 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             Some(NetworkElement::Node(..) | NetworkElement::User(..) | NetworkElement::Comment(..)) => match self.current_stage {
                 NetworkToolStage::AssociationStart
                 | NetworkToolStage::AssociationEnd => TARGETTABLE_COLOR,
-                NetworkToolStage::Node
-                | NetworkToolStage::User
+                NetworkToolStage::Node { .. }
+                | NetworkToolStage::User { .. }
                 | NetworkToolStage::ContainerStart
                 | NetworkToolStage::ContainerEnd
                 | NetworkToolStage::Comment => NON_TARGETTABLE_COLOR,
@@ -635,22 +655,13 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         }
 
         match (self.current_stage, &mut self.result) {
-            (NetworkToolStage::Node, _) => {
-                let (_, node_view) = new_network_node(
-                    "Workstation",
-                    NetworkNodeKind::Workstation,
-                    pos,
-                );
-
+            (NetworkToolStage::Node { name, kind }, _) => {
+                let (_, node_view) = new_network_node(name, kind, pos);
                 self.result = PartialNetworkElement::Some(node_view.into());
                 self.event_lock = true;
             }
-            (NetworkToolStage::User, _) => {
-                let (_, user_view) = new_network_user(
-                    "User",
-                    NetworkUserKind::Normal,
-                    pos,
-                );
+            (NetworkToolStage::User { name, kind }, _) => {
+                let (_, user_view) = new_network_user(name, kind, pos);
                 self.result = PartialNetworkElement::Some(user_view.into());
                 self.event_lock = true;
             }
