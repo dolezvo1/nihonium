@@ -71,10 +71,17 @@ fn main() -> eframe::Result<()> {
     unsafe {
         std::env::set_var("RUST_BACKTRACE", "1");
     }
+
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon-256.png"))
+        .expect("Invalid icon data");
+
     let options = eframe::NativeOptions {
-        viewport: ViewportBuilder::default().with_inner_size(vec2(1024.0, 1024.0)),
+        viewport: ViewportBuilder::default()
+            .with_inner_size(vec2(1024.0, 1024.0))
+            .with_icon(Arc::new(icon)),
         ..Default::default()
     };
+
     eframe::run_native("Nihonium", options, Box::new(|_cc| {
         Ok(Box::<NHApp>::default())
     }))
