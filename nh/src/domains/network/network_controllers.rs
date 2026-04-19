@@ -1484,12 +1484,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                 for e in [
                     NetworkUserKind::Normal,
                     NetworkUserKind::Sysadmin,
-                    NetworkUserKind::Operations,
-                    NetworkUserKind::Specialist,
                     NetworkUserKind::Tie,
                     NetworkUserKind::Audit,
-                    NetworkUserKind::Tester,
-                    NetworkUserKind::Architect,
                     NetworkUserKind::Developer,
                     NetworkUserKind::BlackHat,
                     NetworkUserKind::GrayHat,
@@ -1562,7 +1558,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
             INNER_SIZE / 4.0,
             background_color,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            canvas::Highlight::NONE,
         );
         canvas.draw_polygon(
             [
@@ -1575,9 +1571,161 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
             ].to_vec(),
             background_color,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-            self.highlight,
+            canvas::Highlight::NONE,
         );
-        // TODO: draw details based on user kind
+
+        match self.kind_buffer {
+            NetworkUserKind::Normal => {},
+            NetworkUserKind::Sysadmin => {
+                let screen_rect = egui::Rect::from_two_pos(
+                    inner_rect.left_bottom() + egui::Vec2::new(4.0, -10.0),
+                    inner_rect.center() + egui::Vec2::new(-6.0, 5.0),
+                );
+                canvas.draw_rectangle(
+                    screen_rect.expand(2.0),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    screen_rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::LIGHT_BLUE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        screen_rect.center_bottom() + egui::Vec2::new(-4.0, 5.0),
+                        screen_rect.center_bottom() + egui::Vec2::new(-2.0, 2.0),
+                        screen_rect.center_bottom() + egui::Vec2::new(2.0, 2.0),
+                        screen_rect.center_bottom() + egui::Vec2::new(4.0, 5.0),
+                    ].to_vec(),
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            },
+            NetworkUserKind::Tie => {
+                canvas.draw_polygon(
+                    [
+                        self.position + egui::Vec2::new(1.0, 7.0),
+                        self.position + egui::Vec2::new(3.0, 16.0),
+                        self.position + egui::Vec2::new(0.0, 18.0),
+                        self.position + egui::Vec2::new(-3.0, 16.0),
+                        self.position + egui::Vec2::new(-1.0, 7.0),
+                    ].to_vec(),
+                    egui::Color32::BLACK,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            NetworkUserKind::Audit => {
+                let paper_rect = egui::Rect::from_two_pos(
+                    inner_rect.left_bottom() + egui::Vec2::new(4.0, -4.0),
+                    inner_rect.center() + egui::Vec2::new(-6.0, 3.0),
+                );
+                canvas.draw_rectangle(
+                    paper_rect.expand(2.0),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::BROWN,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_rectangle(
+                    paper_rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        paper_rect.center_top() + egui::Vec2::new(-4.0, 2.0),
+                        paper_rect.center_top() + egui::Vec2::new(-2.0, -2.0),
+                        paper_rect.center_top() + egui::Vec2::new(2.0, -2.0),
+                        paper_rect.center_top() + egui::Vec2::new(4.0, 2.0),
+                    ].to_vec(),
+                    egui::Color32::LIGHT_GRAY,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            }
+            NetworkUserKind::Developer => {
+                const HARD_HAT_COLOR: egui::Color32 = egui::Color32::YELLOW;
+                canvas.draw_polygon(
+                    [
+                        self.position + egui::Vec2::new(-10.0, -10.0),
+                        self.position + egui::Vec2::new(-7.0, -15.0),
+                        self.position + egui::Vec2::new(-2.0, -18.0),
+                        self.position + egui::Vec2::new(2.0, -18.0),
+                        self.position + egui::Vec2::new(7.0, -15.0),
+                        self.position + egui::Vec2::new(10.0, -10.0),
+                    ].to_vec(),
+                    HARD_HAT_COLOR,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        self.position + egui::Vec2::new(-10.0, -10.0),
+                        self.position + egui::Vec2::new(-5.0, -9.0),
+                        self.position + egui::Vec2::new(5.0, -9.0),
+                        self.position + egui::Vec2::new(10.0, -10.0),
+                    ].to_vec(),
+                    HARD_HAT_COLOR,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            },
+            NetworkUserKind::BlackHat
+            | NetworkUserKind::GrayHat
+            | NetworkUserKind::WhiteHat => {
+                let (hat_main, hat_detail) = match self.kind_buffer {
+                    NetworkUserKind::BlackHat => (egui::Color32::BLACK, egui::Color32::WHITE),
+                    NetworkUserKind::GrayHat => (egui::Color32::LIGHT_GRAY, egui::Color32::DARK_GRAY),
+                    NetworkUserKind::WhiteHat => (egui::Color32::WHITE, egui::Color32::BLACK),
+                    _ => unreachable!(),
+                };
+                canvas.draw_polygon(
+                    [
+                        self.position + egui::Vec2::new(-15.0, -8.0),
+                        self.position + egui::Vec2::new(-7.0, -12.0),
+                        self.position + egui::Vec2::new(7.0, -12.0),
+                        self.position + egui::Vec2::new(15.0, -8.0),
+                    ].to_vec(),
+                    hat_main,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        self.position + egui::Vec2::new(-7.0, -12.0),
+                        self.position + egui::Vec2::new(-5.0, -15.0),
+                        self.position + egui::Vec2::new(-2.0, -18.0),
+                        self.position + egui::Vec2::new(2.0, -18.0),
+                        self.position + egui::Vec2::new(5.0, -15.0),
+                        self.position + egui::Vec2::new(7.0, -12.0),
+                    ].to_vec(),
+                    hat_main,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_polygon(
+                    [
+                        self.position + egui::Vec2::new(-9.0, -11.0),
+                        self.position + egui::Vec2::new(-7.0, -13.0),
+                        self.position + egui::Vec2::new(7.0, -13.0),
+                        self.position + egui::Vec2::new(9.0, -11.0),
+                    ].to_vec(),
+                    hat_detail,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+            },
+        }
+
         canvas.draw_text(
             self.position + egui::Vec2::new(0.0, OUTER_SIZE.y / 2.0),
             egui::Align2::CENTER_TOP,

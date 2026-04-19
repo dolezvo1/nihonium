@@ -619,15 +619,9 @@ impl FullTextSearchable for NetworkNode {
 pub enum NetworkUserKind {
     #[default]
     Normal,
-
     Sysadmin,
-    Operations,
-    Specialist,
     Tie,
-
     Audit,
-    Tester,
-    Architect,
     Developer,
 
     BlackHat,
@@ -640,12 +634,8 @@ impl NetworkUserKind {
         match self {
             NetworkUserKind::Normal => "Normal",
             NetworkUserKind::Sysadmin => "Sysadmin",
-            NetworkUserKind::Operations => "Operations",
-            NetworkUserKind::Specialist => "Specialist",
             NetworkUserKind::Tie => "Tie",
             NetworkUserKind::Audit => "Audit",
-            NetworkUserKind::Tester => "Tester",
-            NetworkUserKind::Architect => "Architect",
             NetworkUserKind::Developer => "Developer",
             NetworkUserKind::BlackHat => "Black Hat",
             NetworkUserKind::GrayHat => "Gray Hat",
