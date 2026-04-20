@@ -26,17 +26,7 @@ pub fn deep_copy_diagram(d: &NetworkDiagram) -> (ERef<NetworkDiagram>, HashMap<M
             },
             NetworkElement::Node(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::User(inner) => inner.read().clone_with(*new_uuid).into(),
-            NetworkElement::Association(inner) => {
-                let model = inner.read();
-
-                let new_model = NetworkAssociation {
-                    uuid: new_uuid,
-                    source: model.source.clone(),
-                    target: model.target.clone(),
-                    comment: model.comment.clone(),
-                };
-                ERef::new(new_model).into()
-            },
+            NetworkElement::Association(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
         }
     }
@@ -704,15 +694,58 @@ impl FullTextSearchable for NetworkUser {
 }
 
 
+#[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub enum NetworkAssociationLineType {
+    #[default]
+    Solid,
+    Dashed,
+}
+
+impl NetworkAssociationLineType {
+    pub fn char(&self) -> &'static str {
+        match self {
+            NetworkAssociationLineType::Solid => "Solid",
+            NetworkAssociationLineType::Dashed => "Dashed",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub enum NetworkAssociationArrowheadType {
+    #[default]
+    None,
+    OpenTriangle,
+    EmptyTriangle,
+}
+
+impl NetworkAssociationArrowheadType {
+    pub fn char(&self) -> &'static str {
+        match self {
+            NetworkAssociationArrowheadType::None => "None",
+            NetworkAssociationArrowheadType::OpenTriangle => "Open Triangle",
+            NetworkAssociationArrowheadType::EmptyTriangle => "Empty Triangle",
+        }
+    }
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct NetworkAssociation {
     pub uuid: Arc<ModelUuid>,
 
+    pub line_type: NetworkAssociationLineType,
     #[nh_context_serde(entity)]
     pub source: NetworkElement,
+    pub source_arrowhead: NetworkAssociationArrowheadType,
+    pub source_label_multiplicity: Arc<String>,
+    pub source_label_role: Arc<String>,
+    pub source_label_reading: Arc<String>,
     #[nh_context_serde(entity)]
     pub target: NetworkElement,
+    pub target_arrowhead: NetworkAssociationArrowheadType,
+    pub target_label_multiplicity: Arc<String>,
+    pub target_label_role: Arc<String>,
+    pub target_label_reading: Arc<String>,
 
     pub comment: Arc<String>,
 }
@@ -720,21 +753,46 @@ pub struct NetworkAssociation {
 impl NetworkAssociation {
     pub fn new(
         uuid: ModelUuid,
+        line_type: NetworkAssociationLineType,
         source: NetworkElement,
+        source_arrowhead: NetworkAssociationArrowheadType,
         target: NetworkElement,
+        target_arrowhead: NetworkAssociationArrowheadType,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
+
+            line_type,
             source,
+            source_arrowhead,
+            source_label_multiplicity: "".to_owned().into(),
+            source_label_role: "".to_owned().into(),
+            source_label_reading: "".to_owned().into(),
             target,
+            target_arrowhead,
+            target_label_multiplicity: "".to_owned().into(),
+            target_label_role: "".to_owned().into(),
+            target_label_reading: "".to_owned().into(),
+
             comment: Arc::new("".to_owned()),
         }
     }
     pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
+
+            line_type: self.line_type.clone(),
             source: self.source.clone(),
+            source_arrowhead: self.source_arrowhead.clone(),
+            source_label_multiplicity: self.source_label_multiplicity.clone(),
+            source_label_role: self.source_label_role.clone(),
+            source_label_reading: self.source_label_reading.clone(),
             target: self.target.clone(),
+            target_arrowhead: self.target_arrowhead.clone(),
+            target_label_multiplicity: self.target_label_multiplicity.clone(),
+            target_label_role: self.target_label_role.clone(),
+            target_label_reading: self.target_label_reading.clone(),
+
             comment: self.comment.clone(),
         })
     }

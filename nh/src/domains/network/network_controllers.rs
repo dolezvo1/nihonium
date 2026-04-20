@@ -10,7 +10,7 @@ use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeseria
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
-use crate::domains::network::network_models::{NetworkAssociation, NetworkComment, NetworkContainer, NetworkContainerShapeKind, NetworkDiagram, NetworkElement, NetworkNode, NetworkNodeKind, NetworkUser, NetworkUserKind};
+use crate::domains::network::network_models::{NetworkAssociation, NetworkAssociationArrowheadType, NetworkAssociationLineType, NetworkComment, NetworkContainer, NetworkContainerShapeKind, NetworkDiagram, NetworkElement, NetworkNode, NetworkNodeKind, NetworkUser, NetworkUserKind};
 use crate::{CustomModal};
 use eframe::egui;
 use std::any::Any;
@@ -44,9 +44,15 @@ pub enum NetworkPropChange {
     NodeKindChange(NetworkNodeKind),
     UserKindChange(NetworkUserKind),
 
+    AssociationLineTypeChange(NetworkAssociationLineType),
+    AssociationArrowheadTypeChange(/*target?*/ bool, NetworkAssociationArrowheadType),
+    AssociationMultiplicityChange(/*target?*/ bool, Arc<String>),
+    AssociationRoleChange(/*target?*/ bool, Arc<String>),
+    AssociationReadingChange(/*target?*/ bool, Arc<String>),
+    FlipMulticonnection(FlipMulticonnection),
+
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
-    FlipMulticonnection(FlipMulticonnection),
 }
 
 impl Debug for NetworkPropChange {
@@ -59,9 +65,15 @@ impl Debug for NetworkPropChange {
                 Self::NodeKindChange(_kind) => format!("NodeKindChange(..)"),
                 Self::UserKindChange(_kind) => format!("UserKindChange(..)"),
 
+                Self::AssociationLineTypeChange(_) => format!("AssociationLineTypeChange(..)"),
+                Self::AssociationArrowheadTypeChange(..) => format!("AssociationArrowheadTypeChange(..)"),
+                Self::AssociationMultiplicityChange(..) => format!("AssociationMultiplicityChange(..)"),
+                Self::AssociationRoleChange(..) => format!("AssociationRoleChange(..)"),
+                Self::AssociationReadingChange(..) => format!("AssociationReadingChange(..)"),
+                Self::FlipMulticonnection(_) => format!("FlipMulticonnection"),
+
                 Self::ColorChange(_color) => format!("ColorChange(..)"),
                 Self::CommentChange(comment) => format!("CommentChange({})", comment),
-                Self::FlipMulticonnection(_) => format!("FlipMulticonnection"),
             }
         )
     }
@@ -98,6 +110,12 @@ impl TryMerge for NetworkPropChange {
     fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
         match (self, newer) {
             (Self::NameChange(_), Self::NameChange(newer)) => Some(Self::NameChange(newer.clone())),
+            (Self::AssociationMultiplicityChange(b1, _), Self::AssociationMultiplicityChange(b2, newer))
+                if b1 == b2 => Some(Self::AssociationMultiplicityChange(*b1, newer.clone())),
+            (Self::AssociationRoleChange(b1, _), Self::AssociationRoleChange(b2, newer))
+                if b1 == b2 => Some(Self::AssociationRoleChange(*b1, newer.clone())),
+            (Self::AssociationReadingChange(b1, _), Self::AssociationReadingChange(b2, newer))
+                if b1 == b2 => Some(Self::AssociationReadingChange(*b1, newer.clone())),
             (Self::CommentChange(_), Self::CommentChange(newer)) => Some(Self::CommentChange(newer.clone())),
             _ => None
         }
@@ -489,7 +507,21 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let (_audit_model, audit_view) = new_network_user("Audit", NetworkUserKind::Audit, egui::Pos2::ZERO);
     let (_blackhat_model, blackhat_view) = new_network_user("Black Hat", NetworkUserKind::BlackHat, egui::Pos2::ZERO);
 
-    let (_association, association_view) = new_network_association(user.clone(), node.clone());
+    let (_association1, association1_view) = new_network_association(
+        NetworkAssociationLineType::Solid,
+        user.clone(), NetworkAssociationArrowheadType::None,
+        node.clone(), NetworkAssociationArrowheadType::None,
+    );
+    let (_association2, association2_view) = new_network_association(
+        NetworkAssociationLineType::Solid,
+        user.clone(), NetworkAssociationArrowheadType::None,
+        node.clone(), NetworkAssociationArrowheadType::OpenTriangle,
+    );
+    let (_association3, association3_view) = new_network_association(
+        NetworkAssociationLineType::Dashed,
+        user.clone(), NetworkAssociationArrowheadType::None,
+        node.clone(), NetworkAssociationArrowheadType::None,
+    );
 
     let (_container, container_view) = new_network_container(
         "Subnet", NetworkContainerShapeKind::Rectangle,
@@ -511,7 +543,21 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             (NetworkToolStage::User { name: "Black Hat", kind: NetworkUserKind::BlackHat }, "Black Hat", blackhat_view.into()),
         ]),
         ("Relationships", vec![
-            (NetworkToolStage::AssociationStart, "Association", association_view.into()),
+            (NetworkToolStage::AssociationStart {
+                line_type: NetworkAssociationLineType::Solid,
+                source_arrowhead: NetworkAssociationArrowheadType::None,
+                target_arrowhead: NetworkAssociationArrowheadType::None,
+            }, "Association (solid)", association1_view.into()),
+            (NetworkToolStage::AssociationStart {
+                line_type: NetworkAssociationLineType::Solid,
+                source_arrowhead: NetworkAssociationArrowheadType::None,
+                target_arrowhead: NetworkAssociationArrowheadType::OpenTriangle,
+            }, "Association (solid, arrow)", association2_view.into()),
+            (NetworkToolStage::AssociationStart {
+                line_type: NetworkAssociationLineType::Dashed,
+                source_arrowhead: NetworkAssociationArrowheadType::None,
+                target_arrowhead: NetworkAssociationArrowheadType::None,
+            }, "Association (dashed)", association3_view.into()),
         ]),
         ("Other", vec![
             (NetworkToolStage::ContainerStart, "Container", container_view.into()),
@@ -534,7 +580,11 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
 pub enum NetworkToolStage {
     Node { name: &'static str, kind: NetworkNodeKind },
     User { name: &'static str, kind: NetworkUserKind },
-    AssociationStart,
+    AssociationStart {
+        line_type: NetworkAssociationLineType,
+        source_arrowhead: NetworkAssociationArrowheadType,
+        target_arrowhead: NetworkAssociationArrowheadType,
+    },
     AssociationEnd,
     ContainerStart,
     ContainerEnd,
@@ -545,6 +595,9 @@ enum PartialNetworkElement {
     None,
     Some(NetworkElementView),
     Association {
+        line_type: NetworkAssociationLineType,
+        source_arrowhead: NetworkAssociationArrowheadType,
+        target_arrowhead: NetworkAssociationArrowheadType,
         source: NetworkElement,
         dest: Option<NetworkElement>,
     },
@@ -602,19 +655,20 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 | NetworkToolStage::ContainerStart
                 | NetworkToolStage::ContainerEnd
                 | NetworkToolStage::Comment => TARGETTABLE_COLOR,
-                NetworkToolStage::AssociationStart | NetworkToolStage::AssociationEnd => NON_TARGETTABLE_COLOR,
+                NetworkToolStage::AssociationStart { .. }
+                | NetworkToolStage::AssociationEnd => NON_TARGETTABLE_COLOR,
             },
             Some(NetworkElement::Container(..)) => match self.current_stage {
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
                 | NetworkToolStage::Comment => TARGETTABLE_COLOR,
-                NetworkToolStage::AssociationStart
+                NetworkToolStage::AssociationStart { .. }
                 | NetworkToolStage::AssociationEnd
                 | NetworkToolStage::ContainerStart
                 | NetworkToolStage::ContainerEnd => NON_TARGETTABLE_COLOR,
             },
             Some(NetworkElement::Node(..) | NetworkElement::User(..) | NetworkElement::Comment(..)) => match self.current_stage {
-                NetworkToolStage::AssociationStart
+                NetworkToolStage::AssociationStart { .. }
                 | NetworkToolStage::AssociationEnd => TARGETTABLE_COLOR,
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
@@ -690,52 +744,38 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
 
         match section {
             NetworkElement::Container(..) => {}
-            NetworkElement::Node(inner) => match (self.current_stage, &mut self.result) {
-                (NetworkToolStage::AssociationStart, PartialNetworkElement::None) => {
+            NetworkElement::Node(..) | NetworkElement::User(..)
+            | NetworkElement::Comment(..) => match (self.current_stage, &mut self.result) {
+                (NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead }, PartialNetworkElement::None) => {
+                    let source = match section {
+                        NetworkElement::Node(inner) => inner.into(),
+                        NetworkElement::User(inner) => inner.into(),
+                        NetworkElement::Comment(inner) => inner.into(),
+                        _ => unreachable!(),
+                    };
                     self.result = PartialNetworkElement::Association {
-                        source: inner.into(),
+                        line_type,
+                        source_arrowhead,
+                        target_arrowhead,
+                        source,
                         dest: None,
                     };
                     self.current_stage = NetworkToolStage::AssociationEnd;
                     self.event_lock = true;
                 }
                 (NetworkToolStage::AssociationEnd, PartialNetworkElement::Association { dest, .. }) => {
-                    *dest = Some(inner.into());
-                    self.event_lock = true;
-                }
-                _ => {}
-            },
-            NetworkElement::User(inner) => match (self.current_stage, &mut self.result) {
-                (NetworkToolStage::AssociationStart, PartialNetworkElement::None) => {
-                    self.result = PartialNetworkElement::Association {
-                        source: inner.into(),
-                        dest: None,
+                    let target = match section {
+                        NetworkElement::Node(inner) => inner.into(),
+                        NetworkElement::User(inner) => inner.into(),
+                        NetworkElement::Comment(inner) => inner.into(),
+                        _ => unreachable!(),
                     };
-                    self.current_stage = NetworkToolStage::AssociationEnd;
-                    self.event_lock = true;
-                }
-                (NetworkToolStage::AssociationEnd, PartialNetworkElement::Association { dest, .. }) => {
-                    *dest = Some(inner.into());
+                    *dest = Some(target);
                     self.event_lock = true;
                 }
                 _ => {}
             },
             NetworkElement::Association(..) => {},
-            NetworkElement::Comment(inner) => match (self.current_stage, &mut self.result) {
-                (NetworkToolStage::AssociationStart, PartialNetworkElement::None) => {
-                    self.result = PartialNetworkElement::Association {
-                        source: inner.into(),
-                        dest: None,
-                    };
-                    self.current_stage = NetworkToolStage::AssociationEnd;
-                    self.event_lock = true;
-                }
-                (NetworkToolStage::AssociationEnd, PartialNetworkElement::Association { dest, .. }) => {
-                    *dest = Some(inner.into());
-                    self.event_lock = true;
-                }
-                _ => {}
-            },
         }
     }
 
@@ -755,11 +795,14 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 Some((x, None))
             }
             PartialNetworkElement::Association {
+                line_type,
+                source_arrowhead,
+                target_arrowhead,
                 source,
                 dest: Some(dest),
                 ..
             } => {
-                self.current_stage = NetworkToolStage::AssociationStart;
+                self.current_stage = self.initial_stage;
 
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
                 let association_view: Option<(_, Option<Box<dyn CustomModal>>)> =
@@ -768,11 +811,11 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                         q.get_view_for(&target_uuid),
                     ) && q.is_contained(&source_controller.uuid(), into)
                       && q.is_contained(&dest_controller.uuid(), into)
-                      && q.are_siblings(&source_controller.uuid(), &dest_controller.uuid())
                     {
                         let (_, association_view) = new_network_association(
-                            (source.clone(), source_controller),
-                            (dest.clone(), dest_controller),
+                            *line_type,
+                            (source.clone(), source_controller), *source_arrowhead,
+                            (dest.clone(), dest_controller), *target_arrowhead,
                         );
 
                         Some((association_view.into(), None))
@@ -2277,13 +2320,19 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
 
 
 fn new_network_association(
+    line_type: NetworkAssociationLineType,
     source: (NetworkElement, NetworkElementView),
+    source_arrowhead: NetworkAssociationArrowheadType,
     target: (NetworkElement, NetworkElementView),
+    target_arrowhead: NetworkAssociationArrowheadType,
 ) -> (ERef<NetworkAssociation>, ERef<LinkViewT>) {
     let predicate_model = ERef::new(NetworkAssociation::new(
         ModelUuid::now_v7(),
+        line_type,
         source.0,
+        source_arrowhead,
         target.0,
+        target_arrowhead,
     ));
     let predicate_view = new_network_association_view(
         predicate_model.clone(),
@@ -2328,6 +2377,16 @@ struct NetworkAssociationTemporaries {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
+
+    line_type_buffer: NetworkAssociationLineType,
+    source_arrowhead_buffer: NetworkAssociationArrowheadType,
+    source_multiplicity_buffer: String,
+    source_role_buffer: String,
+    source_reading_buffer: String,
+    target_arrowhead_buffer: NetworkAssociationArrowheadType,
+    target_multiplicity_buffer: String,
+    target_role_buffer: String,
+    target_reading_buffer: String,
     comment_buffer: String,
 }
 
@@ -2376,6 +2435,98 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>
     ) ->PropertiesStatus<NetworkDomain> {
+        ui.label("Line type:");
+        egui::ComboBox::from_id_salt("line type")
+            .selected_text(self.temporaries.line_type_buffer.char())
+            .show_ui(ui, |ui| {
+                for e in [ NetworkAssociationLineType::Solid, NetworkAssociationLineType::Dashed, ] {
+                    if ui.selectable_value(&mut self.temporaries.line_type_buffer, e, e.char()).changed() {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            NetworkPropChange::AssociationLineTypeChange(self.temporaries.line_type_buffer),
+                        ));
+                    }
+                }
+            });
+
+        ui.label("Source arrowhead type:");
+        egui::ComboBox::from_id_salt("source arrohead type")
+            .selected_text(self.temporaries.source_arrowhead_buffer.char())
+            .show_ui(ui, |ui| {
+                for e in [ NetworkAssociationArrowheadType::None, NetworkAssociationArrowheadType::OpenTriangle, NetworkAssociationArrowheadType::EmptyTriangle, ] {
+                    if ui.selectable_value(&mut self.temporaries.source_arrowhead_buffer, e, e.char()).changed() {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            NetworkPropChange::AssociationArrowheadTypeChange(false, self.temporaries.source_arrowhead_buffer),
+                        ));
+                    }
+                }
+            });
+
+        if ui.labeled_text_edit_singleline("Source multiplicity:", &mut self.temporaries.source_multiplicity_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::AssociationMultiplicityChange(false, Arc::new(
+                    self.temporaries.source_multiplicity_buffer.clone(),
+                )),
+            ));
+        }
+        if ui.labeled_text_edit_singleline("Source role:", &mut self.temporaries.source_role_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::AssociationRoleChange(false, Arc::new(
+                    self.temporaries.source_role_buffer.clone(),
+                )),
+            ));
+        }
+        if ui.labeled_text_edit_singleline("Source reading:", &mut self.temporaries.source_reading_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::AssociationReadingChange(false, Arc::new(
+                    self.temporaries.source_reading_buffer.clone(),
+                )),
+            ));
+        }
+
+        ui.label("Target arrowhead type:");
+        egui::ComboBox::from_id_salt("target arrohead type")
+            .selected_text(self.temporaries.target_arrowhead_buffer.char())
+            .show_ui(ui, |ui| {
+                for e in [ NetworkAssociationArrowheadType::None, NetworkAssociationArrowheadType::OpenTriangle, NetworkAssociationArrowheadType::EmptyTriangle, ] {
+                    if ui.selectable_value(&mut self.temporaries.target_arrowhead_buffer, e, e.char()).changed() {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            NetworkPropChange::AssociationArrowheadTypeChange(true, self.temporaries.target_arrowhead_buffer),
+                        ));
+                    }
+                }
+            });
+
+        if ui.labeled_text_edit_singleline("Target multiplicity:", &mut self.temporaries.target_multiplicity_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::AssociationMultiplicityChange(true, Arc::new(
+                    self.temporaries.target_multiplicity_buffer.clone(),
+                )),
+            ));
+        }
+        if ui.labeled_text_edit_singleline("Target role:", &mut self.temporaries.target_role_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::AssociationRoleChange(true, Arc::new(
+                    self.temporaries.target_role_buffer.clone(),
+                )),
+            ));
+        }
+        if ui.labeled_text_edit_singleline("Target reading:", &mut self.temporaries.target_reading_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::AssociationReadingChange(true, Arc::new(
+                    self.temporaries.target_reading_buffer.clone(),
+                )),
+            ));
+        }
+
         if ui.labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
@@ -2401,6 +2552,85 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
             match property {
+                NetworkPropChange::AssociationLineTypeChange(line_type) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        NetworkPropChange::AssociationLineTypeChange(model.line_type.clone()),
+                    ));
+                    model.line_type = line_type.clone();
+                }
+                NetworkPropChange::AssociationArrowheadTypeChange(t, arrowhead) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        NetworkPropChange::AssociationArrowheadTypeChange(
+                            *t,
+                            if !t {
+                                model.source_arrowhead.clone()
+                            } else {
+                                model.target_arrowhead.clone()
+                            }
+                        ),
+                    ));
+                    if !t {
+                        model.source_arrowhead = arrowhead.clone();
+                    } else {
+                        model.target_arrowhead = arrowhead.clone();
+                    }
+                }
+                NetworkPropChange::AssociationMultiplicityChange(t, multiplicity) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        NetworkPropChange::AssociationMultiplicityChange(
+                            *t,
+                            if !t {
+                                model.source_label_multiplicity.clone()
+                            } else {
+                                model.target_label_multiplicity.clone()
+                            }
+                        ),
+                    ));
+                    if !t {
+                        model.source_label_multiplicity = multiplicity.clone();
+                    } else {
+                        model.target_label_multiplicity = multiplicity.clone();
+                    }
+                }
+                NetworkPropChange::AssociationRoleChange(t, role) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        NetworkPropChange::AssociationRoleChange(
+                            *t,
+                            if !t {
+                                model.source_label_role.clone()
+                            } else {
+                                model.target_label_role.clone()
+                            }
+                        ),
+                    ));
+                    if !t {
+                        model.source_label_role = role.clone();
+                    } else {
+                        model.target_label_role = role.clone();
+                    }
+                }
+                NetworkPropChange::AssociationReadingChange(t, reading) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        NetworkPropChange::AssociationReadingChange(
+                            *t,
+                            if !t {
+                                model.source_label_reading.clone()
+                            } else {
+                                model.target_label_reading.clone()
+                            }
+                        ),
+                    ));
+                    if !t {
+                        model.source_label_reading = reading.clone();
+                    } else {
+                        model.target_label_reading = reading.clone();
+                    }
+                }
                 NetworkPropChange::CommentChange(comment) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
@@ -2415,21 +2645,52 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
 
+        fn ah(
+            line_type: NetworkAssociationLineType,
+            arrowhead_type: NetworkAssociationArrowheadType,
+            multiplicity: &Arc<String>,
+            role: &Arc<String>,
+            reading: &Arc<String>,
+        ) -> ArrowData {
+            let line_type = match line_type {
+                NetworkAssociationLineType::Solid => canvas::LineType::Solid,
+                NetworkAssociationLineType::Dashed => canvas::LineType::Dashed,
+            };
+            let arrowhead_type = match arrowhead_type {
+                NetworkAssociationArrowheadType::None => canvas::ArrowheadType::None,
+                NetworkAssociationArrowheadType::OpenTriangle => canvas::ArrowheadType::OpenTriangle,
+                NetworkAssociationArrowheadType::EmptyTriangle => canvas::ArrowheadType::EmptyTriangle,
+            };
+            let multiplicity = if multiplicity.is_empty() { None } else { Some(multiplicity.clone()) };
+            let role = if role.is_empty() { None } else { Some(role.clone()) };
+            let reading = if reading.is_empty() { None } else { Some(reading.clone()) };
+            ArrowData { line_type, arrowhead_type, multiplicity, role, reading }
+        }
+
         self.temporaries.arrow_data.clear();
-        self.temporaries.arrow_data.insert((false, *model.source.uuid()), ArrowData::new_labelless(
-            canvas::LineType::Solid,
-            canvas::ArrowheadType::None,
-        ));
-        self.temporaries.arrow_data.insert((true, *model.target.uuid()), ArrowData::new_labelless(
-            canvas::LineType::Solid,
-            canvas::ArrowheadType::OpenTriangle,
-        ));
+        self.temporaries.arrow_data.insert(
+            (false, *model.source.uuid()),
+            ah(model.line_type, model.source_arrowhead, &model.source_label_multiplicity, &model.source_label_role, &model.source_label_reading),
+        );
+        self.temporaries.arrow_data.insert(
+            (true, *model.target.uuid()),
+            ah(model.line_type, model.target_arrowhead, &model.target_label_multiplicity, &model.target_label_role, &model.target_label_reading),
+        );
 
         self.temporaries.source_uuids.clear();
         self.temporaries.source_uuids.push(*model.source.uuid());
         self.temporaries.target_uuids.clear();
         self.temporaries.target_uuids.push(*model.target.uuid());
 
+        self.temporaries.line_type_buffer = model.line_type.clone();
+        self.temporaries.source_arrowhead_buffer = model.source_arrowhead.clone();
+        self.temporaries.source_multiplicity_buffer = (*model.source_label_multiplicity).clone();
+        self.temporaries.source_role_buffer = (*model.source_label_role).clone();
+        self.temporaries.source_reading_buffer = (*model.source_label_reading).clone();
+        self.temporaries.target_arrowhead_buffer = model.target_arrowhead.clone();
+        self.temporaries.target_multiplicity_buffer = (*model.target_label_multiplicity).clone();
+        self.temporaries.target_role_buffer  = (*model.target_label_role).clone();
+        self.temporaries.target_reading_buffer = (*model.target_label_reading).clone();
         self.temporaries.comment_buffer = (*model.comment).clone();
     }
 
