@@ -912,7 +912,7 @@ impl UiCanvas {
                         + self.camera_offset.x % (distance_x * self.camera_scale)
                         + x * self.camera_scale,
                     egui::Rangef::new(self.canvas.min.y, self.canvas.max.y),
-                    egui::Stroke::new(1.0, color),
+                    egui::Stroke::new(1.0_f32, color),
                 );
             }
         }
@@ -925,7 +925,7 @@ impl UiCanvas {
                     self.canvas.min.y
                         + self.camera_offset.y % (distance_y * self.camera_scale)
                         + y * self.camera_scale,
-                    egui::Stroke::new(1.0, color),
+                    egui::Stroke::new(1.0_f32, color),
                 );
             }
         }

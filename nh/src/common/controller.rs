@@ -295,16 +295,16 @@ pub fn mglobalcolor_edit_button(
                     response.rect,
                     egui::CornerRadius::ZERO,
                     egui::Color32::TRANSPARENT,
-                    egui::Stroke::new(1.0, egui::Color32::RED),
+                    egui::Stroke::new(1.0_f32, egui::Color32::RED),
                     egui::StrokeKind::Inside,
                 );
                 painter.line_segment(
                     [response.rect.left_top(), response.rect.right_bottom()],
-                    egui::Stroke::new(1.0, egui::Color32::RED),
+                    egui::Stroke::new(1.0_f32, egui::Color32::RED),
                 );
                 painter.line_segment(
                     [response.rect.right_top(), response.rect.left_bottom()],
-                    egui::Stroke::new(1.0, egui::Color32::RED),
+                    egui::Stroke::new(1.0_f32, egui::Color32::RED),
                 );
                 ui.label("[no override]");
             },
