@@ -3,7 +3,7 @@ use crate::common::search::FullTextSearchable;
 use crate::common::ui_ext::UiExt;
 use crate::common::uuid::ControllerUuid;
 use crate::common::views::ordered_views::OrderedViewRefs;
-use crate::{CustomModal, CustomModalResult, CustomTab};
+use crate::{CustomModal, CustomModalResult, CustomTab, NHTab};
 use eframe::egui;
 use egui_ltreeview::DirPosition;
 use std::any::Any;
@@ -111,14 +111,13 @@ pub enum ProjectCommand {
     SimpleProjectCommand(SimpleProjectCommand),
     RenameElement(ViewUuid, String),
 
-    OpenAndFocusDiagram(ViewUuid, Option<egui::Pos2>),
+    OpenAndFocusTab(NHTab, Option<egui::Pos2>),
     AddCustomTab(uuid::Uuid, Arc<RwLock<dyn CustomTab>>),
     SetNewDiagramNumber(u32),
     AddNewDiagram(/*parent:*/ViewUuid, ViewUuid, ERef<dyn DiagramController>),
     DeleteDiagram(ViewUuid),
 
     AddNewDocument(ViewUuid, String),
-    OpenAndFocusDocument(ViewUuid, Option<egui::Pos2>),
     DuplicateDocument(ViewUuid),
     DeleteDocument(ViewUuid),
 }
@@ -1896,7 +1895,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         );
         self.redo_stack = redo_stack;
         self.redo_stack.push((original_view, original_command));
-        commands.push(ProjectCommand::OpenAndFocusDiagram(original_view, None));
+        commands.push(ProjectCommand::OpenAndFocusTab(NHTab::Diagram { uuid: original_view }, None));
     }
     fn redo_immediate(
         &mut self,
@@ -1910,7 +1909,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         let redo_stack = std::mem::take(&mut self.redo_stack);
         self.apply_commands(&original_view, vec![redo_command.into()], true, affected_models);
         self.redo_stack = redo_stack;
-        commands.push(ProjectCommand::OpenAndFocusDiagram(original_view, None));
+        commands.push(ProjectCommand::OpenAndFocusTab(NHTab::Diagram { uuid: original_view }, None));
     }
 
     fn show_undo_stack(

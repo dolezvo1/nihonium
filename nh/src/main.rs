@@ -131,7 +131,8 @@ fn main() {
 }
 
 #[derive(Debug, Hash, Eq, PartialEq, Clone)]
-enum NHTab {
+pub enum NHTab {
+    NewDiagram,
     RecentlyUsed,
     Settings,
 
@@ -150,6 +151,7 @@ enum NHTab {
 impl NHTab {
     pub fn name<'a>(&self, gdc: &'a GlobalDrawingContext) -> Cow<'a, str> {
         match self {
+            NHTab::NewDiagram => gdc.translate_0("nh-tab-newdiagram"),
             NHTab::RecentlyUsed => gdc.translate_0("nh-tab-recentlyused"),
             NHTab::Settings => gdc.translate_0("nh-tab-settings"),
 
@@ -231,6 +233,12 @@ enum FileIOOperation {
     Error(String),
 }
 
+type DiagramF = fn(u32) -> (ViewUuid, ERef<dyn DiagramController + 'static>);
+struct DiagramCreationData {
+    description: &'static str,
+    constructors: Vec<(&'static str, DiagramF)>,
+}
+
 struct NHContext {
     file_io_channel: (Sender<FileIOOperation>, Receiver<FileIOOperation>),
     project_path: Option<std::path::PathBuf>,
@@ -257,6 +265,10 @@ struct NHContext {
     shortcut_top_order: Vec<(SimpleProjectCommand, egui::KeyboardShortcut)>,
     modifier_settings: ModifierSettings,
     drawing_context: GlobalDrawingContext,
+
+    new_diagram_data: HashMap<&'static str, DiagramCreationData>,
+    new_diagram_selected_kind: &'static str,
+    new_diagram_selected_constructor: usize,
 
     unprocessed_commands: Vec<ProjectCommand>,
     affected_models: HashSet<ModelUuid>,
@@ -308,6 +320,7 @@ impl TabViewer for NHContext {
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
         match tab {
+            NHTab::NewDiagram => self.show_newdiagram_tab(ui),
             NHTab::RecentlyUsed => {
                 // TODO: show recently used projects
                 ui.heading("Recently used");
@@ -346,9 +359,7 @@ impl TabViewer for NHContext {
 
 fn add_project_element_block(
     gdc: &GlobalDrawingContext,
-    new_diagram_no: u32,
     ui: &mut egui::Ui,
-    modal: &mut Option<Box<dyn CustomModal>>,
     commands: &mut Vec<ProjectCommand>,
 ) {
     if ui.button(gdc.translate_0("nh-project-addnewdocument")).clicked() {
@@ -356,123 +367,7 @@ fn add_project_element_block(
     }
 
     if ui.button(gdc.translate_0("nh-project-addnewdiagram")).clicked() {
-        type DiagramF = fn(u32) -> (ViewUuid, ERef<dyn DiagramController + 'static>);
-        struct DiagramData {
-            description: &'static str,
-            constructors: Vec<(&'static str, DiagramF)>
-        }
-        struct Modal {
-            new_diagram_no: u32,
-            diagram_data: HashMap<&'static str, DiagramData>,
-            selected_diagram: &'static str,
-            selected_constructor: usize,
-        }
-        impl CustomModal for Modal {
-            fn show(
-                &mut self,
-                gdc: &mut GlobalDrawingContext,
-                ui: &mut egui::Ui,
-                commands: &mut Vec<ProjectCommand>,
-            ) -> CustomModalResult {
-                let mut result = CustomModalResult::KeepOpen;
-
-                ui.columns(2, |columns| {
-                    let (_, actions) = egui_ltreeview::TreeView::new(columns[0].make_persistent_id("new diagram modal hierarchy"))
-                        .allow_multi_selection(false)
-                        .show(&mut columns[0], |builder| {
-                            builder.dir("uml", "UML");
-                            builder.leaf("umlclass", "Class diagram");
-                            builder.leaf("umlsequence", "Sequence diagram");
-                            builder.leaf("umlclass-usecase", "Use case diagram");
-                            builder.close_dir();
-
-                            builder.leaf("umlclass-ontouml", "OntoUML UFO-A diagram");
-
-                            builder.dir("demo", "DEMO");
-                            builder.leaf("democsd", "Coordination Structure Diagram");
-                            builder.leaf("demopsd", "Process Structure Diagram");
-                            builder.leaf("demoofd", "Object Fact Diagram");
-                            builder.close_dir();
-
-                            builder.leaf("network", "Network diagram");
-                            builder.leaf("rdf", "RDF diagram");
-                        });
-                    for e in actions {
-                        if let egui_ltreeview::Action::SetSelected(items) = e {
-                            self.selected_diagram = items.get(0).map_or("", |e| *e);
-                        }
-                    }
-
-                    columns[1].vertical(|ui| {
-                        if let Some(dd) = self.diagram_data.get(self.selected_diagram) {
-                            ui.label(dd.description);
-                            ui.separator();
-
-                            for (idx, e) in dd.constructors.iter().enumerate() {
-                                ui.radio_value(&mut self.selected_constructor, idx, e.0);
-                            }
-                            ui.separator();
-
-                            ui.horizontal(|ui| {
-                                if ui.add_enabled(
-                                    self.selected_constructor < dd.constructors.len(),
-                                    egui::Button::new(gdc.translate_0("nh-project-addnewdiagramadd")),
-                                ).clicked() {
-                                    let (uuid, c) = dd.constructors[self.selected_constructor].1(self.new_diagram_no);
-                                    commands.push(ProjectCommand::SetNewDiagramNumber(self.new_diagram_no + 1));
-                                    commands.push(ProjectCommand::AddNewDiagram(ViewUuid::nil(), uuid, c));
-                                    result = CustomModalResult::CloseUnmodified;
-                                }
-                                if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                                    result = CustomModalResult::CloseUnmodified;
-                                }
-                            });
-                        }
-                    });
-                });
-
-                result
-            }
-        }
-
-        let mut diagram_data = HashMap::new();
-        diagram_data.insert("umlclass", DiagramData { description: "UML Class diagram (classes, objects, packages, etc.)", constructors: vec![
-            ("empty", crate::domains::umlclass::umlclass_controllers::new as DiagramF),
-            ("demo", crate::domains::umlclass::umlclass_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("umlsequence", DiagramData { description: "UML Sequence diagram (lifelines, messages, etc.)", constructors: vec![
-            ("empty", crate::domains::umlsequence::umlsequence_controllers::new as DiagramF),
-            ("demo", crate::domains::umlsequence::umlsequence_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("umlclass-usecase", DiagramData { description: "Use case diagram (users, use cases, etc.)", constructors: vec![
-            ("empty", crate::domains::usecase::usecase_controllers::new as DiagramF),
-            ("demo", crate::domains::usecase::usecase_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("umlclass-ontouml", DiagramData { description: "OntoUML UFO-A diagram (UML Class diagram profile for modelling of ontological concepts)", constructors: vec![
-            ("empty", crate::domains::ontouml::ontouml_controllers::new as DiagramF),
-            ("demo", crate::domains::ontouml::ontouml_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("democsd", DiagramData { description: "Coordination Structure Diagram", constructors: vec![
-            ("empty", crate::domains::democsd::democsd_controllers::new as DiagramF),
-            ("demo", crate::domains::democsd::democsd_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("demopsd", DiagramData { description: "Process Structure Diagram", constructors: vec![
-            ("empty", crate::domains::demopsd::demopsd_controllers::new as DiagramF),
-            ("demo", crate::domains::demopsd::demopsd_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("demoofd", DiagramData { description: "Object Fact Diagram", constructors: vec![
-            ("empty", crate::domains::demoofd::demoofd_controllers::new as DiagramF),
-            ("demo", crate::domains::demoofd::demoofd_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("network", DiagramData { description: "Network diagram", constructors: vec![
-            ("empty", crate::domains::network::network_controllers::new as DiagramF),
-            ("demo", crate::domains::network::network_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("rdf", DiagramData { description: "Resource Description Framework", constructors: vec![
-            ("empty", crate::domains::rdf::rdf_controllers::new as DiagramF),
-            ("demo", crate::domains::rdf::rdf_controllers::demo as DiagramF),
-        ] });
-        *modal = Some(Box::new(Modal { new_diagram_no, diagram_data, selected_diagram: "", selected_constructor: 0 }));
+        commands.push(ProjectCommand::OpenAndFocusTab(NHTab::NewDiagram, None));
     }
     ui.separator();
 }
@@ -710,7 +605,7 @@ impl NHContext {
                                     ui.close();
                                 }
 
-                                add_project_element_block(gdc, new_diagram_no, ui, modal, commands);
+                                add_project_element_block(gdc, ui, commands);
 
                                 if ui.button(gdc.translate_0("nh-tab-projecthierarchy-collapsechildren")).clicked() {
                                     *cma = Some(ContextMenuAction::CollapseAt(Some(true), true, *uuid));
@@ -748,7 +643,7 @@ impl NHContext {
                                 ui.set_min_width(MIN_MENU_WIDTH);
 
                                 if ui.button(gdc.translate_0("nh-tab-projecthierarchy-open")).clicked() {
-                                    commands.push(ProjectCommand::OpenAndFocusDiagram(*uuid, None));
+                                    commands.push(ProjectCommand::OpenAndFocusTab(NHTab::Diagram { uuid: *uuid }, None));
                                     ui.close();
                                 }
                                 ui.separator();
@@ -757,11 +652,12 @@ impl NHContext {
                                     ui.close();
                                 }
 
-                                add_project_element_block(gdc, new_diagram_no, ui, modal, commands);
+                                add_project_element_block(gdc, ui, commands);
 
                                 if let Some((new_uuid, new_c)) = c.write().show_duplication_menu(gdc, ui, uuid) {
                                     let new_c = new_c.unwrap_or_else(|| c.clone());
                                     commands.push(ProjectCommand::AddNewDiagram(ViewUuid::nil(), new_uuid, new_c));
+                                    commands.push(ProjectCommand::OpenAndFocusTab(NHTab::Diagram { uuid: new_uuid }, None));
                                 }
 
                                 ui.separator();
@@ -785,7 +681,7 @@ impl NHContext {
                                 ui.set_min_width(MIN_MENU_WIDTH);
 
                                 if ui.button(gdc.translate_0("nh-tab-projecthierarchy-open")).clicked() {
-                                    commands.push(ProjectCommand::OpenAndFocusDocument(*uuid, None));
+                                    commands.push(ProjectCommand::OpenAndFocusTab(NHTab::Document { uuid: *uuid }, None));
                                     ui.close();
                                 }
                                 ui.separator();
@@ -794,7 +690,7 @@ impl NHContext {
                                     ui.close();
                                 }
 
-                                add_project_element_block(gdc, new_diagram_no, ui, modal, commands);
+                                add_project_element_block(gdc, ui, commands);
 
                                 if ui.button(gdc.translate_0("nh-tab-projecthierarchy-duplicate")).clicked() {
                                     commands.push(ProjectCommand::DuplicateDocument(*uuid));
@@ -840,18 +736,18 @@ impl NHContext {
                         egui_ltreeview::Action::Activate(a) => {
                             for selected in &a.selected {
                                 if let Some((HierarchyNode::Diagram(..), _)) = self.project_hierarchy.get(selected) {
-                                    commands.push(ProjectCommand::OpenAndFocusDiagram(*selected, None));
+                                    commands.push(ProjectCommand::OpenAndFocusTab(NHTab::Diagram { uuid: *selected }, None));
                                 } else if let Some((HierarchyNode::Document(..), _)) = self.project_hierarchy.get(selected) {
-                                    commands.push(ProjectCommand::OpenAndFocusDocument(*selected, None));
+                                    commands.push(ProjectCommand::OpenAndFocusTab(NHTab::Document { uuid: *selected }, None));
                                 }
                             }
                         }
                         egui_ltreeview::Action::MoveExternal(dnde) => {
                             for selected in &dnde.source {
                                 if let Some((HierarchyNode::Diagram(..), _)) = self.project_hierarchy.get(selected) {
-                                    commands.push(ProjectCommand::OpenAndFocusDiagram(*selected, Some(dnde.position)));
+                                    commands.push(ProjectCommand::OpenAndFocusTab(NHTab::Diagram { uuid: *selected }, Some(dnde.position)));
                                 } else if let Some((HierarchyNode::Document(..), _)) = self.project_hierarchy.get(selected) {
-                                    commands.push(ProjectCommand::OpenAndFocusDocument(*selected, Some(dnde.position)));
+                                    commands.push(ProjectCommand::OpenAndFocusTab(NHTab::Document { uuid: *selected }, Some(dnde.position)));
                                 }
                             }
                         }
@@ -1002,7 +898,7 @@ impl NHContext {
 
         macro_rules! focus_element_in {
             ($diagram:expr, $element:expr) => {
-                self.unprocessed_commands.push(ProjectCommand::OpenAndFocusDiagram(*$diagram, None));
+                self.unprocessed_commands.push(ProjectCommand::OpenAndFocusTab(NHTab::Diagram { uuid: *$diagram }, None));
                 self.unprocessed_commands.extend_from_slice(&[
                     DiagramCommand::HighlightAllElements(false, crate::common::canvas::Highlight::SELECTED),
                     DiagramCommand::HighlightElement((*$element).into(), true, crate::common::canvas::Highlight::SELECTED),
@@ -1069,6 +965,71 @@ impl NHContext {
         if let Some(m) = c.write().show_properties(last_focused_diagram, &self.drawing_context, ui, &mut self.affected_models) {
             self.custom_modal = Some(m);
         }
+    }
+
+    fn show_newdiagram_tab(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Add New Diagram");
+
+        ui.columns(2, |columns| {
+            let (_, actions) = egui_ltreeview::TreeView::new(columns[0].make_persistent_id("new diagram modal hierarchy"))
+                .allow_multi_selection(false)
+                .show(&mut columns[0], |builder| {
+                    builder.dir("uml", "UML");
+                    builder.leaf("umlclass", "Class diagram");
+                    builder.leaf("umlsequence", "Sequence diagram");
+                    builder.leaf("umlclass-usecase", "Use case diagram");
+                    builder.close_dir();
+
+                    builder.leaf("umlclass-ontouml", "OntoUML UFO-A diagram");
+
+                    builder.dir("demo", "DEMO");
+                    builder.leaf("democsd", "Coordination Structure Diagram");
+                    builder.leaf("demopsd", "Process Structure Diagram");
+                    builder.leaf("demoofd", "Object Fact Diagram");
+                    builder.close_dir();
+
+                    builder.leaf("network", "Network diagram");
+                    builder.leaf("rdf", "RDF diagram");
+                });
+            for e in actions {
+                if let egui_ltreeview::Action::SetSelected(items) = e {
+                    self.new_diagram_selected_kind = items.get(0).map_or("", |e| *e);
+                }
+            }
+
+            columns[1].vertical(|ui| {
+                if let Some(dd) = self.new_diagram_data.get(self.new_diagram_selected_kind) {
+                    ui.label(dd.description);
+                    ui.separator();
+
+                    for (idx, e) in dd.constructors.iter().enumerate() {
+                        ui.radio_value(&mut self.new_diagram_selected_constructor, idx, e.0);
+                    }
+                    ui.separator();
+
+                    ui.horizontal(|ui| {
+                        let enable = self.new_diagram_selected_constructor < dd.constructors.len();
+                        if ui.add_enabled(
+                            enable,
+                            egui::Button::new(self.drawing_context.translate_0("nh-tab-newdiagram-open")),
+                        ).clicked() {
+                            let (uuid, c) = dd.constructors[self.new_diagram_selected_constructor].1(self.new_diagram_no);
+                            self.unprocessed_commands.push(ProjectCommand::SetNewDiagramNumber(self.new_diagram_no + 1));
+                            self.unprocessed_commands.push(ProjectCommand::AddNewDiagram(ViewUuid::nil(), uuid, c));
+                            self.unprocessed_commands.push(ProjectCommand::OpenAndFocusTab(NHTab::Diagram { uuid }, None));
+                        }
+                        if ui.add_enabled(
+                            enable,
+                            egui::Button::new(self.drawing_context.translate_0("nh-tab-newdiagram-background")),
+                        ).clicked() {
+                            let (uuid, c) = dd.constructors[self.new_diagram_selected_constructor].1(self.new_diagram_no);
+                            self.unprocessed_commands.push(ProjectCommand::SetNewDiagramNumber(self.new_diagram_no + 1));
+                            self.unprocessed_commands.push(ProjectCommand::AddNewDiagram(ViewUuid::nil(), uuid, c));
+                        }
+                    });
+                }
+            });
+        });
     }
 
     fn show_settings_tab(&mut self, ui: &mut egui::Ui) {
@@ -1713,7 +1674,7 @@ impl Default for NHApp {
         let mut new_diagram_no = 1;
         let mut diagram_controllers = HashMap::new();
         let mut hierarchy = vec![];
-        let mut tabs = vec![NHTab::RecentlyUsed, NHTab::Settings];
+        let mut tabs = vec![NHTab::NewDiagram, NHTab::Settings];
         let mut model_labels = LabelProvider::new();
 
         let documents = {
@@ -1757,7 +1718,7 @@ impl Default for NHApp {
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
 
         let mut open_unique_tabs = HashSet::new();
-        open_unique_tabs.insert(NHTab::RecentlyUsed);
+        open_unique_tabs.insert(NHTab::NewDiagram);
         open_unique_tabs.insert(NHTab::Settings);
 
         let [a, b] = dock_state.main_surface_mut().split_left(
@@ -1777,6 +1738,43 @@ impl Default for NHApp {
             .split_below(b, 0.7, vec![NHTab::Toolbar]);
         open_unique_tabs.insert(NHTab::Toolbar);
 
+        let mut diagram_data = HashMap::new();
+        diagram_data.insert("umlclass", DiagramCreationData { description: "UML Class diagram (classes, objects, packages, etc.)", constructors: vec![
+            ("empty", crate::domains::umlclass::umlclass_controllers::new as DiagramF),
+            ("demo", crate::domains::umlclass::umlclass_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("umlsequence", DiagramCreationData { description: "UML Sequence diagram (lifelines, messages, etc.)", constructors: vec![
+            ("empty", crate::domains::umlsequence::umlsequence_controllers::new as DiagramF),
+            ("demo", crate::domains::umlsequence::umlsequence_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("umlclass-usecase", DiagramCreationData { description: "Use case diagram (users, use cases, etc.)", constructors: vec![
+            ("empty", crate::domains::usecase::usecase_controllers::new as DiagramF),
+            ("demo", crate::domains::usecase::usecase_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("umlclass-ontouml", DiagramCreationData { description: "OntoUML UFO-A diagram (UML Class diagram profile for modelling of ontological concepts)", constructors: vec![
+            ("empty", crate::domains::ontouml::ontouml_controllers::new as DiagramF),
+            ("demo", crate::domains::ontouml::ontouml_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("democsd", DiagramCreationData { description: "Coordination Structure Diagram", constructors: vec![
+            ("empty", crate::domains::democsd::democsd_controllers::new as DiagramF),
+            ("demo", crate::domains::democsd::democsd_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("demopsd", DiagramCreationData { description: "Process Structure Diagram", constructors: vec![
+            ("empty", crate::domains::demopsd::demopsd_controllers::new as DiagramF),
+            ("demo", crate::domains::demopsd::demopsd_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("demoofd", DiagramCreationData { description: "Object Fact Diagram", constructors: vec![
+            ("empty", crate::domains::demoofd::demoofd_controllers::new as DiagramF),
+            ("demo", crate::domains::demoofd::demoofd_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("network", DiagramCreationData { description: "Network diagram", constructors: vec![
+            ("empty", crate::domains::network::network_controllers::new as DiagramF),
+            ("demo", crate::domains::network::network_controllers::demo as DiagramF),
+        ] });
+        diagram_data.insert("rdf", DiagramCreationData { description: "Resource Description Framework", constructors: vec![
+            ("empty", crate::domains::rdf::rdf_controllers::new as DiagramF),
+            ("demo", crate::domains::rdf::rdf_controllers::demo as DiagramF),
+        ] });
 
         let diagram_type_order = vec![
             ("umlclass", "UML Class"),
@@ -1847,6 +1845,10 @@ impl Default for NHApp {
                 model_labels,
             },
             
+            new_diagram_data: diagram_data,
+            new_diagram_selected_kind: "",
+            new_diagram_selected_constructor: 0,
+
             unprocessed_commands: Vec::new(),
             affected_models: HashSet::new(),
             should_change_title: true,
@@ -1978,7 +1980,6 @@ impl NHApp {
         self.context
             .diagram_controllers
             .insert(view_uuid, controller);
-        push_tab_to_best!(self, NHTab::Diagram { uuid: view_uuid });
     }
 
     pub fn add_custom_tab(&mut self, uuid: uuid::Uuid, tab: Arc<RwLock<dyn CustomTab>>) {
@@ -2110,8 +2111,7 @@ impl eframe::App for NHApp {
             }
 
             match c {
-                ProjectCommand::OpenAndFocusDiagram(uuid, pos) => {
-                    let target_tab = NHTab::Diagram { uuid };
+                ProjectCommand::OpenAndFocusTab(target_tab, pos) => {
                     if let Some(pos) = pos {
                         push_tab_to_cursor!(self, target_tab, pos);
                     } else {
@@ -2123,19 +2123,6 @@ impl eframe::App for NHApp {
                         }
                     }
                 },
-                ProjectCommand::OpenAndFocusDocument(uuid, pos) => {
-                    let target_tab = NHTab::Document { uuid };
-                    if let Some(pos) = pos {
-                        push_tab_to_cursor!(self, target_tab, pos);
-                    } else {
-                        if let Some(t) = self.tree.find_tab(&target_tab) {
-                            self.tree.set_focused_node_and_surface(t.node_path());
-                            let _ = self.tree.set_active_tab(t);
-                        } else {
-                            push_tab_to_best!(self, target_tab);
-                        }
-                    }
-                }
                 other => commands.push(other),
             }
         }
@@ -2297,10 +2284,7 @@ impl eframe::App for NHApp {
                     });
                     ui.separator();
 
-                    add_project_element_block(
-                        &self.context.drawing_context, self.context.new_diagram_no, ui,
-                        &mut self.context.custom_modal, &mut commands,
-                    );
+                    add_project_element_block(&self.context.drawing_context, ui, &mut commands);
 
                     #[cfg(not(target_arch = "wasm32"))]
                     button!(ui, "nh-project-save", SimpleProjectCommand::SaveProject);
@@ -2417,6 +2401,7 @@ impl eframe::App for NHApp {
 
                     // allow certain tabs to be toggled
                     for tab in &[
+                        NHTab::NewDiagram,
                         NHTab::RecentlyUsed,
                         NHTab::Settings,
                         NHTab::ProjectHierarchy,
@@ -2884,8 +2869,7 @@ impl eframe::App for NHApp {
                         &mut self.context.documents,
                     );
                 }
-                ProjectCommand::OpenAndFocusDiagram(..)
-                | ProjectCommand::OpenAndFocusDocument(..) => unreachable!("this really should not happen"),
+                ProjectCommand::OpenAndFocusTab(..) => unreachable!("this really should not happen"),
                 ProjectCommand::AddCustomTab(uuid, tab) => self.add_custom_tab(uuid, tab),
                 ProjectCommand::SetNewDiagramNumber(no) => self.context.new_diagram_no = no,
                 ProjectCommand::AddNewDiagram(parent, view_uuid, controller) => {

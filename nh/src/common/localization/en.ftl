@@ -17,7 +17,6 @@ nh-project-openproject-confirm = Are you sure you want to open a different proje
 nh-project-recentprojects = Recent Projects
 nh-project-addnewdocument = Add New Document
 nh-project-addnewdiagram = Add New Diagram
-nh-project-addnewdiagramadd = Add
 nh-project-save = Save Project
 nh-project-saveas = Save Project as
 nh-project-closeproject = Close Project
@@ -63,6 +62,10 @@ nh-about-bugtracker = Bug reporting/Feature requests
 
 nh-tab-recentlyused = Recently Used
 nh-tab-settings = Settings
+
+nh-tab-newdiagram = New Diagram
+nh-tab-newdiagram-open = Add and Open
+nh-tab-newdiagram-background = Add in Background
 
 nh-tab-projecthierarchy = Project Hierarchy
 nh-tab-projecthierarchy-newfolder = New folder

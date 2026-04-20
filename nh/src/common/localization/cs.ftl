@@ -17,7 +17,6 @@ nh-project-openproject-confirm = Opravdu chcete otevřít jiný projekt?
 nh-project-recentprojects = Nedávné Projekty
 nh-project-addnewdocument = Přidat Nový Dokument
 nh-project-addnewdiagram = Přidat Nový Diagram
-nh-project-addnewdiagramadd = Přidat
 nh-project-save = Uložit Projekt
 nh-project-saveas = Uložit Projekt jako
 nh-project-closeproject = Zavřít Projekt
@@ -63,6 +62,10 @@ nh-about-bugtracker = Hlášení chyb/Požadavky
 
 nh-tab-recentlyused = Nedávné
 nh-tab-settings = Nastavení
+
+nh-tab-newdiagram = Nový Diagram
+nh-tab-newdiagram-open = Přidat a otevřít
+nh-tab-newdiagram-background = Přidat na pozadí
 
 nh-tab-projecthierarchy = Hierarchie Projektu
 nh-tab-projecthierarchy-newfolder = Nová složka
