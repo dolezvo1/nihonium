@@ -184,17 +184,10 @@ impl UmlSequenceHorizontalElementView {
         }
     }
 
-    fn theoretical_height(&self) -> f32 {
-        match self {
-            UmlSequenceHorizontalElementView::CombinedFragment(inner) => inner.read().theoretical_height(),
-            UmlSequenceHorizontalElementView::Message(inner) => inner.read().theoretical_height(),
-            UmlSequenceHorizontalElementView::Ref(inner) => inner.read().theoretical_height(),
-        }
-    }
     fn draw_inner(
         &mut self,
         lifeline_views: &[ERef<UmlSequenceLifelineView>],
-        pos_and_scale_y: (f32, f32),
+        pos_y: f32,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &UmlSequenceSettings,
@@ -202,9 +195,9 @@ impl UmlSequenceHorizontalElementView {
         tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
     ) -> (TargettingStatus, egui::Rect) {
         match self {
-            UmlSequenceHorizontalElementView::CombinedFragment(inner) => inner.write().draw_inner(lifeline_views, pos_and_scale_y, q, context, settings, canvas, tool),
-            UmlSequenceHorizontalElementView::Message(inner) => inner.write().draw_inner(pos_and_scale_y, q, context, settings, canvas, tool),
-            UmlSequenceHorizontalElementView::Ref(inner) => inner.write().draw_inner(lifeline_views, pos_and_scale_y, q, context, settings, canvas, tool),
+            UmlSequenceHorizontalElementView::CombinedFragment(inner) => inner.write().draw_inner(lifeline_views, pos_y, q, context, settings, canvas, tool),
+            UmlSequenceHorizontalElementView::Message(inner) => inner.write().draw_inner(pos_y, q, context, settings, canvas, tool),
+            UmlSequenceHorizontalElementView::Ref(inner) => inner.write().draw_inner(lifeline_views, pos_y, q, context, settings, canvas, tool),
         }
     }
     fn handle_event_inner(
@@ -1360,15 +1353,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 }
 
                 {
-                    let egui::Vec2 { mut x, mut y } = self.bounds_rect.size();
+                    let egui::Vec2 { mut x, .. } = self.bounds_rect.size();
 
                     ui.label("width");
                     if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
                         commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), egui::Align2::LEFT_CENTER, egui::Vec2::new(x - self.bounds_rect.width(), 0.0)));
-                    }
-                    ui.label("height");
-                    if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, y - self.bounds_rect.height())));
                     }
                     ui.end_row();
                 }
@@ -1416,17 +1405,16 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 }
 
                 const PADDING_Y: f32 = 2.0;
-                let theoretical_height = PADDING_Y + self.horizontal_element_views.iter().map(|v| v.theoretical_height()).sum::<f32>();
-                let sliver_y = (self.bounds_rect.height() - 2.0 * max_object_height) / theoretical_height;
-                let mut counter_y = self.bounds_rect.min.y + 2.0 * max_object_height + PADDING_Y * sliver_y;
+                let mut counter_y = self.bounds_rect.min.y + 2.0 * max_object_height + PADDING_Y;
                 for v in self.horizontal_element_views.iter_mut() {
-                    let (t, r) = v.draw_inner(&self.lifeline_views, (counter_y, sliver_y), q, context, settings, canvas, tool);
+                    let (t, r) = v.draw_inner(&self.lifeline_views, counter_y, q, context, settings, canvas, tool);
                     #[allow(unused)]
                     if t != TargettingStatus::NotDrawn {
                         drawn_child_targetting = t;
                     }
                     counter_y = r.max.y;
                 }
+                self.bounds_rect.set_bottom(counter_y.max(self.bounds_rect.min.y + Self::MIN_SIZE.y));
             };
         }
         draw_children!();
@@ -1448,14 +1436,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.temporaries.highlight.selected) {
             let handle_size = self.handle_size(ui_scale);
             for (h, c) in [
-                (self.bounds_rect.left_top(), "↖"),
-                (self.bounds_rect.center_top(), "^"),
-                (self.bounds_rect.right_top(), "↗"),
                 (self.bounds_rect.left_center(), "<"),
                 (self.bounds_rect.right_center(), ">"),
-                (self.bounds_rect.left_bottom(), "↙"),
-                (self.bounds_rect.center_bottom(), "v"),
-                (self.bounds_rect.right_bottom(), "↘"),
             ] {
                 canvas.draw_rectangle(
                     egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size / ui_scale)),
@@ -1612,14 +1594,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             InputEvent::MouseDown(pos) => {
                 let handle_size = self.handle_size(1.0);
                 if self.temporaries.highlight.selected {
-                    for (a,h) in [(egui::Align2::RIGHT_BOTTOM, self.bounds_rect.left_top()),
-                                (egui::Align2::CENTER_BOTTOM, self.bounds_rect.center_top()),
-                                (egui::Align2::LEFT_BOTTOM, self.bounds_rect.right_top()),
-                                (egui::Align2::RIGHT_CENTER, self.bounds_rect.left_center()),
-                                (egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),
-                                (egui::Align2::RIGHT_TOP, self.bounds_rect.left_bottom()),
-                                (egui::Align2::CENTER_TOP, self.bounds_rect.center_bottom()),
-                                (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom())]
+                    for (a,h) in [(egui::Align2::RIGHT_CENTER, self.bounds_rect.left_center()),
+                                (egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),]
                     {
                         if egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
                             self.temporaries.dragged_type_and_shape = Some((PackageDragType::Resize(a), self.bounds_rect));
@@ -2280,12 +2256,7 @@ struct UmlSequenceCombinedFragmentViewTemporaries {
 }
 
 impl UmlSequenceCombinedFragmentView {
-    const COMBINED_FRAGMENT_MARGIN_BOTTOM: f32 = 1.0;
-
-    fn theoretical_height(&self) -> f32 {
-        self.sections.iter().map(|e| e.read().theoretical_height()).sum::<f32>() + Self::COMBINED_FRAGMENT_MARGIN_BOTTOM
-    }
-
+    const COMBINED_FRAGMENT_MARGIN_BOTTOM: f32 = 10.0;
     const BUTTON_RADIUS: f32 = 8.0;
 
     fn new_section_button_rect(&self, ui_scale: f32) ->  egui::Rect {
@@ -2307,7 +2278,7 @@ impl UmlSequenceCombinedFragmentView {
     fn draw_inner(
         &mut self,
         lifeline_views: &[ERef<UmlSequenceLifelineView>],
-        (pos_y, scale_y): (f32, f32),
+        pos_y: f32,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &UmlSequenceSettings,
@@ -2327,7 +2298,7 @@ impl UmlSequenceCombinedFragmentView {
             let (t, r) = e.write().draw_inner(
                 spanned_lifeline_views,
                 span_x,
-                (acc.max.y, scale_y),
+                acc.max.y,
                 q, context, settings, canvas, tool);
             if t != TargettingStatus::NotDrawn {
                 drawn_child_targetting = t;
@@ -2390,7 +2361,7 @@ impl UmlSequenceCombinedFragmentView {
 
         (
             drawn_child_targetting,
-            self.bounds_rect.with_max_y(self.bounds_rect.max.y + Self::COMBINED_FRAGMENT_MARGIN_BOTTOM * scale_y),
+            self.bounds_rect.with_max_y(self.bounds_rect.max.y + Self::COMBINED_FRAGMENT_MARGIN_BOTTOM),
         )
     }
 
@@ -2502,7 +2473,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &<UmlSequenceDomain as Domain>::ToolT)>,
     ) -> TargettingStatus {
-        self.draw_inner(&Vec::new(), (0.0, 1.0), q, context, settings, canvas, tool);
+        self.draw_inner(&Vec::new(), 0.0, q, context, settings, canvas, tool);
         TargettingStatus::NotDrawn
     }
 
@@ -2942,23 +2913,15 @@ struct UmlSequenceCombinedFragmentSectionViewTemporaries {
 
 impl UmlSequenceCombinedFragmentSectionView {
     const SECTION_PADDING_X: f32 = 20.0;
-    const SECTION_EMPTY_SIZE_Y: f32 = 4.0;
-    const SECTION_PADDING_Y: f32 = 2.0;
-
-    fn theoretical_height(&self) -> f32 {
-        if self.horizontal_element_views.is_empty() {
-            Self::SECTION_PADDING_Y + Self::SECTION_EMPTY_SIZE_Y
-        } else {
-            Self::SECTION_PADDING_Y + self.horizontal_element_views.iter().map(|v| v.theoretical_height()).sum::<f32>()
-        }
-    }
+    const SECTION_EMPTY_SIZE_Y: f32 = 60.0;
+    const SECTION_PADDING_Y: f32 = 30.0;
 
     // Does not draw the outer rectangle, because it doesn't know the sizes of sibling sections
     fn draw_inner(
         &mut self,
         lifeline_views: &[ERef<UmlSequenceLifelineView>],
         (min_lifeline_x, max_lifeline_x): (f32, f32),
-        (pos_y, scale_y): (f32, f32),
+        pos_y: f32,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         settings: &UmlSequenceSettings,
@@ -2973,17 +2936,17 @@ impl UmlSequenceCombinedFragmentSectionView {
                 TargettingStatus::NotDrawn,
                 egui::Rect::from_two_pos(
                     egui::Pos2::new(min_lifeline_x - Self::SECTION_PADDING_X, pos_y),
-                    egui::Pos2::new(max_lifeline_x + Self::SECTION_PADDING_X, pos_y + (Self::SECTION_PADDING_Y + Self::SECTION_EMPTY_SIZE_Y) * scale_y),
+                    egui::Pos2::new(max_lifeline_x + Self::SECTION_PADDING_X, pos_y + (Self::SECTION_PADDING_Y + Self::SECTION_EMPTY_SIZE_Y)),
                 ),
             )
         } else {
             let mut drawn_child_targetting = TargettingStatus::NotDrawn;
             let mut acc = egui::Rect::from_min_max(
                 egui::Pos2::new(min_lifeline_x, pos_y),
-                egui::Pos2::new(max_lifeline_x, pos_y + Self::SECTION_PADDING_Y * scale_y),
+                egui::Pos2::new(max_lifeline_x, pos_y + Self::SECTION_PADDING_Y),
             );
             for e in self.horizontal_element_views.iter_mut() {
-                let (t, r) = e.draw_inner(lifeline_views, (acc.max.y, scale_y), q, context, settings, canvas, tool);
+                let (t, r) = e.draw_inner(lifeline_views, acc.max.y, q, context, settings, canvas, tool);
                 if t != TargettingStatus::NotDrawn {
                     drawn_child_targetting = t;
                 }
@@ -3233,7 +3196,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
     ) -> TargettingStatus {
-        self.draw_inner(&Vec::new(), (0.0, 100.0), (0.0, 1.0), q, context, settings, canvas, tool).0
+        self.draw_inner(&Vec::new(), (0.0, 100.0), 0.0, q, context, settings, canvas, tool).0
     }
 
     fn handle_event(
@@ -4198,14 +4161,11 @@ struct UmlSequenceMessageTemporaries {
 }
 
 impl UmlSequenceMessageView {
-    const MESSAGE_SPACING: f32 = 4.0;
+    const MESSAGE_SPACING: f32 = 60.0;
 
-    fn theoretical_height(&self) -> f32 {
-        Self::MESSAGE_SPACING
-    }
     fn draw_inner(
         &mut self,
-        (pos_y, scale_y): (f32, f32),
+        pos_y: f32,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _context: &GlobalDrawingContext,
         _settings: &UmlSequenceSettings,
@@ -4221,8 +4181,8 @@ impl UmlSequenceMessageView {
         let (source_x, target_x) = (self.source.position().x, self.target.position().x);
         let (start, second, penultimate, end) = if source_x == target_x {
             const WIDTH: f32 = 20.0;
-            let start = egui::Pos2::new(source_x, pos_y + scale_y * Self::MESSAGE_SPACING / 2.0 - WIDTH);
-            let end = egui::Pos2::new(target_x, pos_y + scale_y * Self::MESSAGE_SPACING / 2.0 + WIDTH);
+            let start = egui::Pos2::new(source_x, pos_y + Self::MESSAGE_SPACING / 2.0 - WIDTH);
+            let end = egui::Pos2::new(target_x, pos_y + Self::MESSAGE_SPACING / 2.0 + WIDTH);
             let second = egui::Pos2::new(start.x + WIDTH, start.y);
             let penultimate = egui::Pos2::new(end.x + WIDTH, end.y);
 
@@ -4232,8 +4192,8 @@ impl UmlSequenceMessageView {
             self.bounds_rect = egui::Rect::from_two_pos(start, penultimate);
             (start, second, penultimate, end)
         } else {
-            let start = egui::Pos2::new(source_x, pos_y + scale_y * Self::MESSAGE_SPACING / 2.0);
-            let end = egui::Pos2::new(target_x, pos_y + scale_y * Self::MESSAGE_SPACING / 2.0);
+            let start = egui::Pos2::new(source_x, pos_y + Self::MESSAGE_SPACING / 2.0);
+            let end = egui::Pos2::new(target_x, pos_y + Self::MESSAGE_SPACING / 2.0);
             self.bounds_rect = egui::Rect::from_two_pos(start, end);
             (start, end, start, end)
         };
@@ -4268,7 +4228,7 @@ impl UmlSequenceMessageView {
         };
         let r = egui::Rect::from_min_size(
             egui::Pos2::new(lifeline_min_x, pos_y),
-            egui::Vec2::new(lifeline_diff_x, scale_y * Self::MESSAGE_SPACING),
+            egui::Vec2::new(lifeline_diff_x, Self::MESSAGE_SPACING),
         );
         (TargettingStatus::NotDrawn, r)
     }
@@ -4312,7 +4272,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &<UmlSequenceDomain as Domain>::ToolT)>,
     ) -> TargettingStatus {
-        self.draw_inner((0.0, 1.0), q, context, settings, canvas, tool);
+        self.draw_inner(0.0, q, context, settings, canvas, tool);
         TargettingStatus::NotDrawn
     }
 
@@ -4678,12 +4638,8 @@ struct UmlSequenceRefViewTemporaries {
 }
 
 impl UmlSequenceRefView {
-    const REF_MARGIN_BOTTOM: f32 = 1.0;
+    const REF_MARGIN_BOTTOM: f32 = 10.0;
     const REF_PADDING_X: f32 = 20.0;
-
-    fn theoretical_height(&self) -> f32 {
-        1.0 + self.temporaries.text_buffer.chars().filter(|e| *e == '\n').count() as f32 + Self::REF_MARGIN_BOTTOM
-    }
 
     fn spanned_lifeline_views<'a, 'b>(&'a self, lifeline_views: &'b [ERef<UmlSequenceLifelineView>]) -> &'b [ERef<UmlSequenceLifelineView>] {
         let r = self.model.read();
@@ -4695,7 +4651,7 @@ impl UmlSequenceRefView {
     fn draw_inner(
         &mut self,
         lifeline_views: &[ERef<UmlSequenceLifelineView>],
-        (pos_y, scale_y): (f32, f32),
+        pos_y: f32,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
         _settings: &UmlSequenceSettings,
@@ -4749,7 +4705,7 @@ impl UmlSequenceRefView {
 
         (
             TargettingStatus::NotDrawn,
-            self.bounds_rect.with_max_y(self.bounds_rect.max.y + Self::REF_MARGIN_BOTTOM * scale_y)
+            self.bounds_rect.with_max_y(self.bounds_rect.max.y + Self::REF_MARGIN_BOTTOM)
         )
     }
 
@@ -4797,7 +4753,7 @@ impl ElementController<UmlSequenceElement> for UmlSequenceRefView {
     }
 
     fn position(&self) -> egui::Pos2 {
-        todo!()
+        self.bounds_rect.center()
     }
 }
 
@@ -4810,7 +4766,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &<UmlSequenceDomain as Domain>::ToolT)>,
     ) -> TargettingStatus {
-        self.draw_inner(&Vec::new(), (0.0, 1.0), q, context, settings, canvas, tool);
+        self.draw_inner(&Vec::new(), 0.0, q, context, settings, canvas, tool);
         TargettingStatus::NotDrawn
     }
 
