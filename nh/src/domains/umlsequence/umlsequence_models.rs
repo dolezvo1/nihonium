@@ -902,7 +902,13 @@ pub enum UmlSequenceMessageSynchronicityKind {
 }
 
 impl UmlSequenceMessageSynchronicityKind {
-    pub fn char(&self) -> &'static str {
+    pub const VARIANTS: [Self; 3] = [
+        Self::Synchronous,
+        Self::AsynchronousCall,
+        Self::AsynchronousSignal,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Synchronous => "Synchronous",
             Self::AsynchronousCall => "Asynchronous Call",
@@ -920,7 +926,9 @@ pub enum UmlSequenceMessageLifecycleKind {
 }
 
 impl UmlSequenceMessageLifecycleKind {
-    pub fn char(&self) -> &'static str {
+    pub const VARIANTS: [Self; 3] = [Self::None, Self::Create, Self::Delete];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::None => "None",
             Self::Create => "Create",
@@ -1032,7 +1040,22 @@ pub enum UmlSequenceCombinedFragmentKind {
 }
 
 impl UmlSequenceCombinedFragmentKind {
-    pub fn char(&self) -> &'static str {
+    pub const VARIANTS: [Self; 12] = [
+        Self::Opt,
+        Self::Alt,
+        Self::Loop,
+        Self::Break,
+        Self::Par,
+        Self::Strict,
+        Self::Seq,
+        Self::Critical,
+        Self::Ignore,
+        Self::Consider,
+        Self::Assert,
+        Self::Neg,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             UmlSequenceCombinedFragmentKind::Opt => "opt",
             UmlSequenceCombinedFragmentKind::Alt => "alt",
@@ -1046,22 +1069,6 @@ impl UmlSequenceCombinedFragmentKind {
             UmlSequenceCombinedFragmentKind::Consider => "consider",
             UmlSequenceCombinedFragmentKind::Assert => "assert",
             UmlSequenceCombinedFragmentKind::Neg => "neg",
-        }
-    }
-    pub fn name(&self) -> &'static str {
-        match self {
-            UmlSequenceCombinedFragmentKind::Opt => "Opt",
-            UmlSequenceCombinedFragmentKind::Alt => "Alt",
-            UmlSequenceCombinedFragmentKind::Loop => "Loop",
-            UmlSequenceCombinedFragmentKind::Break => "Break",
-            UmlSequenceCombinedFragmentKind::Par => "Par",
-            UmlSequenceCombinedFragmentKind::Strict => "Strict",
-            UmlSequenceCombinedFragmentKind::Seq => "Seq",
-            UmlSequenceCombinedFragmentKind::Critical => "Critical",
-            UmlSequenceCombinedFragmentKind::Ignore => "Ignore",
-            UmlSequenceCombinedFragmentKind::Consider => "Consider",
-            UmlSequenceCombinedFragmentKind::Assert => "Assert",
-            UmlSequenceCombinedFragmentKind::Neg => "Neg",
         }
     }
     pub fn max_allowed_sections_count(&self) -> Option<PositionNoT> {

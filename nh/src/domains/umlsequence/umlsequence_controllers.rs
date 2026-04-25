@@ -2472,11 +2472,11 @@ impl ElementController<UmlSequenceElement> for UmlSequenceCombinedFragmentView {
 fn combined_fragment_display_text(kind: UmlSequenceCombinedFragmentKind, kind_argument: &str) -> String {
     match kind {
         UmlSequenceCombinedFragmentKind::Loop if !kind_argument.is_empty()
-            => format!("{}({})", kind.char(), kind_argument),
+            => format!("{}({})", kind.as_str(), kind_argument),
         UmlSequenceCombinedFragmentKind::Ignore
         | UmlSequenceCombinedFragmentKind::Consider if !kind_argument.is_empty()
-            => format!("{}{{{}}}", kind.char(), kind_argument),
-        a => a.char().to_owned(),
+            => format!("{}{{{}}}", kind.as_str(), kind_argument),
+        a => a.as_str().to_owned(),
     }
 }
 
@@ -2513,23 +2513,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("Kind:")
-            .selected_text(self.temporaries.kind_buffer.name())
+            .selected_text(self.temporaries.kind_buffer.as_str())
             .show_ui(ui, |ui| {
-                for e in [
-                    UmlSequenceCombinedFragmentKind::Opt,
-                    UmlSequenceCombinedFragmentKind::Alt,
-                    UmlSequenceCombinedFragmentKind::Loop,
-                    UmlSequenceCombinedFragmentKind::Break,
-                    UmlSequenceCombinedFragmentKind::Par,
-                    UmlSequenceCombinedFragmentKind::Strict,
-                    UmlSequenceCombinedFragmentKind::Seq,
-                    UmlSequenceCombinedFragmentKind::Critical,
-                    UmlSequenceCombinedFragmentKind::Ignore,
-                    UmlSequenceCombinedFragmentKind::Consider,
-                    UmlSequenceCombinedFragmentKind::Assert,
-                    UmlSequenceCombinedFragmentKind::Neg,
-                ] {
-                    if ui.selectable_value(&mut self.temporaries.kind_buffer, e, e.char()).clicked() {
+                for e in UmlSequenceCombinedFragmentKind::VARIANTS {
+                    if ui.selectable_value(&mut self.temporaries.kind_buffer, e, e.as_str()).clicked() {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             UmlSequencePropChange::CombinedFragmentKindChange(self.temporaries.kind_buffer.clone()),
@@ -3548,7 +3535,16 @@ pub enum UmlSequenceLifelineRenderStyle {
 }
 
 impl UmlSequenceLifelineRenderStyle {
-    pub fn char(&self) -> &'static str {
+    const VARIANTS: [Self; 6] = [
+        Self::StickFigure,
+        Self::Object,
+        Self::Boundary,
+        Self::Control,
+        Self::Entity,
+        Self::Database,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             UmlSequenceLifelineRenderStyle::StickFigure => "Stick Figure",
             UmlSequenceLifelineRenderStyle::Object => "Object",
@@ -3905,17 +3901,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
 
         ui.label("Render style");
         egui::ComboBox::from_id_salt("render style")
-            .selected_text(self.render_style.char())
+            .selected_text(self.render_style.as_str())
             .show_ui(ui, |ui| {
-                for e in [
-                    UmlSequenceLifelineRenderStyle::StickFigure,
-                    UmlSequenceLifelineRenderStyle::Object,
-                    UmlSequenceLifelineRenderStyle::Boundary,
-                    UmlSequenceLifelineRenderStyle::Control,
-                    UmlSequenceLifelineRenderStyle::Entity,
-                    UmlSequenceLifelineRenderStyle::Database,
-                ] {
-                    ui.selectable_value(&mut self.render_style, e, e.char());
+                for e in UmlSequenceLifelineRenderStyle::VARIANTS {
+                    ui.selectable_value(&mut self.render_style, e, e.as_str());
                 }
             });
 
@@ -4312,11 +4301,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
 
         ui.label("Synchronicity:");
         egui::ComboBox::from_id_salt("synchronicity")
-            .selected_text(self.temporaries.synchronicity_kind_buffer.char())
+            .selected_text(self.temporaries.synchronicity_kind_buffer.as_str())
             .show_ui(ui, |ui| {
-                for e in [UmlSequenceMessageSynchronicityKind::Synchronous, UmlSequenceMessageSynchronicityKind::AsynchronousCall, UmlSequenceMessageSynchronicityKind::AsynchronousSignal] {
+                for e in UmlSequenceMessageSynchronicityKind::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.temporaries.synchronicity_kind_buffer, e, e.char())
+                        .selectable_value(&mut self.temporaries.synchronicity_kind_buffer, e, e.as_str())
                         .changed()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
@@ -4329,11 +4318,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
 
         ui.label("Lifecycle:");
         egui::ComboBox::from_id_salt("lifecycle")
-            .selected_text(self.temporaries.lifecycle_kind_buffer.char())
+            .selected_text(self.temporaries.lifecycle_kind_buffer.as_str())
             .show_ui(ui, |ui| {
-                for e in [UmlSequenceMessageLifecycleKind::None, UmlSequenceMessageLifecycleKind::Create, UmlSequenceMessageLifecycleKind::Delete] {
+                for e in UmlSequenceMessageLifecycleKind::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.temporaries.lifecycle_kind_buffer, e, e.char())
+                        .selectable_value(&mut self.temporaries.lifecycle_kind_buffer, e, e.as_str())
                         .changed()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(

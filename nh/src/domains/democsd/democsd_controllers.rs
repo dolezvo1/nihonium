@@ -333,7 +333,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
                 Arc::new(format!("Transaction {} ({})", r.identifier, r.name))
             },
             DemoCsdElement::DemoCsdLink(inner) => {
-                Arc::new(inner.read().link_type.char().to_owned())
+                Arc::new(inner.read().link_type.as_str().to_owned())
             },
         }
     }
@@ -2196,15 +2196,11 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
 
         ui.label("Transaction Kind:");
         egui::ComboBox::from_id_salt("Transaction Kind:")
-            .selected_text(self.kind_buffer.char())
+            .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
-                for value in [
-                    DemoTransactionKind::Performa,
-                    DemoTransactionKind::Informa,
-                    DemoTransactionKind::Forma,
-                ] {
+                for value in DemoTransactionKind::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.kind_buffer, value, value.char())
+                        .selectable_value(&mut self.kind_buffer, value, value.as_str())
                         .clicked()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
@@ -2632,15 +2628,11 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
     ) -> PropertiesStatus<DemoCsdDomain> {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("Type:")
-            .selected_text(self.temporaries.link_type_buffer.char())
+            .selected_text(self.temporaries.link_type_buffer.as_str())
             .show_ui(ui, |ui| {
-                for value in [
-                    DemoCsdLinkType::InitiatorLink,
-                    DemoCsdLinkType::AccessLink,
-                    DemoCsdLinkType::WaitLink,
-                ] {
+                for value in DemoCsdLinkType::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.temporaries.link_type_buffer, value, value.char())
+                        .selectable_value(&mut self.temporaries.link_type_buffer, value, value.as_str())
                         .clicked()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(

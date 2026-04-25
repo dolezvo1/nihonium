@@ -388,7 +388,9 @@ pub enum NetworkContainerShapeKind {
 }
 
 impl NetworkContainerShapeKind {
-    pub fn char(&self) -> &'static str {
+    pub const VARIANTS: [Self; 3] = [Self::Rectangle, Self::Rhombus, Self::Ellipse];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             NetworkContainerShapeKind::Rectangle => "Rectangle",
             NetworkContainerShapeKind::Rhombus => "Rhombus",
@@ -497,7 +499,7 @@ impl FullTextSearchable for NetworkContainer {
             &[
                 &self.uuid.to_string(),
                 &self.name,
-                &self.kind.char(),
+                &self.kind.as_str(),
                 &self.comment,
             ],
         );
@@ -528,7 +530,21 @@ pub enum NetworkNodeKind {
 }
 
 impl NetworkNodeKind {
-    pub fn char(&self) -> &'static str {
+    pub const VARIANTS: [Self; 11] = [
+        Self::Cloud,
+        Self::Firewall,
+        Self::Router,
+        Self::Switch,
+        Self::Server,
+        Self::Workstation,
+        Self::Laptop,
+        Self::Tablet,
+        Self::CellularPhone,
+        Self::UsbDrive,
+        Self::OpticalMedia,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             NetworkNodeKind::Cloud => "Cloud",
             NetworkNodeKind::Firewall => "Firewall",
@@ -597,7 +613,7 @@ impl FullTextSearchable for NetworkNode {
             &[
                 &self.uuid.to_string(),
                 &self.name,
-                &self.kind.char(),
+                &self.kind.as_str(),
                 &self.comment,
             ],
         );
@@ -620,7 +636,18 @@ pub enum NetworkUserKind {
 }
 
 impl NetworkUserKind {
-    pub fn char(&self) -> &'static str {
+    pub const VARIANTS: [Self; 8] = [
+        Self::Normal,
+        Self::Sysadmin,
+        Self::Tie,
+        Self::Audit,
+        Self::Developer,
+        Self::BlackHat,
+        Self::GrayHat,
+        Self::WhiteHat,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             NetworkUserKind::Normal => "Normal",
             NetworkUserKind::Sysadmin => "Sysadmin",
@@ -686,7 +713,7 @@ impl FullTextSearchable for NetworkUser {
             &[
                 &self.uuid.to_string(),
                 &self.name,
-                &self.kind.char(),
+                &self.kind.as_str(),
                 &self.comment,
             ],
         );
@@ -702,7 +729,9 @@ pub enum NetworkAssociationLineType {
 }
 
 impl NetworkAssociationLineType {
-    pub fn char(&self) -> &'static str {
+    pub const VARIANTS: [Self; 2] = [Self::Solid, Self::Dashed];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             NetworkAssociationLineType::Solid => "Solid",
             NetworkAssociationLineType::Dashed => "Dashed",
@@ -719,7 +748,9 @@ pub enum NetworkAssociationArrowheadType {
 }
 
 impl NetworkAssociationArrowheadType {
-    pub fn char(&self) -> &'static str {
+    pub const VARIANTS: [Self; 3] = [Self::None, Self::OpenTriangle, Self::EmptyTriangle];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             NetworkAssociationArrowheadType::None => "None",
             NetworkAssociationArrowheadType::OpenTriangle => "Open Triangle",

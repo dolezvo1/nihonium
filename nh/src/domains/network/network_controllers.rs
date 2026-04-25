@@ -1154,22 +1154,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("kind")
-            .selected_text(self.kind_buffer.char())
+            .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
-                for e in [
-                    NetworkNodeKind::Cloud,
-                    NetworkNodeKind::Firewall,
-                    NetworkNodeKind::Router,
-                    NetworkNodeKind::Switch,
-                    NetworkNodeKind::Server,
-                    NetworkNodeKind::Workstation,
-                    NetworkNodeKind::Laptop,
-                    NetworkNodeKind::Tablet,
-                    NetworkNodeKind::CellularPhone,
-                    NetworkNodeKind::UsbDrive,
-                    NetworkNodeKind::OpticalMedia
-                ] {
-                    if ui.selectable_value(&mut self.kind_buffer, e, e.char()).changed() {
+                for e in NetworkNodeKind::VARIANTS {
+                    if ui.selectable_value(&mut self.kind_buffer, e, e.as_str()).changed() {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             NetworkPropChange::NodeKindChange(self.kind_buffer),
@@ -1865,19 +1853,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
 
         ui.label("Kind:");
         egui::ComboBox::from_id_salt("kind")
-            .selected_text(self.kind_buffer.char())
+            .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
-                for e in [
-                    NetworkUserKind::Normal,
-                    NetworkUserKind::Sysadmin,
-                    NetworkUserKind::Tie,
-                    NetworkUserKind::Audit,
-                    NetworkUserKind::Developer,
-                    NetworkUserKind::BlackHat,
-                    NetworkUserKind::GrayHat,
-                    NetworkUserKind::WhiteHat,
-                ] {
-                    if ui.selectable_value(&mut self.kind_buffer, e, e.char()).changed() {
+                for e in NetworkUserKind::VARIANTS {
+                    if ui.selectable_value(&mut self.kind_buffer, e, e.as_str()).changed() {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             NetworkPropChange::UserKindChange(self.kind_buffer),
@@ -2454,10 +2433,10 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
     ) ->PropertiesStatus<NetworkDomain> {
         ui.label("Line type:");
         egui::ComboBox::from_id_salt("line type")
-            .selected_text(self.temporaries.line_type_buffer.char())
+            .selected_text(self.temporaries.line_type_buffer.as_str())
             .show_ui(ui, |ui| {
-                for e in [ NetworkAssociationLineType::Solid, NetworkAssociationLineType::Dashed, ] {
-                    if ui.selectable_value(&mut self.temporaries.line_type_buffer, e, e.char()).changed() {
+                for e in NetworkAssociationLineType::VARIANTS {
+                    if ui.selectable_value(&mut self.temporaries.line_type_buffer, e, e.as_str()).changed() {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             NetworkPropChange::AssociationLineTypeChange(self.temporaries.line_type_buffer),
@@ -2468,10 +2447,10 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
 
         ui.label("Source arrowhead type:");
         egui::ComboBox::from_id_salt("source arrohead type")
-            .selected_text(self.temporaries.source_arrowhead_buffer.char())
+            .selected_text(self.temporaries.source_arrowhead_buffer.as_str())
             .show_ui(ui, |ui| {
-                for e in [ NetworkAssociationArrowheadType::None, NetworkAssociationArrowheadType::OpenTriangle, NetworkAssociationArrowheadType::EmptyTriangle, ] {
-                    if ui.selectable_value(&mut self.temporaries.source_arrowhead_buffer, e, e.char()).changed() {
+                for e in NetworkAssociationArrowheadType::VARIANTS {
+                    if ui.selectable_value(&mut self.temporaries.source_arrowhead_buffer, e, e.as_str()).changed() {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             NetworkPropChange::AssociationArrowheadTypeChange(false, self.temporaries.source_arrowhead_buffer),
@@ -2507,10 +2486,10 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
 
         ui.label("Target arrowhead type:");
         egui::ComboBox::from_id_salt("target arrohead type")
-            .selected_text(self.temporaries.target_arrowhead_buffer.char())
+            .selected_text(self.temporaries.target_arrowhead_buffer.as_str())
             .show_ui(ui, |ui| {
-                for e in [ NetworkAssociationArrowheadType::None, NetworkAssociationArrowheadType::OpenTriangle, NetworkAssociationArrowheadType::EmptyTriangle, ] {
-                    if ui.selectable_value(&mut self.temporaries.target_arrowhead_buffer, e, e.char()).changed() {
+                for e in NetworkAssociationArrowheadType::VARIANTS {
+                    if ui.selectable_value(&mut self.temporaries.target_arrowhead_buffer, e, e.as_str()).changed() {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             NetworkPropChange::AssociationArrowheadTypeChange(true, self.temporaries.target_arrowhead_buffer),

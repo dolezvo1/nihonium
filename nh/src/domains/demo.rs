@@ -16,7 +16,9 @@ pub enum DemoTransactionKind {
 }
 
 impl DemoTransactionKind {
-    pub fn char(&self) -> &'static str {
+    pub const VARIANTS: [Self; 3] = [Self::Performa, Self::Informa, Self::Forma];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::Performa => "Performa",
             Self::Informa => "Informa",

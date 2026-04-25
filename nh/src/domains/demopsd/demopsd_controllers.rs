@@ -467,7 +467,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
                 Arc::new(l)
             }
             DemoPsdElement::DemoPsdLink(inner) => {
-                Arc::new(inner.read().link_type.char().to_owned())
+                Arc::new(inner.read().link_type.as_str().to_owned())
             },
         }
     }
@@ -1319,14 +1319,10 @@ impl CustomModal for DemoPsdTransactionSetupModal {
     ) -> CustomModalResult {
         ui.label("Transaction Kind:");
         egui::ComboBox::from_id_salt("Transaction Kind:")
-            .selected_text(self.kind_buffer.char())
+            .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
-                for value in [
-                    DemoTransactionKind::Performa,
-                    DemoTransactionKind::Informa,
-                    DemoTransactionKind::Forma,
-                ] {
-                    ui.selectable_value(&mut self.kind_buffer, value, value.char());
+                for value in DemoTransactionKind::VARIANTS {
+                    ui.selectable_value(&mut self.kind_buffer, value, value.as_str());
                 }
             });
         ui.label("Identifier:");
@@ -1536,15 +1532,11 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
         ui.label("Transaction Kind:");
         egui::ComboBox::from_id_salt("Transaction Kind:")
-            .selected_text(self.kind_buffer.char())
+            .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
-                for value in [
-                    DemoTransactionKind::Performa,
-                    DemoTransactionKind::Informa,
-                    DemoTransactionKind::Forma,
-                ] {
+                for value in DemoTransactionKind::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.kind_buffer, value, value.char())
+                        .selectable_value(&mut self.kind_buffer, value, value.as_str())
                         .clicked()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(
@@ -3367,14 +3359,11 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
     ) -> PropertiesStatus<DemoPsdDomain> {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("Type:")
-            .selected_text(self.temporaries.link_type_buffer.char())
+            .selected_text(self.temporaries.link_type_buffer.as_str())
             .show_ui(ui, |ui| {
-                for value in [
-                    DemoPsdLinkType::ResponseLink,
-                    DemoPsdLinkType::WaitLink,
-                ] {
+                for value in DemoPsdLinkType::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.temporaries.link_type_buffer, value, value.char())
+                        .selectable_value(&mut self.temporaries.link_type_buffer, value, value.as_str())
                         .clicked()
                     {
                         commands.push(InsensitiveCommand::PropertyChange(

@@ -693,7 +693,9 @@ pub enum DemoCsdLinkType {
 }
 
 impl DemoCsdLinkType {
-    pub fn char(&self) -> &str {
+    pub const VARIANTS: [Self; 3] = [Self::InitiatorLink, Self::AccessLink, Self::WaitLink];
+
+    pub fn as_str(&self) -> &str {
         match self {
             Self::InitiatorLink => "Initiator Link",
             Self::AccessLink => "Access Link",

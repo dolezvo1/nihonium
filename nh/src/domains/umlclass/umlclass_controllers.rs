@@ -985,7 +985,9 @@ pub enum CommentIndication {
 }
 
 impl CommentIndication {
-    fn char(&self) -> &'static str {
+    const VARIANTS: [Self; 3] = [Self::None, Self::Icon, Self::TextCompartment];
+
+    fn as_str(&self) -> &'static str {
         match self {
             CommentIndication::None => "None",
             CommentIndication::Icon => "Icon",
@@ -1077,10 +1079,10 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
 
     ui.label("Comment indication");
     egui::ComboBox::from_id_salt("comment indication")
-        .selected_text(s.comment_indication.char())
+        .selected_text(s.comment_indication.as_str())
         .show_ui(ui, |ui| {
-            for e in [CommentIndication::None, CommentIndication::Icon, CommentIndication::TextCompartment] {
-                ui.selectable_value(&mut s.comment_indication, e, e.char());
+            for e in CommentIndication::VARIANTS {
+                ui.selectable_value(&mut s.comment_indication, e, e.as_str());
             }
         });
 }
@@ -1846,10 +1848,10 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
 
         ui.label("Package kind:");
         egui::ComboBox::from_id_salt("package kind")
-            .selected_text(self.kind_buffer.char())
+            .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
-                for e in [UmlClassPackageKind::Package, UmlClassPackageKind::Boundary] {
-                    if ui.selectable_value(&mut self.kind_buffer, e, e.char()).clicked() {
+                for e in UmlClassPackageKind::VARIANTS {
+                    if ui.selectable_value(&mut self.kind_buffer, e, e.as_str()).clicked() {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             UmlClassPropChange::PackageKindChange(self.kind_buffer),
@@ -2741,7 +2743,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassPropertySetupModal<SC> {
 
         ui.label("Visibility:");
         egui::ComboBox::from_id_salt("Visibility:")
-            .selected_text(self.visibility_buffer.as_ref().map(|e| e.name()).unwrap_or("Unspecified"))
+            .selected_text(self.visibility_buffer.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified"))
             .show_ui(ui, |ui| {
                 for e in [
                     UFOption::None,
@@ -2750,7 +2752,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassPropertySetupModal<SC> {
                     UFOption::Some(UmlClassVisibilityKind::Protected),
                     UFOption::Some(UmlClassVisibilityKind::Private),
                 ] {
-                    ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.name()).unwrap_or("Unspecified"));
+                    ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified"));
                 }
             });
 
@@ -2978,7 +2980,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
 
         ui.label("Visibility:");
         egui::ComboBox::from_id_salt("Visibility:")
-            .selected_text(self.visibility_buffer.as_ref().map(|e| e.name()).unwrap_or("Unspecified"))
+            .selected_text(self.visibility_buffer.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified"))
             .show_ui(ui, |ui| {
                 for e in [
                     UFOption::None,
@@ -2987,7 +2989,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                     UFOption::Some(UmlClassVisibilityKind::Protected),
                     UFOption::Some(UmlClassVisibilityKind::Private),
                 ] {
-                    if ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.name()).unwrap_or("Unspecified")).clicked() {
+                    if ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified")).clicked() {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             UmlClassPropChange::VisibilityChange(e),
@@ -3213,7 +3215,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             }
 
             if let UFOption::Some(vis) = m.visibility {
-                t.push_str(vis.char());
+                t.push_str(vis.as_char());
             }
 
             if m.is_derived {
@@ -3449,7 +3451,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassOperationSetupModal<SC> {
 
         ui.label("Visibility:");
         egui::ComboBox::from_id_salt("Visibility:")
-            .selected_text(self.visibility_buffer.as_ref().map(|e| e.name()).unwrap_or("Unspecified"))
+            .selected_text(self.visibility_buffer.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified"))
             .show_ui(ui, |ui| {
                 for e in [
                     UFOption::None,
@@ -3458,7 +3460,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassOperationSetupModal<SC> {
                     UFOption::Some(UmlClassVisibilityKind::Protected),
                     UFOption::Some(UmlClassVisibilityKind::Private),
                 ] {
-                    ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.name()).unwrap_or("Unspecified"));
+                    ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified"));
                 }
             });
 
@@ -3676,7 +3678,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
 
         ui.label("Visibility:");
         egui::ComboBox::from_id_salt("Visibility:")
-            .selected_text(self.visibility_buffer.as_ref().map(|e| e.name()).unwrap_or("Unspecified"))
+            .selected_text(self.visibility_buffer.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified"))
             .show_ui(ui, |ui| {
                 for e in [
                     UFOption::None,
@@ -3685,7 +3687,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                     UFOption::Some(UmlClassVisibilityKind::Protected),
                     UFOption::Some(UmlClassVisibilityKind::Private),
                 ] {
-                    if ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.name()).unwrap_or("Unspecified")).clicked() {
+                    if ui.selectable_value(&mut self.visibility_buffer, e, e.as_ref().map(|e| e.as_str()).unwrap_or("Unspecified")).clicked() {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             UmlClassPropChange::VisibilityChange(e),
@@ -3891,7 +3893,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             }
 
             if let UFOption::Some(vis) = m.visibility {
-                t.push_str(vis.char());
+                t.push_str(vis.as_char());
             }
 
             t.push_str(&*m.name);
@@ -4127,7 +4129,7 @@ pub enum UmlClassRenderStyle {
 }
 
 impl UmlClassRenderStyle {
-    pub fn char(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             UmlClassRenderStyle::Class => "Class",
             UmlClassRenderStyle::StickFigure => "Stick Figure",
@@ -4470,11 +4472,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
         ui.label("Render style");
         egui::ComboBox::from_id_salt("render style")
-            .selected_text(self.render_style.char())
+            .selected_text(self.render_style.as_str())
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut self.render_style, UmlClassRenderStyle::Class, UmlClassRenderStyle::Class.char());
+                ui.selectable_value(&mut self.render_style, UmlClassRenderStyle::Class, UmlClassRenderStyle::Class.as_str());
                 if P::allows_class_rendering_as_stick_figure() {
-                    ui.selectable_value(&mut self.render_style, UmlClassRenderStyle::StickFigure, UmlClassRenderStyle::StickFigure.char());
+                    ui.selectable_value(&mut self.render_style, UmlClassRenderStyle::StickFigure, UmlClassRenderStyle::StickFigure.as_str());
                 }
             });
 

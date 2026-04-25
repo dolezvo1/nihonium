@@ -77,7 +77,7 @@ impl UmlClassCollector {
             self.plantuml_data.push_str("{\n");
             for e in &class.properties {
                 let r = e.read();
-                let visibility = r.visibility.as_ref().map(|e| e.char()).unwrap_or("");
+                let visibility = r.visibility.as_ref().map(|e| e.as_char()).unwrap_or("");
                 let value_type = if !r.value_type.is_empty() {
                     format!(": {}", r.value_type)
                 } else {
@@ -87,7 +87,7 @@ impl UmlClassCollector {
             }
             for e in &class.operations {
                 let r = e.read();
-                let visibility = r.visibility.as_ref().map(|e| e.char()).unwrap_or("");
+                let visibility = r.visibility.as_ref().map(|e| e.as_char()).unwrap_or("");
                 let return_type = if !r.return_type.is_empty() {
                     format!(": {}", r.return_type)
                 } else {
@@ -881,7 +881,9 @@ pub enum UmlClassPackageKind {
 }
 
 impl UmlClassPackageKind {
-    pub fn char(&self) -> &'static str {
+    pub const VARIANTS: [Self; 2] = [Self::Package, Self::Boundary];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             UmlClassPackageKind::Package => "Package",
             UmlClassPackageKind::Boundary => "Boundary",
@@ -993,7 +995,7 @@ impl FullTextSearchable for UmlClassPackage {
                 &self.uuid.to_string(),
                 &self.name,
                 &self.stereotype,
-                self.kind.char(),
+                self.kind.as_str(),
                 &self.comment,
             ],
         );
@@ -1084,7 +1086,7 @@ pub enum UmlClassVisibilityKind {
 }
 
 impl UmlClassVisibilityKind {
-    pub fn char(&self) -> &'static str {
+    pub fn as_char(&self) -> &'static str {
         match self {
             UmlClassVisibilityKind::Public => "+",
             UmlClassVisibilityKind::Package => "~",
@@ -1092,7 +1094,7 @@ impl UmlClassVisibilityKind {
             UmlClassVisibilityKind::Private => "-",
         }
     }
-    pub fn name(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             UmlClassVisibilityKind::Public => "Public",
             UmlClassVisibilityKind::Package => "Package",

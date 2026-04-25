@@ -894,7 +894,9 @@ pub enum DemoPsdLinkType {
 }
 
 impl DemoPsdLinkType {
-    pub fn char(&self) -> &'static str {
+    pub const VARIANTS: [Self; 2] = [Self::ResponseLink, Self::WaitLink];
+
+    pub fn as_str(&self) -> &'static str {
         match self {
             DemoPsdLinkType::ResponseLink => "Response Link",
             DemoPsdLinkType::WaitLink => "Wait Link",

@@ -2188,14 +2188,10 @@ impl CustomModal for DemoOfdEventTypeSetupModal {
     ) -> CustomModalResult {
         ui.label("Transaction Kind:");
         egui::ComboBox::from_id_salt("Transaction Kind:")
-            .selected_text(self.kind_buffer.char())
+            .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
-                for value in [
-                    DemoTransactionKind::Performa,
-                    DemoTransactionKind::Informa,
-                    DemoTransactionKind::Forma,
-                ] {
-                    ui.selectable_value(&mut self.kind_buffer, value, value.char());
+                for value in DemoTransactionKind::VARIANTS {
+                    ui.selectable_value(&mut self.kind_buffer, value, value.as_str());
                 }
             });
         ui.label("Identifier:");
@@ -2312,15 +2308,11 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
         ui.label("Transaction Kind:");
         egui::ComboBox::from_id_salt("Transaction Kind:")
-            .selected_text(self.kind_buffer.char())
+            .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
-                for value in [
-                    DemoTransactionKind::Performa,
-                    DemoTransactionKind::Informa,
-                    DemoTransactionKind::Forma,
-                ] {
+                for value in DemoTransactionKind::VARIANTS {
                     if ui
-                        .selectable_value(&mut self.kind_buffer, value, value.char())
+                        .selectable_value(&mut self.kind_buffer, value, value.as_str())
                         .clicked() {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
