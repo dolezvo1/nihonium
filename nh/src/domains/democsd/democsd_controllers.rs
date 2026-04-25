@@ -13,7 +13,7 @@ use super::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage, DemoCsdTransaction, DemoCsdTransactor
 };
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::{CustomModal, CustomModalResult};
+use crate::{CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
 use std::collections::HashSet;
@@ -628,6 +628,23 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
 
     s.palette.write().unwrap().show_treeview(gdc, ui);
 }
+
+inventory::submit! {DiagramInfo {
+    type_indentifier: "democsd",
+    pretty_name: "Coordination Structure Diagram",
+    default_settings: &(default_settings as DefaultSettingsF),
+    show_settings_function: &(settings_function as ShowSettingsF),
+    diagram_creation_data: DiagramCreationData {
+        directory: "/Design & Engineering Methodology for Organizations",
+        description: "Coordination Structure Diagram (roles, transactions, etc.)",
+        constructors: &[
+            ("empty", &(new as DiagramConstructorF)),
+            ("demo", &(demo as DiagramConstructorF)),
+        ],
+    },
+    deserializer: &(deserializer as DeserializeControllerF),
+}}
+
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum DemoCsdToolStage {

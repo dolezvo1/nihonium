@@ -11,7 +11,7 @@ use crate::egui;
 use serde::{Deserialize, Serialize};
 
 use crate::common::controller::{ColorBundle, HierarchyNode};
-use crate::CDes;
+use crate::DeserializeControllerF;
 
 use super::entity::EntityUuid;
 use super::eref::ERef;
@@ -307,7 +307,7 @@ impl NHProjectSerialization {
     pub fn deserialize_all(
         &self,
         ra: &mut dyn FSReadAbstraction,
-        diagram_deserializers: &HashMap<String, &'static CDes>,
+        diagram_deserializers: &HashMap<String, &'static DeserializeControllerF>,
     ) -> Result<(
             Vec<HierarchyNode>,
             HashMap<ViewUuid, ERef<dyn DiagramController>>,
@@ -360,7 +360,7 @@ impl NHProjectSerialization {
             d: &mut NHDeserializer,
             tlc: &HashMap<ViewUuid, ERef<dyn DiagramController + 'static>>,
             docs: &mut HashMap<ViewUuid, (String, String)>,
-            cds: &HashMap<String, &'static CDes>,
+            cds: &HashMap<String, &'static DeserializeControllerF>,
         ) -> Result<HierarchyNode, NHDeserializeError> {
             match e {
                 NHProjectHierarchyNodeSerialization::Folder { uuid, name, hierarchy }

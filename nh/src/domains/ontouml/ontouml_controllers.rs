@@ -2,7 +2,7 @@ use super::super::umlclass::{
         umlclass_models::UmlClassDiagram,
         umlclass_controllers::{LinkType, PlantUmlTab, UmlClassDiagramAdapter, UmlClassDomain, UmlClassElementView, UmlClassProfile, UmlClassToolStage, StereotypeController, UmlClassElementOrVertex, new_umlclass_association, new_umlclass_class, new_umlclass_comment, new_umlclass_commentlink, new_umlclass_generalization, new_umlclass_package},
 };
-use crate::{common::{
+use crate::{DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF, common::{
     controller::{
         BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MultiDiagramController, PositionNoT, ProjectCommand, View
     },
@@ -304,6 +304,23 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
     super::super::umlclass::umlclass_controllers::settings_function_helper::<OntoUmlProfile>(gdc, ui, s);
 }
+
+inventory::submit! {DiagramInfo {
+    type_indentifier: "umlclass-ontouml",
+    pretty_name: "OntoUML UFO-A diagram",
+    default_settings: &(default_settings as DefaultSettingsF),
+    show_settings_function: &(settings_function as ShowSettingsF),
+    diagram_creation_data: DiagramCreationData {
+        directory: "",
+        description: "OntoUML UFO-A diagram (UML Class diagram profile for modelling of ontological concepts)",
+        constructors: &[
+            ("empty", &(new as DiagramConstructorF)),
+            ("demo", &(demo as DiagramConstructorF)),
+        ],
+    },
+    deserializer: &(deserializer as DeserializeControllerF),
+}}
+
 
 #[derive(Clone, Default)]
 pub struct OntoUmlClassStereotypeController {

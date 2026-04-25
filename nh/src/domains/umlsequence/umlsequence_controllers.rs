@@ -14,7 +14,7 @@ use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::domains::umlsequence::umlsequence_models::{UmlSequenceCombinedFragmentKind, UmlSequenceCombinedFragmentSection, UmlSequenceDiagramBoard, UmlSequenceMessageLifecycleKind, UmlSequenceMessageSynchronicityKind, UmlSequenceRef};
-use crate::CustomModal;
+use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::{egui, epaint};
 use std::any::Any;
 use std::collections::HashSet;
@@ -704,6 +704,22 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
 
     s.palette.write().unwrap().show_treeview(gdc, ui);
 }
+
+inventory::submit! {DiagramInfo {
+    type_indentifier: "umlsequence",
+    pretty_name: "UML Sequence diagram",
+    default_settings: &(default_settings as DefaultSettingsF),
+    show_settings_function: &(settings_function as ShowSettingsF),
+    diagram_creation_data: DiagramCreationData {
+        directory: "/Unified Modeling Language",
+        description: "UML Sequence diagram (lifelines, messages, etc.)",
+        constructors: &[
+            ("empty", &(new as DiagramConstructorF)),
+            ("demo", &(demo as DiagramConstructorF)),
+        ],
+    },
+    deserializer: &(deserializer as DeserializeControllerF),
+}}
 
 
 #[derive(Clone, Copy, PartialEq)]

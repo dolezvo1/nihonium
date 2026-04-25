@@ -222,9 +222,6 @@ impl CustomModal for ErrorModal {
     }
 }
 
-type CDes = dyn Fn(ControllerUuid, &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError>;
-type DSF = dyn Fn(&mut GlobalDrawingContext, &mut egui::Ui, &mut Box<dyn DiagramSettings>);
-
 enum FileIOOperation {
     Open(FileHandle),
     OpenContent(FileHandle, Result<Box<dyn FSReadAbstraction + Send>, NHDeserializeError>),
@@ -233,10 +230,16 @@ enum FileIOOperation {
     Error(String),
 }
 
-type DiagramF = fn(u32) -> (ViewUuid, ERef<dyn DiagramController + 'static>);
+type DefaultSettingsF = fn() -> Box<dyn DiagramSettings>;
+type ShowSettingsF = fn(&mut GlobalDrawingContext, &mut egui::Ui, &mut Box<dyn DiagramSettings>);
+type DiagramConstructorF = fn(u32) -> (ViewUuid, ERef<dyn DiagramController + 'static>);
+type DeserializeControllerF = fn(ControllerUuid, &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError>;
+
+#[derive(Clone)]
 struct DiagramCreationData {
+    directory: &'static str,
     description: &'static str,
-    constructors: Vec<(&'static str, DiagramF)>,
+    constructors: &'static [(&'static str, &'static DiagramConstructorF)],
 }
 
 struct NHContext {
@@ -245,7 +248,7 @@ struct NHContext {
     pub diagram_controllers: HashMap<ViewUuid, ERef<dyn DiagramController>>,
     project_hierarchy: HierarchyNode,
     tree_view_state: TreeViewState<ViewUuid>,
-    diagram_deserializers: HashMap<String, &'static CDes>,
+    diagram_deserializers: HashMap<String, &'static DeserializeControllerF>,
     new_diagram_no: u32,
     documents: HashMap<ViewUuid, (String, String)>,
     clipboard: Vec<Box<dyn Any>>,
@@ -255,9 +258,9 @@ struct NHContext {
     pub style: Option<Style>,
     zoom_factor: f32,
     zoom_with_keyboard: bool,
-    diagram_type_order: Vec<(&'static str, &'static str)>,
+    diagram_type_hierarchy: DiagramTypeHierarchyNode,
     diagram_settings: HashMap<&'static str, Box<dyn DiagramSettings>>,
-    diagram_settings_functions: HashMap<&'static str, &'static DSF>,
+    diagram_settings_functions: HashMap<&'static str, &'static ShowSettingsF>,
     diagram_shades: HashMap<&'static str, Vec<egui::Color32>>,
     selected_diagram_shades: HashMap<&'static str, usize>,
     selected_language: usize,
@@ -266,8 +269,8 @@ struct NHContext {
     modifier_settings: ModifierSettings,
     drawing_context: GlobalDrawingContext,
 
-    new_diagram_data: HashMap<&'static str, DiagramCreationData>,
-    new_diagram_selected_kind: &'static str,
+    new_diagram_data: HashMap<usize, (&'static str, DiagramCreationData)>,
+    new_diagram_selected_kind: usize,
     new_diagram_selected_constructor: usize,
 
     unprocessed_commands: Vec<ProjectCommand>,
@@ -972,33 +975,38 @@ impl NHContext {
 
         ui.columns(2, |columns| {
             let (_, actions) = egui_ltreeview::TreeView::new(columns[0].make_persistent_id("new diagram modal hierarchy"))
+                .allow_drag_and_drop(false)
                 .allow_multi_selection(false)
                 .show(&mut columns[0], |builder| {
-                    builder.dir("uml", "UML");
-                    builder.leaf("umlclass", "Class diagram");
-                    builder.leaf("umlsequence", "Sequence diagram");
-                    builder.leaf("umlclass-usecase", "Use case diagram");
-                    builder.close_dir();
+                    fn h<'a, 'ui>(e: &'a DiagramTypeHierarchyNode, builder: &mut egui_ltreeview::TreeViewBuilder<'ui, usize>) {
+                        match e {
+                            DiagramTypeHierarchyNode::Folder(id, name, children) => {
+                                builder.dir(*id, &*name);
 
-                    builder.leaf("umlclass-ontouml", "OntoUML UFO-A diagram");
+                                for e in children {
+                                    h(e, builder);
+                                }
 
-                    builder.dir("demo", "DEMO");
-                    builder.leaf("democsd", "Coordination Structure Diagram");
-                    builder.leaf("demopsd", "Process Structure Diagram");
-                    builder.leaf("demoofd", "Object Fact Diagram");
-                    builder.close_dir();
-
-                    builder.leaf("network", "Network diagram");
-                    builder.leaf("rdf", "RDF diagram");
+                                builder.close_dir();
+                            },
+                            DiagramTypeHierarchyNode::DiagramType(id, _dtype, dname) => {
+                                builder.leaf(*id, &*dname);
+                            },
+                        }
+                    }
+                    let DiagramTypeHierarchyNode::Folder(.., children) = &self.diagram_type_hierarchy else { return; };
+                    for e in children {
+                        h(e, builder);
+                    }
                 });
             for e in actions {
                 if let egui_ltreeview::Action::SetSelected(items) = e {
-                    self.new_diagram_selected_kind = items.get(0).map_or("", |e| *e);
+                    self.new_diagram_selected_kind = items.get(0).map_or(0, |e| *e);
                 }
             }
 
             columns[1].vertical(|ui| {
-                if let Some(dd) = self.new_diagram_data.get(self.new_diagram_selected_kind) {
+                if let Some((_dt, dd)) = self.new_diagram_data.get(&self.new_diagram_selected_kind) {
                     ui.label(dd.description);
                     ui.separator();
 
@@ -1446,10 +1454,10 @@ impl NHContext {
         });
         
         ui.collapsing("Diagram shades", |ui| {
-            for (ctype, ctypename) in &self.diagram_type_order {
+            for (ctype, ctypename) in self.diagram_type_hierarchy.iter_diagrams() {
                 if let Some(values) = self.diagram_shades.get_mut(ctype) {
                     ui.horizontal(|ui| {
-                        ui.label(&**ctypename);
+                        ui.label(ctypename);
                         egui::widgets::color_picker::color_edit_button_srgba(
                             ui,
                             values.first_mut().unwrap(),
@@ -1461,9 +1469,9 @@ impl NHContext {
         });
 
         ui.collapsing("Diagram specific settings", |ui| {
-            for (ctype, ctypename) in &self.diagram_type_order {
+            for (ctype, ctypename) in self.diagram_type_hierarchy.iter_diagrams() {
                 if let (Some(s), Some(f)) = (self.diagram_settings.get_mut(ctype), self.diagram_settings_functions.get(ctype)) {
-                    ui.collapsing(&**ctypename, |ui| {
+                    ui.collapsing(ctypename, |ui| {
                         f(&mut self.drawing_context, ui, s);
                     });
                 }
@@ -1664,6 +1672,80 @@ impl NHContext {
     }
 }
 
+struct DiagramInfo {
+    type_indentifier: &'static str,
+    pretty_name: &'static str,
+    default_settings: &'static DefaultSettingsF,
+    show_settings_function: &'static ShowSettingsF,
+    diagram_creation_data: DiagramCreationData,
+    deserializer: &'static DeserializeControllerF,
+}
+inventory::collect!(DiagramInfo);
+
+enum DiagramTypeHierarchyNode {
+    Folder(usize, String, Vec<DiagramTypeHierarchyNode>),
+    DiagramType(usize, String, String),
+}
+impl DiagramTypeHierarchyNode {
+    fn name(&self) -> &str {
+        match self {
+            DiagramTypeHierarchyNode::Folder(_id, name, _children) => name,
+            DiagramTypeHierarchyNode::DiagramType(_id, _type, name) => name,
+        }
+    }
+    fn push_diagram(&mut self, new_node_id: &mut usize, p: &[&str], e: (&'static str, &'static str)) -> Result<usize, ()> {
+        let DiagramTypeHierarchyNode::Folder(_, _, children) = self else { return Err(()) };
+
+        if p.is_empty() {
+            let id = *new_node_id;
+            children.push(Self::DiagramType(id, e.0.to_owned(), e.1.to_owned()));
+            *new_node_id += 1;
+            return Ok(id);
+        }
+
+        let c = if let Some(c) = children.iter_mut().find(|e| e.name() == p[0]) {
+            c
+        } else {
+            children.push(Self::Folder(*new_node_id, p[0].to_owned(), Vec::new()));
+            *new_node_id += 1;
+            children.last_mut().unwrap()
+        };
+
+        c.push_diagram(new_node_id, &p[1..], e)
+    }
+    fn iter_diagrams(&self) -> impl Iterator<Item = (&str, &str)> {
+        struct LeafIter<'a> {
+            stack: Vec<&'a DiagramTypeHierarchyNode>,
+        }
+
+        impl<'a> LeafIter<'a> {
+            fn new(root: &'a DiagramTypeHierarchyNode) -> Self {
+                Self { stack: vec![root] }
+            }
+        }
+
+        impl<'a> Iterator for LeafIter<'a> {
+            type Item = (&'a str, &'a str);
+
+            fn next(&mut self) -> Option<Self::Item> {
+                while let Some(node) = self.stack.pop() {
+                    match node {
+                        DiagramTypeHierarchyNode::DiagramType(_id, dtype, dname) => return Some((&dtype, &dname)),
+                        DiagramTypeHierarchyNode::Folder(_id, _name, children) => {
+                            for child in children.iter().rev() {
+                                self.stack.push(child);
+                            }
+                        }
+                    }
+                }
+                None
+            }
+        }
+
+        LeafIter::new(self)
+    }
+}
+
 struct NHApp {
     context: NHContext,
     tree: DockState<NHTab>,
@@ -1703,17 +1785,6 @@ impl Default for NHApp {
             new_diagram_no += 1;
         }
 
-        let mut diagram_deserializers = HashMap::new();
-        diagram_deserializers.insert("umlclass".to_string(), &crate::domains::umlclass::umlclass_controllers::deserializer as &CDes);
-        diagram_deserializers.insert("umlsequence".to_string(), &crate::domains::umlsequence::umlsequence_controllers::deserializer as &CDes);
-        diagram_deserializers.insert("umlclass-usecase".to_string(), &crate::domains::usecase::usecase_controllers::deserializer as &CDes);
-        diagram_deserializers.insert("umlclass-ontouml".to_string(), &crate::domains::ontouml::ontouml_controllers::deserializer as &CDes);
-        diagram_deserializers.insert("democsd".to_string(), &crate::domains::democsd::democsd_controllers::deserializer as &CDes);
-        diagram_deserializers.insert("demoofd".to_string(), &crate::domains::demoofd::demoofd_controllers::deserializer as &CDes);
-        diagram_deserializers.insert("demopsd".to_string(), &crate::domains::demopsd::demopsd_controllers::deserializer as &CDes);
-        diagram_deserializers.insert("network".to_string(), &crate::domains::network::network_controllers::deserializer as &CDes);
-        diagram_deserializers.insert("rdf".to_string(), &crate::domains::rdf::rdf_controllers::deserializer as &CDes);
-
         let mut dock_state = DockState::new(tabs);
         "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
 
@@ -1738,77 +1809,38 @@ impl Default for NHApp {
             .split_below(b, 0.7, vec![NHTab::Toolbar]);
         open_unique_tabs.insert(NHTab::Toolbar);
 
-        let mut diagram_data = HashMap::new();
-        diagram_data.insert("umlclass", DiagramCreationData { description: "UML Class diagram (classes, objects, packages, etc.)", constructors: vec![
-            ("empty", crate::domains::umlclass::umlclass_controllers::new as DiagramF),
-            ("demo", crate::domains::umlclass::umlclass_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("umlsequence", DiagramCreationData { description: "UML Sequence diagram (lifelines, messages, etc.)", constructors: vec![
-            ("empty", crate::domains::umlsequence::umlsequence_controllers::new as DiagramF),
-            ("demo", crate::domains::umlsequence::umlsequence_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("umlclass-usecase", DiagramCreationData { description: "Use case diagram (users, use cases, etc.)", constructors: vec![
-            ("empty", crate::domains::usecase::usecase_controllers::new as DiagramF),
-            ("demo", crate::domains::usecase::usecase_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("umlclass-ontouml", DiagramCreationData { description: "OntoUML UFO-A diagram (UML Class diagram profile for modelling of ontological concepts)", constructors: vec![
-            ("empty", crate::domains::ontouml::ontouml_controllers::new as DiagramF),
-            ("demo", crate::domains::ontouml::ontouml_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("democsd", DiagramCreationData { description: "Coordination Structure Diagram", constructors: vec![
-            ("empty", crate::domains::democsd::democsd_controllers::new as DiagramF),
-            ("demo", crate::domains::democsd::democsd_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("demopsd", DiagramCreationData { description: "Process Structure Diagram", constructors: vec![
-            ("empty", crate::domains::demopsd::demopsd_controllers::new as DiagramF),
-            ("demo", crate::domains::demopsd::demopsd_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("demoofd", DiagramCreationData { description: "Object Fact Diagram", constructors: vec![
-            ("empty", crate::domains::demoofd::demoofd_controllers::new as DiagramF),
-            ("demo", crate::domains::demoofd::demoofd_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("network", DiagramCreationData { description: "Network diagram", constructors: vec![
-            ("empty", crate::domains::network::network_controllers::new as DiagramF),
-            ("demo", crate::domains::network::network_controllers::demo as DiagramF),
-        ] });
-        diagram_data.insert("rdf", DiagramCreationData { description: "Resource Description Framework", constructors: vec![
-            ("empty", crate::domains::rdf::rdf_controllers::new as DiagramF),
-            ("demo", crate::domains::rdf::rdf_controllers::demo as DiagramF),
-        ] });
+        let mut diagram_infos: Vec<_> = inventory::iter::<DiagramInfo>.into_iter().collect();
+        diagram_infos.sort_by_cached_key(|e| format!("{}/{}", e.diagram_creation_data.directory, e.pretty_name));
 
-        let diagram_type_order = vec![
-            ("umlclass", "UML Class"),
-            ("umlsequence", "UML Sequence"),
-            ("umlclass-usecase", "Use Case"),
-            ("umlclass-ontouml", "OntoUML"),
-            ("democsd", "DEMO Coordination Structure Diagram"),
-            ("demopsd", "DEMO Project Structure Diagram"),
-            ("demoofd", "DEMO Object Fact Diagram"),
-            ("network", "Network diagram"),
-            ("rdf", "RDF"),
-        ];
-        let (diagram_settings, diagram_settings_functions) = [
-            ("umlclass", crate::domains::umlclass::umlclass_controllers::default_settings(),
-                &crate::domains::umlclass::umlclass_controllers::settings_function as &DSF),
-            ("umlsequence", crate::domains::umlsequence::umlsequence_controllers::default_settings(),
-                &crate::domains::umlsequence::umlsequence_controllers::settings_function as &DSF),
-            ("umlclass-usecase", crate::domains::usecase::usecase_controllers::default_settings(),
-                &crate::domains::usecase::usecase_controllers::settings_function as &DSF),
-            ("umlclass-ontouml", crate::domains::ontouml::ontouml_controllers::default_settings(),
-                &crate::domains::ontouml::ontouml_controllers::settings_function as &DSF),
-            ("democsd", crate::domains::democsd::democsd_controllers::default_settings(),
-                &crate::domains::democsd::democsd_controllers::settings_function as &DSF),
-            ("demopsd", crate::domains::demopsd::demopsd_controllers::default_settings(),
-                &crate::domains::demopsd::demopsd_controllers::settings_function as &DSF),
-            ("demoofd", crate::domains::demoofd::demoofd_controllers::default_settings(),
-                &crate::domains::demoofd::demoofd_controllers::settings_function as &DSF),
-            ("network", crate::domains::network::network_controllers::default_settings(),
-                &crate::domains::network::network_controllers::settings_function as &DSF),
-            ("rdf", crate::domains::rdf::rdf_controllers::default_settings(),
-                &crate::domains::rdf::rdf_controllers::settings_function as &DSF),
-        ].into_iter().map(|e| ((e.0, e.1), (e.0, e.2))).collect();
-        let diagram_shades = diagram_type_order.iter().map(|e| (e.0, vec![egui::Color32::TRANSPARENT])).collect();
-        let selected_diagram_shades = diagram_type_order.iter().map(|e| (e.0, 0)).collect();
+        let (diagram_type_hierarchy, diagram_type_creation_data) = {
+            let mut diagram_type_hierarchy = DiagramTypeHierarchyNode::Folder(0, "".to_owned(), Vec::new());
+            let mut new_node_id = 1;
+            let mut diagram_type_creation_data = HashMap::new();
+
+            for e in &diagram_infos {
+                let r = diagram_type_hierarchy.push_diagram(
+                    &mut new_node_id,
+                    &e.diagram_creation_data.directory.split('/').filter(|e| !e.is_empty()).collect::<Vec<_>>(),
+                    (e.type_indentifier, e.pretty_name),
+                );
+
+                match r {
+                    Err(err) => println!("Could not push {:?} to type hierarchy due to {:?}", e.type_indentifier, err),
+                    Ok(id) => {
+                        diagram_type_creation_data.insert(id, (e.type_indentifier, e.diagram_creation_data.clone()));
+                    },
+                }
+            };
+
+            (diagram_type_hierarchy, diagram_type_creation_data)
+        };
+
+        let diagram_settings = diagram_infos.iter().map(|e| (e.type_indentifier, (e.default_settings)())).collect();
+        let diagram_settings_functions = diagram_infos.iter().map(|e| (e.type_indentifier, e.show_settings_function)).collect();
+        let diagram_deserializers = diagram_infos.iter().map(|e| (e.type_indentifier.to_owned(), e.deserializer)).collect();
+
+        let diagram_shades = diagram_infos.iter().map(|e| (e.type_indentifier, vec![egui::Color32::TRANSPARENT])).collect();
+        let selected_diagram_shades = diagram_infos.iter().map(|e| (e.type_indentifier, 0)).collect();
         let languages_order = common::fluent::AVAILABLE_LANGUAGES.iter().map(|e| e.0.clone()).collect();
         let fluent_bundle = common::fluent::create_fluent_bundle(&languages_order)
             .expect("Could not establish base FluentBundle");
@@ -1829,7 +1861,7 @@ impl Default for NHApp {
             style: None,
             zoom_factor: 1.0,
             zoom_with_keyboard: false,
-            diagram_type_order,
+            diagram_type_hierarchy,
             diagram_settings,
             diagram_settings_functions,
             diagram_shades,
@@ -1845,8 +1877,8 @@ impl Default for NHApp {
                 model_labels,
             },
             
-            new_diagram_data: diagram_data,
-            new_diagram_selected_kind: "",
+            new_diagram_data: diagram_type_creation_data,
+            new_diagram_selected_kind: 0,
             new_diagram_selected_constructor: 0,
 
             unprocessed_commands: Vec::new(),

@@ -14,7 +14,7 @@ use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::domains::umlclass::umlclass_models::{UmlClassOperation, UmlClassPackageKind, UmlClassProperty, UmlClassVisibilityKind, UmlGeneralization, UmlUseCase, UmlUseCaseGeneralization};
-use crate::{CustomModal, CustomModalResult, CustomTab};
+use crate::{CustomModal, CustomModalResult, CustomTab, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
 use std::collections::HashSet;
@@ -1088,6 +1088,22 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
     settings_function_helper::<UmlClassNullProfile>(gdc, ui, s);
 }
+
+inventory::submit! {DiagramInfo {
+    type_indentifier: "umlclass",
+    pretty_name: "UML Class diagram",
+    default_settings: &(default_settings as DefaultSettingsF),
+    show_settings_function: &(settings_function as ShowSettingsF),
+    diagram_creation_data: DiagramCreationData {
+        directory: "/Unified Modeling Language",
+        description: "UML Class diagram (classes, objects, packages, etc.)",
+        constructors: &[
+            ("empty", &(new as DiagramConstructorF)),
+            ("demo", &(demo as DiagramConstructorF)),
+        ],
+    },
+    deserializer: &(deserializer as DeserializeControllerF),
+}}
 
 
 #[derive(Clone, Copy, PartialEq)]

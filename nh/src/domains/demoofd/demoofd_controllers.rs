@@ -14,7 +14,7 @@ use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::domains::demoofd::demoofd_models::{DemoOfdAggregation, DemoOfdExclusion, DemoOfdPrecedence, DemoOfdSpecialization, DemoOfdType};
-use crate::{CustomModal, CustomModalResult};
+use crate::{CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
 use std::collections::HashSet;
@@ -709,6 +709,22 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
 
     s.palette.write().unwrap().show_treeview(gdc, ui);
 }
+
+inventory::submit! {DiagramInfo {
+    type_indentifier: "demoofd",
+    pretty_name: "Object Fact Diagram",
+    default_settings: &(default_settings as DefaultSettingsF),
+    show_settings_function: &(settings_function as ShowSettingsF),
+    diagram_creation_data: DiagramCreationData {
+        directory: "/Design & Engineering Methodology for Organizations",
+        description: "Object Fact Diagram (entity types, event types, etc.)",
+        constructors: &[
+            ("empty", &(new as DiagramConstructorF)),
+            ("demo", &(demo as DiagramConstructorF)),
+        ],
+    },
+    deserializer: &(deserializer as DeserializeControllerF),
+}}
 
 
 #[derive(Clone, Copy, PartialEq)]
