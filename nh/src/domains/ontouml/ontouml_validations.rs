@@ -26,765 +26,6 @@ impl OntoUMLValidationTab {
             results: None,
         }
     }
-
-    fn validate(&self, check_errors: bool, check_antipatterns: bool) -> Vec<ValidationProblem> {
-        let mut problems = Vec::new();
-
-        if check_errors {
-            problems.extend(self.validate_structure());
-        }
-
-        if check_antipatterns {
-            problems.extend(self.validate_antipatterns());
-        }
-
-        problems
-    }
-
-    fn validate_structure(&self) -> Vec<ValidationProblem> {
-        let mut problems = Vec::new();
-        let m = self.model.read();
-
-        // Subtyping and identity providers validation
-        fn valid_direct_subtyping(s: &str, t: &str) -> bool {
-            match (s, t) {
-                (ontouml_models::KIND | ontouml_models::COLLECTIVE | ontouml_models::QUANTITY | ontouml_models::RELATOR | ontouml_models::QUALITY | ontouml_models::MODE | ontouml_models::CATEGORY | ontouml_models::MIXIN, ontouml_models::CATEGORY | ontouml_models::MIXIN) => true,
-                (ontouml_models::SUBKIND | ontouml_models::ROLE, ontouml_models::KIND | ontouml_models::SUBKIND | ontouml_models::COLLECTIVE | ontouml_models::QUANTITY | ontouml_models::RELATOR | ontouml_models::CATEGORY | ontouml_models::MIXIN | ontouml_models::MODE | ontouml_models::QUALITY) => true,
-                (ontouml_models::PHASE, ontouml_models::KIND | ontouml_models::SUBKIND | ontouml_models::COLLECTIVE | ontouml_models::QUANTITY | ontouml_models::RELATOR | ontouml_models::MIXIN | ontouml_models::MODE | ontouml_models::QUALITY | ontouml_models::PHASE | ontouml_models::PHASE_MIXIN) => true,
-                (ontouml_models::ROLE, ontouml_models::ROLE | ontouml_models::ROLE_MIXIN) => true,
-                (ontouml_models::PHASE_MIXIN, ontouml_models::MIXIN | ontouml_models::PHASE_MIXIN | ontouml_models::CATEGORY) => true,
-                (ontouml_models::ROLE_MIXIN, ontouml_models::MIXIN | ontouml_models::ROLE_MIXIN | ontouml_models::CATEGORY | ontouml_models::PHASE_MIXIN) => true,
-                _ => false,
-            }
-        }
-        fn is_identity_provider(s: &str) -> bool {
-            [ontouml_models::KIND, ontouml_models::COLLECTIVE, ontouml_models::QUANTITY, ontouml_models::RELATOR, ontouml_models::QUALITY, ontouml_models::MODE].iter().find(|e| **e == s).is_some()
-        }
-        fn requires_identity(s: &str) -> bool {
-            [ontouml_models::CATEGORY, ontouml_models::MIXIN, ontouml_models::PHASE_MIXIN, ontouml_models::ROLE_MIXIN].iter().find(|e| **e == s).is_none()
-        }
-        #[derive(Default)]
-        struct ElementInfo {
-            stereotype: Arc<String>,
-            identity_providers_min: usize,
-            identity_providers_max: usize,
-            is_abstract: bool,
-            in_disjoint_complete_set: bool,
-            direct_mediations_opposing_lower_bounds: usize,
-            direct_characterizations_toward: usize,
-            parents: Vec<ERef<UmlClassGeneralization>>,
-        }
-        fn r_validate_subtyping(
-            problems: &mut Vec<ValidationProblem>,
-            element_infos: &mut HashMap<ModelUuid, ElementInfo>,
-            e: &UmlClassElement,
-        ) {
-            match e {
-                UmlClassElement::UmlClassPackage(inner) => {
-                    let m = inner.read();
-                    for e in &m.contained_elements {
-                        r_validate_subtyping(problems, element_infos, e);
-                    }
-                },
-                UmlClassElement::UmlClass(inner) => {
-                    let m = inner.read();
-                    let e = element_infos.entry(*m.uuid).or_default();
-
-                    if ontouml_models::ontouml_class_stereotype_literal(&m.stereotype).is_none_or(|e| e == ontouml_models::NONE) {
-                        problems.push(ValidationProblem::Error {
-                            uuid: *m.uuid,
-                            error_type: ErrorType::InvalidStereotype,
-                            text: format!("Invalid or missing stereotype"),
-                        });
-                    }
-
-                    e.stereotype = m.stereotype.clone();
-                    if is_identity_provider(&*m.stereotype) {
-                        e.identity_providers_min += 1;
-                        e.identity_providers_max += 1;
-                    }
-                    if m.is_abstract {
-                        e.is_abstract = true;
-                    }
-                }
-                UmlClassElement::UmlClassGeneralization(inner) => {
-                    let m = inner.read();
-                    let identity_providers_no = m.targets.iter()
-                        .filter(|t| is_identity_provider(&*t.read().stereotype) || requires_identity(&*t.read().stereotype)).count();
-                    let (weight_min, weight_max) = if m.set_is_disjoint || (m.sources.len() == 1 && m.targets.len() == 1) {
-                        (if identity_providers_no == m.targets.len() { 1 } else { 0 }, identity_providers_no.min(1))
-                    } else {
-                        if m.set_is_covering {
-                            (identity_providers_no.min(1), identity_providers_no)
-                        } else {
-                            (0, identity_providers_no + 1)
-                        }
-                    };
-
-                    for s in &m.sources {
-                        let e = element_infos.entry(*s.read().uuid).or_default();
-                        e.identity_providers_min += weight_min;
-                        e.identity_providers_max += weight_max;
-                        e.parents.push(inner.clone());
-                        if m.set_is_disjoint && m.set_is_covering {
-                            e.in_disjoint_complete_set = true;
-                        }
-
-                        for t in &m.targets {
-                            if !valid_direct_subtyping(&*s.read().stereotype, &*t.read().stereotype) {
-                                problems.push(ValidationProblem::Error {
-                                    uuid: *m.uuid,
-                                    error_type: ErrorType::InvalidSubtyping,
-                                    text: format!("«{}» cannot be subtype of «{}»", s.read().stereotype, t.read().stereotype),
-                                });
-                            }
-                        }
-                    }
-                },
-                UmlClassElement::UmlClassAssociation(inner) => {
-                    fn parse_multiplicity(m: &str) -> Option<(usize, Option<usize>)> {
-                        if m.is_empty() {
-                            None
-                        } else if m == "*" {
-                            Some((0, None))
-                        } else if let Ok(n) = str::parse::<usize>(m) {
-                            Some((n, Some(n)))
-                        } else {
-                            let (lower, upper) = m.split_once("..")?;
-                            if upper == "*" {
-                                str::parse(lower).map(|l| (l, None)).ok()
-                            } else {
-                                str::parse(lower).and_then(|l| str::parse(upper).map(|u| (l, Some(u)))).ok()
-                            }
-                        }
-                    }
-                    let m = inner.read();
-
-                    if ontouml_models::ontouml_association_stereotype_literal(&m.stereotype).is_none_or(|e| e == ontouml_models::NONE) {
-                        problems.push(ValidationProblem::Error {
-                            uuid: *m.uuid,
-                            error_type: ErrorType::InvalidStereotype,
-                            text: format!("Invalid or missing stereotype"),
-                        });
-                    }
-
-                    let source_multiplicity = parse_multiplicity(&*m.source_label_multiplicity);
-                    let target_multiplicity = parse_multiplicity(&*m.target_label_multiplicity);
-
-                    if source_multiplicity.zip(target_multiplicity).is_none() {
-                        problems.push(ValidationProblem::Error {
-                            uuid: *m.uuid,
-                            error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                            text: format!("invalid multiplicities"),
-                        });
-                    }
-                    if let Some((lm1, um1)) = source_multiplicity && um1.is_some_and(|um| lm1 > um) {
-                        problems.push(ValidationProblem::Error {
-                            uuid: *m.uuid,
-                            error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                            text: format!("invalid multiplicities"),
-                        });
-                    }
-                    if let Some((lm2, um2)) = target_multiplicity && um2.is_some_and(|um| lm2 > um) {
-                        problems.push(ValidationProblem::Error {
-                            uuid: *m.uuid,
-                            error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                            text: format!("invalid multiplicities"),
-                        });
-                    }
-
-                    match m.stereotype.as_str() {
-                        ontouml_models::MEDIATION => {
-                            if let Some(((lm1, _), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 < 1 || lm2 < 1) {
-                                problems.push(ValidationProblem::Error {
-                                    uuid: *m.uuid,
-                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                    text: format!("«mediation» must have multiplicities of at least 1..*"),
-                                });
-                            }
-                            if let Some((lm, _um)) = &target_multiplicity {
-                                let e = element_infos.entry(*m.source.uuid()).or_default();
-                                e.direct_mediations_opposing_lower_bounds += lm;
-                            }
-                            if let Some((lm, _um)) = &source_multiplicity {
-                                let e = element_infos.entry(*m.target.uuid()).or_default();
-                                e.direct_mediations_opposing_lower_bounds += lm;
-                            }
-                        }
-                        ontouml_models::CHARACTERIZATION => {
-                            if let Some(((lm1, um1), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 < 1) {
-                                problems.push(ValidationProblem::Error {
-                                    uuid: *m.uuid,
-                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                    text: format!("«characterization» must have multiplicities of 1..1 and at least 1..*"),
-                                });
-                            }
-                            if let UmlClassAssociable::UmlClass(t) = &m.target {
-                                let t = t.read();
-                                let e = element_infos.entry(*t.uuid).or_default();
-
-                                if t.stereotype.as_str() != ontouml_models::QUALITY && t.stereotype.as_str() != ontouml_models::MODE {
-                                    problems.push(ValidationProblem::Error {
-                                        uuid: *m.uuid,
-                                        error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
-                                        text: format!("«characterization» must have «quality» or «mode» on the target end"),
-                                    });
-                                }
-
-                                e.direct_characterizations_toward += 1;
-                            }
-                        },
-                        ontouml_models::STRUCTURATION => {
-                            if let Some(((_, _), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm2 != 1 || um2.is_none_or(|um| um != 1)) {
-                                problems.push(ValidationProblem::Error {
-                                    uuid: *m.uuid,
-                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                    text: format!("«structuration» must have multiplicities of 1..1 on the target end"),
-                                });
-                            }
-
-                            if let UmlClassAssociable::UmlClass(s) = &m.source {
-                                let s = s.read();
-                                if s.stereotype.as_str() != ontouml_models::QUALITY {
-                                    problems.push(ValidationProblem::Error {
-                                        uuid: *m.uuid,
-                                        error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
-                                        text: format!("«structuration» must have «quality» on the source end"),
-                                    });
-                                }
-                            }
-
-                            if let UmlClassAssociable::UmlClass(t) = &m.target {
-                                let t = t.read();
-                                if t.stereotype.as_str() !=ontouml_models::QUALITY && t.stereotype.as_str() != ontouml_models::MODE {
-                                    problems.push(ValidationProblem::Error {
-                                        uuid: *m.uuid,
-                                        error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
-                                        text: format!("«structuration» must have «quality» or «mode» on the target end"),
-                                    });
-                                }
-                            }
-                        }
-                        ontouml_models::COMPONENT_OF => {
-                            if let Some(((lm1, _), (_, _))) = source_multiplicity.zip(target_multiplicity)
-                                && lm1 < 1 {
-                                problems.push(ValidationProblem::Error {
-                                    uuid: *m.uuid,
-                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                    text: format!("«componentOf» must have multiplicities of at least 1..* on the source end"),
-                                });
-                            }
-                        }
-                        ontouml_models::SUBCOLLECTION_OF => {
-                            if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
-                                problems.push(ValidationProblem::Error {
-                                    uuid: *m.uuid,
-                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                    text: format!("«subcollectionOf» must have multiplicities of 1..1"),
-                                });
-                            }
-
-                            if let UmlClassAssociable::UmlClass(s) = &m.source {
-                                let s = s.read();
-                                if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
-                                    problems.push(ValidationProblem::Error {
-                                        uuid: *m.uuid,
-                                        error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
-                                        text: format!("«subcollectionOf» must have «collective» on the source end"),
-                                    });
-                                }
-                            }
-
-                            if let UmlClassAssociable::UmlClass(t) = &m.target {
-                                let t = t.read();
-                                if t.stereotype.as_str() != ontouml_models::COLLECTIVE {
-                                    problems.push(ValidationProblem::Error {
-                                        uuid: *m.uuid,
-                                        error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
-                                        text: format!("«subcollectionOf» must have «collective» on the target end"),
-                                    });
-                                }
-                            }
-                        }
-                        ontouml_models::MEMBER_OF => {
-                            if let Some(((lm1, _), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 < 1 || lm2 < 1) {
-                                problems.push(ValidationProblem::Error {
-                                    uuid: *m.uuid,
-                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                    text: format!("«memberOf» must have multiplicities of at least 1..*"),
-                                });
-                            }
-
-                            if let UmlClassAssociable::UmlClass(s) = &m.source {
-                                let s = s.read();
-                                if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
-                                    problems.push(ValidationProblem::Error {
-                                        uuid: *m.uuid,
-                                        error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
-                                        text: format!("«memberOf» must have «collective» on the source end"),
-                                    });
-                                }
-                            }
-                        }
-                        ontouml_models::CONTAINMENT => {
-                            if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
-                                problems.push(ValidationProblem::Error {
-                                    uuid: *m.uuid,
-                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                    text: format!("«containment» must have multiplicities of 1..1"),
-                                });
-                            }
-
-                            if let UmlClassAssociable::UmlClass(t) = &m.target {
-                                let t = t.read();
-                                if t.stereotype.as_str() != ontouml_models::QUANTITY {
-                                    problems.push(ValidationProblem::Error {
-                                        uuid: *m.uuid,
-                                        error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
-                                        text: format!("«containment» must have «quantity» on the target end"),
-                                    });
-                                }
-                            }
-                        }
-                        ontouml_models::SUBQUANTITY_OF => {
-                            if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
-                                && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
-                                problems.push(ValidationProblem::Error {
-                                    uuid: *m.uuid,
-                                    error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
-                                    text: format!("«subquantityOf» must have multiplicities of 1..1"),
-                                });
-                            }
-
-                            if let UmlClassAssociable::UmlClass(s) = &m.source {
-                                let s = s.read();
-                                if s.stereotype.as_str() != ontouml_models::QUANTITY {
-                                    problems.push(ValidationProblem::Error {
-                                        uuid: *m.uuid,
-                                        error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
-                                        text: format!("«subquantityOf» must have «quantity» on the source end"),
-                                    });
-                                }
-                            }
-
-                            if let UmlClassAssociable::UmlClass(t) = &m.target {
-                                let t = t.read();
-                                if t.stereotype.as_str() != ontouml_models::QUANTITY {
-                                    problems.push(ValidationProblem::Error {
-                                        uuid: *m.uuid,
-                                        error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
-                                        text: format!("«subquantityOf» must have «quantity» on the target end"),
-                                    });
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {},
-            }
-        }
-        let mut element_infos = HashMap::new();
-        for e in &m.contained_elements {
-            r_validate_subtyping(&mut problems, &mut element_infos, e);
-        }
-        for (k, info) in &element_infos {
-            fn has_matching_supertype<F: Fn(&ElementInfo) -> bool>(
-                infos: &HashMap<ModelUuid, ElementInfo>,
-                a: ModelUuid,
-                f: &F,
-            ) -> bool {
-                fn has_matching_supertype_inner<F: Fn(&ElementInfo) -> bool>(
-                    visited: &mut HashSet<ModelUuid>,
-                    infos: &HashMap<ModelUuid, ElementInfo>,
-                    a: ModelUuid,
-                    f: &F,
-                ) -> bool {
-                    if visited.contains(&a) {
-                        return false;
-                    }
-                    visited.insert(a);
-
-                    let e = infos.get(&a).unwrap();
-                    let result = e.parents.iter().any(|e| e.read().targets.iter().any(|e| {
-                        let uuid = *e.read().uuid;
-                        f(infos.get(&uuid).unwrap()) || has_matching_supertype_inner(visited, infos, uuid, f)
-                    }));
-
-                    visited.remove(&a);
-                    result
-                }
-
-                has_matching_supertype_inner(&mut HashSet::new(), infos, a, f)
-            }
-
-            if requires_identity(&*info.stereotype) && (info.identity_providers_min != 1 || info.identity_providers_max != 1) {
-                problems.push(ValidationProblem::Error {
-                    uuid: *k,
-                    error_type: ErrorType::InvalidIdentity,
-                    text: format!("element does not have exactly one identity provider (found {}..{})", info.identity_providers_min, info.identity_providers_max),
-                });
-            }
-            fn r_lowerbounds(infos: &HashMap<ModelUuid, ElementInfo>, uuid: &ModelUuid) -> usize {
-                if let Some(e) = infos.get(uuid) {
-                    let mut r = e.direct_mediations_opposing_lower_bounds;
-
-                    for e in &e.parents {
-                        let g = e.read();
-                        r += if g.set_is_disjoint {
-                            g.targets.iter().map(|e| r_lowerbounds(infos, &*e.read().uuid)).min().unwrap_or(0)
-                        } else {
-                            g.targets.iter().map(|e| r_lowerbounds(infos, &*e.read().uuid)).sum()
-                        };
-                    }
-
-                    r
-                } else {
-                    0
-                }
-            }
-            if info.stereotype.as_str() == ontouml_models::ROLE && r_lowerbounds(&element_infos, &k) == 0 {
-                problems.push(ValidationProblem::Error {
-                    uuid: *k,
-                    error_type: ErrorType::InvalidRole,
-                    text: format!("«role» must be connected to a «mediation»"),
-                });
-            }
-
-            if !info.is_abstract
-                && (info.stereotype.as_str() == ontouml_models::RELATOR
-                    || has_matching_supertype(&element_infos, *k, &|e| e.stereotype.as_str() == ontouml_models::RELATOR))
-                && r_lowerbounds(&element_infos, &k) < 2 {
-                problems.push(ValidationProblem::Error {
-                    uuid: *k,
-                    error_type: ErrorType::InvalidRelator,
-                    text: format!("«relator» must have sum of lower bounds on the opposite sides of «mediation»s of at least 2"),
-                });
-            }
-            if info.stereotype.as_str() == ontouml_models::PHASE && !info.in_disjoint_complete_set {
-                problems.push(ValidationProblem::Error {
-                    uuid: *k,
-                    error_type: ErrorType::InvalidPhase,
-                    text: format!("«phase» must always be part of a generalization set which is disjoint and complete"),
-                });
-            }
-            if (info.stereotype.as_str() == ontouml_models::CATEGORY
-                || info.stereotype.as_str() == ontouml_models::MIXIN
-                || info.stereotype.as_str() == ontouml_models::PHASE_MIXIN
-                || info.stereotype.as_str() == ontouml_models::ROLE_MIXIN) && !info.is_abstract {
-                problems.push(ValidationProblem::Error {
-                    uuid: *k,
-                    error_type: ErrorType::InvalidNonabstractMixin,
-                    text: format!("«{}» must always be abstract", info.stereotype),
-                });
-            }
-            if (info.stereotype.as_str() == ontouml_models::QUALITY || info.stereotype.as_str() == ontouml_models::MODE)
-                && info.direct_characterizations_toward < 1 {
-                problems.push(ValidationProblem::Error {
-                    uuid: *k,
-                    error_type: ErrorType::InvalidMissingCharacterization,
-                    text: format!("«{}» must be at the target end of at least one «characterization»", info.stereotype),
-                });
-            }
-        }
-
-        problems
-    }
-
-    fn validate_antipatterns(&self) -> Vec<ValidationProblem> {
-        let mut problems = Vec::new();
-        let m = self.model.read();
-
-        validate_binover(&mut problems, &m);
-
-        // DecInt (Decieving Intersection)
-        fn r_decint_collect(
-            parents: &mut HashMap<ModelUuid, usize>,
-            e: &UmlClassElement,
-        ) {
-            match e {
-                UmlClassElement::UmlClassPackage(inner) => {
-                    let m = inner.read();
-                    for e in &m.contained_elements {
-                        r_decint_collect(parents, e);
-                    }
-                },
-                UmlClassElement::UmlClassGeneralization(inner) => {
-                    let m = inner.read();
-                    let weight = if m.set_is_disjoint { 1 } else { m.targets.iter().filter(|e| !e.read().is_abstract).count() };
-                    for e in &m.sources {
-                        *parents.entry(*e.read().uuid).or_default() += weight;
-                    }
-                },
-                _ => {},
-            }
-        }
-        let mut parents = HashMap::new();
-        for e in &m.contained_elements {
-            r_decint_collect(&mut parents, e);
-        }
-        for (k, v) in parents {
-            if v > 1 {
-                problems.push(ValidationProblem::AntiPattern { uuid: k, antipattern_type: AntiPatternType::DecInt });
-            }
-        }
-
-
-        // DepPhase (Relationally Dependent Phase)
-        #[derive(Default)]
-        struct DepPhaseInfo {
-            stereotype: Option<Arc<String>>,
-            assoc_mediation_count: usize,
-        }
-        fn r_depphase_collect(
-            infos: &mut HashMap<ModelUuid, DepPhaseInfo>,
-            e: &UmlClassElement,
-        ) {
-            match e {
-                UmlClassElement::UmlClassPackage(inner) => {
-                    let m = inner.read();
-                    for e in &m.contained_elements {
-                        r_depphase_collect(infos, e);
-                    }
-                },
-                UmlClassElement::UmlClass(inner) => {
-                    let r = inner.read();
-                    infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
-                },
-                UmlClassElement::UmlClassAssociation(inner) => {
-                    let r = inner.read();
-                    if *r.stereotype == ontouml_models::MEDIATION {
-                        infos.entry(*r.source.uuid()).or_default().assoc_mediation_count += 1;
-                        infos.entry(*r.target.uuid()).or_default().assoc_mediation_count += 1;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let mut infos = HashMap::new();
-        for e in &m.contained_elements {
-            r_depphase_collect(&mut infos, e);
-        }
-        for e in &infos {
-            if let Some(s) = &e.1.stereotype && **s == ontouml_models::PHASE && e.1.assoc_mediation_count >= 1 {
-                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::DepPhase });
-            }
-        }
-
-
-        // FreeRole (Free Role Specialization)
-        #[derive(Default)]
-        struct FreeRoleInfo {
-            stereotype: Option<Arc<String>>,
-            assoc_mediation_count: usize,
-        }
-        fn r_freerole_collect(
-            infos: &mut HashMap<ModelUuid, FreeRoleInfo>,
-            e: &UmlClassElement,
-        ) {
-            match e {
-                UmlClassElement::UmlClassPackage(inner) => {
-                    let m = inner.read();
-                    for e in &m.contained_elements {
-                        r_freerole_collect(infos, e);
-                    }
-                },
-                UmlClassElement::UmlClass(inner) => {
-                    let r = inner.read();
-                    infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
-                },
-                UmlClassElement::UmlClassAssociation(inner) => {
-                    let r = inner.read();
-                    if *r.stereotype == ontouml_models::MEDIATION {
-                        infos.entry(*r.source.uuid()).or_default().assoc_mediation_count += 1;
-                        infos.entry(*r.target.uuid()).or_default().assoc_mediation_count += 1;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let mut infos = HashMap::new();
-        for e in &m.contained_elements {
-            r_freerole_collect(&mut infos, e);
-        }
-        for e in &infos {
-            if let Some(s) = &e.1.stereotype && **s == ontouml_models::ROLE && e.1.assoc_mediation_count == 0 {
-                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::FreeRole });
-            }
-        }
-
-
-        // GSRig (Generalization Set with Mixed Rigidity)
-        fn r_gsrig_test(
-            problems: &mut Vec<ValidationProblem>,
-            e: &UmlClassElement,
-        ) {
-            match e {
-                UmlClassElement::UmlClassPackage(inner) => {
-                    let m = inner.read();
-                    for e in &m.contained_elements {
-                        r_gsrig_test(problems, e);
-                    }
-                },
-                UmlClassElement::UmlClassGeneralization(inner) => {
-                    let r = inner.read();
-                    let has_rigid_children = r.sources.iter().any(|e| is_rigid(&e.read().stereotype));
-                    let has_anti_rigid_children = r.sources.iter().any(|e| is_anti_rigid(&e.read().stereotype));
-
-                    if has_rigid_children && has_anti_rigid_children {
-                        problems.push(ValidationProblem::AntiPattern { uuid: *r.uuid, antipattern_type: AntiPatternType::GSRig });
-                    }
-                }
-                _ => {}
-            }
-        }
-        for e in &m.contained_elements {
-            r_gsrig_test(&mut problems, e);
-        }
-
-
-        // HetColl (Heterogeneous Collective)
-        #[derive(Default)]
-        struct HetCollInfo {
-            stereotype: Option<Arc<String>>,
-            source_end_membership_count: usize,
-        }
-        fn r_hetcoll_collect(
-            infos: &mut HashMap<ModelUuid, HetCollInfo>,
-            e: &UmlClassElement,
-        ) {
-            match e {
-                UmlClassElement::UmlClassPackage(inner) => {
-                    let m = inner.read();
-                    for e in &m.contained_elements {
-                        r_hetcoll_collect(infos, e);
-                    }
-                },
-                UmlClassElement::UmlClass(inner) => {
-                    let r = inner.read();
-                    infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
-                },
-                UmlClassElement::UmlClassAssociation(inner) => {
-                    let r = inner.read();
-                    if *r.stereotype == ontouml_models::MEMBER_OF {
-                        infos.entry(*r.source.uuid()).or_default().source_end_membership_count += 1;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let mut infos = HashMap::new();
-        for e in &m.contained_elements {
-            r_hetcoll_collect(&mut infos, e);
-        }
-        for e in &infos {
-            if let Some(s) = &e.1.stereotype && **s == ontouml_models::COLLECTIVE && e.1.source_end_membership_count > 1 {
-                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::HetColl });
-            }
-        }
-
-
-        // HomoFunc (Homogeneous Functional Complex)
-        #[derive(Default)]
-        struct HomoFuncInfo {
-            source_end_component_count: usize,
-        }
-        fn r_homofunc_collect(
-            infos: &mut HashMap<ModelUuid, HomoFuncInfo>,
-            e: &UmlClassElement,
-        ) {
-            match e {
-                UmlClassElement::UmlClassPackage(inner) => {
-                    let m = inner.read();
-                    for e in &m.contained_elements {
-                        r_homofunc_collect(infos, e);
-                    }
-                },
-                UmlClassElement::UmlClass(inner) => {
-                    let r = inner.read();
-                    infos.entry(*r.uuid).or_default();
-                },
-                UmlClassElement::UmlClassAssociation(inner) => {
-                    let r = inner.read();
-                    if *r.stereotype == ontouml_models::COMPONENT_OF {
-                        infos.entry(*r.source.uuid()).or_default().source_end_component_count += 1;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let mut infos = HashMap::new();
-        for e in &m.contained_elements {
-            r_homofunc_collect(&mut infos, e);
-        }
-        for e in &infos {
-            if e.1.source_end_component_count == 1 {
-                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::HomoFunc });
-            }
-        }
-
-
-        // MixRig (Mixin With Same Rigidity)
-        #[derive(Default)]
-        struct MixRigInfo {
-            stereotype: Option<Arc<String>>,
-            has_rigid_children: bool,
-            has_anti_rigid_children: bool,
-        }
-        fn r_mixrig_collect(
-            infos: &mut HashMap<ModelUuid, MixRigInfo>,
-            e: &UmlClassElement,
-        ) {
-            match e {
-                UmlClassElement::UmlClassPackage(inner) => {
-                    let m = inner.read();
-                    for e in &m.contained_elements {
-                        r_mixrig_collect(infos, e);
-                    }
-                },
-                UmlClassElement::UmlClass(inner) => {
-                    let r = inner.read();
-                    infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
-                },
-                UmlClassElement::UmlClassGeneralization(inner) => {
-                    let r = inner.read();
-                    let has_rigid_children = r.sources.iter().any(|e| is_rigid(&e.read().stereotype));
-                    let has_anti_rigid_children = r.sources.iter().any(|e| is_anti_rigid(&e.read().stereotype));
-
-                    for t in &r.targets {
-                        let e = infos.entry(*t.read().uuid).or_default();
-                        e.has_rigid_children |= has_rigid_children;
-                        e.has_anti_rigid_children |= has_anti_rigid_children;
-                    }
-                }
-                _ => {}
-            }
-        }
-        let mut infos = HashMap::new();
-        for e in &m.contained_elements {
-            r_mixrig_collect(&mut infos, e);
-        }
-        for e in &infos {
-            if let Some(s) = &e.1.stereotype && **s == ontouml_models::MIXIN && e.1.has_rigid_children != e.1.has_anti_rigid_children {
-                problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::MixRig });
-            }
-        }
-
-
-        // MultDep, RelRig
-        validate_relators(&mut problems, &m);
-        // UndefFormal, UndefPhase
-        validate_undef(&mut problems, &m);
-
-
-        problems
-    }
 }
 
 impl CustomTab for OntoUMLValidationTab {
@@ -812,7 +53,7 @@ impl CustomTab for OntoUMLValidationTab {
             ui.checkbox(&mut self.check_antipatterns, "Check antipatterns");
 
             if ui.button("Validate").clicked() {
-                let results = self.validate(self.check_errors, self.check_antipatterns);
+                let results = validate(&self.model, self.check_errors, self.check_antipatterns);
 
                 commands.push(
                     SimpleProjectCommand::SpecificDiagramCommand(
@@ -914,6 +155,769 @@ impl CustomTab for OntoUMLValidationTab {
         }
     }
 }
+
+
+
+fn validate(model: &ERef<UmlClassDiagram>, check_errors: bool, check_antipatterns: bool) -> Vec<ValidationProblem> {
+    let mut problems = Vec::new();
+
+    if check_errors {
+        problems.extend(validate_structure(model));
+    }
+
+    if check_antipatterns {
+        problems.extend(validate_antipatterns(model));
+    }
+
+    problems
+}
+
+fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
+    let mut problems = Vec::new();
+    let m = model.read();
+
+    // Subtyping and identity providers validation
+    fn valid_direct_subtyping(s: &str, t: &str) -> bool {
+        match (s, t) {
+            (ontouml_models::KIND | ontouml_models::COLLECTIVE | ontouml_models::QUANTITY | ontouml_models::RELATOR | ontouml_models::QUALITY | ontouml_models::MODE | ontouml_models::CATEGORY | ontouml_models::MIXIN, ontouml_models::CATEGORY | ontouml_models::MIXIN) => true,
+            (ontouml_models::SUBKIND | ontouml_models::ROLE, ontouml_models::KIND | ontouml_models::SUBKIND | ontouml_models::COLLECTIVE | ontouml_models::QUANTITY | ontouml_models::RELATOR | ontouml_models::CATEGORY | ontouml_models::MIXIN | ontouml_models::MODE | ontouml_models::QUALITY) => true,
+            (ontouml_models::PHASE, ontouml_models::KIND | ontouml_models::SUBKIND | ontouml_models::COLLECTIVE | ontouml_models::QUANTITY | ontouml_models::RELATOR | ontouml_models::MIXIN | ontouml_models::MODE | ontouml_models::QUALITY | ontouml_models::PHASE | ontouml_models::PHASE_MIXIN) => true,
+            (ontouml_models::ROLE, ontouml_models::ROLE | ontouml_models::ROLE_MIXIN) => true,
+            (ontouml_models::PHASE_MIXIN, ontouml_models::MIXIN | ontouml_models::PHASE_MIXIN | ontouml_models::CATEGORY) => true,
+            (ontouml_models::ROLE_MIXIN, ontouml_models::MIXIN | ontouml_models::ROLE_MIXIN | ontouml_models::CATEGORY | ontouml_models::PHASE_MIXIN) => true,
+            _ => false,
+        }
+    }
+    fn is_identity_provider(s: &str) -> bool {
+        [ontouml_models::KIND, ontouml_models::COLLECTIVE, ontouml_models::QUANTITY, ontouml_models::RELATOR, ontouml_models::QUALITY, ontouml_models::MODE].iter().find(|e| **e == s).is_some()
+    }
+    fn requires_identity(s: &str) -> bool {
+        [ontouml_models::CATEGORY, ontouml_models::MIXIN, ontouml_models::PHASE_MIXIN, ontouml_models::ROLE_MIXIN].iter().find(|e| **e == s).is_none()
+    }
+    #[derive(Default)]
+    struct ElementInfo {
+        stereotype: Arc<String>,
+        identity_providers_min: usize,
+        identity_providers_max: usize,
+        is_abstract: bool,
+        in_disjoint_complete_set: bool,
+        direct_mediations_opposing_lower_bounds: usize,
+        direct_characterizations_toward: usize,
+        parents: Vec<ERef<UmlClassGeneralization>>,
+    }
+    fn r_validate_subtyping(
+        problems: &mut Vec<ValidationProblem>,
+        element_infos: &mut HashMap<ModelUuid, ElementInfo>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_validate_subtyping(problems, element_infos, e);
+                }
+            },
+            UmlClassElement::UmlClass(inner) => {
+                let m = inner.read();
+                let e = element_infos.entry(*m.uuid).or_default();
+
+                if ontouml_models::ontouml_class_stereotype_literal(&m.stereotype).is_none_or(|e| e == ontouml_models::NONE) {
+                    problems.push(ValidationProblem::Error {
+                        uuid: *m.uuid,
+                        error_type: ErrorType::InvalidStereotype,
+                        text: format!("Invalid or missing stereotype"),
+                    });
+                }
+
+                e.stereotype = m.stereotype.clone();
+                if is_identity_provider(&*m.stereotype) {
+                    e.identity_providers_min += 1;
+                    e.identity_providers_max += 1;
+                }
+                if m.is_abstract {
+                    e.is_abstract = true;
+                }
+            }
+            UmlClassElement::UmlClassGeneralization(inner) => {
+                let m = inner.read();
+                let identity_providers_no = m.targets.iter()
+                    .filter(|t| is_identity_provider(&*t.read().stereotype) || requires_identity(&*t.read().stereotype)).count();
+                let (weight_min, weight_max) = if m.set_is_disjoint || (m.sources.len() == 1 && m.targets.len() == 1) {
+                    (if identity_providers_no == m.targets.len() { 1 } else { 0 }, identity_providers_no.min(1))
+                } else {
+                    if m.set_is_covering {
+                        (identity_providers_no.min(1), identity_providers_no)
+                    } else {
+                        (0, identity_providers_no + 1)
+                    }
+                };
+
+                for s in &m.sources {
+                    let e = element_infos.entry(*s.read().uuid).or_default();
+                    e.identity_providers_min += weight_min;
+                    e.identity_providers_max += weight_max;
+                    e.parents.push(inner.clone());
+                    if m.set_is_disjoint && m.set_is_covering {
+                        e.in_disjoint_complete_set = true;
+                    }
+
+                    for t in &m.targets {
+                        if !valid_direct_subtyping(&*s.read().stereotype, &*t.read().stereotype) {
+                            problems.push(ValidationProblem::Error {
+                                uuid: *m.uuid,
+                                error_type: ErrorType::InvalidSubtyping,
+                                text: format!("«{}» cannot be subtype of «{}»", s.read().stereotype, t.read().stereotype),
+                            });
+                        }
+                    }
+                }
+            },
+            UmlClassElement::UmlClassAssociation(inner) => {
+                fn parse_multiplicity(m: &str) -> Option<(usize, Option<usize>)> {
+                    if m.is_empty() {
+                        None
+                    } else if m == "*" {
+                        Some((0, None))
+                    } else if let Ok(n) = str::parse::<usize>(m) {
+                        Some((n, Some(n)))
+                    } else {
+                        let (lower, upper) = m.split_once("..")?;
+                        if upper == "*" {
+                            str::parse(lower).map(|l| (l, None)).ok()
+                        } else {
+                            str::parse(lower).and_then(|l| str::parse(upper).map(|u| (l, Some(u)))).ok()
+                        }
+                    }
+                }
+                let m = inner.read();
+
+                if ontouml_models::ontouml_association_stereotype_literal(&m.stereotype).is_none_or(|e| e == ontouml_models::NONE) {
+                    problems.push(ValidationProblem::Error {
+                        uuid: *m.uuid,
+                        error_type: ErrorType::InvalidStereotype,
+                        text: format!("Invalid or missing stereotype"),
+                    });
+                }
+
+                let source_multiplicity = parse_multiplicity(&*m.source_label_multiplicity);
+                let target_multiplicity = parse_multiplicity(&*m.target_label_multiplicity);
+
+                if source_multiplicity.zip(target_multiplicity).is_none() {
+                    problems.push(ValidationProblem::Error {
+                        uuid: *m.uuid,
+                        error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                        text: format!("invalid multiplicities"),
+                    });
+                }
+                if let Some((lm1, um1)) = source_multiplicity && um1.is_some_and(|um| lm1 > um) {
+                    problems.push(ValidationProblem::Error {
+                        uuid: *m.uuid,
+                        error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                        text: format!("invalid multiplicities"),
+                    });
+                }
+                if let Some((lm2, um2)) = target_multiplicity && um2.is_some_and(|um| lm2 > um) {
+                    problems.push(ValidationProblem::Error {
+                        uuid: *m.uuid,
+                        error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                        text: format!("invalid multiplicities"),
+                    });
+                }
+
+                match m.stereotype.as_str() {
+                    ontouml_models::MEDIATION => {
+                        if let Some(((lm1, _), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
+                            && (lm1 < 1 || lm2 < 1) {
+                            problems.push(ValidationProblem::Error {
+                                uuid: *m.uuid,
+                                error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                text: format!("«mediation» must have multiplicities of at least 1..*"),
+                            });
+                        }
+                        if let Some((lm, _um)) = &target_multiplicity {
+                            let e = element_infos.entry(*m.source.uuid()).or_default();
+                            e.direct_mediations_opposing_lower_bounds += lm;
+                        }
+                        if let Some((lm, _um)) = &source_multiplicity {
+                            let e = element_infos.entry(*m.target.uuid()).or_default();
+                            e.direct_mediations_opposing_lower_bounds += lm;
+                        }
+                    }
+                    ontouml_models::CHARACTERIZATION => {
+                        if let Some(((lm1, um1), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
+                            && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 < 1) {
+                            problems.push(ValidationProblem::Error {
+                                uuid: *m.uuid,
+                                error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                text: format!("«characterization» must have multiplicities of 1..1 and at least 1..*"),
+                            });
+                        }
+                        if let UmlClassAssociable::UmlClass(t) = &m.target {
+                            let t = t.read();
+                            let e = element_infos.entry(*t.uuid).or_default();
+
+                            if t.stereotype.as_str() != ontouml_models::QUALITY && t.stereotype.as_str() != ontouml_models::MODE {
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
+                                    text: format!("«characterization» must have «quality» or «mode» on the target end"),
+                                });
+                            }
+
+                            e.direct_characterizations_toward += 1;
+                        }
+                    },
+                    ontouml_models::STRUCTURATION => {
+                        if let Some(((_, _), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
+                            && (lm2 != 1 || um2.is_none_or(|um| um != 1)) {
+                            problems.push(ValidationProblem::Error {
+                                uuid: *m.uuid,
+                                error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                text: format!("«structuration» must have multiplicities of 1..1 on the target end"),
+                            });
+                        }
+
+                        if let UmlClassAssociable::UmlClass(s) = &m.source {
+                            let s = s.read();
+                            if s.stereotype.as_str() != ontouml_models::QUALITY {
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
+                                    text: format!("«structuration» must have «quality» on the source end"),
+                                });
+                            }
+                        }
+
+                        if let UmlClassAssociable::UmlClass(t) = &m.target {
+                            let t = t.read();
+                            if t.stereotype.as_str() !=ontouml_models::QUALITY && t.stereotype.as_str() != ontouml_models::MODE {
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
+                                    text: format!("«structuration» must have «quality» or «mode» on the target end"),
+                                });
+                            }
+                        }
+                    }
+                    ontouml_models::COMPONENT_OF => {
+                        if let Some(((lm1, _), (_, _))) = source_multiplicity.zip(target_multiplicity)
+                            && lm1 < 1 {
+                            problems.push(ValidationProblem::Error {
+                                uuid: *m.uuid,
+                                error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                text: format!("«componentOf» must have multiplicities of at least 1..* on the source end"),
+                            });
+                        }
+                    }
+                    ontouml_models::SUBCOLLECTION_OF => {
+                        if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
+                            && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
+                            problems.push(ValidationProblem::Error {
+                                uuid: *m.uuid,
+                                error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                text: format!("«subcollectionOf» must have multiplicities of 1..1"),
+                            });
+                        }
+
+                        if let UmlClassAssociable::UmlClass(s) = &m.source {
+                            let s = s.read();
+                            if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
+                                    text: format!("«subcollectionOf» must have «collective» on the source end"),
+                                });
+                            }
+                        }
+
+                        if let UmlClassAssociable::UmlClass(t) = &m.target {
+                            let t = t.read();
+                            if t.stereotype.as_str() != ontouml_models::COLLECTIVE {
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
+                                    text: format!("«subcollectionOf» must have «collective» on the target end"),
+                                });
+                            }
+                        }
+                    }
+                    ontouml_models::MEMBER_OF => {
+                        if let Some(((lm1, _), (lm2, _))) = source_multiplicity.zip(target_multiplicity)
+                            && (lm1 < 1 || lm2 < 1) {
+                            problems.push(ValidationProblem::Error {
+                                uuid: *m.uuid,
+                                error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                text: format!("«memberOf» must have multiplicities of at least 1..*"),
+                            });
+                        }
+
+                        if let UmlClassAssociable::UmlClass(s) = &m.source {
+                            let s = s.read();
+                            if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
+                                    text: format!("«memberOf» must have «collective» on the source end"),
+                                });
+                            }
+                        }
+                    }
+                    ontouml_models::CONTAINMENT => {
+                        if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
+                            && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
+                            problems.push(ValidationProblem::Error {
+                                uuid: *m.uuid,
+                                error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                text: format!("«containment» must have multiplicities of 1..1"),
+                            });
+                        }
+
+                        if let UmlClassAssociable::UmlClass(t) = &m.target {
+                            let t = t.read();
+                            if t.stereotype.as_str() != ontouml_models::QUANTITY {
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
+                                    text: format!("«containment» must have «quantity» on the target end"),
+                                });
+                            }
+                        }
+                    }
+                    ontouml_models::SUBQUANTITY_OF => {
+                        if let Some(((lm1, um1), (lm2, um2))) = source_multiplicity.zip(target_multiplicity)
+                            && (lm1 != 1 || um1.is_none_or(|um| um != 1) || lm2 != 1 || um2.is_none_or(|um| um != 1)) {
+                            problems.push(ValidationProblem::Error {
+                                uuid: *m.uuid,
+                                error_type: ErrorType::InvalidRelation(RelationError::Multiplicities),
+                                text: format!("«subquantityOf» must have multiplicities of 1..1"),
+                            });
+                        }
+
+                        if let UmlClassAssociable::UmlClass(s) = &m.source {
+                            let s = s.read();
+                            if s.stereotype.as_str() != ontouml_models::QUANTITY {
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
+                                    text: format!("«subquantityOf» must have «quantity» on the source end"),
+                                });
+                            }
+                        }
+
+                        if let UmlClassAssociable::UmlClass(t) = &m.target {
+                            let t = t.read();
+                            if t.stereotype.as_str() != ontouml_models::QUANTITY {
+                                problems.push(ValidationProblem::Error {
+                                    uuid: *m.uuid,
+                                    error_type: ErrorType::InvalidRelation(RelationError::TargetStereotype),
+                                    text: format!("«subquantityOf» must have «quantity» on the target end"),
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {},
+        }
+    }
+    let mut element_infos = HashMap::new();
+    for e in &m.contained_elements {
+        r_validate_subtyping(&mut problems, &mut element_infos, e);
+    }
+    for (k, info) in &element_infos {
+        fn has_matching_supertype<F: Fn(&ElementInfo) -> bool>(
+            infos: &HashMap<ModelUuid, ElementInfo>,
+            a: ModelUuid,
+            f: &F,
+        ) -> bool {
+            fn has_matching_supertype_inner<F: Fn(&ElementInfo) -> bool>(
+                visited: &mut HashSet<ModelUuid>,
+                infos: &HashMap<ModelUuid, ElementInfo>,
+                a: ModelUuid,
+                f: &F,
+            ) -> bool {
+                if visited.contains(&a) {
+                    return false;
+                }
+                visited.insert(a);
+
+                let e = infos.get(&a).unwrap();
+                let result = e.parents.iter().any(|e| e.read().targets.iter().any(|e| {
+                    let uuid = *e.read().uuid;
+                    f(infos.get(&uuid).unwrap()) || has_matching_supertype_inner(visited, infos, uuid, f)
+                }));
+
+                visited.remove(&a);
+                result
+            }
+
+            has_matching_supertype_inner(&mut HashSet::new(), infos, a, f)
+        }
+
+        if requires_identity(&*info.stereotype) && (info.identity_providers_min != 1 || info.identity_providers_max != 1) {
+            problems.push(ValidationProblem::Error {
+                uuid: *k,
+                error_type: ErrorType::InvalidIdentity,
+                text: format!("element does not have exactly one identity provider (found {}..{})", info.identity_providers_min, info.identity_providers_max),
+            });
+        }
+        fn r_lowerbounds(infos: &HashMap<ModelUuid, ElementInfo>, uuid: &ModelUuid) -> usize {
+            if let Some(e) = infos.get(uuid) {
+                let mut r = e.direct_mediations_opposing_lower_bounds;
+
+                for e in &e.parents {
+                    let g = e.read();
+                    r += if g.set_is_disjoint {
+                        g.targets.iter().map(|e| r_lowerbounds(infos, &*e.read().uuid)).min().unwrap_or(0)
+                    } else {
+                        g.targets.iter().map(|e| r_lowerbounds(infos, &*e.read().uuid)).sum()
+                    };
+                }
+
+                r
+            } else {
+                0
+            }
+        }
+        if info.stereotype.as_str() == ontouml_models::ROLE && r_lowerbounds(&element_infos, &k) == 0 {
+            problems.push(ValidationProblem::Error {
+                uuid: *k,
+                error_type: ErrorType::InvalidRole,
+                text: format!("«role» must be connected to a «mediation»"),
+            });
+        }
+
+        if !info.is_abstract
+            && (info.stereotype.as_str() == ontouml_models::RELATOR
+                || has_matching_supertype(&element_infos, *k, &|e| e.stereotype.as_str() == ontouml_models::RELATOR))
+            && r_lowerbounds(&element_infos, &k) < 2 {
+            problems.push(ValidationProblem::Error {
+                uuid: *k,
+                error_type: ErrorType::InvalidRelator,
+                text: format!("«relator» must have sum of lower bounds on the opposite sides of «mediation»s of at least 2"),
+            });
+        }
+        if info.stereotype.as_str() == ontouml_models::PHASE && !info.in_disjoint_complete_set {
+            problems.push(ValidationProblem::Error {
+                uuid: *k,
+                error_type: ErrorType::InvalidPhase,
+                text: format!("«phase» must always be part of a generalization set which is disjoint and complete"),
+            });
+        }
+        if (info.stereotype.as_str() == ontouml_models::CATEGORY
+            || info.stereotype.as_str() == ontouml_models::MIXIN
+            || info.stereotype.as_str() == ontouml_models::PHASE_MIXIN
+            || info.stereotype.as_str() == ontouml_models::ROLE_MIXIN) && !info.is_abstract {
+            problems.push(ValidationProblem::Error {
+                uuid: *k,
+                error_type: ErrorType::InvalidNonabstractMixin,
+                text: format!("«{}» must always be abstract", info.stereotype),
+            });
+        }
+        if (info.stereotype.as_str() == ontouml_models::QUALITY || info.stereotype.as_str() == ontouml_models::MODE)
+            && info.direct_characterizations_toward < 1 {
+            problems.push(ValidationProblem::Error {
+                uuid: *k,
+                error_type: ErrorType::InvalidMissingCharacterization,
+                text: format!("«{}» must be at the target end of at least one «characterization»", info.stereotype),
+            });
+        }
+    }
+
+    problems
+}
+
+fn validate_antipatterns(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
+    let mut problems = Vec::new();
+    let m = model.read();
+
+    validate_binover(&mut problems, &m);
+
+    // DecInt (Decieving Intersection)
+    fn r_decint_collect(
+        parents: &mut HashMap<ModelUuid, usize>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_decint_collect(parents, e);
+                }
+            },
+            UmlClassElement::UmlClassGeneralization(inner) => {
+                let m = inner.read();
+                let weight = if m.set_is_disjoint { 1 } else { m.targets.iter().filter(|e| !e.read().is_abstract).count() };
+                for e in &m.sources {
+                    *parents.entry(*e.read().uuid).or_default() += weight;
+                }
+            },
+            _ => {},
+        }
+    }
+    let mut parents = HashMap::new();
+    for e in &m.contained_elements {
+        r_decint_collect(&mut parents, e);
+    }
+    for (k, v) in parents {
+        if v > 1 {
+            problems.push(ValidationProblem::AntiPattern { uuid: k, antipattern_type: AntiPatternType::DecInt });
+        }
+    }
+
+
+    // DepPhase (Relationally Dependent Phase)
+    #[derive(Default)]
+    struct DepPhaseInfo {
+        stereotype: Option<Arc<String>>,
+        assoc_mediation_count: usize,
+    }
+    fn r_depphase_collect(
+        infos: &mut HashMap<ModelUuid, DepPhaseInfo>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_depphase_collect(infos, e);
+                }
+            },
+            UmlClassElement::UmlClass(inner) => {
+                let r = inner.read();
+                infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
+            },
+            UmlClassElement::UmlClassAssociation(inner) => {
+                let r = inner.read();
+                if *r.stereotype == ontouml_models::MEDIATION {
+                    infos.entry(*r.source.uuid()).or_default().assoc_mediation_count += 1;
+                    infos.entry(*r.target.uuid()).or_default().assoc_mediation_count += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut infos = HashMap::new();
+    for e in &m.contained_elements {
+        r_depphase_collect(&mut infos, e);
+    }
+    for e in &infos {
+        if let Some(s) = &e.1.stereotype && **s == ontouml_models::PHASE && e.1.assoc_mediation_count >= 1 {
+            problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::DepPhase });
+        }
+    }
+
+
+    // FreeRole (Free Role Specialization)
+    #[derive(Default)]
+    struct FreeRoleInfo {
+        stereotype: Option<Arc<String>>,
+        assoc_mediation_count: usize,
+    }
+    fn r_freerole_collect(
+        infos: &mut HashMap<ModelUuid, FreeRoleInfo>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_freerole_collect(infos, e);
+                }
+            },
+            UmlClassElement::UmlClass(inner) => {
+                let r = inner.read();
+                infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
+            },
+            UmlClassElement::UmlClassAssociation(inner) => {
+                let r = inner.read();
+                if *r.stereotype == ontouml_models::MEDIATION {
+                    infos.entry(*r.source.uuid()).or_default().assoc_mediation_count += 1;
+                    infos.entry(*r.target.uuid()).or_default().assoc_mediation_count += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut infos = HashMap::new();
+    for e in &m.contained_elements {
+        r_freerole_collect(&mut infos, e);
+    }
+    for e in &infos {
+        if let Some(s) = &e.1.stereotype && **s == ontouml_models::ROLE && e.1.assoc_mediation_count == 0 {
+            problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::FreeRole });
+        }
+    }
+
+
+    // GSRig (Generalization Set with Mixed Rigidity)
+    fn r_gsrig_test(
+        problems: &mut Vec<ValidationProblem>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_gsrig_test(problems, e);
+                }
+            },
+            UmlClassElement::UmlClassGeneralization(inner) => {
+                let r = inner.read();
+                let has_rigid_children = r.sources.iter().any(|e| is_rigid(&e.read().stereotype));
+                let has_anti_rigid_children = r.sources.iter().any(|e| is_anti_rigid(&e.read().stereotype));
+
+                if has_rigid_children && has_anti_rigid_children {
+                    problems.push(ValidationProblem::AntiPattern { uuid: *r.uuid, antipattern_type: AntiPatternType::GSRig });
+                }
+            }
+            _ => {}
+        }
+    }
+    for e in &m.contained_elements {
+        r_gsrig_test(&mut problems, e);
+    }
+
+
+    // HetColl (Heterogeneous Collective)
+    #[derive(Default)]
+    struct HetCollInfo {
+        stereotype: Option<Arc<String>>,
+        source_end_membership_count: usize,
+    }
+    fn r_hetcoll_collect(
+        infos: &mut HashMap<ModelUuid, HetCollInfo>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_hetcoll_collect(infos, e);
+                }
+            },
+            UmlClassElement::UmlClass(inner) => {
+                let r = inner.read();
+                infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
+            },
+            UmlClassElement::UmlClassAssociation(inner) => {
+                let r = inner.read();
+                if *r.stereotype == ontouml_models::MEMBER_OF {
+                    infos.entry(*r.source.uuid()).or_default().source_end_membership_count += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut infos = HashMap::new();
+    for e in &m.contained_elements {
+        r_hetcoll_collect(&mut infos, e);
+    }
+    for e in &infos {
+        if let Some(s) = &e.1.stereotype && **s == ontouml_models::COLLECTIVE && e.1.source_end_membership_count > 1 {
+            problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::HetColl });
+        }
+    }
+
+
+    // HomoFunc (Homogeneous Functional Complex)
+    #[derive(Default)]
+    struct HomoFuncInfo {
+        source_end_component_count: usize,
+    }
+    fn r_homofunc_collect(
+        infos: &mut HashMap<ModelUuid, HomoFuncInfo>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_homofunc_collect(infos, e);
+                }
+            },
+            UmlClassElement::UmlClass(inner) => {
+                let r = inner.read();
+                infos.entry(*r.uuid).or_default();
+            },
+            UmlClassElement::UmlClassAssociation(inner) => {
+                let r = inner.read();
+                if *r.stereotype == ontouml_models::COMPONENT_OF {
+                    infos.entry(*r.source.uuid()).or_default().source_end_component_count += 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut infos = HashMap::new();
+    for e in &m.contained_elements {
+        r_homofunc_collect(&mut infos, e);
+    }
+    for e in &infos {
+        if e.1.source_end_component_count == 1 {
+            problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::HomoFunc });
+        }
+    }
+
+
+    // MixRig (Mixin With Same Rigidity)
+    #[derive(Default)]
+    struct MixRigInfo {
+        stereotype: Option<Arc<String>>,
+        has_rigid_children: bool,
+        has_anti_rigid_children: bool,
+    }
+    fn r_mixrig_collect(
+        infos: &mut HashMap<ModelUuid, MixRigInfo>,
+        e: &UmlClassElement,
+    ) {
+        match e {
+            UmlClassElement::UmlClassPackage(inner) => {
+                let m = inner.read();
+                for e in &m.contained_elements {
+                    r_mixrig_collect(infos, e);
+                }
+            },
+            UmlClassElement::UmlClass(inner) => {
+                let r = inner.read();
+                infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
+            },
+            UmlClassElement::UmlClassGeneralization(inner) => {
+                let r = inner.read();
+                let has_rigid_children = r.sources.iter().any(|e| is_rigid(&e.read().stereotype));
+                let has_anti_rigid_children = r.sources.iter().any(|e| is_anti_rigid(&e.read().stereotype));
+
+                for t in &r.targets {
+                    let e = infos.entry(*t.read().uuid).or_default();
+                    e.has_rigid_children |= has_rigid_children;
+                    e.has_anti_rigid_children |= has_anti_rigid_children;
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut infos = HashMap::new();
+    for e in &m.contained_elements {
+        r_mixrig_collect(&mut infos, e);
+    }
+    for e in &infos {
+        if let Some(s) = &e.1.stereotype && **s == ontouml_models::MIXIN && e.1.has_rigid_children != e.1.has_anti_rigid_children {
+            problems.push(ValidationProblem::AntiPattern { uuid: *e.0, antipattern_type: AntiPatternType::MixRig });
+        }
+    }
+
+
+    // MultDep, RelRig
+    validate_relators(&mut problems, &m);
+    // UndefFormal, UndefPhase
+    validate_undef(&mut problems, &m);
+
+
+    problems
+}
+
+
 
 #[derive(PartialEq, Debug)]
 enum ValidationProblem {
@@ -1537,8 +1541,7 @@ mod test {
 
     fn validate(elements: Vec<UmlClassElement>, check_errors: bool, check_antipatterns: bool) -> Vec<ValidationProblem> {
         let d = new_diagram(elements);
-        let vt = super::OntoUMLValidationTab::new(d, ViewUuid::nil());
-        vt.validate(check_errors, check_antipatterns)
+        super::validate(&d, check_errors, check_antipatterns)
     }
 
     fn call_validate_binover(elements: Vec<UmlClassElement>) -> Vec<ValidationProblem> {
@@ -1681,12 +1684,12 @@ mod test {
     fn test_valid_relation1() {
         let quality = new_class(1, ontouml_models::QUALITY, false);
         let collective = new_class(2, ontouml_models::COLLECTIVE, false);
-        let memberOf = new_association(3, ontouml_models::MEMBER_OF, collective.clone().into(), quality.clone().into());
-        memberOf.write().source_label_multiplicity = Arc::new("1".to_owned());
-        memberOf.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let member_of = new_association(3, ontouml_models::MEMBER_OF, collective.clone().into(), quality.clone().into());
+        member_of.write().source_label_multiplicity = Arc::new("1".to_owned());
+        member_of.write().target_label_multiplicity = Arc::new("1".to_owned());
 
         let elements = vec![
-            quality.into(), collective.into(), memberOf.into(),
+            quality.into(), collective.into(), member_of.into(),
         ];
 
         assert_eq!(
@@ -1723,13 +1726,13 @@ mod test {
     fn test_invalid_relation1() {
         let quality = new_class(1, ontouml_models::QUALITY, false);
         let collective = new_class(2, ontouml_models::COLLECTIVE, false);
-        let memberOf = new_association(3, ontouml_models::MEMBER_OF, quality.clone().into(), collective.clone().into());
-        memberOf.write().source_label_multiplicity = Arc::new("1".to_owned());
-        memberOf.write().target_label_multiplicity = Arc::new("1".to_owned());
-        let memberOf_uuid = *memberOf.read().uuid;
+        let member_of = new_association(3, ontouml_models::MEMBER_OF, quality.clone().into(), collective.clone().into());
+        member_of.write().source_label_multiplicity = Arc::new("1".to_owned());
+        member_of.write().target_label_multiplicity = Arc::new("1".to_owned());
+        let member_of_uuid = *member_of.read().uuid;
 
         let elements = vec![
-            quality.into(), collective.into(), memberOf.into(),
+            quality.into(), collective.into(), member_of.into(),
         ];
         let result = validate(elements, true, false);
 
@@ -1739,7 +1742,7 @@ mod test {
                     uuid,
                     error_type: ErrorType::InvalidRelation(RelationError::SourceStereotype),
                     ..
-                } if *uuid == memberOf_uuid)).is_some()
+                } if *uuid == member_of_uuid)).is_some()
         );
     }
 
@@ -1868,12 +1871,10 @@ mod test {
         // kind characterized by quality
         let kind = new_class(1, ontouml_models::KIND, false);
         let mode = new_class(2, ontouml_models::MODE, false);
-        let mode_uuid = *mode.read().uuid;
         let characterization1 = new_association(3, ontouml_models::CHARACTERIZATION, kind.clone().into(), mode.clone().into());
         characterization1.write().source_label_multiplicity = Arc::new("1".to_owned());
         characterization1.write().target_label_multiplicity = Arc::new("1".to_owned());
         let quality = new_class(4, ontouml_models::QUALITY, false);
-        let quality_uuid = *quality.read().uuid;
         let characterization2 = new_association(5, ontouml_models::CHARACTERIZATION, kind.clone().into(), quality.clone().into());
         characterization2.write().source_label_multiplicity = Arc::new("1".to_owned());
         characterization2.write().target_label_multiplicity = Arc::new("1".to_owned());
@@ -1918,7 +1919,6 @@ mod test {
         // phase in a generalization set (disjoint, complete) from kind
         let kind = new_class(1, ontouml_models::KIND, false);
         let phase = new_class(2, ontouml_models::PHASE, false);
-        let phase_uuid = *phase.read().uuid;
         let generalization = new_generalization(3, vec![phase.clone()], vec![kind.clone()], true, true);
 
         let elements = vec![
@@ -1975,7 +1975,6 @@ mod test {
         let kind = new_class(1, ontouml_models::KIND, false);
         let role = new_class(2, ontouml_models::ROLE, false);
         let generalization = new_generalization(3, vec![role.clone()], vec![kind.clone()], true, true);
-        let role_uuid = *role.read().uuid;
         let relator = new_class(4, ontouml_models::RELATOR, false);
         let mediation = new_association(5, ontouml_models::MEDIATION, role.clone().into(), relator.clone().into());
         mediation.write().source_label_multiplicity = Arc::new("1".to_owned());
@@ -2016,7 +2015,6 @@ mod test {
     fn test_valid_relator1() {
         // relator with one mediation with multiplicity >1
         let relator2 = new_class(2, ontouml_models::RELATOR, false);
-        let relator2_uuid = *relator2.read().uuid;
         let kind1 = new_class(3, ontouml_models::KIND, false);
         let mediation1 = new_association(4, ontouml_models::MEDIATION, kind1.clone().into(), relator2.clone().into());
         mediation1.write().source_label_multiplicity = Arc::new("2".to_owned());
@@ -2038,7 +2036,6 @@ mod test {
         mediation2.write().target_label_multiplicity = Arc::new("1".to_owned());
         let kind3 = new_class(8, ontouml_models::KIND, false);
         let mediation3 = new_association(9, ontouml_models::MEDIATION, kind3.clone().into(), relator3.clone().into());
-        let mediation3_uuid = *mediation3.read().uuid;
         mediation3.write().source_label_multiplicity = Arc::new("1".to_owned());
         mediation3.write().target_label_multiplicity = Arc::new("1".to_owned());
 
@@ -2181,11 +2178,11 @@ mod test {
     fn test_valid_mixins() {
         let category = new_class(1, ontouml_models::CATEGORY, true);
         let mixin = new_class(2, ontouml_models::MIXIN, true);
-        let roleMixin = new_class(3, ontouml_models::ROLE_MIXIN, true);
-        let phaseMixin = new_class(4, ontouml_models::PHASE_MIXIN, true);
+        let role_mixin = new_class(3, ontouml_models::ROLE_MIXIN, true);
+        let phase_mixin = new_class(4, ontouml_models::PHASE_MIXIN, true);
 
         let elements = vec![
-            category.into(), mixin.into(), roleMixin.into(), phaseMixin.into(),
+            category.into(), mixin.into(), role_mixin.into(), phase_mixin.into(),
         ];
         assert_eq!(validate(elements, true, false), vec![]);
     }
@@ -2196,13 +2193,13 @@ mod test {
         let category_uuid = *category.read().uuid;
         let mixin = new_class(2, ontouml_models::MIXIN, false);
         let mixin_uuid = *mixin.read().uuid;
-        let roleMixin = new_class(3, ontouml_models::ROLE_MIXIN, false);
-        let roleMixin_uuid = *roleMixin.read().uuid;
-        let phaseMixin = new_class(4, ontouml_models::PHASE_MIXIN, false);
-        let phaseMixin_uuid = *phaseMixin.read().uuid;
+        let role_mixin = new_class(3, ontouml_models::ROLE_MIXIN, false);
+        let role_mixin_uuid = *role_mixin.read().uuid;
+        let phase_mixin = new_class(4, ontouml_models::PHASE_MIXIN, false);
+        let phase_mixin_uuid = *phase_mixin.read().uuid;
 
         let elements = vec![
-            category.into(), mixin.into(), roleMixin.into(), phaseMixin.into(),
+            category.into(), mixin.into(), role_mixin.into(), phase_mixin.into(),
         ];
         let result = validate(elements, true, false);
 
@@ -2225,14 +2222,14 @@ mod test {
                 .iter().find(|e| matches!(e, ValidationProblem::Error {
                     uuid, error_type: ErrorType::InvalidNonabstractMixin,
                     ..
-                } if *uuid == roleMixin_uuid)).is_some()
+                } if *uuid == role_mixin_uuid)).is_some()
         );
         assert!(
             result
                 .iter().find(|e| matches!(e, ValidationProblem::Error {
                     uuid, error_type: ErrorType::InvalidNonabstractMixin,
                     ..
-                } if *uuid == phaseMixin_uuid)).is_some()
+                } if *uuid == phase_mixin_uuid)).is_some()
         );
     }
 
@@ -2539,11 +2536,11 @@ mod test {
         let mixin = new_class(1, ontouml_models::MIXIN, true);
         let kind = new_class(2, ontouml_models::KIND, false);
         let gen1 = new_generalization(3, vec![kind.clone()], vec![mixin.clone()], false, false);
-        let roleMixin = new_class(4, ontouml_models::ROLE_MIXIN, true);
-        let gen2 = new_generalization(5, vec![roleMixin.clone()], vec![mixin.clone()], false, false);
+        let role_mixin = new_class(4, ontouml_models::ROLE_MIXIN, true);
+        let gen2 = new_generalization(5, vec![role_mixin.clone()], vec![mixin.clone()], false, false);
 
         assert_eq!(
-            validate(vec![mixin.into(), kind.into(), gen1.into(), roleMixin.into(), gen2.into()], false, true),
+            validate(vec![mixin.into(), kind.into(), gen1.into(), role_mixin.into(), gen2.into()], false, true),
             vec![],
         );
     }
@@ -2570,11 +2567,11 @@ mod test {
         // only one antirigid
         let mixin = new_class(1, ontouml_models::MIXIN, true);
         let mixin_uuid = *mixin.read().uuid;
-        let roleMixin = new_class(2, ontouml_models::ROLE_MIXIN, true);
-        let gen1 = new_generalization(3, vec![roleMixin.clone()], vec![mixin.clone()], false, false);
+        let role_mixin = new_class(2, ontouml_models::ROLE_MIXIN, true);
+        let gen1 = new_generalization(3, vec![role_mixin.clone()], vec![mixin.clone()], false, false);
 
         assert_eq!(
-            validate(vec![mixin.into(), roleMixin.into(), gen1.into()], false, true),
+            validate(vec![mixin.into(), role_mixin.into(), gen1.into()], false, true),
             vec![ValidationProblem::AntiPattern {
                 uuid: mixin_uuid,
                 antipattern_type: AntiPatternType::MixRig,
