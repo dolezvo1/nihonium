@@ -39,12 +39,28 @@ impl Domain for DemoPsdDomain {
     type ViewTargettingSectionT = DemoPsdElementTargettingSection;
     type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveDemoPsdTool;
+    type OrdinalMovementT = DemoPsdOrdinalMovement;
     type AddCommandElementT = DemoPsdElementOrVertex;
     type PropChangeT = DemoPsdPropChange;
 }
 
 type PackageViewT = PackageView<DemoPsdDomain, DemoPsdPackageAdapter>;
 type LinkViewT = MulticonnectionView<DemoPsdDomain, DemoPsdLinkAdapter>;
+
+#[derive(Clone, Copy, Debug)]
+pub enum DemoPsdOrdinalMovement {
+    StateLeft,
+    StateRight,
+}
+
+impl DemoPsdOrdinalMovement {
+    fn inverse(&self) -> Self {
+        match self {
+            Self::StateLeft => Self::StateRight,
+            Self::StateRight => Self::StateLeft,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub enum DemoPsdPropChange {
@@ -498,7 +514,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) {
         if ui.labeled_text_edit_singleline("Name:", &mut self.buffer.name).changed() {
             commands.push(
@@ -524,8 +540,8 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
     fn apply_property_change_fun(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        command: &InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -1105,7 +1121,7 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
         &mut self,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>
     ) {
         if ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -1131,8 +1147,8 @@ impl PackageAdapter<DemoPsdDomain> for DemoPsdPackageAdapter {
     fn apply_change(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        command: &InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -1506,7 +1522,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         gdc: &GlobalDrawingContext,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
         // try before
         if let Some(child) = self.before_views.iter_mut()
@@ -1763,7 +1779,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> EventHandlingStatus {
         let child_status = self.before_views.iter_mut()
             .flat_map(|e| {
@@ -1926,8 +1942,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        command: &InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
@@ -2213,6 +2229,42 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 recurse!();
             }
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            InsensitiveCommand::MoveOrdinal(uuids, direction) => {
+                let mut undo_uuids = HashSet::new();
+                {
+                    let before_iter: Box<dyn Iterator<Item = &mut DemoPsdStateViewInfo>> = match direction {
+                        DemoPsdOrdinalMovement::StateLeft => Box::new(self.before_views.iter_mut()),
+                        DemoPsdOrdinalMovement::StateRight => Box::new(self.before_views.iter_mut().rev()),
+                    };
+                    let mut before_iter = before_iter.peekable();
+                    while let Some(dest) = before_iter.next()
+                        && let Some(src) = before_iter.peek_mut() {
+                        if uuids.contains(&src.view.uuid()) && !uuids.contains(&dest.view.uuid()) {
+                            undo_uuids.insert(*src.view.uuid());
+                            std::mem::swap(dest, *src);
+                        }
+                    }
+                }
+                {
+                    let after_iter: Box<dyn Iterator<Item = &mut DemoPsdStateViewInfo>> = match direction {
+                        DemoPsdOrdinalMovement::StateLeft => Box::new(self.after_views.iter_mut()),
+                        DemoPsdOrdinalMovement::StateRight => Box::new(self.after_views.iter_mut().rev()),
+                    };
+                    let mut after_iter = after_iter.peekable();
+                    while let Some(dest) = after_iter.next()
+                        && let Some(src) = after_iter.peek_mut() {
+                        if uuids.contains(&src.view.uuid()) && !uuids.contains(&dest.view.uuid()) {
+                            undo_uuids.insert(*src.view.uuid());
+                            std::mem::swap(dest, *src);
+                        }
+                    }
+                }
+                if !undo_uuids.is_empty() {
+                    undo_accumulator.push(InsensitiveCommand::MoveOrdinal(undo_uuids, direction.inverse()));
+                }
+
+                recurse!();
+            }
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -2569,7 +2621,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         _gdc: &GlobalDrawingContext,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -2590,6 +2642,15 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                 DemoPsdPropChange::StateInternalChange(self.internal_buffer),
             ));
         }
+
+        ui.horizontal(|ui| {
+            if ui.button("Move left").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), DemoPsdOrdinalMovement::StateLeft));
+            }
+            if ui.button("Move right").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), DemoPsdOrdinalMovement::StateRight));
+            }
+        });
 
         if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -2633,7 +2694,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
@@ -2709,8 +2770,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        command: &InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -2742,7 +2803,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -2987,7 +3049,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         _gdc: &GlobalDrawingContext,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> PropertiesStatus<DemoPsdDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -3008,6 +3070,15 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                 DemoPsdPropChange::StateInternalChange(self.internal_buffer),
             ));
         }
+
+        ui.horizontal(|ui| {
+            if ui.button("Move left").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), DemoPsdOrdinalMovement::StateLeft));
+            }
+            if ui.button("Move right").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), DemoPsdOrdinalMovement::StateRight));
+            }
+        });
 
         if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3051,7 +3122,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
@@ -3127,8 +3198,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        command: &InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -3160,7 +3231,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -3355,7 +3427,7 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
         &mut self,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>
     ) -> PropertiesStatus<DemoPsdDomain> {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("Type:")
@@ -3393,8 +3465,8 @@ impl MulticonnectionAdapter<DemoPsdDomain> for DemoPsdLinkAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdElementOrVertex, DemoPsdPropChange>>,
+        command: &InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoPsdOrdinalMovement, DemoPsdElementOrVertex, DemoPsdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();

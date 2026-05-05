@@ -29,12 +29,16 @@ impl Domain for RdfDomain {
     type ViewTargettingSectionT = RdfElement;
     type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveRdfTool;
+    type OrdinalMovementT = RdfOrdinalMovement;
     type AddCommandElementT = RdfElementOrVertex;
     type PropChangeT = RdfPropChange;
 }
 
 type PackageViewT = PackageView<RdfDomain, RdfGraphAdapter>;
 type LinkViewT = MulticonnectionView<RdfDomain, RdfPredicateAdapter>;
+
+#[derive(Clone, Copy, Debug)]
+pub struct RdfOrdinalMovement {}
 
 #[derive(Clone)]
 pub enum RdfPropChange {
@@ -311,7 +315,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>,
     ) {
         if ui.labeled_text_edit_singleline("Name:", &mut self.buffer.name).changed() {
             commands.push(
@@ -337,8 +341,8 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     fn apply_property_change_fun(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        command: &InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -985,7 +989,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
         &mut self,
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>
+        commands: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>
     ) {
         if ui.labeled_text_edit_singleline("IRI:", &mut self.iri_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -1020,8 +1024,8 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
     fn apply_change(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        command: &InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -1191,7 +1195,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         _gdc: &GlobalDrawingContext,
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>,
     ) -> PropertiesStatus<RdfDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -1302,7 +1306,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveRdfTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -1371,8 +1375,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        command: &InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -1404,7 +1408,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -1641,7 +1646,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         _gdc: &GlobalDrawingContext,
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>,
     ) -> PropertiesStatus<RdfDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -1742,7 +1747,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveRdfTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -1801,8 +1806,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        command: &InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -1834,7 +1839,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -2041,7 +2047,7 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
         &mut self,
         q: &<RdfDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>
+        commands: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>
     ) ->PropertiesStatus<RdfDomain> {
         if ui.labeled_text_edit_singleline("IRI:", &mut self.temporaries.iri_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -2070,8 +2076,8 @@ impl MulticonnectionAdapter<RdfDomain> for RdfPredicateAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<RdfElementOrVertex, RdfPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<RdfElementOrVertex, RdfPropChange>>,
+        command: &InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<RdfOrdinalMovement, RdfElementOrVertex, RdfPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();

@@ -37,7 +37,7 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         &mut self,
         q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn show_color_property(
         &mut self,
@@ -47,8 +47,8 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn apply_change(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn refresh_buffers(&mut self);
 
@@ -175,7 +175,7 @@ where
         gdc: &GlobalDrawingContext,
         q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
         let child = self
             .owned_views
@@ -375,7 +375,7 @@ where
         q: &DomainT::QueryableT<'_>,
         tool: &mut Option<DomainT::ToolT>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
         let k_status = self.owned_views.event_order_find_mut(|v| {
             let s = v.handle_event(event, ehc, q, tool, element_setup_modal, commands);
@@ -525,8 +525,8 @@ where
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
@@ -611,6 +611,9 @@ where
                     v.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![], affected_models);
                 });
             }
+            InsensitiveCommand::MoveOrdinal(..) => {
+                recurse!();
+            },
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
                 if uuids.contains(&self.uuid) {
                     resize_by!(align, delta);

@@ -30,12 +30,16 @@ impl Domain for NetworkDomain {
     type ViewTargettingSectionT = NetworkElement;
     type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveNetworkTool;
+    type OrdinalMovementT = NetworkOrdinalMovement;
     type AddCommandElementT = NetworkElementOrVertex;
     type PropChangeT = NetworkPropChange;
 }
 
 type PackageViewT = PackageView<NetworkDomain, NetworkContainerAdapter>;
 type LinkViewT = MulticonnectionView<NetworkDomain, NetworkAssociationAdapter>;
+
+#[derive(Clone, Copy, Debug)]
+pub struct NetworkOrdinalMovement {}
 
 #[derive(Clone)]
 pub enum NetworkPropChange {
@@ -326,7 +330,7 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
     ) {
         if ui.labeled_text_edit_singleline("Name:", &mut self.buffer.name).changed() {
             commands.push(
@@ -352,8 +356,8 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
     fn apply_property_change_fun(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -937,7 +941,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         &mut self,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>
+        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>
     ) {
         if ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -972,8 +976,8 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
     fn apply_change(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -1137,7 +1141,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         _gdc: &GlobalDrawingContext,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
     ) -> PropertiesStatus<NetworkDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -1560,7 +1564,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -1619,8 +1623,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -1652,7 +1656,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -1836,7 +1841,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         gdc: &GlobalDrawingContext,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
     ) -> PropertiesStatus<NetworkDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -2126,7 +2131,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -2184,8 +2189,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -2217,7 +2222,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -2429,7 +2435,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         &mut self,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>
+        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>
     ) ->PropertiesStatus<NetworkDomain> {
         ui.label("Line type:");
         egui::ComboBox::from_id_salt("line type")
@@ -2542,8 +2548,8 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -2817,7 +2823,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
         gdc: &GlobalDrawingContext,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
     ) -> PropertiesStatus<NetworkDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -2961,7 +2967,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -3026,8 +3032,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -3059,7 +3065,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);

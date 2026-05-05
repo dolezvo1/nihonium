@@ -104,6 +104,7 @@ impl<P: UmlClassProfile> Domain for UmlClassDomain<P> {
     type ViewTargettingSectionT = UmlClassElement;
     type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveUmlClassTool<P>;
+    type OrdinalMovementT = UmlClassOrdinalMovement;
     type AddCommandElementT = UmlClassElementOrVertex<P>;
     type PropChangeT = UmlClassPropChange;
 }
@@ -114,6 +115,21 @@ type DependencyViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassDepende
 type AssociationViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassAssocationAdapter<P>>;
 type UseCaseGeneralizationViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlUseCaseGeneralizationAdapter>;
 type CommentLinkViewT<P> = MulticonnectionView<UmlClassDomain<P>, UmlClassCommentLinkAdapter>;
+
+#[derive(Clone, Copy, Debug)]
+pub enum UmlClassOrdinalMovement {
+    ClassChildUp,
+    ClassChildDown,
+}
+
+impl UmlClassOrdinalMovement {
+    fn inverse(&self) -> Self {
+        match self {
+            Self::ClassChildUp => Self::ClassChildDown,
+            Self::ClassChildDown => Self::ClassChildUp,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub enum UmlClassPropChange {
@@ -586,7 +602,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if ui.labeled_text_edit_singleline("Name:", &mut self.buffer.name).changed() {
             commands.push(
@@ -614,8 +630,8 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
     fn apply_property_change_fun(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -1830,7 +1846,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) {
         if ui.labeled_text_edit_singleline("Stereotype:", &mut self.stereotype_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -1886,8 +1902,8 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
     fn apply_change(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -2171,7 +2187,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         gdc: &GlobalDrawingContext,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -2379,7 +2395,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -2459,8 +2475,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -2492,7 +2508,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -2936,7 +2953,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         _gdc: &GlobalDrawingContext,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, <UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -3035,6 +3052,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             ));
         }
 
+        ui.horizontal(|ui| {
+            if ui.button("Move up").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlClassOrdinalMovement::ClassChildUp));
+            }
+            if ui.button("Move down").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlClassOrdinalMovement::ClassChildDown));
+            }
+        });
+
         PropertiesStatus::Shown
     }
 
@@ -3056,7 +3082,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlClassDomain<P> as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        _commands: &mut Vec<InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
+        _commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, <UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
@@ -3074,8 +3100,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, <UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, <UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -3099,7 +3125,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -3641,7 +3668,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         _gdc: &GlobalDrawingContext,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, <UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -3727,6 +3754,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             ));
         }
 
+        ui.horizontal(|ui| {
+            if ui.button("Move up").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlClassOrdinalMovement::ClassChildUp));
+            }
+            if ui.button("Move down").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlClassOrdinalMovement::ClassChildDown));
+            }
+        });
+
         PropertiesStatus::Shown
     }
 
@@ -3748,7 +3784,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlClassDomain<P> as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        _commands: &mut Vec<InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
+        _commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, <UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
@@ -3766,8 +3802,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<<UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, <UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, <UmlClassDomain<P> as Domain>::AddCommandElementT, <UmlClassDomain<P> as Domain>::PropChangeT>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -3791,7 +3827,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -4393,7 +4430,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         gdc: &GlobalDrawingContext,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         let properties_status = self.properties_views.iter()
             .flat_map(|e| e.write().show_properties(gdc, q, ui, commands).to_non_default())
@@ -4712,7 +4749,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -4891,8 +4928,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
@@ -5067,6 +5104,42 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 }
             }
             InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            InsensitiveCommand::MoveOrdinal(uuids, direction) => {
+                let mut undo_uuids = HashSet::new();
+                {
+                    let properties_iter: Box<dyn Iterator<Item = &mut ERef<UmlClassPropertyView<P>>>> = match direction {
+                        UmlClassOrdinalMovement::ClassChildUp => Box::new(self.properties_views.iter_mut()),
+                        UmlClassOrdinalMovement::ClassChildDown => Box::new(self.properties_views.iter_mut().rev()),
+                    };
+                    let mut properties_iter = properties_iter.peekable();
+                    while let Some(dest) = properties_iter.next()
+                        && let Some(src) = properties_iter.peek_mut() {
+                        if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
+                            undo_uuids.insert(*src.read().uuid);
+                            std::mem::swap(dest, *src);
+                        }
+                    }
+                }
+                {
+                    let operations_iter: Box<dyn Iterator<Item = &mut ERef<UmlClassOperationView<P>>>> = match direction {
+                        UmlClassOrdinalMovement::ClassChildUp => Box::new(self.operations_views.iter_mut()),
+                        UmlClassOrdinalMovement::ClassChildDown => Box::new(self.operations_views.iter_mut().rev()),
+                    };
+                    let mut operations_iter = operations_iter.peekable();
+                    while let Some(dest) = operations_iter.next()
+                        && let Some(src) = operations_iter.peek_mut() {
+                        if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
+                            undo_uuids.insert(*src.read().uuid);
+                            std::mem::swap(dest, *src);
+                        }
+                    }
+                }
+                if !undo_uuids.is_empty() {
+                    undo_accumulator.push(InsensitiveCommand::MoveOrdinal(undo_uuids, direction.inverse()));
+                }
+
+                recurse!();
+            }
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -5378,7 +5451,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         gdc: &GlobalDrawingContext,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -5521,7 +5594,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -5581,8 +5654,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -5614,7 +5687,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -5872,7 +5946,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if ui.add_enabled(self.model.read().targets.len() <= 1, egui::Button::new("Add source")).clicked() {
             return PropertiesStatus::ToolRequest(
@@ -5945,8 +6019,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -6201,7 +6275,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         ui.label("Stereotype:");
         if self.temporaries.stereotype_controller.show(ui) {
@@ -6250,8 +6324,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -6484,7 +6558,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         ui.label("Stereotype:");
         if self.temporaries.stereotype_controller.show(ui) {
@@ -6654,8 +6728,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -7034,7 +7108,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if ui.add_enabled(self.model.read().targets.len() <= 1, egui::Button::new("Add source")).clicked() {
             return PropertiesStatus::ToolRequest(
@@ -7107,8 +7181,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -7325,7 +7399,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         gdc: &GlobalDrawingContext,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -7469,7 +7543,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -7534,8 +7608,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        command: &InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -7567,7 +7641,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -7733,15 +7808,15 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassC
         &mut self,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _ui: &mut egui::Ui,
-        _commands: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>
+        _commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         PropertiesStatus::NotShown
     }
     fn apply_change(
         &self,
         _view_uuid: &ViewUuid,
-        _command: &InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>,
-        _undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassElementOrVertex<P>, UmlClassPropChange>>,
+        _command: &InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>,
+        _undo_accumulator: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>,
     ) {}
     fn refresh_buffers(&mut self) {
         let model = self.model.read();

@@ -39,6 +39,7 @@ impl Domain for DemoOfdDomain {
     type ViewTargettingSectionT = DemoOfdElement;
     type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveDemoOfdTool;
+    type OrdinalMovementT = DemoOfdOrdinalMovement;
     type AddCommandElementT = DemoOfdElementOrVertex;
     type PropChangeT = DemoOfdPropChange;
 }
@@ -49,6 +50,9 @@ type SpecializationViewT = MulticonnectionView<DemoOfdDomain, DemoOfdSpecializat
 type AggregationViewT = MulticonnectionView<DemoOfdDomain, DemoOfdAggregationAdapter>;
 type PrecedenceViewT = MulticonnectionView<DemoOfdDomain, DemoOfdPrecedenceAdapter>;
 type ExclusionViewT = MulticonnectionView<DemoOfdDomain, DemoOfdExclusionAdapter>;
+
+#[derive(Clone, Copy, Debug)]
+pub enum DemoOfdOrdinalMovement {}
 
 #[derive(Clone)]
 pub enum DemoOfdPropChange {
@@ -448,7 +452,7 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
         if ui.labeled_text_edit_singleline("Name:", &mut self.buffer.name).changed() {
             commands.push(
@@ -476,8 +480,8 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
     fn apply_property_change_fun(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        command: &InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -1356,7 +1360,7 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
         &mut self,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) {
         if ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -1382,8 +1386,8 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
     fn apply_change(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        command: &InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -1796,7 +1800,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         _gdc: &GlobalDrawingContext,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> PropertiesStatus<DemoOfdDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -1868,7 +1872,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoOfdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -1978,8 +1982,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        command: &InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -2011,7 +2015,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -2293,7 +2298,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         gdc: &GlobalDrawingContext,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> PropertiesStatus<DemoOfdDomain> {
         if let Some(child) = self.specialization_view.as_mut()
                 .and_then(|t| t.write().show_properties(gdc, q, ui, commands).to_non_default()) {
@@ -2476,7 +2481,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoOfdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) if self.min_shape().contains(pos) => {
@@ -2581,8 +2586,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        command: &InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
@@ -2675,7 +2680,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 }
                 recurse!();
             }
-            InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
                 if let Some(e) = self.specialization_view.as_ref()
                     && uuids.contains(&*e.read().uuid) {
@@ -2951,7 +2957,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
         &mut self,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         if ui.labeled_text_edit_multiline("Name:", &mut self.temporaries.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3003,8 +3009,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPropertyTypeAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        command: &InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -3220,7 +3226,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
         &mut self,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         if ui.button("Switch source and destination").clicked() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3242,8 +3248,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdSpecializationAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        command: &InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -3433,7 +3439,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
         &mut self,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         let r = self.model.read();
 
@@ -3491,8 +3497,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        command: &InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -3683,7 +3689,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
         &mut self,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         if ui.button("Switch source and destination").clicked() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3705,8 +3711,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdPrecedenceAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        command: &InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -3913,7 +3919,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
         &mut self,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>
     ) -> PropertiesStatus<DemoOfdDomain> {
         if ui.button("Switch source and destination").clicked() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3935,8 +3941,8 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdExclusionAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdElementOrVertex, DemoOfdPropChange>>,
+        command: &InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();

@@ -460,7 +460,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         response: &egui::Response,
         modifier_settings: ModifierSettings,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn cancel_tool(&mut self);
 
@@ -495,7 +495,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> Option<Box<dyn CustomModal>>;
     fn show_menubar_edit_options(
         &mut self,
@@ -521,11 +521,11 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         &mut self,
         command: DiagramCommand,
         clipboard: &mut Vec<Box<dyn Any>>,
-    ) -> Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>;
+    ) -> Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>;
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
 
@@ -964,13 +964,14 @@ pub type BucketNoT = u8;
 pub type PositionNoT = u16;
 /// Selection insensitive command - inherently repeatable
 #[derive(Clone, PartialEq, Debug)]
-pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> {
+pub enum InsensitiveCommand<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> {
     HighlightAll(bool, Highlight),
     SelectByDrag(egui::Rect, bool),
     MoveAllElements(egui::Vec2),
 
     HighlightSpecific(HashSet<ViewUuid>, bool, Highlight),
     MoveSpecificElements(HashSet<ViewUuid>, egui::Vec2),
+    MoveOrdinal(HashSet<ViewUuid>, OrdinalMovementT),
     ResizeSpecificElementsBy(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     ResizeSpecificElementsTo(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     DeleteSpecificElements(HashSet<ViewUuid>, DeleteKind),
@@ -981,8 +982,8 @@ pub enum InsensitiveCommand<AddElementT: Clone + Debug, PropChangeT: TryMerge + 
     PropertyChange(HashSet<ViewUuid>, PropChangeT),
 }
 
-impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug>
-    InsensitiveCommand<AddElementT, PropChangeT>
+impl<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug>
+    InsensitiveCommand<OrdinalMovementT, AddElementT, PropChangeT>
 {
     fn info_text<'a>(
         &self,
@@ -995,7 +996,8 @@ impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug>
             } else {
                 (gdc.fluent_bundle.get_message("nh-viewcommand-deleteelements").unwrap(), uuids.len())
             },
-            InsensitiveCommand::MoveSpecificElements(uuids, _delta)
+            InsensitiveCommand::MoveSpecificElements(uuids, ..)
+            | InsensitiveCommand::MoveOrdinal(uuids, ..)
                 => (gdc.fluent_bundle.get_message("nh-viewcommand-moveelements").unwrap(), uuids.len()),
             InsensitiveCommand::MoveAllElements(_delta)
                 => (gdc.fluent_bundle.get_message("nh-viewcommand-moveallelements").unwrap(), 0),
@@ -1032,7 +1034,7 @@ impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug>
     }
 }
 
-impl<AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> TryMerge for InsensitiveCommand<AddElementT, PropChangeT>
+impl<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> TryMerge for InsensitiveCommand<OrdinalMovementT, AddElementT, PropChangeT>
 {
     fn try_merge(&self, newer: &Self) -> Option<Self> {
         match (self, newer) {
@@ -1075,6 +1077,7 @@ pub trait Domain: Sized + 'static {
     type ViewTargettingSectionT: Into<Self::CommonElementT>;
     type QueryableT<'a>: Queryable<'a, Self>;
     type ToolT: Tool<Self>;
+    type OrdinalMovementT: Clone + Debug;
     type AddCommandElementT: From<Self::CommonElementViewT> + TryInto<Self::CommonElementViewT> + Clone + Debug;
     type PropChangeT: From<ColorChangeData> + TryInto<ColorChangeData> + TryMerge + Clone + Debug;
 }
@@ -1278,7 +1281,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         _drawing_context: &GlobalDrawingContext,
         _q: &DomainT::QueryableT<'_>,
         _ui: &mut egui::Ui,
-        _commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        _commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
         PropertiesStatus::NotShown
     }
@@ -1300,12 +1303,12 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         q: &DomainT::QueryableT<'_>,
         tool: &mut Option<DomainT::ToolT>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus;
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
     /// Refresh view's fields from model (recursing over children is unnecessary)
@@ -1381,13 +1384,13 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
     #[nh_context_serde(skip_and_default)]
     undo_stack: Vec<(
         ViewUuid,
-        InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         Vec<(ModelUuid, DomainT::CommonElementT, BucketNoT, PositionNoT)>,
     )>,
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
-    redo_stack: Vec<(ViewUuid, InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>)>,
+    redo_stack: Vec<(ViewUuid, InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>)>,
 
     #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
@@ -1419,7 +1422,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
     fn apply_commands(
         &mut self,
         view_uuid: &ViewUuid,
-        commands: Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         push_to_undo_stack: bool,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
@@ -2067,13 +2070,13 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn apply_property_change_fun(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn refresh_buffers(&mut self);
     fn menubar_options_fun(
@@ -2185,7 +2188,7 @@ impl<
         modifier_settings: ModifierSettings,
         modifiers: ModifierKeys,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> bool {
         // Collect alignment guides
         self.temporaries.snap_manager = SnapManager::new(self.temporaries.last_interactive_canvas_rect, egui::Vec2::splat(10.0 / self.temporaries.camera_scale));
@@ -2364,8 +2367,8 @@ impl<
 
     fn apply_command_inner(
         &mut self,
-        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -2375,7 +2378,8 @@ impl<
             | InsensitiveCommand::MoveSpecificElements(..)
             | InsensitiveCommand::MoveAllElements(..)
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
+            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::AddDependency(t, b, pos, element, into_model) => {
                 if *t == *self.uuid && *b == 0 {
                     if let Ok(mut view) = element.clone().try_into()
@@ -2485,6 +2489,7 @@ impl<
             | InsensitiveCommand::MoveAllElements(..)
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            | InsensitiveCommand::MoveOrdinal(..)
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
@@ -2674,7 +2679,7 @@ impl<
         modifier_settings: ModifierSettings,
         // TODO: remove, handle as a command
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) {
         macro_rules! pos_to_abs {
             ($pos:expr) => {
@@ -2901,7 +2906,7 @@ impl<
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> Option<Box<dyn CustomModal>> {
         let req = 'req: {
             let queryable = DomainT::QueryableT::new(
@@ -3126,7 +3131,7 @@ impl<
         &mut self,
         command: DiagramCommand,
         clipboard: &mut Vec<Box<dyn Any>>,
-    ) -> Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>> {
+    ) -> Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>> {
         macro_rules! se {
             () => {
                 self.temporaries.flattened_views_status.iter().filter(|e| e.1.selected()).map(|e| *e.0).collect()
@@ -3289,8 +3294,8 @@ impl<
     }
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         self.apply_command_inner(command, undo_accumulator, affected_models);

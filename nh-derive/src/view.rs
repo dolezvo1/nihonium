@@ -136,7 +136,11 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
                 gdc: &GlobalDrawingContext,
                 q: &<#domain as crate::common::controller::Domain> :: QueryableT<'_>,
                 ui: &mut egui::Ui,
-                commands: &mut Vec<InsensitiveCommand<<#domain as crate::common::controller::Domain> :: AddCommandElementT, <#domain as crate::common::controller::Domain> :: PropChangeT>>,
+                commands: &mut Vec<InsensitiveCommand<
+                    <#domain as crate::common::controller::Domain> :: OrdinalMovementT,
+                    <#domain as crate::common::controller::Domain> :: AddCommandElementT,
+                    <#domain as crate::common::controller::Domain> :: PropChangeT>,
+                >,
             ) -> PropertiesStatus<#domain> {
                 match self {
                     #(#arms_show_properties),*
@@ -166,7 +170,11 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
                 q: &<#domain as crate::common::controller::Domain> :: QueryableT<'_>,
                 tool: &mut Option<<#domain as crate::common::controller::Domain> :: ToolT>,
                 element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-                commands: &mut Vec<InsensitiveCommand<<#domain as crate::common::controller::Domain> :: AddCommandElementT, <#domain as crate::common::controller::Domain> :: PropChangeT>>,
+                commands: &mut Vec<InsensitiveCommand<
+                    <#domain as crate::common::controller::Domain> :: OrdinalMovementT,
+                    <#domain as crate::common::controller::Domain> :: AddCommandElementT,
+                    <#domain as crate::common::controller::Domain> :: PropChangeT>,
+                >,
             ) -> EventHandlingStatus {
                 match self {
                     #(#arms_handle_event),*
@@ -174,8 +182,16 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
             }
             fn apply_command(
                 &mut self,
-                command: &InsensitiveCommand<<#domain as crate::common::controller::Domain> :: AddCommandElementT, <#domain as crate::common::controller::Domain> :: PropChangeT>,
-                undo_accumulator: &mut Vec<InsensitiveCommand<<#domain as crate::common::controller::Domain> :: AddCommandElementT, <#domain as crate::common::controller::Domain> :: PropChangeT>>,
+                command: &InsensitiveCommand<
+                    <#domain as crate::common::controller::Domain> :: OrdinalMovementT,
+                    <#domain as crate::common::controller::Domain> :: AddCommandElementT,
+                    <#domain as crate::common::controller::Domain> :: PropChangeT,
+                >,
+                undo_accumulator: &mut Vec<InsensitiveCommand<
+                    <#domain as crate::common::controller::Domain> :: OrdinalMovementT,
+                    <#domain as crate::common::controller::Domain> :: AddCommandElementT,
+                    <#domain as crate::common::controller::Domain> :: PropChangeT>,
+                >,
                 affected_models: &mut HashSet<ModelUuid>,
             ) {
                 match self {

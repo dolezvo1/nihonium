@@ -34,11 +34,31 @@ impl Domain for UmlSequenceDomain {
     type ViewTargettingSectionT = UmlSequenceElement;
     type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveUmlSequenceTool;
+    type OrdinalMovementT = UmlSequenceOrdinalMovement;
     type AddCommandElementT = UmlSequenceElementOrVertex;
     type PropChangeT = UmlSequencePropChange;
 }
 
 type CommentLinkViewT = MulticonnectionView<UmlSequenceDomain, UmlSequenceCommentLinkAdapter>;
+
+#[derive(Clone, Copy, Debug)]
+pub enum UmlSequenceOrdinalMovement {
+    LifelineLeft,
+    LifelineRight,
+    HorizontalUp,
+    HorizontalDown,
+}
+
+impl UmlSequenceOrdinalMovement {
+    fn inverse(&self) -> Self {
+        match self {
+            Self::LifelineLeft => Self::LifelineRight,
+            Self::LifelineRight => Self::LifelineLeft,
+            Self::HorizontalUp => Self::HorizontalDown,
+            Self::HorizontalDown => Self::HorizontalUp,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub enum UmlSequencePropChange {
@@ -208,7 +228,7 @@ impl UmlSequenceHorizontalElementView {
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> EventHandlingStatus {
         match self {
             UmlSequenceHorizontalElementView::CombinedFragment(inner) => inner.write().handle_event_inner(lifeline_views, event, ehc, q, tool, element_setup_modal, commands),
@@ -436,7 +456,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) {
         if ui.labeled_text_edit_singleline("Name:", &mut self.buffer.name).changed() {
             commands.push(
@@ -464,8 +484,8 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
     fn apply_property_change_fun(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        command: &InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -1322,7 +1342,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         gdc: &GlobalDrawingContext,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> PropertiesStatus<UmlSequenceDomain> {
         let child = self
             .lifeline_views
@@ -1584,7 +1604,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> EventHandlingStatus {
         let k_status = self.lifeline_views.iter_mut().flat_map(|v| {
             let mut w = v.write();
@@ -1750,8 +1770,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        command: &InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
@@ -2043,6 +2063,45 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 recurse!();
             }
             InsensitiveCommand::ArrangeSpecificElements(_uuids, _arr) => {},
+            InsensitiveCommand::MoveOrdinal(uuids, direction) => {
+                let mut undo_uuids = HashSet::new();
+                match direction {
+                    UmlSequenceOrdinalMovement::LifelineLeft | UmlSequenceOrdinalMovement::LifelineRight => {
+                        let lifelines_iter: Box<dyn Iterator<Item = &mut ERef<UmlSequenceLifelineView>>> = match direction {
+                            UmlSequenceOrdinalMovement::LifelineLeft => Box::new(self.lifeline_views.iter_mut()),
+                            UmlSequenceOrdinalMovement::LifelineRight => Box::new(self.lifeline_views.iter_mut().rev()),
+                            _ => unreachable!(),
+                        };
+                        let mut lifelines_iter = lifelines_iter.peekable();
+                        while let Some(dest) = lifelines_iter.next()
+                            && let Some(src) = lifelines_iter.peek_mut() {
+                                if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
+                                    undo_uuids.insert(*src.read().uuid);
+                                    std::mem::swap(dest, *src);
+                                }
+                            }
+                    }
+                    UmlSequenceOrdinalMovement::HorizontalUp | UmlSequenceOrdinalMovement::HorizontalDown => {
+                        let horizontal_elements_iter: Box<dyn Iterator<Item = &mut UmlSequenceHorizontalElementView>> = match direction {
+                            UmlSequenceOrdinalMovement::HorizontalUp => Box::new(self.horizontal_element_views.iter_mut()),
+                            UmlSequenceOrdinalMovement::HorizontalDown => Box::new(self.horizontal_element_views.iter_mut().rev()),
+                            _ => unreachable!(),
+                        };
+                        let mut horizontal_elements_iter = horizontal_elements_iter.peekable();
+                        while let Some(dest) = horizontal_elements_iter.next()
+                            && let Some(src) = horizontal_elements_iter.peek_mut() {
+                            if uuids.contains(&src.uuid()) && !uuids.contains(&dest.uuid()) {
+                                undo_uuids.insert(*src.uuid());
+                                std::mem::swap(dest, *src);
+                            }
+                        }
+                    },
+                }
+                if !undo_uuids.is_empty() {
+                    undo_accumulator.push(InsensitiveCommand::MoveOrdinal(undo_uuids, direction.inverse()));
+                }
+                recurse!();
+            }
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     let mut model = self.model.write();
@@ -2283,6 +2342,10 @@ impl UmlSequenceCombinedFragmentView {
             egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
         )
     }
+    fn new_section_command(&self) -> InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange> {
+        let v: UmlSequenceElementView = new_umlsequence_combinedfragmentsection("", Vec::new()).1.into();
+        InsensitiveCommand::AddDependency(*self.uuid, 1, None, v.into(), true)
+    }
 
     fn spanned_lifeline_views<'a, 'b>(&'a self, lifeline_views: &'b [ERef<UmlSequenceLifelineView>]) -> &'b [ERef<UmlSequenceLifelineView>] {
         let r = self.model.read();
@@ -2389,12 +2452,15 @@ impl UmlSequenceCombinedFragmentView {
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT>,
+        >,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.temporaries.highlight.selected && self.new_section_button_rect(ehc.ui_scale).contains(pos) => {
-                let v: UmlSequenceElementView = new_umlsequence_combinedfragmentsection("", Vec::new()).1.into();
-                commands.push(InsensitiveCommand::AddDependency(*self.uuid, 1, None, v.into(), true).into());
+                commands.push(self.new_section_command());
 
                 EventHandlingStatus::HandledByElement
             }
@@ -2498,7 +2564,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         drawing_context: &GlobalDrawingContext,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> PropertiesStatus<UmlSequenceDomain> {
         if let Some(child) = self.sections.iter_mut()
             .filter_map(|v| v.write().show_properties(drawing_context, q, ui, commands).to_non_default())
@@ -2532,6 +2598,18 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
             ));
         }
 
+        if ui.button("Add section").clicked() {
+            commands.push(self.new_section_command());
+        }
+        ui.horizontal(|ui| {
+            if ui.button("Move up").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlSequenceOrdinalMovement::HorizontalUp));
+            }
+            if ui.button("Move down").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlSequenceOrdinalMovement::HorizontalDown));
+            }
+        });
+
         if ui.labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
@@ -2549,15 +2627,27 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        _commands: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
+        _commands: &mut Vec<InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT>,
+        >,
     ) -> EventHandlingStatus {
         unreachable!()
     }
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
+        command: &InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT,
+        >,
+        undo_accumulator: &mut Vec<InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT>,
+        >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
@@ -2717,6 +2807,29 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                 recurse!();
             }
             InsensitiveCommand::ArrangeSpecificElements(_uuids, _arr) => {},
+            InsensitiveCommand::MoveOrdinal(uuids, direction) => {
+                if let UmlSequenceOrdinalMovement::HorizontalUp | UmlSequenceOrdinalMovement::HorizontalDown = direction {
+                    let mut undo_uuids = HashSet::new();
+                    let sections_iter: Box<dyn Iterator<Item = &mut ERef<UmlSequenceCombinedFragmentSectionView>>> = match direction {
+                        UmlSequenceOrdinalMovement::HorizontalUp => Box::new(self.sections.iter_mut()),
+                        UmlSequenceOrdinalMovement::HorizontalDown => Box::new(self.sections.iter_mut().rev()),
+                        _ => unreachable!(),
+                    };
+                    let mut sections_iter = sections_iter.peekable();
+                    while let Some(dest) = sections_iter.next()
+                        && let Some(src) = sections_iter.peek_mut() {
+                        if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
+                            undo_uuids.insert(*src.read().uuid);
+                            std::mem::swap(dest, *src);
+                        }
+                    }
+                    if !undo_uuids.is_empty() {
+                        undo_accumulator.push(InsensitiveCommand::MoveOrdinal(undo_uuids, direction.inverse()));
+                    }
+                }
+
+                recurse!();
+            }
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&self.uuid) {
                     let mut model = self.model.write();
@@ -3016,7 +3129,7 @@ impl UmlSequenceCombinedFragmentSectionView {
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
@@ -3166,7 +3279,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
         drawing_context: &GlobalDrawingContext,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT,
+        >>,
     ) -> PropertiesStatus<UmlSequenceDomain> {
         if let Some(child) = self.horizontal_element_views.iter_mut()
             .filter_map(|v| v.show_properties(drawing_context, q, ui, commands).to_non_default())
@@ -3187,6 +3304,15 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
                 )
             );
         }
+
+        ui.horizontal(|ui| {
+            if ui.button("Move up").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlSequenceOrdinalMovement::HorizontalUp));
+            }
+            if ui.button("Move down").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlSequenceOrdinalMovement::HorizontalDown));
+            }
+        });
 
         PropertiesStatus::Shown
     }
@@ -3209,15 +3335,15 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<NaiveUmlSequenceTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        _commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        _commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> EventHandlingStatus {
         unreachable!()
     }
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        command: &InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
@@ -3374,6 +3500,29 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
                 recurse!();
             }
             InsensitiveCommand::ArrangeSpecificElements(_uuids, _arr) => {},
+            InsensitiveCommand::MoveOrdinal(uuids, direction) => {
+                if let UmlSequenceOrdinalMovement::HorizontalUp | UmlSequenceOrdinalMovement::HorizontalDown = direction {
+                    let mut undo_uuids = HashSet::new();
+                    let horizontal_elements_iter: Box<dyn Iterator<Item = &mut UmlSequenceHorizontalElementView>> = match direction {
+                        UmlSequenceOrdinalMovement::HorizontalUp => Box::new(self.horizontal_element_views.iter_mut()),
+                        UmlSequenceOrdinalMovement::HorizontalDown => Box::new(self.horizontal_element_views.iter_mut().rev()),
+                        _ => unreachable!(),
+                    };
+                    let mut horizontal_elements_iter = horizontal_elements_iter.peekable();
+                    while let Some(dest) = horizontal_elements_iter.next()
+                        && let Some(src) = horizontal_elements_iter.peek_mut() {
+                        if uuids.contains(&src.uuid()) && !uuids.contains(&dest.uuid()) {
+                            undo_uuids.insert(*src.uuid());
+                            std::mem::swap(dest, *src);
+                        }
+                    }
+                    if !undo_uuids.is_empty() {
+                        undo_accumulator.push(InsensitiveCommand::MoveOrdinal(undo_uuids, direction.inverse()));
+                    }
+                }
+
+                recurse!();
+            }
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&self.uuid) {
                     let mut model = self.model.write();
@@ -3859,7 +4008,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         drawing_context: &GlobalDrawingContext,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> PropertiesStatus<UmlSequenceDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -3880,6 +4029,15 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
                 UmlSequencePropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
+
+        ui.horizontal(|ui| {
+            if ui.button("Move left").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlSequenceOrdinalMovement::LifelineLeft));
+            }
+            if ui.button("Move right").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlSequenceOrdinalMovement::LifelineRight));
+            }
+        });
 
         if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -3929,7 +4087,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        _commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        _commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
@@ -3951,8 +4109,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        command: &InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -3984,7 +4142,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -4286,7 +4445,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         _drawing_context: &GlobalDrawingContext,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> PropertiesStatus<UmlSequenceDomain> {
         if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -4355,6 +4514,14 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
                 UmlSequencePropChange::FlipMulticonnection(FlipMulticonnection {}),
             ));
         }
+        ui.horizontal(|ui| {
+            if ui.button("Move up").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlSequenceOrdinalMovement::HorizontalUp));
+            }
+            if ui.button("Move down").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlSequenceOrdinalMovement::HorizontalDown));
+            }
+        });
         ui.separator();
 
         if ui.labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer).changed() {
@@ -4374,7 +4541,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        _commands: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
+        _commands: &mut Vec<InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT,
+        >>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.bounds_rect.expand(5.0).contains(pos) => EventHandlingStatus::HandledByElement,
@@ -4384,8 +4555,16 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
+        command: &InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT,
+        >,
+        undo_accumulator: &mut Vec<InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT,
+        >>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -4722,7 +4901,11 @@ impl UmlSequenceRefView {
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        _commands: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
+        _commands: &mut Vec<InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT
+        >>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
@@ -4780,7 +4963,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
         _drawing_context: &GlobalDrawingContext,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> PropertiesStatus<UmlSequenceDomain> {
         if !self.temporaries.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -4793,6 +4976,15 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
             ));
         }
 
+        ui.horizontal(|ui| {
+            if ui.button("Move up").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlSequenceOrdinalMovement::HorizontalUp));
+            }
+            if ui.button("Move down").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), UmlSequenceOrdinalMovement::HorizontalDown));
+            }
+        });
+
         PropertiesStatus::Shown
     }
 
@@ -4803,15 +4995,27 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        _commands: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
+        _commands: &mut Vec<InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT,
+        >>,
     ) -> EventHandlingStatus {
         unreachable!()
     }
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<<UmlSequenceDomain as Domain>::AddCommandElementT, <UmlSequenceDomain as Domain>::PropChangeT>>,
+        command: &InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT,
+        >,
+        undo_accumulator: &mut Vec<InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT,
+        >>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -4840,8 +5044,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
             InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..) => {}
-            InsensitiveCommand::ArrangeSpecificElements(..) => {},
+            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {},
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&self.uuid) {
                     let mut model = self.model.write();
@@ -5001,7 +5206,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
         drawing_context: &GlobalDrawingContext,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> PropertiesStatus<UmlSequenceDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -5145,7 +5350,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -5211,8 +5416,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        command: &InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -5244,7 +5449,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
             | InsensitiveCommand::RemoveDependency(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     affected_models.insert(*self.model.read().uuid);
@@ -5409,15 +5615,15 @@ impl MulticonnectionAdapter<UmlSequenceDomain> for UmlSequenceCommentLinkAdapter
         &mut self,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _ui: &mut egui::Ui,
-        _commands: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>
+        _commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>
     ) -> PropertiesStatus<UmlSequenceDomain> {
         PropertiesStatus::Shown
     }
     fn apply_change(
         &self,
         _view_uuid: &ViewUuid,
-        _command: &InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>,
-        _undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+        _command: &InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>,
+        _undo_accumulator: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) {}
     fn refresh_buffers(&mut self) {
         let model = self.model.read();

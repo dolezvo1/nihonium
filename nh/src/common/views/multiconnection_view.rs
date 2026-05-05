@@ -101,13 +101,13 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
         &mut self,
         q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>
     ) -> PropertiesStatus<DomainT>;
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
     fn refresh_buffers(&mut self);
 
@@ -302,7 +302,7 @@ where
         gdc: &GlobalDrawingContext,
         q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> PropertiesStatus<DomainT> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -312,7 +312,7 @@ where
             q: &'a DomainT::QueryableT<'_>,
             lp: &'a LabelProvider,
             ui: &mut egui::Ui,
-            commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+            commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
             models: &'a [ModelUuid],
             views: &'a [Ending<DomainT::CommonElementViewT>],
             self_uuid: ViewUuid,
@@ -540,7 +540,7 @@ where
         q: &DomainT::QueryableT<'_>,
         _tool: &mut Option<DomainT::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
         let segment_distance_threshold = 3.0 / ehc.ui_scale;
         let is_over = |a: egui::Pos2, b: egui::Pos2| -> bool {
@@ -764,8 +764,8 @@ where
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! all_pts_mut {
@@ -832,7 +832,8 @@ where
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::ArrangeSpecificElements(..) => {}
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
                 let self_uuid = *self.uuid;
                 if let Some(center_point) =

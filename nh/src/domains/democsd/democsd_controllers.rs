@@ -38,12 +38,16 @@ impl Domain for DemoCsdDomain {
     type ViewTargettingSectionT = DemoCsdElement;
     type QueryableT<'a> = GenericQueryable<'a, Self>;
     type ToolT = NaiveDemoCsdTool;
+    type OrdinalMovementT = DemoCsdOrdinalMovement;
     type AddCommandElementT = DemoCsdElementOrVertex;
     type PropChangeT = DemoCsdPropChange;
 }
 
 type PackageViewT = PackageView<DemoCsdDomain, DemoCsdPackageAdapter>;
 type LinkViewT = MulticonnectionView<DemoCsdDomain, DemoCsdLinkAdapter>;
+
+#[derive(Clone, Copy, Debug)]
+pub enum DemoCsdOrdinalMovement {}
 
 #[derive(Clone)]
 pub enum DemoCsdPropChange {
@@ -364,7 +368,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         &mut self,
         view_uuid: &ViewUuid,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) {
         if ui.labeled_text_edit_singleline("Name:", &mut self.buffer.name).changed() {
             commands.push(
@@ -390,8 +394,8 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     fn apply_property_change_fun(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        command: &InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -987,7 +991,7 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
         &mut self,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>
     ) {
         if ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -1013,8 +1017,8 @@ impl PackageAdapter<DemoCsdDomain> for DemoCsdPackageAdapter {
     fn apply_change(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        command: &InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -1288,7 +1292,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         gdc: &GlobalDrawingContext,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> PropertiesStatus<DemoCsdDomain> {
         if let Some(child) = self.transaction_view.as_mut()
                 .and_then(|t| t.write().show_properties(gdc, q, ui, commands).to_non_default()) {
@@ -1550,7 +1554,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoCsdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         let child = self
             .transaction_view
@@ -1688,8 +1692,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        command: &InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
@@ -1734,6 +1738,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            | InsensitiveCommand::MoveOrdinal(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
                 if *v == *self.uuid
@@ -2186,7 +2191,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         _gdc: &GlobalDrawingContext,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> PropertiesStatus<DemoCsdDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -2321,7 +2326,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoCsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        commands: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) -> EventHandlingStatus {
         match event {
             e if !self.min_shape().contains(*e.mouse_position()) => {
@@ -2385,8 +2390,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        command: &InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -2414,6 +2419,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            | InsensitiveCommand::MoveOrdinal(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency(..)
@@ -2624,7 +2630,7 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
         &mut self,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>
+        commands: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>
     ) -> PropertiesStatus<DemoCsdDomain> {
         ui.label("Type:");
         egui::ComboBox::from_id_salt("Type:")
@@ -2662,8 +2668,8 @@ impl MulticonnectionAdapter<DemoCsdDomain> for DemoCsdLinkAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdElementOrVertex, DemoCsdPropChange>>,
+        command: &InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<DemoCsdOrdinalMovement, DemoCsdElementOrVertex, DemoCsdPropChange>>,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
