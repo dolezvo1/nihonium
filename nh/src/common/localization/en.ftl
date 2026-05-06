@@ -93,6 +93,7 @@ nh-tab-properties = Properties
 nh-tab-diagram = Diagram
 nh-tab-document = Document
 nh-tab-customtab = Custom Tab
+nh-tab-outline = Outline
 
 
 pluralize-element = { $count ->

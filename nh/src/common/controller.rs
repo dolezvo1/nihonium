@@ -497,6 +497,12 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> Option<Box<dyn CustomModal>>;
+    fn show_outline(
+        &mut self,
+        context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
+        ui: &mut egui::Ui,
+    );
     fn show_menubar_edit_options(
         &mut self,
         context: &GlobalDrawingContext,
@@ -616,6 +622,13 @@ pub trait DiagramController: Any + NHContextSerialize {
         ui: &mut egui::Ui,
         affected_models: &mut HashSet<ModelUuid>,
     ) -> Option<Box<dyn CustomModal>>;
+    fn show_outline(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
+        ui: &mut egui::Ui,
+    );
     fn show_menubar_edit_options(
         &mut self,
         uuid: &ViewUuid,
@@ -1826,6 +1839,17 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         let r = view.write().show_properties(context, ui, &mut commands);
         self.apply_commands(uuid, commands, true, affected_models);
         r
+    }
+
+    fn show_outline(
+        &mut self,
+        uuid: &ViewUuid,
+        context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
+        ui: &mut egui::Ui,
+    ) {
+        let view = self.views.get(uuid).unwrap();
+        view.write().show_outline(context, settings, ui)
     }
 
     fn show_menubar_edit_options(
@@ -3063,6 +3087,89 @@ impl<
                     new_global_color_name: String::new(),
                 }))
             },
+        }
+    }
+    fn show_outline(
+        &mut self,
+        context: &GlobalDrawingContext,
+        settings: &Box<dyn DiagramSettings>,
+        ui: &mut egui::Ui,
+    ) {
+        let mut measuring_canvas = canvas::MeasuringCanvas::new(ui.painter());
+        self.draw_in(&context, settings, &mut measuring_canvas, None);
+        let diagram_bounds = measuring_canvas.bounds();
+        drop(measuring_canvas);
+
+        let outline_size = ui.available_size();
+        let camera_scale = (outline_size.x / diagram_bounds.width())
+                            .min(outline_size.y / diagram_bounds.height())
+                            .min(0.5);
+        let remainders = outline_size / camera_scale - diagram_bounds.size();
+        let diagram_bounds = diagram_bounds.expand2(remainders / 2.0);
+
+        // Draw the outline
+        let canvas_rect = egui::Rect::from_min_size(ui.next_widget_position(), outline_size);
+        let (painter_response, painter) = ui.allocate_painter(outline_size, egui::Sense::click_and_drag());
+        painter.rect(
+            canvas_rect,
+            egui::CornerRadius::ZERO,
+            self.adapter.background_color(&context.global_colors),
+            egui::Stroke::NONE,
+            egui::StrokeKind::Middle,
+        );
+        let mut ui_canvas = UiCanvas::new(
+            false,
+            painter.clone(),
+            canvas_rect,
+            diagram_bounds.min * -camera_scale,
+            camera_scale,
+            None,
+            crate::common::canvas::Highlight::NONE,
+        );
+        self.draw_in(&context, settings, &mut ui_canvas, None);
+
+        // Draw viewport location hint
+        {
+            let padding = 20.0 / camera_scale;
+            let mut intersects = true;
+            let licr = self.temporaries.last_interactive_canvas_rect;
+            let range_x = if licr.min.x < diagram_bounds.max.x && licr.max.x > diagram_bounds.min.x {
+                licr.min.x..=licr.max.x
+            } else if licr.max.x <= diagram_bounds.min.x {
+                intersects = false;
+                diagram_bounds.min.x..=(diagram_bounds.min.x + padding)
+            } else {
+                intersects = false;
+                (diagram_bounds.max.x - padding)..=diagram_bounds.max.x
+            };
+            let range_y = if licr.min.y < diagram_bounds.max.y && licr.max.y > diagram_bounds.min.y {
+                licr.min.y..=licr.max.y
+            } else if licr.max.y <= diagram_bounds.min.y {
+                intersects = false;
+                diagram_bounds.min.y..=(diagram_bounds.min.y + padding)
+            } else {
+                intersects = false;
+                (diagram_bounds.max.y - padding)..=diagram_bounds.max.y
+            };
+            let stroke_color = if intersects {
+                egui::Color32::BLUE
+            } else {
+                egui::Color32::RED
+            };
+            ui_canvas.draw_rectangle(
+                egui::Rect::from_x_y_ranges(range_x, range_y),
+                egui::CornerRadius::ZERO,
+                stroke_color.gamma_multiply(0.3),
+                canvas::Stroke::new_solid(1.0, stroke_color),
+                crate::common::canvas::Highlight::NONE,
+            );
+        }
+
+        // Handle events
+        if (painter_response.clicked() || painter_response.dragged())
+            && let Some(hover_pos) = ui.pointer_hover_pos() {
+            let pos = (hover_pos - painter_response.rect.min.to_vec2()) / camera_scale + diagram_bounds.min.to_vec2();
+            self.temporaries.camera_offset = pos * -self.temporaries.camera_scale + self.temporaries.last_interactive_canvas_rect.size() / 2.0 * self.temporaries.camera_scale;
         }
     }
     fn show_menubar_edit_options(

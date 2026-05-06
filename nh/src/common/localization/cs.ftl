@@ -93,6 +93,7 @@ nh-tab-properties = Vlastnosti
 nh-tab-diagram = Diagram
 nh-tab-document = Dokument
 nh-tab-customtab = Zvláštní karta
+nh-tab-outline = Obrys
 
 
 pluralize-element = { $count ->

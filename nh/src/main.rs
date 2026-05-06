@@ -142,6 +142,7 @@ pub enum NHTab {
     Search,
     Toolbar,
     Properties,
+    Outline,
 
     Diagram { uuid: ViewUuid },
     Document { uuid: ViewUuid },
@@ -161,6 +162,7 @@ impl NHTab {
             NHTab::Search => gdc.translate_0("nh-tab-search"),
             NHTab::Toolbar => gdc.translate_0("nh-tab-toolbar"),
             NHTab::Properties => gdc.translate_0("nh-tab-properties"),
+            NHTab::Outline => gdc.translate_0("nh-tab-outline"),
 
             NHTab::Diagram { .. } => gdc.translate_0("nh-tab-diagram"),
             NHTab::Document { .. } => gdc.translate_0("nh-tab-document"),
@@ -337,6 +339,7 @@ impl TabViewer for NHContext {
             NHTab::Search => self.show_search(ui),
             NHTab::Toolbar => self.show_toolbar(ui),
             NHTab::Properties => self.show_properties(ui),
+            NHTab::Outline => self.show_outline(ui),
 
             NHTab::Diagram { uuid } => self.show_diagram_tab(uuid, ui),
             NHTab::Document { uuid } => self.show_document_tab(uuid, ui),
@@ -968,6 +971,15 @@ impl NHContext {
         if let Some(m) = c.write().show_properties(last_focused_diagram, &self.drawing_context, ui, &mut self.affected_models) {
             self.custom_modal = Some(m);
         }
+    }
+
+    fn show_outline(&mut self, ui: &mut egui::Ui) {
+        let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
+        let Some(c) = self.diagram_controllers.get(last_focused_diagram) else { return; };
+        let mut c = c.write();
+        let Some(s) = self.diagram_settings.get(c.controller_type()) else { return; };
+
+        c.show_outline(last_focused_diagram, &self.drawing_context, s, ui);
     }
 
     fn show_newdiagram_tab(&mut self, ui: &mut egui::Ui) {
@@ -1800,7 +1812,7 @@ impl Default for NHApp {
         open_unique_tabs.insert(NHTab::ProjectHierarchy);
         open_unique_tabs.insert(NHTab::ModelHierarchy);
         open_unique_tabs.insert(NHTab::Search);
-        let [_, _] = dock_state
+        let [_, c] = dock_state
             .main_surface_mut()
             .split_right(a, 0.7, vec![NHTab::Properties]);
         open_unique_tabs.insert(NHTab::Properties);
@@ -1808,6 +1820,10 @@ impl Default for NHApp {
             .main_surface_mut()
             .split_below(b, 0.7, vec![NHTab::Toolbar]);
         open_unique_tabs.insert(NHTab::Toolbar);
+        let [_, _] = dock_state
+            .main_surface_mut()
+            .split_below(c, 0.5, vec![NHTab::Outline]);
+        open_unique_tabs.insert(NHTab::Outline);
 
         let mut diagram_infos: Vec<_> = inventory::iter::<DiagramInfo>.into_iter().collect();
         diagram_infos.sort_by_cached_key(|e| format!("{}/{}", e.diagram_creation_data.directory, e.pretty_name));
@@ -2441,6 +2457,7 @@ impl eframe::App for NHApp {
                         NHTab::Search,
                         NHTab::Toolbar,
                         NHTab::Properties,
+                        NHTab::Outline,
                     ] {
                         if ui
                             .selectable_label(
