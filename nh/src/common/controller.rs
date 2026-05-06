@@ -978,12 +978,12 @@ pub type PositionNoT = u16;
 /// Selection insensitive command - inherently repeatable
 #[derive(Clone, PartialEq, Debug)]
 pub enum InsensitiveCommand<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> {
-    HighlightAll(bool, Highlight),
+    HighlightAll(/*set:*/ bool, Highlight),
     SelectByDrag(egui::Rect, bool),
-    MoveAllElements(egui::Vec2),
+    MovePositionalAll(egui::Vec2),
 
-    HighlightSpecific(HashSet<ViewUuid>, bool, Highlight),
-    MoveSpecificElements(HashSet<ViewUuid>, egui::Vec2),
+    HighlightSpecific(HashSet<ViewUuid>, /*set:*/ bool, Highlight),
+    MovePositional(HashSet<ViewUuid>, egui::Vec2),
     MoveOrdinal(HashSet<ViewUuid>, OrdinalMovementT),
     ResizeSpecificElementsBy(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     ResizeSpecificElementsTo(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
@@ -1009,10 +1009,10 @@ impl<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: T
             } else {
                 (gdc.fluent_bundle.get_message("nh-viewcommand-deleteelements").unwrap(), uuids.len())
             },
-            InsensitiveCommand::MoveSpecificElements(uuids, ..)
+            InsensitiveCommand::MovePositional(uuids, ..)
             | InsensitiveCommand::MoveOrdinal(uuids, ..)
                 => (gdc.fluent_bundle.get_message("nh-viewcommand-moveelements").unwrap(), uuids.len()),
-            InsensitiveCommand::MoveAllElements(_delta)
+            InsensitiveCommand::MovePositionalAll(_delta)
                 => (gdc.fluent_bundle.get_message("nh-viewcommand-moveallelements").unwrap(), 0),
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, _, _)
             | InsensitiveCommand::ResizeSpecificElementsTo(uuids, _, _)
@@ -1052,9 +1052,9 @@ impl<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: T
     fn try_merge(&self, newer: &Self) -> Option<Self> {
         match (self, newer) {
             (
-                InsensitiveCommand::MoveSpecificElements(uuids1, delta1),
-                InsensitiveCommand::MoveSpecificElements(uuids2, delta2),
-            ) if uuids1 == uuids2 => Some(InsensitiveCommand::MoveSpecificElements(
+                InsensitiveCommand::MovePositional(uuids1, delta1),
+                InsensitiveCommand::MovePositional(uuids2, delta2),
+            ) if uuids1 == uuids2 => Some(InsensitiveCommand::MovePositional(
                 uuids1.clone(),
                 *delta1 + *delta2,
             )),
@@ -1482,7 +1482,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
 
             if matches!(c, InsensitiveCommand::HighlightAll(..)
                             | InsensitiveCommand::SelectByDrag(..)
-                            | InsensitiveCommand::MoveAllElements(_)) {
+                            | InsensitiveCommand::MovePositionalAll(_)) {
                 view.write().apply_command(&c, &mut undo_accumulator, affected_models);
             } else {
                 self.views.draw_order_foreach_mut(|e| e.apply_command(&c, &mut undo_accumulator, affected_models));
@@ -2399,8 +2399,8 @@ impl<
             InsensitiveCommand::HighlightAll(..)
             | InsensitiveCommand::HighlightSpecific(..)
             | InsensitiveCommand::SelectByDrag(..)
-            | InsensitiveCommand::MoveSpecificElements(..)
-            | InsensitiveCommand::MoveAllElements(..)
+            | InsensitiveCommand::MovePositional(..)
+            | InsensitiveCommand::MovePositionalAll(..)
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
@@ -2509,8 +2509,8 @@ impl<
             | InsensitiveCommand::SelectByDrag(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..) => true,
-            InsensitiveCommand::MoveSpecificElements(..)
-            | InsensitiveCommand::MoveAllElements(..)
+            InsensitiveCommand::MovePositional(..)
+            | InsensitiveCommand::MovePositionalAll(..)
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::MoveOrdinal(..)

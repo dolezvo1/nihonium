@@ -1349,6 +1349,19 @@ impl UmlClass {
             comment: self.comment.clone(),
         })
     }
+    pub fn move_element(&mut self, element: &ModelUuid, within: BucketNoT, target_pos: PositionNoT) {
+        if within == 0 {
+            if let Some((idx, _e)) = self.properties.iter().enumerate().find(|e| *e.1.read().uuid() == *element) {
+                let e = self.properties.remove(idx);
+                self.properties.insert(target_pos.try_into().unwrap(), e);
+            }
+        } else if within == 1 {
+            if let Some((idx, _e)) = self.operations.iter().enumerate().find(|e| *e.1.read().uuid() == *element) {
+                let e = self.operations.remove(idx);
+                self.operations.insert(target_pos.try_into().unwrap(), e);
+            }
+        }
+    }
 }
 
 impl Entity for UmlClass {

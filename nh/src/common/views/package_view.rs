@@ -197,11 +197,11 @@ where
 
                     ui.label("x");
                     if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.bounds_rect.left(), 0.0)));
+                        commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.bounds_rect.left(), 0.0)));
                     }
                     ui.label("y");
                     if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.bounds_rect.top())));
+                        commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.bounds_rect.top())));
                     }
                     ui.end_row();
                 }
@@ -477,9 +477,9 @@ where
                     let coerced_delta = coerced_pos - self.position();
 
                     if self.highlight.selected {
-                        commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
+                        commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
                     } else {
-                        commands.push(InsensitiveCommand::MoveSpecificElements(
+                        commands.push(InsensitiveCommand::MovePositional(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         ));
@@ -598,17 +598,17 @@ where
 
                 recurse!();
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid) => {
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
                 recurse!();
             }
-            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta) | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.bounds_rect.set_center(self.position() + *delta);
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
                 self.owned_views.event_order_foreach_mut(|v| {
-                    v.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![], affected_models);
+                    v.apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut vec![], affected_models);
                 });
             }
             InsensitiveCommand::MoveOrdinal(..) => {

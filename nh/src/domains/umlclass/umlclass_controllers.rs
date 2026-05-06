@@ -2238,11 +2238,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -2457,10 +2457,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                 let coerced_delta = coerced_pos - self.bounds_rect.center();
 
                 if self.highlight.selected {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
-                        InsensitiveCommand::MoveSpecificElements(
+                        InsensitiveCommand::MovePositional(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         ),
@@ -2492,12 +2492,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _)
+            InsensitiveCommand::MovePositional(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta)
-            | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
@@ -3117,8 +3117,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(..)
-            | InsensitiveCommand::MoveAllElements(..)
+            InsensitiveCommand::MovePositional(..)
+            | InsensitiveCommand::MovePositionalAll(..)
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
@@ -3819,8 +3819,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(..)
-            | InsensitiveCommand::MoveAllElements(..)
+            InsensitiveCommand::MovePositional(..)
+            | InsensitiveCommand::MovePositionalAll(..)
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
@@ -4490,11 +4490,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -4910,10 +4910,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
-                        InsensitiveCommand::MoveSpecificElements(
+                        InsensitiveCommand::MovePositional(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         ),
@@ -4957,12 +4957,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
                 recurse!();
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _)
+            InsensitiveCommand::MovePositional(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta)
-            | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
@@ -5115,6 +5115,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     while let Some(dest) = properties_iter.next()
                         && let Some(src) = properties_iter.peek_mut() {
                         if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
+                            let mut w = self.model.write();
+                            let Some(new_pos) = w.get_element_pos(&dest.read().model_uuid()) else { continue; };
+                            w.move_element(&src.read().model_uuid(), 0, new_pos.1);
                             undo_uuids.insert(*src.read().uuid);
                             std::mem::swap(dest, *src);
                         }
@@ -5129,6 +5132,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     while let Some(dest) = operations_iter.next()
                         && let Some(src) = operations_iter.peek_mut() {
                         if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
+                            let mut w = self.model.write();
+                            let Some(new_pos) = w.get_element_pos(&dest.read().model_uuid()) else { continue; };
+                            w.move_element(&src.read().model_uuid(), 1, new_pos.1);
                             undo_uuids.insert(*src.read().uuid);
                             std::mem::swap(dest, *src);
                         }
@@ -5495,11 +5501,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -5636,10 +5642,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
-                        InsensitiveCommand::MoveSpecificElements(
+                        InsensitiveCommand::MovePositional(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         ),
@@ -5671,12 +5677,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _)
+            InsensitiveCommand::MovePositional(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta)
-            | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
@@ -7421,11 +7427,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -7590,10 +7596,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
-                        InsensitiveCommand::MoveSpecificElements(
+                        InsensitiveCommand::MovePositional(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         ),
@@ -7625,12 +7631,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _)
+            InsensitiveCommand::MovePositional(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta)
-            | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));

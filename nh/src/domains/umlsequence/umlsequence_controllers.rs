@@ -1379,11 +1379,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
                     ui.label("x");
                     if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.bounds_rect.left(), 0.0)));
+                        commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.bounds_rect.left(), 0.0)));
                     }
                     ui.label("y");
                     if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.bounds_rect.top())));
+                        commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.bounds_rect.top())));
                     }
                     ui.end_row();
                 }
@@ -1722,9 +1722,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     let coerced_delta = coerced_pos - self.position();
 
                     if self.temporaries.highlight.selected {
-                        commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
+                        commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
                     } else {
-                        commands.push(InsensitiveCommand::MoveSpecificElements(
+                        commands.push(InsensitiveCommand::MovePositional(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         ));
@@ -1846,21 +1846,21 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
                 recurse!();
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid) => {
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
                 recurse!();
             }
-            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta) | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.bounds_rect.set_center(self.position() + *delta);
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
                 let mut void = vec![];
                 self.lifeline_views.iter_mut().for_each(|v| {
-                    v.write().apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut void, affected_models);
+                    v.write().apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
                 self.horizontal_element_views.iter_mut().for_each(|v| {
-                    v.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut void, affected_models);
+                    v.apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
             }
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
@@ -2075,11 +2075,14 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         let mut lifelines_iter = lifelines_iter.peekable();
                         while let Some(dest) = lifelines_iter.next()
                             && let Some(src) = lifelines_iter.peek_mut() {
-                                if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
-                                    undo_uuids.insert(*src.read().uuid);
-                                    std::mem::swap(dest, *src);
-                                }
+                            if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
+                                let mut w = self.model.write();
+                                let Some(new_pos) = w.get_element_pos(&dest.read().model_uuid()) else { continue; };
+                                w.move_element(&src.read().model_uuid(), 0, new_pos.1);
+                                undo_uuids.insert(*src.read().uuid);
+                                std::mem::swap(dest, *src);
                             }
+                        }
                     }
                     UmlSequenceOrdinalMovement::HorizontalUp | UmlSequenceOrdinalMovement::HorizontalDown => {
                         let horizontal_elements_iter: Box<dyn Iterator<Item = &mut UmlSequenceHorizontalElementView>> = match direction {
@@ -2091,6 +2094,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         while let Some(dest) = horizontal_elements_iter.next()
                             && let Some(src) = horizontal_elements_iter.peek_mut() {
                             if uuids.contains(&src.uuid()) && !uuids.contains(&dest.uuid()) {
+                                let mut w = self.model.write();
+                                let Some(new_pos) = w.get_element_pos(&dest.model_uuid()) else { continue; };
+                                w.move_element(&src.model_uuid(), 1, new_pos.1);
                                 undo_uuids.insert(*src.uuid());
                                 std::mem::swap(dest, *src);
                             }
@@ -2692,18 +2698,18 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
 
                 recurse!();
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid) => {
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
                 recurse!();
             }
-            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta) | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.bounds_rect.set_center(self.position() + *delta);
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
                 let mut void = vec![];
                 self.sections.iter_mut().for_each(|v| {
-                    v.write().apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut void, affected_models);
+                    v.write().apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
@@ -2819,6 +2825,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                     while let Some(dest) = sections_iter.next()
                         && let Some(src) = sections_iter.peek_mut() {
                         if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
+                            let mut w = self.model.write();
+                            let Some(new_pos) = w.get_element_pos(&dest.read().model_uuid()) else { continue; };
+                            w.move_element(&src.read().model_uuid(), 1, new_pos.1);
                             undo_uuids.insert(*src.read().uuid);
                             std::mem::swap(dest, *src);
                         }
@@ -3387,18 +3396,18 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
 
                 recurse!();
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid) => {
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
                 recurse!();
             }
-            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta) | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.bounds_rect.set_center(self.position() + *delta);
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
                 let mut void = vec![];
                 self.horizontal_element_views.iter_mut().for_each(|v| {
-                    v.apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut void, affected_models);
+                    v.apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
@@ -3512,6 +3521,9 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
                     while let Some(dest) = horizontal_elements_iter.next()
                         && let Some(src) = horizontal_elements_iter.peek_mut() {
                         if uuids.contains(&src.uuid()) && !uuids.contains(&dest.uuid()) {
+                            let mut w = self.model.write();
+                            let Some(new_pos) = w.get_element_pos(&dest.model_uuid()) else { continue; };
+                            w.move_element(&src.model_uuid(), 1, new_pos.1);
                             undo_uuids.insert(*src.uuid());
                             std::mem::swap(dest, *src);
                         }
@@ -4126,12 +4138,12 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _)
+            InsensitiveCommand::MovePositional(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta)
-            | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.bounds_rect = self.bounds_rect.translate(*delta);
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
@@ -5031,10 +5043,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
                 self.temporaries.highlight.selected =
                     (self.temporaries.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _) if !uuids.contains(&*self.uuid) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
+            InsensitiveCommand::MovePositional(_, delta) | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.bounds_rect.set_center(self.position() + *delta);
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
@@ -5228,11 +5240,11 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -5397,10 +5409,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
-                        InsensitiveCommand::MoveSpecificElements(
+                        InsensitiveCommand::MovePositional(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         )
@@ -5433,12 +5445,12 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _)
+            InsensitiveCommand::MovePositional(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta)
-            | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));

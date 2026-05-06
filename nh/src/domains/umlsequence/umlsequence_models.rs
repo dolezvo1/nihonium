@@ -728,6 +728,19 @@ impl UmlSequenceDiagram {
             comment: self.comment.clone(),
         })
     }
+    pub fn move_element(&mut self, element: &ModelUuid, within: BucketNoT, target_pos: PositionNoT) {
+        if within == 0 {
+            if let Some((idx, _e)) = self.vertical_elements.iter().enumerate().find(|e| *e.1.read().uuid() == *element) {
+                let e = self.vertical_elements.remove(idx);
+                self.vertical_elements.insert(target_pos.try_into().unwrap(), e);
+            }
+        } else if within == 1 {
+            if let Some((idx, _e)) = self.horizontal_elements.iter().enumerate().find(|e| *e.1.uuid() == *element) {
+                let e = self.horizontal_elements.remove(idx);
+                self.horizontal_elements.insert(target_pos.try_into().unwrap(), e);
+            }
+        }
+    }
 }
 
 impl Entity for UmlSequenceDiagram {
@@ -1130,6 +1143,14 @@ impl UmlSequenceCombinedFragment {
             comment: self.comment.clone(),
         })
     }
+    pub fn move_element(&mut self, element: &ModelUuid, within: BucketNoT, target_pos: PositionNoT) {
+        if within == 1 {
+            if let Some((idx, _e)) = self.sections.iter().enumerate().find(|e| *e.1.read().uuid() == *element) {
+                let e = self.sections.remove(idx);
+                self.sections.insert(target_pos.try_into().unwrap(), e);
+            }
+        }
+    }
 }
 
 impl Entity for UmlSequenceCombinedFragment {
@@ -1234,6 +1255,14 @@ impl UmlSequenceCombinedFragmentSection {
             guard: self.guard.clone(),
             horizontal_elements: self.horizontal_elements.clone(),
         })
+    }
+    pub fn move_element(&mut self, element: &ModelUuid, within: BucketNoT, target_pos: PositionNoT) {
+        if within == 1 {
+            if let Some((idx, _e)) = self.horizontal_elements.iter().enumerate().find(|e| *e.1.uuid() == *element) {
+                let e = self.horizontal_elements.remove(idx);
+                self.horizontal_elements.insert(target_pos.try_into().unwrap(), e);
+            }
+        }
     }
 }
 

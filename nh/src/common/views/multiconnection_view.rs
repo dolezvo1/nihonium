@@ -749,9 +749,9 @@ where
                     .find(|e| e.0 == dragged_node.0).unwrap().1;
 
                 if self.selected_vertices.contains(&dragged_node.0) {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
                 } else {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(
+                    commands.push(InsensitiveCommand::MovePositional(
                         std::iter::once(dragged_node.0).collect(),
                         coerced_delta,
                     ).into());
@@ -811,19 +811,19 @@ where
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || all_pts_mut!().find(|p| !rect.contains(p.1)).is_none();
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, delta) if !uuids.contains(&*self.uuid) => {
+            InsensitiveCommand::MovePositional(uuids, delta) if !uuids.contains(&*self.uuid) => {
                 for p in all_pts_mut!().filter(|e| uuids.contains(&e.0)) {
                     p.1 += *delta;
-                    undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                    undo_accumulator.push(InsensitiveCommand::MovePositional(
                         std::iter::once(p.0).collect(),
                         -*delta,
                     ));
                 }
             }
-            InsensitiveCommand::MoveSpecificElements(_, delta) | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta) | InsensitiveCommand::MovePositionalAll(delta) => {
                 for p in all_pts_mut!() {
                     p.1 += *delta;
-                    undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                    undo_accumulator.push(InsensitiveCommand::MovePositional(
                         std::iter::once(p.0).collect(),
                         -*delta,
                     ));

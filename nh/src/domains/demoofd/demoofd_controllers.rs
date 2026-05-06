@@ -1843,11 +1843,11 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -1964,10 +1964,10 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                 let coerced_delta = coerced_pos - self.min_shape().center();
 
                 if self.highlight.selected {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
-                        InsensitiveCommand::MoveSpecificElements(
+                        InsensitiveCommand::MovePositional(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         ),
@@ -1999,12 +1999,12 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                 self.highlight.selected =
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, _)
+            InsensitiveCommand::MovePositional(uuids, _)
                 if !uuids.contains(&*self.uuid) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta)
-            | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
@@ -2355,11 +2355,11 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
             }
         });
 
@@ -2564,10 +2564,10 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(InsensitiveCommand::MoveSpecificElements(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
                 } else {
                     commands.push(
-                        InsensitiveCommand::MoveSpecificElements(
+                        InsensitiveCommand::MovePositional(
                             std::iter::once(*self.uuid).collect(),
                             coerced_delta,
                         ),
@@ -2613,21 +2613,21 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
                 recurse!();
             }
-            InsensitiveCommand::MoveSpecificElements(uuids, delta)
+            InsensitiveCommand::MovePositional(uuids, delta)
                 if !uuids.contains(&*self.uuid())
                     && !self
                         .specialization_view
                         .as_ref()
                         .is_some_and(|e| uuids.contains(&e.read().uuid())) => {}
-            InsensitiveCommand::MoveSpecificElements(_, delta)
-            | InsensitiveCommand::MoveAllElements(delta) => {
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
-                undo_accumulator.push(InsensitiveCommand::MoveSpecificElements(
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid()).collect(),
                     -*delta,
                 ));
                 if let UFOption::Some(s) = &self.specialization_view {
-                    s.write().apply_command(&InsensitiveCommand::MoveAllElements(*delta), &mut vec![], affected_models);
+                    s.write().apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut vec![], affected_models);
                 }
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)

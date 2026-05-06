@@ -624,6 +624,16 @@ impl DemoPsdTransaction {
             comment: self.comment.clone(),
         })
     }
+    pub fn move_element(&mut self, element: &ModelUuid, pos: PositionNoT) {
+        if let Some((idx, _e)) = self.before.iter().enumerate().find(|e| *e.1.state.uuid() == *element) {
+            let e = self.before.remove(idx);
+            self.before.insert(pos.try_into().unwrap(), e);
+        }
+        if let Some((idx, _e)) = self.after.iter().enumerate().find(|e| *e.1.state.uuid() == *element) {
+            let e = self.after.remove(idx);
+            self.after.insert(pos.try_into().unwrap(), e);
+        }
+    }
 }
 
 impl Entity for DemoPsdTransaction {
