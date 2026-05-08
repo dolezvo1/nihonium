@@ -2576,6 +2576,7 @@ impl eframe::App for NHApp {
                         camera_scale,
                         None,
                         *highlight,
+                        (false, false),
                     );
                     if *gridlines {
                         ui_canvas.draw_gridlines(

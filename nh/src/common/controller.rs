@@ -2085,6 +2085,9 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32;
     fn gridlines_color(&self, global_colors: &ColorBundle) -> egui::Color32;
+    fn enable_headers(&self) -> (bool, bool) {
+        (false, false)
+    }
     fn show_view_props_fun(
         &mut self,
         drawing_context: &GlobalDrawingContext,
@@ -2677,6 +2680,7 @@ impl<
                     .to_pos2()
             }),
             Highlight::ALL,
+            self.adapter.enable_headers(),
         );
         ui_canvas.clear(self.adapter.background_color(&context.global_colors));
         ui_canvas.draw_gridlines(
@@ -2919,7 +2923,7 @@ impl<
                         let mut mc = canvas::MeasuringCanvas::new(&painter);
                         view.draw_in(&empty_q, gdc, settings, &mut mc, &None);
                         let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
-                        let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE);
+                        let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE, (false, false));
                         c.clear(egui::Color32::GRAY);
                         view.draw_in(&empty_q, gdc, settings, &mut c, &None);
                     }
@@ -3125,6 +3129,7 @@ impl<
             camera_scale,
             None,
             crate::common::canvas::Highlight::NONE,
+            (false, false),
         );
         self.draw_in(&context, settings, &mut ui_canvas, None);
 

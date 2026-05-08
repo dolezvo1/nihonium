@@ -2,7 +2,7 @@ use eframe::egui;
 
 use std::collections::HashSet;
 use std::io::Write;
-use std::ops::{BitAnd, BitOr};
+use std::ops::{BitAnd, BitOr, RangeInclusive};
 
 use super::uuid::ViewUuid;
 
@@ -708,6 +708,11 @@ pub struct ArrowDataPos<'a> {
     pub arrowhead_type: ArrowheadType,
 }
 
+pub enum HeaderLocation {
+    Horizontal(RangeInclusive<f32>),
+    Vertical(RangeInclusive<f32>),
+}
+
 pub const MULTICONNECTION_HANDLE_PROXIMITY: f32 = 20.0;
 pub trait NHCanvas {
     // These functions are must haves
@@ -739,8 +744,7 @@ pub trait NHCanvas {
         _stroke: Stroke,
         _max_distance: f32,
         _highlight: Highlight,
-    ) {
-    }
+    ) {}
     fn draw_polygon(
         &mut self,
         vertices: Vec<egui::Pos2>,
@@ -764,6 +768,12 @@ pub trait NHCanvas {
         font_size: f32,
         text_color: egui::Color32,
     );
+
+    fn draw_header_text(
+        &mut self,
+        _pos: HeaderLocation,
+        _text: &str,
+    ) {}
 
     // TODO: refactor to allow for line types (solid/dotted/dashed/double/squiggly)
     fn draw_multiconnection<'a>(
@@ -862,6 +872,8 @@ pub struct UiCanvas {
     camera_scale: f32,
     cursor: Option<egui::Pos2>,
     highlight_filter: Highlight,
+    header_horizontal: bool,
+    header_vertical: bool,
 }
 
 impl UiCanvas {
@@ -873,6 +885,7 @@ impl UiCanvas {
         camera_scale: f32,
         cursor: Option<egui::Pos2>,
         highlight_filter: Highlight,
+        enable_headers: (bool, bool),
     ) -> Self {
         Self {
             is_interactive,
@@ -888,6 +901,8 @@ impl UiCanvas {
             camera_scale,
             cursor,
             highlight_filter,
+            header_horizontal: enable_headers.0,
+            header_vertical: enable_headers.1,
         }
     }
 
@@ -1141,6 +1156,36 @@ impl NHCanvas for UiCanvas {
                 Stroke::new_solid(1.0, text_color.gamma_multiply(0.25)),
                 Highlight::NONE,
             );
+        }
+    }
+
+    fn draw_header_text(
+        &mut self,
+        pos: HeaderLocation,
+        text: &str,
+    ) {
+        match pos {
+            HeaderLocation::Horizontal(pos) if self.header_horizontal => {
+                let p = egui::Pos2::new((pos.start() + pos.end()) / 2.0, self.camera_offset.y / -self.camera_scale);
+                self.painter.text(
+                    self.sc_tr(p),
+                    egui::Align2::CENTER_TOP,
+                    text,
+                    egui::FontId::proportional(CLASS_TOP_FONT_SIZE),
+                    egui::Color32::BLACK,
+                );
+            },
+            HeaderLocation::Vertical(pos) if self.header_vertical => {
+                let p = egui::Pos2::new(self.camera_offset.x / -self.camera_scale, (pos.start() + pos.end()) / 2.0);
+                self.painter.text(
+                    self.sc_tr(p),
+                    egui::Align2::LEFT_CENTER,
+                    text,
+                    egui::FontId::proportional(CLASS_TOP_FONT_SIZE),
+                    egui::Color32::BLACK,
+                );
+            },
+            _ => {}
         }
     }
 }

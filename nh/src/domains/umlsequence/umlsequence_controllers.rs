@@ -436,6 +436,9 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
     fn gridlines_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::from_rgb(220, 220, 220)
     }
+    fn enable_headers(&self) -> (bool, bool) {
+        (true, false)
+    }
     fn show_view_props_fun(
         &mut self,
         drawing_context: &GlobalDrawingContext,
@@ -3851,6 +3854,8 @@ impl UmlSequenceLifelineView {
                 canvas.draw_line([pos + egui::Vec2::new(0.0, self.bounds_rect.height() / 2.0 + canvas::CLASS_MIDDLE_FONT_SIZE), egui::Pos2::new(pos.x, max_y)], canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK), h);
             },
         }
+
+        canvas.draw_header_text(canvas::HeaderLocation::Horizontal(self.bounds_rect.min.x..=self.bounds_rect.max.x), &self.name_buffer);
 
         if canvas.ui_scale().is_some() {
             // Draw targetting rectangle
