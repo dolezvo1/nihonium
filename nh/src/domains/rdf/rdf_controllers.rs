@@ -1281,7 +1281,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
         }
 
         // Draw targetting ellipse
-        if let Some(t) = tool
+        if canvas.ui_scale().is_some()
+            && let Some(t) = tool
             .as_ref()
             .filter(|e| self.min_shape().contains(e.0))
             .map(|e| e.1)
@@ -1722,7 +1723,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
         );
 
         // Draw targetting rectangle
-        if let Some(t) = tool
+        if canvas.ui_scale().is_some()
+            && let Some(t) = tool
             .as_ref()
             .filter(|e| self.min_shape().contains(e.0))
             .map(|e| e.1)

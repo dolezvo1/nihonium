@@ -4857,7 +4857,7 @@ impl UmlSequenceRefView {
         context: &GlobalDrawingContext,
         _settings: &UmlSequenceSettings,
         canvas: &mut dyn canvas::NHCanvas,
-        _tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
+        tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
     ) -> (TargettingStatus, egui::Rect) {
         let spanned_lifeline_views = self.spanned_lifeline_views(lifeline_views);
         let span_x = (
@@ -4904,10 +4904,25 @@ impl UmlSequenceRefView {
         canvas.draw_text(egui::Pos2::new(self.bounds_rect.min.x + PENTAGON_PADDING, pos_y + PENTAGON_PADDING), egui::Align2::LEFT_TOP, "ref",
             canvas::CLASS_MIDDLE_FONT_SIZE, egui::Color32::BLACK);
 
-        (
-            TargettingStatus::NotDrawn,
-            self.bounds_rect.with_max_y(self.bounds_rect.max.y + Self::REF_MARGIN_BOTTOM)
-        )
+        let r = self.bounds_rect.with_max_y(self.bounds_rect.max.y + Self::REF_MARGIN_BOTTOM);
+        // Draw targetting rectangle
+        if canvas.ui_scale().is_some()
+            && let Some(t) = tool
+            .as_ref()
+            .filter(|e| self.min_shape().contains(e.0))
+            .map(|e| e.1)
+        {
+            canvas.draw_rectangle(
+                self.bounds_rect,
+                egui::CornerRadius::ZERO,
+                t.targetting_for_section(Some(self.model())),
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            (TargettingStatus::Drawn, r)
+        } else {
+            (TargettingStatus::NotDrawn, r)
+        }
     }
 
     fn handle_event_inner(

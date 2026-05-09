@@ -2900,7 +2900,8 @@ impl<P: UmlClassProfile> UmlClassPropertyView<P> {
                 canvas::Highlight::NONE,
             );
         }
-        if let Some((pos, tool)) = tool && self.bounds_rect.contains(*pos) {
+        if canvas.ui_scale().is_some()
+            && let Some((pos, tool)) = tool && self.bounds_rect.contains(*pos) {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
@@ -3615,7 +3616,8 @@ impl<P: UmlClassProfile> UmlClassOperationView<P> {
                 canvas::Highlight::NONE,
             );
         }
-        if let Some((pos, tool)) = tool && self.bounds_rect.contains(*pos) {
+        if canvas.ui_scale().is_some()
+            && let Some((pos, tool)) = tool && self.bounds_rect.contains(*pos) {
             canvas.draw_rectangle(
                 self.bounds_rect,
                 egui::CornerRadius::ZERO,
@@ -5575,7 +5577,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         }
 
         // Draw targetting ellipse
-        if let Some(t) = tool
+        if canvas.ui_scale().is_some()
+            && let Some(t) = tool
             .as_ref()
             .filter(|e| self.min_shape().contains(e.0))
             .map(|e| e.1)

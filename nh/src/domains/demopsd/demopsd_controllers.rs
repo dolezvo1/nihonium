@@ -1727,7 +1727,9 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             ) == TargettingStatus::Drawn;
         }
 
-        if let Some((pos, tool)) = tool && !child_targetting_drawn {
+        if canvas.ui_scale().is_some()
+            && let Some((pos, tool)) = tool
+            && !child_targetting_drawn {
             let section = self.section_for(*pos);
             if section.1 == egui::Align2::CENTER_CENTER {
                 canvas.draw_polygon(
@@ -2572,7 +2574,8 @@ impl DemoPsdFactView {
         );
 
         // Draw targetting rectangle
-        if let Some(t) = tool
+        if canvas.ui_scale().is_some()
+            && let Some(t) = tool
             .as_ref()
             .filter(|e| self.min_shape().contains(e.0))
             .map(|e| e.1)
@@ -3001,7 +3004,8 @@ impl DemoPsdActView {
         );
 
         // Draw targetting rectangle
-        if let Some(t) = tool
+        if canvas.ui_scale().is_some()
+            && let Some(t) = tool
             .as_ref()
             .filter(|e| self.min_shape().contains(e.0))
             .map(|e| e.1)
