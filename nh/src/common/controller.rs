@@ -468,6 +468,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
+        interactive: bool,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
 
     fn draw_in(
@@ -588,6 +589,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
+        interactive: bool,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
 
     fn draw_in(
@@ -1787,9 +1789,10 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
+        interactive: bool,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
         let view = self.views.get(uuid).unwrap();
-        view.write().new_ui_canvas(context, ui)
+        view.write().new_ui_canvas(context, ui, interactive)
     }
 
     fn draw_in(
@@ -2662,6 +2665,7 @@ impl<
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
+        interactive: bool,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
         let canvas_pos = ui.next_widget_position();
         let canvas_size = ui.available_size();
@@ -2670,7 +2674,7 @@ impl<
         let (painter_response, painter) =
             ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
         let ui_canvas = UiCanvas::new(
-            true,
+            interactive,
             painter,
             canvas_rect,
             self.temporaries.camera_offset,

@@ -1626,7 +1626,8 @@ impl NHContext {
         let ctype = diagram_controller.controller_type();
         let Some(settings) = self.diagram_settings.get(ctype) else { return; };
 
-        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(tab_uuid, &self.drawing_context, ui);
+        let input_probably_blocked = self.confirm_modal_reason.is_some() || self.custom_modal.is_some();
+        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(tab_uuid, &self.drawing_context, ui, !input_probably_blocked);
         response.context_menu(|ui| {
             diagram_controller.context_menu(tab_uuid, &self.drawing_context, ui, &mut self.unprocessed_commands, &mut self.affected_models);
         });
@@ -1642,26 +1643,6 @@ impl NHContext {
             &mut self.custom_modal,
             &mut self.affected_models,
         );
-
-        /*
-        if !undo_accumulator.is_empty() {
-            self.set_has_unsaved_changes(true);
-            for (_uuid, (_t, c)) in self.diagram_controllers.iter().filter(|(uuid, _)| *uuid != tab_uuid) {
-                c.write().apply_command(tab_uuid, DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![], &mut HashSet::new());
-            }
-            
-            self.redo_stack.clear();
-            diagram_controller.apply_command(DiagramCommand::DropRedoStackAndLastChangeFlag, &mut vec![], &mut HashSet::new());
-            diagram_controller.apply_command(DiagramCommand::SetLastChangeFlag, &mut vec![], &mut HashSet::new());
-            
-            for command_label in undo_accumulator {
-                self.undo_stack.push((command_label, *tab_uuid));
-            }
-        }
-
-        drop(diagram_controller);
-        self.refresh_buffers(&affected_models);
-        */
     }
 
     fn show_document_tab(&mut self, uuid: &ViewUuid, ui: &mut egui::Ui) {
