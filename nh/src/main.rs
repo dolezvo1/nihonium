@@ -2219,13 +2219,13 @@ impl eframe::App for NHApp {
         egui::Panel::top("egui_dock::MenuBar").show_inside(ui, |ui| {
             // Check diagram-handled shortcuts
             let interact_pos = ui.ctx().pointer_interact_pos();
-            let input_blocked = self.context.confirm_modal_reason.is_some() || self.context.custom_modal.is_some();
+            let input_probably_blocked = self.context.confirm_modal_reason.is_some() || self.context.custom_modal.is_some();
             ui.input(|is|
                 'outer: for e in is.events.iter() {
                     match e {
                         e @ (egui::Event::Cut
                         | egui::Event::Copy
-                        | egui::Event::Paste(..)) if !input_blocked => {
+                        | egui::Event::Paste(..)) if !input_probably_blocked => {
                             if matches!(self.tree.find_active_focused(), Some((_, NHTab::Diagram { .. }))) {
                                 commands.push(SimpleProjectCommand::from(match e {
                                     egui::Event::Cut => DiagramCommand::CutSelectedElements,
@@ -2258,15 +2258,13 @@ impl eframe::App for NHApp {
                                 }
                             }
 
-                            if input_blocked {continue;}
-
                             'inner: for ksh in &self.context.shortcut_top_order {
                                 if !(modifiers.matches_logically(ksh.1.modifiers) && *key == ksh.1.logical_key) {
                                     continue 'inner;
                                 }
                                 
                                 match ksh.0 {
-                                    e @ SimpleProjectCommand::FocusedDiagramCommand(dc) => match dc {
+                                    e @ SimpleProjectCommand::FocusedDiagramCommand(dc) if !input_probably_blocked => match dc {
                                         DiagramCommand::DropRedoStackAndLastChangeFlag
                                         | DiagramCommand::SetLastChangeFlag => unreachable!(),
                                         DiagramCommand::UndoImmediate
@@ -2281,14 +2279,15 @@ impl eframe::App for NHApp {
                                         }
                                         _ => commands.push(e.into())
                                     },
-                                    other => commands.push(other.into()),
+                                    other if !input_probably_blocked || other == SimpleProjectCommand::SwapTopLanguages => commands.push(other.into()),
+                                    _ => {},
                                 }
                                 
                                 break 'outer;
                             }
                         }
                         egui::Event::MouseWheel { unit, delta, modifiers, .. }
-                            if !input_blocked && modifiers.matches_logically(egui::Modifiers::COMMAND) => {
+                            if !input_probably_blocked && modifiers.matches_logically(egui::Modifiers::COMMAND) => {
                             if let Some(pos) = &interact_pos
                                 && let Some(t) = self.tree.find_tab(&NHTab::Toolbar)
                                 && let Ok(ln) = self.tree.leaf(t.node_path())
