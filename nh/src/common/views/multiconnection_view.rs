@@ -1021,6 +1021,7 @@ where
                             property.clone(),
                         ));
                         std::mem::swap(&mut self.sources, &mut self.targets);
+                        self.adapter.refresh_buffers();
                     }
                     self.adapter.apply_change(&self.uuid, command, undo_accumulator);
                     affected_models.insert(*self.adapter.model_uuid());
