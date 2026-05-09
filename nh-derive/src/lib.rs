@@ -4,6 +4,7 @@ use proc_macro::TokenStream;
 mod unwrap;
 mod model;
 mod container_model;
+mod full_text_searchable;
 mod view;
 mod nh_context_serialize;
 mod nh_context_deserialize;
@@ -23,6 +24,12 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
 pub fn derive_container_model(input: TokenStream) -> TokenStream {
     container_model::derive_container_model(input)
 }
+
+#[proc_macro_derive(FullTextSearchable, attributes(full_text_searchable))]
+pub fn derive_full_text_searchable(input: TokenStream) -> TokenStream {
+    full_text_searchable::derive_full_text_searchable(input)
+}
+
 
 #[proc_macro_derive(View, attributes(view))]
 pub fn derive_view(input: TokenStream) -> TokenStream {

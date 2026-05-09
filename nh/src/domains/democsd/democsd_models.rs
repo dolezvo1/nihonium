@@ -12,9 +12,10 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = DemoCsdElement, default_passthrough = "none")]
+#[full_text_searchable(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum DemoCsdElement {
     #[container_model(passthrough = "eref")]
@@ -49,16 +50,6 @@ impl VisitableElement for DemoCsdElement {
     }
 }
 
-impl FullTextSearchable for DemoCsdElement {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        match self {
-            DemoCsdElement::DemoCsdPackage(inner) => inner.read().full_text_search(acc),
-            DemoCsdElement::DemoCsdTransactor(inner) => inner.read().full_text_search(acc),
-            DemoCsdElement::DemoCsdTransaction(inner) => inner.read().full_text_search(acc),
-            DemoCsdElement::DemoCsdLink(inner) => inner.read().full_text_search(acc),
-        }
-    }
-}
 
 pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<ModelUuid, DemoCsdElement>) {
     fn walk(e: &DemoCsdElement, into: &mut HashMap<ModelUuid, DemoCsdElement>) -> DemoCsdElement {
@@ -617,14 +608,17 @@ impl FullTextSearchable for DemoCsdTransactor {
 
 // ---
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoCsdTransaction {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
 
+    #[full_text_searchable(skip)]
     pub kind: DemoTransactionKind,
     pub identifier: Arc<String>,
     pub name: Arc<String>,
+    #[full_text_searchable(skip)]
     pub multiple: bool,
 
     pub comment: Arc<String>,
@@ -666,20 +660,6 @@ impl Entity for DemoCsdTransaction {
 impl Model for DemoCsdTransaction {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for DemoCsdTransaction {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.identifier,
-                &self.name,
-                &self.comment,
-            ],
-        );
     }
 }
 

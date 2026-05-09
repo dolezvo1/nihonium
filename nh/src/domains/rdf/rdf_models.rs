@@ -28,9 +28,10 @@ impl<'a> RdfCollector<'a> {
     }
 }
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = RdfElement, default_passthrough = "none")]
+#[full_text_searchable(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum RdfElement {
     #[container_model(passthrough = "eref")]
@@ -113,16 +114,6 @@ impl VisitableElement for RdfElement {
     }
 }
 
-impl FullTextSearchable for RdfElement {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        match self {
-            RdfElement::RdfGraph(inner) => inner.read().full_text_search(acc),
-            RdfElement::RdfLiteral(inner) => inner.read().full_text_search(acc),
-            RdfElement::RdfNode(inner) => inner.read().full_text_search(acc),
-            RdfElement::RdfPredicate(inner) => inner.read().full_text_search(acc),
-        }
-    }
-}
 
 pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid, RdfElement>) {
     fn walk(e: &RdfElement, into: &mut HashMap<ModelUuid, RdfElement>) -> RdfElement {
@@ -611,9 +602,10 @@ impl FullTextSearchable for RdfGraph {
 }
 
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct RdfLiteral {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub content: Arc<String>,
     pub datatype: Arc<String>,
@@ -676,25 +668,11 @@ impl Model for RdfLiteral {
     }
 }
 
-impl FullTextSearchable for RdfLiteral {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.content,
-                &self.datatype,
-                &self.langtag,
-                &self.comment,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct RdfNode {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
 
@@ -735,27 +713,17 @@ impl Model for RdfNode {
     }
 }
 
-impl FullTextSearchable for RdfNode {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.iri,
-                &self.comment,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct RdfPredicate {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub iri: Arc<String>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub source: ERef<RdfNode>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: RdfTargettableElement,
 
@@ -797,18 +765,5 @@ impl Entity for RdfPredicate {
 impl Model for RdfPredicate {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for RdfPredicate {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.iri,
-                &self.comment,
-            ],
-        );
     }
 }

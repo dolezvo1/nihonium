@@ -2,9 +2,10 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use crate::common::{controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement}, entity::{Entity, EntityUuid}, eref::ERef, search::FullTextSearchable, uuid::ModelUuid};
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = UmlSequenceElement, default_passthrough = "none")]
+#[full_text_searchable(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlSequenceElement {
     #[container_model(passthrough = "eref")]
@@ -76,21 +77,6 @@ impl VisitableElement for UmlSequenceElement {
                 v.close_complex(self);
             },
             e => v.visit_simple(e),
-        }
-    }
-}
-
-impl FullTextSearchable for UmlSequenceElement {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        match self {
-            UmlSequenceElement::Diagram(inner) => inner.read().full_text_search(acc),
-            UmlSequenceElement::CombinedFragment(inner) => inner.read().full_text_search(acc),
-            UmlSequenceElement::CombinedFragmentSection(inner) => inner.read().full_text_search(acc),
-            UmlSequenceElement::Lifeline(inner) => inner.read().full_text_search(acc),
-            UmlSequenceElement::Message(inner) => inner.read().full_text_search(acc),
-            UmlSequenceElement::Ref(inner) => inner.read().full_text_search(acc),
-            UmlSequenceElement::Comment(inner) => inner.read().full_text_search(acc),
-            UmlSequenceElement::CommentLink(inner) => inner.read().full_text_search(acc),
         }
     }
 }
@@ -435,9 +421,10 @@ fn enumerate(e: &UmlSequenceElement, into: &mut HashSet<ModelUuid>) {
 }
 
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = UmlSequenceElement, default_passthrough = "none")]
+#[full_text_searchable(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlSequenceStandaloneElement {
     #[container_model(passthrough = "eref")]
@@ -450,15 +437,6 @@ impl UmlSequenceStandaloneElement {
         match self {
             UmlSequenceStandaloneElement::Diagram(inner) => inner.into(),
             UmlSequenceStandaloneElement::Comment(inner) => inner.into(),
-        }
-    }
-}
-
-impl FullTextSearchable for UmlSequenceStandaloneElement {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        match self {
-            UmlSequenceStandaloneElement::Diagram(inner) => inner.read().full_text_search(acc),
-            UmlSequenceStandaloneElement::Comment(inner) => inner.read().full_text_search(acc),
         }
     }
 }
@@ -846,9 +824,10 @@ impl FullTextSearchable for UmlSequenceDiagram {
 }
 
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlSequenceLifeline {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
 
     pub name: Arc<String>,
@@ -889,19 +868,6 @@ impl Entity for UmlSequenceLifeline {
 impl Model for UmlSequenceLifeline {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for UmlSequenceLifeline {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.stereotype,
-            ],
-        );
     }
 }
 
@@ -950,19 +916,25 @@ impl UmlSequenceMessageLifecycleKind {
     }
 }
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlSequenceMessage {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub state_invariant: Arc<String>,
 
+    #[full_text_searchable(skip)]
     pub synchronicity: UmlSequenceMessageSynchronicityKind,
+    #[full_text_searchable(skip)]
     pub lifecycle: UmlSequenceMessageLifecycleKind,
+    #[full_text_searchable(skip)]
     pub is_return: bool,
 
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub source: ERef<UmlSequenceLifeline>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: ERef<UmlSequenceLifeline>,
 
@@ -1019,18 +991,6 @@ impl Entity for UmlSequenceMessage {
 impl Model for UmlSequenceMessage {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for UmlSequenceMessage {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-            ],
-        );
     }
 }
 
@@ -1340,11 +1300,13 @@ impl FullTextSearchable for UmlSequenceCombinedFragmentSection {
 }
 
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlSequenceRef {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub text: Arc<String>,
+    #[full_text_searchable(skip)]
     pub horizontal_span: HashSet<ModelUuid>,
 }
 
@@ -1381,22 +1343,11 @@ impl Model for UmlSequenceRef {
     }
 }
 
-impl FullTextSearchable for UmlSequenceRef {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.text,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlSequenceComment {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub text: Arc<String>,
 }
@@ -1431,25 +1382,16 @@ impl Model for UmlSequenceComment {
     }
 }
 
-impl FullTextSearchable for UmlSequenceComment {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.text,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlSequenceCommentLink {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub source: ERef<UmlSequenceComment>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: UmlSequenceElement,
 }
@@ -1484,16 +1426,5 @@ impl Entity for UmlSequenceCommentLink {
 impl Model for UmlSequenceCommentLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for UmlSequenceCommentLink {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-            ],
-        );
     }
 }

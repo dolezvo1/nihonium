@@ -173,9 +173,10 @@ fn enumerate(e: &NetworkElement, into: &mut HashSet<ModelUuid>) {
 }
 
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = NetworkElement, default_passthrough = "none")]
+#[full_text_searchable(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum NetworkElement {
     #[container_model(passthrough = "eref")]
@@ -199,18 +200,6 @@ impl VisitableElement for NetworkElement {
                 v.close_complex(self);
             },
             e => v.visit_simple(e),
-        }
-    }
-}
-
-impl FullTextSearchable for NetworkElement {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        match self {
-            NetworkElement::Container(inner) => inner.read().full_text_search(acc),
-            NetworkElement::Node(inner) => inner.read().full_text_search(acc),
-            NetworkElement::User(inner) => inner.read().full_text_search(acc),
-            NetworkElement::Association(inner) => inner.read().full_text_search(acc),
-            NetworkElement::Comment(inner) => inner.read().full_text_search(acc),
         }
     }
 }
@@ -561,11 +550,13 @@ impl NetworkNodeKind {
     }
 }
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct NetworkNode {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
+    #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: NetworkNodeKind,
 
     pub comment: Arc<String>,
@@ -603,20 +594,6 @@ impl Entity for NetworkNode {
 impl Model for NetworkNode {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for NetworkNode {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.kind.as_str(),
-                &self.comment,
-            ],
-        );
     }
 }
 
@@ -661,11 +638,13 @@ impl NetworkUserKind {
     }
 }
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct NetworkUser {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
+    #[full_text_searchable(search_kind = "as_str_ref")]
     pub kind: NetworkUserKind,
 
     pub comment: Arc<String>,
@@ -703,20 +682,6 @@ impl Entity for NetworkUser {
 impl Model for NetworkUser {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for NetworkUser {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.kind.as_str(),
-                &self.comment,
-            ],
-        );
     }
 }
 
@@ -759,20 +724,26 @@ impl NetworkAssociationArrowheadType {
     }
 }
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct NetworkAssociation {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
 
+    #[full_text_searchable(skip)]
     pub line_type: NetworkAssociationLineType,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub source: NetworkElement,
+    #[full_text_searchable(skip)]
     pub source_arrowhead: NetworkAssociationArrowheadType,
     pub source_label_multiplicity: Arc<String>,
     pub source_label_role: Arc<String>,
     pub source_label_reading: Arc<String>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: NetworkElement,
+    #[full_text_searchable(skip)]
     pub target_arrowhead: NetworkAssociationArrowheadType,
     pub target_label_multiplicity: Arc<String>,
     pub target_label_role: Arc<String>,
@@ -844,22 +815,11 @@ impl Model for NetworkAssociation {
     }
 }
 
-impl FullTextSearchable for NetworkAssociation {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.comment,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct NetworkComment {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub text: Arc<String>,
 }
@@ -891,17 +851,5 @@ impl Entity for NetworkComment {
 impl Model for NetworkComment {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for NetworkComment {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.text,
-            ],
-        );
     }
 }

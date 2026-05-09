@@ -186,9 +186,10 @@ impl UmlClassCollector {
     }
 }
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = UmlClassElement, default_passthrough = "none")]
+#[full_text_searchable(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlClassElement {
     #[container_model(passthrough = "eref")]
@@ -286,24 +287,6 @@ impl VisitableElement for UmlClassElement {
     }
 }
 
-impl FullTextSearchable for UmlClassElement {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        match self {
-            UmlClassElement::UmlClassPackage(inner) => inner.read().full_text_search(acc),
-            UmlClassElement::UmlClassInstance(inner) => inner.read().full_text_search(acc),
-            UmlClassElement::UmlClass(inner) => inner.read().full_text_search(acc),
-            UmlClassElement::UmlClassProperty(inner) => inner.read().full_text_search(acc),
-            UmlClassElement::UmlClassOperation(inner) => inner.read().full_text_search(acc),
-            UmlClassElement::UmlUseCase(inner) => inner.read().full_text_search(acc),
-            UmlClassElement::UmlClassGeneralization(inner) => inner.read().full_text_search(acc),
-            UmlClassElement::UmlClassDependency(inner) => inner.read().full_text_search(acc),
-            UmlClassElement::UmlClassAssociation(inner) => inner.read().full_text_search(acc),
-            UmlClassElement::UmlUseCaseGeneralization(inner) => inner.read().full_text_search(acc),
-            UmlClassElement::UmlClassComment(inner) => inner.read().full_text_search(acc),
-            UmlClassElement::UmlClassCommentLink(inner) => inner.read().full_text_search(acc),
-        }
-    }
-}
 
 pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap<ModelUuid, UmlClassElement>) {
     fn walk(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClassElement>) -> UmlClassElement {
@@ -1007,9 +990,10 @@ impl FullTextSearchable for UmlClassPackage {
 }
 
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassInstance {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub instance_name: Arc<String>,
     pub instance_type: Arc<String>,
@@ -1060,22 +1044,6 @@ impl Model for UmlClassInstance {
     }
 }
 
-impl FullTextSearchable for UmlClassInstance {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.instance_name,
-                &self.instance_type,
-                &self.stereotype,
-                &self.instance_slots,
-                &self.comment,
-            ],
-        );
-    }
-}
-
 
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UmlClassVisibilityKind {
@@ -1112,9 +1080,10 @@ pub enum UmlClassMemberInheritanceKind {
     Redefines(String),
 }
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassProperty {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub value_type: Arc<String>,
@@ -1122,13 +1091,21 @@ pub struct UmlClassProperty {
     pub default_value: Arc<String>,
     pub stereotype: Arc<String>,
 
+    #[full_text_searchable(skip)]
     pub visibility: UFOption<UmlClassVisibilityKind>,
+    #[full_text_searchable(skip)]
     pub inherited: UmlClassMemberInheritanceKind,
+    #[full_text_searchable(skip)]
     pub is_static: bool,
+    #[full_text_searchable(skip)]
     pub is_derived: bool,
+    #[full_text_searchable(skip)]
     pub is_read_only: bool,
+    #[full_text_searchable(skip)]
     pub is_ordered: bool,
+    #[full_text_searchable(skip)]
     pub is_unique: bool,
+    #[full_text_searchable(skip)]
     pub is_id: bool,
 }
 
@@ -1193,38 +1170,30 @@ impl Model for UmlClassProperty {
     }
 }
 
-impl FullTextSearchable for UmlClassProperty {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.value_type,
-                &self.multiplicity,
-                &self.default_value,
-                &self.stereotype,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassOperation {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub parameters: Arc<String>,
     pub return_type: Arc<String>,
     pub stereotype: Arc<String>,
 
+    #[full_text_searchable(skip)]
     pub visibility: UFOption<UmlClassVisibilityKind>,
+    #[full_text_searchable(skip)]
     pub inherited: UmlClassMemberInheritanceKind,
+    #[full_text_searchable(skip)]
     pub is_static: bool,
+    #[full_text_searchable(skip)]
     pub is_abstract: bool,
+    #[full_text_searchable(skip)]
     pub is_query: bool,
+    #[full_text_searchable(skip)]
     pub is_ordered: bool,
+    #[full_text_searchable(skip)]
     pub is_unique: bool,
 }
 
@@ -1281,21 +1250,6 @@ impl Entity for UmlClassOperation {
 impl Model for UmlClassOperation {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for UmlClassOperation {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.parameters,
-                &self.return_type,
-                &self.stereotype,
-            ],
-        );
     }
 }
 
@@ -1458,12 +1412,14 @@ impl FullTextSearchable for UmlClass {
 }
 
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlUseCase {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub stereotype: Arc<String>,
+    #[full_text_searchable(skip)]
     pub is_abstract: bool,
 
     pub comment: Arc<String>,
@@ -1507,32 +1463,23 @@ impl Model for UmlUseCase {
     }
 }
 
-impl FullTextSearchable for UmlUseCase {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.stereotype,
-                &self.comment,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassGeneralization {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub sources: Vec<ERef<UmlClass>>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub targets: Vec<ERef<UmlClass>>,
 
     pub set_name: Arc<String>,
+    #[full_text_searchable(skip)]
     pub set_is_covering: bool,
+    #[full_text_searchable(skip)]
     pub set_is_disjoint: bool,
 
     pub comment: Arc<String>,
@@ -1632,30 +1579,21 @@ impl ContainerModel for UmlClassGeneralization {
     }
 }
 
-impl FullTextSearchable for UmlClassGeneralization {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.set_name,
-                &self.comment,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassDependency {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub stereotype: Arc<String>,
     pub name: Arc<String>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub source: UmlClassAssociable,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: UmlClassAssociable,
+    #[full_text_searchable(skip)]
     pub target_arrow_open: bool,
 
     pub comment: Arc<String>,
@@ -1708,20 +1646,6 @@ impl Model for UmlClassDependency {
     }
 }
 
-impl FullTextSearchable for UmlClassDependency {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.stereotype,
-                &self.name,
-                &self.comment,
-            ],
-        );
-    }
-}
-
 
 #[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum UmlClassAssociationNavigability {
@@ -1759,25 +1683,32 @@ impl UmlClassAssociationAggregation {
     }
 }
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassAssociation {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub stereotype: Arc<String>,
     pub name: Arc<String>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub source: UmlClassAssociable,
     pub source_label_multiplicity: Arc<String>,
     pub source_label_role: Arc<String>,
     pub source_label_reading: Arc<String>,
+    #[full_text_searchable(skip)]
     pub source_navigability: UmlClassAssociationNavigability,
+    #[full_text_searchable(skip)]
     pub source_aggregation: UmlClassAssociationAggregation,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: UmlClassAssociable,
     pub target_label_multiplicity: Arc<String>,
     pub target_label_role: Arc<String>,
     pub target_label_reading: Arc<String>,
+    #[full_text_searchable(skip)]
     pub target_navigability: UmlClassAssociationNavigability,
+    #[full_text_searchable(skip)]
     pub target_aggregation: UmlClassAssociationAggregation,
 
     pub comment: Arc<String>,
@@ -1847,32 +1778,23 @@ impl Model for UmlClassAssociation {
     }
 }
 
-impl FullTextSearchable for UmlClassAssociation {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.stereotype,
-                &self.name,
-                &self.comment,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlUseCaseGeneralization {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub sources: Vec<ERef<UmlUseCase>>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub targets: Vec<ERef<UmlUseCase>>,
 
     pub set_name: Arc<String>,
+    #[full_text_searchable(skip)]
     pub set_is_covering: bool,
+    #[full_text_searchable(skip)]
     pub set_is_disjoint: bool,
 
     pub comment: Arc<String>,
@@ -1972,23 +1894,11 @@ impl ContainerModel for UmlUseCaseGeneralization {
     }
 }
 
-impl FullTextSearchable for UmlUseCaseGeneralization {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.set_name,
-                &self.comment,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassComment {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub text: Arc<String>,
 }
@@ -2017,25 +1927,16 @@ impl Model for UmlClassComment {
     }
 }
 
-impl FullTextSearchable for UmlClassComment {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.text,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassCommentLink {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub source: ERef<UmlClassComment>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: UmlClassElement,
 }
@@ -2063,16 +1964,5 @@ impl Entity for UmlClassCommentLink {
 impl Model for UmlClassCommentLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for UmlClassCommentLink {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-            ],
-        );
     }
 }

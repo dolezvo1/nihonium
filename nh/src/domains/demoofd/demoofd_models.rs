@@ -9,9 +9,10 @@ use crate::{common::{
 }, domains::demo::DemoTransactionKind};
 
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = DemoOfdElement, default_passthrough = "none")]
+#[full_text_searchable(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum DemoOfdElement {
     #[container_model(passthrough = "eref")]
@@ -61,21 +62,6 @@ impl VisitableElement for DemoOfdElement {
                 }
             }
             _ => v.visit_simple(self),
-        }
-    }
-}
-
-impl FullTextSearchable for DemoOfdElement {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        match self {
-            DemoOfdElement::DemoOfdPackage(inner) => inner.read().full_text_search(acc),
-            DemoOfdElement::DemoOfdEntityType(inner) => inner.read().full_text_search(acc),
-            DemoOfdElement::DemoOfdEventType(inner) => inner.read().full_text_search(acc),
-            DemoOfdElement::DemoOfdPropertyType(inner) => inner.read().full_text_search(acc),
-            DemoOfdElement::DemoOfdSpecialization(inner) => inner.read().full_text_search(acc),
-            DemoOfdElement::DemoOfdAggregation(inner) => inner.read().full_text_search(acc),
-            DemoOfdElement::DemoOfdPrecedence(inner) => inner.read().full_text_search(acc),
-            DemoOfdElement::DemoOfdExclusion(inner) => inner.read().full_text_search(acc),
         }
     }
 }
@@ -618,12 +604,14 @@ impl FullTextSearchable for DemoOfdPackage {
 
 
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoOfdEntityType {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     pub properties: Arc<String>,
+    #[full_text_searchable(skip)]
     pub internal: bool,
 
     pub comment: Arc<String>,
@@ -664,20 +652,6 @@ impl Entity for DemoOfdEntityType {
 impl Model for DemoOfdEntityType {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for DemoOfdEntityType {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.properties,
-                &self.comment,
-            ],
-        );
     }
 }
 
@@ -805,14 +779,17 @@ impl FullTextSearchable for DemoOfdEventType {
 }
 
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoOfdPropertyType {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub domain_element: ERef<DemoOfdEntityType>,
     pub domain_multiplicity: Arc<String>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub range_element: ERef<DemoOfdEntityType>,
     pub range_multiplicity: Arc<String>,
@@ -865,28 +842,16 @@ impl Model for DemoOfdPropertyType {
     }
 }
 
-impl FullTextSearchable for DemoOfdPropertyType {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.domain_multiplicity,
-                &self.range_multiplicity,
-                &self.comment,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoOfdSpecialization {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub domain_element: ERef<DemoOfdEntityType>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub range_element: ERef<DemoOfdEntityType>,
 
@@ -931,27 +896,19 @@ impl Model for DemoOfdSpecialization {
     }
 }
 
-impl FullTextSearchable for DemoOfdSpecialization {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.comment,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoOfdAggregation {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub domain_elements: Vec<ERef<DemoOfdEntityType>>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub range_element: ERef<DemoOfdEntityType>,
+    #[full_text_searchable(skip)]
     pub is_generalization: bool,
 
     pub comment: Arc<String>,
@@ -1046,25 +1003,16 @@ impl ContainerModel for DemoOfdAggregation {
     }
 }
 
-impl FullTextSearchable for DemoOfdAggregation {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.comment,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoOfdPrecedence {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub domain_element: ERef<DemoOfdEventType>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub range_element: ERef<DemoOfdEventType>,
 
@@ -1109,25 +1057,16 @@ impl Model for DemoOfdPrecedence {
     }
 }
 
-impl FullTextSearchable for DemoOfdPrecedence {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.comment,
-            ],
-        );
-    }
-}
 
-
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoOfdExclusion {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub domain_element: DemoOfdType,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub range_element: DemoOfdType,
 
@@ -1169,17 +1108,5 @@ impl Entity for DemoOfdExclusion {
 impl Model for DemoOfdExclusion {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for DemoOfdExclusion {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.comment,
-            ],
-        );
     }
 }

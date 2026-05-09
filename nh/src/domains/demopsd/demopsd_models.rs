@@ -6,9 +6,10 @@ use crate::{common::{
 }, domains::demo::DemoTransactionKind};
 
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = DemoPsdElement, default_passthrough = "none")]
+#[full_text_searchable(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum DemoPsdElement {
     #[container_model(passthrough = "eref")]
@@ -20,9 +21,10 @@ pub enum DemoPsdElement {
     DemoPsdLink(ERef<DemoPsdLink>),
 }
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::NHContextSerDeTag)]
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = DemoPsdElement, default_passthrough = "none")]
+#[full_text_searchable(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum DemoPsdState {
     Fact(ERef<DemoPsdFact>),
@@ -75,27 +77,6 @@ impl VisitableElement for DemoPsdElement {
                 v.close_complex(self);
             }
             e => v.visit_simple(e),
-        }
-    }
-}
-
-impl FullTextSearchable for DemoPsdElement {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        match self {
-            DemoPsdElement::DemoPsdPackage(inner) => inner.read().full_text_search(acc),
-            DemoPsdElement::DemoPsdTransaction(inner) => inner.read().full_text_search(acc),
-            DemoPsdElement::DemoPsdFact(inner) => inner.read().full_text_search(acc),
-            DemoPsdElement::DemoPsdAct(inner) => inner.read().full_text_search(acc),
-            DemoPsdElement::DemoPsdLink(inner) => inner.read().full_text_search(acc),
-        }
-    }
-}
-
-impl FullTextSearchable for DemoPsdState {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        match self {
-            DemoPsdState::Fact(inner) => inner.read().full_text_search(acc),
-            DemoPsdState::Act(inner) => inner.read().full_text_search(acc),
         }
     }
 }
@@ -773,11 +754,13 @@ impl FullTextSearchable for DemoPsdTransaction {
 
 
 // "Disc"
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoPsdFact {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub identifier: Arc<String>,
+    #[full_text_searchable(skip)]
     pub internal: bool,
     pub comment: Arc<String>,
 }
@@ -820,26 +803,15 @@ impl Model for DemoPsdFact {
     }
 }
 
-impl FullTextSearchable for DemoPsdFact {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.identifier,
-                &self.comment,
-            ],
-        );
-    }
-}
-
 
 // "Box"
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoPsdAct {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
     pub identifier: Arc<String>,
+    #[full_text_searchable(skip)]
     pub internal: bool,
     pub comment: Arc<String>,
 }
@@ -882,19 +854,6 @@ impl Model for DemoPsdAct {
     }
 }
 
-impl FullTextSearchable for DemoPsdAct {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.identifier,
-                &self.comment,
-            ],
-        );
-    }
-}
-
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DemoPsdLinkType {
@@ -921,14 +880,18 @@ impl DemoPsdLinkType {
     }
 }
 
-#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct DemoPsdLink {
+    #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
 
+    #[full_text_searchable(skip)]
     pub link_type: DemoPsdLinkType,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub source: ERef<DemoPsdFact>,
+    #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
     pub target: ERef<DemoPsdAct>,
     pub multiplicity: Arc<String>,
@@ -975,18 +938,5 @@ impl Entity for DemoPsdLink {
 impl Model for DemoPsdLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
-    }
-}
-
-impl FullTextSearchable for DemoPsdLink {
-    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
-        acc.check_element(
-            *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.multiplicity,
-                &self.comment,
-            ],
-        );
     }
 }
