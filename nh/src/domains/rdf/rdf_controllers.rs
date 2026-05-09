@@ -882,7 +882,7 @@ impl From<RdfElement> for RdfIriBasedSetupModal {
 impl CustomModal for RdfIriBasedSetupModal {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -897,7 +897,7 @@ impl CustomModal for RdfIriBasedSetupModal {
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let iri = Arc::new(self.iri_buffer.clone());
                 match &self.model {
                     RdfElement::RdfGraph(inner) => inner.write().iri = iri,
@@ -907,7 +907,7 @@ impl CustomModal for RdfIriBasedSetupModal {
                 }
                 result = CustomModalResult::CloseModified(*self.model.uuid());
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                 result = CustomModalResult::CloseUnmodified;
             }
         });
@@ -1550,7 +1550,7 @@ impl From<&ERef<RdfLiteral>> for RdfLiteralSetupModal {
 impl CustomModal for RdfLiteralSetupModal {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -1569,14 +1569,14 @@ impl CustomModal for RdfLiteralSetupModal {
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
                 m.content = Arc::new(self.content_buffer.clone());
                 m.datatype = Arc::new(self.datatype_buffer.clone());
                 m.langtag = Arc::new(self.langtag_buffer.clone());
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                 result = CustomModalResult::CloseUnmodified;
             }
         });

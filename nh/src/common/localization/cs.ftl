@@ -1,6 +1,7 @@
 
 nh-generic-yes = Ano
 nh-generic-no = Ne
+nh-generic-ok = Budiž
 nh-generic-cancel = Zrušit
 nh-generic-dontaskagain = Znovu se neptej
 nh-generic-unsavedchanges-warning = Současný projekt má neuložené změny.

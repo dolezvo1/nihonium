@@ -1329,7 +1329,7 @@ impl From<&ERef<DemoPsdTransaction>> for DemoPsdTransactionSetupModal {
 impl CustomModal for DemoPsdTransactionSetupModal {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -1353,14 +1353,14 @@ impl CustomModal for DemoPsdTransactionSetupModal {
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
                 m.kind = self.kind_buffer;
                 m.identifier = Arc::new(self.identifier_buffer.clone());
                 m.name = Arc::new(self.name_buffer.clone());
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                 result = CustomModalResult::CloseUnmodified;
             }
         });

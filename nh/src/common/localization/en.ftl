@@ -1,6 +1,7 @@
 
 nh-generic-yes = Yes
 nh-generic-no = No
+nh-generic-ok = OK
 nh-generic-cancel = Cancel
 nh-generic-dontaskagain = Don't ask again
 nh-generic-unsavedchanges-warning = The current project has unsaved changes.

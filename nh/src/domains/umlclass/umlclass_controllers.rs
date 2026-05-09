@@ -2070,7 +2070,7 @@ impl<SC: StereotypeController> From<&ERef<UmlClassInstance>> for UmlClassInstanc
 impl<SC: StereotypeController> CustomModal for UmlClassInstanceSetupModal<SC> {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -2089,14 +2089,14 @@ impl<SC: StereotypeController> CustomModal for UmlClassInstanceSetupModal<SC> {
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
                 m.instance_name = Arc::new(self.name_buffer.clone());
                 m.instance_type = Arc::new(self.type_buffer.clone());
                 m.stereotype = self.stereotype_controller.get();
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                 result = CustomModalResult::CloseUnmodified;
             }
         });
@@ -2743,7 +2743,7 @@ impl<SC: StereotypeController> From<&ERef<UmlClassProperty>> for UmlClassPropert
 impl<SC: StereotypeController> CustomModal for UmlClassPropertySetupModal<SC> {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -2789,7 +2789,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassPropertySetupModal<SC> {
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
 
                 m.stereotype = self.stereotype_controller.get();
@@ -2808,7 +2808,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassPropertySetupModal<SC> {
 
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                 result = CustomModalResult::CloseUnmodified;
             }
         });
@@ -3463,7 +3463,7 @@ impl<SC: StereotypeController> From<&ERef<UmlClassOperation>> for UmlClassOperat
 impl<SC: StereotypeController> CustomModal for UmlClassOperationSetupModal<SC> {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -3506,7 +3506,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassOperationSetupModal<SC> {
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
                 m.stereotype = self.stereotype_controller.get();
                 m.name = Arc::new(self.name_buffer.clone());
@@ -3522,7 +3522,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassOperationSetupModal<SC> {
 
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                 result = CustomModalResult::CloseUnmodified;
             }
         });
@@ -4127,7 +4127,7 @@ impl<SC: StereotypeController> From<&ERef<UmlClass>> for UmlClassSetupModal<SC> 
 impl<SC: StereotypeController> CustomModal for UmlClassSetupModal<SC> {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -4144,13 +4144,13 @@ impl<SC: StereotypeController> CustomModal for UmlClassSetupModal<SC> {
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
                 m.stereotype = self.stereotype_controller.get();
                 m.name = Arc::new(self.name_buffer.clone());
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                 result = CustomModalResult::CloseUnmodified;
             }
         });

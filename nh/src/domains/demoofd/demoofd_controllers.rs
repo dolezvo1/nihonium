@@ -1535,7 +1535,7 @@ impl From<&ERef<DemoOfdEntityType>> for DemoOfdEntityTypeSetupModal {
 impl CustomModal for DemoOfdEntityTypeSetupModal {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -1552,13 +1552,13 @@ impl CustomModal for DemoOfdEntityTypeSetupModal {
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
                 m.name = Arc::new(self.name_buffer.clone());
                 m.internal = self.internal_buffer;
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                 result = CustomModalResult::CloseUnmodified;
             }
         });
@@ -2187,7 +2187,7 @@ impl From<&ERef<DemoOfdEventType>> for DemoOfdEventTypeSetupModal {
 impl CustomModal for DemoOfdEventTypeSetupModal {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -2212,14 +2212,14 @@ impl CustomModal for DemoOfdEventTypeSetupModal {
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
                 m.kind = self.kind_buffer;
                 m.identifier = Arc::new(self.identifier_buffer.clone());
                 m.name = Arc::new(self.name_buffer.clone());
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                 result = CustomModalResult::CloseUnmodified;
             }
         });

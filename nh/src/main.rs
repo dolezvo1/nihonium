@@ -210,13 +210,13 @@ impl ErrorModal {
 impl CustomModal for ErrorModal {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
         ui.label(&self.message);
 
-        if ui.button("Ok").clicked() {
+        if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
             CustomModalResult::CloseUnmodified
         } else {
             CustomModalResult::KeepOpen
@@ -820,7 +820,7 @@ impl NHContext {
                     impl CustomModal for ViewRenameModal {
                         fn show(
                             &mut self,
-                            _gdc: &mut GlobalDrawingContext,
+                            gdc: &mut GlobalDrawingContext,
                             ui: &mut egui::Ui,
                             commands: &mut Vec<ProjectCommand>,
                         ) -> CustomModalResult {
@@ -833,11 +833,11 @@ impl NHContext {
 
                             let mut result = CustomModalResult::KeepOpen;
                             ui.horizontal(|ui| {
-                                if ui.button("Ok").clicked() {
+                                if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                                     commands.push(ProjectCommand::RenameElement(self.view_uuid, self.name_buffer.clone()));
                                     result = CustomModalResult::CloseUnmodified;
                                 }
-                                if ui.button("Cancel").clicked() {
+                                if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                                     result = CustomModalResult::CloseUnmodified;
                                 }
                             });
@@ -2586,7 +2586,7 @@ impl eframe::App for NHApp {
                 
                 // Confirm export or cancel
                 ui.horizontal(|ui| {
-                    if ui.button("OK").clicked() {
+                    if ui.button(self.context.drawing_context.translate_0("nh-generic-ok")).clicked() {
                         let mut measuring_canvas =
                             MeasuringCanvas::new(ui.painter());
                         controller.draw_in(v, &self.context.drawing_context, s, &mut measuring_canvas, None);

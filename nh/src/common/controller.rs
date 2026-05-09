@@ -3062,7 +3062,7 @@ impl<
                                 MGlobalColorType::Global => !self.global_color.is_nil(),
                                 _ => true,
                             };
-                            if ui.add_enabled(is_valid, egui::Button::new("Ok")).clicked() {
+                            if ui.add_enabled(is_valid, egui::Button::new(gdc.translate_0("nh-generic-ok"))).clicked() {
                                 let c = match self.selected_color_type {
                                     MGlobalColorType::None => MGlobalColor::None,
                                     MGlobalColorType::Local => MGlobalColor::Local(self.local_color),

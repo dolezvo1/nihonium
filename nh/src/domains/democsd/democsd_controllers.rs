@@ -1185,7 +1185,7 @@ impl From<&ERef<DemoCsdTransactor>> for DemoCsdTransactorSetupModal {
 impl CustomModal for DemoCsdTransactorSetupModal {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -1201,13 +1201,13 @@ impl CustomModal for DemoCsdTransactorSetupModal {
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
                 m.identifier = Arc::new(self.identifier_buffer.clone());
                 m.name = Arc::new(self.name_buffer.clone());
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                 result = CustomModalResult::CloseUnmodified;
             }
         });
@@ -2031,7 +2031,7 @@ impl From<&ERef<DemoCsdTransaction>> for DemoCsdTransactionSetupModal {
 impl CustomModal for DemoCsdTransactionSetupModal {
     fn show(
         &mut self,
-        _gdc: &mut GlobalDrawingContext,
+        gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
@@ -2048,14 +2048,14 @@ impl CustomModal for DemoCsdTransactionSetupModal {
 
         let mut result = CustomModalResult::KeepOpen;
         ui.horizontal(|ui| {
-            if ui.button("Ok").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
                 m.identifier = Arc::new(self.identifier_buffer.clone());
                 m.name = Arc::new(self.name_buffer.clone());
                 m.multiple = self.multiple_buffer;
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
-            if ui.button("Cancel").clicked() {
+            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
                 result = CustomModalResult::CloseUnmodified;
             }
         });
