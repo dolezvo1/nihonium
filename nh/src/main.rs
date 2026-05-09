@@ -870,6 +870,7 @@ impl NHContext {
     }
 
     fn show_search(&mut self, ui: &mut egui::Ui) {
+        //compile_error!("TODO: Translate");
         if ui.add_sized([ui.available_width(), 20.0], egui::TextEdit::singleline(&mut self.search_query)).changed() {
             if self.search_query.is_empty() {
                 self.search_results.clear();
@@ -925,10 +926,10 @@ impl NHContext {
 
                                 if let Some(lfd) = &self.last_focused_diagram
                                     && diagrams.contains(lfd)
-                                    && ui.button("Jump to in current diagram").clicked() {
+                                    && ui.button(self.drawing_context.translate_0("nh-tab-search-jumptoincurrent")).clicked() {
                                     focus_element_in!(lfd, e);
                                 }
-                                ui.menu_button("Jump to in", |ui| {
+                                ui.menu_button(self.drawing_context.translate_0("nh-tab-search-jumptoin"), |ui| {
                                     ui.set_min_width(MIN_MENU_WIDTH);
 
                                     for d in diagrams {
@@ -937,7 +938,7 @@ impl NHContext {
                                         }
                                     }
                                 });
-                                ui.menu_button("Create view in", |ui| {
+                                ui.menu_button(self.drawing_context.translate_0("nh-tab-search-createviewin"), |ui| {
                                     ui.set_min_width(MIN_MENU_WIDTH);
 
                                     for d in diagrams {
@@ -2419,8 +2420,20 @@ impl eframe::App for NHApp {
 
                     c2.show_menubar_diagram_options(&v, &self.context.drawing_context, ui, &mut commands);
 
+                    let export_label = {
+                        let name = c2.view_name(&v);
+                        let b = &self.context.drawing_context.fluent_bundle;
+                        let mut args = fluent_bundle::FluentArgs::new();
+                        args.set("name", &*name);
+                        b.format_pattern(
+                            b.get_message("nh-diagram-exportto").unwrap().value().unwrap(),
+                            Some(&args),
+                            &mut vec![],
+                        )
+                    };
+
                     ui.menu_button(
-                        format!("Export Diagram `{}` to", c2.view_name(&v)),
+                        export_label,
                         |ui| {
                             ui.set_min_width(MIN_MENU_WIDTH);
 
@@ -2503,7 +2516,7 @@ impl eframe::App for NHApp {
             let ctype = c.read().controller_type();
             let Some(s) = self.context.diagram_settings.get(ctype) else { return; };
             let mut controller = c.write();
-            
+
             egui::containers::Window::new("SVG export options").show(ui.ctx(), |ui| {
                 // Change options
                 ui.checkbox(background, "Solid background");

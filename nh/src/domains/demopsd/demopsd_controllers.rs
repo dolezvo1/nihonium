@@ -501,7 +501,7 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
     ) -> PropertiesStatus<DemoPsdDomain> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &drawing_context.global_colors,
+            drawing_context,
             ui,
             &mut self.background_color,
         ) {

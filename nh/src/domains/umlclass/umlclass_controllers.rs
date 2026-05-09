@@ -589,7 +589,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &drawing_context.global_colors,
+            drawing_context,
             ui,
             &mut self.background_color,
         ) {
@@ -1890,7 +1890,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
     ) -> PropertiesStatus<UmlClassDomain<P>> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &context.global_colors,
+            context,
             ui,
             &mut self.background_color,
         ) {
@@ -2248,7 +2248,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &gdc.global_colors,
+            gdc,
             ui,
             &mut self.background_color,
         ) {
@@ -4500,7 +4500,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &gdc.global_colors,
+            gdc,
             ui,
             &mut self.background_color,
         ) {
@@ -5511,7 +5511,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
 
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &gdc.global_colors,
+            gdc,
             ui,
             &mut self.background_color,
         ) {
@@ -7437,7 +7437,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
 
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &gdc.global_colors,
+            gdc,
             ui,
             &mut self.background_color,
         ) {

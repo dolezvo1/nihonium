@@ -88,12 +88,26 @@ nh-tab-modelhierarchy-deleteview = Delete view
 nh-tab-modelhierarchy-deletemodel = Delete model
 
 nh-tab-search = Search
+nh-tab-search-jumptoincurrent = Jump to in current diagram
+nh-tab-search-jumptoin = Jump to in
+nh-tab-search-createviewin = Create view in
+
 nh-tab-toolbar = Toolbar
+nh-tab-toolbar-selectmove = Select/Move
+
 nh-tab-properties = Properties
 nh-tab-diagram = Diagram
 nh-tab-document = Document
 nh-tab-customtab = Custom Tab
 nh-tab-outline = Outline
+
+nh-modal-colorpicker = Color Picker
+nh-modal-colorpicker-nooveridebrackets = [no override]
+nh-modal-colorpicker-notfoundbrackets = [not found]
+nh-modal-colorpicker-nooverride = No override
+nh-modal-colorpicker-localcolor = Local color
+nh-modal-colorpicker-globalcolor = Global color
+nh-modal-colorpicker-addnewglobal = Add new
 
 
 pluralize-element = { $count ->

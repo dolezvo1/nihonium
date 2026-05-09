@@ -355,7 +355,7 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
     ) -> PropertiesStatus<DemoCsdDomain> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &drawing_context.global_colors,
+            drawing_context,
             ui,
             &mut self.background_color,
         ) {

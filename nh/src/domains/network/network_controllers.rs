@@ -317,7 +317,7 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
     ) -> PropertiesStatus<NetworkDomain> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &drawing_context.global_colors,
+            drawing_context,
             ui,
             &mut self.background_color,
         ) {
@@ -964,7 +964,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
     ) -> PropertiesStatus<NetworkDomain> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &context.global_colors,
+            context,
             ui,
             &mut self.background_color,
         ) {
@@ -1894,7 +1894,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
 
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &gdc.global_colors,
+            gdc,
             ui,
             &mut self.background_color,
         ) {
@@ -2855,7 +2855,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
 
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &gdc.global_colors,
+            gdc,
             ui,
             &mut self.background_color,
         ) {

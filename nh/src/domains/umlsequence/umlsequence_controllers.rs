@@ -446,7 +446,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
     ) -> PropertiesStatus<UmlSequenceDomain> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &drawing_context.global_colors,
+            drawing_context,
             ui,
             &mut self.background_color,
         ) {
@@ -4067,7 +4067,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
 
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &drawing_context.global_colors,
+            drawing_context,
             ui,
             &mut self.background_color,
         ) {
@@ -5255,7 +5255,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
 
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &drawing_context.global_colors,
+            drawing_context,
             ui,
             &mut self.background_color,
         ) {

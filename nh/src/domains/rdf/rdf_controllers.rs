@@ -302,7 +302,7 @@ impl DiagramAdapter<RdfDomain> for RdfDiagramAdapter {
     ) -> PropertiesStatus<RdfDomain> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &drawing_context.global_colors,
+            drawing_context,
             ui,
             &mut self.background_color,
         ) {
@@ -1012,7 +1012,7 @@ impl PackageAdapter<RdfDomain> for RdfGraphAdapter {
     ) -> PropertiesStatus<RdfDomain> {
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
-            &context.global_colors,
+            context,
             ui,
             &mut self.background_color,
         ) {

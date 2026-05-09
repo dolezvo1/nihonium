@@ -88,12 +88,26 @@ nh-tab-modelhierarchy-deleteview = Odstranit pohled
 nh-tab-modelhierarchy-deletemodel = Odstranit model
 
 nh-tab-search = Vyhledávání
+nh-tab-search-jumptoincurrent = Skočit v současném diagramu
+nh-tab-search-jumptoin = Skočit v
+nh-tab-search-createviewin = Vytvořit pohled v
+
 nh-tab-toolbar = Nástroje
+nh-tab-toolbar-selectmove = Vybrat/Posunout
+
 nh-tab-properties = Vlastnosti
 nh-tab-diagram = Diagram
 nh-tab-document = Dokument
 nh-tab-customtab = Zvláštní karta
 nh-tab-outline = Obrys
+
+nh-modal-colorpicker = Výběr barvy
+nh-modal-colorpicker-nooveridebrackets = [beze změn]
+nh-modal-colorpicker-notfoundbrackets = [nenalezeno]
+nh-modal-colorpicker-nooverride = Beze změn
+nh-modal-colorpicker-localcolor = Lokální barva
+nh-modal-colorpicker-globalcolor = Globální barva
+nh-modal-colorpicker-addnewglobal = Přidat novou
 
 
 pluralize-element = { $count ->
