@@ -3335,8 +3335,8 @@ impl<
                 if let Some((v, _)) = view_uuid.and_then(|e| self.temporaries.flattened_views.get(&e)) {
                     let bb = v.bounding_box();
                     if force || !self.temporaries.last_interactive_canvas_rect.contains_rect(bb) {
+                        let lir = self.temporaries.last_interactive_canvas_rect.size() / 2.0 * self.temporaries.camera_scale;
                         self.temporaries.camera_scale = 1.0;
-                        let lir = self.temporaries.last_interactive_canvas_rect.size() / 2.0;
                         let lir = egui::Pos2::new(lir.x.max(10.0), lir.y.max(10.0));
                         self.temporaries.camera_offset = lir - bb.center().to_vec2();
                     }
