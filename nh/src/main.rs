@@ -984,7 +984,7 @@ impl NHContext {
     }
 
     fn show_newdiagram_tab(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Add New Diagram");
+        ui.heading(self.drawing_context.translate_0("nh-project-addnewdiagram"));
 
         ui.columns(2, |columns| {
             let (_, actions) = egui_ltreeview::TreeView::new(columns[0].make_persistent_id("new diagram modal hierarchy"))
@@ -2497,20 +2497,22 @@ impl eframe::App for NHApp {
             let Some(s) = self.context.diagram_settings.get(ctype) else { return; };
             let mut controller = c.write();
 
-            egui::containers::Window::new("SVG export options").show(ui.ctx(), |ui| {
+            egui::containers::Window::new(self.context.drawing_context.translate_0("nh-window-svgexport"))
+                .id(egui::Id::from("SVG Export Options"))
+                .show(ui.ctx(), |ui| {
                 // Change options
-                ui.checkbox(background, "Solid background");
-                ui.checkbox(gridlines, "Gridlines");
+                ui.checkbox(background, self.context.drawing_context.translate_0("nh-window-svgexport-solidbackground"));
+                ui.checkbox(gridlines, self.context.drawing_context.translate_0("nh-window-svgexport-gridlines"));
                 ui.horizontal(|ui| {
-                    ui.checkbox(&mut highlight.selected, "Select");
-                    ui.checkbox(&mut highlight.valid, "Valid");
-                    ui.checkbox(&mut highlight.warning, "Warning");
-                    ui.checkbox(&mut highlight.invalid, "Invalid");
+                    ui.checkbox(&mut highlight.selected, self.context.drawing_context.translate_0("nh-window-svgexport-select"));
+                    ui.checkbox(&mut highlight.valid, self.context.drawing_context.translate_0("nh-window-svgexport-valid"));
+                    ui.checkbox(&mut highlight.warning, self.context.drawing_context.translate_0("nh-window-svgexport-warning"));
+                    ui.checkbox(&mut highlight.invalid, self.context.drawing_context.translate_0("nh-window-svgexport-invalid"));
                 });
                 
                 ui.spacing_mut().slider_width = (ui.available_width() / 2.0).max(50.0);
-                ui.add(egui::Slider::new(padding_x, 0.0..=500.0).text("Horizontal padding"));
-                ui.add(egui::Slider::new(padding_y, 0.0..=500.0).text("Vertical padding"));
+                ui.add(egui::Slider::new(padding_x, 0.0..=500.0).text(self.context.drawing_context.translate_0("nh-window-svgexport-horizontalpadding")));
+                ui.add(egui::Slider::new(padding_y, 0.0..=500.0).text(self.context.drawing_context.translate_0("nh-window-svgexport-verticalpadding")));
                 
                 ui.separator();
                 
@@ -2545,8 +2547,8 @@ impl eframe::App for NHApp {
                         );
                     } else {
                         const RECT_SIDE: f32 = 20.0;
-                        for ii in 0..((preview_width / RECT_SIDE) as u32) {
-                            for jj in 0..=((preview_height / RECT_SIDE) as u32) {
+                        for ii in 0..((preview_width / RECT_SIDE) as u32 + 1) {
+                            for jj in 0..=((preview_height / RECT_SIDE) as u32 + 1) {
                                 painter.rect(
                                     egui::Rect::from_min_size(
                                         egui::Pos2::new(ii as f32 * RECT_SIDE, jj as f32 * RECT_SIDE)
@@ -2582,11 +2584,8 @@ impl eframe::App for NHApp {
 
                 ui.separator();
                 
-                // Cancel or confirm export
+                // Confirm export or cancel
                 ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        hide_svg_export_modal = true;
-                    }
                     if ui.button("OK").clicked() {
                         let mut measuring_canvas =
                             MeasuringCanvas::new(ui.painter());
@@ -2627,6 +2626,9 @@ impl eframe::App for NHApp {
                             })
                         }
 
+                        hide_svg_export_modal = true;
+                    }
+                    if ui.button(self.context.drawing_context.translate_0("nh-generic-cancel")).clicked() {
                         hide_svg_export_modal = true;
                     }
                 });

@@ -109,6 +109,16 @@ nh-modal-colorpicker-localcolor = Lokální barva
 nh-modal-colorpicker-globalcolor = Globální barva
 nh-modal-colorpicker-addnewglobal = Přidat novou
 
+nh-window-svgexport = Možnosti SVG Exportu
+nh-window-svgexport-solidbackground = Pevné pozadí
+nh-window-svgexport-gridlines = Mřížka
+nh-window-svgexport-select = Výběr
+nh-window-svgexport-valid = Platný
+nh-window-svgexport-warning = Varování
+nh-window-svgexport-invalid = Neplatný
+nh-window-svgexport-horizontalpadding = Horizontální vycpávka
+nh-window-svgexport-verticalpadding = Vertikální vycpávka
+
 
 pluralize-element = { $count ->
    [one] { $count } prvek

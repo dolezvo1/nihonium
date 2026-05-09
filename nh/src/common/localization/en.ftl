@@ -109,6 +109,16 @@ nh-modal-colorpicker-localcolor = Local color
 nh-modal-colorpicker-globalcolor = Global color
 nh-modal-colorpicker-addnewglobal = Add new
 
+nh-window-svgexport = SVG Export Options
+nh-window-svgexport-solidbackground = Solid background
+nh-window-svgexport-gridlines = Gridlines
+nh-window-svgexport-select = Select
+nh-window-svgexport-valid = Valid
+nh-window-svgexport-warning = Warning
+nh-window-svgexport-invalid = Invalid
+nh-window-svgexport-horizontalpadding = Horizontal padding
+nh-window-svgexport-verticalpadding = Vertical padding
+
 
 pluralize-element = { $count ->
    [one] { $count } element
