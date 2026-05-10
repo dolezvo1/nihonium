@@ -806,6 +806,7 @@ enum PartialDemoPsdElement {
 }
 
 pub struct NaiveDemoPsdTool {
+    uuid: uuid::Uuid,
     initial_stage: DemoPsdToolStage,
     current_stage: DemoPsdToolStage,
     result: PartialDemoPsdElement,
@@ -826,8 +827,9 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
     type Stage = DemoPsdToolStage;
 
-    fn new(initial_stage: DemoPsdToolStage, repeat: bool) -> Self {
+    fn new(uuid: uuid::Uuid, initial_stage: DemoPsdToolStage, repeat: bool) -> Self {
         Self {
+            uuid,
             initial_stage,
             current_stage: initial_stage,
             result: PartialDemoPsdElement::None,
@@ -835,8 +837,8 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             is_spent: if repeat { None } else { Some(false) },
         }
     }
-    fn initial_stage(&self) -> DemoPsdToolStage {
-        self.initial_stage
+    fn initial_stage_uuid(&self) -> &uuid::Uuid {
+        &self.uuid
     }
     fn repeats(&self) -> bool {
         self.is_spent.is_none()

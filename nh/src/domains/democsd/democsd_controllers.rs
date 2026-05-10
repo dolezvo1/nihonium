@@ -676,6 +676,7 @@ enum PartialDemoCsdElement {
 }
 
 pub struct NaiveDemoCsdTool {
+    uuid: uuid::Uuid,
     initial_stage: DemoCsdToolStage,
     current_stage: DemoCsdToolStage,
     result: PartialDemoCsdElement,
@@ -696,8 +697,9 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
     type Stage = DemoCsdToolStage;
 
-    fn new(initial_stage: DemoCsdToolStage, repeat: bool) -> Self {
+    fn new(uuid: uuid::Uuid, initial_stage: DemoCsdToolStage, repeat: bool) -> Self {
         Self {
+            uuid,
             initial_stage,
             current_stage: initial_stage,
             result: PartialDemoCsdElement::None,
@@ -705,8 +707,8 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             is_spent: if repeat { None } else { Some(false) },
         }
     }
-    fn initial_stage(&self) -> DemoCsdToolStage {
-        self.initial_stage
+    fn initial_stage_uuid(&self) -> &uuid::Uuid {
+        &self.uuid
     }
     fn repeats(&self) -> bool {
         self.is_spent.is_none()
@@ -1617,6 +1619,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
                 if self.highlight.selected && self.initiation_button_rect(ehc.ui_scale).contains(pos) {
                     *tool = Some(NaiveDemoCsdTool {
+                        uuid: uuid::Uuid::nil(),
                         initial_stage: DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::InitiatorLink },
                         current_stage: DemoCsdToolStage::LinkEnd,
                         result: PartialDemoCsdElement::Link {
@@ -1625,7 +1628,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                             dest: None,
                         },
                         event_lock: true,
-                        is_spent: None,
+                        is_spent: Some(false),
                     });
 
                     return EventHandlingStatus::HandledByElement;

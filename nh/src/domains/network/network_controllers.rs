@@ -629,6 +629,7 @@ enum PartialNetworkElement {
 }
 
 pub struct NaiveNetworkTool {
+    uuid: uuid::Uuid,
     initial_stage: NetworkToolStage,
     current_stage: NetworkToolStage,
     result: PartialNetworkElement,
@@ -649,8 +650,9 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl Tool<NetworkDomain> for NaiveNetworkTool {
     type Stage = NetworkToolStage;
 
-    fn new(initial_stage: NetworkToolStage, repeat: bool) -> Self {
+    fn new(uuid: uuid::Uuid, initial_stage: NetworkToolStage, repeat: bool) -> Self {
         Self {
+            uuid,
             initial_stage,
             current_stage: initial_stage,
             result: PartialNetworkElement::None,
@@ -658,8 +660,8 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             is_spent: if repeat { None } else { Some(false) },
         }
     }
-    fn initial_stage(&self) -> NetworkToolStage {
-        self.initial_stage
+    fn initial_stage_uuid(&self) -> &uuid::Uuid {
+        &self.uuid
     }
     fn repeats(&self) -> bool {
         self.is_spent.is_none()

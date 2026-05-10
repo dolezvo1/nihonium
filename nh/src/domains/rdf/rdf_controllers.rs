@@ -620,6 +620,7 @@ enum PartialRdfElement {
 }
 
 pub struct NaiveRdfTool {
+    uuid: uuid::Uuid,
     initial_stage: RdfToolStage,
     current_stage: RdfToolStage,
     result: PartialRdfElement,
@@ -640,8 +641,9 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl Tool<RdfDomain> for NaiveRdfTool {
     type Stage = RdfToolStage;
 
-    fn new(initial_stage: RdfToolStage, repeat: bool) -> Self {
+    fn new(uuid: uuid::Uuid, initial_stage: RdfToolStage, repeat: bool) -> Self {
         Self {
+            uuid,
             initial_stage,
             current_stage: initial_stage,
             result: PartialRdfElement::None,
@@ -649,8 +651,8 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             is_spent: if repeat { None } else { Some(false) },
         }
     }
-    fn initial_stage(&self) -> RdfToolStage {
-        self.initial_stage
+    fn initial_stage_uuid(&self) -> &uuid::Uuid {
+        &self.uuid
     }
     fn repeats(&self) -> bool {
         self.is_spent.is_none()
@@ -1327,11 +1329,12 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             }
             InputEvent::Click(pos) if self.highlight.selected && self.predicate_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveRdfTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: RdfToolStage::PredicateStart,
                     current_stage: RdfToolStage::PredicateEnd,
                     result: PartialRdfElement::Predicate { source: self.model.clone(), dest: None },
                     event_lock: true,
-                    is_spent: None,
+                    is_spent: Some(false),
                 });
 
                 EventHandlingStatus::HandledByElement

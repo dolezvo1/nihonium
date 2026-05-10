@@ -786,6 +786,7 @@ enum PartialDemoOfdElement {
 }
 
 pub struct NaiveDemoOfdTool {
+    uuid: uuid::Uuid,
     initial_stage: DemoOfdToolStage,
     current_stage: DemoOfdToolStage,
     result: PartialDemoOfdElement,
@@ -806,8 +807,9 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
     type Stage = DemoOfdToolStage;
 
-    fn new(initial_stage: DemoOfdToolStage, repeat: bool) -> Self {
+    fn new(uuid: uuid::Uuid, initial_stage: DemoOfdToolStage, repeat: bool) -> Self {
         Self {
+            uuid,
             initial_stage,
             current_stage: initial_stage,
             result: PartialDemoOfdElement::None,
@@ -815,8 +817,8 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             is_spent: if repeat { None } else { Some(false) },
         }
     }
-    fn initial_stage(&self) -> Self::Stage {
-        self.initial_stage
+    fn initial_stage_uuid(&self) -> &uuid::Uuid {
+        &self.uuid
     }
     fn repeats(&self) -> bool {
         self.is_spent.is_none()
@@ -1892,6 +1894,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             }
             InputEvent::Click(pos) if self.highlight.selected && self.event_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveDemoOfdTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: DemoOfdToolStage::EventStart { with_specialization: false },
                     current_stage: DemoOfdToolStage::EventEnd,
                     result: PartialDemoOfdElement::Event {
@@ -1900,13 +1903,14 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                         pos: None,
                     },
                     event_lock: true,
-                    is_spent: None,
+                    is_spent: Some(false),
                 });
 
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.highlight.selected && self.event_spec_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveDemoOfdTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: DemoOfdToolStage::EventStart { with_specialization: true },
                     current_stage: DemoOfdToolStage::EventEnd,
                     result: PartialDemoOfdElement::Event {
@@ -1915,13 +1919,14 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                         pos: None,
                     },
                     event_lock: true,
-                    is_spent: None,
+                    is_spent: Some(false),
                 });
 
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.highlight.selected && self.property_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveDemoOfdTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType },
                     current_stage: DemoOfdToolStage::LinkEnd,
                     result: PartialDemoOfdElement::EntityLink {
@@ -1930,7 +1935,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                         dest: None,
                     },
                     event_lock: true,
-                    is_spent: None,
+                    is_spent: Some(false),
                 });
 
                 EventHandlingStatus::HandledByElement
@@ -3446,6 +3451,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
         if ui.button("Add source").clicked() {
             return PropertiesStatus::ToolRequest(
                 Some(NaiveDemoOfdTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: DemoOfdToolStage::LinkAddEnding { source: true },
                     current_stage: DemoOfdToolStage::LinkAddEnding { source: true },
                     result: PartialDemoOfdElement::AggregationEnding {
@@ -3453,7 +3459,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
                         new_model: None,
                     },
                     event_lock: false,
-                    is_spent: None,
+                    is_spent: Some(false),
                 })
             );
         }

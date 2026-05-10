@@ -850,17 +850,19 @@ pub trait TryMerge {
 }
 
 
-pub struct ToolPalette<S, V> {
-    elements: Vec<(uuid::Uuid, &'static str, Vec<(uuid::Uuid, S, &'static str, V)>)>
+pub struct ToolPalette<S: Clone, V: Clone> {
+    elements: Vec<(uuid::Uuid, &'static str, Vec<(uuid::Uuid, S, &'static str, V)>)>,
+    selected_stage: Option<(uuid::Uuid, S)>,
 }
 
-impl<S, V> ToolPalette<S, V> {
+impl<S: Clone, V: Clone> ToolPalette<S, V> {
     pub fn new(elements: Vec<(&'static str, Vec<(S, &'static str, V)>)>) -> Self {
         let elements = elements.into_iter()
             .map(|e| (uuid::Uuid::now_v7(), e.0, e.1.into_iter().map(|e| (uuid::Uuid::now_v7(), e.0, e.1, e.2)).collect()))
             .collect();
         Self {
-            elements
+            elements,
+            selected_stage: None,
         }
     }
 
@@ -869,56 +871,134 @@ impl<S, V> ToolPalette<S, V> {
         self.elements.iter_mut().for_each(f);
     }
 
-    pub fn show_treeview(&mut self, _gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui) {
+    pub fn show_treeview(
+        &mut self,
+        _gdc: &mut GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) -> &mut Option<(uuid::Uuid, S)> {
         #[derive(Clone, Eq, Hash, PartialEq)]
-        enum Element {
+        enum TreeElement {
             Root,
             Group(uuid::Uuid),
             Tool(uuid::Uuid),
         }
 
-        let (_r, a) = egui_ltreeview::TreeView::new(ui.id().with("toolbar items"))
-            .show(ui, |b| {
-                b.dir(Element::Root, "Toolbar items");
-                for (gid, l1, elements) in &self.elements {
-                    b.dir(Element::Group(*gid), *l1);
-                    for (tid, _s, l2, _v) in elements {
-                        b.leaf(Element::Tool(*tid), *l2);
-                    }
-                    b.close_dir();
-                }
-                b.close_dir();
-            });
-        for e in a {
-            if let egui_ltreeview::Action::Move(e) = e {
-                let egui_ltreeview::DragAndDrop { source, target, position, .. } = e;
-                let position = match position {
-                    egui_ltreeview::DirPosition::First => egui_ltreeview::DirPosition::First,
-                    egui_ltreeview::DirPosition::Last => egui_ltreeview::DirPosition::Last,
-                    egui_ltreeview::DirPosition::Before(e) => match e {
-                        Element::Root => continue,
-                        Element::Group(e) | Element::Tool(e) => egui_ltreeview::DirPosition::Before(e),
-                    },
-                    egui_ltreeview::DirPosition::After(e) => match e {
-                        Element::Root => continue,
-                        Element::Group(e) | Element::Tool(e) => egui_ltreeview::DirPosition::After(e),
-                    },
-                };
-
-                for src in source {
-                    match src {
-                        Element::Root => continue,
-                        Element::Group(src) => {
-                            self.move_group(src, position);
-                        },
-                        Element::Tool(src) => {
-                            let Element::Group(target) = target else { continue; };
-                            self.move_tool(src, target, position);
-                        },
-                    }
-                }
-            }
+        enum TreeCommand {
+            AddGroup(&'static str),
+            Duplicate(uuid::Uuid),
+            Delete(uuid::Uuid),
         }
+        let mut command = None;
+
+        ui.label("Toolbar items");
+
+        egui::ScrollArea::neither()
+            .max_height(400.0)
+            .show(ui, |ui| {
+                let (_r, a) = egui_ltreeview::TreeView::new(ui.id().with("toolbar items"))
+                    .allow_multi_selection(false)
+                    .show(ui, |b| {
+                        b.dir(TreeElement::Root, "Toolbar root");
+                        for (group_id, group_label, elements) in &self.elements {
+                            let add_options = |ui: &mut egui::Ui| {
+                                ui.menu_button("Add element", |_ui| {
+                                    // TODO: show possible element types
+                                });
+                                if ui.button("Add group").clicked() {
+                                    return Some(TreeCommand::AddGroup(*group_label));
+                                }
+                                None
+                            };
+                            let group_node = egui_ltreeview::NodeBuilder::dir(TreeElement::Group(*group_id))
+                                .label(*group_label)
+                                .context_menu(|ui| {
+                                    if ui.button("Edit").clicked() {
+
+                                    }
+
+                                    command = command.take().or(add_options(ui));
+
+                                    if ui.add_enabled(elements.is_empty(), egui::Button::new("Delete")).clicked() {
+                                        command = Some(TreeCommand::Delete(*group_id));
+                                    }
+                                });
+                            b.node(group_node);
+
+                            for (tool_id, _s, tool_label, _v) in elements {
+                                let tool_node = egui_ltreeview::NodeBuilder::leaf(TreeElement::Tool(*tool_id))
+                                    .label(*tool_label)
+                                    .context_menu(|ui| {
+                                        if ui.button("Edit").clicked() {
+
+                                        }
+
+                                        command = command.take().or(add_options(ui));
+
+                                        if ui.button("Duplicate").clicked() {
+                                            command = Some(TreeCommand::Duplicate(*tool_id));
+                                        }
+                                        if ui.button("Delete").clicked() {
+                                            command = Some(TreeCommand::Delete(*tool_id));
+                                        }
+                                    });
+                                b.node(tool_node);
+                            }
+                            b.close_dir();
+                        }
+                        b.close_dir();
+                    });
+                for e in a {
+                    if let egui_ltreeview::Action::SetSelected(e) = &e {
+                        match e.first() {
+                            Some(TreeElement::Tool(id)) => {
+                                self.selected_stage = self.elements.iter()
+                                    .find_map(|e| e.2.iter().find_map(|e| if *id == e.0 { Some((*id, e.1.clone())) } else { None } ));
+                            }
+                            _ => {
+                                self.selected_stage = None;
+                            }
+                        }
+                    }
+                    if let egui_ltreeview::Action::Move(e) = e {
+                        let egui_ltreeview::DragAndDrop { source, target, position, .. } = e;
+                        let position = match position {
+                            egui_ltreeview::DirPosition::First => egui_ltreeview::DirPosition::First,
+                            egui_ltreeview::DirPosition::Last => egui_ltreeview::DirPosition::Last,
+                            egui_ltreeview::DirPosition::Before(e) => match e {
+                                TreeElement::Root => continue,
+                                TreeElement::Group(e) | TreeElement::Tool(e) => egui_ltreeview::DirPosition::Before(e),
+                            },
+                            egui_ltreeview::DirPosition::After(e) => match e {
+                                TreeElement::Root => continue,
+                                TreeElement::Group(e) | TreeElement::Tool(e) => egui_ltreeview::DirPosition::After(e),
+                            },
+                        };
+
+                        for src in source {
+                            match src {
+                                TreeElement::Root => continue,
+                                TreeElement::Group(src) => {
+                                    self.move_group(src, position);
+                                },
+                                TreeElement::Tool(src) => {
+                                    let TreeElement::Group(target) = target else { continue; };
+                                    self.move_tool(src, target, position);
+                                },
+                            }
+                        }
+                    }
+                }
+            });
+        match command {
+            None => {},
+            Some(TreeCommand::AddGroup(s)) => {
+                self.elements.push((uuid::Uuid::now_v7(), s, Vec::new()));
+            }
+            Some(TreeCommand::Duplicate(id)) => self.duplicate_tool(id),
+            Some(TreeCommand::Delete(id)) => self.delete_node(id),
+        }
+
+        &mut self.selected_stage
     }
 
     fn move_group(&mut self, src: uuid::Uuid, pos: egui_ltreeview::DirPosition<uuid::Uuid>) {
@@ -965,6 +1045,18 @@ impl<S, V> ToolPalette<S, V> {
             },
         };
         elements.insert(pos, t);
+    }
+    fn duplicate_tool(&mut self, target: uuid::Uuid) {
+        for (_, _, elements) in self.elements.iter_mut() {
+            if let Some(e) = elements.iter().find(|e| e.0 == target) {
+                let new_e = (uuid::Uuid::now_v7(), e.1.clone(), e.2, e.3.clone());
+                elements.push(new_e);
+            }
+        }
+    }
+    fn delete_node(&mut self, target: uuid::Uuid) {
+        self.elements.retain(|e| e.0 != target);
+        self.elements.iter_mut().for_each(|e| e.2.retain(|e| e.0 != target));
     }
 }
 
@@ -1214,8 +1306,8 @@ impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, Domain
 pub trait Tool<DomainT: Domain> {
     type Stage: Clone + PartialEq + 'static;
 
-    fn new(initial_stage: Self::Stage, repeat: bool) -> Self;
-    fn initial_stage(&self) -> Self::Stage;
+    fn new(uuid: uuid::Uuid, initial_stage: Self::Stage, repeat: bool) -> Self;
+    fn initial_stage_uuid(&self) -> &uuid::Uuid;
     fn repeats(&self) -> bool;
     fn is_spent(&self) -> bool;
 
@@ -2863,8 +2955,8 @@ impl<
         };
         let button_background_color = ui.style().visuals.extreme_bg_color;
 
-        let stage = self.temporaries.current_tool.as_ref().map(|e| e.initial_stage());
-        let c = |s: &<<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage| -> egui::Color32 {
+        let stage = self.temporaries.current_tool.as_ref().map(|e| e.initial_stage_uuid()).cloned();
+        let c = |s: &uuid::Uuid| -> egui::Color32 {
             if stage.as_ref().is_some_and(|e| *e == *s) {
                 selected_background_color
             } else {
@@ -2890,14 +2982,15 @@ impl<
         let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
         let empty_q = DomainT::QueryableT::new(&empty_a, &empty_b, &empty_c);
 
-        settings.palette_for_each_mut(|(_gid, label, items)| {
+        settings.palette_for_each_mut(|(gid, label, items)| {
             egui::CollapsingHeader::new(*label)
+                .id_salt(gid)
                 .default_open(true)
                 .show(ui, |ui| {
                     let width = ui.available_width();
-                    for (_tid, stage, name, view) in items.iter_mut() {
-                        let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(stage)));
-                        if let Some(t) = &self.temporaries.current_tool && t.initial_stage() == *stage {
+                    for (tid, stage, name, view) in items.iter_mut() {
+                        let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(tid)));
+                        if let Some(t) = &self.temporaries.current_tool && *t.initial_stage_uuid() == *tid {
                             ui.painter().text(
                                 response.rect.right_bottom(),
                                 egui::Align2::RIGHT_BOTTOM,
@@ -2908,17 +3001,17 @@ impl<
                         }
 
                         if response.clicked() {
-                            if let Some(t) = &self.temporaries.current_tool && t.initial_stage() == *stage && t.repeats() {
+                            if let Some(t) = &self.temporaries.current_tool && *t.initial_stage_uuid() == *tid && t.repeats() {
                                 self.temporaries.current_tool = None;
                             } else {
-                                self.temporaries.current_tool = Some(DomainT::ToolT::new(stage.clone(), true));
+                                self.temporaries.current_tool = Some(DomainT::ToolT::new(*tid, stage.clone(), true));
                             }
                         }
                         if response.secondary_clicked() {
-                            if let Some(t) = &self.temporaries.current_tool && t.initial_stage() == *stage && !t.repeats() {
+                            if let Some(t) = &self.temporaries.current_tool && *t.initial_stage_uuid() == *tid && !t.repeats() {
                                 self.temporaries.current_tool = None;
                             } else {
-                                self.temporaries.current_tool = Some(DomainT::ToolT::new(stage.clone(), false));
+                                self.temporaries.current_tool = Some(DomainT::ToolT::new(*tid, stage.clone(), false));
                             }
                         }
 

@@ -798,6 +798,7 @@ enum PartialUmlSequenceElement {
 }
 
 pub struct NaiveUmlSequenceTool {
+    uuid: uuid::Uuid,
     initial_stage: UmlSequenceToolStage,
     current_stage: UmlSequenceToolStage,
     result: PartialUmlSequenceElement,
@@ -818,8 +819,9 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
     type Stage = UmlSequenceToolStage;
 
-    fn new(initial_stage: UmlSequenceToolStage, repeat: bool) -> Self {
+    fn new(uuid: uuid::Uuid, initial_stage: UmlSequenceToolStage, repeat: bool) -> Self {
         Self {
+            uuid,
             initial_stage,
             current_stage: initial_stage,
             result: PartialUmlSequenceElement::None,
@@ -827,8 +829,8 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
             is_spent: if repeat { None } else { Some(false) },
         }
     }
-    fn initial_stage(&self) -> Self::Stage {
-        self.initial_stage
+    fn initial_stage_uuid(&self) -> &uuid::Uuid {
+        &self.uuid
     }
     fn repeats(&self) -> bool {
         self.is_spent.is_none()

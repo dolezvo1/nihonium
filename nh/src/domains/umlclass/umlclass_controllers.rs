@@ -1180,6 +1180,7 @@ enum PartialUmlClassElement<P: UmlClassProfile> {
 }
 
 pub struct NaiveUmlClassTool<P: UmlClassProfile> {
+    uuid: uuid::Uuid,
     initial_stage: UmlClassToolStage,
     current_stage: UmlClassToolStage,
     result: PartialUmlClassElement<P>,
@@ -1200,8 +1201,9 @@ const NON_TARGETTABLE_COLOR: egui::Color32 = egui::Color32::from_rgba_premultipl
 impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
     type Stage = UmlClassToolStage;
 
-    fn new(initial_stage: UmlClassToolStage, repeat: bool) -> Self {
+    fn new(uuid: uuid::Uuid, initial_stage: UmlClassToolStage, repeat: bool) -> Self {
         Self {
+            uuid,
             initial_stage,
             current_stage: initial_stage,
             result: PartialUmlClassElement::None,
@@ -1209,8 +1211,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             is_spent: if repeat { None } else { Some(false) },
         }
     }
-    fn initial_stage(&self) -> Self::Stage {
-        self.initial_stage
+    fn initial_stage_uuid(&self) -> &uuid::Uuid {
+        &self.uuid
     }
     fn repeats(&self) -> bool {
         self.is_spent.is_none()
@@ -2415,6 +2417,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             }
             InputEvent::Click(pos) if self.highlight.selected && self.association_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlClassTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } },
                     current_stage: UmlClassToolStage::LinkEnd,
                     result: PartialUmlClassElement::Link {
@@ -2423,7 +2426,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                         dest: None,
                     },
                     event_lock: true,
-                    is_spent: None,
+                    is_spent: Some(false),
                 });
 
                 EventHandlingStatus::HandledByElement
@@ -4772,6 +4775,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             }
             InputEvent::Click(pos) if self.highlight.selected && self.association_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlClassTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } },
                     current_stage: UmlClassToolStage::LinkEnd,
                     result: PartialUmlClassElement::Link {
@@ -4780,18 +4784,19 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         dest: None,
                     },
                     event_lock: true,
-                    is_spent: None,
+                    is_spent: Some(false),
                 });
 
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.highlight.selected && P::allows_class_properties() && self.property_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlClassTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: UmlClassToolStage::ClassProperty,
                     current_stage: UmlClassToolStage::ClassProperty,
                     result: PartialUmlClassElement::None,
                     event_lock: false,
-                    is_spent: None,
+                    is_spent: Some(false),
                 });
 
                 if let Some(tool) = tool {
@@ -4809,11 +4814,12 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             }
             InputEvent::Click(pos) if self.highlight.selected && P::allows_class_operations() && self.operation_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveUmlClassTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: UmlClassToolStage::ClassOperation,
                     current_stage: UmlClassToolStage::ClassOperation,
                     result: PartialUmlClassElement::None,
                     event_lock: false,
-                    is_spent: None,
+                    is_spent: Some(false),
                 });
 
                 if let Some(tool) = tool {
@@ -5960,6 +5966,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
         if ui.add_enabled(self.model.read().targets.len() <= 1, egui::Button::new("Add source")).clicked() {
             return PropertiesStatus::ToolRequest(
                 Some(NaiveUmlClassTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: UmlClassToolStage::LinkAddEnding { source: true },
                     current_stage: UmlClassToolStage::LinkAddEnding { source: true },
                     result: PartialUmlClassElement::LinkEnding {
@@ -5968,13 +5975,14 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
                         new_model: None,
                     },
                     event_lock: false,
-                    is_spent: None,
+                    is_spent: Some(false),
                 })
             );
         }
         if ui.add_enabled(self.model.read().sources.len() <= 1, egui::Button::new("Add target")).clicked() {
             return PropertiesStatus::ToolRequest(
                 Some(NaiveUmlClassTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: UmlClassToolStage::LinkAddEnding { source: false },
                     current_stage: UmlClassToolStage::LinkAddEnding { source: false },
                     result: PartialUmlClassElement::LinkEnding {
@@ -5983,7 +5991,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
                         new_model: None,
                     },
                     event_lock: false,
-                    is_spent: None,
+                    is_spent: Some(false),
                 })
             );
         }
@@ -7122,6 +7130,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
         if ui.add_enabled(self.model.read().targets.len() <= 1, egui::Button::new("Add source")).clicked() {
             return PropertiesStatus::ToolRequest(
                 Some(NaiveUmlClassTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: UmlClassToolStage::LinkAddEnding { source: true },
                     current_stage: UmlClassToolStage::LinkAddEnding { source: true },
                     result: PartialUmlClassElement::LinkEnding {
@@ -7130,13 +7139,14 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
                         new_model: None,
                     },
                     event_lock: false,
-                    is_spent: None,
+                    is_spent: Some(false),
                 })
             );
         }
         if ui.add_enabled(self.model.read().sources.len() <= 1, egui::Button::new("Add target")).clicked() {
             return PropertiesStatus::ToolRequest(
                 Some(NaiveUmlClassTool {
+                    uuid: uuid::Uuid::nil(),
                     initial_stage: UmlClassToolStage::LinkAddEnding { source: false },
                     current_stage: UmlClassToolStage::LinkAddEnding { source: false },
                     result: PartialUmlClassElement::LinkEnding {
@@ -7145,7 +7155,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
                         new_model: None,
                     },
                     event_lock: false,
-                    is_spent: None,
+                    is_spent: Some(false),
                 })
             );
         }
