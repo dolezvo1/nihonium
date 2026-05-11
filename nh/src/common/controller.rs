@@ -850,32 +850,70 @@ pub trait TryMerge {
 }
 
 
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct StringIndex(usize);
+pub struct StringStore(Vec<String>);
+
+impl StringStore {
+    pub fn get(&self, StringIndex(idx): StringIndex) -> &str {
+        self.0[idx].as_str()
+    }
+    fn get_mut(&mut self, StringIndex(idx): StringIndex) -> &mut String {
+        &mut self.0[idx]
+    }
+
+    fn push(&mut self, s: String) -> StringIndex {
+        let new_index = StringIndex(self.0.len());
+        self.0.push(s);
+        new_index
+    }
+}
+
 pub struct ToolPalette<S: Clone, V: Clone> {
-    elements: Vec<(uuid::Uuid, &'static str, Vec<(uuid::Uuid, S, &'static str, V)>)>,
-    selected_stage: Option<(uuid::Uuid, S)>,
+    strings: StringStore,
+    elements: Vec<(uuid::Uuid, StringIndex, Vec<(uuid::Uuid, S, StringIndex, V)>)>,
+    selected_group: Option<(uuid::Uuid, StringIndex)>,
+    selected_tool: Option<(uuid::Uuid, S, StringIndex)>,
 }
 
 impl<S: Clone, V: Clone> ToolPalette<S, V> {
-    pub fn new(elements: Vec<(&'static str, Vec<(S, &'static str, V)>)>) -> Self {
+    pub fn new(elements: Vec<(&str, Vec<(S, &str, V)>)>) -> Self {
+        let mut strings = Vec::new();
         let elements = elements.into_iter()
-            .map(|e| (uuid::Uuid::now_v7(), e.0, e.1.into_iter().map(|e| (uuid::Uuid::now_v7(), e.0, e.1, e.2)).collect()))
+            .map(|e| {
+                let group_label_index = StringIndex(strings.len());
+                strings.push(e.0.to_owned());
+                (
+                    uuid::Uuid::now_v7(),
+                    group_label_index,
+                    e.1.into_iter().map(|e| {
+                        let tool_label_index = StringIndex(strings.len());
+                        strings.push(e.1.to_owned());
+                        (uuid::Uuid::now_v7(), e.0, tool_label_index, e.2)
+                    }).collect(),
+                )
+            })
             .collect();
+        let strings = StringStore(strings);
         Self {
+            strings,
             elements,
-            selected_stage: None,
+            selected_group: None,
+            selected_tool: None,
         }
     }
 
-    pub fn for_each_mut<F>(&mut self, f: F)
-        where F: FnMut(&mut (uuid::Uuid, &'static str, Vec<(uuid::Uuid, S, &'static str, V)>)) {
-        self.elements.iter_mut().for_each(f);
+    pub fn for_each_mut<F>(&mut self, mut f: F)
+        where F: FnMut(&StringStore, &mut (uuid::Uuid, StringIndex, Vec<(uuid::Uuid, S, StringIndex, V)>)),
+    {
+        self.elements.iter_mut().for_each(|e| f(&self.strings, e));
     }
 
     pub fn show_treeview(
         &mut self,
         _gdc: &mut GlobalDrawingContext,
         ui: &mut egui::Ui,
-    ) -> &mut Option<(uuid::Uuid, S)> {
+    ) {
         #[derive(Clone, Eq, Hash, PartialEq)]
         enum TreeElement {
             Root,
@@ -884,7 +922,7 @@ impl<S: Clone, V: Clone> ToolPalette<S, V> {
         }
 
         enum TreeCommand {
-            AddGroup(&'static str),
+            AddGroup(StringIndex),
             Duplicate(uuid::Uuid),
             Delete(uuid::Uuid),
         }
@@ -910,7 +948,7 @@ impl<S: Clone, V: Clone> ToolPalette<S, V> {
                                 None
                             };
                             let group_node = egui_ltreeview::NodeBuilder::dir(TreeElement::Group(*group_id))
-                                .label(*group_label)
+                                .label(self.strings.get(*group_label))
                                 .context_menu(|ui| {
                                     if ui.button("Edit").clicked() {
 
@@ -926,7 +964,7 @@ impl<S: Clone, V: Clone> ToolPalette<S, V> {
 
                             for (tool_id, _s, tool_label, _v) in elements {
                                 let tool_node = egui_ltreeview::NodeBuilder::leaf(TreeElement::Tool(*tool_id))
-                                    .label(*tool_label)
+                                    .label(self.strings.get(*tool_label))
                                     .context_menu(|ui| {
                                         if ui.button("Edit").clicked() {
 
@@ -950,12 +988,19 @@ impl<S: Clone, V: Clone> ToolPalette<S, V> {
                 for e in a {
                     if let egui_ltreeview::Action::SetSelected(e) = &e {
                         match e.first() {
+                            Some(TreeElement::Group(id)) => {
+                                self.selected_group = self.elements.iter()
+                                    .find_map(|e| if *id == e.0 { Some((*id, e.1.clone())) } else { None } );
+                                self.selected_tool = None;
+                            }
                             Some(TreeElement::Tool(id)) => {
-                                self.selected_stage = self.elements.iter()
-                                    .find_map(|e| e.2.iter().find_map(|e| if *id == e.0 { Some((*id, e.1.clone())) } else { None } ));
+                                self.selected_group = None;
+                                self.selected_tool = self.elements.iter()
+                                    .find_map(|e| e.2.iter().find_map(|e| if *id == e.0 { Some((*id, e.1.clone(), e.2)) } else { None } ));
                             }
                             _ => {
-                                self.selected_stage = None;
+                                self.selected_group = None;
+                                self.selected_tool = None;
                             }
                         }
                     }
@@ -991,14 +1036,22 @@ impl<S: Clone, V: Clone> ToolPalette<S, V> {
             });
         match command {
             None => {},
-            Some(TreeCommand::AddGroup(s)) => {
-                self.elements.push((uuid::Uuid::now_v7(), s, Vec::new()));
+            Some(TreeCommand::AddGroup(si)) => {
+                let new_group_label_index = self.strings.push(self.strings.get(si).to_owned());
+                self.elements.push((uuid::Uuid::now_v7(), new_group_label_index, Vec::new()));
             }
             Some(TreeCommand::Duplicate(id)) => self.duplicate_tool(id),
             Some(TreeCommand::Delete(id)) => self.delete_node(id),
         }
-
-        &mut self.selected_stage
+    }
+    pub fn get_selected_group(&mut self) -> Option<(uuid::Uuid, StringIndex)> {
+        self.selected_group.clone()
+    }
+    pub fn get_selected_tool(&mut self) -> Option<(uuid::Uuid, S, StringIndex)> {
+        self.selected_tool.clone()
+    }
+    pub fn get_string_mut(&mut self, si: StringIndex) -> &mut String {
+        self.strings.get_mut(si)
     }
 
     fn move_group(&mut self, src: uuid::Uuid, pos: egui_ltreeview::DirPosition<uuid::Uuid>) {
@@ -1049,7 +1102,8 @@ impl<S: Clone, V: Clone> ToolPalette<S, V> {
     fn duplicate_tool(&mut self, target: uuid::Uuid) {
         for (_, _, elements) in self.elements.iter_mut() {
             if let Some(e) = elements.iter().find(|e| e.0 == target) {
-                let new_e = (uuid::Uuid::now_v7(), e.1.clone(), e.2, e.3.clone());
+                let new_label_index = self.strings.push(self.strings.get(e.2).to_owned());
+                let new_e = (uuid::Uuid::now_v7(), e.1.clone(), new_label_index, e.3.clone());
                 elements.push(new_e);
             }
         }
@@ -1062,8 +1116,8 @@ impl<S: Clone, V: Clone> ToolPalette<S, V> {
 
 pub trait DiagramSettings: Any {}
 pub trait DiagramSettings2<DomainT: Domain>: DiagramSettings {
-    fn palette_for_each_mut<F>(&self, f: F)
-        where F: FnMut(&mut (uuid::Uuid, &'static str, Vec<(uuid::Uuid, <<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage, &'static str, DomainT::CommonElementViewT)>));
+    fn palette_for_each_mut<'a, F>(&'a self, f: F)
+        where F: FnMut(&StringStore, &mut (uuid::Uuid, StringIndex, Vec<(uuid::Uuid, <<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage, StringIndex, DomainT::CommonElementViewT)>));
 }
 
 
@@ -2982,14 +3036,14 @@ impl<
         let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
         let empty_q = DomainT::QueryableT::new(&empty_a, &empty_b, &empty_c);
 
-        settings.palette_for_each_mut(|(gid, label, items)| {
-            egui::CollapsingHeader::new(*label)
+        settings.palette_for_each_mut(|store, (gid, label, items)| {
+            egui::CollapsingHeader::new(store.get(*label))
                 .id_salt(gid)
                 .default_open(true)
                 .show(ui, |ui| {
                     let width = ui.available_width();
                     for (tid, stage, name, view) in items.iter_mut() {
-                        let response = ui.add_sized([width, button_height], egui::Button::new(*name).fill(c(tid)));
+                        let response = ui.add_sized([width, button_height], egui::Button::new(store.get(*name)).fill(c(tid)));
                         if let Some(t) = &self.temporaries.current_tool && *t.initial_stage_uuid() == *tid {
                             ui.painter().text(
                                 response.rect.right_bottom(),

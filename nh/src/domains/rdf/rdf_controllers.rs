@@ -1,7 +1,7 @@
 use super::rdf_models::{RdfDiagram, RdfElement, RdfGraph, RdfLiteral, RdfNode, RdfPredicate, RdfTargettableElement};
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, StringIndex, StringStore, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -540,7 +540,7 @@ pub struct RdfSettings {
 impl DiagramSettings for RdfSettings {}
 impl DiagramSettings2<RdfDomain> for RdfSettings {
     fn palette_for_each_mut<F>(&self, f: F)
-        where F: FnMut(&mut (uuid::Uuid, &'static str, Vec<(uuid::Uuid, RdfToolStage, &'static str, RdfElementView)>))
+        where F: FnMut(&StringStore, &mut (uuid::Uuid, StringIndex, Vec<(uuid::Uuid, RdfToolStage, StringIndex, RdfElementView)>))
     {
         self.palette.write().unwrap().for_each_mut(f);
     }
@@ -576,7 +576,21 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<RdfSettings>() else { return; };
 
-    s.palette.write().unwrap().show_treeview(gdc, ui);
+    let mut w = s.palette.write().unwrap();
+
+    ui.columns(2, |columns| {
+        w.show_treeview(gdc, &mut columns[0]);
+
+        if let Some(selected) = w.get_selected_group() {
+            columns[1].labeled_text_edit_singleline("Label", w.get_string_mut(selected.1));
+        }
+
+        if let Some(selected) = w.get_selected_tool() {
+            columns[1].labeled_text_edit_singleline("Label", w.get_string_mut(selected.2));
+
+            // TODO: edit Stage properties
+        }
+    });
 }
 
 inventory::submit! {DiagramInfo {

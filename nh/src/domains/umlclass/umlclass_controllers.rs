@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, StringIndex, StringStore, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
@@ -1020,7 +1020,7 @@ pub struct UmlClassSettings<P: UmlClassProfile> {
 impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {}
 impl<P: UmlClassProfile> DiagramSettings2<UmlClassDomain<P>> for UmlClassSettings<P> {
     fn palette_for_each_mut<F>(&self, f: F)
-        where F: FnMut(&mut (uuid::Uuid, &'static str, Vec<(uuid::Uuid, UmlClassToolStage, &'static str, UmlClassElementView<P>)>))
+        where F: FnMut(&StringStore, &mut (uuid::Uuid, StringIndex, Vec<(uuid::Uuid, UmlClassToolStage, StringIndex, UmlClassElementView<P>)>))
     {
         self.palette.write().unwrap().for_each_mut(f);
     }
@@ -1091,7 +1091,45 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<UmlClassSettings<P>>() else { return; };
 
-    s.palette.write().unwrap().show_treeview(gdc, ui);
+    let mut w = s.palette.write().unwrap();
+
+    ui.columns(2, |columns| {
+        w.show_treeview(gdc, &mut columns[0]);
+
+        if let Some(selected) = w.get_selected_group() {
+            columns[1].labeled_text_edit_singleline("Label", w.get_string_mut(selected.1));
+        }
+
+        if let Some(selected) = w.get_selected_tool() {
+            columns[1].labeled_text_edit_singleline("Label", w.get_string_mut(selected.2));
+
+            match selected.1 {
+                UmlClassToolStage::Instance => {},
+                UmlClassToolStage::Class { name, stereotype, render_style } => {
+
+                },
+                UmlClassToolStage::ClassProperty => {},
+                UmlClassToolStage::ClassOperation => {},
+                UmlClassToolStage::UseCase { name, stereotype } => {
+
+                },
+                UmlClassToolStage::LinkStart { link_type } => {
+
+                },
+                UmlClassToolStage::PackageStart { name, stereotype, kind } => {
+
+                },
+                UmlClassToolStage::Comment => {
+
+                },
+                UmlClassToolStage::CommentLinkStart => {},
+                UmlClassToolStage::LinkEnd
+                | UmlClassToolStage::LinkAddEnding { .. }
+                | UmlClassToolStage::PackageEnd
+                | UmlClassToolStage::CommentLinkEnd => unreachable!(),
+            }
+        }
+    });
 
     ui.label("Comment indication");
     egui::ComboBox::from_id_salt("comment indication")
