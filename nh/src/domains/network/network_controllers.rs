@@ -536,16 +536,40 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
     let palette_items = vec![
         ("Nodes", vec![
-            (NetworkToolStage::Node { name: "Workstation", kind: NetworkNodeKind::Workstation }, "Workstation", node.1),
-            (NetworkToolStage::Node { name: "Laptop", kind: NetworkNodeKind::Laptop }, "Laptop", laptop_view.into()),
-            (NetworkToolStage::Node { name: "Router", kind: NetworkNodeKind::Router }, "Router", router_view.into()),
-            (NetworkToolStage::Node { name: "Switch", kind: NetworkNodeKind::Switch }, "Switch", switch_view.into()),
+            (NetworkToolStage::Node {
+                name: "Workstation".to_owned(),
+                kind: NetworkNodeKind::Workstation,
+            }, "Workstation", node.1),
+            (NetworkToolStage::Node {
+                name: "Laptop".to_owned(),
+                kind: NetworkNodeKind::Laptop,
+            }, "Laptop", laptop_view.into()),
+            (NetworkToolStage::Node {
+                name: "Router".to_owned(),
+                kind: NetworkNodeKind::Router,
+            }, "Router", router_view.into()),
+            (NetworkToolStage::Node {
+                name: "Switch".to_owned(),
+                kind: NetworkNodeKind::Switch,
+            }, "Switch", switch_view.into()),
         ]),
         ("Users", vec![
-            (NetworkToolStage::User { name: "User", kind: NetworkUserKind::Normal }, "User", user.1),
-            (NetworkToolStage::User { name: "Developer", kind: NetworkUserKind::Developer }, "Developer", developer_view.into()),
-            (NetworkToolStage::User { name: "Audit", kind: NetworkUserKind::Audit }, "Audit", audit_view.into()),
-            (NetworkToolStage::User { name: "Black Hat", kind: NetworkUserKind::BlackHat }, "Black Hat", blackhat_view.into()),
+            (NetworkToolStage::User {
+                name: "User".to_owned(),
+                kind: NetworkUserKind::Normal,
+            }, "User", user.1),
+            (NetworkToolStage::User {
+                name: "Developer".to_owned(),
+                kind: NetworkUserKind::Developer,
+            }, "Developer", developer_view.into()),
+            (NetworkToolStage::User {
+                name: "Audit".to_owned(),
+                kind: NetworkUserKind::Audit,
+            }, "Audit", audit_view.into()),
+            (NetworkToolStage::User {
+                name: "Black Hat".to_owned(),
+                kind: NetworkUserKind::BlackHat,
+            }, "Black Hat", blackhat_view.into()),
         ]),
         ("Relationships", vec![
             (NetworkToolStage::AssociationStart {
@@ -565,8 +589,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             }, "Association (dashed)", association3_view.into()),
         ]),
         ("Other", vec![
-            (NetworkToolStage::ContainerStart, "Container", container_view.into()),
-            (NetworkToolStage::Comment, "Comment", comment_view.into()),
+            (NetworkToolStage::ContainerStart { name: "Subnet".to_owned() }, "Container", container_view.into()),
+            (NetworkToolStage::Comment { text: "a comment".to_owned() }, "Comment", comment_view.into()),
         ]),
     ];
 
@@ -600,7 +624,68 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                // TODO: edit
+                match tool {
+                    NetworkToolStage::Node { name, kind } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+
+                        columns[1].label("Kind");
+                        egui::ComboBox::from_id_salt("kind")
+                            .selected_text(kind.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in NetworkNodeKind::VARIANTS {
+                                    modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
+                                }
+                            });
+                    },
+                    NetworkToolStage::User { name, kind } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+
+                        columns[1].label("Kind");
+                        egui::ComboBox::from_id_salt("kind")
+                            .selected_text(kind.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in NetworkUserKind::VARIANTS {
+                                    modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
+                                }
+                            });
+                    },
+                    NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead } => {
+                        columns[1].label("Line type");
+                        egui::ComboBox::from_id_salt("line type")
+                            .selected_text(line_type.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in NetworkAssociationLineType::VARIANTS {
+                                    modified |= ui.selectable_value(line_type, e, e.as_str()).clicked();
+                                }
+                            });
+
+                        columns[1].label("Source arrowhead");
+                        egui::ComboBox::from_id_salt("source arrowhead")
+                            .selected_text(source_arrowhead.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in NetworkAssociationArrowheadType::VARIANTS {
+                                    modified |= ui.selectable_value(source_arrowhead, e, e.as_str()).clicked();
+                                }
+                            });
+
+                        columns[1].label("Target arrowhead");
+                        egui::ComboBox::from_id_salt("target arrowhead")
+                            .selected_text(target_arrowhead.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in NetworkAssociationArrowheadType::VARIANTS {
+                                    modified |= ui.selectable_value(target_arrowhead, e, e.as_str()).clicked();
+                                }
+                            });
+                    },
+                    NetworkToolStage::ContainerStart { name } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+                    },
+                    NetworkToolStage::Comment { text } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
+                    },
+                    NetworkToolStage::AssociationEnd
+                    | NetworkToolStage::ContainerEnd => unreachable!(),
+                }
 
                 if modified {
                     w.set_from_buffer(buffer.clone());
@@ -627,19 +712,19 @@ inventory::submit! {DiagramInfo {
 }}
 
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum NetworkToolStage {
-    Node { name: &'static str, kind: NetworkNodeKind },
-    User { name: &'static str, kind: NetworkUserKind },
+    Node { name: String, kind: NetworkNodeKind },
+    User { name: String, kind: NetworkUserKind },
     AssociationStart {
         line_type: NetworkAssociationLineType,
         source_arrowhead: NetworkAssociationArrowheadType,
         target_arrowhead: NetworkAssociationArrowheadType,
     },
     AssociationEnd,
-    ContainerStart,
+    ContainerStart { name: String },
     ContainerEnd,
-    Comment,
+    Comment { text: String },
 }
 
 enum PartialNetworkElement {
@@ -653,6 +738,7 @@ enum PartialNetworkElement {
         dest: Option<NetworkElement>,
     },
     Container {
+        name: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
@@ -683,8 +769,8 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
     fn new(uuid: uuid::Uuid, initial_stage: NetworkToolStage, repeat: bool) -> Self {
         Self {
             uuid,
+            current_stage: initial_stage.clone(),
             initial_stage,
-            current_stage: initial_stage,
             result: PartialNetworkElement::None,
             event_lock: false,
             is_spent: if repeat { None } else { Some(false) },
@@ -705,19 +791,19 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             None => match self.current_stage {
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
-                | NetworkToolStage::ContainerStart
+                | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd
-                | NetworkToolStage::Comment => TARGETTABLE_COLOR,
+                | NetworkToolStage::Comment { .. } => TARGETTABLE_COLOR,
                 NetworkToolStage::AssociationStart { .. }
                 | NetworkToolStage::AssociationEnd => NON_TARGETTABLE_COLOR,
             },
             Some(NetworkElement::Container(..)) => match self.current_stage {
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
-                | NetworkToolStage::Comment => TARGETTABLE_COLOR,
+                | NetworkToolStage::Comment { .. } => TARGETTABLE_COLOR,
                 NetworkToolStage::AssociationStart { .. }
                 | NetworkToolStage::AssociationEnd
-                | NetworkToolStage::ContainerStart
+                | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd => NON_TARGETTABLE_COLOR,
             },
             Some(NetworkElement::Node(..) | NetworkElement::User(..) | NetworkElement::Comment(..)) => match self.current_stage {
@@ -725,9 +811,9 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 | NetworkToolStage::AssociationEnd => TARGETTABLE_COLOR,
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
-                | NetworkToolStage::ContainerStart
+                | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd
-                | NetworkToolStage::Comment => NON_TARGETTABLE_COLOR,
+                | NetworkToolStage::Comment { .. } => NON_TARGETTABLE_COLOR,
             },
             Some(NetworkElement::Association(..)) => todo!(),
         }
@@ -761,26 +847,26 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             return;
         }
 
-        match (self.current_stage, &mut self.result) {
+        match (&self.current_stage, &mut self.result) {
             (NetworkToolStage::Node { name, kind }, _) => {
-                let (_, node_view) = new_network_node(name, kind, pos);
+                let (_, node_view) = new_network_node(name, *kind, pos);
                 self.result = PartialNetworkElement::Some(node_view.into());
                 self.event_lock = true;
             }
             (NetworkToolStage::User { name, kind }, _) => {
-                let (_, user_view) = new_network_user(name, kind, pos);
+                let (_, user_view) = new_network_user(name, *kind, pos);
                 self.result = PartialNetworkElement::Some(user_view.into());
                 self.event_lock = true;
             }
-            (NetworkToolStage::ContainerStart, _) => {
-                self.result = PartialNetworkElement::Container { a: pos, b: None };
+            (NetworkToolStage::ContainerStart { name }, _) => {
+                self.result = PartialNetworkElement::Container { name: name.clone(), a: pos, b: None };
                 self.current_stage = NetworkToolStage::ContainerEnd;
                 self.event_lock = true;
             }
             (NetworkToolStage::ContainerEnd, PartialNetworkElement::Container { b, .. }) => *b = Some(pos),
-            (NetworkToolStage::Comment, _) => {
+            (NetworkToolStage::Comment { text }, _) => {
                 let (_, comment_view) = new_network_comment(
-                    "text",
+                    text,
                     pos,
                 );
 
@@ -798,7 +884,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         match section {
             NetworkElement::Container(..) => {}
             NetworkElement::Node(..) | NetworkElement::User(..)
-            | NetworkElement::Comment(..) => match (self.current_stage, &mut self.result) {
+            | NetworkElement::Comment(..) => match (&self.current_stage, &mut self.result) {
                 (NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead }, PartialNetworkElement::None) => {
                     let source = match section {
                         NetworkElement::Node(inner) => inner.into(),
@@ -807,9 +893,9 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                         _ => unreachable!(),
                     };
                     self.result = PartialNetworkElement::Association {
-                        line_type,
-                        source_arrowhead,
-                        target_arrowhead,
+                        line_type: *line_type,
+                        source_arrowhead: *source_arrowhead,
+                        target_arrowhead: *target_arrowhead,
                         source,
                         dest: None,
                     };
@@ -855,7 +941,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 dest: Some(dest),
                 ..
             } => {
-                self.current_stage = self.initial_stage;
+                self.current_stage = self.initial_stage.clone();
 
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
                 let association_view: Option<(_, Option<Box<dyn CustomModal>>)> =
@@ -879,11 +965,11 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.try_spend();
                 association_view
             }
-            PartialNetworkElement::Container { a, b: Some(b) } => {
-                self.current_stage = NetworkToolStage::ContainerStart;
+            PartialNetworkElement::Container { name, a, b: Some(b) } => {
+                self.current_stage = self.initial_stage.clone();
 
                 let (_, container_view) = new_network_container(
-                    "Subnet", NetworkContainerShapeKind::Rectangle, egui::Rect::from_two_pos(*a, *b),
+                    name, NetworkContainerShapeKind::Rectangle, egui::Rect::from_two_pos(*a, *b),
                 );
 
                 self.try_spend();
