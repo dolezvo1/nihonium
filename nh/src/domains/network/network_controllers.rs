@@ -1,7 +1,7 @@
 
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, StringIndex, StringStore, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -488,11 +488,12 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
 
 pub struct NetworkSettings {
     palette: RwLock<ToolPalette<NetworkToolStage, NetworkElementView>>,
+    palette_edit_buffer: RwLock<PaletteEditBuffer<NetworkToolStage, NetworkElementView>>,
 }
 impl DiagramSettings for NetworkSettings {}
 impl DiagramSettings2<NetworkDomain> for NetworkSettings {
     fn palette_for_each_mut<F>(&self, f: F)
-        where F: FnMut(&StringStore, &mut (uuid::Uuid, StringIndex, Vec<(uuid::Uuid, NetworkToolStage, StringIndex, NetworkElementView)>))
+        where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, NetworkToolStage, String, NetworkElementView)>))
     {
         self.palette.write().unwrap().for_each_mut(f);
     }
@@ -571,6 +572,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
     Box::new(NetworkSettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
+        palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
     })
 }
 
@@ -578,18 +580,32 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<NetworkSettings>() else { return; };
 
     let mut w = s.palette.write().unwrap();
+    let mut buffer = s.palette_edit_buffer.write().unwrap();
 
     ui.columns(2, |columns| {
         w.show_treeview(gdc, &mut columns[0]);
 
-        if let Some(selected) = w.get_selected_group() {
-            columns[1].labeled_text_edit_singleline("Label", w.get_string_mut(selected.1));
+        let selected = w.get_selected();
+        if selected.uuid() != buffer.uuid() {
+            *buffer = w.get_buffer(selected.uuid().cloned());
         }
+        match &mut *buffer {
+            PaletteEditBuffer::None => {},
+            PaletteEditBuffer::Group(_uuid, name) => {
+                if columns[1].labeled_text_edit_singleline("Label", name).changed() {
+                    w.set_from_buffer(buffer.clone());
+                }
+            },
+            PaletteEditBuffer::Tool(_uuid, name, tool, view) => {
+                let mut modified = false;
+                modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-        if let Some(selected) = w.get_selected_tool() {
-            columns[1].labeled_text_edit_singleline("Label", w.get_string_mut(selected.2));
+                // TODO: edit
 
-            // TODO: edit Stage properties
+                if modified {
+                    w.set_from_buffer(buffer.clone());
+                }
+            },
         }
     });
 }

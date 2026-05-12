@@ -3,7 +3,7 @@ use super::umlclass_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, StringIndex, StringStore, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
@@ -1015,12 +1015,13 @@ impl CommentIndication {
 pub struct UmlClassSettings<P: UmlClassProfile> {
     comment_indication: CommentIndication,
     palette: RwLock<ToolPalette<UmlClassToolStage, UmlClassElementView<P>>>,
+    palette_edit_buffer: RwLock<PaletteEditBuffer<UmlClassToolStage, UmlClassElementView<P>>>,
 }
 
 impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {}
 impl<P: UmlClassProfile> DiagramSettings2<UmlClassDomain<P>> for UmlClassSettings<P> {
     fn palette_for_each_mut<F>(&self, f: F)
-        where F: FnMut(&StringStore, &mut (uuid::Uuid, StringIndex, Vec<(uuid::Uuid, UmlClassToolStage, StringIndex, UmlClassElementView<P>)>))
+        where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, UmlClassToolStage, String, UmlClassElementView<P>)>))
     {
         self.palette.write().unwrap().for_each_mut(f);
     }
@@ -1032,6 +1033,7 @@ pub fn default_settings_helper<P: UmlClassProfile>(
     Box::new(UmlClassSettings {
         comment_indication: CommentIndication::Icon,
         palette: RwLock::new(ToolPalette::new(palette_items)),
+        palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
     })
 }
 
@@ -1092,42 +1094,56 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<UmlClassSettings<P>>() else { return; };
 
     let mut w = s.palette.write().unwrap();
+    let mut buffer = s.palette_edit_buffer.write().unwrap();
 
     ui.columns(2, |columns| {
         w.show_treeview(gdc, &mut columns[0]);
 
-        if let Some(selected) = w.get_selected_group() {
-            columns[1].labeled_text_edit_singleline("Label", w.get_string_mut(selected.1));
+        let selected = w.get_selected();
+        if selected.uuid() != buffer.uuid() {
+            *buffer = w.get_buffer(selected.uuid().cloned());
         }
+        match &mut *buffer {
+            PaletteEditBuffer::None => {},
+            PaletteEditBuffer::Group(_uuid, name) => {
+                if columns[1].labeled_text_edit_singleline("Label", name).changed() {
+                    w.set_from_buffer(buffer.clone());
+                }
+            },
+            PaletteEditBuffer::Tool(_uuid, name, tool, view) => {
+                let mut modified = false;
+                modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-        if let Some(selected) = w.get_selected_tool() {
-            columns[1].labeled_text_edit_singleline("Label", w.get_string_mut(selected.2));
+                match tool {
+                    UmlClassToolStage::Instance => {},
+                    UmlClassToolStage::Class { name, stereotype, render_style } => {
 
-            match selected.1 {
-                UmlClassToolStage::Instance => {},
-                UmlClassToolStage::Class { name, stereotype, render_style } => {
+                    },
+                    UmlClassToolStage::ClassProperty => {},
+                    UmlClassToolStage::ClassOperation => {},
+                    UmlClassToolStage::UseCase { name, stereotype } => {
 
-                },
-                UmlClassToolStage::ClassProperty => {},
-                UmlClassToolStage::ClassOperation => {},
-                UmlClassToolStage::UseCase { name, stereotype } => {
+                    },
+                    UmlClassToolStage::LinkStart { link_type } => {
 
-                },
-                UmlClassToolStage::LinkStart { link_type } => {
+                    },
+                    UmlClassToolStage::PackageStart { name, stereotype, kind } => {
 
-                },
-                UmlClassToolStage::PackageStart { name, stereotype, kind } => {
+                    },
+                    UmlClassToolStage::Comment => {
 
-                },
-                UmlClassToolStage::Comment => {
+                    },
+                    UmlClassToolStage::CommentLinkStart => {},
+                    UmlClassToolStage::LinkEnd
+                    | UmlClassToolStage::LinkAddEnding { .. }
+                    | UmlClassToolStage::PackageEnd
+                    | UmlClassToolStage::CommentLinkEnd => unreachable!(),
+                }
 
-                },
-                UmlClassToolStage::CommentLinkStart => {},
-                UmlClassToolStage::LinkEnd
-                | UmlClassToolStage::LinkAddEnding { .. }
-                | UmlClassToolStage::PackageEnd
-                | UmlClassToolStage::CommentLinkEnd => unreachable!(),
-            }
+                if modified {
+                    w.set_from_buffer(buffer.clone());
+                }
+            },
         }
     });
 

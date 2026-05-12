@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, Highlight, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, StringIndex, StringStore, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::{PackageAdapter, PackageView};
@@ -581,11 +581,12 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
 
 pub struct DemoCsdSettings {
     palette: RwLock<ToolPalette<DemoCsdToolStage, DemoCsdElementView>>,
+    palette_edit_buffer: RwLock<PaletteEditBuffer<DemoCsdToolStage, DemoCsdElementView>>,
 }
 impl DiagramSettings for DemoCsdSettings {}
 impl DiagramSettings2<DemoCsdDomain> for DemoCsdSettings {
     fn palette_for_each_mut<F>(&self, f: F)
-        where F: FnMut(&StringStore, &mut (uuid::Uuid, StringIndex, Vec<(uuid::Uuid, DemoCsdToolStage, StringIndex, DemoCsdElementView)>)),
+        where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, DemoCsdToolStage, String, DemoCsdElementView)>)),
     {
         self.palette.write().unwrap().for_each_mut(f);
     }
@@ -624,6 +625,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
     Box::new(DemoCsdSettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
+        palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
     })
 }
 
@@ -631,35 +633,49 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<DemoCsdSettings>() else { return; };
 
     let mut w = s.palette.write().unwrap();
+    let mut buffer = s.palette_edit_buffer.write().unwrap();
 
     ui.columns(2, |columns| {
         w.show_treeview(gdc, &mut columns[0]);
 
-        if let Some(selected) = w.get_selected_group() {
-            columns[1].labeled_text_edit_singleline("Label", w.get_string_mut(selected.1));
+        let selected = w.get_selected();
+        if selected.uuid() != buffer.uuid() {
+            *buffer = w.get_buffer(selected.uuid().cloned());
         }
+        match &mut *buffer {
+            PaletteEditBuffer::None => {},
+            PaletteEditBuffer::Group(_uuid, name) => {
+                if columns[1].labeled_text_edit_singleline("Label", name).changed() {
+                    w.set_from_buffer(buffer.clone());
+                }
+            },
+            PaletteEditBuffer::Tool(_uuid, name, tool, view) => {
+                let mut modified = false;
+                modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-        if let Some(selected) = w.get_selected_tool() {
-            columns[1].labeled_text_edit_singleline("Label", w.get_string_mut(selected.2));
+                match tool {
+                    DemoCsdToolStage::Client => {
 
-            match selected.1 {
-                DemoCsdToolStage::Client => {
+                    },
+                    DemoCsdToolStage::Transactor => {
 
-                },
-                DemoCsdToolStage::Transactor => {
+                    },
+                    DemoCsdToolStage::Bank => {
 
-                },
-                DemoCsdToolStage::Bank => {
+                    },
+                    DemoCsdToolStage::LinkStart { link_type } => {
 
-                },
-                DemoCsdToolStage::LinkStart { link_type } => {
+                    },
+                    DemoCsdToolStage::PackageStart => {
 
-                },
-                DemoCsdToolStage::PackageStart => {
+                    },
+                    DemoCsdToolStage::LinkEnd | DemoCsdToolStage::PackageEnd => unreachable!(),
+                }
 
-                },
-                DemoCsdToolStage::LinkEnd | DemoCsdToolStage::PackageEnd => unreachable!(),
-            }
+                if modified {
+                    w.set_from_buffer(buffer.clone());
+                }
+            },
         }
     });
 }
