@@ -166,17 +166,28 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let mut classes = Vec::new();
     let (_actor, actor_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::StickFigure);
     classes.push(
-        (UmlClassToolStage::Class { name: "Customer", stereotype: usecase_models::ACTOR, render_style: UmlClassRenderStyle::StickFigure }, "Actor", actor_view.into())
+        (UmlClassToolStage::Class {
+            name: "Customer".to_owned(),
+            stereotype: usecase_models::ACTOR.to_owned(),
+            render_style: UmlClassRenderStyle::StickFigure,
+        }, "Actor", actor_view.into())
     );
     let (_class, class_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
     class_view.write().refresh_buffers();
     classes.push(
-        (UmlClassToolStage::Class { name: "Customer", stereotype: usecase_models::ACTOR, render_style: UmlClassRenderStyle::Class }, "Class Actor", class_view.into())
+        (UmlClassToolStage::Class {
+            name: "Customer".to_owned(),
+            stereotype: usecase_models::ACTOR.to_owned(),
+            render_style: UmlClassRenderStyle::Class,
+        }, "Class Actor", class_view.into())
     );
     let (_usecase, usecase_view) = new_uml_usecase("Registration", usecase_models::NONE, false, egui::Pos2::ZERO);
     usecase_view.write().refresh_buffers();
     classes.push(
-        (UmlClassToolStage::UseCase { name: "Registration", stereotype: usecase_models::NONE }, "Use case", usecase_view.into())
+        (UmlClassToolStage::UseCase {
+            name: "Registration".to_owned(),
+            stereotype: usecase_models::NONE.to_owned(),
+        }, "Use case", usecase_view.into())
     );
 
 
@@ -195,13 +206,13 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         m.write().target_label_multiplicity = Arc::new("".to_owned());
         m_view.write().refresh_buffers();
         relationships.push(
-            (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "" } }, "Association", m_view.into()),
+            (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } }, "Association", m_view.into()),
         );
     }
     for (stereotype, label) in [(usecase_models::EXTEND, "Extend"), (usecase_models::INCLUDE, "Include")] {
         let (_d, d_view) = new_umlclass_dependency(stereotype, "", true, None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
         relationships.push(
-            (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype } }, label, d_view.into()),
+            (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype: stereotype.to_owned() } }, label, d_view.into()),
         );
     }
 
@@ -216,8 +227,12 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ("Classes", classes),
         ("Relationships", relationships),
         ("Other", vec![
-            (UmlClassToolStage::PackageStart { name: "Boundary", stereotype: "", kind: UmlClassPackageKind::Boundary }, "Boundary", boundary_view.into()),
-            (UmlClassToolStage::Comment, "Comment", comment.1),
+            (UmlClassToolStage::PackageStart {
+                name: "Boundary".to_owned(),
+                stereotype: "".to_owned(),
+                kind: UmlClassPackageKind::Boundary,
+            }, "Boundary", boundary_view.into()),
+            (UmlClassToolStage::Comment { text: "a comment".to_owned() }, "Comment", comment.1),
             (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
         ]),
     ];

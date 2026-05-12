@@ -251,7 +251,11 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         let (_c, c_view) = new_ontouml_class(name, stereotype, is_abstract, egui::Pos2::ZERO);
         c_view.write().refresh_buffers();
         classes.push(
-            (UmlClassToolStage::Class { name, stereotype, render_style: UmlClassRenderStyle::Class }, label, c_view.into()),
+            (UmlClassToolStage::Class {
+                name: name.to_owned(),
+                stereotype: stereotype.to_owned(),
+                render_style: UmlClassRenderStyle::Class,
+            }, label, c_view.into()),
         );
     }
 
@@ -278,7 +282,9 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         m.write().target_label_multiplicity = Arc::new("".to_owned());
         m_view.write().refresh_buffers();
         relationships.push(
-            (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype } }, label, m_view.into()),
+            (UmlClassToolStage::LinkStart {
+                link_type: LinkType::Association { stereotype: stereotype.to_owned() }
+            }, label, m_view.into()),
         );
     }
 
@@ -292,8 +298,12 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ("Classes", classes),
         ("Relationships", relationships),
         ("Other", vec![
-            (UmlClassToolStage::PackageStart { name: "a package", stereotype: "", kind: UmlClassPackageKind::Package }, "Package", package_view.into()),
-            (UmlClassToolStage::Comment, "Comment", comment.1),
+            (UmlClassToolStage::PackageStart {
+                name: "a package".to_owned(),
+                stereotype: "".to_owned(),
+                kind: UmlClassPackageKind::Package,
+            }, "Package", package_view.into()),
+            (UmlClassToolStage::Comment { text: "a comment".to_owned() }, "Comment", comment.1),
             (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
         ]),
     ];
