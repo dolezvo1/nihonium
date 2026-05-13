@@ -558,14 +558,24 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
     let palette_items = vec![
         ("Elements", vec![
-            (RdfToolStage::Literal, "Literal", literal.1),
-            (RdfToolStage::Node, "Node", node.1),
+            (RdfToolStage::Literal {
+                content: "Eric Miller".to_owned(),
+                datatype: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
+                language: "en".to_owned(),
+            }, "Literal", literal.1),
+            (RdfToolStage::Node {
+                uri: "http://www.w3.org/People/EM/contact#me".to_owned(),
+            }, "Node", node.1),
         ]),
         ("Relationships", vec![
-            (RdfToolStage::PredicateStart, "Predicate", predicate_view.into()),
+            (RdfToolStage::PredicateStart {
+                uri: "http://www.w3.org/2000/10/swap/pim/contact#fullName".to_owned(),
+            }, "Predicate", predicate_view.into()),
         ]),
         ("Other", vec![
-            (RdfToolStage::GraphStart, "Graph", graph_view.into()),
+            (RdfToolStage::GraphStart {
+                uri: "http://a-graph".to_owned(),
+            }, "Graph", graph_view.into()),
         ]),
     ];
 
@@ -599,7 +609,20 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                // TODO: edit
+                match tool {
+                    RdfToolStage::Literal { content, datatype, language } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Content", content).changed();
+                        modified |= columns[1].labeled_text_edit_singleline("Datatype", datatype).changed();
+                        modified |= columns[1].labeled_text_edit_singleline("Language", language).changed();
+                    },
+                    RdfToolStage::Node { uri }
+                    | RdfToolStage::PredicateStart { uri }
+                    | RdfToolStage::GraphStart { uri } => {
+                        modified |= columns[1].labeled_text_edit_singleline("URI", uri).changed();
+                    },
+                    RdfToolStage::PredicateEnd
+                    | RdfToolStage::GraphEnd => unreachable!(),
+                }
 
                 if modified {
                     w.set_from_buffer(buffer.clone());
@@ -626,13 +649,23 @@ inventory::submit! {DiagramInfo {
 }}
 
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum RdfToolStage {
-    Literal,
-    Node,
-    PredicateStart,
+    Literal {
+        content: String,
+        datatype: String,
+        language: String,
+    },
+    Node {
+        uri: String,
+    },
+    PredicateStart {
+        uri: String,
+    },
     PredicateEnd,
-    GraphStart,
+    GraphStart {
+        uri: String,
+    },
     GraphEnd,
 }
 
@@ -640,10 +673,12 @@ enum PartialRdfElement {
     None,
     Some(RdfElementView),
     Predicate {
+        uri: String,
         source: ERef<RdfNode>,
         dest: Option<RdfTargettableElement>,
     },
     Graph {
+        uri: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
@@ -674,8 +709,8 @@ impl Tool<RdfDomain> for NaiveRdfTool {
     fn new(uuid: uuid::Uuid, initial_stage: RdfToolStage, repeat: bool) -> Self {
         Self {
             uuid,
+            current_stage: initial_stage.clone(),
             initial_stage,
-            current_stage: initial_stage,
             result: PartialRdfElement::None,
             event_lock: false,
             is_spent: if repeat { None } else { Some(false) },
@@ -694,34 +729,37 @@ impl Tool<RdfDomain> for NaiveRdfTool {
     fn targetting_for_section(&self, element: Option<RdfElement>) -> egui::Color32 {
         match element {
             None => match self.current_stage {
-                RdfToolStage::Literal
-                | RdfToolStage::Node
-                | RdfToolStage::GraphStart
+                RdfToolStage::Literal { .. }
+                | RdfToolStage::Node { .. }
+                | RdfToolStage::GraphStart { .. }
                 | RdfToolStage::GraphEnd => TARGETTABLE_COLOR,
-                RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => NON_TARGETTABLE_COLOR,
+                RdfToolStage::PredicateStart { .. }
+                | RdfToolStage::PredicateEnd => NON_TARGETTABLE_COLOR,
             },
             Some(RdfElement::RdfGraph(..)) => match self.current_stage {
-                RdfToolStage::Literal | RdfToolStage::Node => {
+                RdfToolStage::Literal { .. }
+                | RdfToolStage::Node { .. } => {
                     TARGETTABLE_COLOR
                 }
-                RdfToolStage::PredicateStart
+                RdfToolStage::PredicateStart { .. }
                 | RdfToolStage::PredicateEnd
-                | RdfToolStage::GraphStart
+                | RdfToolStage::GraphStart { .. }
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
             Some(RdfElement::RdfLiteral(..)) => match self.current_stage {
                 RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
-                RdfToolStage::Literal
-                | RdfToolStage::Node
-                | RdfToolStage::PredicateStart
-                | RdfToolStage::GraphStart
+                RdfToolStage::Literal { .. }
+                | RdfToolStage::Node { .. }
+                | RdfToolStage::PredicateStart { .. }
+                | RdfToolStage::GraphStart { .. }
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
             Some(RdfElement::RdfNode(..)) => match self.current_stage {
-                RdfToolStage::PredicateStart | RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
-                RdfToolStage::Literal
-                | RdfToolStage::Node
-                | RdfToolStage::GraphStart
+                RdfToolStage::PredicateStart { .. }
+                | RdfToolStage::PredicateEnd => TARGETTABLE_COLOR,
+                RdfToolStage::Literal { .. }
+                | RdfToolStage::Node { .. }
+                | RdfToolStage::GraphStart { .. }
                 | RdfToolStage::GraphEnd => NON_TARGETTABLE_COLOR,
             },
             Some(RdfElement::RdfPredicate(..)) => todo!(),
@@ -756,26 +794,26 @@ impl Tool<RdfDomain> for NaiveRdfTool {
             return;
         }
 
-        match (self.current_stage, &mut self.result) {
-            (RdfToolStage::Literal, _) => {
+        match (&self.current_stage, &mut self.result) {
+            (RdfToolStage::Literal { content, datatype, language }, _) => {
                 let (_literal_model, literal_view) = new_rdf_literal(
-                    "Eric Miller",
-                    "http://www.w3.org/2001/XMLSchema#string",
-                    "en",
+                    content,
+                    datatype,
+                    language,
                     pos,
                 );
                 
                 self.result = PartialRdfElement::Some(literal_view.into());
                 self.event_lock = true;
             }
-            (RdfToolStage::Node, _) => {
+            (RdfToolStage::Node { uri }, _) => {
                 let (_node, node_view) =
-                    new_rdf_node("http://www.w3.org/People/EM/contact#me", pos);
+                    new_rdf_node(uri, pos);
                 self.result = PartialRdfElement::Some(node_view.into());
                 self.event_lock = true;
             }
-            (RdfToolStage::GraphStart, _) => {
-                self.result = PartialRdfElement::Graph { a: pos, b: None };
+            (RdfToolStage::GraphStart { uri }, _) => {
+                self.result = PartialRdfElement::Graph { uri: uri.clone(), a: pos, b: None };
                 self.current_stage = RdfToolStage::GraphEnd;
                 self.event_lock = true;
             }
@@ -790,16 +828,17 @@ impl Tool<RdfDomain> for NaiveRdfTool {
 
         match controller {
             RdfElement::RdfGraph(..) => {}
-            RdfElement::RdfLiteral(inner) => match (self.current_stage, &mut self.result) {
+            RdfElement::RdfLiteral(inner) => match (&self.current_stage, &mut self.result) {
                 (RdfToolStage::PredicateEnd, PartialRdfElement::Predicate { dest, .. }) => {
                     *dest = Some(RdfTargettableElement::from(inner));
                     self.event_lock = true;
                 }
                 _ => {}
             },
-            RdfElement::RdfNode(inner) => match (self.current_stage, &mut self.result) {
-                (RdfToolStage::PredicateStart, PartialRdfElement::None) => {
+            RdfElement::RdfNode(inner) => match (&self.current_stage, &mut self.result) {
+                (RdfToolStage::PredicateStart { uri }, PartialRdfElement::None) => {
                     self.result = PartialRdfElement::Predicate {
+                        uri: uri.clone(),
                         source: inner,
                         dest: None,
                     };
@@ -841,11 +880,12 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 Some((x, esm))
             }
             PartialRdfElement::Predicate {
+                uri,
                 source,
                 dest: Some(dest),
                 ..
             } => {
-                self.current_stage = RdfToolStage::PredicateStart;
+                self.current_stage = self.initial_stage.clone();
 
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.uuid());
                 let predicate_view: Option<(_, Option<Box<dyn CustomModal>>)> =
@@ -857,7 +897,7 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                       && q.are_siblings(&source_controller.uuid(), &dest_controller.uuid())
                     {
                         let (predicate_model, predicate_view) = new_rdf_predicate(
-                            "http://www.w3.org/2000/10/swap/pim/contact#fullName",
+                            uri,
                             (source.clone(), source_controller),
                             (dest.clone(), dest_controller),
                         );
@@ -870,11 +910,11 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 self.try_spend();
                 predicate_view
             }
-            PartialRdfElement::Graph { a, b: Some(b) } => {
-                self.current_stage = RdfToolStage::GraphStart;
+            PartialRdfElement::Graph { uri, a, b: Some(b) } => {
+                self.current_stage = self.initial_stage.clone();
 
                 let (graph_model, graph_view) =
-                    new_rdf_graph("http://a-graph", egui::Rect::from_two_pos(*a, *b));
+                    new_rdf_graph(uri, egui::Rect::from_two_pos(*a, *b));
 
                 self.try_spend();
                 Some((graph_view.into(), Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(graph_model))))))
@@ -1360,9 +1400,15 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             InputEvent::Click(pos) if self.highlight.selected && self.predicate_button_rect(ehc.ui_scale).contains(pos) => {
                 *tool = Some(NaiveRdfTool {
                     uuid: uuid::Uuid::nil(),
-                    initial_stage: RdfToolStage::PredicateStart,
+                    initial_stage: RdfToolStage::PredicateStart {
+                        uri: "http://www.w3.org/2000/10/swap/pim/contact#fullName".to_owned(),
+                    },
                     current_stage: RdfToolStage::PredicateEnd,
-                    result: PartialRdfElement::Predicate { source: self.model.clone(), dest: None },
+                    result: PartialRdfElement::Predicate {
+                        uri: "http://www.w3.org/2000/10/swap/pim/contact#fullName".to_owned(),
+                        source: self.model.clone(),
+                        dest: None,
+                    },
                     event_lock: true,
                     is_spent: Some(false),
                 });
