@@ -504,7 +504,8 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     controllers.push(client_view.clone().into());
 
     let (tx1_model, tx1_view) = new_democsd_transaction(
-        "TK01", "Sale completion", false,
+        "TK01", "Sale completion",
+        DemoTransactionKind::Performa, false,
         egui::Pos2::new(200.0, 400.0), true,
     );
     let (ta1_model, ta1_view) = new_democsd_transactor(
@@ -524,7 +525,8 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     controllers.push(initiator_link.1.into());
 
     let (tx2_model, tx2_view) = new_democsd_transaction(
-        "TK10", "Sale transportation", false,
+        "TK10", "Sale transportation",
+        DemoTransactionKind::Performa, false,
         egui::Pos2::new(200.0, 600.0), true,
     );
     let (ta_model, ta_view) = new_democsd_transactor(
@@ -544,7 +546,8 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     controllers.push(wait_link.1.into());
 
     let (tx3_model, tx3_view) = new_democsd_transaction(
-        "TK11", "Sale controlling", false,
+        "TK11", "Sale controlling",
+        DemoTransactionKind::Performa, false,
         egui::Pos2::new(400.0, 400.0), true,
     );
     let (ta3_model, ta3_view) = new_democsd_transactor(
@@ -595,10 +598,10 @@ impl DiagramSettings2<DemoCsdDomain> for DemoCsdSettings {
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let (client, client_view) = new_democsd_transactor("CTAR01", "Client", false, true, None, false, egui::Pos2::ZERO);
     let (_actor, actor_view) = {
-        let tx = new_democsd_transaction("TK01", "Transaction", false, egui::Pos2::ZERO, true);
+        let tx = new_democsd_transaction("TK01", "Transaction", DemoTransactionKind::Performa, false, egui::Pos2::ZERO, true);
         new_democsd_transactor("AR01", "Transactor", true, false, Some(tx), false, egui::Pos2::ZERO)
     };
-    let (bank, bank_view) = new_democsd_transaction("TK01", "Bank", false, egui::Pos2::new(100.0, 75.0), false);
+    let (bank, bank_view) = new_democsd_transaction("TK01", "Bank", DemoTransactionKind::Performa, false, egui::Pos2::new(100.0, 75.0), false);
     let bank = (bank, bank_view.into());
 
     let (_init, init_view) = new_democsd_link(DemoCsdLinkType::InitiatorLink, (client.clone(), client_view.clone().into()), bank.clone());
@@ -609,9 +612,22 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
     let palette_items = vec![
         ("Elements", vec![
-            (DemoCsdToolStage::Client, "Client Role", client_view.into()),
-            (DemoCsdToolStage::Transactor, "Actor Role", actor_view.into()),
-            (DemoCsdToolStage::Bank, "Transaction Bank", bank.1.into()),
+            (DemoCsdToolStage::BareTransactor {
+                identifier: "CTAR01".to_owned(),
+                name: "Client".to_owned(),
+                internal: false,
+            }, "Client Role", client_view.into()),
+            (DemoCsdToolStage::ComboTransactor {
+                identifier: "TK01".to_owned(),
+                name: "Transaction".to_owned(),
+                internal: true,
+                transaction_kind: DemoTransactionKind::Performa,
+            }, "Actor Role", actor_view.into()),
+            (DemoCsdToolStage::Bank {
+                identifier: "TK01".to_owned(),
+                name: "Bank".to_owned(),
+                transaction_kind: DemoTransactionKind::Performa,
+            }, "Transaction Bank", bank.1.into()),
         ]),
         ("Relationships", vec![
             (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::InitiatorLink }, "Initiator Link", init_view.into()),
@@ -654,14 +670,37 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
                 match tool {
-                    DemoCsdToolStage::Client => {
-
+                    DemoCsdToolStage::BareTransactor { identifier, name, internal } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+                        modified |= columns[1].checkbox(internal, "internal").changed();
                     },
-                    DemoCsdToolStage::Transactor => {
+                    DemoCsdToolStage::ComboTransactor { identifier, name, internal, transaction_kind } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+                        modified |= columns[1].checkbox(internal, "internal").changed();
 
+                        columns[1].label("Transaction kind");
+                        egui::ComboBox::from_id_salt("transaction kind")
+                            .selected_text(transaction_kind.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in DemoTransactionKind::VARIANTS {
+                                    modified |= ui.selectable_value(transaction_kind, e, e.as_str()).clicked();
+                                }
+                            });
                     },
-                    DemoCsdToolStage::Bank => {
+                    DemoCsdToolStage::Bank { identifier, name, transaction_kind } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
+                        columns[1].label("Transaction kind");
+                        egui::ComboBox::from_id_salt("transaction kind")
+                            .selected_text(transaction_kind.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in DemoTransactionKind::VARIANTS {
+                                    modified |= ui.selectable_value(transaction_kind, e, e.as_str()).clicked();
+                                }
+                            });
                     },
                     DemoCsdToolStage::LinkStart { link_type } => {
 
@@ -697,11 +736,24 @@ inventory::submit! {DiagramInfo {
 }}
 
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum DemoCsdToolStage {
-    Client,
-    Transactor,
-    Bank,
+    BareTransactor {
+        identifier: String,
+        name: String,
+        internal: bool,
+    },
+    ComboTransactor {
+        identifier: String,
+        name: String,
+        internal: bool,
+        transaction_kind: DemoTransactionKind,
+    },
+    Bank {
+        identifier: String,
+        name: String,
+        transaction_kind: DemoTransactionKind,
+    },
     LinkStart { link_type: DemoCsdLinkType },
     LinkEnd,
     PackageStart,
@@ -747,8 +799,8 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
     fn new(uuid: uuid::Uuid, initial_stage: DemoCsdToolStage, repeat: bool) -> Self {
         Self {
             uuid,
+            current_stage: initial_stage.clone(),
             initial_stage,
-            current_stage: initial_stage,
             result: PartialDemoCsdElement::None,
             event_lock: false,
             is_spent: if repeat { None } else { Some(false) },
@@ -767,9 +819,9 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
     fn targetting_for_section(&self, element: Option<DemoCsdElement>) -> egui::Color32 {
         match element {
             None => match self.current_stage {
-                DemoCsdToolStage::Client
-                | DemoCsdToolStage::Transactor
-                | DemoCsdToolStage::Bank
+                DemoCsdToolStage::BareTransactor { .. }
+                | DemoCsdToolStage::ComboTransactor { .. }
+                | DemoCsdToolStage::Bank { .. }
                 | DemoCsdToolStage::PackageStart
                 | DemoCsdToolStage::PackageEnd => TARGETTABLE_COLOR,
                 DemoCsdToolStage::LinkStart { .. } | DemoCsdToolStage::LinkEnd => {
@@ -777,9 +829,9 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 }
             },
             Some(DemoCsdElement::DemoCsdPackage(..)) => match self.current_stage {
-                DemoCsdToolStage::Client
-                | DemoCsdToolStage::Transactor
-                | DemoCsdToolStage::Bank
+                DemoCsdToolStage::BareTransactor { .. }
+                | DemoCsdToolStage::ComboTransactor { .. }
+                | DemoCsdToolStage::Bank { .. }
                 | DemoCsdToolStage::PackageStart
                 | DemoCsdToolStage::PackageEnd => TARGETTABLE_COLOR,
                 DemoCsdToolStage::LinkStart { .. } | DemoCsdToolStage::LinkEnd => {
@@ -788,11 +840,11 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             },
             Some(DemoCsdElement::DemoCsdTransactor(inner)) => match self.current_stage {
                 DemoCsdToolStage::LinkStart { .. } => TARGETTABLE_COLOR,
-                DemoCsdToolStage::Bank if inner.read().transaction.as_ref().is_none()
+                DemoCsdToolStage::Bank { .. } if inner.read().transaction.as_ref().is_none()
                     => TARGETTABLE_COLOR,
-                DemoCsdToolStage::Client
-                | DemoCsdToolStage::Transactor
-                | DemoCsdToolStage::Bank
+                DemoCsdToolStage::BareTransactor { .. }
+                | DemoCsdToolStage::ComboTransactor { .. }
+                | DemoCsdToolStage::Bank { .. }
                 | DemoCsdToolStage::LinkEnd
                 | DemoCsdToolStage::PackageStart
                 | DemoCsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
@@ -808,9 +860,9 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     },
                     _ => NON_TARGETTABLE_COLOR
                 }
-                DemoCsdToolStage::Client
-                | DemoCsdToolStage::Transactor
-                | DemoCsdToolStage::Bank
+                DemoCsdToolStage::BareTransactor { .. }
+                | DemoCsdToolStage::ComboTransactor { .. }
+                | DemoCsdToolStage::Bank { .. }
                 | DemoCsdToolStage::LinkStart { .. }
                 | DemoCsdToolStage::PackageStart
                 | DemoCsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
@@ -855,20 +907,20 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             return;
         }
 
-        match (self.current_stage, &mut self.result) {
-            (DemoCsdToolStage::Client, _) => {
+        match (&self.current_stage, &mut self.result) {
+            (DemoCsdToolStage::BareTransactor { identifier, name, internal }, _) => {
                 let (_client_model, client_view) =
-                    new_democsd_transactor("CTAR01", "Client", false, true, None, false, pos);
+                    new_democsd_transactor(identifier, name, *internal, true, None, false, pos);
                 self.result = PartialDemoCsdElement::Some(client_view.into());
                 self.event_lock = true;
             }
-            (DemoCsdToolStage::Transactor, _) => {
+            (DemoCsdToolStage::ComboTransactor { identifier, name, internal, transaction_kind }, _) => {
                 let (tx_model, tx_view) =
-                    new_democsd_transaction("TK01", "Transaction", false, pos, true);
+                    new_democsd_transaction(identifier, name, *transaction_kind, false, pos, true);
                 let (_ta_model, ta_view) = new_democsd_transactor(
                     "AR01",
                     "Transactor",
-                    true,
+                    *internal,
                     false,
                     Some((tx_model, tx_view)),
                     false,
@@ -877,9 +929,9 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 self.result = PartialDemoCsdElement::Some(ta_view.into());
                 self.event_lock = true;
             }
-            (DemoCsdToolStage::Bank, _) => {
+            (DemoCsdToolStage::Bank { identifier, name, transaction_kind }, _) => {
                 let (_bank_model, transaction_view) =
-                    new_democsd_transaction("TK01", "Bank", false, pos, false);
+                    new_democsd_transaction(identifier, name, *transaction_kind, false, pos, false);
                 self.result = PartialDemoCsdElement::Some(transaction_view.into());
                 self.event_lock = true;
             }
@@ -902,17 +954,17 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         match element {
             DemoCsdElement::DemoCsdPackage(..) => {}
             DemoCsdElement::DemoCsdTransactor(inner) => {
-                match (self.current_stage, &mut self.result) {
+                match (&self.current_stage, &mut self.result) {
                     (DemoCsdToolStage::LinkStart { link_type }, PartialDemoCsdElement::None) => {
                         self.result = PartialDemoCsdElement::Link {
-                            link_type,
+                            link_type: *link_type,
                             source: inner,
                             dest: None,
                         };
                         self.current_stage = DemoCsdToolStage::LinkEnd;
                         self.event_lock = true;
                     }
-                    (DemoCsdToolStage::Bank, PartialDemoCsdElement::None) => {
+                    (DemoCsdToolStage::Bank { .. }, PartialDemoCsdElement::None) => {
                         if inner.read().transaction.is_some() {
                             self.event_lock = true;
                         }
@@ -920,7 +972,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     _ => {}
                 }
             }
-            DemoCsdElement::DemoCsdTransaction(inner) => match (self.current_stage, &mut self.result) {
+            DemoCsdElement::DemoCsdTransaction(inner) => match (&self.current_stage, &mut self.result) {
                 (DemoCsdToolStage::LinkEnd, PartialDemoCsdElement::Link { source, dest, .. }) => {
                     if source.read().transaction.as_ref().is_some_and(|e| *e.read().uuid == *inner.read().uuid) {
                         return;
@@ -973,7 +1025,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 ) && q.is_contained(&source_view.uuid(), into)
                   && q.is_contained(&target_view.uuid(), into)
                 {
-                    self.current_stage = self.initial_stage;
+                    self.current_stage = self.initial_stage.clone();
 
                     let (_link_model, link_view) = new_democsd_link(
                         *link_type,
@@ -1383,7 +1435,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             ));
         }
 
-        if ui.checkbox(&mut self.internal_buffer, "Internal").changed() {
+        if ui.checkbox(&mut self.internal_buffer, "internal").changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoCsdPropChange::TransactorInternalChange(self.internal_buffer),
@@ -2014,13 +2066,14 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 fn new_democsd_transaction(
     identifier: &str,
     name: &str,
+    kind: DemoTransactionKind,
     multiple: bool,
     position: egui::Pos2,
     actor: bool,
 ) -> (ERef<DemoCsdTransaction>, ERef<DemoCsdTransactionView>) {
     let tx_model = ERef::new(DemoCsdTransaction::new(
         ModelUuid::now_v7(),
-        DemoTransactionKind::Performa,
+        kind,
         identifier.to_owned(),
         name.to_owned(),
         multiple,
@@ -2062,6 +2115,7 @@ struct DemoCsdTransactionSetupModal {
     first_frame: bool,
     identifier_buffer: String,
     name_buffer: String,
+    kind_buffer: DemoTransactionKind,
     multiple_buffer: bool,
 }
 
@@ -2074,6 +2128,7 @@ impl From<&ERef<DemoCsdTransaction>> for DemoCsdTransactionSetupModal {
             first_frame: true,
             identifier_buffer: (*m.identifier).clone(),
             name_buffer: (*m.name).clone(),
+            kind_buffer: m.kind,
             multiple_buffer: m.multiple,
         }
     }
@@ -2090,6 +2145,14 @@ impl CustomModal for DemoCsdTransactionSetupModal {
         let r = ui.text_edit_singleline(&mut self.identifier_buffer);
         ui.label("Name:");
         ui.text_edit_multiline(&mut self.name_buffer);
+        ui.label("Transaction kind");
+        egui::ComboBox::from_id_salt("transaction kind")
+            .selected_text(self.kind_buffer.as_str())
+            .show_ui(ui, |ui| {
+                for e in DemoTransactionKind::VARIANTS {
+                    ui.selectable_value(&mut self.kind_buffer, e, e.as_str());
+                }
+            });
         ui.checkbox(&mut self.multiple_buffer, "Multiple");
 
         if self.first_frame {
@@ -2103,6 +2166,7 @@ impl CustomModal for DemoCsdTransactionSetupModal {
                 let mut m = self.model.write();
                 m.identifier = Arc::new(self.identifier_buffer.clone());
                 m.name = Arc::new(self.name_buffer.clone());
+                m.kind = self.kind_buffer;
                 m.multiple = self.multiple_buffer;
                 result = CustomModalResult::CloseModified(*m.uuid);
             }

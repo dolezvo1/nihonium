@@ -657,17 +657,17 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     );
 
     let (tx01, tx01_view) = new_demopsd_transaction(
-        "01", "usufruct case concluding",
+        "01", "usufruct case concluding", DemoTransactionKind::Performa,
         vec![(false, act1.0.clone().into(), act1.1.clone().into())], None, vec![],
         egui::Pos2::new(200.0, 200.0), 350.0,
     );
     let (tx02, tx02_view) = new_demopsd_transaction(
-        "02", "resource seizing",
+        "02", "resource seizing", DemoTransactionKind::Performa,
         vec![], None, vec![],
         egui::Pos2::new(100.0, 300.0), 150.0,
     );
     let (tx03, tx03_view) = new_demopsd_transaction(
-        "03", "resource releasing",
+        "03", "resource releasing", DemoTransactionKind::Performa,
         vec![], Some(act2.clone()), vec![],
         egui::Pos2::new(300.0, 300.0), 150.0,
     );
@@ -721,7 +721,7 @@ impl DiagramSettings2<DemoPsdDomain> for DemoPsdSettings {
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    let (ta, ta_view) = new_demopsd_transaction("01", "", vec![], None, vec![], egui::Pos2::new(100.0, 75.0), 200.0);
+    let (ta, ta_view) = new_demopsd_transaction("01", "", DemoTransactionKind::Performa, vec![], None, vec![], egui::Pos2::new(100.0, 75.0), 200.0);
     let ta = (ta, ta_view.into());
 
     let (fact, fact_view) = new_demopsd_fact("rq", true, egui::Pos2::ZERO);
@@ -736,9 +736,19 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
     let palette_items = vec![
         ("Elements", vec![
-            (DemoPsdToolStage::TransactionStart, "Transaction", ta.1),
-            (DemoPsdToolStage::Fact, "Fact", fact.1),
-            (DemoPsdToolStage::Act, "Act", act.1),
+            (DemoPsdToolStage::TransactionStart {
+                identifier: "01".to_owned(),
+                name: "".to_owned(),
+                transaction_kind: DemoTransactionKind::Performa,
+            }, "Transaction", ta.1),
+            (DemoPsdToolStage::Fact {
+                identifier: "".to_owned(),
+                internal: true,
+            }, "Fact", fact.1),
+            (DemoPsdToolStage::Act {
+                identifier: "".to_owned(),
+                internal: true,
+            }, "Act", act.1),
         ]),
         ("Relationships", vec![
             (DemoPsdToolStage::LinkStart { link_type: DemoPsdLinkType::ResponseLink }, "Response Link", response_view.into()),
@@ -779,7 +789,38 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                // TODO: edit
+                match tool {
+                    DemoPsdToolStage::TransactionStart { identifier, name, transaction_kind } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+
+                        columns[1].label("Transaction kind");
+                        egui::ComboBox::from_id_salt("transaction kind")
+                            .selected_text(transaction_kind.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in DemoTransactionKind::VARIANTS {
+                                    modified |= ui.selectable_value(transaction_kind, e, e.as_str()).clicked();
+                                }
+                            });
+                    },
+                    DemoPsdToolStage::Fact { identifier, internal } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
+                        modified |= columns[1].checkbox(internal, "internal").changed();
+                    },
+                    DemoPsdToolStage::Act { identifier, internal } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
+                        modified |= columns[1].checkbox(internal, "internal").changed();
+                    },
+                    DemoPsdToolStage::LinkStart { link_type } => {
+
+                    },
+                    DemoPsdToolStage::PackageStart => {
+
+                    },
+                    DemoPsdToolStage::TransactionEnd
+                    | DemoPsdToolStage::LinkEnd
+                    | DemoPsdToolStage::PackageEnd => unreachable!(),
+                }
 
                 if modified {
                     w.set_from_buffer(buffer.clone());
@@ -806,12 +847,22 @@ inventory::submit! {DiagramInfo {
 }}
 
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum DemoPsdToolStage {
-    TransactionStart,
+    TransactionStart {
+        identifier: String,
+        name: String,
+        transaction_kind: DemoTransactionKind,
+    },
     TransactionEnd,
-    Fact,
-    Act,
+    Fact {
+        identifier: String,
+        internal: bool,
+    },
+    Act {
+        identifier: String,
+        internal: bool,
+    },
     LinkStart { link_type: DemoPsdLinkType },
     LinkEnd,
     PackageStart,
@@ -822,6 +873,9 @@ enum PartialDemoPsdElement {
     None,
     Some(DemoPsdElementView),
     TransactionStart {
+        identifier: String,
+        name: String,
+        transaction_kind: DemoTransactionKind,
         start_pos: egui::Pos2,
     },
     Link {
@@ -860,8 +914,8 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
     fn new(uuid: uuid::Uuid, initial_stage: DemoPsdToolStage, repeat: bool) -> Self {
         Self {
             uuid,
+            current_stage: initial_stage.clone(),
             initial_stage,
-            current_stage: initial_stage,
             result: PartialDemoPsdElement::None,
             event_lock: false,
             is_spent: if repeat { None } else { Some(false) },
@@ -881,10 +935,10 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         type TS = DemoPsdElementTargettingSection;
         match element {
             None => match self.current_stage {
-                DemoPsdToolStage::TransactionStart
+                DemoPsdToolStage::TransactionStart { .. }
                 | DemoPsdToolStage::TransactionEnd
-                | DemoPsdToolStage::Fact
-                | DemoPsdToolStage::Act
+                | DemoPsdToolStage::Fact { .. }
+                | DemoPsdToolStage::Act { .. }
                 | DemoPsdToolStage::PackageStart
                 | DemoPsdToolStage::PackageEnd => TARGETTABLE_COLOR,
                 DemoPsdToolStage::LinkStart { .. }
@@ -893,10 +947,10 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 }
             },
             Some(TS::Package(..)) => match self.current_stage {
-                DemoPsdToolStage::TransactionStart
+                DemoPsdToolStage::TransactionStart { .. }
                 | DemoPsdToolStage::TransactionEnd
-                | DemoPsdToolStage::Fact
-                | DemoPsdToolStage::Act
+                | DemoPsdToolStage::Fact { .. }
+                | DemoPsdToolStage::Act { .. }
                 | DemoPsdToolStage::PackageStart
                 | DemoPsdToolStage::PackageEnd => TARGETTABLE_COLOR,
                 DemoPsdToolStage::LinkStart { .. }
@@ -906,14 +960,14 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             },
             Some(TS::Transaction(tx, align)) => {
                 if align == egui::Align2::CENTER_CENTER {
-                    return if self.current_stage == DemoPsdToolStage::Act && !tx.read().p_act.is_some() {
+                    return if matches!(self.current_stage, DemoPsdToolStage::Act { .. }) && !tx.read().p_act.is_some() {
                         TARGETTABLE_COLOR
                     } else {
                         NON_TARGETTABLE_COLOR
                     };
                 }
 
-                if matches!(self.current_stage, DemoPsdToolStage::Fact | DemoPsdToolStage::Act) {
+                if matches!(self.current_stage, DemoPsdToolStage::Fact { .. } | DemoPsdToolStage::Act { .. }) {
                     TARGETTABLE_COLOR
                 } else {
                     NON_TARGETTABLE_COLOR
@@ -921,20 +975,20 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             },
             Some(TS::Fact(..)) => match self.current_stage {
                 DemoPsdToolStage::LinkStart { .. } => TARGETTABLE_COLOR,
-                DemoPsdToolStage::TransactionStart
+                DemoPsdToolStage::TransactionStart { .. }
                 | DemoPsdToolStage::TransactionEnd
-                | DemoPsdToolStage::Fact
-                | DemoPsdToolStage::Act
+                | DemoPsdToolStage::Fact { .. }
+                | DemoPsdToolStage::Act { .. }
                 | DemoPsdToolStage::LinkEnd
                 | DemoPsdToolStage::PackageStart
                 | DemoPsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             }
             Some(TS::Act(..)) => match self.current_stage {
                 DemoPsdToolStage::LinkEnd => TARGETTABLE_COLOR,
-                DemoPsdToolStage::TransactionStart
+                DemoPsdToolStage::TransactionStart { .. }
                 | DemoPsdToolStage::TransactionEnd
-                | DemoPsdToolStage::Fact
-                | DemoPsdToolStage::Act
+                | DemoPsdToolStage::Fact { .. }
+                | DemoPsdToolStage::Act { .. }
                 | DemoPsdToolStage::LinkStart { .. }
                 | DemoPsdToolStage::PackageStart
                 | DemoPsdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
@@ -944,7 +998,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
     }
     fn draw_status_hint(&self, q: &<DemoPsdDomain as Domain>::QueryableT<'_>, canvas: &mut dyn canvas::NHCanvas, pos: egui::Pos2) {
         match &self.result {
-            PartialDemoPsdElement::TransactionStart { start_pos } => {
+            PartialDemoPsdElement::TransactionStart { start_pos, .. } => {
                 canvas.draw_line(
                     [*start_pos, egui::Pos2::new(pos.x, start_pos.y)],
                     canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
@@ -986,30 +1040,35 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
             return;
         }
 
-        match (self.current_stage, &mut self.result) {
-            (DemoPsdToolStage::TransactionStart, _) => {
-                self.result = PartialDemoPsdElement::TransactionStart { start_pos: pos };
+        match (&self.current_stage, &mut self.result) {
+            (DemoPsdToolStage::TransactionStart { identifier, name, transaction_kind }, _) => {
+                self.result = PartialDemoPsdElement::TransactionStart {
+                    identifier: identifier.clone(),
+                    name: name.clone(),
+                    transaction_kind: *transaction_kind,
+                    start_pos: pos,
+                };
                 self.current_stage = DemoPsdToolStage::TransactionEnd;
                 self.event_lock = true;
             }
-            (DemoPsdToolStage::TransactionEnd, PartialDemoPsdElement::TransactionStart { start_pos }) => {
+            (DemoPsdToolStage::TransactionEnd, PartialDemoPsdElement::TransactionStart { identifier, name, transaction_kind, start_pos }) => {
                 let rect = egui::Rect::from_two_pos(
                     egui::Pos2::new(start_pos.x, start_pos.y),
                     egui::Pos2::new(pos.x, start_pos.y),
                 );
                 let (_transaction_model, transaction_view) =
-                    new_demopsd_transaction("01", "", vec![], None, vec![], rect.center(), rect.width());
+                    new_demopsd_transaction(identifier, name, *transaction_kind, vec![], None, vec![], rect.center(), rect.width());
                 self.result = PartialDemoPsdElement::Some(transaction_view.into());
-                self.current_stage = DemoPsdToolStage::TransactionStart;
+                self.current_stage = self.initial_stage.clone();
                 self.event_lock = true;
             }
-            (DemoPsdToolStage::Fact, _) => {
-                let (_fact_model, fact_view) = new_demopsd_fact("", true, pos);
+            (DemoPsdToolStage::Fact { identifier, internal }, _) => {
+                let (_fact_model, fact_view) = new_demopsd_fact(identifier, *internal, pos);
                 self.result = PartialDemoPsdElement::Some(fact_view.into());
                 self.event_lock = true;
             }
-            (DemoPsdToolStage::Act, _) => {
-                let (_act_model, act_view) = new_demopsd_act("", true, pos);
+            (DemoPsdToolStage::Act { identifier, internal }, _) => {
+                let (_act_model, act_view) = new_demopsd_act(identifier, *internal, pos);
                 self.result = PartialDemoPsdElement::Some(act_view.into());
                 self.event_lock = true;
             }
@@ -1085,7 +1144,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 ) && q.is_contained(&source_view.uuid(), into)
                   && q.is_contained(&target_view.uuid(), into)
                 {
-                    self.current_stage = self.initial_stage;
+                    self.current_stage = self.initial_stage.clone();
 
                     let (_link_model, link_view) = new_demopsd_link(
                         *link_type,
@@ -1273,6 +1332,7 @@ fn new_demopsd_package_view(
 fn new_demopsd_transaction(
     identifier: &str,
     name: &str,
+    transaction_kind: DemoTransactionKind,
     before: Vec<(bool, DemoPsdState, DemoPsdStateView)>,
     p_act: Option<(ERef<DemoPsdAct>, ERef<DemoPsdActView>)>,
     after: Vec<(bool, DemoPsdState, DemoPsdStateView)>,
@@ -1295,7 +1355,7 @@ fn new_demopsd_transaction(
 
     let tx_model = ERef::new(DemoPsdTransaction::new(
         ModelUuid::now_v7(),
-        DemoTransactionKind::Performa,
+        transaction_kind,
         identifier.to_owned(),
         name.to_owned(),
         before_models,
@@ -1762,6 +1822,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         if canvas.ui_scale().is_some()
             && let Some((pos, tool)) = tool
             && !child_targetting_drawn {
+            // TODO: it would make sense to not draw individual segments for tools where no segment could be valid
             let section = self.section_for(*pos);
             if section.1 == egui::Align2::CENTER_CENTER {
                 canvas.draw_polygon(
@@ -2677,7 +2738,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
             ));
         }
 
-        if ui.checkbox(&mut self.internal_buffer, "Internal").changed() {
+        if ui.checkbox(&mut self.internal_buffer, "internal").changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::StateInternalChange(self.internal_buffer),
@@ -3106,7 +3167,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
             ));
         }
 
-        if ui.checkbox(&mut self.internal_buffer, "Internal").changed() {
+        if ui.checkbox(&mut self.internal_buffer, "internal").changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 DemoPsdPropChange::StateInternalChange(self.internal_buffer),
