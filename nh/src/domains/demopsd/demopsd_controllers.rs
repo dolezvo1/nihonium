@@ -1822,8 +1822,18 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         if canvas.ui_scale().is_some()
             && let Some((pos, tool)) = tool
             && !child_targetting_drawn {
-            // TODO: it would make sense to not draw individual segments for tools where no segment could be valid
             let section = self.section_for(*pos);
+            if !matches!(&tool.initial_stage, DemoPsdToolStage::Fact { .. } | DemoPsdToolStage::Act { .. })
+                && self.tx_outer_rectangle.contains(*pos) {
+                canvas.draw_rectangle(
+                    self.tx_outer_rectangle,
+                    egui::CornerRadius::ZERO,
+                    tool.targetting_for_section(Some(section.into())),
+                    canvas::Stroke::new_solid(0.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                return TargettingStatus::Drawn;
+            }
             if section.1 == egui::Align2::CENTER_CENTER {
                 canvas.draw_polygon(
                     vec![
