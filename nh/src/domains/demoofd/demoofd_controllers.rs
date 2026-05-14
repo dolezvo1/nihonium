@@ -689,16 +689,16 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
     let palette_items = vec![
         ("Elements", vec![
-            (DemoOfdToolStage::Entity {
+            (DemoOfdToolStage::Entity(EntityStageData {
                 name: "MEMBERSHIP".to_owned(),
                 properties: "".to_owned(),
                 internal: true,
-            }, "Entity Type", entity_2.1.into()),
+            }), "Entity Type", entity_2.1.into()),
             (DemoOfdToolStage::EventStart {
                 identifier: "01".to_owned(),
                 name: "is started".to_owned(),
                 transaction_kind: DemoTransactionKind::Performa,
-                with_specialization: false,
+                specialization: None,
             }, "Event Type", event_view.into()),
         ]),
         ("Relationships", vec![
@@ -709,7 +709,9 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             (DemoOfdToolStage::LinkStart { link_type: LinkType::Exclusion }, "Exclusion", excl_view.into()),
         ]),
         ("Other", vec![
-            (DemoOfdToolStage::PackageStart, "Package", package_view.into()),
+            (DemoOfdToolStage::PackageStart {
+                name: "A package".to_owned(),
+            }, "Package", package_view.into()),
         ]),
     ];
 
@@ -745,7 +747,7 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
 
                 match (tool, view.model()) {
                     (
-                        DemoOfdToolStage::Entity { name, properties, internal },
+                        DemoOfdToolStage::Entity(EntityStageData { name, properties, internal }),
                         DemoOfdElement::DemoOfdEntityType(inner),
                     ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
@@ -759,13 +761,13 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                         }
                     },
                     (
-                        DemoOfdToolStage::EventStart { identifier, name, transaction_kind, with_specialization },
+                        DemoOfdToolStage::EventStart { identifier, name, transaction_kind, specialization },
                         DemoOfdElement::DemoOfdEventType(inner),
                     ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
-                        columns[1].label("Transaction kind");
+                        columns[1].label("Kind");
                         egui::ComboBox::from_id_salt("transaction kind")
                             .selected_text(transaction_kind.as_str())
                             .show_ui(&mut columns[1], |ui| {
@@ -774,17 +776,38 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                 }
                             });
 
+                        if let Some(s) = specialization {
+                            modified |= columns[1].labeled_text_edit_singleline("Name", &mut s.name).changed();
+                            modified |= columns[1].labeled_text_edit_singleline("Properties", &mut s.properties).changed();
+                            modified |= columns[1].checkbox(&mut s.internal, "internal").changed();
+                        }
+
                         if modified && let mut mw = inner.write() {
                             mw.identifier = identifier.clone().into();
                             mw.name = name.clone().into();
                             mw.kind = *transaction_kind;
+
+                            if let Some(sm) = mw.specialization_entity_type.as_ref()
+                                && let mut sm = sm.write()
+                                && let Some(sb) = specialization {
+                                sm.name = sb.name.clone().into();
+                                sm.properties = sb.properties.clone().into();
+                                sm.internal = sb.internal;
+                            }
                         }
                     },
                     (DemoOfdToolStage::LinkStart { link_type }, _) => {
 
                     },
-                    (DemoOfdToolStage::PackageStart, _) => {
+                    (
+                        DemoOfdToolStage::PackageStart { name },
+                        DemoOfdElement::DemoOfdPackage(inner),
+                    ) => {
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
+                        if modified && let mut mw = inner.write() {
+                            mw.name = name.clone().into();
+                        }
                     },
                     _ => unreachable!(),
                 }
@@ -815,6 +838,13 @@ inventory::submit! {DiagramInfo {
 }}
 
 
+#[derive(Clone, PartialEq)]
+struct EntityStageData {
+    name: String,
+    properties: String,
+    internal: bool,
+}
+
 #[derive(Clone, Copy, PartialEq)]
 pub enum LinkType {
     PropertyType,
@@ -826,22 +856,20 @@ pub enum LinkType {
 
 #[derive(Clone, PartialEq)]
 pub enum DemoOfdToolStage {
-    Entity {
-        name: String,
-        properties: String,
-        internal: bool,
-    },
+    Entity(EntityStageData),
     EventStart {
         identifier: String,
         name: String,
         transaction_kind: DemoTransactionKind,
-        with_specialization: bool,
+        specialization: Option<EntityStageData>,
     },
     EventEnd,
     LinkStart { link_type: LinkType },
     LinkEnd,
     LinkAddEnding { source: bool },
-    PackageStart,
+    PackageStart {
+        name: String,
+    },
     PackageEnd,
 }
 
@@ -852,7 +880,7 @@ enum PartialDemoOfdElement {
         identifier: String,
         name: String,
         transaction_kind: DemoTransactionKind,
-        with_specialization: bool,
+        specialization: Option<EntityStageData>,
         source: ERef<DemoOfdEntityType>,
         pos: Option<egui::Pos2>,
     },
@@ -876,6 +904,7 @@ enum PartialDemoOfdElement {
         dest: Option<DemoOfdType>,
     },
     Package {
+        name: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
@@ -928,7 +957,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             None => match self.current_stage {
                 DemoOfdToolStage::Entity { .. }
                 | DemoOfdToolStage::EventEnd
-                | DemoOfdToolStage::PackageStart
+                | DemoOfdToolStage::PackageStart { .. }
                 | DemoOfdToolStage::PackageEnd => TARGETTABLE_COLOR,
                 DemoOfdToolStage::EventStart { .. }
                 | DemoOfdToolStage::LinkStart { .. }
@@ -940,7 +969,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             Some(DemoOfdElement::DemoOfdPackage(..)) => match self.current_stage {
                 DemoOfdToolStage::Entity { .. }
                 | DemoOfdToolStage::EventEnd
-                | DemoOfdToolStage::PackageStart
+                | DemoOfdToolStage::PackageStart { .. }
                 | DemoOfdToolStage::PackageEnd => TARGETTABLE_COLOR,
 
                 DemoOfdToolStage::EventStart { .. }
@@ -978,7 +1007,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 DemoOfdToolStage::EventEnd
                 | DemoOfdToolStage::Entity { .. }
                 | DemoOfdToolStage::LinkStart { link_type: LinkType::Precedence }
-                | DemoOfdToolStage::PackageStart
+                | DemoOfdToolStage::PackageStart { .. }
                 | DemoOfdToolStage::PackageEnd => NON_TARGETTABLE_COLOR,
             },
             Some(DemoOfdElement::DemoOfdEventType(inner)) => match self.current_stage {
@@ -991,7 +1020,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 }
                 DemoOfdToolStage::EventStart { .. }
                 | DemoOfdToolStage::EventEnd
-                | DemoOfdToolStage::PackageStart
+                | DemoOfdToolStage::PackageStart { .. }
                 | DemoOfdToolStage::PackageEnd
                 | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType | LinkType::Specialization | LinkType::Aggregation }
                 | DemoOfdToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
@@ -1085,7 +1114,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
         }
 
         match (&self.current_stage, &mut self.result) {
-            (DemoOfdToolStage::Entity { name, properties, internal }, _) => {
+            (DemoOfdToolStage::Entity(EntityStageData { name, properties, internal }), _) => {
                 let (_class_model, class_view) =
                     new_demoofd_entitytype(name, properties, *internal, pos);
                 self.result = PartialDemoOfdElement::Some(class_view.into());
@@ -1095,8 +1124,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 *p = Some(pos);
                 self.event_lock = true;
             }
-            (DemoOfdToolStage::PackageStart, _) => {
-                self.result = PartialDemoOfdElement::Package { a: pos, b: None };
+            (DemoOfdToolStage::PackageStart { name }, _) => {
+                self.result = PartialDemoOfdElement::Package {
+                    name: name.clone(),
+                    a: pos,
+                    b: None,
+                };
                 self.current_stage = DemoOfdToolStage::PackageEnd;
                 self.event_lock = true;
             }
@@ -1114,12 +1147,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
         match element {
             DemoOfdElement::DemoOfdEntityType(inner) => {
                 match (&self.current_stage, &mut self.result) {
-                    (DemoOfdToolStage::EventStart { identifier, name, transaction_kind, with_specialization }, PartialDemoOfdElement::None) => {
+                    (DemoOfdToolStage::EventStart { identifier, name, transaction_kind, specialization }, PartialDemoOfdElement::None) => {
                         self.result = PartialDemoOfdElement::Event {
                             identifier: identifier.clone(),
                             name: name.clone(),
                             transaction_kind: *transaction_kind,
-                            with_specialization: *with_specialization,
+                            specialization: specialization.clone(),
                             source: inner,
                             pos: None,
                         };
@@ -1179,7 +1212,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             }
             DemoOfdElement::DemoOfdEventType(inner) => {
                 match (&self.current_stage, &mut self.result) {
-                    (DemoOfdToolStage::Entity { name, properties, internal }, _) => {
+                    (DemoOfdToolStage::Entity(EntityStageData { name, properties, internal }), _) => {
                         if !inner.read().specialization_entity_type.is_some() {
                             let (_class_model, class_view) =
                                 new_demoofd_entitytype(name, properties, *internal, egui::Pos2::ZERO);
@@ -1265,7 +1298,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 self.try_spend();
                 Some((x, esm))
             }
-            PartialDemoOfdElement::Event { identifier, name, transaction_kind, with_specialization, source, pos: Some(p) } => {
+            PartialDemoOfdElement::Event { identifier, name, transaction_kind, specialization, source, pos: Some(p) } => {
                 let base_uuid = *source.read().uuid;
                 if let Some(base_view) = q.get_view_for(&base_uuid)
                     && q.is_contained(&base_view.uuid(), into)
@@ -1274,14 +1307,11 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         identifier: identifier.clone(),
                         name: name.clone(),
                         transaction_kind: *transaction_kind,
-                        with_specialization: *with_specialization,
+                        specialization: specialization.clone(),
                     };
 
-                    let spec = if *with_specialization {
-                        Some(new_demoofd_entitytype("STARTED MEMBERSHIP", "starting day [DAY]", true, *p))
-                    } else {
-                        None
-                    };
+                    let spec = specialization.as_ref()
+                        .map(|e| new_demoofd_entitytype(&e.name, &e.properties, e.internal, *p));
                     let (event_model, event_view) =
                         new_demoofd_eventtype(identifier, name, *transaction_kind, (source.clone(), base_view), spec, *p);
 
@@ -1417,11 +1447,11 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     None
                 }
             }
-            PartialDemoOfdElement::Package { a, b: Some(b) } => {
-                self.current_stage = DemoOfdToolStage::PackageStart;
+            PartialDemoOfdElement::Package { name, a, b: Some(b) } => {
+                self.current_stage = self.initial_stage.clone();
 
                 let (_package_model, package_view) =
-                    new_demoofd_package("A package", egui::Rect::from_two_pos(*a, *b));
+                    new_demoofd_package(name, egui::Rect::from_two_pos(*a, *b));
 
                 self.try_spend();
                 Some((package_view.into(), None))
@@ -2006,14 +2036,14 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                         identifier: "01".to_owned(),
                         name: "is started".to_owned(),
                         transaction_kind: DemoTransactionKind::Performa,
-                        with_specialization: false,
+                        specialization: None,
                     },
                     current_stage: DemoOfdToolStage::EventEnd,
                     result: PartialDemoOfdElement::Event {
                         identifier: "01".to_owned(),
                         name: "is started".to_owned(),
                         transaction_kind: DemoTransactionKind::Performa,
-                        with_specialization: false,
+                        specialization: None,
                         source: self.model.clone(),
                         pos: None,
                     },
@@ -2024,20 +2054,25 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.highlight.selected && self.event_spec_button_rect(ehc.ui_scale).contains(pos) => {
+                let esd = EntityStageData {
+                    name: "STARTED MEMBERSHIP".to_owned(),
+                    properties: "starting day [DAY]".to_owned(),
+                    internal: true,
+                };
                 *tool = Some(NaiveDemoOfdTool {
                     uuid: uuid::Uuid::nil(),
                     initial_stage: DemoOfdToolStage::EventStart {
                         identifier: "01".to_owned(),
                         name: "is started".to_owned(),
                         transaction_kind: DemoTransactionKind::Performa,
-                        with_specialization: true,
+                        specialization: Some(esd.clone()),
                     },
                     current_stage: DemoOfdToolStage::EventEnd,
                     result: PartialDemoOfdElement::Event {
                         identifier: "01".to_owned(),
                         name: "is started".to_owned(),
                         transaction_kind: DemoTransactionKind::Performa,
-                        with_specialization: true,
+                        specialization: Some(esd),
                         source: self.model.clone(),
                         pos: None,
                     },
