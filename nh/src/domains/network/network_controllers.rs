@@ -487,7 +487,7 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
 
 
 pub struct NetworkSettings {
-    palette: RwLock<ToolPalette<NetworkToolStage, NetworkElementView>>,
+    palette: RwLock<ToolPalette<NetworkToolStage, NetworkDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<NetworkToolStage, NetworkElementView>>,
 }
 impl DiagramSettings for NetworkSettings {}
@@ -532,7 +532,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         "Subnet", NetworkContainerShapeKind::Rectangle,
         egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) },
     );
-    let (_comment, comment_view) = new_network_comment("text", egui::Pos2::ZERO);
+    let (_comment, comment_view) = new_network_comment("a comment", egui::Pos2::ZERO);
 
     let palette_items = vec![
         ("Nodes", vec![
@@ -624,8 +624,11 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match tool {
-                    NetworkToolStage::Node { name, kind } => {
+                match (tool, view.model()) {
+                    (
+                        NetworkToolStage::Node { name, kind },
+                        NetworkElement::Node(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                         columns[1].label("Kind");
@@ -636,8 +639,16 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
                                 }
                             });
+
+                        if modified && let mut mw = inner.write() {
+                            mw.name = name.clone().into();
+                            mw.kind = *kind;
+                        }
                     },
-                    NetworkToolStage::User { name, kind } => {
+                    (
+                        NetworkToolStage::User { name, kind },
+                        NetworkElement::User(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                         columns[1].label("Kind");
@@ -648,8 +659,16 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
                                 }
                             });
+
+                        if modified && let mut mw = inner.write() {
+                            mw.name = name.clone().into();
+                            mw.kind = *kind;
+                        }
                     },
-                    NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead } => {
+                    (
+                        NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead },
+                        NetworkElement::Association(inner),
+                    ) => {
                         columns[1].label("Line type");
                         egui::ComboBox::from_id_salt("line type")
                             .selected_text(line_type.as_str())
@@ -676,18 +695,38 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(target_arrowhead, e, e.as_str()).clicked();
                                 }
                             });
+
+                        if modified && let mut mw = inner.write() {
+                            mw.line_type = *line_type;
+                            mw.source_arrowhead = *source_arrowhead;
+                            mw.target_arrowhead = *target_arrowhead;
+                        }
                     },
-                    NetworkToolStage::ContainerStart { name } => {
+                    (
+                        NetworkToolStage::ContainerStart { name },
+                        NetworkElement::Container(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+
+                        if modified && let mut mw = inner.write() {
+                            mw.name = name.clone().into();
+                        }
                     },
-                    NetworkToolStage::Comment { text } => {
+                    (
+                        NetworkToolStage::Comment { text },
+                        NetworkElement::Comment(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
+
+                        if modified && let mut mw = inner.write() {
+                            mw.text = text.clone().into();
+                        }
                     },
-                    NetworkToolStage::AssociationEnd
-                    | NetworkToolStage::ContainerEnd => unreachable!(),
+                    _ => unreachable!(),
                 }
 
                 if modified {
+                    view.refresh_buffers();
                     w.set_from_buffer(buffer.clone());
                 }
             },

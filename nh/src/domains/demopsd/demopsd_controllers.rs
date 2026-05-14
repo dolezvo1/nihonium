@@ -708,7 +708,7 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
 
 
 pub struct DemoPsdSettings {
-    palette: RwLock<ToolPalette<DemoPsdToolStage, DemoPsdElementView>>,
+    palette: RwLock<ToolPalette<DemoPsdToolStage, DemoPsdDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<DemoPsdToolStage, DemoPsdElementView>>,
 }
 impl DiagramSettings for DemoPsdSettings {}
@@ -789,8 +789,11 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match tool {
-                    DemoPsdToolStage::TransactionStart { identifier, name, transaction_kind } => {
+                match (tool, view.model()) {
+                    (
+                        DemoPsdToolStage::TransactionStart { identifier, name, transaction_kind },
+                        DemoPsdElement::DemoPsdTransaction(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
@@ -802,27 +805,48 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(transaction_kind, e, e.as_str()).clicked();
                                 }
                             });
+
+                        if modified && let mut mw = inner.write() {
+                            mw.identifier = identifier.clone().into();
+                            mw.name = name.clone().into();
+                            mw.kind = *transaction_kind;
+                        }
                     },
-                    DemoPsdToolStage::Fact { identifier, internal } => {
+                    (
+                        DemoPsdToolStage::Fact { identifier, internal },
+                        DemoPsdElement::DemoPsdFact(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].checkbox(internal, "internal").changed();
+
+                        if modified && let mut mw = inner.write() {
+                            mw.identifier = identifier.clone().into();
+                            mw.internal = *internal;
+                        }
                     },
-                    DemoPsdToolStage::Act { identifier, internal } => {
+                    (
+                        DemoPsdToolStage::Act { identifier, internal },
+                        DemoPsdElement::DemoPsdAct(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].checkbox(internal, "internal").changed();
+
+                        if modified && let mut mw = inner.write() {
+                            mw.identifier = identifier.clone().into();
+                            mw.internal = *internal;
+                        }
                     },
-                    DemoPsdToolStage::LinkStart { link_type } => {
+                    (DemoPsdToolStage::LinkStart { link_type }, _) => {
 
                     },
-                    DemoPsdToolStage::PackageStart => {
+                    (DemoPsdToolStage::PackageStart, _) => {
 
                     },
-                    DemoPsdToolStage::TransactionEnd
-                    | DemoPsdToolStage::LinkEnd
-                    | DemoPsdToolStage::PackageEnd => unreachable!(),
+                    _ => unreachable!(),
                 }
 
                 if modified {
+                    view.refresh_buffers();
                     w.set_from_buffer(buffer.clone());
                 }
             },

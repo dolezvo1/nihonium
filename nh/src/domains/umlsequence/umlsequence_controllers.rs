@@ -638,7 +638,7 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
 }
 
 pub struct UmlSequenceSettings {
-    palette: RwLock<ToolPalette<UmlSequenceToolStage, UmlSequenceElementView>>,
+    palette: RwLock<ToolPalette<UmlSequenceToolStage, UmlSequenceDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<UmlSequenceToolStage, UmlSequenceElementView>>,
 }
 

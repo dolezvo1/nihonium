@@ -27,7 +27,10 @@ use std::{
 
 pub trait StereotypeController: Default + Clone + Send + Sync + 'static {
     fn show(&mut self, ui: &mut egui::Ui) -> bool;
-    fn get(&mut self) -> Arc<String>;
+    fn get_raw(&self) -> String;
+    fn get_arc(&self) -> Arc<String> {
+        self.get_raw().into()
+    }
     fn is_valid(&self, _value: &str) -> bool {
         true
     }
@@ -76,13 +79,11 @@ pub struct UnrestrictedStereotypeController {
 }
 impl StereotypeController for UnrestrictedStereotypeController {
     fn show(&mut self, ui: &mut egui::Ui) -> bool {
-        ui.add_sized(
-            (ui.available_width(), 20.0),
-            egui::TextEdit::singleline(&mut self.buffer),
-        ).changed()
+        ui.labeled_text_edit_singleline("Stereotype:", &mut self.buffer)
+            .changed()
     }
-    fn get(&mut self) -> Arc<String> {
-        self.buffer.clone().into()
+    fn get_raw(&self) -> String {
+        self.buffer.clone()
     }
     fn refresh(&mut self, new_value: &str) {
         self.buffer.replace_range(.., new_value);
@@ -1014,7 +1015,7 @@ impl CommentIndication {
 
 pub struct UmlClassSettings<P: UmlClassProfile> {
     comment_indication: CommentIndication,
-    palette: RwLock<ToolPalette<UmlClassToolStage, UmlClassElementView<P>>>,
+    palette: RwLock<ToolPalette<UmlClassToolStage, UmlClassDomain<P>>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<UmlClassToolStage, UmlClassElementView<P>>>,
 }
 
@@ -1134,41 +1135,124 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match tool {
-                    UmlClassToolStage::Instance { instance_name, instance_type, stereotype } => {
-                        modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
+                // TODO: make the stereotypes more efficient
+                match (tool, view.model()) {
+                    (
+                        UmlClassToolStage::Instance { instance_name, instance_type, stereotype },
+                        UmlClassElement::UmlClassInstance(inner),
+                    ) => {
+                        let mut sc = P::InstanceStereotypeController::default();
+                        sc.refresh(&stereotype);
+                        modified |= sc.show(&mut columns[1]);
                         modified |= columns[1].labeled_text_edit_singleline("Instance name", instance_name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Instance type", instance_type).changed();
+
+                        if modified && let mut mw = inner.write() {
+                            *stereotype = sc.get_raw();
+                            mw.stereotype = stereotype.clone().into();
+                            mw.instance_name = instance_name.clone().into();
+                            mw.instance_type = instance_type.clone().into();
+                        }
                     },
-                    UmlClassToolStage::Class { name, stereotype, render_style } => {
-                        modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
+                    (
+                        UmlClassToolStage::Class { name, stereotype, render_style },
+                        UmlClassElement::UmlClass(inner),
+                    ) => {
+                        let mut sc = P::ClassStereotypeController::default();
+                        sc.refresh(&stereotype);
+                        modified |= sc.show(&mut columns[1]);
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+
+                        if modified && let mut mw = inner.write() {
+                            *stereotype = sc.get_raw();
+                            mw.stereotype = stereotype.clone().into();
+                            mw.name = name.clone().into();
+                        }
                     },
-                    UmlClassToolStage::ClassProperty { name, property_type, stereotype } => {
-                        modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
+                    (
+                        UmlClassToolStage::ClassProperty { name, property_type, stereotype },
+                        UmlClassElement::UmlClassProperty(inner),
+                    ) => {
+                        let mut sc = P::ClassPropertyStereotypeController::default();
+                        sc.refresh(&stereotype);
+                        modified |= sc.show(&mut columns[1]);
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Property type", property_type).changed();
+
+                        if modified && let mut mw = inner.write() {
+                            *stereotype = sc.get_raw();
+                            mw.stereotype = stereotype.clone().into();
+                            mw.name = name.clone().into();
+                            mw.value_type = property_type.clone().into();
+                        }
                     },
-                    UmlClassToolStage::ClassOperation { name, return_type, stereotype } => {
-                        modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
+                    (
+                        UmlClassToolStage::ClassOperation { name, return_type, stereotype },
+                        UmlClassElement::UmlClassOperation(inner),
+                    ) => {
+                        let mut sc = P::ClassOperationStereotypeController::default();
+                        sc.refresh(&stereotype);
+                        modified |= sc.show(&mut columns[1]);
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Return type", return_type).changed();
+
+                        if modified && let mut mw = inner.write() {
+                            *stereotype = sc.get_raw();
+                            mw.stereotype = stereotype.clone().into();
+                            mw.name = name.clone().into();
+                            mw.return_type = return_type.clone().into();
+                        }
                     },
-                    UmlClassToolStage::UseCase { name, stereotype } => {
-                        modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
+                    (
+                        UmlClassToolStage::UseCase { name, stereotype },
+                        UmlClassElement::UmlUseCase(inner),
+                    ) => {
+                        let mut sc = P::UseCaseStereotypeController::default();
+                        sc.refresh(&stereotype);
+                        modified |= sc.show(&mut columns[1]);
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+
+                        if modified && let mut mw = inner.write() {
+                            *stereotype = sc.get_raw();
+                            mw.stereotype = stereotype.clone().into();
+                            mw.name = name.clone().into();
+                        }
                     },
-                    UmlClassToolStage::LinkStart { link_type } => match link_type {
-                        LinkType::Generalization => {},
-                        LinkType::Dependency { target_arrow_open, stereotype } => {
-                            modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
+                    (UmlClassToolStage::LinkStart { link_type }, lv) => match (link_type, lv) {
+                        (
+                            LinkType::Dependency { target_arrow_open, stereotype },
+                            UmlClassElement::UmlClassDependency(inner),
+                        ) => {
+                            let mut sc = P::DependencyStereotypeController::default();
+                            sc.refresh(&stereotype);
+                            modified |= sc.show(&mut columns[1]);
                             modified |= columns[1].checkbox(target_arrow_open, "target arrow open").changed();
+
+                            if modified && let mut mw = inner.write() {
+                                *stereotype = sc.get_raw();
+                                mw.stereotype = stereotype.clone().into();
+                                mw.target_arrow_open = *target_arrow_open;
+                            }
                         },
-                        LinkType::Association { stereotype } => {
-                            modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
+                        (
+                            LinkType::Association { stereotype },
+                            UmlClassElement::UmlClassAssociation(inner),
+                        ) => {
+                            let mut sc = P::AssociationStereotypeController::default();
+                            sc.refresh(&stereotype);
+                            modified |= sc.show(&mut columns[1]);
+
+                            if modified && let mut mw = inner.write() {
+                                *stereotype = sc.get_raw();
+                                mw.stereotype = stereotype.clone().into();
+                            }
                         },
+                        _ => {}
                     },
-                    UmlClassToolStage::PackageStart { name, stereotype, kind } => {
+                    (
+                        UmlClassToolStage::PackageStart { name, stereotype, kind },
+                        UmlClassElement::UmlClassPackage(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
@@ -1180,18 +1264,29 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
                                 }
                             });
+
+                        if modified && let mut mw = inner.write() {
+                            mw.stereotype = stereotype.clone().into();
+                            mw.name = name.clone().into();
+                            mw.kind = *kind;
+                        }
                     },
-                    UmlClassToolStage::Comment { text } => {
+                    (
+                        UmlClassToolStage::Comment { text },
+                        UmlClassElement::UmlClassComment(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
+
+                        if modified && let mut mw = inner.write() {
+                            mw.text = text.clone().into();
+                        }
                     },
-                    UmlClassToolStage::CommentLinkStart => {},
-                    UmlClassToolStage::LinkEnd
-                    | UmlClassToolStage::LinkAddEnding { .. }
-                    | UmlClassToolStage::PackageEnd
-                    | UmlClassToolStage::CommentLinkEnd => unreachable!(),
+                    (UmlClassToolStage::CommentLinkStart, _) => {},
+                    _ => unreachable!(),
                 }
 
                 if modified {
+                    view.refresh_buffers();
                     w.set_from_buffer(buffer.clone());
                 }
             },
@@ -2188,7 +2283,6 @@ impl<SC: StereotypeController> CustomModal for UmlClassInstanceSetupModal<SC> {
         let r = ui.text_edit_singleline(&mut self.name_buffer);
         ui.label("Type:");
         ui.text_edit_singleline(&mut self.type_buffer);
-        ui.label("Stereotype:");
         self.stereotype_controller.show(ui);
         ui.separator();
 
@@ -2203,7 +2297,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassInstanceSetupModal<SC> {
                 let mut m = self.model.write();
                 m.instance_name = Arc::new(self.name_buffer.clone());
                 m.instance_type = Arc::new(self.type_buffer.clone());
-                m.stereotype = self.stereotype_controller.get();
+                m.stereotype = self.stereotype_controller.get_arc();
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
             if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
@@ -2319,11 +2413,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             ));
         }
 
-        ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
+                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
             ));
         }
 
@@ -2858,7 +2951,6 @@ impl<SC: StereotypeController> CustomModal for UmlClassPropertySetupModal<SC> {
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
-        ui.label("Stereotype:");
         self.stereotype_controller.show(ui);
         ui.label("Name:");
         let r = ui.text_edit_singleline(&mut self.name_buffer);
@@ -2903,7 +2995,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassPropertySetupModal<SC> {
             if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
 
-                m.stereotype = self.stereotype_controller.get();
+                m.stereotype = self.stereotype_controller.get_arc();
                 m.name = Arc::new(self.name_buffer.clone());
                 m.value_type = Arc::new(self.value_type_buffer.clone());
                 m.multiplicity = Arc::new(self.multiplicity_buffer.clone());
@@ -3071,11 +3163,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             return PropertiesStatus::NotShown;
         }
 
-        ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
+                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
             ));
         }
 
@@ -3579,7 +3670,6 @@ impl<SC: StereotypeController> CustomModal for UmlClassOperationSetupModal<SC> {
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
-        ui.label("Stereotype:");
         self.stereotype_controller.show(ui);
         ui.label("Name:");
         let r = ui.text_edit_singleline(&mut self.name_buffer);
@@ -3620,7 +3710,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassOperationSetupModal<SC> {
         ui.horizontal(|ui| {
             if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
-                m.stereotype = self.stereotype_controller.get();
+                m.stereotype = self.stereotype_controller.get_arc();
                 m.name = Arc::new(self.name_buffer.clone());
                 m.parameters = Arc::new(self.parameters_buffer.clone());
                 m.return_type = Arc::new(self.return_type_buffer.clone());
@@ -3787,11 +3877,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             return PropertiesStatus::NotShown;
         }
 
-        ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
+                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
             ));
         }
 
@@ -4244,7 +4333,6 @@ impl<SC: StereotypeController> CustomModal for UmlClassSetupModal<SC> {
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
-        ui.label("Stereotype:");
         self.stereotype_controller.show(ui);
         ui.label("Name:");
         let r = ui.text_edit_singleline(&mut self.name_buffer);
@@ -4259,7 +4347,7 @@ impl<SC: StereotypeController> CustomModal for UmlClassSetupModal<SC> {
         ui.horizontal(|ui| {
             if ui.button(gdc.translate_0("nh-generic-ok")).clicked() {
                 let mut m = self.model.write();
-                m.stereotype = self.stereotype_controller.get();
+                m.stereotype = self.stereotype_controller.get_arc();
                 m.name = Arc::new(self.name_buffer.clone());
                 result = CustomModalResult::CloseModified(*m.uuid);
             }
@@ -4560,11 +4648,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
         ui.label("Model properties");
 
-        ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
+                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
             ));
         }
 
@@ -5591,11 +5678,10 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
 
         ui.label("Model properties");
 
-        ui.label("Stereotype:");
         if self.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get()),
+                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
             ));
         }
 
@@ -6412,11 +6498,10 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
-        ui.label("Stereotype:");
         if self.temporaries.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.temporaries.stereotype_controller.get()),
+                UmlClassPropChange::StereotypeChange(self.temporaries.stereotype_controller.get_arc()),
             ));
         }
 
@@ -6695,11 +6780,10 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) -> PropertiesStatus<UmlClassDomain<P>> {
-        ui.label("Stereotype:");
         if self.temporaries.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.temporaries.stereotype_controller.get()),
+                UmlClassPropChange::StereotypeChange(self.temporaries.stereotype_controller.get_arc()),
             ));
         }
 

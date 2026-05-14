@@ -883,13 +883,13 @@ impl<T: Clone, V: Clone> PaletteEditBuffer<T, V> {
     }
 }
 
-pub struct ToolPalette<S: Clone, V: Clone> {
-    elements: Vec<(uuid::Uuid, String, Vec<(uuid::Uuid, S, String, V)>)>,
+pub struct ToolPalette<S: Clone, DomainT: Domain> {
+    elements: Vec<(uuid::Uuid, String, Vec<(uuid::Uuid, S, String, DomainT::CommonElementViewT)>)>,
     selection: PaletteEditingSelection,
 }
 
-impl<S: Clone, V: Clone> ToolPalette<S, V> {
-    pub fn new(elements: Vec<(&str, Vec<(S, &str, V)>)>) -> Self {
+impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
+    pub fn new(elements: Vec<(&str, Vec<(S, &str, DomainT::CommonElementViewT)>)>) -> Self {
         let elements = elements.into_iter()
             .map(|e| {
                 (
@@ -908,7 +908,7 @@ impl<S: Clone, V: Clone> ToolPalette<S, V> {
     }
 
     pub fn for_each_mut<F>(&mut self, f: F)
-        where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, S, String, V)>)),
+        where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, S, String, DomainT::CommonElementViewT)>)),
     {
         self.elements.iter_mut().for_each(f);
     }
@@ -1045,7 +1045,7 @@ impl<S: Clone, V: Clone> ToolPalette<S, V> {
     pub fn get_selected(&self) -> PaletteEditingSelection {
         self.selection
     }
-    pub fn get_buffer(&self, s: Option<uuid::Uuid>) -> PaletteEditBuffer<S, V> {
+    pub fn get_buffer(&self, s: Option<uuid::Uuid>) -> PaletteEditBuffer<S, DomainT::CommonElementViewT> {
         let Some(id) = s else {
             return PaletteEditBuffer::None;
         };
@@ -1060,7 +1060,7 @@ impl<S: Clone, V: Clone> ToolPalette<S, V> {
 
         PaletteEditBuffer::None
     }
-    pub fn set_from_buffer(&mut self, b: PaletteEditBuffer<S, V>) {
+    pub fn set_from_buffer(&mut self, b: PaletteEditBuffer<S, DomainT::CommonElementViewT>) {
         match b {
             PaletteEditBuffer::None => {},
             PaletteEditBuffer::Group(uuid, name) => {
@@ -1132,7 +1132,16 @@ impl<S: Clone, V: Clone> ToolPalette<S, V> {
     fn duplicate_tool(&mut self, target: uuid::Uuid) {
         for (_, _, elements) in self.elements.iter_mut() {
             if let Some(e) = elements.iter().find(|e| e.0 == target) {
-                let new_e = (uuid::Uuid::now_v7(), e.1.clone(), e.2.to_owned(), e.3.clone());
+                let new_view = {
+                    let (mut tlc, mut c, mut m) = Default::default();
+                    e.3.deep_copy_clone(&|_| false, &mut tlc, &mut c, &mut m);
+                    tlc.iter_mut().for_each(|e| {
+                        e.1.deep_copy_relink(&c, &m);
+                    });
+                    tlc.get(&e.3.uuid()).cloned().unwrap()
+                };
+
+                let new_e = (uuid::Uuid::now_v7(), e.1.clone(), e.2.to_owned(), new_view);
                 elements.push(new_e);
             }
         }

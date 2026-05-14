@@ -649,7 +649,7 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
 
 
 pub struct DemoOfdSettings {
-    palette: RwLock<ToolPalette<DemoOfdToolStage, DemoOfdElementView>>,
+    palette: RwLock<ToolPalette<DemoOfdToolStage, DemoOfdDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<DemoOfdToolStage, DemoOfdElementView>>,
 }
 impl DiagramSettings for DemoOfdSettings {}
@@ -743,13 +743,25 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match tool {
-                    DemoOfdToolStage::Entity { name, properties, internal } => {
+                match (tool, view.model()) {
+                    (
+                        DemoOfdToolStage::Entity { name, properties, internal },
+                        DemoOfdElement::DemoOfdEntityType(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Properties", properties).changed();
                         modified |= columns[1].checkbox(internal, "internal").changed();
+
+                        if modified && let mut mw = inner.write() {
+                            mw.name = name.clone().into();
+                            mw.properties = properties.clone().into();
+                            mw.internal = *internal;
+                        }
                     },
-                    DemoOfdToolStage::EventStart { identifier, name, transaction_kind, with_specialization } => {
+                    (
+                        DemoOfdToolStage::EventStart { identifier, name, transaction_kind, with_specialization },
+                        DemoOfdElement::DemoOfdEventType(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
@@ -761,20 +773,24 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(transaction_kind, e, e.as_str()).clicked();
                                 }
                             });
+
+                        if modified && let mut mw = inner.write() {
+                            mw.identifier = identifier.clone().into();
+                            mw.name = name.clone().into();
+                            mw.kind = *transaction_kind;
+                        }
                     },
-                    DemoOfdToolStage::LinkStart { link_type } => {
+                    (DemoOfdToolStage::LinkStart { link_type }, _) => {
 
                     },
-                    DemoOfdToolStage::PackageStart => {
+                    (DemoOfdToolStage::PackageStart, _) => {
 
                     },
-                    DemoOfdToolStage::EventEnd
-                    | DemoOfdToolStage::LinkEnd
-                    | DemoOfdToolStage::LinkAddEnding { .. }
-                    | DemoOfdToolStage::PackageEnd => unreachable!(),
+                    _ => unreachable!(),
                 }
 
                 if modified {
+                    view.refresh_buffers();
                     w.set_from_buffer(buffer.clone());
                 }
             },

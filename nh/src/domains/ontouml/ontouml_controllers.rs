@@ -340,7 +340,8 @@ pub struct OntoUmlClassStereotypeController {
 
 impl StereotypeController for OntoUmlClassStereotypeController {
     fn show(&mut self, ui: &mut egui::Ui) -> bool {
-        let mut ret = false;
+        ui.label("Stereotype:");
+        let mut changed = false;
         egui::ComboBox::from_id_salt("Class stereotype:")
             .selected_text(&self.display_string)
             .show_ui(ui, |ui| {
@@ -364,15 +365,15 @@ impl StereotypeController for OntoUmlClassStereotypeController {
                     (ontouml_models::QUALITY, "Quality"),
                 ] {
                     if ui.selectable_value(&mut self.buffer, e.0, e.1).changed() {
-                        ret = true;
+                        changed = true;
                         self.refresh(e.0);
                     }
                 }
             });
-        ret
+        changed
     }
-    fn get(&mut self) -> Arc<String> {
-        self.buffer.to_owned().into()
+    fn get_raw(&self) -> String {
+        self.buffer.to_owned()
     }
     fn is_valid(&self, value: &str) -> bool {
         ontouml_models::ontouml_class_stereotype_literal(value).is_some()
@@ -407,7 +408,8 @@ pub struct OntoUmlAssociationStereotypeController {
 
 impl StereotypeController for OntoUmlAssociationStereotypeController {
     fn show(&mut self, ui: &mut egui::Ui) -> bool {
-        let mut ret = false;
+        ui.label("Stereotype:");
+        let mut changed = false;
         egui::ComboBox::from_id_salt("Association stereotype:")
             .selected_text(&self.display_string)
             .show_ui(ui, |ui| {
@@ -427,15 +429,15 @@ impl StereotypeController for OntoUmlAssociationStereotypeController {
                         .selectable_value(&mut self.buffer, sv.0, sv.1)
                         .changed()
                     {
-                        ret = true;
+                        changed = true;
                         self.refresh(sv.0);
                     }
                 }
             });
-        ret
+        changed
     }
-    fn get(&mut self) -> Arc<String> {
-        self.buffer.to_owned().into()
+    fn get_raw(&self) -> String {
+        self.buffer.to_owned()
     }
     fn is_valid(&self, value: &str) -> bool {
         ontouml_models::ontouml_association_stereotype_literal(value).is_some()

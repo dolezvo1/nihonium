@@ -583,7 +583,7 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
 
 
 pub struct DemoCsdSettings {
-    palette: RwLock<ToolPalette<DemoCsdToolStage, DemoCsdElementView>>,
+    palette: RwLock<ToolPalette<DemoCsdToolStage, DemoCsdDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<DemoCsdToolStage, DemoCsdElementView>>,
 }
 impl DiagramSettings for DemoCsdSettings {}
@@ -618,7 +618,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 internal: false,
             }, "Client Role", client_view.into()),
             (DemoCsdToolStage::ComboTransactor {
-                identifier: "TK01".to_owned(),
+                identifier: "AR01".to_owned(),
                 name: "Transaction".to_owned(),
                 internal: true,
                 transaction_kind: DemoTransactionKind::Performa,
@@ -669,13 +669,25 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match tool {
-                    DemoCsdToolStage::BareTransactor { identifier, name, internal } => {
+                match (tool, view.model()) {
+                    (
+                        DemoCsdToolStage::BareTransactor { identifier, name, internal },
+                        DemoCsdElement::DemoCsdTransactor(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].checkbox(internal, "internal").changed();
+
+                        if modified && let mut mw = inner.write() {
+                            mw.identifier = identifier.clone().into();
+                            mw.name = name.clone().into();
+                            mw.internal = *internal;
+                        }
                     },
-                    DemoCsdToolStage::ComboTransactor { identifier, name, internal, transaction_kind } => {
+                    (
+                        DemoCsdToolStage::ComboTransactor { identifier, name, internal, transaction_kind },
+                        DemoCsdElement::DemoCsdTransactor(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].checkbox(internal, "internal").changed();
@@ -688,8 +700,20 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(transaction_kind, e, e.as_str()).clicked();
                                 }
                             });
+
+                        if modified && let mut mw = inner.write() {
+                            mw.identifier = identifier.clone().into();
+                            mw.name = name.clone().into();
+                            mw.internal = *internal;
+                            if let Some(t) = mw.transaction.as_ref() {
+                                t.write().kind = *transaction_kind;
+                            }
+                        }
                     },
-                    DemoCsdToolStage::Bank { identifier, name, transaction_kind } => {
+                    (
+                        DemoCsdToolStage::Bank { identifier, name, transaction_kind },
+                        DemoCsdElement::DemoCsdTransaction(inner),
+                    ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
@@ -701,17 +725,24 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(transaction_kind, e, e.as_str()).clicked();
                                 }
                             });
+
+                        if modified && let mut mw = inner.write() {
+                            mw.kind = *transaction_kind;
+                            mw.identifier = identifier.clone().into();
+                            mw.name = name.clone().into();
+                        }
                     },
-                    DemoCsdToolStage::LinkStart { link_type } => {
+                    (DemoCsdToolStage::LinkStart { link_type }, _) => {
 
                     },
-                    DemoCsdToolStage::PackageStart => {
+                    (DemoCsdToolStage::PackageStart, _) => {
 
                     },
-                    DemoCsdToolStage::LinkEnd | DemoCsdToolStage::PackageEnd => unreachable!(),
+                    _ => unreachable!(),
                 }
 
                 if modified {
+                    view.refresh_buffers();
                     w.set_from_buffer(buffer.clone());
                 }
             },
