@@ -65,12 +65,6 @@ pub trait UmlClassProfile: Default + Clone + Send + Sync + 'static {
     fn allows_class_rendering_as_stick_figure() -> bool {
         false
     }
-    fn allows_class_properties() -> bool {
-        true
-    }
-    fn allows_class_operations() -> bool {
-        true
-    }
 }
 
 #[derive(Clone, Default)]
@@ -1017,6 +1011,8 @@ pub struct UmlClassSettings<P: UmlClassProfile> {
     comment_indication: CommentIndication,
     palette: RwLock<ToolPalette<UmlClassToolStage, UmlClassDomain<P>>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<UmlClassToolStage, UmlClassElementView<P>>>,
+    instance_buttons: Vec<(&'static str, &'static dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<P>, bool))>,
+    class_buttons: Vec<(&'static str, &'static dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<P>, bool))>,
 }
 
 impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {}
@@ -1030,11 +1026,15 @@ impl<P: UmlClassProfile> DiagramSettings2<UmlClassDomain<P>> for UmlClassSetting
 
 pub fn default_settings_helper<P: UmlClassProfile>(
     palette_items: Vec<(&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<P>)>)>,
+    instance_buttons: Vec<(&'static str, &'static dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<P>, bool))>,
+    class_buttons: Vec<(&'static str, &'static dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<P>, bool))>,
 ) -> Box<UmlClassSettings<P>> {
     Box::new(UmlClassSettings {
         comment_indication: CommentIndication::Icon,
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
+        instance_buttons,
+        class_buttons,
     })
 }
 
@@ -1108,7 +1108,73 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ]),
     ];
 
-    default_settings_helper::<UmlClassNullProfile>(palette_items)
+
+    fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
+        (
+            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type: LinkType::Association { stereotype: "".to_owned() },
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    let instance_buttons = vec![
+        (
+            "↘",
+            &instance_association as &dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool),
+        ),
+    ];
+    fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
+        (
+            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type: LinkType::Association { stereotype: "".to_owned() },
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    fn class_property(_m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
+        let stage = UmlClassToolStage::ClassProperty {
+            name: "property".to_owned(),
+            property_type: "PropertyType".to_owned(),
+            stereotype: "".to_owned(),
+        };
+        (stage.clone(), stage, PartialUmlClassElement::None, false)
+    }
+    fn class_operation(_m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
+        let stage = UmlClassToolStage::ClassOperation {
+            name: "operation".to_owned(),
+            return_type: "ReturnType".to_owned(),
+            stereotype: "".to_owned(),
+        };
+        (stage.clone(), stage, PartialUmlClassElement::None, false)
+    }
+    let class_buttons = vec![
+        (
+            "↘",
+            &class_association as &dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool),
+        ),
+        (
+            "P",
+            &class_property as &dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool),
+        ),
+        (
+            "O",
+            &class_operation as &dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool),
+        ),
+    ];
+
+    default_settings_helper::<UmlClassNullProfile>(
+        palette_items,
+        instance_buttons,
+        class_buttons,
+    )
 }
 
 pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
@@ -1353,7 +1419,7 @@ pub enum UmlClassToolStage {
     CommentLinkEnd,
 }
 
-enum PartialUmlClassElement<P: UmlClassProfile> {
+pub enum PartialUmlClassElement<P: UmlClassProfile> {
     None,
     Some(UmlClassElementView<P>),
     Link {
@@ -2344,12 +2410,13 @@ pub struct UmlClassInstanceView<P: UmlClassProfile> {
 }
 
 impl<P: UmlClassProfile> UmlClassInstanceView<P> {
-    fn association_button_rect(&self, ui_scale: f32) -> egui::Rect {
-        let b_radius = 8.0;
-        let b_center = self.bounds_rect.right_top() + egui::Vec2::splat(b_radius / ui_scale);
+    const BUTTON_RADIUS: f32 = 8.0;
+    fn button_rect(&self, ui_scale: f32, index: usize) -> egui::Rect {
+        let b_center = self.bounds_rect.right_top()
+            + egui::Vec2::new(Self::BUTTON_RADIUS / ui_scale, (1.0 + 2.0 * index as f32) * Self::BUTTON_RADIUS / ui_scale);
         egui::Rect::from_center_size(
             b_center,
-            egui::Vec2::splat(2.0 * b_radius / ui_scale),
+            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
         )
     }
 }
@@ -2465,7 +2532,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         &mut self,
         _: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
-        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
+        settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
@@ -2538,15 +2605,17 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
         // Draw buttons
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            let b_rect = self.association_button_rect(ui_scale);
-            canvas.draw_rectangle(
-                b_rect,
-                egui::CornerRadius::ZERO,
-                egui::Color32::WHITE,
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                canvas::Highlight::NONE,
-            );
-            canvas.draw_text(b_rect.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
+            for (idx, e) in settings.instance_buttons.iter().enumerate() {
+                let b_rect = self.button_rect(ui_scale, idx);
+                canvas.draw_rectangle(
+                    b_rect,
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(b_rect.center(), egui::Align2::CENTER_CENTER, e.0, 14.0 / ui_scale, egui::Color32::BLACK);
+            }
         }
 
         if canvas.ui_scale().is_some() {
@@ -2595,6 +2664,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -2616,17 +2686,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                     EventHandlingStatus::NotHandled
                 }
             }
-            InputEvent::Click(pos) if self.highlight.selected && self.association_button_rect(ehc.ui_scale).contains(pos) => {
+            InputEvent::Click(pos) if self.highlight.selected
+                && let Some(e) = settings.instance_buttons.iter().enumerate().find(|(idx, _e)| self.button_rect(ehc.ui_scale, *idx).contains(pos)) => {
+                let (initial_stage, current_stage, result, event_lock) = e.1.1(self.model.clone());
                 *tool = Some(NaiveUmlClassTool {
                     uuid: uuid::Uuid::nil(),
-                    initial_stage: UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
-                    current_stage: UmlClassToolStage::LinkEnd,
-                    result: PartialUmlClassElement::Link {
-                        link_type: LinkType::Association { stereotype: "".to_owned() },
-                        source: self.model.clone().into(),
-                        dest: None,
-                    },
-                    event_lock: true,
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
                     is_spent: Some(false),
                 });
 
@@ -3282,6 +3350,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlClassDomain<P> as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -3983,6 +4052,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         _q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlClassDomain<P> as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -4418,25 +4488,9 @@ pub struct UmlClassView<P: UmlClassProfile> {
 
 impl<P: UmlClassProfile> UmlClassView<P> {
     const BUTTON_RADIUS: f32 = 8.0;
-    fn association_button_rect(&self, ui_scale: f32) ->  egui::Rect {
+    fn button_rect(&self, ui_scale: f32, index: usize) -> egui::Rect {
         let b_center = self.bounds_rect.right_top()
-            + egui::Vec2::splat(Self::BUTTON_RADIUS / ui_scale);
-        egui::Rect::from_center_size(
-            b_center,
-            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
-        )
-    }
-    fn property_button_rect(&self, ui_scale: f32) ->  egui::Rect {
-        let b_center = self.bounds_rect.right_top()
-            + egui::Vec2::new(Self::BUTTON_RADIUS / ui_scale, 3.0 * Self::BUTTON_RADIUS / ui_scale);
-        egui::Rect::from_center_size(
-            b_center,
-            egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
-        )
-    }
-    fn operation_button_rect(&self, ui_scale: f32) -> egui::Rect {
-        let b_center = self.bounds_rect.right_top()
-            + egui::Vec2::new(Self::BUTTON_RADIUS / ui_scale, 5.0 * Self::BUTTON_RADIUS / ui_scale);
+            + egui::Vec2::new(Self::BUTTON_RADIUS / ui_scale, (1.0 + 2.0 * index as f32) * Self::BUTTON_RADIUS / ui_scale);
         egui::Rect::from_center_size(
             b_center,
             egui::Vec2::splat(2.0 * Self::BUTTON_RADIUS / ui_scale),
@@ -4842,38 +4896,16 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
             // Draw buttons
             if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-                let b1 = self.association_button_rect(ui_scale);
-                canvas.draw_rectangle(
-                    b1,
-                    egui::CornerRadius::ZERO,
-                    egui::Color32::WHITE,
-                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
-                canvas.draw_text(b1.center(), egui::Align2::CENTER_CENTER, "↘", 14.0 / ui_scale, egui::Color32::BLACK);
-
-                if P::allows_class_properties() {
-                    let b2 = self.property_button_rect(ui_scale);
+                for (idx, e) in settings.class_buttons.iter().enumerate() {
+                    let b1 = self.button_rect(ui_scale, idx);
                     canvas.draw_rectangle(
-                        b2,
+                        b1,
                         egui::CornerRadius::ZERO,
                         egui::Color32::WHITE,
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
-                    canvas.draw_text(b2.center(), egui::Align2::CENTER_CENTER, "P", 14.0 / ui_scale, egui::Color32::BLACK);
-                }
-
-                if P::allows_class_operations() {
-                    let b3 = self.operation_button_rect(ui_scale);
-                    canvas.draw_rectangle(
-                        b3,
-                        egui::CornerRadius::ZERO,
-                        egui::Color32::WHITE,
-                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        canvas::Highlight::NONE,
-                    );
-                    canvas.draw_text(b3.center(), egui::Align2::CENTER_CENTER, "O", 14.0 / ui_scale, egui::Color32::BLACK);
+                    canvas.draw_text(b1.center(), egui::Align2::CENTER_CENTER, e.0, 14.0 / ui_scale, egui::Color32::BLACK);
                 }
             }
         }
@@ -4946,6 +4978,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -4968,72 +5001,35 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     EventHandlingStatus::NotHandled
                 }
             }
-            InputEvent::Click(pos) if self.highlight.selected && self.association_button_rect(ehc.ui_scale).contains(pos) => {
+            InputEvent::Click(pos) if self.highlight.selected
+                && let Some(e) = settings.class_buttons.iter().enumerate().find(|(idx, _e)| self.button_rect(ehc.ui_scale, *idx).contains(pos)) => {
+                let (initial_stage, current_stage, result, event_lock) = e.1.1(self.model.clone());
                 *tool = Some(NaiveUmlClassTool {
                     uuid: uuid::Uuid::nil(),
-                    initial_stage: UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
-                    current_stage: UmlClassToolStage::LinkEnd,
-                    result: PartialUmlClassElement::Link {
-                        link_type: LinkType::Association { stereotype: "".to_owned() },
-                        source: self.model.clone().into(),
-                        dest: None,
-                    },
-                    event_lock: true,
-                    is_spent: Some(false),
-                });
-
-                EventHandlingStatus::HandledByElement
-            }
-            InputEvent::Click(pos) if self.highlight.selected && P::allows_class_properties() && self.property_button_rect(ehc.ui_scale).contains(pos) => {
-                let stage = UmlClassToolStage::ClassProperty {
-                    name: "property".to_owned(),
-                    property_type: "PropertyType".to_owned(),
-                    stereotype: "".to_owned(),
-                };
-                *tool = Some(NaiveUmlClassTool {
-                    uuid: uuid::Uuid::nil(),
-                    initial_stage: stage.clone(),
-                    current_stage: stage,
-                    result: PartialUmlClassElement::None,
-                    event_lock: false,
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
                     is_spent: Some(false),
                 });
 
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
-                    if let Some((view, esm)) = tool.try_construct_view(q, &self.uuid)
-                        && matches!(view, UmlClassElementView::ClassProperty(_)) {
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, view.into(), true).into());
-                        if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                            *element_setup_modal = esm;
-                        }
-                    }
-                }
-
-                EventHandlingStatus::HandledByElement
-            }
-            InputEvent::Click(pos) if self.highlight.selected && P::allows_class_operations() && self.operation_button_rect(ehc.ui_scale).contains(pos) => {
-                let stage = UmlClassToolStage::ClassOperation {
-                    name: "operation".to_owned(),
-                    return_type: "ReturnType".to_owned(),
-                    stereotype: "".to_owned(),
-                };
-                *tool = Some(NaiveUmlClassTool {
-                    uuid: uuid::Uuid::nil(),
-                    initial_stage: stage.clone(),
-                    current_stage: stage,
-                    result: PartialUmlClassElement::None,
-                    event_lock: false,
-                    is_spent: Some(false),
-                });
-
-                if let Some(tool) = tool {
-                    tool.add_section(self.model());
-                    if let Some((view, esm)) = tool.try_construct_view(q, &self.uuid)
-                        && matches!(view, UmlClassElementView::ClassOperation(_)) {
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 1, None, view.into(), true).into());
-                        if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                            *element_setup_modal = esm;
+                    if let Some((view, esm)) = tool.try_construct_view(q, &self.uuid) {
+                        match view {
+                            UmlClassElementView::ClassProperty(_) => {
+                                commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, view.into(), true).into());
+                                if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                                    *element_setup_modal = esm;
+                                }
+                            }
+                            UmlClassElementView::ClassOperation(_) => {
+                                commands.push(InsensitiveCommand::AddDependency(*self.uuid, 1, None, view.into(), true).into());
+                                if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                                    *element_setup_modal = esm;
+                                }
+                            }
+                            _ => unreachable!(),
                         }
                     }
                 }
@@ -5044,13 +5040,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 let child = self.properties_views.iter()
                     .map(|e| {
                         let mut w = e.write();
-                        (*w.uuid, w.highlight.selected, w.handle_event(event, ehc, q, tool, element_setup_modal, commands))
+                        (*w.uuid, w.highlight.selected, w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands))
                     })
                     .find(|e| e.2 != EventHandlingStatus::NotHandled)
                     .or_else(|| self.operations_views.iter()
                         .map(|e| {
                             let mut w = e.write();
-                            (*w.uuid, w.highlight.selected, w.handle_event(event, ehc, q, tool, element_setup_modal, commands))
+                            (*w.uuid, w.highlight.selected, w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands))
                         })
                         .find(|e| e.2 != EventHandlingStatus::NotHandled));
 
@@ -5810,6 +5806,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -7761,6 +7758,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _settings: &<UmlClassDomain<P> as Domain>::SettingsT,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlClassTool<P>>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,

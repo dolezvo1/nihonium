@@ -1905,6 +1905,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        settings: &<DemoPsdDomain as Domain>::SettingsT,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -1912,7 +1913,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
     ) -> EventHandlingStatus {
         let child_status = self.before_views.iter_mut()
             .flat_map(|e| {
-                let s = e.view.handle_event(event, ehc, q, tool, element_setup_modal, commands);
+                let s = e.view.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
                 if s != EventHandlingStatus::NotHandled {
                     Some((*e.view.uuid(), s))
                 } else {
@@ -1922,7 +1923,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             .next();
         let child_status = child_status.or_else(|| self.p_act_view.as_ref().and_then(|e| {
             let mut w = e.write();
-            let s = w.handle_event(event, ehc, q, tool, element_setup_modal, commands);
+            let s = w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*w.uuid(), s))
             } else {
@@ -1931,7 +1932,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         }));
         let child_status = child_status.or_else(|| self.after_views.iter_mut()
             .flat_map(|e| {
-                let s = e.view.handle_event(event, ehc, q, tool, element_setup_modal, commands);
+                let s = e.view.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
                 if s != EventHandlingStatus::NotHandled {
                     Some((*e.view.uuid(), s))
                 } else {
@@ -2827,6 +2828,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _settings: &<DemoPsdDomain as Domain>::SettingsT,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -3256,6 +3258,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _settings: &<DemoPsdDomain as Domain>::SettingsT,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoPsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,

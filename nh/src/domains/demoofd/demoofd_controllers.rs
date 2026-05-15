@@ -2008,6 +2008,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _settings: &<DemoOfdDomain as Domain>::SettingsT,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoOfdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -2642,6 +2643,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        settings: &<DemoOfdDomain as Domain>::SettingsT,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoOfdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -2682,7 +2684,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             }
             InputEvent::Click(pos) if !self.min_shape().contains(pos) => {
                 if let UFOption::Some(s) = &self.specialization_view {
-                    let r = s.write().handle_event(event, ehc, q, tool, element_setup_modal, commands);
+                    let r = s.write().handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
                     match r {
                         EventHandlingStatus::HandledByElement => {
                             let s = s.read();
@@ -2743,7 +2745,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             _ => self
                 .specialization_view
                 .as_ref()
-                .map(|t| t.write().handle_event(event, ehc, q, tool, element_setup_modal, commands))
+                .map(|t| t.write().handle_event(event, ehc, settings, q, tool, element_setup_modal, commands))
                 .unwrap_or(EventHandlingStatus::NotHandled)
         }
     }

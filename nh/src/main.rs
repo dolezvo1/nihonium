@@ -1640,6 +1640,7 @@ impl NHContext {
             tab_uuid,
             ui, &response,
             self.modifier_settings,
+            settings,
             &mut self.custom_modal,
             &mut self.affected_models,
         );

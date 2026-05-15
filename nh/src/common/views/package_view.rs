@@ -372,13 +372,14 @@ where
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        settings: &DomainT::SettingsT,
         q: &DomainT::QueryableT<'_>,
         tool: &mut Option<DomainT::ToolT>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> EventHandlingStatus {
         let k_status = self.owned_views.event_order_find_mut(|v| {
-            let s = v.handle_event(event, ehc, q, tool, element_setup_modal, commands);
+            let s = v.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*v.uuid(), s))
             } else {

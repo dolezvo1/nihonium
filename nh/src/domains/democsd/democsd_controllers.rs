@@ -1694,6 +1694,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        settings: &<DemoCsdDomain as Domain>::SettingsT,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoCsdTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -1702,7 +1703,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         let child = self
             .transaction_view
             .as_ref()
-            .map(|t| t.write().handle_event(event, ehc, q, tool, element_setup_modal, commands))
+            .map(|t| t.write().handle_event(event, ehc, settings, q, tool, element_setup_modal, commands))
             .filter(|e| *e != EventHandlingStatus::NotHandled);
 
         match event {
@@ -2480,6 +2481,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _settings: &<DemoCsdDomain as Domain>::SettingsT,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveDemoCsdTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,

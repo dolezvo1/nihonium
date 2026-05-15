@@ -71,7 +71,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
     let arms_show_properties = arms_mutable.iter().map(|e| quote! { #e.show_properties(gdc, q, ui, commands) }).collect::<Vec<_>>();
     let arms_draw_in = arms_mutable.iter().map(|e| quote! { #e.draw_in(q, context, settings, canvas, tool) }).collect::<Vec<_>>();
     let arms_collect_alignment = arms_mutable.iter().map(|e| quote! { #e.collect_allignment(am) }).collect::<Vec<_>>();
-    let arms_handle_event = arms_mutable.iter().map(|e| quote! { #e.handle_event(event, ehc, q, tool, element_setup_modal, commands) }).collect::<Vec<_>>();
+    let arms_handle_event = arms_mutable.iter().map(|e| quote! { #e.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands) }).collect::<Vec<_>>();
     let arms_apply_command = arms_mutable.iter().map(|e| quote! { #e.apply_command(command, undo_accumulator, affected_models) }).collect::<Vec<_>>();
     let arms_refresh_buffers = arms_mutable.iter().map(|e| quote! { #e.refresh_buffers() }).collect::<Vec<_>>();
     let arms_head_count = arms_mutable.iter().map(|e| quote! { #e.head_count(flattened_views, flattened_views_status, flattened_represented_models) }).collect::<Vec<_>>();
@@ -167,6 +167,7 @@ pub fn derive_view(input: TokenStream) -> TokenStream {
                 &mut self,
                 event: InputEvent,
                 ehc: &EventHandlingContext,
+                settings: &<#domain as crate::common::controller::Domain> :: SettingsT,
                 q: &<#domain as crate::common::controller::Domain> :: QueryableT<'_>,
                 tool: &mut Option<<#domain as crate::common::controller::Domain> :: ToolT>,
                 element_setup_modal: &mut Option<Box<dyn CustomModal>>,

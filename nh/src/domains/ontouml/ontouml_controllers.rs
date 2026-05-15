@@ -9,7 +9,7 @@ use crate::{DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, Diagr
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
     uuid::{ControllerUuid, ModelUuid, ViewUuid},
-}, domains::{ontouml::ontouml_models, umlclass::{umlclass_controllers::{UmlClassRenderStyle, UmlClassView}, umlclass_models::{UmlClass, UmlClassElement, UmlClassPackageKind}}}};
+}, domains::{ontouml::ontouml_models, umlclass::{umlclass_controllers::{PartialUmlClassElement, UmlClassRenderStyle, UmlClassView}, umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind}}}};
 use eframe::egui;
 use std::{
     collections::HashSet,
@@ -43,13 +43,6 @@ impl UmlClassProfile for OntoUmlProfile {
             ));
         }
         ui.separator();
-    }
-
-    fn allows_class_properties() -> bool {
-        false
-    }
-    fn allows_class_operations() -> bool {
-        false
     }
 }
 
@@ -308,7 +301,48 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ]),
     ];
 
-    super::super::umlclass::umlclass_controllers::default_settings_helper::<OntoUmlProfile>(palette_items)
+    fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<OntoUmlProfile>, bool) {
+        (
+            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type: LinkType::Association { stereotype: "".to_owned() },
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    let instance_buttons = vec![
+        (
+            "↘",
+            &instance_association as &dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<OntoUmlProfile>, bool),
+        ),
+    ];
+    fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<OntoUmlProfile>, bool) {
+        (
+            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type: LinkType::Association { stereotype: "".to_owned() },
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    let class_buttons = vec![
+        (
+            "↘",
+            &class_association as &dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<OntoUmlProfile>, bool),
+        ),
+    ];
+
+    super::super::umlclass::umlclass_controllers::default_settings_helper::<OntoUmlProfile>(
+        palette_items,
+        instance_buttons,
+        class_buttons,
+    )
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {

@@ -10,7 +10,7 @@ use crate::{DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, Diagr
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
     uuid::{ControllerUuid, ModelUuid, ViewUuid},
-}, domains::{umlclass::{umlclass_controllers::{UmlClassRenderStyle, new_uml_usecase, new_umlclass_dependency}, umlclass_models::{UmlClassElement, UmlClassPackageKind}}, usecase::usecase_models}};
+}, domains::{umlclass::{umlclass_controllers::{PartialUmlClassElement, UmlClassRenderStyle, new_uml_usecase, new_umlclass_dependency}, umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind}}, usecase::usecase_models}};
 use eframe::egui;
 use std::{
     collections::HashSet,
@@ -237,7 +237,49 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ]),
     ];
 
-    super::super::umlclass::umlclass_controllers::default_settings_helper::<UseCaseProfile>(palette_items)
+
+    fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool) {
+        (
+            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type: LinkType::Association { stereotype: "".to_owned() },
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    let instance_buttons = vec![
+        (
+            "↘",
+            &instance_association as &dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool),
+        ),
+    ];
+    fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool) {
+        (
+            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type: LinkType::Association { stereotype: "".to_owned() },
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    let class_buttons = vec![
+        (
+            "↘",
+            &class_association as &dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool),
+        ),
+    ];
+
+    super::super::umlclass::umlclass_controllers::default_settings_helper::<UseCaseProfile>(
+        palette_items,
+        instance_buttons,
+        class_buttons,
+    )
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {

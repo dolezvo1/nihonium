@@ -537,6 +537,7 @@ where
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _settings: &DomainT::SettingsT,
         q: &DomainT::QueryableT<'_>,
         _tool: &mut Option<DomainT::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,

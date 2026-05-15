@@ -459,6 +459,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         ui: &mut egui::Ui,
         response: &egui::Response,
         modifier_settings: ModifierSettings,
+        settings: &Box<dyn DiagramSettings>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
@@ -580,6 +581,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         ui: &mut egui::Ui,
         response: &egui::Response,
         modifier_settings: ModifierSettings,
+        settings: &Box<dyn DiagramSettings>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         affected_models: &mut HashSet<ModelUuid>,
     );
@@ -1499,6 +1501,7 @@ pub trait ElementControllerGen2<DomainT: Domain>: ElementController<DomainT::Com
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        settings: &DomainT::SettingsT,
         q: &DomainT::QueryableT<'_>,
         tool: &mut Option<DomainT::ToolT>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -1955,12 +1958,13 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         ui: &mut egui::Ui,
         response: &egui::Response,
         modifier_settings: ModifierSettings,
+        settings: &Box<dyn DiagramSettings>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         let view = self.views.get(uuid).unwrap();
         let mut commands = Vec::new();
-        view.write().handle_input(ui, response, modifier_settings, element_setup_modal, &mut commands);
+        view.write().handle_input(ui, response, modifier_settings, settings, element_setup_modal, &mut commands);
         self.apply_commands(uuid, commands, true, affected_models);
     }
 
@@ -2401,6 +2405,7 @@ impl<
         event: InputEvent,
         modifier_settings: ModifierSettings,
         modifiers: ModifierKeys,
+        settings: &DomainT::SettingsT,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> bool {
@@ -2426,7 +2431,7 @@ impl<
         );
 
         let child = self.owned_views.event_order_find_mut(|v| {
-            let r = v.handle_event(event, &ehc, &q, &mut self.temporaries.current_tool, element_setup_modal, &mut commands);
+            let r = v.handle_event(event, &ehc, settings, &q, &mut self.temporaries.current_tool, element_setup_modal, &mut commands);
             if r != EventHandlingStatus::NotHandled {
                 let k = v.uuid();
                 Some((*k, match r {
@@ -2893,10 +2898,13 @@ impl<
         ui: &mut egui::Ui,
         response: &egui::Response,
         modifier_settings: ModifierSettings,
+        settings: &Box<dyn DiagramSettings>,
         // TODO: remove, handle as a command
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) {
+        let Some(settings) = (settings.as_ref() as &dyn Any).downcast_ref::<DomainT::SettingsT>() else { return; };
+
         macro_rules! pos_to_abs {
             ($pos:expr) => {
                 (($pos - self.temporaries.camera_offset - response.rect.min.to_vec2()) / self.temporaries.camera_scale).to_pos2()
@@ -2909,7 +2917,7 @@ impl<
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if *pressed && *button == egui::PointerButton::Primary => {
                     self.temporaries.last_unhandled_mouse_pos = Some(pos_to_abs!(*pos));
-                    self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifier_settings, modifiers, element_setup_modal, commands);
+                    self.handle_event(InputEvent::MouseDown(pos_to_abs!(*pos)), modifier_settings, modifiers, settings, element_setup_modal, commands);
                 },
                 _ => {}
             })
@@ -2917,19 +2925,19 @@ impl<
         if response.dragged_by(egui::PointerButton::Primary) && ui.input(|i| i.multi_touch().is_none()) {
             if let Some(old_pos) = self.temporaries.last_unhandled_mouse_pos {
                 let delta = response.drag_delta() / self.temporaries.camera_scale;
-                self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifier_settings, modifiers, element_setup_modal, commands);
+                self.handle_event(InputEvent::Drag { from: old_pos, delta }, modifier_settings, modifiers, settings, element_setup_modal, commands);
                 self.temporaries.last_unhandled_mouse_pos = Some(old_pos + delta);
             }
         }
         if response.clicked_by(egui::PointerButton::Primary) {
             if let Some(pos) = ui.ctx().pointer_interact_pos() {
-                self.handle_event(InputEvent::Click(pos_to_abs!(pos)), modifier_settings, modifiers, element_setup_modal, commands);
+                self.handle_event(InputEvent::Click(pos_to_abs!(pos)), modifier_settings, modifiers, settings, element_setup_modal, commands);
             }
         }
         ui.input(|is| is.events.iter()
             .for_each(|e| match e {
                 egui::Event::PointerButton { pos, button, pressed, .. } if !*pressed && *button == egui::PointerButton::Primary => {
-                    self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifier_settings, modifiers, element_setup_modal, commands);
+                    self.handle_event(InputEvent::MouseUp(pos_to_abs!(*pos)), modifier_settings, modifiers, settings, element_setup_modal, commands);
                     self.temporaries.last_unhandled_mouse_pos = None;
                 },
                 _ => {}

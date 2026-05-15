@@ -225,14 +225,15 @@ impl UmlSequenceHorizontalElementView {
         lifeline_views: &[ERef<UmlSequenceLifelineView>],
         event: InputEvent,
         ehc: &EventHandlingContext,
+        settings: &<UmlSequenceDomain as Domain>::SettingsT,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) -> EventHandlingStatus {
         match self {
-            UmlSequenceHorizontalElementView::CombinedFragment(inner) => inner.write().handle_event_inner(lifeline_views, event, ehc, q, tool, element_setup_modal, commands),
-            UmlSequenceHorizontalElementView::Message(inner) => inner.write().handle_event(event, ehc, q, tool, element_setup_modal, commands),
+            UmlSequenceHorizontalElementView::CombinedFragment(inner) => inner.write().handle_event_inner(lifeline_views, event, ehc, settings, q, tool, element_setup_modal, commands),
+            UmlSequenceHorizontalElementView::Message(inner) => inner.write().handle_event(event, ehc, settings, q, tool, element_setup_modal, commands),
             UmlSequenceHorizontalElementView::Ref(inner) => inner.write().handle_event_inner(lifeline_views, event, ehc, q, tool, element_setup_modal, commands),
         }
     }
@@ -1636,6 +1637,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        settings: &<UmlSequenceDomain as Domain>::SettingsT,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -1643,14 +1645,14 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
     ) -> EventHandlingStatus {
         let k_status = self.lifeline_views.iter_mut().flat_map(|v| {
             let mut w = v.write();
-            let s = w.handle_event(event, ehc, q, tool, element_setup_modal, commands);
+            let s = w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*w.uuid(), s))
             } else {
                 None
             }
         }).next().or_else(|| self.horizontal_element_views.iter_mut().flat_map(|v| {
-            let s = v.handle_event_inner(&self.lifeline_views, event, ehc, q, tool, element_setup_modal, commands);
+            let s = v.handle_event_inner(&self.lifeline_views, event, ehc, settings, q, tool, element_setup_modal, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*v.uuid(), s))
             } else {
@@ -2490,6 +2492,7 @@ impl UmlSequenceCombinedFragmentView {
         lifeline_views: &[ERef<UmlSequenceLifelineView>],
         event: InputEvent,
         ehc: &EventHandlingContext,
+        settings: &<UmlSequenceDomain as Domain>::SettingsT,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -2513,7 +2516,7 @@ impl UmlSequenceCombinedFragmentView {
                 let k_status = self.sections.iter()
                         .map(|e| {
                             let mut w = e.write();
-                            (*w.uuid, w.handle_event_inner(spanned_lifeline_views, event, ehc, q, tool, element_setup_modal, commands))
+                            (*w.uuid, w.handle_event_inner(spanned_lifeline_views, event, ehc, settings, q, tool, element_setup_modal, commands))
                         })
                         .find(|e| e.1 != EventHandlingStatus::NotHandled);
 
@@ -2665,6 +2668,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
         &mut self,
         _event: InputEvent,
         _ehc: &EventHandlingContext,
+        _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -3170,6 +3174,7 @@ impl UmlSequenceCombinedFragmentSectionView {
         lifeline_views: &[ERef<UmlSequenceLifelineView>],
         event: InputEvent,
         ehc: &EventHandlingContext,
+        settings: &<UmlSequenceDomain as Domain>::SettingsT,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -3179,7 +3184,7 @@ impl UmlSequenceCombinedFragmentSectionView {
             InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
                 let k_status = self.horizontal_element_views.iter_mut()
                     .map(|e| {
-                        (*e.uuid(), e.handle_event_inner(lifeline_views, event, ehc, q, tool, element_setup_modal, commands))
+                        (*e.uuid(), e.handle_event_inner(lifeline_views, event, ehc, settings, q, tool, element_setup_modal, commands))
                     })
                     .find(|e| e.1 != EventHandlingStatus::NotHandled);
 
@@ -3376,6 +3381,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
         &mut self,
         _event: InputEvent,
         _ehc: &EventHandlingContext,
+        _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<NaiveUmlSequenceTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -4133,6 +4139,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -4587,6 +4594,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         &mut self,
         event: InputEvent,
         _ehc: &EventHandlingContext,
+        _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -5056,6 +5064,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
         &mut self,
         _event: InputEvent,
         _ehc: &EventHandlingContext,
+        _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         _q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         _tool: &mut Option<<UmlSequenceDomain as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -5411,6 +5420,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
+        _settings: &<UmlSequenceDomain as Domain>::SettingsT,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlSequenceTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
