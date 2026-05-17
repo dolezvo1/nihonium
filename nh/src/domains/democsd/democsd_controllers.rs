@@ -788,7 +788,7 @@ inventory::submit! {DiagramInfo {
 
 
 #[derive(Clone, PartialEq)]
-struct TransactionStageData {
+pub struct TransactionStageData {
     identifier: String,
     name: String,
     kind: DemoTransactionKind,

@@ -839,7 +839,7 @@ inventory::submit! {DiagramInfo {
 
 
 #[derive(Clone, PartialEq)]
-struct EntityStageData {
+pub struct EntityStageData {
     name: String,
     properties: String,
     internal: bool,
