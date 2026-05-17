@@ -644,13 +644,13 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let act2 = new_demopsd_act("", false, egui::Pos2::new(200.0, 500.0));
 
     let response_link = new_demopsd_link(
-        DemoPsdLinkType::ResponseLink,
+        DemoPsdLinkType::ResponseLink, "",
         (fact1.0.clone(), fact1.1.clone().into()),
         (act1.0.clone(), act1.1.clone().into()),
         None,
     );
     let wait_link = new_demopsd_link(
-        DemoPsdLinkType::WaitLink,
+        DemoPsdLinkType::WaitLink, "",
         (fact2.0.clone(), fact2.1.clone().into()),
         (act2.0.clone(), act2.1.clone().into()),
         Some((ViewUuid::now_v7(), egui::Pos2::new(300.0, 400.0))),
@@ -729,8 +729,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let (act, act_view) = new_demopsd_act("rq", true, egui::Pos2::new(100.0, 75.0));
     let act = (act, act_view.into());
 
-    let (_response, response_view) = new_demopsd_link(DemoPsdLinkType::ResponseLink, fact.clone(), act.clone(), None);
-    let (_wait, wait_view) = new_demopsd_link(DemoPsdLinkType::WaitLink, fact.clone(), act.clone(), None);
+    let (_response, response_view) = new_demopsd_link(DemoPsdLinkType::ResponseLink, "", fact.clone(), act.clone(), None);
+    let (_wait, wait_view) = new_demopsd_link(DemoPsdLinkType::WaitLink, "", fact.clone(), act.clone(), None);
 
     let (_package, package_view) = new_demopsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
 
@@ -751,8 +751,14 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             }, "Act", act.1),
         ]),
         ("Relationships", vec![
-            (DemoPsdToolStage::LinkStart { link_type: DemoPsdLinkType::ResponseLink }, "Response Link", response_view.into()),
-            (DemoPsdToolStage::LinkStart { link_type: DemoPsdLinkType::WaitLink }, "Wait Link", wait_view.into()),
+            (DemoPsdToolStage::LinkStart {
+                link_type: DemoPsdLinkType::ResponseLink,
+                multiplicity: "".to_owned(),
+            }, "Response Link", response_view.into()),
+            (DemoPsdToolStage::LinkStart {
+                link_type: DemoPsdLinkType::WaitLink,
+                multiplicity: "".to_owned(),
+            }, "Wait Link", wait_view.into()),
         ]),
         ("Other", vec![
             (DemoPsdToolStage::PackageStart, "Package", package_view.into()),
@@ -836,8 +842,25 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                             mw.internal = *internal;
                         }
                     },
-                    (DemoPsdToolStage::LinkStart { link_type }, _) => {
+                    (
+                        DemoPsdToolStage::LinkStart { link_type, multiplicity },
+                        DemoPsdElement::DemoPsdLink(inner),
+                    ) => {
+                        columns[1].label("Link type");
+                        egui::ComboBox::from_id_salt("link type")
+                            .selected_text(link_type.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in DemoPsdLinkType::VARIANTS {
+                                    modified |= ui.selectable_value(link_type, e, e.as_str()).clicked();
+                                }
+                            });
 
+                        modified |= columns[1].labeled_text_edit_singleline("Multiplicity", multiplicity).changed();
+
+                        if modified && let mut mw = inner.write() {
+                            mw.link_type = *link_type;
+                            mw.multiplicity = multiplicity.clone().into();
+                        }
                     },
                     (DemoPsdToolStage::PackageStart, _) => {
 
@@ -887,7 +910,10 @@ pub enum DemoPsdToolStage {
         identifier: String,
         internal: bool,
     },
-    LinkStart { link_type: DemoPsdLinkType },
+    LinkStart {
+        link_type: DemoPsdLinkType,
+        multiplicity: String,
+    },
     LinkEnd,
     PackageStart,
     PackageEnd,
@@ -904,6 +930,7 @@ enum PartialDemoPsdElement {
     },
     Link {
         link_type: DemoPsdLinkType,
+        multiplicity: String,
         source: ERef<DemoPsdFact>,
         dest: Option<ERef<DemoPsdAct>>,
     },
@@ -1117,8 +1144,13 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         match section {
             TS::Package(..)
             | TS::Transaction(..) => {},
-            TS::Fact(inner) => if let DemoPsdToolStage::LinkStart { link_type } = self.current_stage {
-                self.result = PartialDemoPsdElement::Link { link_type: link_type, source: inner, dest: None };
+            TS::Fact(inner) => if let DemoPsdToolStage::LinkStart { link_type, multiplicity } = &self.current_stage {
+                self.result = PartialDemoPsdElement::Link {
+                    link_type: *link_type,
+                    multiplicity: multiplicity.clone(),
+                    source: inner,
+                    dest: None,
+                };
                 self.current_stage = DemoPsdToolStage::LinkEnd;
                 self.event_lock = true;
             } else {},
@@ -1159,6 +1191,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 source,
                 dest: Some(target),
                 link_type,
+                multiplicity,
                 ..
             } => {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *target.read().uuid());
@@ -1172,6 +1205,7 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
 
                     let (_link_model, link_view) = new_demopsd_link(
                         *link_type,
+                        multiplicity,
                         (source.clone(), source_view),
                         (target.clone(), target_view),
                         None,
@@ -3464,6 +3498,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
 
 fn new_demopsd_link(
     link_type: DemoPsdLinkType,
+    multiplicity: &str,
     source: (
         ERef<DemoPsdFact>,
         DemoPsdElementView,
@@ -3477,6 +3512,7 @@ fn new_demopsd_link(
     let link_model = ERef::new(DemoPsdLink::new(
         ModelUuid::now_v7(),
         link_type,
+        multiplicity.to_owned().into(),
         source.0,
         target.0,
     ));

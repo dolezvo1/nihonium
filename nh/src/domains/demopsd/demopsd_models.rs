@@ -903,6 +903,7 @@ impl DemoPsdLink {
     pub fn new(
         uuid: ModelUuid,
         link_type: DemoPsdLinkType,
+        multiplicity: Arc<String>,
         source: ERef<DemoPsdFact>,
         target: ERef<DemoPsdAct>,
     ) -> Self {
@@ -911,7 +912,7 @@ impl DemoPsdLink {
             link_type,
             source,
             target,
-            multiplicity: Arc::new("".to_owned()),
+            multiplicity,
             comment: Arc::new("".to_owned()),
         }
     }

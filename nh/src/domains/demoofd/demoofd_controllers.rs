@@ -606,7 +606,8 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     );
 
     let (prop_member, prop_member_view) = new_demoofd_propertytype(
-        "", None,
+        "", "0..*", "1..1",
+        None,
         (entity_started_membership.clone(), entity_started_membership_view.clone().into()),
         (entity_person.clone(), entity_person_view.clone().into()),
     );
@@ -676,10 +677,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         None, egui::Pos2::new(200.0, 50.0),
     );
 
-    let (prop, prop_view) = new_demoofd_propertytype("", None, entity_2.clone(), (d.clone(), dv.clone().into()));
-    prop.write().domain_multiplicity = Arc::new("".to_owned());
-    prop.write().range_multiplicity = Arc::new("".to_owned());
-    prop_view.write().refresh_buffers();
+    let (_prop, prop_view) = new_demoofd_propertytype("", "0..*", "1..1", None, entity_2.clone(), (d.clone(), dv.clone().into()));
     let (_spec, spec_view) = new_demoofd_specialization(None, entity_2.clone(), (d.clone(), dv.clone().into()));
     let (_aggr, aggr_view) = new_demoofd_aggregation(None, entity_2.clone(), (d.clone(), dv.clone().into()));
     let (_prec, prec_view) = new_demoofd_precedence(None, (event.clone(), event_view.clone().into()), (dummy_event.clone(), dummy_event_view.clone().into()));
@@ -702,7 +700,11 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             }, "Event Type", event_view.into()),
         ]),
         ("Relationships", vec![
-            (DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType }, "Property Type", prop_view.into()),
+            (DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType {
+                name: "".to_owned(),
+                domain_multiplicity: "0..*".to_owned(),
+                range_multiplicity: "1..1".to_owned(),
+            } }, "Property Type", prop_view.into()),
             (DemoOfdToolStage::LinkStart { link_type: LinkType::Specialization }, "Specialization", spec_view.into()),
             (DemoOfdToolStage::LinkStart { link_type: LinkType::Aggregation }, "Aggregation/Generalization", aggr_view.into()),
             (DemoOfdToolStage::LinkStart { link_type: LinkType::Precedence }, "Precedence", prec_view.into()),
@@ -796,9 +798,21 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                             }
                         }
                     },
-                    (DemoOfdToolStage::LinkStart { link_type }, _) => {
+                    (
+                        DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType { name, domain_multiplicity, range_multiplicity }, },
+                        DemoOfdElement::DemoOfdPropertyType(inner),
+                    ) => {
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+                        modified |= columns[1].labeled_text_edit_singleline("Domain multiplicity", domain_multiplicity).changed();
+                        modified |= columns[1].labeled_text_edit_singleline("Range multiplicity", range_multiplicity).changed();
 
+                        if modified && let mut mw = inner.write() {
+                            mw.name = name.clone().into();
+                            mw.domain_multiplicity = domain_multiplicity.clone().into();
+                            mw.range_multiplicity = range_multiplicity.clone().into();
+                        }
                     },
+                    (DemoOfdToolStage::LinkStart { .. }, _) => {}
                     (
                         DemoOfdToolStage::PackageStart { name },
                         DemoOfdElement::DemoOfdPackage(inner),
@@ -845,9 +859,13 @@ pub struct EntityStageData {
     internal: bool,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum LinkType {
-    PropertyType,
+    PropertyType {
+        name: String,
+        domain_multiplicity: String,
+        range_multiplicity: String,
+    },
     Specialization,
     Aggregation,
     Precedence,
@@ -982,7 +1000,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
             Some(DemoOfdElement::DemoOfdEntityType(inner)) => match self.current_stage {
                 DemoOfdToolStage::LinkEnd => match &self.result {
                     PartialDemoOfdElement::EntityLink { link_type, source, .. } => {
-                        if *link_type == LinkType::PropertyType
+                        if matches!(link_type, LinkType::PropertyType { .. })
                             || (*link_type == LinkType::Specialization && *source.read().uuid != *inner.read().uuid)
                             || (*link_type == LinkType::Aggregation && *source.read().uuid != *inner.read().uuid){
                             TARGETTABLE_COLOR
@@ -1000,7 +1018,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     _ => NON_TARGETTABLE_COLOR
                 }
                 DemoOfdToolStage::EventStart { .. }
-                | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType | LinkType::Specialization | LinkType::Aggregation | LinkType::Exclusion }
+                | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType { .. } | LinkType::Specialization | LinkType::Aggregation | LinkType::Exclusion }
                 | DemoOfdToolStage::LinkAddEnding { .. } => {
                     TARGETTABLE_COLOR
                 }
@@ -1022,7 +1040,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 | DemoOfdToolStage::EventEnd
                 | DemoOfdToolStage::PackageStart { .. }
                 | DemoOfdToolStage::PackageEnd
-                | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType | LinkType::Specialization | LinkType::Aggregation }
+                | DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType { .. } | LinkType::Specialization | LinkType::Aggregation }
                 | DemoOfdToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
 
                 DemoOfdToolStage::LinkStart { link_type: LinkType::Precedence | LinkType::Exclusion } => TARGETTABLE_COLOR,
@@ -1159,9 +1177,9 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         self.current_stage = DemoOfdToolStage::EventEnd;
                         self.event_lock = true;
                     }
-                    (DemoOfdToolStage::LinkStart { link_type: link_type @ (LinkType::PropertyType | LinkType::Specialization | LinkType::Aggregation) }, PartialDemoOfdElement::None) => {
+                    (DemoOfdToolStage::LinkStart { link_type: link_type @ (LinkType::PropertyType { .. } | LinkType::Specialization | LinkType::Aggregation) }, PartialDemoOfdElement::None) => {
                         self.result = PartialDemoOfdElement::EntityLink {
-                            link_type: *link_type,
+                            link_type: link_type.clone(),
                             source: inner.into(),
                             dest: None,
                         };
@@ -1170,7 +1188,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     }
                     (DemoOfdToolStage::LinkStart { link_type: link_type @ LinkType::Exclusion }, PartialDemoOfdElement::None) => {
                         self.result = PartialDemoOfdElement::TypeLink {
-                            link_type: *link_type,
+                            link_type: link_type.clone(),
                             source: inner.into(),
                             dest: None,
                         };
@@ -1181,7 +1199,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         DemoOfdToolStage::LinkEnd,
                         PartialDemoOfdElement::EntityLink { link_type, source, dest },
                     ) => {
-                        if (*link_type == LinkType::PropertyType)
+                        if matches!(link_type, LinkType::PropertyType { .. })
                             || (*link_type == LinkType::Specialization && *source.read().uuid != *inner.read().uuid)
                             || (*link_type == LinkType::Aggregation && *source.read().uuid != *inner.read().uuid) {
                             *dest = Some(inner.into());
@@ -1222,7 +1240,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     }
                     (DemoOfdToolStage::LinkStart { link_type: link_type @ LinkType::Precedence }, PartialDemoOfdElement::None) => {
                         self.result = PartialDemoOfdElement::EventLink {
-                            link_type: *link_type,
+                            link_type: link_type.clone(),
                             source: inner.into(),
                             dest: None,
                         };
@@ -1231,7 +1249,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     }
                     (DemoOfdToolStage::LinkStart { link_type: link_type @ LinkType::Exclusion }, PartialDemoOfdElement::None) => {
                         self.result = PartialDemoOfdElement::TypeLink {
-                            link_type: *link_type,
+                            link_type: link_type.clone(),
                             source: inner.into(),
                             dest: None,
                         };
@@ -1336,14 +1354,18 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 ) && q.is_contained(&source_view.uuid(), into)
                   && q.is_contained(&dest_view.uuid(), into)
                 {
-                    self.current_stage = DemoOfdToolStage::LinkStart {
-                        link_type: *link_type,
-                    };
+                    self.current_stage = self.initial_stage.clone();
 
                     let link_view = match link_type {
-                        LinkType::PropertyType => {
+                        LinkType::PropertyType {
+                            name,
+                            domain_multiplicity,
+                            range_multiplicity,
+                        } => {
                             new_demoofd_propertytype(
-                                "",
+                                name,
+                                domain_multiplicity,
+                                range_multiplicity,
                                 None,
                                 (source.clone(), source_view),
                                 (dest.clone(), dest_view),
@@ -1386,12 +1408,10 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 ) && q.is_contained(&source_view.uuid(), into)
                   && q.is_contained(&dest_view.uuid(), into)
                 {
-                    self.current_stage = DemoOfdToolStage::LinkStart {
-                        link_type: *link_type,
-                    };
+                    self.current_stage = self.initial_stage.clone();
 
                     let link_view = match link_type {
-                        LinkType::PropertyType
+                        LinkType::PropertyType { .. }
                         | LinkType::Specialization
                         | LinkType::Aggregation => unreachable!(),
                         LinkType::Precedence => {
@@ -1423,12 +1443,10 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 ) && q.is_contained(&source_view.uuid(), into)
                   && q.is_contained(&dest_view.uuid(), into)
                 {
-                    self.current_stage = DemoOfdToolStage::LinkStart {
-                        link_type: *link_type,
-                    };
+                    self.current_stage = self.initial_stage.clone();
 
                     let link_view = match link_type {
-                        LinkType::PropertyType
+                        LinkType::PropertyType { .. }
                         | LinkType::Specialization
                         | LinkType::Aggregation
                         | LinkType::Precedence => unreachable!(),
@@ -2084,12 +2102,19 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                 EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.highlight.selected && self.property_button_rect(ehc.ui_scale).contains(pos) => {
+                let link_type = LinkType::PropertyType {
+                    name: "".to_owned(),
+                    domain_multiplicity: "0..*".to_owned(),
+                    range_multiplicity: "1..1".to_owned(),
+                };
                 *tool = Some(NaiveDemoOfdTool {
                     uuid: uuid::Uuid::nil(),
-                    initial_stage: DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType },
+                    initial_stage: DemoOfdToolStage::LinkStart {
+                        link_type: link_type.clone(),
+                    },
                     current_stage: DemoOfdToolStage::LinkEnd,
                     result: PartialDemoOfdElement::EntityLink {
-                        link_type: LinkType::PropertyType,
+                        link_type,
                         source: self.model.clone().into(),
                         dest: None,
                     },
@@ -3018,6 +3043,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
 
 fn new_demoofd_propertytype(
     name: &str,
+    domain_multiplicity: &str,
+    range_multiplicity: &str,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: (ERef<DemoOfdEntityType>, DemoOfdElementView),
     target: (ERef<DemoOfdEntityType>, DemoOfdElementView),
@@ -3025,7 +3052,9 @@ fn new_demoofd_propertytype(
     let link_model = ERef::new(DemoOfdPropertyType::new(
         ModelUuid::now_v7(),
         name.to_owned(),
+        domain_multiplicity.to_owned(),
         source.0,
+        range_multiplicity.to_owned(),
         target.0,
     ));
     let link_view = new_demoofd_propertytype_view(link_model.clone(), center_point, source.1, target.1);

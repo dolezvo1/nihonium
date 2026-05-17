@@ -517,7 +517,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     controllers.push(ta1_view.clone().into());
 
     let initiator_link = new_democsd_link(
-        DemoCsdLinkType::InitiatorLink,
+        DemoCsdLinkType::InitiatorLink, "",
         (client_model, client_view.into()),
         (tx1_model, tx1_view.into()),
     );
@@ -538,7 +538,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     controllers.push(ta_view.into());
 
     let wait_link = new_democsd_link(
-        DemoCsdLinkType::WaitLink,
+        DemoCsdLinkType::WaitLink, "",
         (ta1_model, ta1_view.into()),
         (tx2_model.clone(), tx2_view.clone().into()),
     );
@@ -559,7 +559,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     controllers.push(ta3_view.clone().into());
 
     let access_link = new_democsd_link(
-        DemoCsdLinkType::AccessLink,
+        DemoCsdLinkType::AccessLink, "",
         (ta3_model, ta3_view.into()),
         (tx2_model, tx2_view.into()),
     );
@@ -604,9 +604,9 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let (bank, bank_view) = new_democsd_transaction("TK01", "Bank", DemoTransactionKind::Performa, false, egui::Pos2::new(100.0, 75.0), false);
     let bank = (bank, bank_view.into());
 
-    let (_init, init_view) = new_democsd_link(DemoCsdLinkType::InitiatorLink, (client.clone(), client_view.clone().into()), bank.clone());
-    let (_ints, ints_view) = new_democsd_link(DemoCsdLinkType::AccessLink, (client.clone(), client_view.clone().into()), bank.clone());
-    let (_inim, inim_view) = new_democsd_link(DemoCsdLinkType::WaitLink, (client.clone(), client_view.clone().into()), bank.clone());
+    let (_init, init_view) = new_democsd_link(DemoCsdLinkType::InitiatorLink, "", (client.clone(), client_view.clone().into()), bank.clone());
+    let (_ints, ints_view) = new_democsd_link(DemoCsdLinkType::AccessLink, "", (client.clone(), client_view.clone().into()), bank.clone());
+    let (_inim, inim_view) = new_democsd_link(DemoCsdLinkType::WaitLink, "", (client.clone(), client_view.clone().into()), bank.clone());
 
     let (_package, package_view) = new_democsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
 
@@ -639,9 +639,18 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             }), "Transaction Bank", bank.1.into()),
         ]),
         ("Relationships", vec![
-            (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::InitiatorLink }, "Initiator Link", init_view.into()),
-            (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::AccessLink }, "Access Link", ints_view.into()),
-            (DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::WaitLink }, "Wait Link", inim_view.into()),
+            (DemoCsdToolStage::LinkStart {
+                link_type: DemoCsdLinkType::InitiatorLink,
+                multiplicity: "".to_owned(),
+            }, "Initiator Link", init_view.into()),
+            (DemoCsdToolStage::LinkStart {
+                link_type: DemoCsdLinkType::AccessLink,
+                multiplicity: "".to_owned(),
+            }, "Access Link", ints_view.into()),
+            (DemoCsdToolStage::LinkStart {
+                link_type: DemoCsdLinkType::WaitLink,
+                multiplicity: "".to_owned(),
+            }, "Wait Link", inim_view.into()),
         ]),
         ("Other", vec![
             (DemoCsdToolStage::PackageStart {
@@ -745,8 +754,25 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                             mw.name = name.clone().into();
                         }
                     },
-                    (DemoCsdToolStage::LinkStart { link_type }, _) => {
+                    (
+                        DemoCsdToolStage::LinkStart { link_type, multiplicity },
+                        DemoCsdElement::DemoCsdLink(inner),
+                    ) => {
+                        columns[1].label("Link type");
+                        egui::ComboBox::from_id_salt("link type")
+                            .selected_text(link_type.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in DemoCsdLinkType::VARIANTS {
+                                    modified |= ui.selectable_value(link_type, e, e.as_str()).clicked();
+                                }
+                            });
 
+                        modified |= columns[1].labeled_text_edit_singleline("Multiplicity", multiplicity).changed();
+
+                        if modified && let mut mw = inner.write() {
+                            mw.link_type = *link_type;
+                            mw.multiplicity = multiplicity.clone().into();
+                        }
                     },
                     (
                         DemoCsdToolStage::PackageStart { name },
@@ -805,7 +831,10 @@ pub enum DemoCsdToolStage {
         transaction: Option<TransactionStageData>,
     },
     Bank(TransactionStageData),
-    LinkStart { link_type: DemoCsdLinkType },
+    LinkStart {
+        link_type: DemoCsdLinkType,
+        multiplicity: String,
+    },
     LinkEnd,
     PackageStart {
         name: String,
@@ -818,6 +847,7 @@ enum PartialDemoCsdElement {
     Some(DemoCsdElementView),
     Link {
         link_type: DemoCsdLinkType,
+        multiplicity: String,
         source: ERef<DemoCsdTransactor>,
         dest: Option<ERef<DemoCsdTransaction>>,
     },
@@ -996,9 +1026,10 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
             DemoCsdElement::DemoCsdPackage(..) => {}
             DemoCsdElement::DemoCsdTransactor(inner) => {
                 match (&self.current_stage, &mut self.result) {
-                    (DemoCsdToolStage::LinkStart { link_type }, PartialDemoCsdElement::None) => {
+                    (DemoCsdToolStage::LinkStart { link_type, multiplicity }, PartialDemoCsdElement::None) => {
                         self.result = PartialDemoCsdElement::Link {
                             link_type: *link_type,
+                            multiplicity: multiplicity.clone(),
                             source: inner,
                             dest: None,
                         };
@@ -1057,6 +1088,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 source,
                 dest: Some(target),
                 link_type,
+                multiplicity,
                 ..
             } => {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *target.read().uuid());
@@ -1070,6 +1102,7 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
 
                     let (_link_model, link_view) = new_democsd_link(
                         *link_type,
+                        multiplicity,
                         (source.clone(), source_view),
                         (target.clone(), target_view),
                     );
@@ -1761,10 +1794,14 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                 if self.highlight.selected && self.initiation_button_rect(ehc.ui_scale).contains(pos) {
                     *tool = Some(NaiveDemoCsdTool {
                         uuid: uuid::Uuid::nil(),
-                        initial_stage: DemoCsdToolStage::LinkStart { link_type: DemoCsdLinkType::InitiatorLink },
+                        initial_stage: DemoCsdToolStage::LinkStart {
+                            link_type: DemoCsdLinkType::InitiatorLink,
+                            multiplicity: "".to_owned(),
+                        },
                         current_stage: DemoCsdToolStage::LinkEnd,
                         result: PartialDemoCsdElement::Link {
                             link_type: DemoCsdLinkType::InitiatorLink,
+                            multiplicity: "".to_owned(),
                             source: self.model.clone(),
                             dest: None,
                         },
@@ -2698,6 +2735,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
 
 fn new_democsd_link(
     link_type: DemoCsdLinkType,
+    multiplicity: &str,
     source: (
         ERef<DemoCsdTransactor>,
         DemoCsdElementView,
@@ -2710,7 +2748,7 @@ fn new_democsd_link(
     let link_model = ERef::new(DemoCsdLink::new(
         ModelUuid::now_v7(),
         link_type,
-        Arc::new("".to_owned()),
+        multiplicity.to_owned().into(),
         source.0,
         target.0,
     ));

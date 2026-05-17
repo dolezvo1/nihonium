@@ -801,16 +801,18 @@ impl DemoOfdPropertyType {
     pub fn new(
         uuid: ModelUuid,
         name: String,
+        domain_multiplicity: String,
         domain_element: ERef<DemoOfdEntityType>,
+        range_multiplicity: String,
         range_element: ERef<DemoOfdEntityType>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
             domain_element,
-            domain_multiplicity: Arc::new("0..*".to_owned()),
+            domain_multiplicity: Arc::new(domain_multiplicity),
             range_element,
-            range_multiplicity: Arc::new("1..1".to_owned()),
+            range_multiplicity: Arc::new(range_multiplicity),
             comment: Arc::new("".to_owned()),
         }
     }
