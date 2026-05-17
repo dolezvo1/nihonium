@@ -466,7 +466,11 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             }
             UmlClassElement::UmlClassComment(inner) => {
                 UmlClassElementView::from(
-                    new_umlclass_comment_view(inner, egui::Pos2::ZERO)
+                    new_umlclass_comment_view(
+                        inner,
+                        egui::Pos2::ZERO,
+                        egui::Align2::CENTER_CENTER,
+                    )
                 )
             },
             UmlClassElement::UmlClassCommentLink(inner) => {
@@ -917,7 +921,11 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     point_assoc_model.write().target_label_multiplicity = Arc::new("3..*".to_owned());
     point_assoc_model.write().target_navigability = UmlClassAssociationNavigability::Navigable;
 
-    let (comment, comment_view) = new_umlclass_comment("This is a comment\nwith multiple lines", egui::Pos2::new(650.0, 250.0));
+    let (comment, comment_view) = new_umlclass_comment(
+        "This is a comment\nwith multiple lines",
+        egui::Pos2::new(650.0, 250.0),
+        egui::Align2::CENTER_CENTER,
+    );
     let (commentlink1, commentlink1_view) = new_umlclass_commentlink(
         None,
         (comment.clone(), comment_view.clone().into()),
@@ -1064,7 +1072,11 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
     let (_package, package_view) = new_umlclass_package("a package", "", UmlClassPackageKind::Package, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
     package_view.write().refresh_buffers();
-    let (comment, comment_view) = new_umlclass_comment("a comment", egui::Pos2::new(-100.0, -75.0));
+    let (comment, comment_view) = new_umlclass_comment(
+        "a comment",
+        egui::Pos2::new(-100.0, -75.0),
+        egui::Align2::CENTER_CENTER,
+    );
     let comment = (comment, comment_view.into());
     let commentlink = new_umlclass_commentlink(None, comment.clone(), (class_m.into(), class_2.1.clone()));
 
@@ -1103,7 +1115,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 stereotype: "".to_owned(),
                 kind: UmlClassPackageKind::Package,
             }, "Package", package_view.into()),
-            (UmlClassToolStage::Comment { text: "a comment".to_owned() }, "Comment", comment.1),
+            (UmlClassToolStage::Comment {
+                text: "a comment".to_owned(),
+                align: egui::Align2::CENTER_CENTER,
+            }, "Comment", comment.1),
             (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
         ]),
     ];
@@ -1221,7 +1236,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                         }
                     },
                     (
-                        UmlClassToolStage::Class { name, stereotype, render_style },
+                        UmlClassToolStage::Class { name, stereotype, .. },
                         UmlClassElement::UmlClass(inner),
                     ) => {
                         let mut sc = P::ClassStereotypeController::default();
@@ -1338,10 +1353,25 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                         }
                     },
                     (
-                        UmlClassToolStage::Comment { text },
+                        UmlClassToolStage::Comment { text, align },
                         UmlClassElement::UmlClassComment(inner),
                     ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
+
+                        egui::ComboBox::new("horizontal align", "Horizontal align")
+                            .selected_text(format!("{:?}", align.x()))
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                    modified |= ui.selectable_value(&mut align.0[0], e, format!("{:?}", e)).changed();
+                                }
+                            });
+                        egui::ComboBox::new("vertical align", "Vertical align")
+                            .selected_text(format!("{:?}", align.y()))
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                    modified |= ui.selectable_value(&mut align.0[1], e, format!("{:?}", e)).changed();
+                                }
+                            });
 
                         if modified && let mut mw = inner.write() {
                             mw.text = text.clone().into();
@@ -1414,7 +1444,7 @@ pub enum UmlClassToolStage {
     LinkAddEnding { source: bool },
     PackageStart { name: String, stereotype: String, kind: UmlClassPackageKind },
     PackageEnd,
-    Comment { text: String },
+    Comment { text: String, align: egui::Align2 },
     CommentLinkStart,
     CommentLinkEnd,
 }
@@ -1680,9 +1710,9 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (UmlClassToolStage::Comment { text }, _) => {
+            (UmlClassToolStage::Comment { text, align }, _) => {
                 let (_comment_model, comment_view) =
-                    new_umlclass_comment(text, pos);
+                    new_umlclass_comment(text, pos, *align);
                 self.result = PartialUmlClassElement::Some(comment_view.into());
                 self.event_lock = true;
             }
@@ -7529,18 +7559,20 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
 pub fn new_umlclass_comment<P: UmlClassProfile>(
     text: &str,
     position: egui::Pos2,
+    align: egui::Align2,
 ) -> (ERef<UmlClassComment>, ERef<UmlClassCommentView<P>>) {
     let comment_model = ERef::new(UmlClassComment::new(
         ModelUuid::now_v7(),
         text.to_owned(),
     ));
-    let comment_view = new_umlclass_comment_view(comment_model.clone(), position);
+    let comment_view = new_umlclass_comment_view(comment_model.clone(), position, align);
 
     (comment_model, comment_view)
 }
 pub fn new_umlclass_comment_view<P: UmlClassProfile>(
     model: ERef<UmlClassComment>,
     position: egui::Pos2,
+    align: egui::Align2,
 ) -> ERef<UmlClassCommentView<P>> {
     let m = model.read();
     ERef::new(UmlClassCommentView {
@@ -7552,6 +7584,7 @@ pub fn new_umlclass_comment_view<P: UmlClassProfile>(
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position,
+        align,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color: MGlobalColor::None,
         _profile: PhantomData,
@@ -7573,11 +7606,16 @@ pub struct UmlClassCommentView<P: UmlClassProfile> {
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
+    pub align: egui::Align2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
 
     #[nh_context_serde(skip_and_default)]
     _profile: PhantomData<P>,
+}
+
+impl<P: UmlClassProfile> UmlClassCommentView<P> {
+    const CORNER_SIZE: f32 = 10.0;
 }
 
 impl<P: UmlClassProfile> Entity for UmlClassCommentView<P> {
@@ -7647,6 +7685,21 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             }
         });
 
+        egui::ComboBox::new("horizontal align", "Horizontal align")
+            .selected_text(format!("{:?}", self.align.x()))
+            .show_ui(ui, |ui| {
+                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                    ui.selectable_value(&mut self.align.0[0], e, format!("{:?}", e));
+                }
+            });
+        egui::ComboBox::new("vertical align", "Vertical align")
+            .selected_text(format!("{:?}", self.align.y()))
+            .show_ui(ui, |ui| {
+                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                    ui.selectable_value(&mut self.align.0[1], e, format!("{:?}", e));
+                }
+            });
+
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
             gdc,
@@ -7669,21 +7722,31 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
     ) -> TargettingStatus {
         let read = self.model.read();
 
-        let corner_size = 10.0;
+        let align_offset = egui::Vec2 { x: match self.align.x() {
+            egui::Align::Min => -Self::CORNER_SIZE,
+            egui::Align::Center => 0.0,
+            egui::Align::Max => Self::CORNER_SIZE,
+        }, y: match self.align.y() {
+            egui::Align::Min => Self::CORNER_SIZE,
+            egui::Align::Center => 0.0,
+            egui::Align::Max => -Self::CORNER_SIZE,
+        }};
         self.bounds_rect = canvas.measure_text(
             self.position,
-            egui::Align2::CENTER_CENTER,
+            self.align,
             &read.text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-        ).expand2(egui::Vec2 { x: corner_size, y: corner_size });
+        )
+        .expand2(egui::Vec2 { x: Self::CORNER_SIZE, y: Self::CORNER_SIZE })
+        .translate(align_offset);
 
         canvas.draw_polygon(
             [
                 self.bounds_rect.min,
                 egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.max.y),
                 self.bounds_rect.max,
-                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
-                egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
+                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
             ].into_iter().collect(),
             context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -7691,17 +7754,17 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         );
         canvas.draw_polygon(
             [
-                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
-                egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y + corner_size),
-                egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
+                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
             ].into_iter().collect(),
             context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
         canvas.draw_text(
-            self.position,
-            egui::Align2::CENTER_CENTER,
+            self.position + align_offset,
+            self.align,
             &read.text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
@@ -7738,8 +7801,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                         self.bounds_rect.min,
                         egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.max.y),
                         self.bounds_rect.max,
-                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
-                        egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
+                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                        egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
                     ].into_iter().collect(),
                     t.targetting_for_section(Some(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -7806,7 +7869,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                     ehc.snap_manager
                         .coerce(translated_real_shape, |e| *e != *self.uuid)
                 };
-                let coerced_delta = coerced_pos - self.position;
+                let coerced_delta = coerced_pos - self.bounds_rect.center();
 
                 if self.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
@@ -7932,6 +7995,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             dragged_shape: None,
             highlight: self.highlight,
             position: self.position,
+            align: self.align,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
             _profile: PhantomData,

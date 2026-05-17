@@ -374,7 +374,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 new_umlsequence_ref_view(inner.clone()).into()
             },
             UmlSequenceElement::Comment(inner) => {
-                new_umlsequence_comment_view(inner, egui::Pos2::ZERO).into()
+                new_umlsequence_comment_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER).into()
             },
             UmlSequenceElement::CommentLink(inner) => todo!(),
         };
@@ -681,7 +681,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         (lifeline_model2.clone(), lifeline_view2.clone().into()));
     message_view4.write().refresh_buffers();
     let (_, ref_view) = new_umlsequence_ref("Checkout", HashSet::new());
-    let (_, comment_view) = new_umlsequence_comment("Comment", egui::Pos2::ZERO);
+    let (_, comment_view) = new_umlsequence_comment("Comment", egui::Pos2::ZERO, egui::Align2::CENTER_CENTER);
 
     let palette_items = vec![
         ("Containers", vec![
@@ -716,7 +716,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ]),
         ("Other", vec![
             (UmlSequenceToolStage::RefStart, "Interaction Fragment", ref_view.into()),
-            (UmlSequenceToolStage::Comment, "Comment", comment_view.into()),
+            (UmlSequenceToolStage::Comment {
+                text: "a comment".to_owned(),
+                align: egui::Align2::CENTER_CENTER,
+            }, "Comment", comment_view.into()),
             //(UmlSequenceToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
         ]),
     ];
@@ -749,7 +752,34 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                // TODO: edit
+                match (tool, view.model()) {
+                    (
+                        UmlSequenceToolStage::Comment { text, align },
+                        UmlSequenceElement::Comment(inner),
+                    ) => {
+                        modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
+
+                        egui::ComboBox::new("horizontal align", "Horizontal align")
+                            .selected_text(format!("{:?}", align.x()))
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                    modified |= ui.selectable_value(&mut align.0[0], e, format!("{:?}", e)).changed();
+                                }
+                            });
+                        egui::ComboBox::new("vertical align", "Vertical align")
+                            .selected_text(format!("{:?}", align.y()))
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                    modified |= ui.selectable_value(&mut align.0[1], e, format!("{:?}", e)).changed();
+                                }
+                            });
+
+                        if modified && let mut mw = inner.write() {
+                            mw.text = text.clone().into();
+                        }
+                    }
+                    _ => {}
+                }
 
                 if modified {
                     w.set_from_buffer(buffer.clone());
@@ -785,7 +815,7 @@ pub enum LinkType {
     },
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum UmlSequenceToolStage {
     DiagramStart,
     DiagramEnd,
@@ -796,7 +826,7 @@ pub enum UmlSequenceToolStage {
     LinkEnd,
     RefStart,
     RefEnd,
-    Comment,
+    Comment { text: String, align: egui::Align2 },
     CommentLinkStart,
     CommentLinkEnd,
 }
@@ -853,8 +883,8 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
     fn new(uuid: uuid::Uuid, initial_stage: UmlSequenceToolStage, repeat: bool) -> Self {
         Self {
             uuid,
+            current_stage: initial_stage.clone(),
             initial_stage,
-            current_stage: initial_stage,
             result: PartialUmlSequenceElement::None,
             event_lock: false,
             is_spent: if repeat { None } else { Some(false) },
@@ -875,7 +905,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
             None => match self.current_stage {
                 UmlSequenceToolStage::DiagramStart
                 | UmlSequenceToolStage::DiagramEnd
-                | UmlSequenceToolStage::Comment => TARGETTABLE_COLOR,
+                | UmlSequenceToolStage::Comment { .. } => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
             Some(UmlSequenceElement::Diagram(_)) => match self.current_stage {
@@ -962,10 +992,10 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
             return;
         }
 
-        match (self.current_stage, &mut self.result) {
+        match (&self.current_stage, &mut self.result) {
             (UmlSequenceToolStage::Lifeline { name, stereotype, render_style }, _) => {
                 let (_class_model, class_view) =
-                    new_umlsequence_lifeline(name, stereotype, render_style);
+                    new_umlsequence_lifeline(name, stereotype, *render_style);
                 self.result = PartialUmlSequenceElement::Some(class_view.into());
                 self.event_lock = true;
             }
@@ -981,9 +1011,9 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (UmlSequenceToolStage::Comment, PartialUmlSequenceElement::None) => {
+            (UmlSequenceToolStage::Comment { text, align }, PartialUmlSequenceElement::None) => {
                 let (_comment_model, comment_view) =
-                    new_umlsequence_comment("a comment", pos);
+                    new_umlsequence_comment(text, pos, *align);
                 self.result = PartialUmlSequenceElement::Some(comment_view.into());
                 self.event_lock = true;
             }
@@ -997,10 +1027,10 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
 
         match element {
             UmlSequenceElement::Lifeline(inner) => {
-                match (self.current_stage, &mut self.result) {
+                match (&self.current_stage, &mut self.result) {
                     (UmlSequenceToolStage::LinkStart { link_type }, PartialUmlSequenceElement::None) => {
                         self.result = PartialUmlSequenceElement::Link {
-                            link_type,
+                            link_type: *link_type,
                             source: inner,
                             dest: None,
                         };
@@ -1016,7 +1046,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     }
                     (UmlSequenceToolStage::CombinedFragmentStart { kind }, PartialUmlSequenceElement::None) => {
                         self.result = PartialUmlSequenceElement::CombinedFragment {
-                            kind,
+                            kind: *kind,
                             source: inner,
                             dest: None,
                         };
@@ -1082,7 +1112,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     q.get_view_for(&target_uuid),
                 ) && q.find_parent(&source_view.uuid(), |_, e| matches!(e, UmlSequenceElementView::Diagram(_))).map(|e| e.0)
                     == q.find_parent(&target_view.uuid(), |_, e| matches!(e, UmlSequenceElementView::Diagram(_))).map(|e| e.0) {
-                    self.current_stage = self.initial_stage;
+                    self.current_stage = self.initial_stage.clone();
 
                     let section = new_umlsequence_combinedfragmentsection("", Vec::new()).into();
                     let link_view = new_umlsequence_combinedfragment(
@@ -1110,7 +1140,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     q.get_view_for(&target_uuid),
                 ) && q.find_parent(&source_view.uuid(), |_, e| matches!(e, UmlSequenceElementView::Diagram(_))).map(|e| e.0)
                     == q.find_parent(&target_view.uuid(), |_, e| matches!(e, UmlSequenceElementView::Diagram(_))).map(|e| e.0) {
-                    self.current_stage = self.initial_stage;
+                    self.current_stage = self.initial_stage.clone();
 
                     let link_view = match link_type {
                         LinkType::Message { synchronicity_kind, is_return, name } => {
@@ -1143,7 +1173,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     q.get_view_for(&target_uuid),
                 ) && q.find_parent(&source_view.uuid(), |_, e| matches!(e, UmlSequenceElementView::Diagram(_))).map(|e| e.0)
                     == q.find_parent(&target_view.uuid(), |_, e| matches!(e, UmlSequenceElementView::Diagram(_))).map(|e| e.0) {
-                    self.current_stage = self.initial_stage;
+                    self.current_stage = self.initial_stage.clone();
 
                     let ref_view = new_umlsequence_ref(
                         "",
@@ -5195,18 +5225,20 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
 pub fn new_umlsequence_comment(
     text: &str,
     position: egui::Pos2,
+    align: egui::Align2,
 ) -> (ERef<UmlSequenceComment>, ERef<UmlSequenceCommentView>) {
     let comment_model = ERef::new(UmlSequenceComment::new(
         ModelUuid::now_v7(),
         text.to_owned(),
     ));
-    let comment_view = new_umlsequence_comment_view(comment_model.clone(), position);
+    let comment_view = new_umlsequence_comment_view(comment_model.clone(), position, align);
 
     (comment_model, comment_view)
 }
 pub fn new_umlsequence_comment_view(
     model: ERef<UmlSequenceComment>,
     position: egui::Pos2,
+    align: egui::Align2,
 ) -> ERef<UmlSequenceCommentView> {
     let m = model.read();
     ERef::new(UmlSequenceCommentView {
@@ -5218,6 +5250,7 @@ pub fn new_umlsequence_comment_view(
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position,
+        align,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color: MGlobalColor::None,
     })
@@ -5238,8 +5271,13 @@ pub struct UmlSequenceCommentView {
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
+    align: egui::Align2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
+}
+
+impl UmlSequenceCommentView {
+    const CORNER_SIZE: f32 = 10.0;
 }
 
 impl Entity for UmlSequenceCommentView {
@@ -5309,6 +5347,21 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
             }
         });
 
+        egui::ComboBox::new("horizontal align", "Horizontal align")
+            .selected_text(format!("{:?}", self.align.x()))
+            .show_ui(ui, |ui| {
+                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                    ui.selectable_value(&mut self.align.0[0], e, format!("{:?}", e));
+                }
+            });
+        egui::ComboBox::new("vertical align", "Vertical align")
+            .selected_text(format!("{:?}", self.align.y()))
+            .show_ui(ui, |ui| {
+                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                    ui.selectable_value(&mut self.align.0[1], e, format!("{:?}", e));
+                }
+            });
+
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
             drawing_context,
@@ -5331,21 +5384,30 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
     ) -> TargettingStatus {
         let read = self.model.read();
 
-        let corner_size = 10.0;
+        let align_offset = egui::Vec2 { x: match self.align.x() {
+            egui::Align::Min => -Self::CORNER_SIZE,
+            egui::Align::Center => 0.0,
+            egui::Align::Max => Self::CORNER_SIZE,
+        }, y: match self.align.y() {
+            egui::Align::Min => Self::CORNER_SIZE,
+            egui::Align::Center => 0.0,
+            egui::Align::Max => -Self::CORNER_SIZE,
+        }};
         self.bounds_rect = canvas.measure_text(
             self.position,
-            egui::Align2::CENTER_CENTER,
+            self.align,
             &read.text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-        ).expand2(egui::Vec2 { x: corner_size, y: corner_size });
+        ).expand2(egui::Vec2 { x: Self::CORNER_SIZE, y: Self::CORNER_SIZE })
+        .translate(align_offset);
 
         canvas.draw_polygon(
             [
                 self.bounds_rect.min,
                 egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.max.y),
                 self.bounds_rect.max,
-                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
-                egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
+                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
             ].into_iter().collect(),
             context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -5353,17 +5415,17 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
         );
         canvas.draw_polygon(
             [
-                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
-                egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y + corner_size),
-                egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
+                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
             ].into_iter().collect(),
             context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
         canvas.draw_text(
-            self.position,
-            egui::Align2::CENTER_CENTER,
+            self.position + align_offset,
+            self.align,
             &read.text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
@@ -5400,8 +5462,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
                         self.bounds_rect.min,
                         egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.max.y),
                         self.bounds_rect.max,
-                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
-                        egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
+                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                        egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
                     ].into_iter().collect(),
                     t.targetting_for_section(Some(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -5468,7 +5530,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
                     ehc.snap_manager
                         .coerce(translated_real_shape, |e| *e != *self.uuid)
                 };
-                let coerced_delta = coerced_pos - self.position;
+                let coerced_delta = coerced_pos - self.bounds_rect.center();
 
                 if self.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
@@ -5595,6 +5657,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
             dragged_shape: None,
             highlight: self.highlight,
             position: self.position,
+            align: self.align,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
         });

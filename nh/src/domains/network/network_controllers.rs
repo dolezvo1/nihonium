@@ -272,7 +272,7 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
                 ).into()
             },
             NetworkElement::Comment(inner) => {
-                new_network_comment_view(inner, egui::Pos2::ZERO).into()
+                new_network_comment_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER).into()
             },
         };
 
@@ -532,7 +532,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         "Subnet", NetworkContainerShapeKind::Rectangle,
         egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) },
     );
-    let (_comment, comment_view) = new_network_comment("a comment", egui::Pos2::ZERO);
+    let (_comment, comment_view) = new_network_comment("a comment", egui::Pos2::ZERO, egui::Align2::CENTER_CENTER);
 
     let palette_items = vec![
         ("Nodes", vec![
@@ -590,7 +590,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ]),
         ("Other", vec![
             (NetworkToolStage::ContainerStart { name: "Subnet".to_owned() }, "Container", container_view.into()),
-            (NetworkToolStage::Comment { text: "a comment".to_owned() }, "Comment", comment_view.into()),
+            (NetworkToolStage::Comment {
+                text: "a comment".to_owned(),
+                align: egui::Align2::CENTER_CENTER,
+            }, "Comment", comment_view.into()),
         ]),
     ];
 
@@ -713,10 +716,25 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                         }
                     },
                     (
-                        NetworkToolStage::Comment { text },
+                        NetworkToolStage::Comment { text, align },
                         NetworkElement::Comment(inner),
                     ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
+
+                        egui::ComboBox::new("horizontal align", "Horizontal align")
+                            .selected_text(format!("{:?}", align.x()))
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                    modified |= ui.selectable_value(&mut align.0[0], e, format!("{:?}", e)).changed();
+                                }
+                            });
+                        egui::ComboBox::new("vertical align", "Vertical align")
+                            .selected_text(format!("{:?}", align.y()))
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                                    modified |= ui.selectable_value(&mut align.0[1], e, format!("{:?}", e)).changed();
+                                }
+                            });
 
                         if modified && let mut mw = inner.write() {
                             mw.text = text.clone().into();
@@ -763,7 +781,10 @@ pub enum NetworkToolStage {
     AssociationEnd,
     ContainerStart { name: String },
     ContainerEnd,
-    Comment { text: String },
+    Comment {
+        text: String,
+        align: egui::Align2,
+    },
 }
 
 enum PartialNetworkElement {
@@ -903,11 +924,8 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.event_lock = true;
             }
             (NetworkToolStage::ContainerEnd, PartialNetworkElement::Container { b, .. }) => *b = Some(pos),
-            (NetworkToolStage::Comment { text }, _) => {
-                let (_, comment_view) = new_network_comment(
-                    text,
-                    pos,
-                );
+            (NetworkToolStage::Comment { text, align }, _) => {
+                let (_, comment_view) = new_network_comment(text, pos, *align);
 
                 self.result = PartialNetworkElement::Some(comment_view.into());
                 self.event_lock = true;
@@ -2900,18 +2918,20 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
 pub fn new_network_comment(
     text: &str,
     position: egui::Pos2,
+    align: egui::Align2,
 ) -> (ERef<NetworkComment>, ERef<NetworkCommentView>) {
     let comment_model = ERef::new(NetworkComment::new(
         ModelUuid::now_v7(),
         text.to_owned(),
     ));
-    let comment_view = new_network_comment_view(comment_model.clone(), position);
+    let comment_view = new_network_comment_view(comment_model.clone(), position, align);
 
     (comment_model, comment_view)
 }
 pub fn new_network_comment_view(
     model: ERef<NetworkComment>,
     position: egui::Pos2,
+    align: egui::Align2,
 ) -> ERef<NetworkCommentView> {
     let m = model.read();
     ERef::new(NetworkCommentView {
@@ -2923,6 +2943,7 @@ pub fn new_network_comment_view(
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position,
+        align,
         bounds_rect: egui::Rect::from_min_max(position, position),
         background_color: MGlobalColor::None,
     })
@@ -2943,8 +2964,13 @@ pub struct NetworkCommentView {
     #[nh_context_serde(skip_and_default)]
     highlight: canvas::Highlight,
     pub position: egui::Pos2,
+    align: egui::Align2,
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
+}
+
+impl NetworkCommentView {
+    const CORNER_SIZE: f32 = 10.0;
 }
 
 impl Entity for NetworkCommentView {
@@ -3014,6 +3040,21 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
             }
         });
 
+        egui::ComboBox::new("horizontal align", "Horizontal align")
+            .selected_text(format!("{:?}", self.align.x()))
+            .show_ui(ui, |ui| {
+                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                    ui.selectable_value(&mut self.align.0[0], e, format!("{:?}", e));
+                }
+            });
+        egui::ComboBox::new("vertical align", "Vertical align")
+            .selected_text(format!("{:?}", self.align.y()))
+            .show_ui(ui, |ui| {
+                for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
+                    ui.selectable_value(&mut self.align.0[1], e, format!("{:?}", e));
+                }
+            });
+
         ui.label("Background color:");
         if crate::common::controller::mglobalcolor_edit_button(
             gdc,
@@ -3036,21 +3077,30 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
     ) -> TargettingStatus {
         let read = self.model.read();
 
-        let corner_size = 10.0;
+        let align_offset = egui::Vec2 { x: match self.align.x() {
+            egui::Align::Min => -Self::CORNER_SIZE,
+            egui::Align::Center => 0.0,
+            egui::Align::Max => Self::CORNER_SIZE,
+        }, y: match self.align.y() {
+            egui::Align::Min => Self::CORNER_SIZE,
+            egui::Align::Center => 0.0,
+            egui::Align::Max => -Self::CORNER_SIZE,
+        }};
         self.bounds_rect = canvas.measure_text(
             self.position,
-            egui::Align2::CENTER_CENTER,
+            self.align,
             &read.text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-        ).expand2(egui::Vec2 { x: corner_size, y: corner_size });
+        ).expand2(egui::Vec2 { x: Self::CORNER_SIZE, y: Self::CORNER_SIZE })
+        .translate(align_offset);
 
         canvas.draw_polygon(
             [
                 self.bounds_rect.min,
                 egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.max.y),
                 self.bounds_rect.max,
-                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
-                egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
+                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
             ].into_iter().collect(),
             context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -3058,17 +3108,17 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
         );
         canvas.draw_polygon(
             [
-                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
-                egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y + corner_size),
-                egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
+                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
             ].into_iter().collect(),
             context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
         canvas.draw_text(
-            self.position,
-            egui::Align2::CENTER_CENTER,
+            self.position + align_offset,
+            self.align,
             &read.text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
@@ -3105,8 +3155,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                         self.bounds_rect.min,
                         egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.max.y),
                         self.bounds_rect.max,
-                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + corner_size),
-                        egui::Pos2::new(self.bounds_rect.max.x - corner_size, self.bounds_rect.min.y),
+                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
+                        egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
                     ].into_iter().collect(),
                     t.targetting_for_section(Some(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -3173,7 +3223,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                     ehc.snap_manager
                         .coerce(translated_real_shape, |e| *e != *self.uuid)
                 };
-                let coerced_delta = coerced_pos - self.position;
+                let coerced_delta = coerced_pos - self.bounds_rect.center();
 
                 if self.highlight.selected {
                     commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
@@ -3299,6 +3349,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
             dragged_shape: None,
             highlight: self.highlight,
             position: self.position,
+            align: self.align,
             bounds_rect: self.bounds_rect,
             background_color: self.background_color,
         });
