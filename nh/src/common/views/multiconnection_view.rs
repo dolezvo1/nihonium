@@ -928,6 +928,7 @@ where
 
                             affected_models.insert(*self.adapter.model_uuid());
                         }
+                        self.adapter.refresh_buffers();
                     }
                     // vertex
                     if let Ok(VertexInformation {
