@@ -1525,9 +1525,9 @@ mod test {
                 stereotype.to_owned(),
                 "".to_owned(),
                 source,
-                "".to_owned(),
+                "0..*".to_owned(),
                 target,
-                "".to_owned(),
+                "1..1".to_owned(),
             )
         )
     }
