@@ -894,6 +894,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     };
     let (circle_model, circle_view) = new_umlclass_class("Circle", "entity", false, circle_properties, Vec::new(), egui::Pos2::new(300.0, 550.0), UmlClassRenderStyle::Class);
     let (gen_model, gen_view) = new_umlclass_generalization(
+        "",
         Some((ViewUuid::now_v7(), egui::Pos2::new(200.0, 490.0))),
         (polygon_model.clone(), polygon_view.clone().into()),
         (shape_model.clone(), shape_view.clone().into())
@@ -913,7 +914,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     };
     let (point_model, point_view) = new_umlclass_class("Point", "struct", false, point_properties, Vec::new(), egui::Pos2::new(100.0, 700.0), UmlClassRenderStyle::Class);
     let (point_assoc_model, point_assoc_view) = new_umlclass_association(
-        "", "", None,
+        "", "", "", "", None,
         (polygon_model.clone().into(), polygon_view.clone().into()),
         (point_model.clone().into(), point_view.clone().into())
     );
@@ -1062,8 +1063,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let (_operation, operation_view) = new_umlclass_operation(UFOption::None, "operation", "", "ReturnType", "");
     operation_view.write().refresh_buffers();
 
-    let (_gen, gen_view) = new_umlclass_generalization(None, class_1, dummy_1);
-    let (assoc, assoc_view) = new_umlclass_association("", "", None, class_2.clone(), dummy_2.clone());
+    let (_gen, gen_view) = new_umlclass_generalization("", None, class_1, dummy_1);
+    let (assoc, assoc_view) = new_umlclass_association("", "", "", "", None, class_2.clone(), dummy_2.clone());
     assoc.write().source_label_multiplicity = Arc::new("".to_owned());
     assoc.write().target_label_multiplicity = Arc::new("".to_owned());
     assoc_view.write().refresh_buffers();
@@ -1104,10 +1105,32 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             }, "Operation", operation_view.into()),
         ]),
         ("Relationships", vec![
-            (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
-            (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } }, "Association", assoc_view.into()),
-            (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: false, stereotype: "".to_owned() } }, "IntReal", intreal_view.into()),
-            (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype: "use".to_owned() } }, "Usage", usage_view.into()),
+            (UmlClassToolStage::LinkStart {
+                link_type: LinkType::Generalization {
+                    set_name: "".to_owned(),
+                },
+            }, "Generalization (Set)", gen_view.into()),
+            (UmlClassToolStage::LinkStart {
+                link_type: LinkType::Association {
+                    stereotype: "".to_owned(),
+                    source_multiplicity: "0..*".to_owned(),
+                    target_multiplicity: "1..1".to_owned(),
+                },
+            }, "Association", assoc_view.into()),
+            (UmlClassToolStage::LinkStart {
+                link_type: LinkType::Dependency {
+                    target_arrow_open: false,
+                    stereotype: "".to_owned(),
+                    name: "".to_owned(),
+                },
+            }, "IntReal", intreal_view.into()),
+            (UmlClassToolStage::LinkStart {
+                link_type: LinkType::Dependency {
+                    target_arrow_open: true,
+                    stereotype: "use".to_owned(),
+                    name: "".to_owned(),
+                },
+            }, "Usage", usage_view.into()),
         ]),
         ("Other", vec![
             (UmlClassToolStage::PackageStart {
@@ -1125,11 +1148,18 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
 
     fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
+        let link_type = LinkType::Association {
+            stereotype: "".to_owned(),
+            source_multiplicity: "0..*".to_owned(),
+            target_multiplicity: "1..1".to_owned(),
+        };
         (
-            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type: LinkType::Association { stereotype: "".to_owned() },
+                link_type,
                 source: m.into(),
                 dest: None,
             },
@@ -1143,11 +1173,18 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ),
     ];
     fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
+        let link_type = LinkType::Association {
+            stereotype: "".to_owned(),
+            source_multiplicity: "0..*".to_owned(),
+            target_multiplicity: "1..1".to_owned(),
+        };
         (
-            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type: LinkType::Association { stereotype: "".to_owned() },
+                link_type,
                 source: m.into(),
                 dest: None,
             },
@@ -1299,33 +1336,49 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                             mw.name = name.clone().into();
                         }
                     },
-                    (UmlClassToolStage::LinkStart { link_type }, lv) => match (link_type, lv) {
+                    (UmlClassToolStage::LinkStart { link_type }, lm) => match (link_type, lm) {
                         (
-                            LinkType::Dependency { target_arrow_open, stereotype },
+                            LinkType::Generalization { set_name },
+                            UmlClassElement::UmlClassGeneralization(inner),
+                        ) => {
+                            modified |= columns[1].labeled_text_edit_singleline("Set name", set_name).changed();
+
+                            if modified && let mut mw = inner.write() {
+                                mw.set_name = set_name.clone().into();
+                            }
+                        },
+                        (
+                            LinkType::Dependency { target_arrow_open, stereotype, name },
                             UmlClassElement::UmlClassDependency(inner),
                         ) => {
                             let mut sc = P::DependencyStereotypeController::default();
                             sc.refresh(&stereotype);
                             modified |= sc.show(&mut columns[1]);
+                            modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                             modified |= columns[1].checkbox(target_arrow_open, "target arrow open").changed();
 
                             if modified && let mut mw = inner.write() {
                                 *stereotype = sc.get_raw();
                                 mw.stereotype = stereotype.clone().into();
+                                mw.name = name.clone().into();
                                 mw.target_arrow_open = *target_arrow_open;
                             }
                         },
                         (
-                            LinkType::Association { stereotype },
+                            LinkType::Association { stereotype, source_multiplicity, target_multiplicity },
                             UmlClassElement::UmlClassAssociation(inner),
                         ) => {
                             let mut sc = P::AssociationStereotypeController::default();
                             sc.refresh(&stereotype);
                             modified |= sc.show(&mut columns[1]);
+                            modified |= columns[1].labeled_text_edit_singleline("Source multiplicity", source_multiplicity).changed();
+                            modified |= columns[1].labeled_text_edit_singleline("Target multiplicity", target_multiplicity).changed();
 
                             if modified && let mut mw = inner.write() {
                                 *stereotype = sc.get_raw();
                                 mw.stereotype = stereotype.clone().into();
+                                mw.source_label_multiplicity = source_multiplicity.clone().into();
+                                mw.target_label_multiplicity = target_multiplicity.clone().into();
                             }
                         },
                         _ => {}
@@ -1422,29 +1475,64 @@ inventory::submit! {DiagramInfo {
 
 #[derive(Clone, PartialEq)]
 pub enum LinkType {
-    Generalization,
+    Generalization {
+        set_name: String,
+    },
     Dependency {
         target_arrow_open: bool,
         stereotype: String,
+        name: String,
     },
     Association {
         stereotype: String,
+        source_multiplicity: String,
+        target_multiplicity: String,
     },
 }
 
 #[derive(Clone, PartialEq)]
 pub enum UmlClassToolStage {
-    Instance { instance_name: String, instance_type: String, stereotype: String },
-    Class { name: String, stereotype: String, render_style: UmlClassRenderStyle },
-    ClassProperty { name: String, property_type: String, stereotype: String },
-    ClassOperation { name: String, return_type: String, stereotype: String },
-    UseCase { name: String, stereotype: String },
-    LinkStart { link_type: LinkType },
+    Instance {
+        instance_name: String,
+        instance_type: String,
+        stereotype: String,
+    },
+    Class {
+        name: String,
+        stereotype: String,
+        render_style: UmlClassRenderStyle,
+    },
+    ClassProperty {
+        name: String,
+        property_type: String,
+        stereotype: String,
+    },
+    ClassOperation {
+        name: String,
+        return_type: String,
+        stereotype: String,
+    },
+    UseCase {
+        name: String,
+        stereotype: String,
+    },
+    LinkStart {
+        link_type: LinkType,
+    },
     LinkEnd,
-    LinkAddEnding { source: bool },
-    PackageStart { name: String, stereotype: String, kind: UmlClassPackageKind },
+    LinkAddEnding {
+        source: bool,
+    },
+    PackageStart {
+        name: String,
+        stereotype: String,
+        kind: UmlClassPackageKind,
+    },
     PackageEnd,
-    Comment { text: String, align: egui::Align2 },
+    Comment {
+        text: String,
+        align: egui::Align2,
+    },
     CommentLinkStart,
     CommentLinkEnd,
 }
@@ -1548,7 +1636,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::PackageEnd
                 | UmlClassToolStage::Comment { .. }
                 | UmlClassToolStage::CommentLinkStart
-                | UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }
+                | UmlClassToolStage::LinkStart { link_type: LinkType::Generalization { .. } }
                 | UmlClassToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
 
                 UmlClassToolStage::LinkStart { .. }
@@ -1571,9 +1659,9 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::CommentLinkStart => NON_TARGETTABLE_COLOR,
 
                 UmlClassToolStage::LinkAddEnding { .. } | UmlClassToolStage::LinkEnd => match &self.result {
-                    PartialUmlClassElement::Link { link_type: LinkType::Generalization, source: UmlClassAssociable::UmlClass(_), .. }
+                    PartialUmlClassElement::Link { link_type: LinkType::Generalization { .. }, source: UmlClassAssociable::UmlClass(_), .. }
                     | PartialUmlClassElement::LinkEnding { gen_model: UmlGeneralization::ClassGeneralization(_), .. } => TARGETTABLE_COLOR,
-                    PartialUmlClassElement::Link { link_type, .. } if *link_type != LinkType::Generalization => TARGETTABLE_COLOR,
+                    PartialUmlClassElement::Link { link_type, .. } if !matches!(link_type, LinkType::Generalization { .. }) => TARGETTABLE_COLOR,
                     _ => NON_TARGETTABLE_COLOR,
                 }
             },
@@ -1594,9 +1682,9 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
 
                 UmlClassToolStage::LinkAddEnding { .. } | UmlClassToolStage::LinkEnd => match &self.result {
-                    PartialUmlClassElement::Link { link_type: LinkType::Generalization, source: UmlClassAssociable::UmlUseCase(_), .. }
+                    PartialUmlClassElement::Link { link_type: LinkType::Generalization { .. }, source: UmlClassAssociable::UmlUseCase(_), .. }
                     | PartialUmlClassElement::LinkEnding { gen_model: UmlGeneralization::UseCaseGeneralization(_), .. } => TARGETTABLE_COLOR,
-                    PartialUmlClassElement::Link { link_type, .. } if *link_type != LinkType::Generalization => TARGETTABLE_COLOR,
+                    PartialUmlClassElement::Link { link_type, .. } if !matches!(link_type, LinkType::Generalization { .. }) => TARGETTABLE_COLOR,
                     _ => NON_TARGETTABLE_COLOR,
                 }
             },
@@ -1740,7 +1828,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
             UmlClassElement::UmlClassInstance(inner) => {
                 match (&self.current_stage, &mut self.result) {
                     (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None)
-                        if *link_type != LinkType::Generalization => {
+                        if !matches!(link_type, LinkType::Generalization { .. }) => {
                         self.result = PartialUmlClassElement::Link {
                             link_type: link_type.clone(),
                             source: inner.into(),
@@ -1753,7 +1841,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         UmlClassToolStage::LinkEnd,
                         PartialUmlClassElement::Link { link_type, dest, .. },
                     ) => {
-                        if *link_type != LinkType::Generalization {
+                        if !matches!(link_type, LinkType::Generalization { .. }) {
                             *dest = Some(inner.into());
                         }
                         self.event_lock = true;
@@ -1793,7 +1881,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         UmlClassToolStage::LinkEnd,
                         PartialUmlClassElement::Link { link_type, source, dest },
                     ) => {
-                        if *link_type != LinkType::Generalization || matches!(source, UmlClassAssociable::UmlClass(_)) {
+                        if !matches!(link_type, LinkType::Generalization { .. })
+                            || matches!(source, UmlClassAssociable::UmlClass(_)) {
                             *dest = Some(inner.into());
                         }
                         self.event_lock = true;
@@ -1837,7 +1926,8 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         UmlClassToolStage::LinkEnd,
                         PartialUmlClassElement::Link { link_type, source, dest },
                     ) => {
-                        if *link_type != LinkType::Generalization || matches!(source, UmlClassAssociable::UmlUseCase(_)) {
+                        if !matches!(link_type, LinkType::Generalization { .. })
+                            || matches!(source, UmlClassAssociable::UmlUseCase(_)) {
                             *dest = Some(inner.into());
                         }
                         self.event_lock = true;
@@ -1934,9 +2024,10 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     };
 
                     let link_view = match link_type {
-                        LinkType::Generalization => {
+                        LinkType::Generalization { set_name } => {
                             if let (UmlClassAssociable::UmlClass(source), UmlClassAssociable::UmlClass(dest)) = (source, dest) {
                                 new_umlclass_generalization(
+                                    set_name,
                                     None,
                                     (source.clone(), source_view),
                                     (dest.clone(), target_view),
@@ -1951,20 +2042,22 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                                 return None;
                             }
                         },
-                        LinkType::Dependency { target_arrow_open, stereotype } => {
+                        LinkType::Dependency { target_arrow_open, stereotype, name } => {
                             new_umlclass_dependency(
                                 stereotype,
-                                "",
+                                name,
                                 *target_arrow_open,
                                 None,
                                 (source.clone(), source_view),
                                 (dest.clone(), target_view),
                             ).1.into()
                         },
-                        LinkType::Association { stereotype } => {
+                        LinkType::Association { stereotype, source_multiplicity, target_multiplicity } => {
                             new_umlclass_association(
                                 stereotype,
                                 "",
+                                source_multiplicity,
+                                target_multiplicity,
                                 None,
                                 (source.clone(), source_view),
                                 (dest.clone(), target_view),
@@ -6059,12 +6152,14 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
 
 
 pub fn new_umlclass_generalization<P: UmlClassProfile>(
+    set_name: &str,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: (ERef<UmlClass>, UmlClassElementView<P>),
     target: (ERef<UmlClass>, UmlClassElementView<P>),
 ) -> (ERef<UmlClassGeneralization>, ERef<GeneralizationViewT<P>>) {
     let link_model = ERef::new(UmlClassGeneralization::new(
         ModelUuid::now_v7(),
+        set_name.to_owned(),
         vec![source.0],
         vec![target.0],
     ));
@@ -6693,6 +6788,8 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
 pub fn new_umlclass_association<P: UmlClassProfile>(
     stereotype: &str,
     name: &str,
+    source_label_multiplicity: &str,
+    target_label_multiplicity: &str,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: (UmlClassAssociable, UmlClassElementView<P>),
     target: (UmlClassAssociable, UmlClassElementView<P>),
@@ -6702,7 +6799,9 @@ pub fn new_umlclass_association<P: UmlClassProfile>(
         stereotype.to_owned(),
         name.to_owned(),
         source.0,
+        source_label_multiplicity.to_owned(),
         target.0,
+        target_label_multiplicity.to_owned(),
     ));
     let link_view = new_umlclass_association_view(link_model.clone(), center_point, source.1, target.1);
     (link_model, link_view)

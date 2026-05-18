@@ -12,10 +12,7 @@ use crate::{DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, Diagr
     uuid::{ControllerUuid, ModelUuid, ViewUuid},
 }, domains::{umlclass::{umlclass_controllers::{PartialUmlClassElement, UmlClassRenderStyle, new_uml_usecase, new_umlclass_dependency}, umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind}}, usecase::usecase_models}};
 use eframe::egui;
-use std::{
-    collections::HashSet,
-    sync::Arc,
-};
+use std::collections::HashSet;
 
 
 #[derive(Clone, Default)]
@@ -130,8 +127,8 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (bank_model, bank_view) = new_umlclass_class("Bank Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 400.0), UmlClassRenderStyle::Class);
     let (usecase_model, usecase_view) = new_uml_usecase("Registration", usecase_models::NONE, false, egui::Pos2::new(550.0, 200.0));
 
-    let (gen_model, gen_view) = new_umlclass_generalization(None, (bank_model.clone(), bank_view.clone().into()), (customer_model.clone(), customer_view.clone().into()));
-    let (assoc_model, assoc_view) = new_umlclass_association("", "", None, (customer_model.clone().into(), customer_view.clone().into()), (usecase_model.clone().into(), usecase_view.clone().into()));
+    let (gen_model, gen_view) = new_umlclass_generalization("", None, (bank_model.clone(), bank_view.clone().into()), (customer_model.clone(), customer_view.clone().into()));
+    let (assoc_model, assoc_view) = new_umlclass_association("", "", "0..*", "1..1", None, (customer_model.clone().into(), customer_view.clone().into()), (usecase_model.clone().into(), usecase_view.clone().into()));
 
     let name = format!("Demo Use Case diagram {}", no);
     let diagram = ERef::new(UmlClassDiagram::new(
@@ -195,24 +192,37 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let dummy1 = new_umlclass_class("dummy1", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0), UmlClassRenderStyle::Class);
     let dummy2 = new_umlclass_class("dummy2", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0), UmlClassRenderStyle::Class);
     {
-        let (_gen, gen_view) = new_umlclass_generalization(None, (dummy1.0.clone(), dummy1.1.clone().into()), (dummy2.0.clone(), dummy2.1.clone().into()));
+        let (_gen, gen_view) = new_umlclass_generalization("", None, (dummy1.0.clone(), dummy1.1.clone().into()), (dummy2.0.clone(), dummy2.1.clone().into()));
         relationships.push(
-            (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
+            (UmlClassToolStage::LinkStart {
+                link_type: LinkType::Generalization {
+                    set_name: "".to_owned(),
+                },
+            }, "Generalization (Set)", gen_view.into()),
         );
     }
     {
-        let (m, m_view) = new_umlclass_association("", "", None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
-        m.write().source_label_multiplicity = Arc::new("".to_owned());
-        m.write().target_label_multiplicity = Arc::new("".to_owned());
-        m_view.write().refresh_buffers();
+        let (_m, m_view) = new_umlclass_association("", "", "0..*", "1..1", None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
         relationships.push(
-            (UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } }, "Association", m_view.into()),
+            (UmlClassToolStage::LinkStart {
+                link_type: LinkType::Association {
+                    stereotype: "".to_owned(),
+                    source_multiplicity: "0..*".to_owned(),
+                    target_multiplicity: "1..1".to_owned(),
+                },
+            }, "Association", m_view.into()),
         );
     }
     for (stereotype, label) in [(usecase_models::EXTEND, "Extend"), (usecase_models::INCLUDE, "Include")] {
         let (_d, d_view) = new_umlclass_dependency(stereotype, "", true, None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
         relationships.push(
-            (UmlClassToolStage::LinkStart { link_type: LinkType::Dependency { target_arrow_open: true, stereotype: stereotype.to_owned() } }, label, d_view.into()),
+            (UmlClassToolStage::LinkStart {
+                link_type: LinkType::Dependency {
+                    target_arrow_open: true,
+                    stereotype: stereotype.to_owned(),
+                    name: "".to_owned(),
+                },
+            }, label, d_view.into()),
         );
     }
 
@@ -246,11 +256,18 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
 
     fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool) {
+        let link_type = LinkType::Association {
+            stereotype: "".to_owned(),
+            source_multiplicity: "0..*".to_owned(),
+            target_multiplicity: "1..1".to_owned(),
+        };
         (
-            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type: LinkType::Association { stereotype: "".to_owned() },
+                link_type,
                 source: m.into(),
                 dest: None,
             },
@@ -264,11 +281,18 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ),
     ];
     fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool) {
+        let link_type = LinkType::Association {
+            stereotype: "".to_owned(),
+            source_multiplicity: "0..*".to_owned(),
+            target_multiplicity: "1..1".to_owned(),
+        };
         (
-            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type: LinkType::Association { stereotype: "".to_owned() },
+                link_type,
                 source: m.into(),
                 dest: None,
             },

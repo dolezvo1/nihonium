@@ -137,6 +137,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (marriage_model, marriage_view) = new_ontouml_class("Marriage", ontouml_models::RELATOR, false, egui::Pos2::new(550.0, 500.0));
 
     let (gen_phase_model, gen_phase_view) = new_umlclass_generalization(
+        "",
         Some((ViewUuid::now_v7(), egui::Pos2::new(480.0, 200.0))),
         (alive_model.clone(), alive_view.clone().into()),
         (animal_model.clone(), animal_view.clone().into()),
@@ -151,32 +152,30 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     );
 
     let (gen_human_model, gen_human_view) = new_umlclass_generalization(
+        "",
         None,
         (human_model.clone(), human_view.clone().into()),
         (animal_model.clone(), animal_view.clone().into()),
     );
 
     let (gen_spouse_model, gen_spouse_view) = new_umlclass_generalization(
+        "",
         None,
         (spouse_model.clone(), spouse_view.clone().into()),
         (human_model.clone(), human_view.clone().into()),
     );
 
     let (char_model, char_view) = new_umlclass_association(
-        ontouml_models::CHARACTERIZATION, "", None,
+        ontouml_models::CHARACTERIZATION, "", "1", "1", None,
         (animal_model.clone().into(), animal_view.clone().into()),
         (temp_model.clone().into(), temp_view.clone().into()),
     );
-    char_model.write().source_label_multiplicity = Arc::new("1".to_owned());
-    char_model.write().target_label_multiplicity = Arc::new("1".to_owned());
 
     let (mediation_model, mediation_view) = new_umlclass_association(
-        ontouml_models::MEDIATION, "", None,
+        ontouml_models::MEDIATION, "", "2..2", "1..1", None,
         (spouse_model.clone().into(), spouse_view.clone().into()),
         (marriage_model.clone().into(), marriage_view.clone().into()),
     );
-    mediation_model.write().source_label_multiplicity = Arc::new("2..*".to_owned());
-    mediation_model.write().target_label_multiplicity = Arc::new("1..1".to_owned());
 
     let name = format!("Demo OntoUML diagram {}", no);
     let diagram = ERef::new(UmlClassDiagram::new(
@@ -255,9 +254,11 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let mut relationships = Vec::new();
     let dummy1 = new_ontouml_class("dummy1", ontouml_models::NONE, false, egui::Pos2::new(100.0, 75.0));
     let dummy2 = new_ontouml_class("dummy2", ontouml_models::NONE, false, egui::Pos2::new(200.0, 150.0));
-    let (_gen, gen_view) = new_umlclass_generalization(None, (dummy1.0.clone(), dummy1.1.clone().into()), (dummy2.0.clone(), dummy2.1.clone().into()));
+    let (_gen, gen_view) = new_umlclass_generalization("", None, (dummy1.0.clone(), dummy1.1.clone().into()), (dummy2.0.clone(), dummy2.1.clone().into()));
     relationships.push(
-        (UmlClassToolStage::LinkStart { link_type: LinkType::Generalization }, "Generalization (Set)", gen_view.into()),
+        (UmlClassToolStage::LinkStart {
+            link_type: LinkType::Generalization { set_name: "".to_owned() },
+        }, "Generalization (Set)", gen_view.into()),
     );
     for (stereotype, label) in [
         (ontouml_models::FORMAL, "Formal"),
@@ -270,13 +271,14 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         (ontouml_models::SUBCOLLECTION_OF, "SubcollectionOf"),
         (ontouml_models::SUBQUANTITY_OF, "SubquantityOf"),
     ] {
-        let (m, m_view) = new_umlclass_association(stereotype, "", None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
-        m.write().source_label_multiplicity = Arc::new("".to_owned());
-        m.write().target_label_multiplicity = Arc::new("".to_owned());
-        m_view.write().refresh_buffers();
+        let (_m, m_view) = new_umlclass_association(stereotype, "", "0..*", "1..1", None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
         relationships.push(
             (UmlClassToolStage::LinkStart {
-                link_type: LinkType::Association { stereotype: stereotype.to_owned() }
+                link_type: LinkType::Association {
+                    stereotype: stereotype.to_owned(),
+                    source_multiplicity: "0..*".to_owned(),
+                    target_multiplicity: "1..1".to_owned(),
+                }
             }, label, m_view.into()),
         );
     }
@@ -309,11 +311,19 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     ];
 
     fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<OntoUmlProfile>, bool) {
+        let link_type = LinkType::Association {
+            stereotype: "".to_owned(),
+            source_multiplicity: "0..*".to_owned(),
+            target_multiplicity: "1..1".to_owned(),
+        };
         (
-            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type: LinkType::Association { stereotype: "".to_owned() },
+                link_type,
                 source: m.into(),
                 dest: None,
             },
@@ -327,11 +337,18 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ),
     ];
     fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<OntoUmlProfile>, bool) {
+        let link_type = LinkType::Association {
+            stereotype: "".to_owned(),
+            source_multiplicity: "0..*".to_owned(),
+            target_multiplicity: "1..1".to_owned(),
+        };
         (
-            UmlClassToolStage::LinkStart { link_type: LinkType::Association { stereotype: "".to_owned() } },
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
             UmlClassToolStage::LinkEnd,
             PartialUmlClassElement::Link {
-                link_type: LinkType::Association { stereotype: "".to_owned() },
+                link_type,
                 source: m.into(),
                 dest: None,
             },

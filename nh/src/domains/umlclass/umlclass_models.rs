@@ -1488,6 +1488,7 @@ pub struct UmlClassGeneralization {
 impl UmlClassGeneralization {
     pub fn new(
         uuid: ModelUuid,
+        set_name: String,
         sources: Vec<ERef<UmlClass>>,
         targets: Vec<ERef<UmlClass>>,
     ) -> Self {
@@ -1496,7 +1497,7 @@ impl UmlClassGeneralization {
             sources,
             targets,
 
-            set_name: Arc::new("".to_owned()),
+            set_name: Arc::new(set_name),
             set_is_covering: false,
             set_is_disjoint: false,
 
@@ -1720,20 +1721,22 @@ impl UmlClassAssociation {
         stereotype: String,
         name: String,
         source: UmlClassAssociable,
+        source_label_multiplicity: String,
         target: UmlClassAssociable,
+        target_label_multiplicity: String,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
             stereotype: Arc::new(stereotype),
             name: Arc::new(name),
             source,
-            source_label_multiplicity: Arc::new("0..*".to_owned()),
+            source_label_multiplicity: Arc::new(source_label_multiplicity),
             source_label_role: Arc::new("".to_owned()),
             source_label_reading: Arc::new("".to_owned()),
             source_navigability: UmlClassAssociationNavigability::Unspecified,
             source_aggregation: UmlClassAssociationAggregation::None,
             target,
-            target_label_multiplicity: Arc::new("1..1".to_owned()),
+            target_label_multiplicity: Arc::new(target_label_multiplicity),
             target_label_role: Arc::new("".to_owned()),
             target_label_reading: Arc::new("".to_owned()),
             target_navigability: UmlClassAssociationNavigability::Unspecified,

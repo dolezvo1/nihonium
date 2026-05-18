@@ -1503,6 +1503,7 @@ mod test {
     ) ->ERef<UmlClassGeneralization> {
         let mut g = UmlClassGeneralization::new(
             generate_modeluuid(id),
+            "".to_owned(),
             sources,
             targets,
         );
@@ -1524,7 +1525,9 @@ mod test {
                 stereotype.to_owned(),
                 "".to_owned(),
                 source,
+                "".to_owned(),
                 target,
+                "".to_owned(),
             )
         )
     }
