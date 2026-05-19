@@ -663,18 +663,22 @@ impl DiagramSettings2<DemoOfdDomain> for DemoOfdSettings {
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    let (entity_m, entity_view) = new_demoofd_entitytype("MEMBERSHIP", "", true, egui::Pos2::ZERO);
+    let (entity_m, entity_view) = new_demoofd_entitytype("MEMBERSHIP", "\n\n\n\n", true, egui::Pos2::ZERO);
     let (event, event_view) = new_demoofd_eventtype(
         "01", "is started", DemoTransactionKind::Performa,
         (entity_m.clone(), entity_view.clone().into()),
-        None, egui::Pos2::new(100.0, 0.0),
+        None,
+        egui::Pos2::new(100.0, 0.0),
     );
     let entity_2 = (entity_m.clone().into(), entity_view.into());
-    let (d, dv) = new_demoofd_entitytype("dummy", "", false, egui::Pos2::new(100.0, 75.0));
+
+    let (d, dv) = new_demoofd_entitytype("dummy", "", false, egui::Pos2::new(175.0, 125.0));
+    dv.write().bounds_rect = egui::Rect::from_center_size(egui::Pos2::new(175.0, 125.0), egui::Vec2::new(100.0, 100.0));
     let (dummy_event, dummy_event_view) = new_demoofd_eventtype(
         "01", "is started", DemoTransactionKind::Performa,
         entity_2.clone(),
-        None, egui::Pos2::new(200.0, 50.0),
+        None,
+        egui::Pos2::new(200.0, 75.0),
     );
 
     let (_prop, prop_view) = new_demoofd_propertytype("", "0..*", "1..1", None, entity_2.clone(), (d.clone(), dv.clone().into()));

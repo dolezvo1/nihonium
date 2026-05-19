@@ -188,11 +188,19 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     );
 
 
+    let (d, dv) = new_umlclass_class("dummy", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
+    dv.write().bounds_rect = egui::Rect::from_center_size(egui::Pos2::ZERO, egui::Vec2::new(100.0, 100.0));
+    let dummy_1_class = (d.clone(), dv.clone().into());
+    let dummy_1_associable = (d.into(), dv.into());
+    let (d, dv) = new_umlclass_class("dummy", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0), UmlClassRenderStyle::Class);
+    dv.write().bounds_rect = egui::Rect::from_center_size(egui::Pos2::new(200.0, 150.0), egui::Vec2::new(100.0, 100.0));
+    let dummy_2_class = (d.clone(), dv.clone().into());
+    let dummy_2_associable = (d.clone().into(), dv.clone().into());
+    let dummy_2_element = (d.into(), dv.into());
+
     let mut relationships = Vec::new();
-    let dummy1 = new_umlclass_class("dummy1", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0), UmlClassRenderStyle::Class);
-    let dummy2 = new_umlclass_class("dummy2", usecase_models::NONE, false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0), UmlClassRenderStyle::Class);
     {
-        let (_gen, gen_view) = new_umlclass_generalization("", None, (dummy1.0.clone(), dummy1.1.clone().into()), (dummy2.0.clone(), dummy2.1.clone().into()));
+        let (_gen, gen_view) = new_umlclass_generalization("", None, dummy_1_class.clone(), dummy_2_class.clone());
         relationships.push(
             (UmlClassToolStage::LinkStart {
                 link_type: LinkType::Generalization {
@@ -202,7 +210,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         );
     }
     {
-        let (_m, m_view) = new_umlclass_association("", "", "0..*", "1..1", None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
+        let (_m, m_view) = new_umlclass_association("", "", "0..*", "1..1", None, dummy_1_associable.clone(), dummy_2_associable.clone());
         relationships.push(
             (UmlClassToolStage::LinkStart {
                 link_type: LinkType::Association {
@@ -214,7 +222,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         );
     }
     for (stereotype, label) in [(usecase_models::EXTEND, "Extend"), (usecase_models::INCLUDE, "Include")] {
-        let (_d, d_view) = new_umlclass_dependency(stereotype, "", true, None, (dummy1.0.clone().into(), dummy1.1.clone().into()), (dummy2.0.clone().into(), dummy2.1.clone().into()));
+        let (_d, d_view) = new_umlclass_dependency(stereotype, "", true, None, dummy_1_associable.clone(), dummy_2_associable.clone());
         relationships.push(
             (UmlClassToolStage::LinkStart {
                 link_type: LinkType::Dependency {
@@ -235,7 +243,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         egui::Align2::CENTER_CENTER,
     );
     let comment = (comment, comment_view.into());
-    let commentlink = new_umlclass_commentlink(None, comment.clone(), (dummy2.0.clone().into(), dummy2.1.clone().into()));
+    let commentlink = new_umlclass_commentlink(None, comment.clone(), dummy_2_element);
 
     let palette_items = vec![
         ("Classes", classes),

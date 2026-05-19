@@ -1051,36 +1051,38 @@ pub fn default_settings_helper<P: UmlClassProfile>(
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let (_instance, instance_view) = new_umlclass_instance("o", "Type", "", "", egui::Pos2::ZERO);
     instance_view.write().refresh_buffers();
-    let (class_m, class_view) = new_umlclass_class("ClassName", "class", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
+    let (_class, class_view) = new_umlclass_class("ClassName", "class", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
     class_view.write().refresh_buffers();
-    let class_1 = (class_m.clone(), class_view.clone().into());
-    let class_2 = (class_m.clone().into(), class_view.into());
-    let (d, dv) = new_umlclass_class("dummy", "class", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 75.0), UmlClassRenderStyle::Class);
-    let dummy_1 = (d.clone(), dv.clone().into());
-    let dummy_2 = (d.clone().into(), dv.into());
 
     let (_property, property_view) = new_umlclass_property(UFOption::None, "property", "Type", "", "", "");
     property_view.write().refresh_buffers();
     let (_operation, operation_view) = new_umlclass_operation(UFOption::None, "operation", "", "ReturnType", "");
     operation_view.write().refresh_buffers();
 
-    let (_gen, gen_view) = new_umlclass_generalization("", None, class_1, dummy_1);
-    let (assoc, assoc_view) = new_umlclass_association("", "", "", "", None, class_2.clone(), dummy_2.clone());
-    assoc.write().source_label_multiplicity = Arc::new("".to_owned());
-    assoc.write().target_label_multiplicity = Arc::new("".to_owned());
-    assoc_view.write().refresh_buffers();
-    let (_intreal, intreal_view) = new_umlclass_dependency("", "", false, None, class_2.clone(), dummy_2.clone());
-    let (_usage, usage_view) = new_umlclass_dependency("use", "", true, None, class_2.clone(), dummy_2.clone());
+    let (d, dv) = new_umlclass_class("dummy", "class", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
+    dv.write().bounds_rect = egui::Rect::from_center_size(egui::Pos2::ZERO, egui::Vec2::new(100.0, 100.0));
+    let dummy_1_class = (d.clone(), dv.clone().into());
+    let dummy_1_associable = (d.into(), dv.into());
+    let (d, dv) = new_umlclass_class("dummy", "class", false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0), UmlClassRenderStyle::Class);
+    dv.write().bounds_rect = egui::Rect::from_center_size(egui::Pos2::new(200.0, 150.0), egui::Vec2::new(100.0, 100.0));
+    let dummy_2_class = (d.clone(), dv.clone().into());
+    let dummy_2_associable = (d.clone().into(), dv.clone().into());
+    let dummy_2_element = (d.into(), dv.into());
+
+    let (_gen, gen_view) = new_umlclass_generalization("", None, dummy_1_class, dummy_2_class);
+    let (_assoc, assoc_view) = new_umlclass_association("", "", "0..*", "1..1", None, dummy_1_associable.clone(), dummy_2_associable.clone());
+    let (_intreal, intreal_view) = new_umlclass_dependency("", "", false, None, dummy_1_associable.clone(), dummy_2_associable.clone());
+    let (_usage, usage_view) = new_umlclass_dependency("use", "", true, None, dummy_1_associable.clone(), dummy_2_associable.clone());
 
     let (_package, package_view) = new_umlclass_package("a package", "", UmlClassPackageKind::Package, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
     package_view.write().refresh_buffers();
     let (comment, comment_view) = new_umlclass_comment(
         "a comment",
-        egui::Pos2::new(-100.0, -75.0),
+        egui::Pos2::ZERO,
         egui::Align2::CENTER_CENTER,
     );
     let comment = (comment, comment_view.into());
-    let commentlink = new_umlclass_commentlink(None, comment.clone(), (class_m.into(), class_2.1.clone()));
+    let commentlink = new_umlclass_commentlink(None, comment.clone(), dummy_2_element.clone());
 
     let palette_items = vec![
         ("Elements", vec![
@@ -1093,7 +1095,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 name: "ClassName".to_owned(),
                 stereotype: "class".to_owned(),
                 render_style: UmlClassRenderStyle::Class,
-            }, "Class", class_2.1),
+            }, "Class", class_view.into()),
             (UmlClassToolStage::ClassProperty {
                 name: "property".to_owned(),
                 property_type: "PropertyType".to_owned(),
