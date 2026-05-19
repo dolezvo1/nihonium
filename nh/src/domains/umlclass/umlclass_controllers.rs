@@ -170,6 +170,7 @@ pub enum UmlClassPropChange {
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
+    CommentAlignChange(Option<egui::Align>, Option<egui::Align>),
 }
 
 impl Debug for UmlClassPropChange {
@@ -7787,15 +7788,31 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         egui::ComboBox::new("horizontal align", "Horizontal align")
             .selected_text(format!("{:?}", self.align.x()))
             .show_ui(ui, |ui| {
+                let mut tmp_x = self.align.x();
                 for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
-                    ui.selectable_value(&mut self.align.0[0], e, format!("{:?}", e));
+                    if ui.selectable_value(&mut tmp_x, e, format!("{:?}", e)).changed() {
+                        commands.push(
+                            InsensitiveCommand::PropertyChange(
+                                q.selected_views(),
+                                UmlClassPropChange::CommentAlignChange(Some(tmp_x), None),
+                            )
+                        );
+                    }
                 }
             });
         egui::ComboBox::new("vertical align", "Vertical align")
             .selected_text(format!("{:?}", self.align.y()))
             .show_ui(ui, |ui| {
+                let mut tmp_y = self.align.y();
                 for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
-                    ui.selectable_value(&mut self.align.0[1], e, format!("{:?}", e));
+                    if ui.selectable_value(&mut tmp_y, e, format!("{:?}", e)).changed() {
+                        commands.push(
+                            InsensitiveCommand::PropertyChange(
+                                q.selected_views(),
+                                UmlClassPropChange::CommentAlignChange(None, Some(tmp_y)),
+                            )
+                        );
+                    }
                 }
             });
 
@@ -8042,6 +8059,21 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                                 UmlClassPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
                             ));
                             self.background_color = *color;
+                        }
+                        UmlClassPropChange::CommentAlignChange(x, y) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::CommentAlignChange(
+                                    Some(self.align.x()),
+                                    Some(self.align.y()),
+                                ),
+                            ));
+                            if let Some(x) = x {
+                                self.align.0[0] = *x;
+                            }
+                            if let Some(y) = y {
+                                self.align.0[1] = *y;
+                            }
                         }
                         _ => {}
                     }
