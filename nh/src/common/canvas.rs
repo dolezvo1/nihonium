@@ -1134,28 +1134,39 @@ impl NHCanvas for UiCanvas {
                 text_color,
             );
         } else {
-            let size = egui::Vec2::new(font_size * text.len() as f32 / 2.0, font_size);
-            let pos = egui::Pos2::new(
-                position.x
-                    - match anchor.x() {
-                        egui::Align::Min => -size.x / 2.0,
-                        egui::Align::Center => 0.0,
-                        egui::Align::Max => size.x / 2.0,
-                    },
-                position.y
-                    - match anchor.y() {
-                        egui::Align::Min => -size.y / 2.0,
-                        egui::Align::Center => 0.0,
-                        egui::Align::Max => size.y / 2.0,
-                    },
+            macro_rules! to_width {
+                ($x:expr) => {
+                    $x * font_size / 2.2
+                };
+            }
+            let total_lines = text.lines().count();
+            let max_line_len = text.lines().map(|e| e.len()).max().unwrap_or(0);
+            let mut left_top_pos = egui::Pos2::new(
+                position.x - match anchor.x() {
+                    egui::Align::Min => 0.0,
+                    egui::Align::Center => to_width!(max_line_len as f32) / 2.0,
+                    egui::Align::Max => to_width!(max_line_len as f32),
+                },
+                position.y - match anchor.y() {
+                    egui::Align::Min => 0.0,
+                    egui::Align::Center => total_lines as f32 * font_size / 2.0,
+                    egui::Align::Max => total_lines as f32 * font_size,
+                },
             );
-            self.draw_rectangle(
-                egui::Rect::from_center_size(pos, size),
-                egui::CornerRadius::ZERO,
-                text_color,
-                Stroke::new_solid(1.0, text_color.gamma_multiply(0.25)),
-                Highlight::NONE,
-            );
+            for l in text.lines() {
+                let line_size = egui::Vec2::new(
+                    font_size * l.len() as f32 / 2.2,
+                    font_size,
+                );
+                self.draw_rectangle(
+                    egui::Rect::from_min_size(left_top_pos, line_size),
+                    egui::CornerRadius::ZERO,
+                    text_color.gamma_multiply(font_size * self.camera_scale / 15.0),
+                    Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
+                    Highlight::NONE,
+                );
+                left_top_pos.y += font_size;
+            }
         }
     }
 
