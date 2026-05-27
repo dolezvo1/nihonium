@@ -5,6 +5,8 @@ pub mod demopsd;
 pub mod rdf;
 pub mod network;
 pub mod ontouml;
+pub mod umlactivity;
 pub mod umlclass;
-pub mod usecase;
 pub mod umlsequence;
+pub mod usecase;
+

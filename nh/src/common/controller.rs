@@ -403,6 +403,7 @@ pub struct LabelProvider {
 }
 
 impl LabelProvider {
+    /// Clips string to reasonable size, replacing whitespaces with space
     pub fn filter_and_elipsis(src: &str) -> String {
         const CUTOFF: usize = 40;
         let mut s: String = src.chars()
