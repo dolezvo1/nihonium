@@ -108,11 +108,13 @@ impl TryFrom<DemoOfdPropChange> for ColorChangeData {
 impl TryMerge for DemoOfdPropChange {
     fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
         match (self, newer) {
-            (Self::NameChange(_), Self::NameChange(newer)) => Some(Self::NameChange(newer.clone())),
-            (Self::EntityPropertiesChange(_), Self::EntityPropertiesChange(newer)) => Some(Self::EntityPropertiesChange(newer.clone())),
-            (Self::EventIdentifierChange(_), Self::EventIdentifierChange(newer)) => Some(Self::EventIdentifierChange(newer.clone())),
-            (Self::LinkMultiplicityChange(b1, _), Self::LinkMultiplicityChange(b2, newer)) if b1 == b2 => Some(Self::LinkMultiplicityChange(*b2, newer.clone())),
-            (Self::CommentChange(_), Self::CommentChange(newer)) => Some(Self::CommentChange(newer.clone())),
+            (Self::NameChange(_), newer @ Self::NameChange(_))
+            | (Self::EntityPropertiesChange(_), newer @ Self::EntityPropertiesChange(_))
+            | (Self::EventIdentifierChange(_), newer @ Self::EventIdentifierChange(_))
+            | (Self::CommentChange(_), newer @ Self::CommentChange(_))
+                => Some(newer.clone()),
+            (Self::LinkMultiplicityChange(b1, _), newer @ Self::LinkMultiplicityChange(b2, _))
+                if b1 == b2 => Some(newer.clone()),
             _ => None
         }
     }

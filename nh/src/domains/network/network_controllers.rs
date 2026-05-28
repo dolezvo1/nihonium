@@ -115,14 +115,13 @@ impl TryFrom<NetworkPropChange> for ColorChangeData {
 impl TryMerge for NetworkPropChange {
     fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
         match (self, newer) {
-            (Self::NameChange(_), Self::NameChange(newer)) => Some(Self::NameChange(newer.clone())),
-            (Self::AssociationMultiplicityChange(b1, _), Self::AssociationMultiplicityChange(b2, newer))
-                if b1 == b2 => Some(Self::AssociationMultiplicityChange(*b1, newer.clone())),
-            (Self::AssociationRoleChange(b1, _), Self::AssociationRoleChange(b2, newer))
-                if b1 == b2 => Some(Self::AssociationRoleChange(*b1, newer.clone())),
-            (Self::AssociationReadingChange(b1, _), Self::AssociationReadingChange(b2, newer))
-                if b1 == b2 => Some(Self::AssociationReadingChange(*b1, newer.clone())),
-            (Self::CommentChange(_), Self::CommentChange(newer)) => Some(Self::CommentChange(newer.clone())),
+            (Self::NameChange(_), newer @ Self::NameChange(_))
+            | (Self::CommentChange(_), newer @ Self::CommentChange(_))
+                => Some(newer.clone()),
+            (Self::AssociationMultiplicityChange(b1, _), newer @ Self::AssociationMultiplicityChange(b2, _))
+            | (Self::AssociationRoleChange(b1, _), newer @ Self::AssociationRoleChange(b2, _))
+            | (Self::AssociationReadingChange(b1, _), newer @ Self::AssociationReadingChange(b2, _))
+                if b1 == b2 => Some(newer.clone()),
             _ => None
         }
     }

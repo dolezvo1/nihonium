@@ -105,12 +105,13 @@ impl TryFrom<RdfPropChange> for ColorChangeData {
 impl TryMerge for RdfPropChange {
     fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
         match (self, newer) {
-            (Self::NameChange(_), Self::NameChange(newer)) => Some(Self::NameChange(newer.clone())),
-            (Self::IriChange(_), Self::IriChange(newer)) => Some(Self::IriChange(newer.clone())),
-            (Self::ContentChange(_), Self::ContentChange(newer)) => Some(Self::ContentChange(newer.clone())),
-            (Self::DataTypeChange(_), Self::DataTypeChange(newer)) => Some(Self::DataTypeChange(newer.clone())),
-            (Self::LangTagChange(_), Self::LangTagChange(newer)) => Some(Self::LangTagChange(newer.clone())),
-            (Self::CommentChange(_), Self::CommentChange(newer)) => Some(Self::CommentChange(newer.clone())),
+            (Self::NameChange(_), newer @ Self::NameChange(_))
+            | (Self::IriChange(_), newer @ Self::IriChange(_))
+            | (Self::ContentChange(_), newer @ Self::ContentChange(_))
+            | (Self::DataTypeChange(_), newer @ Self::DataTypeChange(_))
+            | (Self::LangTagChange(_), newer @ Self::LangTagChange(_))
+            | (Self::CommentChange(_), newer @ Self::CommentChange(_))
+                => Some(newer.clone()),
             _ => None
         }
     }

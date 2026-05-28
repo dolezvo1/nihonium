@@ -95,11 +95,12 @@ impl TryFrom<UmlActivityPropChange> for ColorChangeData {
 impl TryMerge for UmlActivityPropChange {
     fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
         match (self, newer) {
-            (Self::NameChange(_), newer @ Self::NameChange(_)) => Some(newer.clone()),
-            (Self::StereotypeChange(_), newer @ Self::StereotypeChange(_)) => Some(newer.clone()),
-            (Self::ActivityParametersChange(_), newer @ Self::ActivityParametersChange(_)) => Some(newer.clone()),
-            (Self::ForkLengthChange(_), newer @ Self::ForkLengthChange(_)) => Some(newer.clone()),
-            (Self::CommentChange(_), newer @ Self::CommentChange(_)) => Some(newer.clone()),
+            (Self::NameChange(_), newer @ Self::NameChange(_))
+            | (Self::StereotypeChange(_), newer @ Self::StereotypeChange(_))
+            | (Self::ActivityParametersChange(_), newer @ Self::ActivityParametersChange(_))
+            | (Self::ForkLengthChange(_), newer @ Self::ForkLengthChange(_))
+            | (Self::CommentChange(_), newer @ Self::CommentChange(_))
+                => Some(newer.clone()),
             _ => None
         }
     }

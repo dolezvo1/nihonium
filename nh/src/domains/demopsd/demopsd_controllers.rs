@@ -112,10 +112,11 @@ impl TryFrom<DemoPsdPropChange> for ColorChangeData {
 impl TryMerge for DemoPsdPropChange {
     fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
         match (self, newer) {
-            (Self::NameChange(_), Self::NameChange(newer)) => Some(Self::NameChange(newer.clone())),
-            (Self::IdentifierChange(_), Self::IdentifierChange(newer)) => Some(Self::IdentifierChange(newer.clone())),
-            (Self::LinkMultiplicityChange(_), Self::LinkMultiplicityChange(newer)) => Some(Self::LinkMultiplicityChange(newer.clone())),
-            (Self::CommentChange(_), Self::CommentChange(newer)) => Some(Self::CommentChange(newer.clone())),
+            (Self::NameChange(_), newer @ Self::NameChange(_))
+            | (Self::IdentifierChange(_), newer @ Self::IdentifierChange(_))
+            | (Self::LinkMultiplicityChange(_), newer @ Self::LinkMultiplicityChange(_))
+            | (Self::CommentChange(_), newer @ Self::CommentChange(_))
+                => Some(newer.clone()),
             _ => None
         }
     }

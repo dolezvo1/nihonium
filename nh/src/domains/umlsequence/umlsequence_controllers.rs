@@ -116,12 +116,13 @@ impl TryFrom<UmlSequencePropChange> for ColorChangeData {
 impl TryMerge for UmlSequencePropChange {
     fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
         match (self, newer) {
-            (Self::StereotypeChange(_), Self::StereotypeChange(newer)) => Some(Self::StereotypeChange(newer.clone())),
-            (Self::NameChange(_), Self::NameChange(newer)) => Some(Self::NameChange(newer.clone())),
-            (Self::StateInvariantChange(_), Self::StateInvariantChange(newer)) => Some(Self::StateInvariantChange(newer.clone())),
-            (Self::CombinedFragmentKindArgumentChange(_), Self::CombinedFragmentKindArgumentChange(newer)) => Some(Self::CombinedFragmentKindArgumentChange(newer.clone())),
-            (Self::CombinedFragmentSectionGuardChange(_), Self::CombinedFragmentSectionGuardChange(newer)) => Some(Self::CombinedFragmentSectionGuardChange(newer.clone())),
-            (Self::CommentChange(_), Self::CommentChange(newer)) => Some(Self::CommentChange(newer.clone())),
+            (Self::StereotypeChange(_), newer @ Self::StereotypeChange(_))
+            | (Self::NameChange(_), newer @ Self::NameChange(_))
+            | (Self::StateInvariantChange(_), newer @ Self::StateInvariantChange(_))
+            | (Self::CombinedFragmentKindArgumentChange(_), newer @ Self::CombinedFragmentKindArgumentChange(_))
+            | (Self::CombinedFragmentSectionGuardChange(_), newer @ Self::CombinedFragmentSectionGuardChange(_))
+            | (Self::CommentChange(_), newer @ Self::CommentChange(_))
+                => Some(newer.clone()),
             _ => None
         }
     }

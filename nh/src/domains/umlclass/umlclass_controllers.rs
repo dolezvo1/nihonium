@@ -209,24 +209,24 @@ impl TryFrom<UmlClassPropChange> for ColorChangeData {
 impl TryMerge for UmlClassPropChange {
     fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
         match (self, newer) {
-            (Self::StereotypeChange(_), Self::StereotypeChange(newer)) => Some(Self::StereotypeChange(newer.clone())),
-            (Self::InstanceName(_), Self::InstanceName(newer)) => Some(Self::InstanceName(newer.clone())),
-            (Self::InstanceType(_), Self::InstanceType(newer)) => Some(Self::InstanceType(newer.clone())),
-            (Self::InstanceSlots(_), Self::InstanceSlots(newer)) => Some(Self::InstanceSlots(newer.clone())),
-            (Self::NameChange(_), Self::NameChange(newer)) => Some(Self::NameChange(newer.clone())),
-            (Self::TemplateParametersChange(_), Self::TemplateParametersChange(newer)) => Some(Self::TemplateParametersChange(newer.clone())),
-            (Self::PropertyTypeChange(_), Self::PropertyTypeChange(newer)) => Some(Self::PropertyTypeChange(newer.clone())),
-            (Self::PropertyMultiplicityChange(_), Self::PropertyMultiplicityChange(newer)) => Some(Self::PropertyMultiplicityChange(newer.clone())),
-            (Self::PropertyDefaultValueChange(_), Self::PropertyDefaultValueChange(newer)) => Some(Self::PropertyDefaultValueChange(newer.clone())),
-            (Self::OperationParametersChange(_), Self::OperationParametersChange(newer)) => Some(Self::OperationParametersChange(newer.clone())),
-            (Self::OperationReturnTypeChange(_), Self::OperationReturnTypeChange(newer)) => Some(Self::OperationReturnTypeChange(newer.clone())),
-            (Self::SetNameChange(_), Self::SetNameChange(newer)) => Some(Self::SetNameChange(newer.clone())),
-
-            (Self::LinkMultiplicityChange(b1, _), Self::LinkMultiplicityChange(b2, newer)) if b1 == b2 => Some(Self::LinkMultiplicityChange(*b2, newer.clone())),
-            (Self::LinkRoleChange(b1, _), Self::LinkRoleChange(b2, newer)) if b1 == b2 => Some(Self::LinkRoleChange(*b2, newer.clone())),
-            (Self::LinkReadingChange(b1, _), Self::LinkReadingChange(b2, newer)) if b1 == b2 => Some(Self::LinkReadingChange(*b2, newer.clone())),
-
-            (Self::CommentChange(_), Self::CommentChange(newer)) => Some(Self::CommentChange(newer.clone())),
+            (Self::StereotypeChange(_), newer @ Self::StereotypeChange(_))
+            | (Self::InstanceName(_), newer @ Self::InstanceName(_))
+            | (Self::InstanceType(_), newer @ Self::InstanceType(_))
+            | (Self::InstanceSlots(_), newer @ Self::InstanceSlots(_))
+            | (Self::NameChange(_), newer @ Self::NameChange(_))
+            | (Self::TemplateParametersChange(_), newer @ Self::TemplateParametersChange(_))
+            | (Self::PropertyTypeChange(_), newer @ Self::PropertyTypeChange(_))
+            | (Self::PropertyMultiplicityChange(_), newer @ Self::PropertyMultiplicityChange(_))
+            | (Self::PropertyDefaultValueChange(_), newer @ Self::PropertyDefaultValueChange(_))
+            | (Self::OperationParametersChange(_), newer @ Self::OperationParametersChange(_))
+            | (Self::OperationReturnTypeChange(_), newer @ Self::OperationReturnTypeChange(_))
+            | (Self::SetNameChange(_), newer @ Self::SetNameChange(_))
+            | (Self::CommentChange(_), newer @ Self::CommentChange(_))
+                => Some(newer.clone()),
+            (Self::LinkMultiplicityChange(b1, _), newer @ Self::LinkMultiplicityChange(b2, _))
+            | (Self::LinkRoleChange(b1, _), newer @ Self::LinkRoleChange(b2, _))
+            | (Self::LinkReadingChange(b1, _), newer @ Self::LinkReadingChange(b2, _))
+                if b1 == b2 => Some(newer.clone()),
             _ => None
         }
     }
