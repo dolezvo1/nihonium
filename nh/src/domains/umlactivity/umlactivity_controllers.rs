@@ -145,7 +145,7 @@ impl TryFrom<UmlActivityElementOrVertex> for UmlActivityElementView {
 #[view(default_passthrough = "eref", domain = "UmlActivityDomain")]
 #[nh_context_serde(uuid_type = ViewUuid)]
 pub enum UmlActivityElementView {
-    Package(ERef<ActivityViewT>),
+    Activity(ERef<ActivityViewT>),
     ActionNode(ERef<UmlActivityActionNodeView>),
     InitialNode(ERef<UmlActivityInitialNodeView>),
     FinalNode(ERef<UmlActivityFinalNodeView>),
@@ -529,16 +529,25 @@ pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let (_initial, initial_view) = new_umlactivity_initialnode(egui::Pos2::new(200.0, 200.0));
-    let (_object, object_view) = new_umlactivity_objectnode("Order data", "", egui::Pos2::new(350.0, 200.0));
-    let (_decision, decision1_view) = new_umlactivity_decisionnode("", egui::Pos2::new(500.0, 200.0));
-    let (_ship, ship_view) = new_umlactivity_actionnode("Ship items", "", UmlActivityActionKind::CallAction, egui::Pos2::new(750.0, 200.0));
+    let (initial, initial_view) = new_umlactivity_initialnode(egui::Pos2::new(200.0, 200.0));
+    let (object, object_view) = new_umlactivity_objectnode("Order data", "", egui::Pos2::new(350.0, 200.0));
+    let (decision1, decision1_view) = new_umlactivity_decisionnode("", egui::Pos2::new(500.0, 200.0));
+    let (ship, ship_view) = new_umlactivity_actionnode("Ship items", "", UmlActivityActionKind::CallAction, egui::Pos2::new(750.0, 200.0));
 
-    let (_procure, procure_view) = new_umlactivity_actionnode("Procure items", "", UmlActivityActionKind::CallAction, egui::Pos2::new(500.0, 350.0));
-    let (_final, final_view) = new_umlactivity_finalnode(true, egui::Pos2::new(750.0, 350.0));
-    let (_decision, decision2_view) = new_umlactivity_decisionnode("", egui::Pos2::new(500.0, 500.0));
-    let (_signal, signal_view) = new_umlactivity_actionnode("Notify user", "", UmlActivityActionKind::SendSignalAction, egui::Pos2::new(750.0, 500.0));
+    let (procure, procure_view) = new_umlactivity_actionnode("Procure items", "", UmlActivityActionKind::CallAction, egui::Pos2::new(500.0, 350.0));
+    let (r#final, final_view) = new_umlactivity_finalnode(true, egui::Pos2::new(750.0, 350.0));
+    let (decision2, decision2_view) = new_umlactivity_decisionnode("", egui::Pos2::new(500.0, 500.0));
+    let (signal, signal_view) = new_umlactivity_actionnode("Notify user", "", UmlActivityActionKind::SendSignalAction, egui::Pos2::new(750.0, 500.0));
 
+    let (_e1, e1_view) = new_umlactivity_flowedge("", None, (initial.into(), initial_view.clone().into()), (object.clone().into(), object_view.clone().into()));
+    let (_e2, e2_view) = new_umlactivity_flowedge("", None, (object.into(), object_view.clone().into()), (decision1.clone().into(), decision1_view.clone().into()));
+    let (_e3, e3_view) = new_umlactivity_flowedge("[all items available]", None, (decision1.clone().into(), decision1_view.clone().into()), (ship.clone().into(), ship_view.clone().into()));
+    let (_e4, e4_view) = new_umlactivity_flowedge("[some items unavailable]", None, (decision1.clone().into(), decision1_view.clone().into()), (procure.clone().into(), procure_view.clone().into()));
+    let (_e5, e5_view) = new_umlactivity_flowedge("", None, (ship.clone().into(), ship_view.clone().into()), (r#final.clone().into(), final_view.clone().into()));
+    let (_e6, e6_view) = new_umlactivity_flowedge("", None, (procure.clone().into(), procure_view.clone().into()), (decision2.clone().into(), decision2_view.clone().into()));
+    let (_e7, e7_view) = new_umlactivity_flowedge("", None, (signal.clone().into(), signal_view.clone().into()), (r#final.into(), final_view.clone().into()));
+    let (_e8, e8_view) = new_umlactivity_flowedge("[success]", None, (decision2.clone().into(), decision2_view.clone().into()), (ship.into(), ship_view.clone().into()));
+    let (_e9, e9_view) = new_umlactivity_flowedge("[failure]", None, (decision2.into(), decision2_view.clone().into()), (signal.into(), signal_view.clone().into()));
 
     let (activity, activity_view) = new_umlactivity_activity("Order", "", "", egui::Rect::from_x_y_ranges(100.0..=950.0, 100.0..=600.0));
     {
@@ -549,6 +558,11 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             initial_view.into(), object_view.into(), decision1_view.into(), ship_view.into(),
             procure_view.into(), final_view.into(),
             decision2_view.into(), signal_view.into(),
+            e1_view.into(), e2_view.into(), e3_view.into(),
+            e4_view.into(), e5_view.into(),
+            e6_view.into(), e7_view.into(),
+            e8_view.into(), e9_view.into(),
+
         ] {
             w.apply_command(
                 &InsensitiveCommand::AddDependency(activity_uuid, 0, None, UmlActivityElementOrVertex::Element(e), true),
@@ -1164,6 +1178,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     q.get_view_for(&target_uuid),
                 ) && q.is_contained(&source_view.uuid(), into)
                   && q.is_contained(&target_view.uuid(), into)
+                  && q.find_parent(&source_view.uuid(), |_, e| matches!(e, UmlActivityElementView::Activity(_))).map(|e| e.0)
+                     == q.find_parent(&target_view.uuid(), |_, e| matches!(e, UmlActivityElementView::Activity(_))).map(|e| e.0)
                 {
                     self.current_stage = UmlActivityToolStage::LinkStart {
                         link_type: link_type.clone(),
