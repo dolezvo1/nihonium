@@ -469,6 +469,13 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (swtch, swtch_view) = new_network_node("Switch", NetworkNodeKind::Switch, egui::Pos2::new(400.0, 200.0));
     let (workstation, workstation_view) = new_network_node("Workstation", NetworkNodeKind::Workstation, egui::Pos2::new(500.0, 400.0));
     let (user, user_view) = new_network_user("User", NetworkUserKind::Normal, egui::Pos2::new(600.0, 200.0));
+    let (file, file_view) = new_network_file("File", NetworkFileKind::Certificate, egui::Pos2::new(700.0, 400.0));
+
+    let (e1, e1_view) = new_network_association(NetworkAssociationLineType::Solid, (internet.clone().into(), internet_view.clone().into()), NetworkAssociationArrowheadType::None, (router.clone().into(), router_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
+    let (e2, e2_view) = new_network_association(NetworkAssociationLineType::Solid, (router.clone().into(), router_view.clone().into()), NetworkAssociationArrowheadType::None, (swtch.clone().into(), swtch_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
+    let (e3, e3_view) = new_network_association(NetworkAssociationLineType::Solid, (swtch.clone().into(), swtch_view.clone().into()), NetworkAssociationArrowheadType::None, (workstation.clone().into(), workstation_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
+    let (e4, e4_view) = new_network_association(NetworkAssociationLineType::Solid, (workstation.clone().into(), workstation_view.clone().into()), NetworkAssociationArrowheadType::None, (file.clone().into(), file_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
+    let (e5, e5_view) = new_network_association(NetworkAssociationLineType::Dashed, (user.clone().into(), user_view.clone().into()), NetworkAssociationArrowheadType::None, (file.clone().into(), file_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
 
     let name = format!("Demo Network diagram {}", no);
     let diagram = ERef::new(NetworkDiagram::new(
@@ -480,6 +487,12 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             swtch.into(),
             workstation.into(),
             user.into(),
+            file.into(),
+            e1.into(),
+            e2.into(),
+            e3.into(),
+            e4.into(),
+            e5.into(),
         ],
     ));
     new_controlller(diagram, name, vec![
@@ -488,6 +501,12 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         swtch_view.into(),
         workstation_view.into(),
         user_view.into(),
+        file_view.into(),
+        e1_view.into(),
+        e2_view.into(),
+        e3_view.into(),
+        e4_view.into(),
+        e5_view.into(),
     ])
 }
 
