@@ -26,6 +26,7 @@ pub fn deep_copy_diagram(d: &NetworkDiagram) -> (ERef<NetworkDiagram>, HashMap<M
             },
             NetworkElement::Node(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::User(inner) => inner.read().clone_with(*new_uuid).into(),
+            NetworkElement::File(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::Association(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
         }
@@ -39,7 +40,9 @@ pub fn deep_copy_diagram(d: &NetworkDiagram) -> (ERef<NetworkDiagram>, HashMap<M
                     relink(e, all_models);
                 }
             }
-            NetworkElement::Node(_) | NetworkElement::User(_) => {},
+            NetworkElement::Node(_)
+            | NetworkElement::User(_)
+            | NetworkElement::File(_) => {},
             NetworkElement::Association(inner) => {
                 let mut model = inner.write();
 
@@ -114,10 +117,11 @@ pub fn transitive_closure(d: &NetworkDiagram, mut when_deleting: HashSet<ModelUu
                         }
                     }
                 },
-                NetworkElement::Node(..)
-                | NetworkElement::User(..)
-                | NetworkElement::Association(..)
-                | NetworkElement::Comment(..) => {},
+                NetworkElement::Node(_)
+                | NetworkElement::User(_)
+                | NetworkElement::File(_)
+                | NetworkElement::Association(_)
+                | NetworkElement::Comment(_) => {},
             }
         }
         walk(e, &mut when_deleting);
@@ -132,8 +136,9 @@ pub fn transitive_closure(d: &NetworkDiagram, mut when_deleting: HashSet<ModelUu
                         walk(e, when_deleting, also_delete);
                     }
                 },
-                NetworkElement::Node(..)
-                | NetworkElement::User(..) => {},
+                NetworkElement::Node(_)
+                | NetworkElement::User(_)
+                | NetworkElement::File(_) => {},
                 NetworkElement::Association(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
@@ -142,7 +147,7 @@ pub fn transitive_closure(d: &NetworkDiagram, mut when_deleting: HashSet<ModelUu
                         also_delete.insert(*r.uuid);
                     }
                 },
-                NetworkElement::Comment(..) => {}
+                NetworkElement::Comment(_) => {}
             }
         }
         for e in &d.contained_elements {
@@ -165,10 +170,11 @@ fn enumerate(e: &NetworkElement, into: &mut HashSet<ModelUuid>) {
                 enumerate(e, into);
             }
         },
-        NetworkElement::Node(..)
-        | NetworkElement::User(..)
-        | NetworkElement::Association(..)
-        | NetworkElement::Comment(..) => {},
+        NetworkElement::Node(_)
+        | NetworkElement::User(_)
+        | NetworkElement::File(_)
+        | NetworkElement::Association(_)
+        | NetworkElement::Comment(_) => {},
     }
 }
 
@@ -183,6 +189,7 @@ pub enum NetworkElement {
     Container(ERef<NetworkContainer>),
     Node(ERef<NetworkNode>),
     User(ERef<NetworkUser>),
+    File(ERef<NetworkFile>),
 
     Association(ERef<NetworkAssociation>),
 
@@ -270,6 +277,7 @@ impl NetworkDiagram {
                 },
                 NetworkElement::Node(_)
                 | NetworkElement::User(_)
+                | NetworkElement::File(_)
                 | NetworkElement::Association(_)
                 | NetworkElement::Comment(_) => {},
             }
@@ -680,6 +688,94 @@ impl Entity for NetworkUser {
 }
 
 impl Model for NetworkUser {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+
+#[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub enum NetworkFileKind {
+    #[default]
+    Unspecified,
+
+    Document,
+    SourceCode,
+    Certificate,
+
+    Audio,
+    Image,
+    Video,
+
+    Binary,
+    Archive,
+}
+
+impl NetworkFileKind {
+    pub const VARIANTS: [Self; 9] = [
+        Self::Unspecified,
+        Self::Document, Self::SourceCode, Self::Certificate,
+        Self::Audio, Self::Image, Self::Video,
+        Self::Binary, Self::Archive,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            NetworkFileKind::Unspecified => "Unspecified",
+            NetworkFileKind::Document => "Document",
+            NetworkFileKind::SourceCode => "Source Code",
+            NetworkFileKind::Certificate => "Certificate",
+            NetworkFileKind::Audio => "Audio",
+            NetworkFileKind::Image => "Image",
+            NetworkFileKind::Video => "Video",
+            NetworkFileKind::Binary => "Binary",
+            NetworkFileKind::Archive => "Archive",
+        }
+    }
+}
+
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct NetworkFile {
+    #[full_text_searchable(search_kind = "to_string_ref")]
+    pub uuid: Arc<ModelUuid>,
+    pub name: Arc<String>,
+    #[full_text_searchable(search_kind = "as_str_ref")]
+    pub kind: NetworkFileKind,
+
+    pub comment: Arc<String>,
+}
+
+impl NetworkFile {
+    pub fn new(
+        uuid: ModelUuid,
+        name: String,
+        kind: NetworkFileKind,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            name: Arc::new(name),
+            kind,
+            comment: Arc::new("".to_owned()),
+        }
+    }
+    pub fn clone_with(&self, new_uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(new_uuid),
+            name: self.name.clone(),
+            kind: self.kind.clone(),
+            comment: self.comment.clone(),
+        })
+    }
+}
+
+impl Entity for NetworkFile {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for NetworkFile {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }

@@ -10,7 +10,7 @@ use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeseria
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
-use crate::domains::network::network_models::{NetworkAssociation, NetworkAssociationArrowheadType, NetworkAssociationLineType, NetworkComment, NetworkContainer, NetworkContainerShapeKind, NetworkDiagram, NetworkElement, NetworkNode, NetworkNodeKind, NetworkUser, NetworkUserKind};
+use crate::domains::network::network_models::{NetworkAssociation, NetworkAssociationArrowheadType, NetworkAssociationLineType, NetworkComment, NetworkContainer, NetworkContainerShapeKind, NetworkDiagram, NetworkElement, NetworkFile, NetworkFileKind, NetworkNode, NetworkNodeKind, NetworkUser, NetworkUserKind};
 use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
@@ -47,6 +47,7 @@ pub enum NetworkPropChange {
 
     NodeKindChange(NetworkNodeKind),
     UserKindChange(NetworkUserKind),
+    FileKindChange(NetworkFileKind),
 
     AssociationLineTypeChange(NetworkAssociationLineType),
     AssociationArrowheadTypeChange(/*target?*/ bool, NetworkAssociationArrowheadType),
@@ -69,6 +70,7 @@ impl Debug for NetworkPropChange {
                 Self::NameChange(name) => format!("NameChange({})", name),
                 Self::NodeKindChange(_kind) => format!("NodeKindChange(..)"),
                 Self::UserKindChange(_kind) => format!("UserKindChange(..)"),
+                Self::FileKindChange(_kind) => format!("FileKindChange(..)"),
 
                 Self::AssociationLineTypeChange(_) => format!("AssociationLineTypeChange(..)"),
                 Self::AssociationArrowheadTypeChange(..) => format!("AssociationArrowheadTypeChange(..)"),
@@ -146,6 +148,7 @@ pub enum NetworkElementView {
     Container(ERef<PackageViewT>),
     Node(ERef<NetworkNodeView>),
     User(ERef<NetworkUserView>),
+    File(ERef<NetworkFileView>),
     Predicate(ERef<LinkViewT>),
     Comment(ERef<NetworkCommentView>),
 }
@@ -259,6 +262,9 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
             NetworkElement::User(inner) => {
                 new_network_user_view(inner, egui::Pos2::ZERO).into()
             },
+            NetworkElement::File(inner) => {
+                new_network_file_view(inner, egui::Pos2::ZERO).into()
+            }
             NetworkElement::Association(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.source.uuid(), *m.target.uuid());
@@ -289,6 +295,9 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
             },
             NetworkElement::User(inner) => {
                 format!("User ({})", LabelProvider::filter_and_elipsis(&inner.read().name)).into()
+            },
+            NetworkElement::File(inner) => {
+                format!("File ({})", LabelProvider::filter_and_elipsis(&inner.read().name)).into()
             },
             NetworkElement::Association(_inner) => {
                 "Association".to_owned().into()
@@ -513,6 +522,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let (_audit_model, audit_view) = new_network_user("Audit", NetworkUserKind::Audit, egui::Pos2::ZERO);
     let (_blackhat_model, blackhat_view) = new_network_user("Black Hat", NetworkUserKind::BlackHat, egui::Pos2::ZERO);
 
+    let (_file, file_view) = new_network_file("File", NetworkFileKind::Unspecified, egui::Pos2::ZERO);
+
     let (_association1, association1_view) = new_network_association(
         NetworkAssociationLineType::Solid,
         user.clone(), NetworkAssociationArrowheadType::None,
@@ -571,6 +582,12 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 name: "Black Hat".to_owned(),
                 kind: NetworkUserKind::BlackHat,
             }, "Black Hat", blackhat_view.into()),
+        ]),
+        ("Files", vec![
+            (NetworkToolStage::File {
+                name: "File".to_owned(),
+                kind: NetworkFileKind::Unspecified,
+            }, "File", file_view.into()),
         ]),
         ("Relationships", vec![
             (NetworkToolStage::AssociationStart {
@@ -660,6 +677,26 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                             .selected_text(kind.as_str())
                             .show_ui(&mut columns[1], |ui| {
                                 for e in NetworkUserKind::VARIANTS {
+                                    modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
+                                }
+                            });
+
+                        if modified && let mut mw = inner.write() {
+                            mw.name = name.clone().into();
+                            mw.kind = *kind;
+                        }
+                    },
+                    (
+                        NetworkToolStage::File { name, kind },
+                        NetworkElement::File(inner),
+                    ) => {
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+
+                        columns[1].label("Kind");
+                        egui::ComboBox::from_id_salt("kind")
+                            .selected_text(kind.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in NetworkFileKind::VARIANTS {
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
                                 }
                             });
@@ -774,6 +811,7 @@ inventory::submit! {DiagramInfo {
 pub enum NetworkToolStage {
     Node { name: String, kind: NetworkNodeKind },
     User { name: String, kind: NetworkUserKind },
+    File { name: String, kind: NetworkFileKind },
     AssociationStart {
         line_type: NetworkAssociationLineType,
         source_arrowhead: NetworkAssociationArrowheadType,
@@ -852,31 +890,37 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             None => match self.current_stage {
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
+                | NetworkToolStage::File { .. }
                 | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd
                 | NetworkToolStage::Comment { .. } => TARGETTABLE_COLOR,
                 NetworkToolStage::AssociationStart { .. }
                 | NetworkToolStage::AssociationEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(NetworkElement::Container(..)) => match self.current_stage {
+            Some(NetworkElement::Container(_)) => match self.current_stage {
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
+                | NetworkToolStage::File { .. }
                 | NetworkToolStage::Comment { .. } => TARGETTABLE_COLOR,
                 NetworkToolStage::AssociationStart { .. }
                 | NetworkToolStage::AssociationEnd
                 | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(NetworkElement::Node(..) | NetworkElement::User(..) | NetworkElement::Comment(..)) => match self.current_stage {
+            Some(NetworkElement::Node(_)
+                | NetworkElement::User(_)
+                | NetworkElement::File(_)
+                | NetworkElement::Comment(_)) => match self.current_stage {
                 NetworkToolStage::AssociationStart { .. }
                 | NetworkToolStage::AssociationEnd => TARGETTABLE_COLOR,
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
+                | NetworkToolStage::File { .. }
                 | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd
                 | NetworkToolStage::Comment { .. } => NON_TARGETTABLE_COLOR,
             },
-            Some(NetworkElement::Association(..)) => todo!(),
+            Some(NetworkElement::Association(_)) => todo!(),
         }
     }
     fn draw_status_hint(&self, q: &<NetworkDomain as Domain>::QueryableT<'_>, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
@@ -919,6 +963,11 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.result = PartialNetworkElement::Some(user_view.into());
                 self.event_lock = true;
             }
+            (NetworkToolStage::File { name, kind }, _) => {
+                let (_, file_view) = new_network_file(name, *kind, pos);
+                self.result = PartialNetworkElement::Some(file_view.into());
+                self.event_lock = true;
+            }
             (NetworkToolStage::ContainerStart { name }, _) => {
                 self.result = PartialNetworkElement::Container { name: name.clone(), a: pos, b: None };
                 self.current_stage = NetworkToolStage::ContainerEnd;
@@ -941,33 +990,23 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
 
         match section {
             NetworkElement::Container(..) => {}
-            NetworkElement::Node(..) | NetworkElement::User(..)
-            | NetworkElement::Comment(..) => match (&self.current_stage, &mut self.result) {
+            NetworkElement::Node(_)
+            | NetworkElement::User(_)
+            | NetworkElement::File(_)
+            | NetworkElement::Comment(_) => match (&self.current_stage, &mut self.result) {
                 (NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead }, PartialNetworkElement::None) => {
-                    let source = match section {
-                        NetworkElement::Node(inner) => inner.into(),
-                        NetworkElement::User(inner) => inner.into(),
-                        NetworkElement::Comment(inner) => inner.into(),
-                        _ => unreachable!(),
-                    };
                     self.result = PartialNetworkElement::Association {
                         line_type: *line_type,
                         source_arrowhead: *source_arrowhead,
                         target_arrowhead: *target_arrowhead,
-                        source,
+                        source: section,
                         dest: None,
                     };
                     self.current_stage = NetworkToolStage::AssociationEnd;
                     self.event_lock = true;
                 }
                 (NetworkToolStage::AssociationEnd, PartialNetworkElement::Association { dest, .. }) => {
-                    let target = match section {
-                        NetworkElement::Node(inner) => inner.into(),
-                        NetworkElement::User(inner) => inner.into(),
-                        NetworkElement::Comment(inner) => inner.into(),
-                        _ => unreachable!(),
-                    };
-                    *dest = Some(target);
+                    *dest = Some(section);
                     self.event_lock = true;
                 }
                 _ => {}
@@ -2476,6 +2515,476 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         };
 
         let modelish = if let Some(NetworkElement::User(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(model_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        let cloneish = ERef::new(Self {
+            uuid: view_uuid.into(),
+            model: modelish,
+            name_buffer: self.name_buffer.clone(),
+            kind_buffer: self.kind_buffer.clone(),
+            comment_buffer: self.comment_buffer.clone(),
+            dragged_shape: None,
+            highlight: self.highlight,
+            position: self.position,
+            bounds_rect: self.bounds_rect,
+            background_color: self.background_color.clone(),
+        });
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
+    }
+}
+
+
+fn new_network_file(
+    name: &str,
+    kind: NetworkFileKind,
+    position: egui::Pos2,
+) -> (ERef<NetworkFile>, ERef<NetworkFileView>) {
+    let user_model = ERef::new(NetworkFile::new(
+        ModelUuid::now_v7(),
+        name.to_owned(),
+        kind,
+    ));
+    let user_view = new_network_file_view(user_model.clone(), position);
+    (user_model, user_view)
+}
+fn new_network_file_view(
+    model: ERef<NetworkFile>,
+    position: egui::Pos2,
+) -> ERef<NetworkFileView> {
+    let m = model.read();
+    ERef::new(NetworkFileView {
+        uuid: ViewUuid::now_v7().into(),
+        model: model.clone(),
+
+        name_buffer: (*m.name).to_owned(),
+        kind_buffer: m.kind.clone(),
+        comment_buffer: (*m.comment).to_owned(),
+
+        dragged_shape: None,
+        highlight: canvas::Highlight::NONE,
+        position: position,
+        bounds_rect: egui::Rect::ZERO,
+        background_color: MGlobalColor::None,
+    })
+}
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct NetworkFileView {
+    uuid: Arc<ViewUuid>,
+    #[nh_context_serde(entity)]
+    pub model: ERef<NetworkFile>,
+
+    #[nh_context_serde(skip_and_default)]
+    name_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    kind_buffer: NetworkFileKind,
+    #[nh_context_serde(skip_and_default)]
+    comment_buffer: String,
+
+    #[nh_context_serde(skip_and_default)]
+    dragged_shape: Option<NHShape>,
+    #[nh_context_serde(skip_and_default)]
+    highlight: canvas::Highlight,
+    pub position: egui::Pos2,
+    pub bounds_rect: egui::Rect,
+    background_color: MGlobalColor,
+}
+
+impl Entity for NetworkFileView {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl View for NetworkFileView {
+    fn uuid(&self) -> Arc<ViewUuid> {
+        self.uuid.clone()
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+}
+
+impl ElementController<NetworkElement> for NetworkFileView {
+    fn model(&self) -> NetworkElement {
+        self.model.clone().into()
+    }
+
+    fn min_shape(&self) -> NHShape {
+        NHShape::Rect {
+            inner: self.bounds_rect
+        }
+    }
+
+    fn position(&self) -> egui::Pos2 {
+        self.position
+    }
+}
+
+impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
+    fn show_properties(
+        &mut self,
+        gdc: &GlobalDrawingContext,
+        q: &<NetworkDomain as Domain>::QueryableT<'_>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+    ) -> PropertiesStatus<NetworkDomain> {
+        if !self.highlight.selected {
+            return PropertiesStatus::NotShown;
+        }
+
+        ui.label("Model properties");
+
+        if ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+            ));
+        }
+
+        ui.label("Kind:");
+        egui::ComboBox::from_id_salt("kind")
+            .selected_text(self.kind_buffer.as_str())
+            .show_ui(ui, |ui| {
+                for e in NetworkFileKind::VARIANTS {
+                    if ui.selectable_value(&mut self.kind_buffer, e, e.as_str()).changed() {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            NetworkPropChange::FileKindChange(self.kind_buffer),
+                        ));
+                    }
+                }
+            });
+
+        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                NetworkPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
+            ));
+        }
+
+        ui.label("View properties");
+
+        ui.horizontal(|ui| {
+            let egui::Pos2 { mut x, mut y } = self.position;
+
+            ui.label("x");
+            if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+            }
+            ui.label("y");
+            if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+            }
+        });
+
+        ui.label("Background color:");
+        if crate::common::controller::mglobalcolor_edit_button(
+            gdc,
+            ui,
+            &mut self.background_color,
+        ) {
+            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+        }
+
+        PropertiesStatus::Shown
+    }
+    fn draw_in(
+        &mut self,
+        _q: &<NetworkDomain as Domain>::QueryableT<'_>,
+        gdc: &GlobalDrawingContext,
+        _settings: &NetworkSettings,
+        canvas: &mut dyn NHCanvas,
+        tool: &Option<(egui::Pos2, &NaiveNetworkTool)>,
+    ) -> TargettingStatus {
+        const INNER_SIZE: egui::Vec2 = egui::Vec2::new(40.0, 40.0);
+        const OUTER_SIZE: egui::Vec2 = egui::Vec2::new(50.0, 50.0);
+        // Draw shape and text
+        let inner_rect = egui::Rect::from_center_size(self.position, INNER_SIZE);
+        let background_color = gdc.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE);
+        canvas.draw_rectangle(
+            inner_rect,
+            egui::CornerRadius::ZERO,
+            egui::Color32::TRANSPARENT,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.highlight,
+        );
+        const FILE_SIZE: egui::Vec2 = egui::Vec2::new(21.0, 29.0);
+        let file_rect = egui::Rect::from_center_size(self.position, FILE_SIZE);
+        const CORNER_BEVEL: f32 = 5.0;
+        canvas.draw_polygon(
+            [
+                file_rect.left_top(),
+                file_rect.right_top() - egui::Vec2::new(CORNER_BEVEL, 0.0),
+                file_rect.right_top() + egui::Vec2::new(0.0, CORNER_BEVEL),
+                file_rect.right_bottom(),
+                file_rect.left_bottom(),
+            ].to_vec(),
+            background_color,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            canvas::Highlight::NONE,
+        );
+
+        match self.kind_buffer {
+            NetworkFileKind::Unspecified => {},
+            NetworkFileKind::Document => {
+                const MARGIN: f32 = 3.0;
+                for k in 1..6 {
+                    canvas.draw_line(
+                        [
+                            egui::Pos2::new(file_rect.left() + MARGIN, file_rect.top() + k as f32 * 5.0),
+                            egui::Pos2::new(file_rect.right() - MARGIN, file_rect.top() + k as f32 * 5.0),
+                        ],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            NetworkFileKind::Binary => {
+                for (e, a) in [
+                    ("01", egui::Align2::CENTER_BOTTOM),
+                    ("10", egui::Align2::CENTER_TOP),
+                ] {
+                    canvas.draw_text(
+                        self.position,
+                        a,
+                        e,
+                        canvas::CLASS_TOP_FONT_SIZE,
+                        egui::Color32::BLACK,
+                    );
+                }
+            }
+            k => {
+                let c = match k {
+                    NetworkFileKind::Unspecified
+                    | NetworkFileKind::Document
+                    | NetworkFileKind::Binary => unreachable!(),
+                    NetworkFileKind::SourceCode => "</>",
+                    NetworkFileKind::Certificate => "🔑",
+                    NetworkFileKind::Audio => "🔊",
+                    NetworkFileKind::Image => "🖼",
+                    NetworkFileKind::Video => "📽",
+                    NetworkFileKind::Archive => "📦",
+                };
+                canvas.draw_text(
+                    self.position,
+                    egui::Align2::CENTER_CENTER,
+                    c,
+                    canvas::CLASS_TOP_FONT_SIZE,
+                    egui::Color32::BLACK,
+                );
+            }
+        }
+
+        canvas.draw_text(
+            self.position + egui::Vec2::new(0.0, OUTER_SIZE.y / 2.0),
+            egui::Align2::CENTER_TOP,
+            &self.name_buffer,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+        self.bounds_rect = egui::Rect::from_center_size(self.position, OUTER_SIZE);
+
+        // Draw targetting rectangle
+        if canvas.ui_scale().is_some()
+            && let Some(t) = tool
+            .as_ref()
+            .filter(|e| self.min_shape().contains(e.0))
+            .map(|e| e.1)
+        {
+            canvas.draw_rectangle(
+                inner_rect,
+                egui::CornerRadius::ZERO,
+                t.targetting_for_section(Some(self.model())),
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            TargettingStatus::Drawn
+        } else {
+            TargettingStatus::NotDrawn
+        }
+    }
+
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        ehc: &EventHandlingContext,
+        _settings: &<NetworkDomain as Domain>::SettingsT,
+        q: &<NetworkDomain as Domain>::QueryableT<'_>,
+        tool: &mut Option<NaiveNetworkTool>,
+        _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+    ) -> EventHandlingStatus {
+        match event {
+            InputEvent::MouseDown(pos) => {
+                if !self.min_shape().contains(pos) {
+                    return EventHandlingStatus::NotHandled
+                }
+                self.dragged_shape = Some(self.min_shape());
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::MouseUp(_) => {
+                if self.dragged_shape.is_some() {
+                    self.dragged_shape = None;
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            }
+            InputEvent::Click(pos) if self.min_shape().contains(pos) => {
+                if let Some(tool) = tool {
+                    tool.add_section(self.model());
+                }
+
+                EventHandlingStatus::HandledByElement
+            }
+            InputEvent::Drag { delta, .. } if self.dragged_shape.is_some() => {
+                let translated_real_shape = self.dragged_shape.unwrap().translate(delta);
+                self.dragged_shape = Some(translated_real_shape);
+                let coerced_pos = if self.highlight.selected {
+                    ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        !ehc.all_elements
+                            .get(e)
+                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    })
+                } else {
+                    ehc.snap_manager
+                        .coerce(translated_real_shape, |e| *e != *self.uuid)
+                };
+                let coerced_delta = coerced_pos - self.position;
+
+                if self.highlight.selected {
+                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
+                } else {
+                    commands.push(
+                        InsensitiveCommand::MovePositional(
+                            std::iter::once(*self.uuid).collect(),
+                            coerced_delta,
+                        ),
+                    );
+                }
+                EventHandlingStatus::HandledByElement
+            }
+            _ => EventHandlingStatus::NotHandled,
+        }
+    }
+
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
+        match command {
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.highlight = self.highlight.combine(*set, *h);
+            }
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
+                if uuids.contains(&*self.uuid) {
+                    self.highlight = self.highlight.combine(*set, *h);
+                }
+            }
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.highlight.selected =
+                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
+            }
+            InsensitiveCommand::MovePositional(uuids, _)
+                if !uuids.contains(&*self.uuid) => {}
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
+                self.position += *delta;
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
+                    std::iter::once(*self.uuid).collect(),
+                    -*delta,
+                ));
+            }
+            InsensitiveCommand::ResizeSpecificElementsBy(..)
+            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            | InsensitiveCommand::DeleteSpecificElements(..)
+            | InsensitiveCommand::PasteSpecificElements(..)
+            | InsensitiveCommand::AddDependency(..)
+            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::ArrangeSpecificElements(..)
+            | InsensitiveCommand::MoveOrdinal(..) => {}
+            InsensitiveCommand::PropertyChange(uuids, property) => {
+                if uuids.contains(&*self.uuid) {
+                    affected_models.insert(*self.model.read().uuid);
+                    let mut model = self.model.write();
+                    match property {
+                        NetworkPropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                NetworkPropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
+                        }
+                        NetworkPropChange::FileKindChange(kind)  => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                NetworkPropChange::FileKindChange(model.kind.clone()),
+                            ));
+                            model.kind = kind.clone();
+                        }
+                        NetworkPropChange::CommentChange(comment) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                NetworkPropChange::CommentChange(model.comment.clone()),
+                            ));
+                            model.comment = comment.clone();
+                        }
+                        NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                            ));
+                            self.background_color = *color;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.name_buffer = (*model.name).clone();
+        self.kind_buffer = model.kind.clone();
+        self.comment_buffer = (*model.comment).clone();
+    }
+
+    fn head_count(
+        &mut self,
+        _flattened_views: &mut HashMap<ViewUuid, (NetworkElementView, ViewUuid)>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        flattened_views_status.insert(*self.uuid(), self.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+    }
+
+    fn deep_copy_clone(
+        &self,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, NetworkElementView>,
+        c: &mut HashMap<ViewUuid, NetworkElementView>,
+        m: &mut HashMap<ModelUuid, NetworkElement>,
+    ) {
+        let old_model = self.model.read();
+
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
+        } else {
+            (*self.uuid, *old_model.uuid)
+        };
+
+        let modelish = if let Some(NetworkElement::File(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
