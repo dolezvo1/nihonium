@@ -45,6 +45,8 @@ pub trait UmlClassProfile: Default + Clone + Send + Sync + 'static {
     type UseCaseStereotypeController: StereotypeController = UnrestrictedStereotypeController;
     type DependencyStereotypeController: StereotypeController = UnrestrictedStereotypeController;
     type AssociationStereotypeController: StereotypeController = UnrestrictedStereotypeController;
+    type PackageStereotypeController: StereotypeController = UnrestrictedStereotypeController;
+    type CommentStereotypeController: StereotypeController = UnrestrictedStereotypeController;
 
     fn menubar_options_fun(
         model: &ERef<UmlClassDiagram>,
@@ -881,6 +883,24 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             (class_productb.clone().into(), class_productb_view.clone().into()),
         );
 
+    let (comment, comment_view) = new_umlclass_comment(
+        "This is a comment\nwith multiple lines",
+        "",
+        egui::Pos2::new(650.0, 250.0),
+        egui::Align2::CENTER_CENTER,
+    );
+    let (commentlink1, commentlink1_view) = new_umlclass_commentlink(
+        None,
+        (comment.clone(), comment_view.clone().into()),
+        (class_producta.clone().into(), class_producta_view.clone().into()),
+    );
+    let (commentlink2, commentlink2_view) = new_umlclass_commentlink(
+        None,
+        (comment.clone(), comment_view.clone().into()),
+        (class_productb.clone().into(), class_productb_view.clone().into()),
+    );
+
+
     let shape_operations = {
         let d = new_umlclass_operation(UFOption::Some(UmlClassVisibilityKind::Public), "draw", "", "", "");
         let m = new_umlclass_operation(UFOption::Some(UmlClassVisibilityKind::Public), "move", "", "", "");
@@ -923,20 +943,16 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     point_assoc_model.write().target_label_multiplicity = Arc::new("3..*".to_owned());
     point_assoc_model.write().target_navigability = UmlClassAssociationNavigability::Navigable;
 
-    let (comment, comment_view) = new_umlclass_comment(
-        "This is a comment\nwith multiple lines",
-        egui::Pos2::new(650.0, 250.0),
+    let (comment2, comment2_view) = new_umlclass_comment(
+        "{radius >= 0}",
+        "",
+        egui::Pos2::new(300.0, 650.0),
         egui::Align2::CENTER_CENTER,
     );
-    let (commentlink1, commentlink1_view) = new_umlclass_commentlink(
+    let (commentlink3, commentlink3_view) = new_umlclass_commentlink(
         None,
-        (comment.clone(), comment_view.clone().into()),
-        (class_producta.clone().into(), class_producta_view.clone().into()),
-    );
-    let (commentlink2, commentlink2_view) = new_umlclass_commentlink(
-        None,
-        (comment.clone(), comment_view.clone().into()),
-        (class_productb.clone().into(), class_productb_view.clone().into()),
+        (comment2.clone(), comment2_view.clone().into()),
+        (circle_model.clone().into(), circle_view.clone().into()),
     );
 
     let name = format!("Demo UML class diagram {}", no);
@@ -955,15 +971,17 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             usage_client_producta.into(),
             class_productb.into(),
             usage_client_productb.into(),
+            comment.into(),
+            commentlink1.into(),
+            commentlink2.into(),
             shape_model.into(),
             polygon_model.into(),
             circle_model.into(),
             gen_model.into(),
             point_model.into(),
             point_assoc_model.into(),
-            comment.into(),
-            commentlink1.into(),
-            commentlink2.into(),
+            comment2.into(),
+            commentlink3.into(),
         ],
     ));
     new_controlller(
@@ -981,15 +999,17 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             usage_client_producta_view.into(),
             class_productb_view.into(),
             usage_client_productb_view.into(),
+            comment_view.into(),
+            commentlink1_view.into(),
+            commentlink2_view.into(),
             shape_view.into(),
             polygon_view.into(),
             circle_view.into(),
             gen_view.into(),
             point_view.into(),
             point_assoc_view.into(),
-            comment_view.into(),
-            commentlink1_view.into(),
-            commentlink2_view.into(),
+            comment2_view.into(),
+            commentlink3_view.into(),
         ],
     )
 }
@@ -1078,9 +1098,11 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     package_view.write().refresh_buffers();
     let (comment, comment_view) = new_umlclass_comment(
         "a comment",
+        "",
         egui::Pos2::ZERO,
         egui::Align2::CENTER_CENTER,
     );
+    comment_view.write().refresh_buffers();
     let comment = (comment, comment_view.into());
     let commentlink = new_umlclass_commentlink(None, comment.clone(), dummy_2_element.clone());
 
@@ -1142,6 +1164,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 kind: UmlClassPackageKind::Package,
             }, "Package", package_view.into()),
             (UmlClassToolStage::Comment {
+                stereotype: "".to_owned(),
                 text: "a comment".to_owned(),
                 align: egui::Align2::CENTER_CENTER,
             }, "Comment", comment.1),
@@ -1390,7 +1413,9 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                         UmlClassToolStage::PackageStart { name, stereotype, kind },
                         UmlClassElement::UmlClassPackage(inner),
                     ) => {
-                        modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
+                        let mut sc = P::PackageStereotypeController::default();
+                        sc.refresh(&stereotype);
+                        modified |= sc.show(&mut columns[1]);
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                         columns[1].label("Package kind");
@@ -1403,15 +1428,19 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                             });
 
                         if modified && let mut mw = inner.write() {
+                            *stereotype = sc.get_raw();
                             mw.stereotype = stereotype.clone().into();
                             mw.name = name.clone().into();
                             mw.kind = *kind;
                         }
                     },
                     (
-                        UmlClassToolStage::Comment { text, align },
+                        UmlClassToolStage::Comment { stereotype, text, align },
                         UmlClassElement::UmlClassComment(inner),
                     ) => {
+                        let mut sc = P::CommentStereotypeController::default();
+                        sc.refresh(&stereotype);
+                        modified |= sc.show(&mut columns[1]);
                         modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
 
                         egui::ComboBox::new("horizontal align", "Horizontal align")
@@ -1430,6 +1459,8 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                             });
 
                         if modified && let mut mw = inner.write() {
+                            *stereotype = sc.get_raw();
+                            mw.stereotype = stereotype.clone().into();
                             mw.text = text.clone().into();
                         }
                     },
@@ -1533,6 +1564,7 @@ pub enum UmlClassToolStage {
     },
     PackageEnd,
     Comment {
+        stereotype: String,
         text: String,
         align: egui::Align2,
     },
@@ -1801,9 +1833,9 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (UmlClassToolStage::Comment { text, align }, _) => {
+            (UmlClassToolStage::Comment { stereotype, text, align }, _) => {
                 let (_comment_model, comment_view) =
-                    new_umlclass_comment(text, pos, *align);
+                    new_umlclass_comment(text, stereotype, pos, *align);
                 self.result = PartialUmlClassElement::Some(comment_view.into());
                 self.event_lock = true;
             }
@@ -2143,7 +2175,7 @@ pub fn new_umlclass_package_view<P: UmlClassProfile>(
             background_color: MGlobalColor::None,
             display_text: Arc::new("".to_owned()),
             name_buffer: (*m.name).clone(),
-            stereotype_buffer: (*m.stereotype).clone(),
+            stereotype_controller: Default::default(),
             kind_buffer: m.kind.clone(),
             comment_buffer: (*m.comment).clone(),
             _profile: PhantomData,
@@ -2163,8 +2195,9 @@ pub struct UmlClassPackageAdapter<P: UmlClassProfile> {
     display_text: Arc<String>,
     #[nh_context_serde(skip_and_default)]
     name_buffer: String,
+    #[serde(skip)]
     #[nh_context_serde(skip_and_default)]
-    stereotype_buffer: String,
+    stereotype_controller: P::PackageStereotypeController,
     #[nh_context_serde(skip_and_default)]
     kind_buffer: UmlClassPackageKind,
     #[nh_context_serde(skip_and_default)]
@@ -2245,10 +2278,10 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlClassOrdinalMovement, UmlClassElementOrVertex<P>, UmlClassPropChange>>
     ) {
-        if ui.labeled_text_edit_singleline("Stereotype:", &mut self.stereotype_buffer).changed() {
+        if self.stereotype_controller.show(ui) {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                UmlClassPropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
             ));
         }
 
@@ -2306,6 +2339,10 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             let mut model = self.model.write();
             match property {
                 UmlClassPropChange::StereotypeChange(stereotype) => {
+                    if !self.stereotype_controller.is_valid(&stereotype) {
+                        return;
+                    }
+
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
                         UmlClassPropChange::StereotypeChange(model.stereotype.clone()),
@@ -2352,7 +2389,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
         } else {
             format!("«{}» {}", model.stereotype, model.name).into()
         };
-        self.stereotype_buffer = (*model.stereotype).clone();
+        self.stereotype_controller.refresh(&model.stereotype);
         self.name_buffer = (*model.name).clone();
         self.kind_buffer = model.kind;
         self.comment_buffer = (*model.comment).clone();
@@ -2377,7 +2414,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             model,
             background_color: self.background_color.clone(),
             display_text: self.display_text.clone(),
-            stereotype_buffer: self.stereotype_buffer.clone(),
+            stereotype_controller: self.stereotype_controller.clone(),
             name_buffer: self.name_buffer.clone(),
             kind_buffer: self.kind_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
@@ -7660,11 +7697,13 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
 
 pub fn new_umlclass_comment<P: UmlClassProfile>(
     text: &str,
+    stereotype: &str,
     position: egui::Pos2,
     align: egui::Align2,
 ) -> (ERef<UmlClassComment>, ERef<UmlClassCommentView<P>>) {
     let comment_model = ERef::new(UmlClassComment::new(
         ModelUuid::now_v7(),
+        stereotype.to_owned(),
         text.to_owned(),
     ));
     let comment_view = new_umlclass_comment_view(comment_model.clone(), position, align);
@@ -7681,6 +7720,8 @@ pub fn new_umlclass_comment_view<P: UmlClassProfile>(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        display_text: String::new(),
+        stereotype_controller: Default::default(),
         text_buffer: (*m.text).clone(),
 
         dragged_shape: None,
@@ -7700,6 +7741,10 @@ pub struct UmlClassCommentView<P: UmlClassProfile> {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlClassComment>,
 
+    #[nh_context_serde(skip_and_default)]
+    display_text: String,
+    #[nh_context_serde(skip_and_default)]
+    stereotype_controller: P::CommentStereotypeController,
     #[nh_context_serde(skip_and_default)]
     text_buffer: String,
 
@@ -7764,6 +7809,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         }
 
         ui.label("Model properties");
+
+        if self.stereotype_controller.show(ui) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
+            ));
+        }
 
         if ui.labeled_text_edit_multiline("Text:", &mut self.text_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
@@ -7838,8 +7890,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlClassTool<P>)>,
     ) -> TargettingStatus {
-        let read = self.model.read();
-
         let align_offset = egui::Vec2 { x: match self.align.x() {
             egui::Align::Min => -Self::CORNER_SIZE,
             egui::Align::Center => 0.0,
@@ -7852,7 +7902,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         self.bounds_rect = canvas.measure_text(
             self.position,
             self.align,
-            &read.text,
+            &self.display_text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
         )
         .expand2(egui::Vec2 { x: Self::CORNER_SIZE, y: Self::CORNER_SIZE })
@@ -7883,7 +7933,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         canvas.draw_text(
             self.position + align_offset,
             self.align,
-            &read.text,
+            &self.display_text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
@@ -8048,6 +8098,17 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
                     match property {
+                        UmlClassPropChange::StereotypeChange(stereotype) => {
+                            if !self.stereotype_controller.is_valid(&stereotype) {
+                                return;
+                            }
+
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlClassPropChange::StereotypeChange(model.stereotype.clone()),
+                            ));
+                            model.stereotype = stereotype.clone();
+                        }
                         UmlClassPropChange::NameChange(text) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
@@ -8085,6 +8146,18 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
+
+        self.display_text = {
+            let mut s = String::new();
+            if !model.stereotype.is_empty() {
+                s.push_str("«");
+                s.push_str(&model.stereotype);
+                s.push_str("»\n");
+            }
+            s.push_str(&model.text);
+            s
+        };
+        self.stereotype_controller.refresh(&model.stereotype);
         self.text_buffer = (*model.text).clone();
     }
 
@@ -8116,7 +8189,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         let modelish = if let Some(UmlClassElement::UmlClassComment(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(UmlClassComment::new(model_uuid, (*old_model.text).clone()));
+            let modelish = old_model.clone_with(model_uuid);
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };
@@ -8124,6 +8197,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            display_text: self.display_text.clone(),
+            stereotype_controller: self.stereotype_controller.clone(),
             text_buffer: self.text_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,
@@ -8263,7 +8338,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassC
         let model = if let Some(UmlClassElement::UmlClassCommentLink(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
-            let modelish = ERef::new(UmlClassCommentLink::new(new_uuid, old_model.source.clone(), old_model.target.clone()));
+            let modelish = old_model.clone_with(new_uuid);
             m.insert(*old_model.uuid, modelish.clone().into());
             modelish
         };

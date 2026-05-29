@@ -309,52 +309,17 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 };
                 UmlClassElement::UmlClassPackage(ERef::new(new_model))
             },
-            UmlClassElement::UmlClassInstance(inner) => {
-                UmlClassElement::UmlClassInstance(inner.read().clone_with(*new_uuid))
-            }
-            UmlClassElement::UmlClass(inner) => {
-                UmlClassElement::UmlClass(inner.read().clone_with(*new_uuid))
-            },
-            UmlClassElement::UmlClassProperty(inner) => {
-                inner.read().clone_with(*new_uuid).into()
-            }
-            UmlClassElement::UmlClassOperation(inner) => {
-                inner.read().clone_with(*new_uuid).into()
-            },
-            UmlClassElement::UmlUseCase(inner) => {
-                UmlClassElement::UmlUseCase(inner.read().clone_with(*new_uuid))
-            },
-            UmlClassElement::UmlClassGeneralization(inner) => {
-                UmlClassElement::UmlClassGeneralization(inner.read().clone_with(*new_uuid))
-            },
-            UmlClassElement::UmlClassDependency(inner) => {
-                UmlClassElement::UmlClassDependency(inner.read().clone_with(*new_uuid))
-            }
-            UmlClassElement::UmlClassAssociation(inner) => {
-                UmlClassElement::UmlClassAssociation(inner.read().clone_with(*new_uuid))
-            },
-            UmlClassElement::UmlUseCaseGeneralization(inner) => {
-                UmlClassElement::UmlUseCaseGeneralization(inner.read().clone_with(*new_uuid))
-            }
-            UmlClassElement::UmlClassComment(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlClassComment {
-                    uuid: new_uuid,
-                    text: model.text.clone(),
-                };
-                UmlClassElement::UmlClassComment(ERef::new(new_model))
-            }
-            UmlClassElement::UmlClassCommentLink(inner) => {
-                let model = inner.read();
-
-                let new_model = UmlClassCommentLink {
-                    uuid: new_uuid,
-                    source: model.source.clone(),
-                    target: model.target.clone(),
-                };
-                UmlClassElement::UmlClassCommentLink(ERef::new(new_model))
-            }
+            UmlClassElement::UmlClassInstance(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UmlClass(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UmlClassProperty(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UmlClassOperation(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UmlUseCase(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UmlClassGeneralization(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UmlClassDependency(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UmlClassAssociation(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UmlUseCaseGeneralization(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UmlClassComment(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UmlClassCommentLink(inner) => inner.read().clone_with(*new_uuid).into(),
         }
     }
 
@@ -1903,18 +1868,28 @@ impl ContainerModel for UmlUseCaseGeneralization {
 pub struct UmlClassComment {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
+    pub stereotype: Arc<String>,
     pub text: Arc<String>,
 }
 
 impl UmlClassComment {
     pub fn new(
         uuid: ModelUuid,
+        stereotype: String,
         text: String,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
+            stereotype: Arc::new(stereotype),
             text: Arc::new(text),
         }
+    }
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            stereotype: self.stereotype.clone(),
+            text: self.text.clone(),
+        })
     }
 }
 
@@ -1955,6 +1930,13 @@ impl UmlClassCommentLink {
             source,
             target,
         }
+    }
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            source: self.source.clone(),
+            target: self.target.clone(),
+        })
     }
 }
 

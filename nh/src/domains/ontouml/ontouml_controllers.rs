@@ -295,9 +295,11 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     package_view.write().refresh_buffers();
     let (comment, comment_view) = new_umlclass_comment(
         "a comment",
+        "",
         egui::Pos2::new(-100.0, -75.0),
         egui::Align2::CENTER_CENTER,
     );
+    comment_view.write().refresh_buffers();
     let comment = (comment, comment_view.into());
     let commentlink = new_umlclass_commentlink(None, comment.clone(), dummy_2_element);
 
@@ -311,6 +313,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 kind: UmlClassPackageKind::Package,
             }, "Package", package_view.into()),
             (UmlClassToolStage::Comment {
+                stereotype: "".to_owned(),
                 text: "a comment".to_owned(),
                 align: egui::Align2::CENTER_CENTER,
             }, "Comment", comment.1),
