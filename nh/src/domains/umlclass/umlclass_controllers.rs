@@ -388,7 +388,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         element: UmlClassElement,
     ) -> Result<UmlClassElementView<P>, HashSet<ModelUuid>> {
         let v = match element {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 UmlClassElementView::from(
                     new_umlclass_package_view(
                         inner,
@@ -396,12 +396,12 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     )
                 )
             },
-            UmlClassElement::UmlClassInstance(inner) => {
+            UmlClassElement::Instance(inner) => {
                 UmlClassElementView::from(
                     new_umlclass_instance_view(inner, egui::Pos2::ZERO)
                 )
             }
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 let (properties_views, operations_views) = {
                     let r = inner.read();
                     (
@@ -414,16 +414,16 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     new_umlclass_class_view(inner, properties_views, operations_views, egui::Pos2::ZERO, UmlClassRenderStyle::Class)
                 )
             },
-            UmlClassElement::UmlClassProperty(..)
-            | UmlClassElement::UmlClassOperation(..) => {
+            UmlClassElement::Property(..)
+            | UmlClassElement::Operation(..) => {
                 unreachable!()
             },
-            UmlClassElement::UmlUseCase(inner) => {
+            UmlClassElement::UseCase(inner) => {
                 UmlClassElementView::from(
                     new_uml_usecase_view(inner, egui::Pos2::ZERO)
                 )
             }
-            UmlClassElement::UmlClassGeneralization(inner) => {
+            UmlClassElement::Generalization(inner) => {
                 let m = inner.read();
                 let (Some(sv), Some(tv)) = (m.sources.iter().map(|e| q.get_view_for(&e.read().uuid)).collect(),
                                             m.targets.iter().map(|e| q.get_view_for(&e.read().uuid)).collect()) else {
@@ -434,7 +434,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     new_umlclass_generalization_view(inner.clone(), None, sv, tv)
                 )
             },
-            UmlClassElement::UmlClassDependency(inner) => {
+            UmlClassElement::Dependency(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.uuid(), m.target.uuid());
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
@@ -445,7 +445,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     new_umlclass_dependency_view(inner.clone(), None, source_view, target_view)
                 )
             }
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.uuid(), m.target.uuid());
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
@@ -456,7 +456,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     new_umlclass_association_view(inner.clone(), None, source_view, target_view)
                 )
             },
-            UmlClassElement::UmlUseCaseGeneralization(inner) => {
+            UmlClassElement::UseCaseGeneralization(inner) => {
                 let m = inner.read();
                 let (Some(sv), Some(tv)) = (m.sources.iter().map(|e| q.get_view_for(&e.read().uuid)).collect(),
                                             m.targets.iter().map(|e| q.get_view_for(&e.read().uuid)).collect()) else {
@@ -467,7 +467,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     new_uml_usecasegeneralization_view(inner.clone(), None, sv, tv)
                 )
             }
-            UmlClassElement::UmlClassComment(inner) => {
+            UmlClassElement::Comment(inner) => {
                 UmlClassElementView::from(
                     new_umlclass_comment_view(
                         inner,
@@ -476,7 +476,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     )
                 )
             },
-            UmlClassElement::UmlClassCommentLink(inner) => {
+            UmlClassElement::CommentLink(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
@@ -493,10 +493,10 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
     }
     fn label_for(&self, e: &UmlClassElement) -> Arc<String> {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 inner.read().name.clone()
             },
-            UmlClassElement::UmlClassInstance(inner) => {
+            UmlClassElement::Instance(inner) => {
                 let r = inner.read();
                 let s = if r.instance_name.is_empty() {
                     format!(":{}", r.instance_type)
@@ -505,7 +505,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 };
                 Arc::new(s)
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 let r = inner.read();
                 if r.stereotype.is_empty() {
                     r.name.clone()
@@ -513,13 +513,13 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     Arc::new(format!("{} «{}»", r.name, r.stereotype))
                 }
             },
-            UmlClassElement::UmlClassProperty(inner) => {
+            UmlClassElement::Property(inner) => {
                 inner.read().name.clone()
             },
-            UmlClassElement::UmlClassOperation(inner) => {
+            UmlClassElement::Operation(inner) => {
                 inner.read().name.clone()
             },
-            UmlClassElement::UmlUseCase(inner) => {
+            UmlClassElement::UseCase(inner) => {
                 let r = inner.read();
                 if r.stereotype.is_empty() {
                     r.name.clone()
@@ -527,7 +527,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                     Arc::new(format!("{} «{}»", r.name, r.stereotype))
                 }
             },
-            UmlClassElement::UmlClassGeneralization(inner) => {
+            UmlClassElement::Generalization(inner) => {
                 let r = inner.read();
                 let s = if r.set_name.is_empty() {
                     "Generalization".to_owned()
@@ -536,7 +536,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 };
                 Arc::new(s)
             },
-            UmlClassElement::UmlClassDependency(inner) => {
+            UmlClassElement::Dependency(inner) => {
                 let r = inner.read();
                 let s = if r.stereotype.is_empty() {
                     "Dependency".to_owned()
@@ -545,7 +545,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 };
                 Arc::new(s)
             }
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 let r = inner.read();
                 let s = if r.stereotype.is_empty() {
                     "Association".to_owned()
@@ -554,7 +554,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 };
                 Arc::new(s)
             },
-            UmlClassElement::UmlUseCaseGeneralization(inner) => {
+            UmlClassElement::UseCaseGeneralization(inner) => {
                 let r = inner.read();
                 let s = if r.set_name.is_empty() {
                     "Generalization".to_owned()
@@ -563,7 +563,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 };
                 Arc::new(s)
             },
-            UmlClassElement::UmlClassComment(inner) => {
+            UmlClassElement::Comment(inner) => {
                 let r = inner.read();
                 let s = if r.text.is_empty() {
                     "Comment".to_owned()
@@ -572,7 +572,7 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 };
                 Arc::new(s)
             },
-            UmlClassElement::UmlClassCommentLink(_inner) => {
+            UmlClassElement::CommentLink(_inner) => {
                 Arc::new(format!("Comment Link"))
             },
         }
@@ -1283,7 +1283,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                 match (tool, view.model()) {
                     (
                         UmlClassToolStage::Instance { instance_name, instance_type, stereotype },
-                        UmlClassElement::UmlClassInstance(inner),
+                        UmlClassElement::Instance(inner),
                     ) => {
                         let mut sc = P::InstanceStereotypeController::default();
                         sc.refresh(&stereotype);
@@ -1300,7 +1300,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                     },
                     (
                         UmlClassToolStage::Class { name, stereotype, .. },
-                        UmlClassElement::UmlClass(inner),
+                        UmlClassElement::Class(inner),
                     ) => {
                         let mut sc = P::ClassStereotypeController::default();
                         sc.refresh(&stereotype);
@@ -1315,7 +1315,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                     },
                     (
                         UmlClassToolStage::ClassProperty { name, property_type, stereotype },
-                        UmlClassElement::UmlClassProperty(inner),
+                        UmlClassElement::Property(inner),
                     ) => {
                         let mut sc = P::ClassPropertyStereotypeController::default();
                         sc.refresh(&stereotype);
@@ -1332,7 +1332,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                     },
                     (
                         UmlClassToolStage::ClassOperation { name, return_type, stereotype },
-                        UmlClassElement::UmlClassOperation(inner),
+                        UmlClassElement::Operation(inner),
                     ) => {
                         let mut sc = P::ClassOperationStereotypeController::default();
                         sc.refresh(&stereotype);
@@ -1349,7 +1349,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                     },
                     (
                         UmlClassToolStage::UseCase { name, stereotype },
-                        UmlClassElement::UmlUseCase(inner),
+                        UmlClassElement::UseCase(inner),
                     ) => {
                         let mut sc = P::UseCaseStereotypeController::default();
                         sc.refresh(&stereotype);
@@ -1365,7 +1365,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                     (UmlClassToolStage::LinkStart { link_type }, lm) => match (link_type, lm) {
                         (
                             LinkType::Generalization { set_name },
-                            UmlClassElement::UmlClassGeneralization(inner),
+                            UmlClassElement::Generalization(inner),
                         ) => {
                             modified |= columns[1].labeled_text_edit_singleline("Set name", set_name).changed();
 
@@ -1375,7 +1375,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                         },
                         (
                             LinkType::Dependency { target_arrow_open, stereotype, name },
-                            UmlClassElement::UmlClassDependency(inner),
+                            UmlClassElement::Dependency(inner),
                         ) => {
                             let mut sc = P::DependencyStereotypeController::default();
                             sc.refresh(&stereotype);
@@ -1392,7 +1392,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                         },
                         (
                             LinkType::Association { stereotype, source_multiplicity, target_multiplicity },
-                            UmlClassElement::UmlClassAssociation(inner),
+                            UmlClassElement::Association(inner),
                         ) => {
                             let mut sc = P::AssociationStereotypeController::default();
                             sc.refresh(&stereotype);
@@ -1411,7 +1411,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                     },
                     (
                         UmlClassToolStage::PackageStart { name, stereotype, kind },
-                        UmlClassElement::UmlClassPackage(inner),
+                        UmlClassElement::Package(inner),
                     ) => {
                         let mut sc = P::PackageStereotypeController::default();
                         sc.refresh(&stereotype);
@@ -1436,7 +1436,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                     },
                     (
                         UmlClassToolStage::Comment { stereotype, text, align },
-                        UmlClassElement::UmlClassComment(inner),
+                        UmlClassElement::Comment(inner),
                     ) => {
                         let mut sc = P::CommentStereotypeController::default();
                         sc.refresh(&stereotype);
@@ -1643,7 +1643,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
 
     fn targetting_for_section(&self, element: Option<UmlClassElement>) -> egui::Color32 {
         match element {
-            None | Some(UmlClassElement::UmlClassPackage(..)) => match self.current_stage {
+            None | Some(UmlClassElement::Package(..)) => match self.current_stage {
                 UmlClassToolStage::Instance { .. }
                 | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::UseCase { .. }
@@ -1661,7 +1661,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     NON_TARGETTABLE_COLOR
                 }
             },
-            Some(UmlClassElement::UmlClassInstance(..)) => match self.current_stage {
+            Some(UmlClassElement::Instance(..)) => match self.current_stage {
                 UmlClassToolStage::Instance { .. }
                 | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::ClassProperty { .. }
@@ -1678,7 +1678,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::LinkEnd
                 | UmlClassToolStage::CommentLinkEnd => TARGETTABLE_COLOR
             },
-            Some(UmlClassElement::UmlClass(..)) => match self.current_stage {
+            Some(UmlClassElement::Class(..)) => match self.current_stage {
                 UmlClassToolStage::ClassProperty { .. }
                 | UmlClassToolStage::ClassOperation { .. }
                 | UmlClassToolStage::LinkStart { .. }
@@ -1694,15 +1694,15 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::CommentLinkStart => NON_TARGETTABLE_COLOR,
 
                 UmlClassToolStage::LinkAddEnding { .. } | UmlClassToolStage::LinkEnd => match &self.result {
-                    PartialUmlClassElement::Link { link_type: LinkType::Generalization { .. }, source: UmlClassAssociable::UmlClass(_), .. }
-                    | PartialUmlClassElement::LinkEnding { gen_model: UmlGeneralization::ClassGeneralization(_), .. } => TARGETTABLE_COLOR,
+                    PartialUmlClassElement::Link { link_type: LinkType::Generalization { .. }, source: UmlClassAssociable::Class(_), .. }
+                    | PartialUmlClassElement::LinkEnding { gen_model: UmlGeneralization::Generalization(_), .. } => TARGETTABLE_COLOR,
                     PartialUmlClassElement::Link { link_type, .. } if !matches!(link_type, LinkType::Generalization { .. }) => TARGETTABLE_COLOR,
                     _ => NON_TARGETTABLE_COLOR,
                 }
             },
-            Some(UmlClassElement::UmlClassProperty(..)
-                | UmlClassElement::UmlClassOperation(..)) => NON_TARGETTABLE_COLOR,
-            Some(UmlClassElement::UmlUseCase(..)) => match self.current_stage {
+            Some(UmlClassElement::Property(..)
+                | UmlClassElement::Operation(..)) => NON_TARGETTABLE_COLOR,
+            Some(UmlClassElement::UseCase(..)) => match self.current_stage {
                 UmlClassToolStage::Instance { .. }
                 | UmlClassToolStage::Class { .. }
                 | UmlClassToolStage::ClassProperty { .. }
@@ -1717,13 +1717,13 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
 
                 UmlClassToolStage::LinkAddEnding { .. } | UmlClassToolStage::LinkEnd => match &self.result {
-                    PartialUmlClassElement::Link { link_type: LinkType::Generalization { .. }, source: UmlClassAssociable::UmlUseCase(_), .. }
+                    PartialUmlClassElement::Link { link_type: LinkType::Generalization { .. }, source: UmlClassAssociable::UseCase(_), .. }
                     | PartialUmlClassElement::LinkEnding { gen_model: UmlGeneralization::UseCaseGeneralization(_), .. } => TARGETTABLE_COLOR,
                     PartialUmlClassElement::Link { link_type, .. } if !matches!(link_type, LinkType::Generalization { .. }) => TARGETTABLE_COLOR,
                     _ => NON_TARGETTABLE_COLOR,
                 }
             },
-            Some(UmlClassElement::UmlClassComment(..)) => match self.current_stage {
+            Some(UmlClassElement::Comment(..)) => match self.current_stage {
                 UmlClassToolStage::CommentLinkStart => {
                     TARGETTABLE_COLOR
                 }
@@ -1740,11 +1740,11 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 | UmlClassToolStage::Comment { .. }
                 | UmlClassToolStage::CommentLinkEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlClassElement::UmlClassGeneralization(..)
-                | UmlClassElement::UmlClassDependency(..)
-                | UmlClassElement::UmlClassAssociation(..)
-                | UmlClassElement::UmlUseCaseGeneralization(..)
-                | UmlClassElement::UmlClassCommentLink(..)) => todo!(),
+            Some(UmlClassElement::Generalization(..)
+                | UmlClassElement::Dependency(..)
+                | UmlClassElement::Association(..)
+                | UmlClassElement::UseCaseGeneralization(..)
+                | UmlClassElement::CommentLink(..)) => todo!(),
         }
     }
     fn draw_status_hint(&self, q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,  canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
@@ -1848,7 +1848,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
         }
 
         match element {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 match (&self.current_stage, &mut self.result) {
                     (
                         UmlClassToolStage::CommentLinkEnd,
@@ -1860,7 +1860,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     _ => {}
                 }
             }
-            UmlClassElement::UmlClassInstance(inner) => {
+            UmlClassElement::Instance(inner) => {
                 match (&self.current_stage, &mut self.result) {
                     (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None)
                         if !matches!(link_type, LinkType::Generalization { .. }) => {
@@ -1891,7 +1891,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     _ => {}
                 }
             }
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 match (&self.current_stage, &mut self.result) {
                     (UmlClassToolStage::ClassProperty { name, property_type, stereotype }, PartialUmlClassElement::None) => {
                         let (_property, property_view) = new_umlclass_property(UFOption::None, name, property_type, "", "", stereotype);
@@ -1917,14 +1917,14 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         PartialUmlClassElement::Link { link_type, source, dest },
                     ) => {
                         if !matches!(link_type, LinkType::Generalization { .. })
-                            || matches!(source, UmlClassAssociable::UmlClass(_)) {
+                            || matches!(source, UmlClassAssociable::Class(_)) {
                             *dest = Some(inner.into());
                         }
                         self.event_lock = true;
                     }
                     (UmlClassToolStage::LinkAddEnding { source }, &mut PartialUmlClassElement::LinkEnding { ref gen_model, ref mut new_model, .. }) => {
                         let inner_uuid = *inner.read().uuid;
-                        if let UmlGeneralization::ClassGeneralization(inner2) = gen_model {
+                        if let UmlGeneralization::Generalization(inner2) = gen_model {
                             let r = inner2.read();
 
                             if (*source && !r.sources.iter().any(|e| *e.read().uuid == inner_uuid))
@@ -1944,9 +1944,9 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     _ => {}
                 }
             }
-            UmlClassElement::UmlClassProperty(..)
-            | UmlClassElement::UmlClassOperation(..) => {}
-            UmlClassElement::UmlUseCase(inner) => {
+            UmlClassElement::Property(..)
+            | UmlClassElement::Operation(..) => {}
+            UmlClassElement::UseCase(inner) => {
                 match (&self.current_stage, &mut self.result) {
                     (UmlClassToolStage::LinkStart { link_type }, PartialUmlClassElement::None) => {
                         self.result = PartialUmlClassElement::Link {
@@ -1962,7 +1962,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                         PartialUmlClassElement::Link { link_type, source, dest },
                     ) => {
                         if !matches!(link_type, LinkType::Generalization { .. })
-                            || matches!(source, UmlClassAssociable::UmlUseCase(_)) {
+                            || matches!(source, UmlClassAssociable::UseCase(_)) {
                             *dest = Some(inner.into());
                         }
                         self.event_lock = true;
@@ -1989,7 +1989,7 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     _ => {}
                 }
             }
-            UmlClassElement::UmlClassComment(inner) => {
+            UmlClassElement::Comment(inner) => {
                 match (&self.current_stage, &mut self.result) {
                     (UmlClassToolStage::CommentLinkStart, PartialUmlClassElement::None) => {
                         self.result = PartialUmlClassElement::CommentLink {
@@ -2002,11 +2002,11 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     _ => {}
                 }
             }
-            UmlClassElement::UmlClassGeneralization(..)
-            | UmlClassElement::UmlClassDependency(..)
-            | UmlClassElement::UmlClassAssociation(..)
-            | UmlClassElement::UmlUseCaseGeneralization(..)
-            | UmlClassElement::UmlClassCommentLink(..) => {}
+            UmlClassElement::Generalization(..)
+            | UmlClassElement::Dependency(..)
+            | UmlClassElement::Association(..)
+            | UmlClassElement::UseCaseGeneralization(..)
+            | UmlClassElement::CommentLink(..) => {}
         }
     }
 
@@ -2060,14 +2060,14 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
 
                     let link_view = match link_type {
                         LinkType::Generalization { set_name } => {
-                            if let (UmlClassAssociable::UmlClass(source), UmlClassAssociable::UmlClass(dest)) = (source, dest) {
+                            if let (UmlClassAssociable::Class(source), UmlClassAssociable::Class(dest)) = (source, dest) {
                                 new_umlclass_generalization(
                                     set_name,
                                     None,
                                     (source.clone(), source_view),
                                     (dest.clone(), target_view),
                                 ).1.into()
-                            } else if let (UmlClassAssociable::UmlUseCase(source), UmlClassAssociable::UmlUseCase(dest)) = (source, dest) {
+                            } else if let (UmlClassAssociable::UseCase(source), UmlClassAssociable::UseCase(dest)) = (source, dest) {
                                 new_uml_usecasegeneralization(
                                     None,
                                     (source.clone(), source_view),
@@ -2402,7 +2402,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
     ) -> Self where Self: Sized {
         let old_model = self.model.read();
 
-        let model = if let Some(UmlClassElement::UmlClassPackage(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(UmlClassElement::Package(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -3048,7 +3048,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(UmlClassElement::UmlClassInstance(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(UmlClassElement::Instance(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
@@ -3768,7 +3768,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(UmlClassElement::UmlClassProperty(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(UmlClassElement::Property(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
@@ -4439,7 +4439,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(UmlClassElement::UmlClassOperation(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(UmlClassElement::Operation(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
@@ -5640,7 +5640,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(UmlClassElement::UmlClass(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(UmlClassElement::Class(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
@@ -5703,13 +5703,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
         let mut w = self.model.write();
         for e in w.properties.iter_mut() {
             let uuid = *e.read().uuid;
-            if let Some(UmlClassElement::UmlClassProperty(new_property)) = m.get(&uuid) {
+            if let Some(UmlClassElement::Property(new_property)) = m.get(&uuid) {
                 *e = new_property.clone();
             }
         }
         for e in w.operations.iter_mut() {
             let uuid = *e.read().uuid;
-            if let Some(UmlClassElement::UmlClassOperation(new_operation)) = m.get(&uuid) {
+            if let Some(UmlClassElement::Operation(new_operation)) = m.get(&uuid) {
                 *e = new_operation.clone();
             }
         }
@@ -6162,7 +6162,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(UmlClassElement::UmlUseCase(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(UmlClassElement::UseCase(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
@@ -6493,7 +6493,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
     ) -> Self where Self: Sized {
         let old_model = self.model.read();
 
-        let model = if let Some(UmlClassElement::UmlClassGeneralization(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(UmlClassElement::Generalization(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -6515,13 +6515,13 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassG
 
         for e in model.sources.iter_mut() {
             let sid = *e.read().uuid;
-            if let Some(UmlClassElement::UmlClass(new_source)) = m.get(&sid) {
+            if let Some(UmlClassElement::Class(new_source)) = m.get(&sid) {
                 *e = new_source.clone();
             }
         }
         for e in model.targets.iter_mut() {
             let tid = *e.read().uuid;
-            if let Some(UmlClassElement::UmlClass(new_target)) = m.get(&tid) {
+            if let Some(UmlClassElement::Class(new_target)) = m.get(&tid) {
                 *e = new_target.clone();
             }
         }
@@ -6793,7 +6793,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassD
     ) -> Self where Self: Sized {
         let old_model = self.model.read();
 
-        let model = if let Some(UmlClassElement::UmlClassDependency(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(UmlClassElement::Dependency(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -7327,7 +7327,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassA
     ) -> Self where Self: Sized {
         let old_model = self.model.read();
 
-        let model = if let Some(UmlClassElement::UmlClassAssociation(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(UmlClassElement::Association(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -7659,7 +7659,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
     ) -> Self where Self: Sized {
         let old_model = self.model.read();
 
-        let model = if let Some(UmlClassElement::UmlUseCaseGeneralization(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(UmlClassElement::UseCaseGeneralization(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -7681,13 +7681,13 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlUseCas
 
         for e in model.sources.iter_mut() {
             let sid = *e.read().uuid;
-            if let Some(UmlClassElement::UmlUseCase(new_source)) = m.get(&sid) {
+            if let Some(UmlClassElement::UseCase(new_source)) = m.get(&sid) {
                 *e = new_source.clone();
             }
         }
         for e in model.targets.iter_mut() {
             let tid = *e.read().uuid;
-            if let Some(UmlClassElement::UmlUseCase(new_target)) = m.get(&tid) {
+            if let Some(UmlClassElement::UseCase(new_target)) = m.get(&tid) {
                 *e = new_target.clone();
             }
         }
@@ -8186,7 +8186,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             (*self.uuid, *old_model.uuid)
         };
 
-        let modelish = if let Some(UmlClassElement::UmlClassComment(m)) = m.get(&old_model.uuid) {
+        let modelish = if let Some(UmlClassElement::Comment(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(model_uuid);
@@ -8335,7 +8335,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassC
     ) -> Self where Self: Sized {
         let old_model = self.model.read();
 
-        let model = if let Some(UmlClassElement::UmlClassCommentLink(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(UmlClassElement::CommentLink(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
@@ -8356,7 +8356,7 @@ impl<P: UmlClassProfile> MulticonnectionAdapter<UmlClassDomain<P>> for UmlClassC
         let mut model = self.model.write();
 
         let source_uuid = *model.source.read().uuid();
-        if let Some(UmlClassElement::UmlClassComment(new_source)) = m.get(&source_uuid) {
+        if let Some(UmlClassElement::Comment(new_source)) = m.get(&source_uuid) {
             model.source = new_source.clone();
         }
         let target_uuid = *model.target.uuid();

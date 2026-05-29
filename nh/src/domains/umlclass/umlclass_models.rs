@@ -193,70 +193,70 @@ impl UmlClassCollector {
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlClassElement {
     #[container_model(passthrough = "eref")]
-    UmlClassPackage(ERef<UmlClassPackage>),
-    UmlClassInstance(ERef<UmlClassInstance>),
+    Package(ERef<UmlClassPackage>),
+    Instance(ERef<UmlClassInstance>),
     #[container_model(passthrough = "eref")]
-    UmlClass(ERef<UmlClass>),
-    UmlClassProperty(ERef<UmlClassProperty>),
-    UmlClassOperation(ERef<UmlClassOperation>),
-    UmlUseCase(ERef<UmlUseCase>),
-    UmlClassGeneralization(ERef<UmlClassGeneralization>),
-    UmlClassDependency(ERef<UmlClassDependency>),
-    UmlClassAssociation(ERef<UmlClassAssociation>),
-    UmlUseCaseGeneralization(ERef<UmlUseCaseGeneralization>),
-    UmlClassComment(ERef<UmlClassComment>),
-    UmlClassCommentLink(ERef<UmlClassCommentLink>),
+    Class(ERef<UmlClass>),
+    Property(ERef<UmlClassProperty>),
+    Operation(ERef<UmlClassOperation>),
+    UseCase(ERef<UmlUseCase>),
+    Generalization(ERef<UmlClassGeneralization>),
+    Dependency(ERef<UmlClassDependency>),
+    Association(ERef<UmlClassAssociation>),
+    UseCaseGeneralization(ERef<UmlUseCaseGeneralization>),
+    Comment(ERef<UmlClassComment>),
+    CommentLink(ERef<UmlClassCommentLink>),
 }
 
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlClassAssociable {
-    UmlClassObject(ERef<UmlClassInstance>),
-    UmlClass(ERef<UmlClass>),
-    UmlUseCase(ERef<UmlUseCase>),
+    Instance(ERef<UmlClassInstance>),
+    Class(ERef<UmlClass>),
+    UseCase(ERef<UmlUseCase>),
 }
 
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[nh_context_serde(uuid_type = ModelUuid)]
 pub enum UmlGeneralization {
-    ClassGeneralization(ERef<UmlClassGeneralization>),
+    Generalization(ERef<UmlClassGeneralization>),
     UseCaseGeneralization(ERef<UmlUseCaseGeneralization>),
 }
 
 impl UmlClassElement {
     pub fn as_associable(&self) -> Option<UmlClassAssociable> {
         match self {
-            UmlClassElement::UmlClassInstance(inner) => Some(inner.clone().into()),
-            UmlClassElement::UmlClass(inner) => Some(inner.clone().into()),
-            UmlClassElement::UmlUseCase(inner) => Some(inner.clone().into()),
-            UmlClassElement::UmlClassPackage(..)
-            | UmlClassElement::UmlClassProperty(..)
-            | UmlClassElement::UmlClassOperation(..)
-            | UmlClassElement::UmlClassGeneralization(..)
-            | UmlClassElement::UmlClassDependency(..)
-            | UmlClassElement::UmlClassAssociation(..)
-            | UmlClassElement::UmlUseCaseGeneralization(..)
-            | UmlClassElement::UmlClassComment(..)
-            | UmlClassElement::UmlClassCommentLink(..) => None,
+            UmlClassElement::Instance(inner) => Some(inner.clone().into()),
+            UmlClassElement::Class(inner) => Some(inner.clone().into()),
+            UmlClassElement::UseCase(inner) => Some(inner.clone().into()),
+            UmlClassElement::Package(..)
+            | UmlClassElement::Property(..)
+            | UmlClassElement::Operation(..)
+            | UmlClassElement::Generalization(..)
+            | UmlClassElement::Dependency(..)
+            | UmlClassElement::Association(..)
+            | UmlClassElement::UseCaseGeneralization(..)
+            | UmlClassElement::Comment(..)
+            | UmlClassElement::CommentLink(..) => None,
         }
     }
 
     fn accept_uml(&self, visitor: &mut UmlClassCollector) {
         match self {
-            UmlClassElement::UmlClassPackage(inner) => visitor.visit_package(&inner.read()),
-            UmlClassElement::UmlClassInstance(inner) => visitor.visit_object(&inner.read()),
-            UmlClassElement::UmlClass(inner) => visitor.visit_class(&inner.read()),
-            UmlClassElement::UmlClassProperty(..)
-            | UmlClassElement::UmlClassOperation(..)
-            | UmlClassElement::UmlUseCase(..) => unreachable!(),
-            UmlClassElement::UmlClassGeneralization(inner) => visitor.visit_generalization(&inner.read()),
-            UmlClassElement::UmlClassDependency(inner) => visitor.visit_dependency(&inner.read()),
-            UmlClassElement::UmlClassAssociation(inner) => visitor.visit_association(&inner.read()),
-            UmlClassElement::UmlUseCaseGeneralization(..) => unreachable!(),
-            UmlClassElement::UmlClassComment(inner) => visitor.visit_comment(&inner.read()),
-            UmlClassElement::UmlClassCommentLink(inner) => visitor.visit_commentlink(&inner.read()),
+            UmlClassElement::Package(inner) => visitor.visit_package(&inner.read()),
+            UmlClassElement::Instance(inner) => visitor.visit_object(&inner.read()),
+            UmlClassElement::Class(inner) => visitor.visit_class(&inner.read()),
+            UmlClassElement::Property(..)
+            | UmlClassElement::Operation(..)
+            | UmlClassElement::UseCase(..) => unreachable!(),
+            UmlClassElement::Generalization(inner) => visitor.visit_generalization(&inner.read()),
+            UmlClassElement::Dependency(inner) => visitor.visit_dependency(&inner.read()),
+            UmlClassElement::Association(inner) => visitor.visit_association(&inner.read()),
+            UmlClassElement::UseCaseGeneralization(..) => unreachable!(),
+            UmlClassElement::Comment(inner) => visitor.visit_comment(&inner.read()),
+            UmlClassElement::CommentLink(inner) => visitor.visit_commentlink(&inner.read()),
         }
     }
 }
@@ -264,14 +264,14 @@ impl UmlClassElement {
 impl VisitableElement for UmlClassElement {
     fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
         match self {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 v.open_complex(self);
                 for e in &inner.read().contained_elements {
                     e.accept(v);
                 }
                 v.close_complex(self);
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 v.open_complex(self);
                 let r = inner.read();
                 for e in &r.properties {
@@ -292,7 +292,7 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
     fn walk(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClassElement>) -> UmlClassElement {
         let new_uuid = ModelUuid::now_v7().into();
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let model = inner.read();
 
                 let new_model = UmlClassPackage {
@@ -307,52 +307,52 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                     }).collect(),
                     comment: model.comment.clone()
                 };
-                UmlClassElement::UmlClassPackage(ERef::new(new_model))
+                UmlClassElement::Package(ERef::new(new_model))
             },
-            UmlClassElement::UmlClassInstance(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UmlClass(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UmlClassProperty(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UmlClassOperation(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UmlUseCase(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UmlClassGeneralization(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UmlClassDependency(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UmlClassAssociation(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UmlUseCaseGeneralization(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UmlClassComment(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UmlClassCommentLink(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::Instance(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::Class(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::Property(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::Operation(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UseCase(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::Generalization(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::Dependency(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::Association(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UseCaseGeneralization(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::CommentLink(inner) => inner.read().clone_with(*new_uuid).into(),
         }
     }
 
     fn relink(e: &mut UmlClassElement, all_models: &HashMap<ModelUuid, UmlClassElement>) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let mut model = inner.write();
                 for e in model.contained_elements.iter_mut() {
                     relink(e, all_models);
                 }
             },
-            UmlClassElement::UmlClassInstance(..)
-            | UmlClassElement::UmlClass(..)
-            | UmlClassElement::UmlClassProperty(..)
-            | UmlClassElement::UmlClassOperation(..)
-            | UmlClassElement::UmlUseCase(..) => {},
-            UmlClassElement::UmlClassGeneralization(inner) => {
+            UmlClassElement::Instance(..)
+            | UmlClassElement::Class(..)
+            | UmlClassElement::Property(..)
+            | UmlClassElement::Operation(..)
+            | UmlClassElement::UseCase(..) => {},
+            UmlClassElement::Generalization(inner) => {
                 let mut model = inner.write();
 
                 for e in model.sources.iter_mut() {
                     let sid = *e.read().uuid;
-                    if let Some(UmlClassElement::UmlClass(s)) = all_models.get(&sid) {
+                    if let Some(UmlClassElement::Class(s)) = all_models.get(&sid) {
                         *e = s.clone();
                     }
                 }
                 for e in model.targets.iter_mut() {
                     let tid = *e.read().uuid;
-                    if let Some(UmlClassElement::UmlClass(t)) = all_models.get(&tid) {
+                    if let Some(UmlClassElement::Class(t)) = all_models.get(&tid) {
                         *e = t.clone();
                     }
                 }
             },
-            UmlClassElement::UmlClassDependency(inner) => {
+            UmlClassElement::Dependency(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.source.uuid();
@@ -364,7 +364,7 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                     model.target = t;
                 }
             }
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.source.uuid();
@@ -376,28 +376,28 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                     model.target = t;
                 }
             },
-            UmlClassElement::UmlUseCaseGeneralization(inner) => {
+            UmlClassElement::UseCaseGeneralization(inner) => {
                 let mut model = inner.write();
 
                 for e in model.sources.iter_mut() {
                     let sid = *e.read().uuid;
-                    if let Some(UmlClassElement::UmlUseCase(s)) = all_models.get(&sid) {
+                    if let Some(UmlClassElement::UseCase(s)) = all_models.get(&sid) {
                         *e = s.clone();
                     }
                 }
                 for e in model.targets.iter_mut() {
                     let tid = *e.read().uuid;
-                    if let Some(UmlClassElement::UmlUseCase(t)) = all_models.get(&tid) {
+                    if let Some(UmlClassElement::UseCase(t)) = all_models.get(&tid) {
                         *e = t.clone();
                     }
                 }
             },
-            UmlClassElement::UmlClassComment(..) => {},
-            UmlClassElement::UmlClassCommentLink(inner) => {
+            UmlClassElement::Comment(..) => {},
+            UmlClassElement::CommentLink(inner) => {
                 let mut model = inner.write();
 
                 let source_uuid = *model.source.read().uuid();
-                if let Some(UmlClassElement::UmlClassComment(s)) = all_models.get(&source_uuid) {
+                if let Some(UmlClassElement::Comment(s)) = all_models.get(&source_uuid) {
                     model.source = s.clone().into();
                 }
                 let target_uuid = *model.target.uuid();
@@ -431,7 +431,7 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
 pub fn fake_copy_diagram(d: &UmlClassDiagram) -> HashMap<ModelUuid, UmlClassElement> {
     fn walk(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClassElement>) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let model = inner.read();
 
                 for e in &model.contained_elements {
@@ -439,7 +439,7 @@ pub fn fake_copy_diagram(d: &UmlClassDiagram) -> HashMap<ModelUuid, UmlClassElem
                     into.insert(*e.uuid(), e.clone());
                 }
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 let model = inner.read();
 
                 for e in &model.properties {
@@ -468,7 +468,7 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
     for e in &d.contained_elements {
         fn walk(e: &UmlClassElement, when_deleting: &mut HashSet<ModelUuid>) {
             match e {
-                UmlClassElement::UmlClassPackage(inner) => {
+                UmlClassElement::Package(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
                         enumerate(e, when_deleting);
@@ -478,11 +478,11 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                         }
                     }
                 },
-                UmlClassElement::UmlClassInstance(..)
-                | UmlClassElement::UmlClassProperty(..)
-                | UmlClassElement::UmlClassOperation(..)
-                | UmlClassElement::UmlUseCase(..) => {},
-                UmlClassElement::UmlClass(inner) => {
+                UmlClassElement::Instance(..)
+                | UmlClassElement::Property(..)
+                | UmlClassElement::Operation(..)
+                | UmlClassElement::UseCase(..) => {},
+                UmlClassElement::Class(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
                         for e in &r.properties {
@@ -500,12 +500,12 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                         }
                     }
                 },
-                UmlClassElement::UmlClassGeneralization(..)
-                | UmlClassElement::UmlClassDependency(..)
-                | UmlClassElement::UmlClassAssociation(..)
-                | UmlClassElement::UmlUseCaseGeneralization(..)
-                | UmlClassElement::UmlClassComment(..)
-                | UmlClassElement::UmlClassCommentLink(..) => {},
+                UmlClassElement::Generalization(..)
+                | UmlClassElement::Dependency(..)
+                | UmlClassElement::Association(..)
+                | UmlClassElement::UseCaseGeneralization(..)
+                | UmlClassElement::Comment(..)
+                | UmlClassElement::CommentLink(..) => {},
             }
         }
         walk(e, &mut when_deleting);
@@ -515,17 +515,17 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
     loop {
         fn walk(e: &UmlClassElement, when_deleting: &HashSet<ModelUuid>, also_delete: &mut HashSet<ModelUuid>) {
             match e {
-                UmlClassElement::UmlClassPackage(inner) => {
+                UmlClassElement::Package(inner) => {
                     for e in &inner.read().contained_elements {
                         walk(e, when_deleting, also_delete);
                     }
                 },
-                UmlClassElement::UmlClassInstance(..)
-                | UmlClassElement::UmlClass(..)
-                | UmlClassElement::UmlClassProperty(..)
-                | UmlClassElement::UmlClassOperation(..)
-                | UmlClassElement::UmlUseCase(..) => {},
-                UmlClassElement::UmlClassGeneralization(inner) => {
+                UmlClassElement::Instance(..)
+                | UmlClassElement::Class(..)
+                | UmlClassElement::Property(..)
+                | UmlClassElement::Operation(..)
+                | UmlClassElement::UseCase(..) => {},
+                UmlClassElement::Generalization(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (r.sources.iter().all(|e| when_deleting.contains(&e.read().uuid))
@@ -533,7 +533,7 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                         also_delete.insert(*r.uuid);
                     }
                 },
-                UmlClassElement::UmlClassDependency(inner) => {
+                UmlClassElement::Dependency(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.uuid())
@@ -541,7 +541,7 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                         also_delete.insert(*r.uuid);
                     }
                 },
-                UmlClassElement::UmlClassAssociation(inner) => {
+                UmlClassElement::Association(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.uuid())
@@ -549,7 +549,7 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                         also_delete.insert(*r.uuid);
                     }
                 },
-                UmlClassElement::UmlUseCaseGeneralization(inner) => {
+                UmlClassElement::UseCaseGeneralization(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (r.sources.iter().all(|e| when_deleting.contains(&e.read().uuid))
@@ -557,8 +557,8 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                         also_delete.insert(*r.uuid);
                     }
                 },
-                UmlClassElement::UmlClassComment(..) => {},
-                UmlClassElement::UmlClassCommentLink(inner) => {
+                UmlClassElement::Comment(..) => {},
+                UmlClassElement::CommentLink(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.read().uuid)
@@ -583,15 +583,15 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
 fn enumerate(e: &UmlClassElement, into: &mut HashSet<ModelUuid>) {
     into.insert(*e.uuid());
     match e {
-        UmlClassElement::UmlClassPackage(inner) => {
+        UmlClassElement::Package(inner) => {
             for e in &inner.read().contained_elements {
                 enumerate(e, into);
             }
         },
-        UmlClassElement::UmlClassInstance(..)
-        | UmlClassElement::UmlClassProperty(..)
-        | UmlClassElement::UmlClassOperation(..) => {},
-        UmlClassElement::UmlClass(inner) => {
+        UmlClassElement::Instance(..)
+        | UmlClassElement::Property(..)
+        | UmlClassElement::Operation(..) => {},
+        UmlClassElement::Class(inner) => {
             let r = inner.read();
             for e in &r.properties {
                 enumerate(&e.clone().into(), into);
@@ -600,13 +600,13 @@ fn enumerate(e: &UmlClassElement, into: &mut HashSet<ModelUuid>) {
                 enumerate(&e.clone().into(), into);
             }
         },
-        UmlClassElement::UmlUseCase(..)
-        | UmlClassElement::UmlClassGeneralization(..)
-        | UmlClassElement::UmlClassDependency(..)
-        | UmlClassElement::UmlClassAssociation(..)
-        | UmlClassElement::UmlUseCaseGeneralization(..)
-        | UmlClassElement::UmlClassComment(..)
-        | UmlClassElement::UmlClassCommentLink(..) => {},
+        UmlClassElement::UseCase(..)
+        | UmlClassElement::Generalization(..)
+        | UmlClassElement::Dependency(..)
+        | UmlClassElement::Association(..)
+        | UmlClassElement::UseCaseGeneralization(..)
+        | UmlClassElement::Comment(..)
+        | UmlClassElement::CommentLink(..) => {},
     }
 }
 
@@ -685,7 +685,7 @@ impl UmlClassDiagram {
     pub fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
         fn r(e: &UmlClassElement, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
             match e {
-                UmlClassElement::UmlClassPackage(inner) => {
+                UmlClassElement::Package(inner) => {
                     let mut w = inner.write();
                     for (idx, e) in w.contained_elements.iter().enumerate() {
                         if uuids.contains(&e.uuid()) {
@@ -696,10 +696,10 @@ impl UmlClassDiagram {
                     }
                     w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
                 },
-                UmlClassElement::UmlClassInstance(_)
-                | UmlClassElement::UmlClassProperty(_)
-                | UmlClassElement::UmlClassOperation(_) => {},
-                UmlClassElement::UmlClass(inner) => {
+                UmlClassElement::Instance(_)
+                | UmlClassElement::Property(_)
+                | UmlClassElement::Operation(_) => {},
+                UmlClassElement::Class(inner) => {
                     let mut w = inner.write();
                     for (idx, e) in w.properties.iter().enumerate() {
                         if uuids.contains(&e.read().uuid) {
@@ -718,13 +718,13 @@ impl UmlClassDiagram {
                     }
                     w.operations.retain(|e| !uuids.contains(&e.read().uuid));
                 }
-                UmlClassElement::UmlUseCase(_)
-                | UmlClassElement::UmlClassGeneralization(_)
-                | UmlClassElement::UmlClassDependency(_)
-                | UmlClassElement::UmlClassAssociation(_)
-                | UmlClassElement::UmlUseCaseGeneralization(_)
-                | UmlClassElement::UmlClassComment(_)
-                | UmlClassElement::UmlClassCommentLink(_) => {},
+                UmlClassElement::UseCase(_)
+                | UmlClassElement::Generalization(_)
+                | UmlClassElement::Dependency(_)
+                | UmlClassElement::Association(_)
+                | UmlClassElement::UseCaseGeneralization(_)
+                | UmlClassElement::Comment(_)
+                | UmlClassElement::CommentLink(_) => {},
             }
         }
 
@@ -1325,11 +1325,11 @@ impl ContainerModel for UmlClass {
         None
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
-        if bucket == 0 && let UmlClassElement::UmlClassProperty(p) = element {
+        if bucket == 0 && let UmlClassElement::Property(p) = element {
             let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.properties.len());
             self.properties.insert(pos, p);
             Ok(pos.try_into().unwrap())
-        } else if bucket == 1 && let UmlClassElement::UmlClassOperation(o) = element {
+        } else if bucket == 1 && let UmlClassElement::Operation(o) = element {
             let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.operations.len());
             self.operations.insert(pos, o);
             Ok(pos.try_into().unwrap())
@@ -1510,7 +1510,7 @@ impl ContainerModel for UmlClassGeneralization {
             return Err(element);
         }
 
-        let UmlClassElement::UmlClass(c) = element else {
+        let UmlClassElement::Class(c) = element else {
             return Err(element);
         };
 
@@ -1827,7 +1827,7 @@ impl ContainerModel for UmlUseCaseGeneralization {
             return Err(element);
         }
 
-        let UmlClassElement::UmlUseCase(c) = element else {
+        let UmlClassElement::UseCase(c) = element else {
             return Err(element);
         };
 

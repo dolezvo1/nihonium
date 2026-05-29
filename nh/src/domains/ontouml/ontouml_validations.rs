@@ -211,13 +211,13 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_validate_subtyping(problems, element_infos, e);
                 }
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 let m = inner.read();
                 let e = element_infos.entry(*m.uuid).or_default();
 
@@ -238,7 +238,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                     e.is_abstract = true;
                 }
             }
-            UmlClassElement::UmlClassGeneralization(inner) => {
+            UmlClassElement::Generalization(inner) => {
                 let m = inner.read();
                 let identity_providers_no = m.targets.iter()
                     .filter(|t| is_identity_provider(&*t.read().stereotype) || requires_identity(&*t.read().stereotype)).count();
@@ -272,7 +272,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                     }
                 }
             },
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 fn parse_multiplicity(m: &str) -> Option<(usize, Option<usize>)> {
                     if m.is_empty() {
                         None
@@ -352,7 +352,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                                 text: format!("«characterization» must have multiplicities of 1..1 and at least 1..*"),
                             });
                         }
-                        if let UmlClassAssociable::UmlClass(t) = &m.target {
+                        if let UmlClassAssociable::Class(t) = &m.target {
                             let t = t.read();
                             let e = element_infos.entry(*t.uuid).or_default();
 
@@ -377,7 +377,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                             });
                         }
 
-                        if let UmlClassAssociable::UmlClass(s) = &m.source {
+                        if let UmlClassAssociable::Class(s) = &m.source {
                             let s = s.read();
                             if s.stereotype.as_str() != ontouml_models::QUALITY {
                                 problems.push(ValidationProblem::Error {
@@ -388,7 +388,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                             }
                         }
 
-                        if let UmlClassAssociable::UmlClass(t) = &m.target {
+                        if let UmlClassAssociable::Class(t) = &m.target {
                             let t = t.read();
                             if t.stereotype.as_str() !=ontouml_models::QUALITY && t.stereotype.as_str() != ontouml_models::MODE {
                                 problems.push(ValidationProblem::Error {
@@ -419,7 +419,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                             });
                         }
 
-                        if let UmlClassAssociable::UmlClass(s) = &m.source {
+                        if let UmlClassAssociable::Class(s) = &m.source {
                             let s = s.read();
                             if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
                                 problems.push(ValidationProblem::Error {
@@ -430,7 +430,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                             }
                         }
 
-                        if let UmlClassAssociable::UmlClass(t) = &m.target {
+                        if let UmlClassAssociable::Class(t) = &m.target {
                             let t = t.read();
                             if t.stereotype.as_str() != ontouml_models::COLLECTIVE {
                                 problems.push(ValidationProblem::Error {
@@ -451,7 +451,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                             });
                         }
 
-                        if let UmlClassAssociable::UmlClass(s) = &m.source {
+                        if let UmlClassAssociable::Class(s) = &m.source {
                             let s = s.read();
                             if s.stereotype.as_str() != ontouml_models::COLLECTIVE {
                                 problems.push(ValidationProblem::Error {
@@ -472,7 +472,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                             });
                         }
 
-                        if let UmlClassAssociable::UmlClass(t) = &m.target {
+                        if let UmlClassAssociable::Class(t) = &m.target {
                             let t = t.read();
                             if t.stereotype.as_str() != ontouml_models::QUANTITY {
                                 problems.push(ValidationProblem::Error {
@@ -493,7 +493,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                             });
                         }
 
-                        if let UmlClassAssociable::UmlClass(s) = &m.source {
+                        if let UmlClassAssociable::Class(s) = &m.source {
                             let s = s.read();
                             if s.stereotype.as_str() != ontouml_models::QUANTITY {
                                 problems.push(ValidationProblem::Error {
@@ -504,7 +504,7 @@ fn validate_structure(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem> {
                             }
                         }
 
-                        if let UmlClassAssociable::UmlClass(t) = &m.target {
+                        if let UmlClassAssociable::Class(t) = &m.target {
                             let t = t.read();
                             if t.stereotype.as_str() != ontouml_models::QUANTITY {
                                 problems.push(ValidationProblem::Error {
@@ -640,13 +640,13 @@ fn validate_antipatterns(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_decint_collect(parents, e);
                 }
             },
-            UmlClassElement::UmlClassGeneralization(inner) => {
+            UmlClassElement::Generalization(inner) => {
                 let m = inner.read();
                 let weight = if m.set_is_disjoint { 1 } else { m.targets.iter().filter(|e| !e.read().is_abstract).count() };
                 for e in &m.sources {
@@ -678,17 +678,17 @@ fn validate_antipatterns(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_depphase_collect(infos, e);
                 }
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 let r = inner.read();
                 infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
             },
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 let r = inner.read();
                 if *r.stereotype == ontouml_models::MEDIATION {
                     infos.entry(*r.source.uuid()).or_default().assoc_mediation_count += 1;
@@ -720,17 +720,17 @@ fn validate_antipatterns(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_freerole_collect(infos, e);
                 }
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 let r = inner.read();
                 infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
             },
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 let r = inner.read();
                 if *r.stereotype == ontouml_models::MEDIATION {
                     infos.entry(*r.source.uuid()).or_default().assoc_mediation_count += 1;
@@ -757,13 +757,13 @@ fn validate_antipatterns(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_gsrig_test(problems, e);
                 }
             },
-            UmlClassElement::UmlClassGeneralization(inner) => {
+            UmlClassElement::Generalization(inner) => {
                 let r = inner.read();
                 let has_rigid_children = r.sources.iter().any(|e| is_rigid(&e.read().stereotype));
                 let has_anti_rigid_children = r.sources.iter().any(|e| is_anti_rigid(&e.read().stereotype));
@@ -791,17 +791,17 @@ fn validate_antipatterns(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_hetcoll_collect(infos, e);
                 }
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 let r = inner.read();
                 infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
             },
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 let r = inner.read();
                 if *r.stereotype == ontouml_models::MEMBER_OF {
                     infos.entry(*r.source.uuid()).or_default().source_end_membership_count += 1;
@@ -831,17 +831,17 @@ fn validate_antipatterns(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_homofunc_collect(infos, e);
                 }
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 let r = inner.read();
                 infos.entry(*r.uuid).or_default();
             },
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 let r = inner.read();
                 if *r.stereotype == ontouml_models::COMPONENT_OF {
                     infos.entry(*r.source.uuid()).or_default().source_end_component_count += 1;
@@ -873,17 +873,17 @@ fn validate_antipatterns(model: &ERef<UmlClassDiagram>) -> Vec<ValidationProblem
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_mixrig_collect(infos, e);
                 }
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 let r = inner.read();
                 infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
             },
-            UmlClassElement::UmlClassGeneralization(inner) => {
+            UmlClassElement::Generalization(inner) => {
                 let r = inner.read();
                 let has_rigid_children = r.sources.iter().any(|e| is_rigid(&e.read().stereotype));
                 let has_anti_rigid_children = r.sources.iter().any(|e| is_anti_rigid(&e.read().stereotype));
@@ -1017,16 +1017,16 @@ fn validate_binover(
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_binover_collect(infos, e);
                 }
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 infos.entry(*inner.read().uuid).or_default();
             }
-            UmlClassElement::UmlClassGeneralization(inner) => {
+            UmlClassElement::Generalization(inner) => {
                 let m = inner.read();
                 for e in &m.sources {
                     infos.entry(*e.read().uuid).or_default().parents.push(inner.clone());
@@ -1085,9 +1085,9 @@ fn validate_binover(
         }
         fn is_nonprovider_sortal(c: &UmlClassAssociable) -> bool {
             match c {
-                UmlClassAssociable::UmlClassObject(_)
-                | UmlClassAssociable::UmlUseCase(_) => false,
-                UmlClassAssociable::UmlClass(inner) => {
+                UmlClassAssociable::Instance(_)
+                | UmlClassAssociable::UseCase(_) => false,
+                UmlClassAssociable::Class(inner) => {
                     [
                         ontouml_models::SUBKIND,
                         ontouml_models::ROLE,
@@ -1098,27 +1098,27 @@ fn validate_binover(
         }
         fn is_relator(c: &UmlClassAssociable) -> bool {
             match c {
-                UmlClassAssociable::UmlClassObject(_)
-                | UmlClassAssociable::UmlUseCase(_) => false,
-                UmlClassAssociable::UmlClass(inner) => {
+                UmlClassAssociable::Instance(_)
+                | UmlClassAssociable::UseCase(_) => false,
+                UmlClassAssociable::Class(inner) => {
                     &*inner.read().stereotype == ontouml_models::RELATOR
                 },
             }
         }
         fn is_mode(c: &UmlClassAssociable) -> bool {
             match c {
-                UmlClassAssociable::UmlClassObject(_)
-                | UmlClassAssociable::UmlUseCase(_) => false,
-                UmlClassAssociable::UmlClass(inner) => {
+                UmlClassAssociable::Instance(_)
+                | UmlClassAssociable::UseCase(_) => false,
+                UmlClassAssociable::Class(inner) => {
                     &*inner.read().stereotype == ontouml_models::MODE
                 },
             }
         }
         fn is_mixin(c: &UmlClassAssociable) -> bool {
             match c {
-                UmlClassAssociable::UmlClassObject(_)
-                | UmlClassAssociable::UmlUseCase(_) => false,
-                UmlClassAssociable::UmlClass(inner) => {
+                UmlClassAssociable::Instance(_)
+                | UmlClassAssociable::UseCase(_) => false,
+                UmlClassAssociable::Class(inner) => {
                     [
                         ontouml_models::CATEGORY,
                         ontouml_models::PHASE_MIXIN,
@@ -1210,13 +1210,13 @@ fn validate_binover(
         }
 
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_binover_test(problems, infos, e);
                 }
             },
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 let m = inner.read();
                 if *m.source.uuid() == *m.target.uuid()
                     || is_subtype_of(infos, *m.source.uuid(), *m.target.uuid())
@@ -1285,17 +1285,17 @@ fn validate_relators(
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_collect1(infos, e);
                 }
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 let r = inner.read();
                 infos.entry(*r.uuid).or_default().stereotype = Some(r.stereotype.clone());
             },
-            UmlClassElement::UmlClassGeneralization(inner) => {
+            UmlClassElement::Generalization(inner) => {
                 let r = inner.read();
                 for e in &r.sources {
                     infos.entry(*e.read().uuid).or_default().parents.push(inner.clone());
@@ -1313,29 +1313,29 @@ fn validate_relators(
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_collect2(infos, e);
                 }
             },
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 let r = inner.read();
                 if *r.stereotype == ontouml_models::MEDIATION {
-                    if let UmlClassAssociable::UmlClass(s) = &r.source
+                    if let UmlClassAssociable::Class(s) = &r.source
                         && is_relator(&infos, *s.read().uuid) {
                         infos.entry(*r.target.uuid()).or_default().associated_relators.push(*s.read().uuid);
                     }
-                    if let UmlClassAssociable::UmlClass(t) = &r.target
+                    if let UmlClassAssociable::Class(t) = &r.target
                         && is_relator(&infos, *t.read().uuid) {
                         infos.entry(*r.source.uuid()).or_default().associated_relators.push(*t.read().uuid);
                     }
 
-                    if let UmlClassAssociable::UmlClass(s) = &r.source
+                    if let UmlClassAssociable::Class(s) = &r.source
                         && is_rigid(&s.read().stereotype) {
                         infos.entry(*r.target.uuid()).or_default().has_associated_rigids = true;
                     }
-                    if let UmlClassAssociable::UmlClass(t) = &r.target
+                    if let UmlClassAssociable::Class(t) = &r.target
                         && is_rigid(&t.read().stereotype) {
                         infos.entry(*r.source.uuid()).or_default().has_associated_rigids = true;
                     }
@@ -1375,13 +1375,13 @@ fn validate_undef(
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_undef_collect(infos, e);
                 }
             },
-            UmlClassElement::UmlClass(inner) => {
+            UmlClassElement::Class(inner) => {
                 let r = inner.read();
                 let e = infos.entry(*r.uuid).or_default();
                 e.stereotype = Some(r.stereotype.clone());
@@ -1389,13 +1389,13 @@ fn validate_undef(
                     e.has_intrinsics = true;
                 }
             },
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 let r = inner.read();
                 if *r.stereotype == ontouml_models::CHARACTERIZATION {
                     infos.entry(*r.source.uuid()).or_default().has_intrinsics = true;
                 }
             }
-            UmlClassElement::UmlClassGeneralization(inner) => {
+            UmlClassElement::Generalization(inner) => {
                 let r = inner.read();
                 for e in &r.sources {
                     infos.entry(*e.read().uuid()).or_default().parents.push(inner.clone());
@@ -1447,13 +1447,13 @@ fn validate_undef(
         e: &UmlClassElement,
     ) {
         match e {
-            UmlClassElement::UmlClassPackage(inner) => {
+            UmlClassElement::Package(inner) => {
                 let m = inner.read();
                 for e in &m.contained_elements {
                     r_undefformal_test(problems, infos, e);
                 }
             },
-            UmlClassElement::UmlClassAssociation(inner) => {
+            UmlClassElement::Association(inner) => {
                 let r = inner.read();
                 if *r.stereotype == ontouml_models::FORMAL
                     && (!has_intrinsics_including_transitively(infos, *r.source.uuid())
