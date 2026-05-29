@@ -9,7 +9,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::domains::umlactivity::umlactivity_models::{UmlActivity, UmlActivityActionKind, UmlActivityActionNode, UmlActivityComment, UmlActivityDecisionNode, UmlActivityDiagram, UmlActivityElement, UmlActivityFinalNode, UmlActivityFlowEdge, UmlActivityForkNode, UmlActivityInitialNode, UmlActivityNonFinalNode, UmlActivityNonInitialNode, UmlActivityObjectNode};
+use crate::domains::umlactivity::umlactivity_models::{UmlActivity, UmlActivityActionKind, UmlActivityActionNode, UmlActivityComment, UmlActivityDecisionNode, UmlActivityDiagram, UmlActivityElement, UmlActivityFinalNode, UmlActivityFinalNodeKind, UmlActivityFlowEdge, UmlActivityForkNode, UmlActivityInitialNode, UmlActivityNonFinalNode, UmlActivityNonInitialNode, UmlActivityObjectNode};
 use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
@@ -47,7 +47,7 @@ pub enum UmlActivityPropChange {
 
     ActivityParametersChange(Arc<String>),
     ActionKindChange(UmlActivityActionKind),
-    FinalNodeActivityChange(bool),
+    FinalNodeKindChange(UmlActivityFinalNodeKind),
 
     ForkVerticalChange(bool),
     ForkLengthChange(f32),
@@ -327,11 +327,7 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 "Initial Node".to_owned().into()
             },
             UmlActivityElement::FinalNode(inner) => {
-                if !inner.read().activity_final {
-                    "Flow Final Node".to_owned()
-                } else {
-                    "Activity Final Node".to_owned()
-                }.into()
+                format!("{} Node", inner.read().kind.as_str()).into()
             },
             UmlActivityElement::DecisionNode(inner) => {
                 let r = inner.read();
@@ -535,7 +531,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (ship, ship_view) = new_umlactivity_actionnode("Ship items", "", UmlActivityActionKind::CallAction, egui::Pos2::new(750.0, 200.0));
 
     let (procure, procure_view) = new_umlactivity_actionnode("Procure items", "", UmlActivityActionKind::CallAction, egui::Pos2::new(500.0, 350.0));
-    let (r#final, final_view) = new_umlactivity_finalnode(true, egui::Pos2::new(750.0, 350.0));
+    let (r#final, final_view) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::ActivityFinal, egui::Pos2::new(750.0, 350.0));
     let (decision2, decision2_view) = new_umlactivity_decisionnode("", egui::Pos2::new(500.0, 500.0));
     let (signal, signal_view) = new_umlactivity_actionnode("Notify user", "", UmlActivityActionKind::SendSignalAction, egui::Pos2::new(750.0, 500.0));
 
@@ -612,9 +608,9 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     wait_time_view.write().refresh_buffers();
     let (_initial, initial_view) = new_umlactivity_initialnode(egui::Pos2::ZERO);
     initial_view.write().refresh_buffers();
-    let (_flowfinal, flowfinal_view) = new_umlactivity_finalnode(false, egui::Pos2::ZERO);
+    let (_flowfinal, flowfinal_view) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::FlowFinal, egui::Pos2::ZERO);
     flowfinal_view.write().refresh_buffers();
-    let (_activityfinal, activityfinal_view) = new_umlactivity_finalnode(true, egui::Pos2::ZERO);
+    let (_activityfinal, activityfinal_view) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::ActivityFinal, egui::Pos2::ZERO);
     activityfinal_view.write().refresh_buffers();
     let (_decision, decision_view) = new_umlactivity_decisionnode("", egui::Pos2::ZERO);
     decision_view.write().refresh_buffers();
@@ -625,7 +621,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 
     let (d, dv) = new_umlactivity_initialnode(egui::Pos2::ZERO);
     let dummy_1_element = (d.into(), dv.into());
-    let (d, dv) = new_umlactivity_finalnode(false, egui::Pos2::new(200.0, 150.0));
+    let (d, dv) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::FlowFinal, egui::Pos2::new(200.0, 150.0));
     let dummy_2_element = (d.clone().into(), dv.clone().into());
 
     let (_flowedge, flowedge_view) = new_umlactivity_flowedge("", None, dummy_1_element.clone(), dummy_2_element.clone());
@@ -677,10 +673,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             (UmlActivityToolStage::InitialNode {
             }, "Initial Node", initial_view.into()),
             (UmlActivityToolStage::FinalNode {
-                activity_final: false,
+                kind: UmlActivityFinalNodeKind::FlowFinal,
             }, "Flow Final Node", flowfinal_view.into()),
             (UmlActivityToolStage::FinalNode {
-                activity_final: true,
+                kind: UmlActivityFinalNodeKind::ActivityFinal,
             }, "Activity Final Node", activityfinal_view.into()),
             (UmlActivityToolStage::DecisionNode {
                 name: "".to_owned(),
@@ -862,7 +858,7 @@ pub enum UmlActivityToolStage {
     },
     InitialNode {},
     FinalNode {
-        activity_final: bool,
+        kind: UmlActivityFinalNodeKind,
     },
     DecisionNode {
         name: String,
@@ -1038,8 +1034,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::FinalNode { activity_final }, _) => {
-                let (_model, view) = new_umlactivity_finalnode(*activity_final, pos);
+            (UmlActivityToolStage::FinalNode { kind }, _) => {
+                let (_model, view) = new_umlactivity_finalnode(*kind, pos);
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -2362,12 +2358,12 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
 
 
 pub fn new_umlactivity_finalnode(
-    activity_final: bool,
+    kind: UmlActivityFinalNodeKind,
     position: egui::Pos2,
 ) -> (ERef<UmlActivityFinalNode>, ERef<UmlActivityFinalNodeView>) {
     let node_model = ERef::new(UmlActivityFinalNode::new(
         ModelUuid::now_v7(),
-        activity_final,
+        kind,
     ));
     let node_view = new_umlactivity_finalnode_view(
         node_model.clone(),
@@ -2385,7 +2381,7 @@ pub fn new_umlactivity_finalnode_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
-        activity_final_buffer: m.activity_final,
+        kind_buffer: m.kind,
 
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
@@ -2401,7 +2397,7 @@ pub struct UmlActivityFinalNodeView {
     pub model: ERef<UmlActivityFinalNode>,
 
     #[nh_context_serde(skip_and_default)]
-    activity_final_buffer: bool,
+    kind_buffer: UmlActivityFinalNodeKind,
 
     #[nh_context_serde(skip_and_default)]
     dragged_shape: Option<NHShape>,
@@ -2460,14 +2456,21 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
 
         ui.label("Model properties");
 
-        if ui.checkbox(&mut self.activity_final_buffer, "Activity final").changed() {
-            commands.push(
-                InsensitiveCommand::PropertyChange(
-                    q.selected_views(),
-                    UmlActivityPropChange::FinalNodeActivityChange(self.activity_final_buffer),
-                )
-            );
-        }
+        ui.label("Kind:");
+        egui::ComboBox::from_id_salt("kind")
+            .selected_text(self.kind_buffer.as_str())
+            .show_ui(ui, |ui| {
+                for e in UmlActivityFinalNodeKind::VARIANTS {
+                    if ui.selectable_value(&mut self.kind_buffer, e, e.as_str()).changed() {
+                        commands.push(
+                            InsensitiveCommand::PropertyChange(
+                                q.selected_views(),
+                                UmlActivityPropChange::FinalNodeKindChange(self.kind_buffer),
+                            )
+                        );
+                    }
+                }
+            });
 
         ui.label("View properties");
 
@@ -2498,45 +2501,46 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
         let r = UmlActivityInitialNodeView::CIRCLE_RADIUS + Self::RADIUS_INCREMENT;
         let sin45 = 0.70;
 
-        if !self.activity_final_buffer {
-            // Draw flow final node
-            canvas.draw_ellipse(
-                self.position,
-                egui::Vec2::splat(r),
-                egui::Color32::WHITE,
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                self.highlight,
-            );
-            for e in [1.0, -1.0, -1.0, 1.0, 1.0].array_windows::<4>() {
-                canvas.draw_line(
-                    [
-                        self.position + egui::Vec2::new(e[0] * r * sin45, e[1] * r * sin45),
-                        self.position + egui::Vec2::new(e[2] * r * sin45, e[3] * r * sin45),
-                    ],
+        match self.kind_buffer {
+            UmlActivityFinalNodeKind::FlowFinal => {
+                canvas.draw_ellipse(
+                    self.position,
+                    egui::Vec2::splat(r),
+                    egui::Color32::WHITE,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    self.highlight,
+                );
+                for e in [1.0, -1.0, -1.0, 1.0, 1.0].array_windows::<4>() {
+                    canvas.draw_line(
+                        [
+                            self.position + egui::Vec2::new(e[0] * r * sin45, e[1] * r * sin45),
+                            self.position + egui::Vec2::new(e[2] * r * sin45, e[3] * r * sin45),
+                        ],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            },
+            UmlActivityFinalNodeKind::ActivityFinal => {
+                canvas.draw_ellipse(
+                    self.position,
+                    egui::Vec2::splat(r),
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    self.highlight,
+                );
+                canvas.draw_ellipse(
+                    self.position,
+                    egui::Vec2::splat(UmlActivityInitialNodeView::CIRCLE_RADIUS),
+                    egui::Color32::BLACK,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
                     canvas::Highlight::NONE,
                 );
-            }
-        } else {
-            // Draw activity final node
-            canvas.draw_ellipse(
-                self.position,
-                egui::Vec2::splat(r),
-                egui::Color32::WHITE,
-                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                self.highlight,
-            );
-            canvas.draw_ellipse(
-                self.position,
-                egui::Vec2::splat(UmlActivityInitialNodeView::CIRCLE_RADIUS),
-                egui::Color32::BLACK,
-                canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
-                canvas::Highlight::NONE,
-            );
+            },
         }
 
         if canvas.ui_scale().is_some() {
-            // Draw targetting rectangle
+            // Draw targetting ellipse
             if let Some(t) = tool
                 .as_ref()
                 .filter(|e| self.min_shape().contains(e.0))
@@ -2672,12 +2676,12 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
                     match property {
-                        UmlActivityPropChange::FinalNodeActivityChange(activity_final) => {
+                        UmlActivityPropChange::FinalNodeKindChange(kind) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                UmlActivityPropChange::FinalNodeActivityChange(model.activity_final),
+                                UmlActivityPropChange::FinalNodeKindChange(model.kind),
                             ));
-                            model.activity_final = *activity_final;
+                            model.kind = *kind;
                         }
                         _ => {}
                     }
@@ -2685,7 +2689,10 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
             }
         }
     }
-    fn refresh_buffers(&mut self) {}
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+        self.kind_buffer = model.kind;
+    }
 
     fn head_count(
         &mut self,
@@ -2723,7 +2730,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
-            activity_final_buffer: self.activity_final_buffer,
+            kind_buffer: self.kind_buffer,
             dragged_shape: None,
             highlight: self.highlight,
             position: self.position,

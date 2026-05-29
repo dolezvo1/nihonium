@@ -679,29 +679,47 @@ impl Entity for UmlActivityInitialNode {
 }
 
 
+#[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub enum UmlActivityFinalNodeKind {
+    #[default]
+    FlowFinal,
+    ActivityFinal,
+}
+
+impl UmlActivityFinalNodeKind {
+    pub const VARIANTS: [Self; 2] = [Self::FlowFinal, Self::ActivityFinal];
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            UmlActivityFinalNodeKind::FlowFinal => "Flow Final",
+            UmlActivityFinalNodeKind::ActivityFinal => "Activity Final",
+        }
+    }
+}
+
 #[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlActivityFinalNode {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
-    #[full_text_searchable(skip)]
-    pub activity_final: bool,
+    #[full_text_searchable(search_kind = "as_str_ref")]
+    pub kind: UmlActivityFinalNodeKind,
 }
 
 impl UmlActivityFinalNode {
     pub fn new(
         uuid: ModelUuid,
-        activity_final: bool,
+        kind: UmlActivityFinalNodeKind,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
-            activity_final,
+            kind,
         }
     }
     pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
         ERef::new(Self {
             uuid: Arc::new(uuid),
-            activity_final: self.activity_final,
+            kind: self.kind,
         })
     }
 }
