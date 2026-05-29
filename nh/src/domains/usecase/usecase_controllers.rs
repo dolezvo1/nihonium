@@ -5,12 +5,12 @@ use super::super::umlclass::{
 };
 use crate::{DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF, common::{
     controller::{
-        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, MultiDiagramController, PositionNoT, ProjectCommand
+        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MultiDiagramController, PositionNoT, ProjectCommand, View
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
     uuid::{ControllerUuid, ModelUuid, ViewUuid},
-}, domains::{umlclass::{umlclass_controllers::{PartialUmlClassElement, UmlClassRenderStyle, new_uml_usecase, new_umlclass_dependency}, umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind}}, usecase::usecase_models}};
+}, domains::{umlclass::{umlclass_controllers::{PartialUmlClassElement, UmlClassElementOrVertex, UmlClassRenderStyle, new_uml_usecase, new_umlclass_dependency}, umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind}}, usecase::usecase_models}};
 use eframe::egui;
 use std::collections::HashSet;
 
@@ -123,12 +123,27 @@ pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let (customer_model, customer_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 200.0), UmlClassRenderStyle::StickFigure);
-    let (bank_model, bank_view) = new_umlclass_class("Bank Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::new(350.0, 400.0), UmlClassRenderStyle::Class);
+    let (customer_model, customer_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::new(300.0, 200.0), UmlClassRenderStyle::StickFigure);
+    let (bank_model, bank_view) = new_umlclass_class("Bank Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::new(300.0, 400.0), UmlClassRenderStyle::Class);
     let (usecase_model, usecase_view) = new_uml_usecase("Registration", usecase_models::NONE, false, egui::Pos2::new(550.0, 200.0));
 
     let (gen_model, gen_view) = new_umlclass_generalization("", None, (bank_model.clone(), bank_view.clone().into()), (customer_model.clone(), customer_view.clone().into()));
-    let (assoc_model, assoc_view) = new_umlclass_association("", "", "0..*", "1..1", None, (customer_model.clone().into(), customer_view.clone().into()), (usecase_model.clone().into(), usecase_view.clone().into()));
+    let (assoc_model, assoc_view) = new_umlclass_association("", "", "0..*", "1..1", None, (customer_model.clone().into(), customer_view.clone().into()), (usecase_model.into(), usecase_view.clone().into()));
+
+    let (boundary, boundary_view) = new_umlclass_package("E-Shop", "business", UmlClassPackageKind::Boundary, egui::Rect::from_x_y_ranges(400.0..=750.0, 100.0..=500.0));
+    {
+        let mut w = boundary_view.write();
+        let boundary_uuid = *w.uuid();
+        let (mut u, mut a) = Default::default();
+        for e in [
+            usecase_view.into()
+        ] {
+            w.apply_command(
+                &InsensitiveCommand::AddDependency(boundary_uuid, 0, None, UmlClassElementOrVertex::Element(e), true),
+                &mut u, &mut a,
+            );
+        }
+    }
 
     let name = format!("Demo Use Case diagram {}", no);
     let diagram = ERef::new(UmlClassDiagram::new(
@@ -137,9 +152,9 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         vec![
             customer_model.into(),
             bank_model.into(),
-            usecase_model.into(),
             gen_model.into(),
             assoc_model.into(),
+            boundary.into(),
         ],
     ));
     new_controlller(
@@ -148,9 +163,9 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         vec![
             customer_view.into(),
             bank_view.into(),
-            usecase_view.into(),
             gen_view.into(),
             assoc_view.into(),
+            boundary_view.into(),
         ],
     )
 }
