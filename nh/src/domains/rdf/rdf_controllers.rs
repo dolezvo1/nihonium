@@ -496,14 +496,14 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     ])
 }
 
-pub fn stress_test<const N: usize>(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
+pub fn stress_test<const N1: usize, const DX: u32, const DY: u32>(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (mut models, mut views): (Vec<_>, Vec<_>) = Default::default();
 
-    for xx in 100..=(100 + N) {
-        for yy in 300..=400 {
+    for xx in 0..N1 {
+        for yy in 0..100 {
             let (node_st, node_st_view) = new_rdf_node(
                 "http://www.w3.org/People/EM/contact#me",
-                egui::Pos2::new(xx as f32, yy as f32),
+                egui::Pos2::new(100.0 + xx as f32 * DX as f32, 200.0 + yy as f32 * DY as f32),
             );
             models.push(node_st.into());
             views.push(node_st_view.into());
@@ -667,9 +667,9 @@ inventory::submit! {DiagramInfo {
         constructors: &[
             ("empty", &(new as DiagramConstructorF)),
             ("demo", &(demo as DiagramConstructorF)),
-            ("stress test 2k", &(stress_test::<20> as DiagramConstructorF)),
-            ("stress test 5k", &(stress_test::<50> as DiagramConstructorF)),
-            ("stress test 10k", &(stress_test::<100> as DiagramConstructorF)),
+            ("stress test 2k", &(stress_test::<20, 20, 20> as DiagramConstructorF)),
+            ("stress test 5k", &(stress_test::<50, 20, 20> as DiagramConstructorF)),
+            ("stress test 10k", &(stress_test::<100, 20, 20> as DiagramConstructorF)),
         ],
     },
     deserializer: &(deserializer as DeserializeControllerF),
