@@ -39,6 +39,7 @@ pub fn deep_copy_diagram(d: &UmlActivityDiagram) -> (ERef<UmlActivityDiagram>, H
             UmlActivityElement::ObjectNode(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlActivityElement::FlowEdge(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlActivityElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlActivityElement::CommentLink(inner) => inner.read().clone_with(*new_uuid).into(),
         }
     }
 
@@ -67,6 +68,18 @@ pub fn deep_copy_diagram(d: &UmlActivityDiagram) -> (ERef<UmlActivityDiagram>, H
                 let target_uuid = *model.target.uuid();
                 if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_noninitial()) {
                     model.target = t;
+                }
+            },
+            UmlActivityElement::CommentLink(inner) => {
+                let mut model = inner.write();
+
+                let source_uuid = *model.source.read().uuid();
+                if let Some(UmlActivityElement::Comment(s)) = all_models.get(&source_uuid) {
+                    model.source = s.clone().into();
+                }
+                let target_uuid = *model.target.uuid();
+                if let Some(t) = all_models.get(&target_uuid) {
+                    model.target = t.clone();
                 }
             },
         }
@@ -160,6 +173,14 @@ pub fn transitive_closure(d: &UmlActivityDiagram, mut when_deleting: HashSet<Mod
                         also_delete.insert(*r.uuid);
                     }
                 },
+                UmlActivityElement::CommentLink(inner) => {
+                    let r = inner.read();
+                    if !when_deleting.contains(&r.uuid)
+                        && (when_deleting.contains(&r.source.read().uuid)
+                            || when_deleting.contains(&r.target.uuid())) {
+                        also_delete.insert(*r.uuid);
+                    }
+                },
             }
         }
         for e in &d.contained_elements {
@@ -204,6 +225,7 @@ pub enum UmlActivityElement {
     ObjectNode(ERef<UmlActivityObjectNode>),
     FlowEdge(ERef<UmlActivityFlowEdge>),
     Comment(ERef<UmlActivityComment>),
+    CommentLink(ERef<UmlActivityCommentLink>),
 }
 
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
@@ -911,22 +933,26 @@ impl Entity for UmlActivityFlowEdge {
 pub struct UmlActivityComment {
     #[full_text_searchable(search_kind = "to_string_ref")]
     pub uuid: Arc<ModelUuid>,
+    pub stereotype: Arc<String>,
     pub text: Arc<String>,
 }
 
 impl UmlActivityComment {
     pub fn new(
         uuid: ModelUuid,
+        stereotype: String,
         text: String,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
+            stereotype: Arc::new(stereotype),
             text: Arc::new(text),
         }
     }
     pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
         ERef::new(Self {
             uuid: Arc::new(uuid),
+            stereotype: self.stereotype.clone(),
             text: self.text.clone(),
         })
     }
@@ -939,6 +965,52 @@ impl Entity for UmlActivityComment {
 }
 
 impl Model for UmlActivityComment {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlActivityCommentLink {
+    #[full_text_searchable(search_kind = "to_string_ref")]
+    pub uuid: Arc<ModelUuid>,
+    #[full_text_searchable(skip)]
+    #[nh_context_serde(entity)]
+    pub source: ERef<UmlActivityComment>,
+    #[full_text_searchable(skip)]
+    #[nh_context_serde(entity)]
+    pub target: UmlActivityElement,
+}
+
+impl UmlActivityCommentLink {
+    pub fn new(
+        uuid: ModelUuid,
+        source: ERef<UmlActivityComment>,
+        target: UmlActivityElement,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            source,
+            target,
+        }
+    }
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            source: self.source.clone(),
+            target: self.target.clone(),
+        })
+    }
+}
+
+impl Entity for UmlActivityCommentLink {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl Model for UmlActivityCommentLink {
     fn uuid(&self) -> Arc<ModelUuid> {
         self.uuid.clone()
     }

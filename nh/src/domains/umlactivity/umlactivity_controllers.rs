@@ -9,7 +9,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::domains::umlactivity::umlactivity_models::{UmlActivity, UmlActivityActionKind, UmlActivityActionNode, UmlActivityComment, UmlActivityDecisionNode, UmlActivityDiagram, UmlActivityElement, UmlActivityFinalNode, UmlActivityFinalNodeKind, UmlActivityFlowEdge, UmlActivityForkNode, UmlActivityInitialNode, UmlActivityNonFinalNode, UmlActivityNonInitialNode, UmlActivityObjectNode};
+use crate::domains::umlactivity::umlactivity_models::{UmlActivity, UmlActivityActionKind, UmlActivityActionNode, UmlActivityComment, UmlActivityCommentLink, UmlActivityDecisionNode, UmlActivityDiagram, UmlActivityElement, UmlActivityFinalNode, UmlActivityFinalNodeKind, UmlActivityFlowEdge, UmlActivityForkNode, UmlActivityInitialNode, UmlActivityNonFinalNode, UmlActivityNonInitialNode, UmlActivityObjectNode};
 use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
@@ -36,6 +36,7 @@ impl Domain for UmlActivityDomain {
 
 type ActivityViewT = PackageView<UmlActivityDomain, UmlActivityAdapter>;
 type FlowEdgeViewT = MulticonnectionView<UmlActivityDomain, UmlActivityFlowEdgeAdapter>;
+type CommentLinkViewT = MulticonnectionView<UmlActivityDomain, UmlActivityCommentLinkAdapter>;
 
 #[derive(Clone, Copy, Debug)]
 pub enum UmlActivityOrdinalMovement {}
@@ -154,6 +155,7 @@ pub enum UmlActivityElementView {
     ObjectNode(ERef<UmlActivityObjectNodeView>),
     Association(ERef<FlowEdgeViewT>),
     Comment(ERef<UmlActivityCommentView>),
+    CommentLink(ERef<CommentLinkViewT>),
 }
 
 
@@ -293,6 +295,15 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                     egui::Align2::CENTER_CENTER,
                 ).into()
             },
+            UmlActivityElement::CommentLink(inner) => {
+                let m = inner.read();
+                let (sid, tid) = (m.source.read().uuid(), m.target.uuid());
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
+                    (Some(sv), Some(tv)) => (sv, tv),
+                    _ => return Err(HashSet::from([*sid, *tid])),
+                };
+                new_umlactivity_commentlink_view(inner.clone(), None, source_view, target_view).into()
+            },
         };
 
         Ok(v)
@@ -370,6 +381,9 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                     format!("Comment ({})", LabelProvider::filter_and_elipsis(&r.text))
                 };
                 Arc::new(s)
+            },
+            UmlActivityElement::CommentLink(_inner) => {
+                Arc::new(format!("Comment Link"))
             },
         }
     }
@@ -530,15 +544,18 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (decision1, decision1_view) = new_umlactivity_decisionnode("", egui::Pos2::new(500.0, 200.0));
     let (ship, ship_view) = new_umlactivity_actionnode("Ship items", "", UmlActivityActionKind::CallAction, egui::Pos2::new(750.0, 200.0));
 
+    let (comment, comment_view) = new_umlactivity_comment("all items available", "decisionInput", egui::Pos2::new(300.0, 350.0), egui::Align2::CENTER_CENTER);
     let (procure, procure_view) = new_umlactivity_actionnode("Procure items", "", UmlActivityActionKind::CallAction, egui::Pos2::new(500.0, 350.0));
     let (r#final, final_view) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::ActivityFinal, egui::Pos2::new(750.0, 350.0));
+
     let (decision2, decision2_view) = new_umlactivity_decisionnode("", egui::Pos2::new(500.0, 500.0));
     let (signal, signal_view) = new_umlactivity_actionnode("Notify user", "", UmlActivityActionKind::SendSignalAction, egui::Pos2::new(750.0, 500.0));
 
     let (_e1, e1_view) = new_umlactivity_flowedge("", None, (initial.into(), initial_view.clone().into()), (object.clone().into(), object_view.clone().into()));
     let (_e2, e2_view) = new_umlactivity_flowedge("", None, (object.into(), object_view.clone().into()), (decision1.clone().into(), decision1_view.clone().into()));
-    let (_e3, e3_view) = new_umlactivity_flowedge("[all items available]", None, (decision1.clone().into(), decision1_view.clone().into()), (ship.clone().into(), ship_view.clone().into()));
-    let (_e4, e4_view) = new_umlactivity_flowedge("[some items unavailable]", None, (decision1.clone().into(), decision1_view.clone().into()), (procure.clone().into(), procure_view.clone().into()));
+    let (_e3, e3_view) = new_umlactivity_flowedge("[true]", None, (decision1.clone().into(), decision1_view.clone().into()), (ship.clone().into(), ship_view.clone().into()));
+    let (_cl, cl_view) = new_umlactivity_commentlink(None, (comment, comment_view.clone().into()), (decision1.clone().into(), decision1_view.clone().into()));
+    let (_e4, e4_view) = new_umlactivity_flowedge("[false]", None, (decision1.clone().into(), decision1_view.clone().into()), (procure.clone().into(), procure_view.clone().into()));
     let (_e5, e5_view) = new_umlactivity_flowedge("", None, (ship.clone().into(), ship_view.clone().into()), (r#final.clone().into(), final_view.clone().into()));
     let (_e6, e6_view) = new_umlactivity_flowedge("", None, (procure.clone().into(), procure_view.clone().into()), (decision2.clone().into(), decision2_view.clone().into()));
     let (_e7, e7_view) = new_umlactivity_flowedge("", None, (signal.clone().into(), signal_view.clone().into()), (r#final.into(), final_view.clone().into()));
@@ -552,13 +569,12 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         let (mut u, mut a) = Default::default();
         for e in [
             initial_view.into(), object_view.into(), decision1_view.into(), ship_view.into(),
-            procure_view.into(), final_view.into(),
+            comment_view.into(), procure_view.into(), final_view.into(),
             decision2_view.into(), signal_view.into(),
             e1_view.into(), e2_view.into(), e3_view.into(),
-            e4_view.into(), e5_view.into(),
+            cl_view.into(), e4_view.into(), e5_view.into(),
             e6_view.into(), e7_view.into(),
             e8_view.into(), e9_view.into(),
-
         ] {
             w.apply_command(
                 &InsensitiveCommand::AddDependency(activity_uuid, 0, None, UmlActivityElementOrVertex::Element(e), true),
@@ -620,19 +636,22 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     object_view.write().refresh_buffers();
 
     let (d, dv) = new_umlactivity_initialnode(egui::Pos2::ZERO);
-    let dummy_1_element = (d.into(), dv.into());
+    let dummy_1_nonfinal = (d.into(), dv.into());
     let (d, dv) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::FlowFinal, egui::Pos2::new(200.0, 150.0));
-    let dummy_2_element = (d.clone().into(), dv.clone().into());
+    let dummy_2_noninitial = (d.clone().into(), dv.clone().into());
+    let dummy_2_element = (d.into(), dv.into());
 
-    let (_flowedge, flowedge_view) = new_umlactivity_flowedge("", None, dummy_1_element.clone(), dummy_2_element.clone());
+    let (_flowedge, flowedge_view) = new_umlactivity_flowedge("", None, dummy_1_nonfinal.clone(), dummy_2_noninitial.clone());
 
     let (_activity, activity_view) = new_umlactivity_activity("activity", "", "", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
     activity_view.write().refresh_buffers();
-    let (_comment, comment_view) = new_umlactivity_comment(
-        "a comment",
+    let (comment, comment_view) = new_umlactivity_comment(
+        "a comment", "",
         egui::Pos2::ZERO,
         egui::Align2::CENTER_CENTER,
     );
+    comment_view.write().refresh_buffers();
+    let commentlink = new_umlactivity_commentlink(None, (comment.clone(), comment_view.clone().into()), dummy_2_element.clone());
 
     let palette_items = vec![
         ("Containers", vec![
@@ -697,9 +716,12 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ]),
         ("Other", vec![
             (UmlActivityToolStage::Comment {
+                stereotype: "".to_owned(),
                 text: "a comment".to_owned(),
                 align: egui::Align2::CENTER_CENTER,
             }, "Comment", comment_view.into()),
+            (UmlActivityToolStage::CommentLinkStart {
+            }, "Comment Link", commentlink.1.into()),
         ]),
     ];
 
@@ -783,9 +805,10 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                         }
                     }
                     (
-                        UmlActivityToolStage::Comment { text, align },
+                        UmlActivityToolStage::Comment { stereotype, text, align },
                         UmlActivityElement::Comment(inner),
                     ) => {
+                        modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
 
                         egui::ComboBox::new("horizontal align", "Horizontal align")
@@ -804,6 +827,7 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                             });
 
                         if modified && let mut mw = inner.write() {
+                            mw.stereotype = stereotype.clone().into();
                             mw.text = text.clone().into();
                         }
                     }
@@ -874,9 +898,12 @@ pub enum UmlActivityToolStage {
     },
     LinkEnd,
     Comment {
+        stereotype: String,
         text: String,
         align: egui::Align2,
     },
+    CommentLinkStart,
+    CommentLinkEnd,
 }
 
 pub enum PartialUmlActivityElement {
@@ -898,6 +925,10 @@ pub enum PartialUmlActivityElement {
         link_type: LinkType,
         source: UmlActivityNonFinalNode,
         dest: Option<UmlActivityNonInitialNode>,
+    },
+    CommentLink {
+        source: ERef<UmlActivityComment>,
+        dest: Option<UmlActivityElement>,
     },
 }
 
@@ -957,14 +988,18 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 | UmlActivityToolStage::ActivityEnd
                 | UmlActivityToolStage::Comment { .. } => TARGETTABLE_COLOR,
                 UmlActivityToolStage::LinkStart { .. }
-                | UmlActivityToolStage::LinkEnd => NON_TARGETTABLE_COLOR,
+                | UmlActivityToolStage::LinkEnd
+                | UmlActivityToolStage::CommentLinkStart
+                | UmlActivityToolStage::CommentLinkEnd => NON_TARGETTABLE_COLOR,
             },
             Some(UmlActivityElement::InitialNode(_)) => match self.current_stage {
-                UmlActivityToolStage::LinkStart { .. } => TARGETTABLE_COLOR,
+                UmlActivityToolStage::LinkStart { .. }
+                | UmlActivityToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             }
             Some(UmlActivityElement::FinalNode(_)) => match self.current_stage {
-                UmlActivityToolStage::LinkEnd => TARGETTABLE_COLOR,
+                UmlActivityToolStage::LinkEnd
+                | UmlActivityToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             }
             Some(UmlActivityElement::ActionNode(_)
@@ -972,11 +1007,16 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 | UmlActivityElement::ForkNode(_)
                 | UmlActivityElement::ObjectNode(_)) => match self.current_stage {
                     UmlActivityToolStage::LinkStart { .. }
-                    | UmlActivityToolStage::LinkEnd => TARGETTABLE_COLOR,
+                    | UmlActivityToolStage::LinkEnd
+                    | UmlActivityToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
                     _ => NON_TARGETTABLE_COLOR,
                 },
-            Some(UmlActivityElement::Comment(_)) => NON_TARGETTABLE_COLOR,
-            Some(UmlActivityElement::FlowEdge(_)) => unreachable!(),
+            Some(UmlActivityElement::Comment(_)) => match self.current_stage {
+                UmlActivityToolStage::CommentLinkStart => TARGETTABLE_COLOR,
+                _ => NON_TARGETTABLE_COLOR,
+            },
+            Some(UmlActivityElement::FlowEdge(_)
+                | UmlActivityElement::CommentLink(_)) => unreachable!(),
         }
     }
     fn draw_status_hint(&self, q: &<UmlActivityDomain as Domain>::QueryableT<'_>,  canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
@@ -1010,6 +1050,15 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            PartialUmlActivityElement::CommentLink { source, .. } => {
+                if let Some(source_view) = q.get_view_for(&source.read().uuid) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
                     );
                 }
@@ -1061,8 +1110,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::Comment { text, align }, _) => {
-                let (_model, view) = new_umlactivity_comment(text, pos, *align);
+            (UmlActivityToolStage::Comment { stereotype, text, align }, _) => {
+                let (_model, view) = new_umlactivity_comment(text, stereotype, pos, *align);
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -1113,8 +1162,26 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                         *dest = Some(e);
                         self.event_lock = true;
                     }
+                    (
+                        UmlActivityToolStage::CommentLinkEnd,
+                        PartialUmlActivityElement::CommentLink { dest, .. },
+                    ) => {
+                        *dest = Some(e);
+                        self.event_lock = true;
+                    }
                     _ => {}
                 }
+            UmlActivityElement::Comment(inner) => match &self.current_stage {
+                UmlActivityToolStage::CommentLinkStart => {
+                    self.result = PartialUmlActivityElement::CommentLink {
+                        source: inner,
+                        dest: None,
+                    };
+                    self.current_stage = UmlActivityToolStage::CommentLinkEnd;
+                    self.event_lock = true;
+                }
+                _ => {}
+            }
             _ => {}
         }
     }
@@ -1191,6 +1258,34 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                             ).1.into()
                         },
                     };
+
+                    self.try_spend();
+                    Some((link_view, None))
+                } else {
+                    None
+                }
+            }
+            PartialUmlActivityElement::CommentLink {
+                source,
+                dest: Some(dest),
+                ..
+            } => {
+                let (source_uuid, target_uuid) = (*source.read().uuid, *dest.uuid());
+                if let (Some(source_view), Some(target_view)) = (
+                    q.get_view_for(&source_uuid),
+                    q.get_view_for(&target_uuid),
+                ) && q.is_contained(&source_view.uuid(), into)
+                  && q.is_contained(&target_view.uuid(), into)
+                  && q.find_parent(&source_view.uuid(), |_, e| matches!(e, UmlActivityElementView::Activity(_))).map(|e| e.0)
+                     == q.find_parent(&target_view.uuid(), |_, e| matches!(e, UmlActivityElementView::Activity(_))).map(|e| e.0)
+                {
+                    self.current_stage = self.initial_stage.clone();
+
+                    let link_view = new_umlactivity_commentlink(
+                        None,
+                        (source.clone(), source_view),
+                        (dest.clone(), target_view),
+                    ).1.into();
 
                     self.try_spend();
                     Some((link_view, None))
@@ -4102,11 +4197,13 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityFlowEdgeAdapter {
 
 pub fn new_umlactivity_comment(
     text: &str,
+    stereotype: &str,
     position: egui::Pos2,
     align: egui::Align2,
 ) -> (ERef<UmlActivityComment>, ERef<UmlActivityCommentView>) {
     let comment_model = ERef::new(UmlActivityComment::new(
         ModelUuid::now_v7(),
+        stereotype.to_owned(),
         text.to_owned(),
     ));
     let comment_view = new_umlactivity_comment_view(comment_model.clone(), position, align);
@@ -4123,6 +4220,8 @@ pub fn new_umlactivity_comment_view(
         uuid: ViewUuid::now_v7().into(),
         model: model.clone(),
 
+        display_text: String::new(),
+        stereotype_buffer: (*m.stereotype).clone(),
         text_buffer: (*m.text).clone(),
 
         dragged_shape: None,
@@ -4141,6 +4240,10 @@ pub struct UmlActivityCommentView {
     #[nh_context_serde(entity)]
     pub model: ERef<UmlActivityComment>,
 
+    #[nh_context_serde(skip_and_default)]
+    display_text: String,
+    #[nh_context_serde(skip_and_default)]
+    stereotype_buffer: String,
     #[nh_context_serde(skip_and_default)]
     text_buffer: String,
 
@@ -4203,6 +4306,12 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
 
         ui.label("Model properties");
 
+        if ui.labeled_text_edit_singleline("Stereotype:", &mut self.stereotype_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlActivityPropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+            ));
+        }
         if ui.labeled_text_edit_multiline("Text:", &mut self.text_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
@@ -4276,8 +4385,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlActivityTool)>,
     ) -> TargettingStatus {
-        let read = self.model.read();
-
         let align_offset = egui::Vec2 { x: match self.align.x() {
             egui::Align::Min => -Self::CORNER_SIZE,
             egui::Align::Center => 0.0,
@@ -4290,7 +4397,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
         self.bounds_rect = canvas.measure_text(
             self.position,
             self.align,
-            &read.text,
+            &self.display_text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
         )
         .expand2(egui::Vec2 { x: Self::CORNER_SIZE, y: Self::CORNER_SIZE })
@@ -4321,7 +4428,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
         canvas.draw_text(
             self.position + align_offset,
             self.align,
-            &read.text,
+            &self.display_text,
             canvas::CLASS_MIDDLE_FONT_SIZE,
             egui::Color32::BLACK,
         );
@@ -4486,6 +4593,13 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
                     affected_models.insert(*self.model.read().uuid);
                     let mut model = self.model.write();
                     match property {
+                        UmlActivityPropChange::StereotypeChange(stereotype) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlActivityPropChange::StereotypeChange(model.stereotype.clone()),
+                            ));
+                            model.stereotype = stereotype.clone();
+                        }
                         UmlActivityPropChange::NameChange(text) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
@@ -4523,6 +4637,18 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
     }
     fn refresh_buffers(&mut self) {
         let model = self.model.read();
+
+        self.display_text = {
+            let mut s = "".to_owned();
+            if !model.stereotype.is_empty() {
+                s.push_str("«");
+                s.push_str(&model.stereotype);
+                s.push_str("»\n");
+            }
+            s.push_str(&model.text);
+            s
+        };
+        self.stereotype_buffer = (*model.stereotype).clone();
         self.text_buffer = (*model.text).clone();
     }
 
@@ -4562,6 +4688,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model: modelish,
+            display_text: self.display_text.clone(),
+            stereotype_buffer: self.stereotype_buffer.clone(),
             text_buffer: self.text_buffer.clone(),
             dragged_shape: None,
             highlight: self.highlight,
@@ -4575,3 +4703,155 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
     }
 }
 
+
+pub fn new_umlactivity_commentlink(
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: (ERef<UmlActivityComment>, UmlActivityElementView),
+    target: (UmlActivityElement, UmlActivityElementView),
+) -> (ERef<UmlActivityCommentLink>, ERef<CommentLinkViewT>) {
+    let link_model = ERef::new(UmlActivityCommentLink::new(
+        ModelUuid::now_v7(),
+        source.0,
+        target.0,
+    ));
+    let link_view = new_umlactivity_commentlink_view(link_model.clone(), center_point, source.1, target.1);
+    (link_model, link_view)
+}
+pub fn new_umlactivity_commentlink_view(
+    model: ERef<UmlActivityCommentLink>,
+    center_point: Option<(ViewUuid, egui::Pos2)>,
+    source: UmlActivityElementView,
+    target: UmlActivityElementView,
+) -> ERef<CommentLinkViewT> {
+    MulticonnectionView::new(
+        ViewUuid::now_v7().into(),
+        UmlActivityCommentLinkAdapter {
+            model,
+            temporaries: Default::default(),
+        },
+        vec![Ending::new(source)],
+        vec![Ending::new(target)],
+        center_point,
+    )
+}
+
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct UmlActivityCommentLinkAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<UmlActivityCommentLink>,
+    #[serde(skip_serializing)]
+    #[nh_context_serde(skip_and_default)]
+    temporaries: UmlActivityCommentLinkTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct UmlActivityCommentLinkTemporaries {
+    arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
+    source_uuids: Vec<ModelUuid>,
+    target_uuids: Vec<ModelUuid>,
+}
+
+impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityCommentLinkAdapter {
+    fn model(&self) -> UmlActivityElement {
+        self.model.clone().into()
+    }
+
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+
+    fn draw_center_or_get_label(
+        &self,
+        _center: egui::Pos2,
+        _highlight: canvas::Highlight,
+        _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
+    ) -> Result<(), Arc<String>> {
+        Ok(())
+    }
+
+    fn arrow_data(&self) -> &HashMap<(bool, ModelUuid), ArrowData> {
+        &self.temporaries.arrow_data
+    }
+
+    fn source_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.source_uuids
+    }
+
+    fn target_uuids(&self) -> &[ModelUuid] {
+        &self.temporaries.target_uuids
+    }
+
+    fn show_properties(
+        &mut self,
+        _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        _ui: &mut egui::Ui,
+        _commands: &mut Vec<InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>>
+    ) -> PropertiesStatus<UmlActivityDomain> {
+        PropertiesStatus::NotShown
+    }
+    fn apply_change(
+        &self,
+        _view_uuid: &ViewUuid,
+        _command: &InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>,
+        _undo_accumulator: &mut Vec<InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>>,
+    ) {}
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+
+        self.temporaries.arrow_data.clear();
+        self.temporaries.arrow_data.insert((false, *model.source.read().uuid), ArrowData::new_labelless(
+            canvas::LineType::Dashed,
+            canvas::ArrowheadType::None,
+        ));
+        self.temporaries.arrow_data.insert((true, *model.target.uuid()), ArrowData::new_labelless(
+            canvas::LineType::Dashed,
+            canvas::ArrowheadType::None,
+        ));
+
+        self.temporaries.source_uuids.clear();
+        self.temporaries.source_uuids.push(*model.source.read().uuid);
+        self.temporaries.target_uuids.clear();
+        self.temporaries.target_uuids.push(*model.target.uuid());
+    }
+
+    fn deep_copy_init(
+        &self,
+        new_uuid: ModelUuid,
+        m: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> Self where Self: Sized {
+        let old_model = self.model.read();
+
+        let model = if let Some(UmlActivityElement::CommentLink(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(new_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        Self {
+            model,
+            temporaries: self.temporaries.clone(),
+        }
+    }
+
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<ModelUuid, UmlActivityElement>,
+    ) {
+        let mut model = self.model.write();
+
+        let source_uuid = *model.source.read().uuid();
+        if let Some(UmlActivityElement::Comment(new_source)) = m.get(&source_uuid) {
+            model.source = new_source.clone();
+        }
+        let target_uuid = *model.target.uuid();
+        if let Some(new_target) = m.get(&target_uuid) {
+            model.target = new_target.clone();
+        }
+    }
+}
