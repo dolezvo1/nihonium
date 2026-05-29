@@ -475,48 +475,9 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     );
 
     let (graph, graph_view) = new_rdf_graph(
-        "http://graph",
-        egui::Rect::from_min_max(egui::Pos2::new(400.0, 50.0), egui::Pos2::new(500.0, 150.0)),
+        "http://subgraph",
+        egui::Rect::from_x_y_ranges(100.0..=500.0, 300.0..=500.0),
     );
-
-    //<stress test>
-    let mut models_st = Vec::<RdfElement>::new();
-    let mut controllers_st = Vec::<RdfElementView>::new();
-
-    for xx in 0..=10 {
-        for yy in 300..=400 {
-            let (node_st, node_st_view) = new_rdf_node(
-                "http://www.w3.org/People/EM/contact#me",
-                egui::Pos2::new(xx as f32, yy as f32),
-            );
-            models_st.push(node_st.into());
-            controllers_st.push(node_st_view.into());
-        }
-    }
-
-    for xx in 3000..=3100 {
-        for yy in 3000..=3100 {
-            let (node_st, node_st_view) = new_rdf_node(
-                "http://www.w3.org/People/EM/contact#me",
-                egui::Pos2::new(xx as f32, yy as f32),
-            );
-            models_st.push(node_st.into());
-            controllers_st.push(node_st_view.into());
-        }
-    }
-
-    let (graph_st, graph_st_view) = new_rdf_graph(
-        "http://stresstestgraph",
-        egui::Rect::from_min_max(egui::Pos2::new(0.0, 300.0), egui::Pos2::new(3000.0, 3300.0)),
-    );
-    //</stress test>
-
-    let mut owned_controllers = Vec::<RdfElementView>::new();
-    owned_controllers.push(node_view.into());
-    owned_controllers.push(literal_view.into());
-    owned_controllers.push(predicate_view.into());
-    owned_controllers.push(graph_view.into());
-    owned_controllers.push(graph_st_view.into());
 
     let name = format!("Demo RDF diagram {}", no);
     let diagram = ERef::new(RdfDiagram::new(
@@ -524,10 +485,38 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         name.clone(),
         vec![
             node.into(), literal_model.into(),
-            predicate.into(), graph.into(), graph_st.into(),
+            predicate.into(), graph.into(),
         ],
     ));
-    new_controlller(diagram, name, owned_controllers)
+    new_controlller(diagram, name, vec![
+        node_view.into(),
+        literal_view.into(),
+        predicate_view.into(),
+        graph_view.into(),
+    ])
+}
+
+pub fn stress_test<const N: usize>(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
+    let (mut models, mut views): (Vec<_>, Vec<_>) = Default::default();
+
+    for xx in 100..=(100 + N) {
+        for yy in 300..=400 {
+            let (node_st, node_st_view) = new_rdf_node(
+                "http://www.w3.org/People/EM/contact#me",
+                egui::Pos2::new(xx as f32, yy as f32),
+            );
+            models.push(node_st.into());
+            views.push(node_st_view.into());
+        }
+    }
+
+    let name = format!("Stress RDF diagram {}", no);
+    let diagram = ERef::new(RdfDiagram::new(
+        ModelUuid::now_v7(),
+        name.clone(),
+        models,
+    ));
+    new_controlller(diagram, name, views)
 }
 
 pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
@@ -678,6 +667,9 @@ inventory::submit! {DiagramInfo {
         constructors: &[
             ("empty", &(new as DiagramConstructorF)),
             ("demo", &(demo as DiagramConstructorF)),
+            ("stress test 2k", &(stress_test::<20> as DiagramConstructorF)),
+            ("stress test 5k", &(stress_test::<50> as DiagramConstructorF)),
+            ("stress test 10k", &(stress_test::<100> as DiagramConstructorF)),
         ],
     },
     deserializer: &(deserializer as DeserializeControllerF),
