@@ -17,8 +17,11 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::WHITE
     }
-    fn foreground_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
+    fn text_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::BLACK
+    }
+    fn border_stroke(&self, _global_colors: &ColorBundle) -> canvas::Stroke {
+        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK)
     }
     fn draw_label_or_get_text(
         &self,
@@ -239,7 +242,7 @@ where
             self.bounds_rect,
             egui::CornerRadius::ZERO,
             self.adapter.background_color(&context.global_colors),
-            canvas::Stroke::new_solid(1.0, self.adapter.foreground_color(&context.global_colors)),
+            self.adapter.border_stroke(&context.global_colors),
             self.highlight,
         );
 
@@ -252,7 +255,7 @@ where
                     egui::Align2::CENTER_TOP,
                     &label,
                     canvas::CLASS_MIDDLE_FONT_SIZE,
-                    self.adapter.foreground_color(&context.global_colors),
+                    self.adapter.text_color(&context.global_colors),
                 );
             },
         }

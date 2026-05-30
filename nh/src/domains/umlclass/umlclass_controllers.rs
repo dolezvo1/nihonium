@@ -2245,7 +2245,7 @@ impl<P: UmlClassProfile> PackageAdapter<UmlClassDomain<P>> for UmlClassPackageAd
             UmlClassPackageKind::Package => {
                 const PADDING: f32 = 4.0;
                 let background_color = self.background_color(&context.global_colors);
-                let foreground_color = self.foreground_color(&context.global_colors);
+                let foreground_color = self.text_color(&context.global_colors);
                 let r = canvas.measure_text(
                     bounds_rect.left_top() + egui::Vec2::new(PADDING, -PADDING),
                     egui::Align2::LEFT_BOTTOM,

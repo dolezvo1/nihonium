@@ -9,7 +9,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::domains::umlactivity::umlactivity_models::{UmlActivity, UmlActivityActionKind, UmlActivityActionNode, UmlActivityComment, UmlActivityCommentLink, UmlActivityDecisionNode, UmlActivityDiagram, UmlActivityElement, UmlActivityFinalNode, UmlActivityFinalNodeKind, UmlActivityFlowEdge, UmlActivityForkNode, UmlActivityInitialNode, UmlActivityNonFinalNode, UmlActivityNonInitialNode, UmlActivityObjectNode};
+use crate::domains::umlactivity::umlactivity_models::{UmlActivity, UmlActivityActionKind, UmlActivityActionNode, UmlActivityComment, UmlActivityCommentLink, UmlActivityDecisionNode, UmlActivityDiagram, UmlActivityEdgeKind, UmlActivityElement, UmlActivityFinalNode, UmlActivityFinalNodeKind, UmlActivityFlowEdge, UmlActivityForkNode, UmlActivityInitialNode, UmlActivityInterruptibleRegion, UmlActivityNonFinalNode, UmlActivityNonInitialNode, UmlActivityObjectNode};
 use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
@@ -35,7 +35,8 @@ impl Domain for UmlActivityDomain {
 }
 
 type ActivityViewT = PackageView<UmlActivityDomain, UmlActivityAdapter>;
-type FlowEdgeViewT = MulticonnectionView<UmlActivityDomain, UmlActivityFlowEdgeAdapter>;
+type InterruptibleRegionViewT = PackageView<UmlActivityDomain, UmlActivityInterruptibleRegionAdapter>;
+type FlowEdgeViewT = MulticonnectionView<UmlActivityDomain, UmlActivityEdgeAdapter>;
 type CommentLinkViewT = MulticonnectionView<UmlActivityDomain, UmlActivityCommentLinkAdapter>;
 
 #[derive(Clone, Copy, Debug)]
@@ -53,6 +54,7 @@ pub enum UmlActivityPropChange {
     ForkVerticalChange(bool),
     ForkLengthChange(f32),
 
+    EdgeKindChange(UmlActivityEdgeKind),
     FlipMulticonnection(FlipMulticonnection),
 
     ColorChange(ColorChangeData),
@@ -147,6 +149,7 @@ impl TryFrom<UmlActivityElementOrVertex> for UmlActivityElementView {
 #[nh_context_serde(uuid_type = ViewUuid)]
 pub enum UmlActivityElementView {
     Activity(ERef<ActivityViewT>),
+    InterruptibleRegion(ERef<InterruptibleRegionViewT>),
     ActionNode(ERef<UmlActivityActionNodeView>),
     InitialNode(ERef<UmlActivityInitialNodeView>),
     FinalNode(ERef<UmlActivityFinalNodeView>),
@@ -261,6 +264,12 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                     egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
                 ).into()
             },
+            UmlActivityElement::InterruptibleRegion(inner) => {
+                new_umlactivity_interruptibleregion_view(
+                    inner.clone(),
+                    egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
+                ).into()
+            },
             UmlActivityElement::ActionNode(inner) => {
                 new_umlactivity_actionnode_view(inner, egui::Pos2::ZERO).into()
             },
@@ -279,14 +288,14 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
             UmlActivityElement::ObjectNode(inner) => {
                 new_umlactivity_objectnode_view(inner, egui::Pos2::ZERO).into()
             },
-            UmlActivityElement::FlowEdge(inner) => {
+            UmlActivityElement::Edge(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (m.source.uuid(), m.target.uuid());
                 let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([*sid, *tid])),
                 };
-                new_umlactivity_flowedge_view(inner.clone(), None, source_view, target_view).into()
+                new_umlactivity_edge_view(inner.clone(), None, source_view, target_view).into()
             },
             UmlActivityElement::Comment(inner) => {
                 new_umlactivity_comment_view(
@@ -313,6 +322,18 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
             UmlActivityElement::Activity(inner) => {
                 let r = inner.read();
                 let mut s = "Activity (".to_owned();
+                s.push_str(&r.name);
+                if !r.stereotype.is_empty() {
+                    s.push_str("«");
+                    s.push_str(&r.stereotype);
+                    s.push_str("»");
+                }
+                s.push_str(")");
+                s.into()
+            },
+            UmlActivityElement::InterruptibleRegion(inner) => {
+                let r = inner.read();
+                let mut s = "Interruptible Region (".to_owned();
                 s.push_str(&r.name);
                 if !r.stereotype.is_empty() {
                     s.push_str("«");
@@ -364,13 +385,16 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 s.push_str(")");
                 s.into()
             },
-            UmlActivityElement::FlowEdge(inner) => {
+            UmlActivityElement::Edge(inner) => {
                 let r = inner.read();
-                let s = if r.name.is_empty() {
-                    "Flow Edge".to_owned()
-                } else {
-                    format!("Flow Edge ({})", r.name)
-                };
+                let mut s = String::new();
+                s.push_str(r.kind.as_str());
+                s.push_str(" Edge");
+                if !r.name.is_empty() {
+                    s.push_str(" (");
+                    s.push_str(&r.name);
+                    s.push_str(")");
+                }
                 Arc::new(s)
             },
             UmlActivityElement::Comment(inner) => {
@@ -551,16 +575,16 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (decision2, decision2_view) = new_umlactivity_decisionnode("", egui::Pos2::new(500.0, 500.0));
     let (signal, signal_view) = new_umlactivity_actionnode("Notify user", "", UmlActivityActionKind::SendSignalAction, egui::Pos2::new(750.0, 500.0));
 
-    let (_e1, e1_view) = new_umlactivity_flowedge("", None, (initial.into(), initial_view.clone().into()), (object.clone().into(), object_view.clone().into()));
-    let (_e2, e2_view) = new_umlactivity_flowedge("", None, (object.into(), object_view.clone().into()), (decision1.clone().into(), decision1_view.clone().into()));
-    let (_e3, e3_view) = new_umlactivity_flowedge("[true]", None, (decision1.clone().into(), decision1_view.clone().into()), (ship.clone().into(), ship_view.clone().into()));
+    let (_e1, e1_view) = new_umlactivity_edge("", UmlActivityEdgeKind::Regular, None, (initial.into(), initial_view.clone().into()), (object.clone().into(), object_view.clone().into()));
+    let (_e2, e2_view) = new_umlactivity_edge("", UmlActivityEdgeKind::Regular, None, (object.into(), object_view.clone().into()), (decision1.clone().into(), decision1_view.clone().into()));
+    let (_e3, e3_view) = new_umlactivity_edge("[true]", UmlActivityEdgeKind::Regular, None, (decision1.clone().into(), decision1_view.clone().into()), (ship.clone().into(), ship_view.clone().into()));
     let (_cl, cl_view) = new_umlactivity_commentlink(None, (comment, comment_view.clone().into()), (decision1.clone().into(), decision1_view.clone().into()));
-    let (_e4, e4_view) = new_umlactivity_flowedge("[false]", None, (decision1.clone().into(), decision1_view.clone().into()), (procure.clone().into(), procure_view.clone().into()));
-    let (_e5, e5_view) = new_umlactivity_flowedge("", None, (ship.clone().into(), ship_view.clone().into()), (r#final.clone().into(), final_view.clone().into()));
-    let (_e6, e6_view) = new_umlactivity_flowedge("", None, (procure.clone().into(), procure_view.clone().into()), (decision2.clone().into(), decision2_view.clone().into()));
-    let (_e7, e7_view) = new_umlactivity_flowedge("", None, (signal.clone().into(), signal_view.clone().into()), (r#final.into(), final_view.clone().into()));
-    let (_e8, e8_view) = new_umlactivity_flowedge("[success]", None, (decision2.clone().into(), decision2_view.clone().into()), (ship.into(), ship_view.clone().into()));
-    let (_e9, e9_view) = new_umlactivity_flowedge("[failure]", None, (decision2.into(), decision2_view.clone().into()), (signal.into(), signal_view.clone().into()));
+    let (_e4, e4_view) = new_umlactivity_edge("[false]", UmlActivityEdgeKind::Regular, None, (decision1.clone().into(), decision1_view.clone().into()), (procure.clone().into(), procure_view.clone().into()));
+    let (_e5, e5_view) = new_umlactivity_edge("", UmlActivityEdgeKind::Regular, None, (ship.clone().into(), ship_view.clone().into()), (r#final.clone().into(), final_view.clone().into()));
+    let (_e6, e6_view) = new_umlactivity_edge("", UmlActivityEdgeKind::Regular, None, (procure.clone().into(), procure_view.clone().into()), (decision2.clone().into(), decision2_view.clone().into()));
+    let (_e7, e7_view) = new_umlactivity_edge("", UmlActivityEdgeKind::Regular, None, (signal.clone().into(), signal_view.clone().into()), (r#final.into(), final_view.clone().into()));
+    let (_e8, e8_view) = new_umlactivity_edge("[success]", UmlActivityEdgeKind::Regular, None, (decision2.clone().into(), decision2_view.clone().into()), (ship.into(), ship_view.clone().into()));
+    let (_e9, e9_view) = new_umlactivity_edge("[failure]", UmlActivityEdgeKind::Regular, None, (decision2.into(), decision2_view.clone().into()), (signal.into(), signal_view.clone().into()));
 
     let (activity, activity_view) = new_umlactivity_activity("Order", "", "", egui::Rect::from_x_y_ranges(100.0..=950.0, 100.0..=600.0));
     {
@@ -641,10 +665,14 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let dummy_2_noninitial = (d.clone().into(), dv.clone().into());
     let dummy_2_element = (d.into(), dv.into());
 
-    let (_flowedge, flowedge_view) = new_umlactivity_flowedge("", None, dummy_1_nonfinal.clone(), dummy_2_noninitial.clone());
+    let (_flowedge, flowedge_view) = new_umlactivity_edge("", UmlActivityEdgeKind::Regular, None, dummy_1_nonfinal.clone(), dummy_2_noninitial.clone());
+    let (_interruptedge, interruptedge_view) = new_umlactivity_edge("", UmlActivityEdgeKind::Interrupting, None, dummy_1_nonfinal.clone(), dummy_2_noninitial.clone());
 
     let (_activity, activity_view) = new_umlactivity_activity("activity", "", "", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
     activity_view.write().refresh_buffers();
+    let (_interruptible, interruptible_view) = new_umlactivity_interruptibleregion("InterruptibleRegion", "", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(175.0, 75.0) });
+    interruptible_view.write().refresh_buffers();
+
     let (comment, comment_view) = new_umlactivity_comment(
         "a comment", "",
         egui::Pos2::ZERO,
@@ -654,13 +682,6 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     let commentlink = new_umlactivity_commentlink(None, (comment.clone(), comment_view.clone().into()), dummy_2_element.clone());
 
     let palette_items = vec![
-        ("Containers", vec![
-            (UmlActivityToolStage::ActivityStart {
-                name: "activity".to_owned(),
-                stereotype: "".to_owned(),
-                parameters: "".to_owned(),
-            }, "Activity", activity_view.into()),
-        ]),
         ("Action Nodes", vec![
             (UmlActivityToolStage::ActionNode {
                 stereotype: "".to_owned(),
@@ -709,10 +730,28 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ]),
         ("Relationships", vec![
             (UmlActivityToolStage::LinkStart {
-                link_type: LinkType::FlowEdge {
+                link_type: LinkType::Edge {
                     name: "".to_owned(),
+                    kind: UmlActivityEdgeKind::Regular,
                 },
-            }, "Flow Edge", flowedge_view.into()),
+            }, "Regular Edge", flowedge_view.into()),
+            (UmlActivityToolStage::LinkStart {
+                link_type: LinkType::Edge {
+                    name: "".to_owned(),
+                    kind: UmlActivityEdgeKind::Interrupting,
+                },
+            }, "Interrupting Edge", interruptedge_view.into()),
+        ]),
+        ("Containers", vec![
+            (UmlActivityToolStage::ActivityStart {
+                name: "activity".to_owned(),
+                stereotype: "".to_owned(),
+                parameters: "".to_owned(),
+            }, "Activity", activity_view.into()),
+            (UmlActivityToolStage::InterruptibleRegionStart {
+                stereotype: "".to_owned(),
+                name: "InterruptibleRegion".to_owned(),
+            }, "InterruptibleRegion", interruptible_view.into()),
         ]),
         ("Other", vec![
             (UmlActivityToolStage::Comment {
@@ -771,6 +810,18 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                         }
                     }
                     (
+                        UmlActivityToolStage::InterruptibleRegionStart { stereotype, name },
+                        UmlActivityElement::InterruptibleRegion(inner),
+                    ) => {
+                        modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+
+                        if modified && let mut mw = inner.write() {
+                            mw.stereotype = stereotype.clone().into();
+                            mw.name = name.clone().into();
+                        }
+                    }
+                    (
                         UmlActivityToolStage::ActionNode { stereotype, name, kind },
                         UmlActivityElement::ActionNode(inner),
                     ) => {
@@ -802,6 +853,26 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                         if modified && let mut mw = inner.write() {
                             mw.stereotype = name.clone().into();
                             mw.name = name.clone().into();
+                        }
+                    }
+                    (
+                            UmlActivityToolStage::LinkStart { link_type: LinkType::Edge { name, kind } },
+                            UmlActivityElement::Edge(inner),
+                    ) => {
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+
+                        columns[1].label("Kind:");
+                        egui::ComboBox::from_id_salt("kind")
+                            .selected_text(kind.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in UmlActivityEdgeKind::VARIANTS {
+                                    modified |= ui.selectable_value(kind, e, e.as_str()).changed();
+                                }
+                            });
+
+                        if modified && let mut mw = inner.write() {
+                            mw.name = name.clone().into();
+                            mw.kind = *kind;
                         }
                     }
                     (
@@ -862,8 +933,9 @@ inventory::submit! {DiagramInfo {
 
 #[derive(Clone, PartialEq)]
 pub enum LinkType {
-    FlowEdge {
+    Edge {
         name: String,
+        kind: UmlActivityEdgeKind,
     },
 }
 
@@ -875,6 +947,11 @@ pub enum UmlActivityToolStage {
         parameters: String,
     },
     ActivityEnd,
+    InterruptibleRegionStart {
+        stereotype: String,
+        name: String,
+    },
+    InterruptibleRegionEnd,
     ActionNode {
         stereotype: String,
         name: String,
@@ -914,6 +991,13 @@ pub enum PartialUmlActivityElement {
         name: String,
         stereotype: String,
         parameters: String,
+        a: egui::Pos2,
+        b: Option<egui::Pos2>,
+    },
+    InterruptibleRegion {
+        // TODO: are these necessary?
+        name: String,
+        stereotype: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
@@ -976,21 +1060,13 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
 
     fn targetting_for_section(&self, element: Option<UmlActivityElement>) -> egui::Color32 {
         match element {
-            None | Some(UmlActivityElement::Activity(_)) => match self.current_stage {
-                UmlActivityToolStage::ActionNode { .. }
-                | UmlActivityToolStage::InitialNode { .. }
-                | UmlActivityToolStage::FinalNode { .. }
-                | UmlActivityToolStage::DecisionNode { .. }
-                | UmlActivityToolStage::ForkNodeStart { .. }
-                | UmlActivityToolStage::ForkNodeEnd
-                | UmlActivityToolStage::ObjectNode { .. }
-                | UmlActivityToolStage::ActivityStart { .. }
-                | UmlActivityToolStage::ActivityEnd
-                | UmlActivityToolStage::Comment { .. } => TARGETTABLE_COLOR,
+            None | Some(UmlActivityElement::Activity(_))
+            | Some(UmlActivityElement::InterruptibleRegion(_)) => match self.current_stage {
                 UmlActivityToolStage::LinkStart { .. }
                 | UmlActivityToolStage::LinkEnd
                 | UmlActivityToolStage::CommentLinkStart
                 | UmlActivityToolStage::CommentLinkEnd => NON_TARGETTABLE_COLOR,
+                _ => TARGETTABLE_COLOR,
             },
             Some(UmlActivityElement::InitialNode(_)) => match self.current_stage {
                 UmlActivityToolStage::LinkStart { .. }
@@ -1015,13 +1091,14 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 UmlActivityToolStage::CommentLinkStart => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             },
-            Some(UmlActivityElement::FlowEdge(_)
+            Some(UmlActivityElement::Edge(_)
                 | UmlActivityElement::CommentLink(_)) => unreachable!(),
         }
     }
     fn draw_status_hint(&self, q: &<UmlActivityDomain as Domain>::QueryableT<'_>,  canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
         match &self.result {
-            PartialUmlActivityElement::Activity { a, .. } => {
+            PartialUmlActivityElement::Activity { a, .. }
+            | PartialUmlActivityElement::InterruptibleRegion { a, .. } => {
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(*a, pos),
                     egui::CornerRadius::ZERO,
@@ -1130,6 +1207,20 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 *b = Some(pos);
                 self.event_lock = true;
             }
+            (UmlActivityToolStage::InterruptibleRegionStart { name, stereotype }, _) => {
+                self.result = PartialUmlActivityElement::InterruptibleRegion {
+                    name: name.clone(),
+                    stereotype: stereotype.clone(),
+                    a: pos,
+                    b: None,
+                };
+                self.current_stage = UmlActivityToolStage::InterruptibleRegionEnd;
+                self.event_lock = true;
+            }
+            (UmlActivityToolStage::InterruptibleRegionEnd, PartialUmlActivityElement::InterruptibleRegion { b, .. }) => {
+                *b = Some(pos);
+                self.event_lock = true;
+            }
             _ => {}
         }
     }
@@ -1210,6 +1301,15 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.try_spend();
                 Some((package_view.into(), None))
             }
+            PartialUmlActivityElement::InterruptibleRegion { name, stereotype, a, b: Some(b) } => {
+                self.current_stage = self.initial_stage.clone();
+
+                let (_package_model, package_view) =
+                    new_umlactivity_interruptibleregion(name, stereotype, egui::Rect::from_two_pos(*a, *b));
+
+                self.try_spend();
+                Some((package_view.into(), None))
+            }
             PartialUmlActivityElement::ForkNode { a, b: Some(b) } => {
                 self.current_stage = self.initial_stage.clone();
 
@@ -1244,14 +1344,13 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                   && q.find_parent(&source_view.uuid(), |_, e| matches!(e, UmlActivityElementView::Activity(_))).map(|e| e.0)
                      == q.find_parent(&target_view.uuid(), |_, e| matches!(e, UmlActivityElementView::Activity(_))).map(|e| e.0)
                 {
-                    self.current_stage = UmlActivityToolStage::LinkStart {
-                        link_type: link_type.clone(),
-                    };
+                    self.current_stage = self.initial_stage.clone();
 
                     let link_view = match link_type {
-                        LinkType::FlowEdge { name } => {
-                            new_umlactivity_flowedge(
+                        LinkType::Edge { name, kind } => {
+                            new_umlactivity_edge(
                                 name,
+                                *kind,
                                 None,
                                 (source.clone(), source_view),
                                 (dest.clone(), target_view),
@@ -1554,6 +1653,200 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
             name_buffer: self.name_buffer.clone(),
             parameters_buffer: self.parameters_buffer.clone(),
             comment_buffer: self.comment_buffer.clone(),
+        }
+    }
+
+    fn deep_copy_finish(
+        &mut self,
+        m: &HashMap<ModelUuid, UmlActivityElement>,
+    ) {
+        let mut w = self.model.write();
+        for e in w.contained_elements.iter_mut() {
+            if let Some(new_model) = m.get(&*e.uuid()) {
+                *e = new_model.clone();
+            }
+        }
+    }
+}
+
+
+pub fn new_umlactivity_interruptibleregion(
+    name: &str,
+    stereotype: &str,
+    bounds_rect: egui::Rect,
+) -> (ERef<UmlActivityInterruptibleRegion>, ERef<InterruptibleRegionViewT>) {
+    let package_model = ERef::new(UmlActivityInterruptibleRegion::new(
+        ModelUuid::now_v7(),
+        stereotype.to_owned(),
+        name.to_owned(),
+        Vec::new(),
+    ));
+    let package_view = new_umlactivity_interruptibleregion_view(package_model.clone(), bounds_rect);
+
+    (package_model, package_view)
+}
+pub fn new_umlactivity_interruptibleregion_view(
+    model: ERef<UmlActivityInterruptibleRegion>,
+    bounds_rect: egui::Rect,
+) -> ERef<InterruptibleRegionViewT> {
+    let m = model.read();
+    PackageView::new(
+        ViewUuid::now_v7().into(),
+        UmlActivityInterruptibleRegionAdapter {
+            model: model.clone(),
+            display_text: Arc::new("".to_owned()),
+            stereotype_buffer: (*m.stereotype).clone(),
+            name_buffer: (*m.name).clone(),
+        },
+        Vec::new(),
+        bounds_rect,
+    )
+}
+
+#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+pub struct UmlActivityInterruptibleRegionAdapter {
+    #[nh_context_serde(entity)]
+    model: ERef<UmlActivityInterruptibleRegion>,
+
+    #[nh_context_serde(skip_and_default)]
+    display_text: Arc<String>,
+    #[nh_context_serde(skip_and_default)]
+    stereotype_buffer: String,
+    #[nh_context_serde(skip_and_default)]
+    name_buffer: String,
+}
+
+impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter {
+    fn model_section(&self) -> UmlActivityElement {
+        self.model.clone().into()
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+    fn model_name(&self) -> Arc<String> {
+        self.model.read().name.clone()
+    }
+
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        self.model.read().get_element_pos(uuid)
+    }
+    fn insert_element(&mut self, position: Option<PositionNoT>, element: UmlActivityElement) -> Result<PositionNoT, ()> {
+        self.model.write().insert_element(0, position, element).map_err(|_| ())
+    }
+    fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
+        self.model.write().remove_element(uuid).map(|e| e.1)
+    }
+
+    fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
+        egui::Color32::TRANSPARENT
+    }
+    fn border_stroke(&self, _global_colors: &ColorBundle) -> canvas::Stroke {
+        canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK)
+    }
+    fn draw_label_or_get_text(
+        &self,
+        _bounds_rect: egui::Rect,
+        _highlight: canvas::Highlight,
+        _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        _context: &GlobalDrawingContext,
+        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        _canvas: &mut dyn canvas::NHCanvas,
+        _tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
+    ) -> Result<egui::Rect, Arc<String>> {
+        Err(self.display_text.clone())
+    }
+
+    fn show_model_properties(
+        &mut self,
+        q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>>
+    ) {
+        if ui.labeled_text_edit_singleline("Stereotype:", &mut self.stereotype_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlActivityPropChange::StereotypeChange(Arc::new(self.stereotype_buffer.clone())),
+            ));
+        }
+
+        if ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlActivityPropChange::NameChange(Arc::new(self.name_buffer.clone())),
+            ));
+        }
+    }
+    fn show_color_property(
+        &mut self,
+        _context: &GlobalDrawingContext,
+        _ui: &mut egui::Ui,
+    ) -> PropertiesStatus<UmlActivityDomain> {
+        PropertiesStatus::Shown
+    }
+    fn apply_change(
+        &mut self,
+        view_uuid: &ViewUuid,
+        command: &InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>>,
+    ) {
+        if let InsensitiveCommand::PropertyChange(_, property) = command {
+            let mut model = self.model.write();
+            match property {
+                UmlActivityPropChange::StereotypeChange(stereotype) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlActivityPropChange::StereotypeChange(model.stereotype.clone()),
+                    ));
+                    model.stereotype = stereotype.clone();
+                }
+                UmlActivityPropChange::NameChange(name) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlActivityPropChange::NameChange(model.name.clone()),
+                    ));
+                    model.name = name.clone();
+                }
+                _ => {}
+            }
+        }
+    }
+    fn refresh_buffers(&mut self) {
+        let model = self.model.read();
+
+        self.display_text = {
+            let mut acc = String::new();
+            if !model.stereotype.is_empty() {
+                acc.push_str("«");
+                acc.push_str(&model.stereotype);
+                acc.push_str("» ");
+            }
+            acc.push_str(&model.name);
+            acc.into()
+        };
+        self.stereotype_buffer = (*model.stereotype).clone();
+        self.name_buffer = (*model.name).clone();
+    }
+
+    fn deep_copy_init(
+        &self,
+        new_uuid: ModelUuid,
+        m: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) -> Self where Self: Sized {
+        let old_model = self.model.read();
+
+        let model = if let Some(UmlActivityElement::InterruptibleRegion(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(new_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        Self {
+            model,
+            display_text: self.display_text.clone(),
+            stereotype_buffer: self.stereotype_buffer.clone(),
+            name_buffer: self.name_buffer.clone(),
         }
     }
 
@@ -3971,8 +4264,9 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
 }
 
 
-pub fn new_umlactivity_flowedge(
+pub fn new_umlactivity_edge(
     name: &str,
+    kind: UmlActivityEdgeKind,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: (UmlActivityNonFinalNode, UmlActivityElementView),
     target: (UmlActivityNonInitialNode, UmlActivityElementView),
@@ -3980,13 +4274,14 @@ pub fn new_umlactivity_flowedge(
     let link_model = ERef::new(UmlActivityFlowEdge::new(
         ModelUuid::now_v7(),
         name.to_owned(),
+        kind,
         source.0,
         target.0,
     ));
-    let link_view = new_umlactivity_flowedge_view(link_model.clone(), center_point, source.1, target.1);
+    let link_view = new_umlactivity_edge_view(link_model.clone(), center_point, source.1, target.1);
     (link_model, link_view)
 }
-pub fn new_umlactivity_flowedge_view(
+pub fn new_umlactivity_edge_view(
     model: ERef<UmlActivityFlowEdge>,
     center_point: Option<(ViewUuid, egui::Pos2)>,
     source: UmlActivityElementView,
@@ -3998,7 +4293,7 @@ pub fn new_umlactivity_flowedge_view(
 
     MulticonnectionView::new(
         ViewUuid::now_v7().into(),
-        UmlActivityFlowEdgeAdapter {
+        UmlActivityEdgeAdapter {
             model: model.clone(),
             temporaries: Default::default(),
         },
@@ -4009,25 +4304,25 @@ pub fn new_umlactivity_flowedge_view(
 }
 
 #[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-pub struct UmlActivityFlowEdgeAdapter {
+pub struct UmlActivityEdgeAdapter {
     #[nh_context_serde(entity)]
     model: ERef<UmlActivityFlowEdge>,
     #[serde(skip_serializing)]
     #[nh_context_serde(skip_and_default)]
-    temporaries: UmlActivityFlowEdgeTemporaries,
+    temporaries: UmlActivityEdgeTemporaries,
 }
 
 #[derive(Clone, Default)]
-struct UmlActivityFlowEdgeTemporaries {
+struct UmlActivityEdgeTemporaries {
     arrow_data: HashMap<(bool, ModelUuid), ArrowData>,
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
     midpoint_label: Option<Arc<String>>,
     name_buffer: String,
-    comment_buffer: String,
+    kind_buffer: UmlActivityEdgeKind,
 }
 
-impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityFlowEdgeAdapter {
+impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityEdgeAdapter {
     fn model(&self) -> UmlActivityElement {
         self.model.clone().into()
     }
@@ -4088,6 +4383,21 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityFlowEdgeAdapter {
                 UmlActivityPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
             ));
         }
+
+        ui.label("Kind:");
+        egui::ComboBox::from_id_salt("kind")
+            .selected_text(self.temporaries.kind_buffer.as_str())
+            .show_ui(ui, |ui| {
+                for e in UmlActivityEdgeKind::VARIANTS {
+                    if ui.selectable_value(&mut self.temporaries.kind_buffer, e, e.as_str()).changed() {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            UmlActivityPropChange::EdgeKindChange(self.temporaries.kind_buffer),
+                        ));
+                    }
+                }
+            });
+
         ui.separator();
 
         if ui.button("Switch source and destination").clicked() {
@@ -4097,13 +4407,6 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityFlowEdgeAdapter {
             ));
         }
         ui.separator();
-
-        if ui.labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer).changed() {
-            commands.push(InsensitiveCommand::PropertyChange(
-                q.selected_views(),
-                UmlActivityPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
-            ));
-        }
 
         PropertiesStatus::Shown
     }
@@ -4125,6 +4428,13 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityFlowEdgeAdapter {
                     ));
                     model.name = name.clone();
                 }
+                UmlActivityPropChange::EdgeKindChange(kind) => {
+                    undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                        std::iter::once(*view_uuid).collect(),
+                        UmlActivityPropChange::EdgeKindChange(model.kind),
+                    ));
+                    model.kind = *kind;
+                }
                 _ => {}
             }
         }
@@ -4139,7 +4449,18 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityFlowEdgeAdapter {
         );
         self.temporaries.arrow_data.insert(
             (true, *model.target.uuid()),
-            ArrowData::new_labelless(canvas::LineType::Solid, canvas::ArrowheadType::OpenTriangle),
+            ArrowData {
+                line_type: canvas::LineType::Solid,
+                arrowhead_type: canvas::ArrowheadType::OpenTriangle,
+                multiplicity: match model.kind {
+                    UmlActivityEdgeKind::Regular => None,
+                    // Doesn't work: ⌁⤷⦮🢱↸↛⇥⇲➠➦➲⦳⧬⧴⭸⭼⮧⮇↯⭍⇝⦚𝥽⟿⥱∅≷⊩⍻⟴⤼⥸⨘⯢➚
+                    // Not great: ↘♂⚦†⏭
+                    UmlActivityEdgeKind::Interrupting => Some("↪".to_owned().into()),
+                },
+                role: None,
+                reading: None,
+            },
         );
 
         self.temporaries.source_uuids.clear();
@@ -4147,12 +4468,12 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityFlowEdgeAdapter {
         self.temporaries.target_uuids.clear();
         self.temporaries.target_uuids.push(*model.target.uuid());
 
-        self.temporaries.midpoint_label = if model.name.is_empty() {
-            None
-        } else {
-            model.name.clone().into()
+        self.temporaries.midpoint_label = match model.name.is_empty() {
+            true => None,
+            false => Some(model.name.clone().into()),
         };
         self.temporaries.name_buffer = (*model.name).clone();
+        self.temporaries.kind_buffer = model.kind;
     }
 
     fn deep_copy_init(
@@ -4162,7 +4483,7 @@ impl MulticonnectionAdapter<UmlActivityDomain> for UmlActivityFlowEdgeAdapter {
     ) -> Self where Self: Sized {
         let old_model = self.model.read();
 
-        let model = if let Some(UmlActivityElement::FlowEdge(m)) = m.get(&old_model.uuid) {
+        let model = if let Some(UmlActivityElement::Edge(m)) = m.get(&old_model.uuid) {
             m.clone()
         } else {
             let modelish = old_model.clone_with(new_uuid);
