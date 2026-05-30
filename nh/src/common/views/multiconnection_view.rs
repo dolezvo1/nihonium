@@ -2,7 +2,7 @@
 use std::{collections::{HashMap, HashSet}, sync::Arc};
 use eframe::egui;
 
-use crate::{CustomModal, common::{canvas::{self, ArrowDataPos, Highlight}, controller::{BucketNoT, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}};
+use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{BucketNoT, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}};
 
 #[derive(Clone)]
 pub struct ArrowData {
@@ -223,6 +223,112 @@ where
             .chain(self.sources.iter().flat_map(|e| e.points.iter()))
             .chain(self.targets.iter().flat_map(|e| e.points.iter()))
     }
+
+    fn draw_multiconnection(
+        &self,
+        canvas: &mut dyn canvas::NHCanvas,
+        central_point: (ViewUuid, egui::Pos2),
+        arrow_data: &HashMap<(bool, ModelUuid), ArrowData>,
+    ) {
+        let sources = self.sources.iter().map(|e| {
+            let ad = arrow_data.get(&(false, *e.element.model_uuid())).unwrap();
+            (e, ad)
+        });
+        let destinations = self.targets.iter().map(|e| {
+            let ad = arrow_data.get(&(true, *e.element.model_uuid())).unwrap();
+            (e, ad)
+        });
+
+
+        fn a<'a>(
+            color: egui::Color32,
+            central_point: (ViewUuid, egui::Pos2),
+            points: &'a Vec<(ViewUuid, egui::Pos2)>,
+            ad: &ArrowData,
+        ) -> (
+            canvas::ArrowheadType,
+            canvas::Stroke,
+            egui::Pos2,
+            impl Iterator<Item = (ViewUuid, egui::Pos2)> + 'a,
+        ) {
+            let focal_point = points.first().unwrap();
+            let path = std::iter::once((
+                ViewUuid::nil(),
+                ad.arrowhead_type.get_intersect(focal_point.1, points.get(1).unwrap_or(&central_point).1),
+            ))
+            .chain(points.iter().skip(1).map(|e| *e))
+            .chain(std::iter::once(central_point));
+            (
+                ad.arrowhead_type,
+                canvas::Stroke {
+                    width: 1.0,
+                    color,
+                    line_type: ad.line_type,
+                },
+                focal_point.1,
+                path,
+            )
+        }
+
+        let fg = self.adapter.foreground_color();
+        let bg = self.adapter.background_color();
+        for (ah, ls, fp, iter) in sources
+            .map(|e| a(fg, central_point, &e.0.points, e.1))
+            .chain(destinations.map(|e| a(fg, central_point, &e.0.points, e.1)))
+        {
+            let mut iter_peekable = iter.peekable();
+            let mut first = true;
+
+            while let Some(u) = iter_peekable.next() {
+                let v = if let Some(v) = iter_peekable.peek() {
+                    *v
+                } else {
+                    break;
+                };
+                let (u, v, v_uuid) = (u.1, v.1, v.0);
+
+                if first {
+                    ah.draw_in(canvas, fp, v, (fg, bg), self.highlight);
+                }
+
+                canvas.draw_line([u, v], ls, self.highlight);
+
+                // Draw drag handle in the middle of a segment
+                if !central_point.0.is_nil() {
+                    canvas.draw_ellipse_proximity(
+                        (if first { fp } else { u } + v.to_vec2()) / 2.0,
+                        egui::Vec2::new(1.0, 1.0),
+                        egui::Color32::BLACK,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::MULTICONNECTION_HANDLE_PROXIMITY,
+                        Highlight::NONE,
+                    );
+                }
+
+                // Draw drag handle at the end of the segment
+                if self.selected_vertices.contains(&v_uuid) {
+                    canvas.draw_ellipse(
+                        v,
+                        egui::Vec2::new(1.0, 1.0),
+                        egui::Color32::BLACK,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        Highlight::SELECTED,
+                    );
+                } else {
+                    canvas.draw_ellipse_proximity(
+                        v,
+                        egui::Vec2::new(1.0, 1.0),
+                        egui::Color32::BLACK,
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::MULTICONNECTION_HANDLE_PROXIMITY,
+                        Highlight::NONE,
+                    );
+                }
+
+                first = false;
+            }
+        }
+    }
 }
 
 impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> Entity for MulticonnectionView<DomainT, AdapterT> {
@@ -387,34 +493,10 @@ where
                 (self.sources[0].points[0].1 + self.targets[0].points[0].1.to_vec2()) / 2.0,
             ),
         };
-        canvas.draw_multiconnection(
-            &self.selected_vertices,
-            self.sources.iter().map(|e| {
-                let d = ad.get(&(false, *e.element.model_uuid())).unwrap();
-                ArrowDataPos {
-                    points: &e.points,
-                    stroke: crate::common::canvas::Stroke {
-                        width: 1.0,
-                        color: self.adapter.foreground_color(),
-                        line_type: d.line_type,
-                    },
-                    arrowhead_type: d.arrowhead_type,
-                }
-            }).collect(),
-            self.targets.iter().map(|e| {
-                let d = ad.get(&(true, *e.element.model_uuid())).unwrap();
-                ArrowDataPos {
-                    points: &e.points,
-                    stroke: crate::common::canvas::Stroke {
-                        width: 1.0,
-                        color: self.adapter.foreground_color(),
-                        line_type: d.line_type,
-                    },
-                    arrowhead_type: d.arrowhead_type,
-                }
-            }).collect(),
+        self.draw_multiconnection(
+            canvas,
             central_point,
-            self.highlight,
+            ad,
         );
 
         match self.adapter.draw_center_or_get_label(

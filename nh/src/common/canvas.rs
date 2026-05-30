@@ -1,10 +1,7 @@
 use eframe::egui;
 
-use std::collections::HashSet;
 use std::io::Write;
 use std::ops::{BitAnd, BitOr, RangeInclusive};
-
-use super::uuid::ViewUuid;
 
 // find unique intersection between segments (s1a, s1b) and (s2a, s2b)
 // based on https://stackoverflow.com/a/1968345
@@ -444,18 +441,6 @@ const ARROWHEAD_SIDE_LENGTH: f32 = 15.0;
 const ARROWHEAD_INNER_ANGLE: f32 = 35.0;
 
 impl ArrowheadType {
-    pub fn _name(&self) -> &str {
-        match self {
-            Self::None => "None",
-            Self::OpenTriangle => "Open Triangle",
-            Self::EmptyTriangle => "Empty Triangle",
-            Self::EmptyTriangleWith(..) => "Empty Triangle With Char",
-            Self::FullTriangle => "Full Triangle",
-            Self::EmptyRhombus => "Empty Rhombus",
-            Self::FullRhombus => "Full Rhombus",
-        }
-    }
-
     // Get intersection of line between focal_point and other point
     // that is the furthest from the focal_point
     pub fn get_intersect(&self, focal_point: egui::Pos2, other: egui::Pos2) -> egui::Pos2 {
@@ -488,12 +473,10 @@ impl ArrowheadType {
         canvas: &mut (impl NHCanvas + ?Sized),
         focal_point: egui::Pos2,
         other: egui::Pos2,
+        (primary_color, secondary_color): (egui::Color32, egui::Color32),
         highlight: Highlight,
     ) {
         let outward_angle = atan2(focal_point, other);
-        if matches!(self, ArrowheadType::OpenTriangle) {
-            //println!("{:?}, {:?}, {:?}, {:?}", self, outward_angle, focal_point, other);
-        }
         let [p1, p2] = [-ARROWHEAD_INNER_ANGLE, ARROWHEAD_INNER_ANGLE]
             .map(|e| e * std::f32::consts::PI / 180.0 + outward_angle)
             .map(|a| focal_point + egui::Vec2::new(a.cos(), a.sin()) * ARROWHEAD_SIDE_LENGTH);
@@ -502,12 +485,12 @@ impl ArrowheadType {
             ArrowheadType::OpenTriangle => {
                 canvas.draw_line(
                     [focal_point, p1],
-                    Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    Stroke::new_solid(1.0, primary_color),
                     highlight,
                 );
                 canvas.draw_line(
                     [focal_point, p2],
-                    Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    Stroke::new_solid(1.0, primary_color),
                     highlight,
                 );
             }
@@ -518,11 +501,11 @@ impl ArrowheadType {
                     vec![focal_point, p1, p2],
                     match self {
                         ArrowheadType::EmptyTriangle
-                        | ArrowheadType::EmptyTriangleWith(..) => egui::Color32::WHITE,
-                        ArrowheadType::FullTriangle => egui::Color32::BLACK,
+                        | ArrowheadType::EmptyTriangleWith(..) => secondary_color,
+                        ArrowheadType::FullTriangle => primary_color,
                         _ => unreachable!(),
                     },
-                    Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    Stroke::new_solid(1.0, primary_color),
                     highlight,
                 );
                 if let ArrowheadType::EmptyTriangleWith(c) = self {
@@ -532,7 +515,7 @@ impl ArrowheadType {
                         egui::Align2::CENTER_CENTER,
                         &c.to_string(),
                         10.0,
-                        egui::Color32::BLACK,
+                        primary_color,
                     );
                 }
             }
@@ -541,11 +524,11 @@ impl ArrowheadType {
                 canvas.draw_polygon(
                     vec![focal_point, p1, p3, p2],
                     if *self == ArrowheadType::EmptyRhombus {
-                        egui::Color32::WHITE
+                        secondary_color
                     } else {
-                        egui::Color32::BLACK
+                        primary_color
                     },
-                    Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    Stroke::new_solid(1.0, primary_color),
                     highlight,
                 );
             }
@@ -702,12 +685,6 @@ pub const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
 pub const CLASS_BOTTOM_FONT_SIZE: f32 = 12.0;
 pub const CLASS_ITEM_FONT_SIZE: f32 = 10.0;
 
-pub struct ArrowDataPos<'a> {
-    pub points: &'a Vec<(ViewUuid, egui::Pos2)>,
-    pub stroke: Stroke,
-    pub arrowhead_type: ArrowheadType,
-}
-
 pub enum HeaderLocation {
     Horizontal(RangeInclusive<f32>),
     Vertical(RangeInclusive<f32>),
@@ -774,93 +751,6 @@ pub trait NHCanvas {
         _pos: HeaderLocation,
         _text: &str,
     ) {}
-
-    // TODO: refactor to allow for line types (solid/dotted/dashed/double/squiggly)
-    fn draw_multiconnection<'a>(
-        &mut self,
-        selected_vertices: &HashSet<ViewUuid>,
-        sources: Vec<ArrowDataPos<'a>>,
-        destinations: Vec<ArrowDataPos<'a>>,
-        central_point: (ViewUuid, egui::Pos2),
-        highlight: Highlight,
-    ) {
-        fn a<'a>(
-            central_point: (ViewUuid, egui::Pos2),
-            e: ArrowDataPos<'a>,
-        ) -> (
-            ArrowheadType,
-            Stroke,
-            egui::Pos2,
-            impl Iterator<Item = (ViewUuid, egui::Pos2)> + 'a,
-        ) {
-            let focal_point = e.points.first().unwrap();
-            let path = std::iter::once((
-                ViewUuid::nil(),
-                e.arrowhead_type.get_intersect(focal_point.1, e.points.get(1).unwrap_or(&central_point).1),
-            ))
-            .chain(e.points.iter().skip(1).map(|e| *e))
-            .chain(std::iter::once(central_point));
-            (e.arrowhead_type, e.stroke, focal_point.1, path)
-        }
-
-        for (ah, ls, fp, iter) in sources
-            .into_iter()
-            .map(|e| a(central_point, e))
-            .chain(destinations.into_iter().map(|e| a(central_point, e)))
-        {
-            let mut iter_peekable = iter.peekable();
-            let mut first = true;
-
-            while let Some(u) = iter_peekable.next() {
-                let v = if let Some(v) = iter_peekable.peek() {
-                    *v
-                } else {
-                    break;
-                };
-                let (u, v, v_uuid) = (u.1, v.1, v.0);
-
-                if first {
-                    ah.draw_in(self, fp, v, highlight);
-                }
-
-                self.draw_line([u, v], ls, highlight);
-
-                // Draw drag handle in the middle of a segment
-                if !central_point.0.is_nil() {
-                    self.draw_ellipse_proximity(
-                        (if first { fp } else { u } + v.to_vec2()) / 2.0,
-                        egui::Vec2::new(1.0, 1.0),
-                        egui::Color32::BLACK,
-                        Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        MULTICONNECTION_HANDLE_PROXIMITY,
-                        Highlight::NONE,
-                    );
-                }
-
-                // Draw drag handle at the end of the segment
-                if selected_vertices.contains(&v_uuid) {
-                    self.draw_ellipse(
-                        v,
-                        egui::Vec2::new(1.0, 1.0),
-                        egui::Color32::BLACK,
-                        Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        Highlight::SELECTED,
-                    );
-                } else {
-                    self.draw_ellipse_proximity(
-                        v,
-                        egui::Vec2::new(1.0, 1.0),
-                        egui::Color32::BLACK,
-                        Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        MULTICONNECTION_HANDLE_PROXIMITY,
-                        Highlight::NONE,
-                    );
-                }
-
-                first = false;
-            }
-        }
-    }
 }
 
 pub struct UiCanvas {

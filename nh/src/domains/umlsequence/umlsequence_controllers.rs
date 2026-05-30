@@ -4456,7 +4456,13 @@ impl UmlSequenceMessageView {
             s,
             self.temporaries.highlight,
         );
-        self.temporaries.target_arrow_type.draw_in(canvas, end, penultimate, self.temporaries.highlight);
+        self.temporaries.target_arrow_type.draw_in(
+            canvas,
+            end,
+            penultimate,
+            (egui::Color32::BLACK, egui::Color32::WHITE),
+            self.temporaries.highlight,
+        );
 
         canvas.draw_text(
             (start + second.to_vec2()) / 2.0,
