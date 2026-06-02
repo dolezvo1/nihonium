@@ -1,15 +1,15 @@
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
-use crate::common::views::package_view::{PackageAdapter, PackageView};
+use crate::common::views::package_view::{PackageAdapter, PackageDragType, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::domains::umlactivity::umlactivity_models::{UmlActivity, UmlActivityActionKind, UmlActivityActionNode, UmlActivityComment, UmlActivityCommentLink, UmlActivityDecisionNode, UmlActivityDiagram, UmlActivityEdgeKind, UmlActivityElement, UmlActivityFinalNode, UmlActivityFinalNodeKind, UmlActivityFlowEdge, UmlActivityForkNode, UmlActivityInitialNode, UmlActivityInterruptibleRegion, UmlActivityNonFinalNode, UmlActivityNonInitialNode, UmlActivityObjectNode};
+use crate::domains::umlactivity::umlactivity_models::{UmlActivity, UmlActivityActionKind, UmlActivityActionNode, UmlActivityComment, UmlActivityCommentLink, UmlActivityDecisionNode, UmlActivityDiagram, UmlActivityEdgeKind, UmlActivityElement, UmlActivityFinalNode, UmlActivityFinalNodeKind, UmlActivityFlowEdge, UmlActivityForkNode, UmlActivityInitialNode, UmlActivityInterruptibleRegion, UmlActivityNonFinalNode, UmlActivityNonInitialNode, UmlActivityObjectNode, UmlActivityPartition, UmlActivityPartitionSection};
 use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
@@ -40,7 +40,19 @@ type FlowEdgeViewT = MulticonnectionView<UmlActivityDomain, UmlActivityEdgeAdapt
 type CommentLinkViewT = MulticonnectionView<UmlActivityDomain, UmlActivityCommentLinkAdapter>;
 
 #[derive(Clone, Copy, Debug)]
-pub enum UmlActivityOrdinalMovement {}
+pub enum UmlActivityOrdinalMovement {
+    Left,
+    Right,
+}
+
+impl UmlActivityOrdinalMovement {
+    pub fn inverse(&self) -> Self {
+        match self {
+            Self::Left => Self::Right,
+            Self::Right => Self::Left,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub enum UmlActivityPropChange {
@@ -150,6 +162,8 @@ impl TryFrom<UmlActivityElementOrVertex> for UmlActivityElementView {
 pub enum UmlActivityElementView {
     Activity(ERef<ActivityViewT>),
     InterruptibleRegion(ERef<InterruptibleRegionViewT>),
+    Partition(ERef<UmlActivityPartitionView>),
+    PartitionSection(ERef<UmlActivityPartitionSectionView>),
     ActionNode(ERef<UmlActivityActionNodeView>),
     InitialNode(ERef<UmlActivityInitialNodeView>),
     FinalNode(ERef<UmlActivityFinalNodeView>),
@@ -260,13 +274,32 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
         let v = match element {
             UmlActivityElement::Activity(inner) => {
                 new_umlactivity_activity_view(
-                    inner.clone(),
+                    inner,
                     egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
                 ).into()
             },
             UmlActivityElement::InterruptibleRegion(inner) => {
                 new_umlactivity_interruptibleregion_view(
+                    inner,
+                    egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
+                ).into()
+            },
+            UmlActivityElement::Partition(inner) => {
+                let r = inner.read();
+                let section_views: Result<Vec<_>, _> = r.sections.iter()
+                    .map(|e| self.create_new_view_for(q, e.clone().into()).map(|e| match e {
+                        UmlActivityElementView::PartitionSection(inner) => inner,
+                        _ => unreachable!(),
+                    }))
+                    .collect();
+                new_umlactivity_partition_view(
                     inner.clone(),
+                    section_views?,
+                ).into()
+            }
+            UmlActivityElement::PartitionSection(inner) => {
+                new_umlactivity_partitionsection_view(
+                    inner,
                     egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
                 ).into()
             },
@@ -343,6 +376,21 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 s.push_str(")");
                 s.into()
             },
+            UmlActivityElement::Partition(_inner) => {
+                "Partition".to_owned().into()
+            }
+            UmlActivityElement::PartitionSection(inner) => {
+                let r = inner.read();
+                let mut s = "Partition Section (".to_owned();
+                s.push_str(&r.name);
+                if !r.stereotype.is_empty() {
+                    s.push_str("«");
+                    s.push_str(&r.stereotype);
+                    s.push_str("»");
+                }
+                s.push_str(")");
+                s.into()
+            }
             UmlActivityElement::ActionNode(inner) => {
                 let r = inner.read();
                 let mut s = "Action Node (".to_owned();
@@ -672,6 +720,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     activity_view.write().refresh_buffers();
     let (_interruptible, interruptible_view) = new_umlactivity_interruptibleregion("InterruptibleRegion", "", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(175.0, 75.0) });
     interruptible_view.write().refresh_buffers();
+    let ps = new_umlactivity_partitionsection("Partition Section", "", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(175.0, 75.0) });
+    ps.1.write().refresh_buffers();
+    let (_partition, partition_view) = new_umlactivity_partition(vec![ps]);
+    partition_view.write().refresh_buffers();
 
     let (comment, comment_view) = new_umlactivity_comment(
         "a comment", "",
@@ -752,6 +804,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 stereotype: "".to_owned(),
                 name: "InterruptibleRegion".to_owned(),
             }, "InterruptibleRegion", interruptible_view.into()),
+            (UmlActivityToolStage::PartitionStart {
+                section_stereotype: "".to_owned(),
+                section_name: "Partition Section".to_owned(),
+            }, "Partition", partition_view.into()),
         ]),
         ("Other", vec![
             (UmlActivityToolStage::Comment {
@@ -819,6 +875,25 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                         if modified && let mut mw = inner.write() {
                             mw.stereotype = stereotype.clone().into();
                             mw.name = name.clone().into();
+                        }
+                    }
+                    (
+                        UmlActivityToolStage::PartitionStart { section_stereotype, section_name },
+                        UmlActivityElement::Partition(inner),
+                    ) => {
+                        modified |= columns[1].labeled_text_edit_singleline("Section stereotype", section_stereotype).changed();
+                        modified |= columns[1].labeled_text_edit_singleline("Section name", section_name).changed();
+
+                        if modified {
+                            {
+                                let mr = inner.read();
+                                let mut sw = mr.sections[0].write();
+                                sw.stereotype = section_stereotype.clone().into();
+                                sw.name = section_name.clone().into();
+                            }
+                            if let UmlActivityElementView::Partition(view) = view {
+                                view.read().sections[0].write().refresh_buffers();
+                            }
                         }
                     }
                     (
@@ -941,17 +1016,6 @@ pub enum LinkType {
 
 #[derive(Clone, PartialEq)]
 pub enum UmlActivityToolStage {
-    ActivityStart {
-        stereotype: String,
-        name: String,
-        parameters: String,
-    },
-    ActivityEnd,
-    InterruptibleRegionStart {
-        stereotype: String,
-        name: String,
-    },
-    InterruptibleRegionEnd,
     ActionNode {
         stereotype: String,
         name: String,
@@ -974,6 +1038,22 @@ pub enum UmlActivityToolStage {
         link_type: LinkType,
     },
     LinkEnd,
+    ActivityStart {
+        stereotype: String,
+        name: String,
+        parameters: String,
+    },
+    ActivityEnd,
+    InterruptibleRegionStart {
+        stereotype: String,
+        name: String,
+    },
+    InterruptibleRegionEnd,
+    PartitionStart {
+        section_stereotype: String,
+        section_name: String,
+    },
+    PartitionEnd,
     Comment {
         stereotype: String,
         text: String,
@@ -986,6 +1066,15 @@ pub enum UmlActivityToolStage {
 pub enum PartialUmlActivityElement {
     None,
     Some(UmlActivityElementView),
+    ForkNode {
+        a: egui::Pos2,
+        b: Option<egui::Pos2>,
+    },
+    Link {
+        link_type: LinkType,
+        source: UmlActivityNonFinalNode,
+        dest: Option<UmlActivityNonInitialNode>,
+    },
     Activity {
         // TODO: are these necessary?
         name: String,
@@ -1001,14 +1090,12 @@ pub enum PartialUmlActivityElement {
         a: egui::Pos2,
         b: Option<egui::Pos2>,
     },
-    ForkNode {
+    Partition {
+        // TODO: are these necessary?
+        section_name: String,
+        section_stereotype: String,
         a: egui::Pos2,
         b: Option<egui::Pos2>,
-    },
-    Link {
-        link_type: LinkType,
-        source: UmlActivityNonFinalNode,
-        dest: Option<UmlActivityNonInitialNode>,
     },
     CommentLink {
         source: ERef<UmlActivityComment>,
@@ -1060,8 +1147,12 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
 
     fn targetting_for_section(&self, element: Option<UmlActivityElement>) -> egui::Color32 {
         match element {
-            None | Some(UmlActivityElement::Activity(_))
-            | Some(UmlActivityElement::InterruptibleRegion(_)) => match self.current_stage {
+            None
+            | Some(UmlActivityElement::Activity(_)
+                | UmlActivityElement::InterruptibleRegion(_)
+                | UmlActivityElement::Partition(_)
+                | UmlActivityElement::PartitionSection(_))
+                => match self.current_stage {
                 UmlActivityToolStage::LinkStart { .. }
                 | UmlActivityToolStage::LinkEnd
                 | UmlActivityToolStage::CommentLinkStart
@@ -1097,16 +1188,6 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
     }
     fn draw_status_hint(&self, q: &<UmlActivityDomain as Domain>::QueryableT<'_>,  canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
         match &self.result {
-            PartialUmlActivityElement::Activity { a, .. }
-            | PartialUmlActivityElement::InterruptibleRegion { a, .. } => {
-                canvas.draw_rectangle(
-                    egui::Rect::from_two_pos(*a, pos),
-                    egui::CornerRadius::ZERO,
-                    egui::Color32::TRANSPARENT,
-                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
-                    canvas::Highlight::NONE,
-                );
-            }
             PartialUmlActivityElement::ForkNode { a, .. } => {
                 let vertical = (pos.y - a.y).abs() > (pos.x - a.x).abs();
                 canvas.draw_line(
@@ -1130,6 +1211,17 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                         canvas::Highlight::NONE,
                     );
                 }
+            }
+            PartialUmlActivityElement::Activity { a, .. }
+            | PartialUmlActivityElement::InterruptibleRegion { a, .. }
+            | PartialUmlActivityElement::Partition { a, .. } => {
+                canvas.draw_rectangle(
+                    egui::Rect::from_two_pos(*a, pos),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::TRANSPARENT,
+                    canvas::Stroke::new_dashed(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
             }
             PartialUmlActivityElement::CommentLink { source, .. } => {
                 if let Some(source_view) = q.get_view_for(&source.read().uuid) {
@@ -1221,6 +1313,20 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 *b = Some(pos);
                 self.event_lock = true;
             }
+            (UmlActivityToolStage::PartitionStart { section_stereotype, section_name }, _) => {
+                self.result = PartialUmlActivityElement::Partition {
+                    section_name: section_name.clone(),
+                    section_stereotype: section_stereotype.clone(),
+                    a: pos,
+                    b: None,
+                };
+                self.current_stage = UmlActivityToolStage::PartitionEnd;
+                self.event_lock = true;
+            }
+            (UmlActivityToolStage::PartitionEnd, PartialUmlActivityElement::Partition { b, .. }) => {
+                *b = Some(pos);
+                self.event_lock = true;
+            }
             _ => {}
         }
     }
@@ -1292,24 +1398,6 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.try_spend();
                 Some((x, None))
             }
-            PartialUmlActivityElement::Activity { name, stereotype, parameters, a, b: Some(b) } => {
-                self.current_stage = self.initial_stage.clone();
-
-                let (_package_model, package_view) =
-                    new_umlactivity_activity(name, stereotype, parameters, egui::Rect::from_two_pos(*a, *b));
-
-                self.try_spend();
-                Some((package_view.into(), None))
-            }
-            PartialUmlActivityElement::InterruptibleRegion { name, stereotype, a, b: Some(b) } => {
-                self.current_stage = self.initial_stage.clone();
-
-                let (_package_model, package_view) =
-                    new_umlactivity_interruptibleregion(name, stereotype, egui::Rect::from_two_pos(*a, *b));
-
-                self.try_spend();
-                Some((package_view.into(), None))
-            }
             PartialUmlActivityElement::ForkNode { a, b: Some(b) } => {
                 self.current_stage = self.initial_stage.clone();
 
@@ -1363,6 +1451,35 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 } else {
                     None
                 }
+            }
+            PartialUmlActivityElement::Activity { name, stereotype, parameters, a, b: Some(b) } => {
+                self.current_stage = self.initial_stage.clone();
+
+                let (_package_model, package_view) =
+                    new_umlactivity_activity(name, stereotype, parameters, egui::Rect::from_two_pos(*a, *b));
+
+                self.try_spend();
+                Some((package_view.into(), None))
+            }
+            PartialUmlActivityElement::InterruptibleRegion { name, stereotype, a, b: Some(b) } => {
+                self.current_stage = self.initial_stage.clone();
+
+                let (_package_model, package_view) =
+                    new_umlactivity_interruptibleregion(name, stereotype, egui::Rect::from_two_pos(*a, *b));
+
+                self.try_spend();
+                Some((package_view.into(), None))
+            }
+            PartialUmlActivityElement::Partition { section_name, section_stereotype, a, b: Some(b) } => {
+                self.current_stage = self.initial_stage.clone();
+
+                let r = egui::Rect::from_two_pos(*a, *b);
+                let s = new_umlactivity_partitionsection(section_name, section_stereotype, r);
+                let (_package_model, package_view) =
+                    new_umlactivity_partition(vec![s]);
+
+                self.try_spend();
+                Some((package_view.into(), None))
             }
             PartialUmlActivityElement::CommentLink {
                 source,
@@ -1662,8 +1779,8 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
     ) {
         let mut w = self.model.write();
         for e in w.contained_elements.iter_mut() {
-            if let Some(new_model) = m.get(&*e.uuid()) {
-                *e = new_model.clone();
+            if let Some(new_model) = m.get(&*e.uuid()).and_then(|e| e.as_standalone()) {
+                *e = new_model;
             }
         }
     }
@@ -1856,8 +1973,1371 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
     ) {
         let mut w = self.model.write();
         for e in w.contained_elements.iter_mut() {
-            if let Some(new_model) = m.get(&*e.uuid()) {
+            if let Some(new_model) = m.get(&*e.uuid()).and_then(|e| e.as_standalone()) {
+                *e = new_model;
+            }
+        }
+    }
+}
+
+
+pub fn new_umlactivity_partition(
+    sections: Vec<(ERef<UmlActivityPartitionSection>, ERef<UmlActivityPartitionSectionView>)>,
+) -> (ERef<UmlActivityPartition>, ERef<UmlActivityPartitionView>) {
+    let (section_models, section_views) = sections.into_iter().collect();
+    let package_model = ERef::new(UmlActivityPartition::new(
+        ModelUuid::now_v7(),
+        section_models,
+    ));
+    let package_view = new_umlactivity_partition_view(package_model.clone(), section_views);
+
+    (package_model, package_view)
+}
+pub fn new_umlactivity_partition_view(
+    model: ERef<UmlActivityPartition>,
+    sections: Vec<ERef<UmlActivityPartitionSectionView>>,
+) -> ERef<UmlActivityPartitionView> {
+    ERef::new(
+        UmlActivityPartitionView {
+            uuid: ViewUuid::now_v7().into(),
+            model,
+            sections,
+            bounds_rect: egui::Rect::ZERO,
+            temporaries: Default::default(),
+        }
+    )
+}
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlActivityPartitionView {
+    uuid: Arc<ViewUuid>,
+    #[nh_context_serde(entity)]
+    model: ERef<UmlActivityPartition>,
+    #[nh_context_serde(entity)]
+    sections: Vec<ERef<UmlActivityPartitionSectionView>>,
+
+    bounds_rect: egui::Rect,
+    #[nh_context_serde(skip_and_default)]
+    temporaries: UmlActivityPartitionViewTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct UmlActivityPartitionViewTemporaries {
+    highlight: canvas::Highlight,
+    selected_direct_elements: HashSet<ViewUuid>,
+}
+
+impl Entity for UmlActivityPartitionView {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl View for UmlActivityPartitionView {
+    fn uuid(&self) -> Arc<ViewUuid> {
+        self.uuid.clone()
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+}
+
+impl ElementController<UmlActivityElement> for UmlActivityPartitionView {
+    fn model(&self) -> UmlActivityElement {
+        self.model.clone().into()
+    }
+
+    fn min_shape(&self) -> NHShape {
+        NHShape::Rect { inner: self.bounds_rect }
+    }
+
+    fn position(&self) -> egui::Pos2 {
+        self.bounds_rect.center()
+    }
+}
+
+impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
+    fn draw_in(
+        &mut self,
+        q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        context: &GlobalDrawingContext,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
+        canvas: &mut dyn NHCanvas,
+        tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
+    ) -> TargettingStatus {
+        let mut child_targetting_drawn = false;
+        let mut r = egui::Rect::ZERO;
+        for e in self.sections.iter() {
+            let mut w = e.write();
+            child_targetting_drawn |= w.draw_in(q, context, settings, canvas, tool) != TargettingStatus::NotDrawn;
+            r = r.union(w.bounds_rect);
+        }
+        self.bounds_rect = r;
+
+        match child_targetting_drawn {
+            false => TargettingStatus::NotDrawn,
+            true => TargettingStatus::Drawn,
+        }
+    }
+
+    fn show_properties(
+        &mut self,
+        gdc: &GlobalDrawingContext,
+        q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>>,
+    ) -> PropertiesStatus<UmlActivityDomain> {
+        for (idx, e) in self.sections.iter().enumerate() {
+            let mut w = e.write();
+            let child = w.show_properties_inner(gdc, q, ui, commands);
+
+            if let Some(add_sibling) = child.1 {
+                let idx = match add_sibling {
+                    UmlActivityOrdinalMovement::Left => idx,
+                    UmlActivityOrdinalMovement::Right => idx + 1,
+                };
+                let x_range = match add_sibling {
+                    UmlActivityOrdinalMovement::Left => (w.bounds_rect.left()-200.0)..=w.bounds_rect.left(),
+                    UmlActivityOrdinalMovement::Right => w.bounds_rect.right()..=(w.bounds_rect.right()+200.0),
+                };
+                let sibling = new_umlactivity_partitionsection(
+                    "New Partition Section",
+                    "",
+                    egui::Rect::from_x_y_ranges(
+                        x_range,
+                        w.bounds_rect.y_range(),
+                    ),
+                );
+                commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, Some(idx.try_into().unwrap()), UmlActivityElementOrVertex::Element(sibling.1.into()), true));
+            }
+
+            if let Some(child) = child.0.to_non_default() {
+                return child;
+            }
+        }
+
+        return PropertiesStatus::NotShown;
+    }
+
+    fn collect_allignment(&mut self, am: &mut SnapManager) {
+        self.sections.iter().for_each(|v| v.write().collect_allignment(am));
+    }
+
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        ehc: &EventHandlingContext,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
+        q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        tool: &mut Option<<UmlActivityDomain as Domain>::ToolT>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        commands: &mut Vec<InsensitiveCommand<
+            <UmlActivityDomain as Domain>::OrdinalMovementT,
+            <UmlActivityDomain as Domain>::AddCommandElementT,
+            <UmlActivityDomain as Domain>::PropChangeT>,
+        >,
+    ) -> EventHandlingStatus {
+        match event {
+            InputEvent::Click(_) => {
+                let k_status = self.sections.iter()
+                        .map(|e| {
+                            let mut w = e.write();
+                            (*w.uuid, w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands))
+                        })
+                        .find(|e| e.1 != EventHandlingStatus::NotHandled);
+
+                if let Some((k, status)) = k_status {
+                    if status == EventHandlingStatus::HandledByElement {
+                        if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                            commands.push(InsensitiveCommand::HighlightAll(false, canvas::Highlight::SELECTED).into());
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                canvas::Highlight::SELECTED,
+                            ).into());
+                        } else {
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.temporaries.selected_direct_elements.contains(&k),
+                                canvas::Highlight::SELECTED,
+                            ).into());
+                        }
+                    }
+                    EventHandlingStatus::HandledByContainer
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            },
+            _ => {
+                let k_status = self.sections.iter()
+                        .map(|e| {
+                            let mut w = e.write();
+                            (*w.uuid, w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands))
+                        })
+                        .find(|e| e.1 != EventHandlingStatus::NotHandled);
+                k_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled)
+            },
+        }
+    }
+
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<
+            <UmlActivityDomain as Domain>::OrdinalMovementT,
+            <UmlActivityDomain as Domain>::AddCommandElementT,
+            <UmlActivityDomain as Domain>::PropChangeT,
+        >,
+        undo_accumulator: &mut Vec<InsensitiveCommand<
+            <UmlActivityDomain as Domain>::OrdinalMovementT,
+            <UmlActivityDomain as Domain>::AddCommandElementT,
+            <UmlActivityDomain as Domain>::PropChangeT>,
+        >,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
+        macro_rules! recurse {
+            () => {
+                self.sections.iter().for_each(|s| s.write().apply_command(command, undo_accumulator, affected_models));
+            };
+        }
+
+        match command {
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
+                if h.selected {
+                    match set {
+                        true => {
+                            self.temporaries.selected_direct_elements =
+                                self.sections.iter().map(|v| *v.read().uuid).collect();
+                        }
+                        false => self.temporaries.selected_direct_elements.clear(),
+                    }
+                }
+                recurse!();
+            }
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
+                if uuids.contains(&*self.uuid) {
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
+                }
+
+                if h.selected {
+                    for k in self.sections.iter().map(|v| *v.read().uuid).filter(|k| uuids.contains(k)) {
+                        match set {
+                            true => self.temporaries.selected_direct_elements.insert(k),
+                            false => self.temporaries.selected_direct_elements.remove(&k),
+                        };
+                    }
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.temporaries.highlight.selected =
+                    (self.temporaries.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
+
+                recurse!();
+            }
+            InsensitiveCommand::MovePositional(uuids, _)
+                if !uuids.contains(&self.uuid)
+                    && !self.sections.iter().any(|e| uuids.contains(&e.read().uuid)) => {
+                recurse!();
+            }
+            InsensitiveCommand::MovePositional(_, delta) | InsensitiveCommand::MovePositionalAll(delta) => {
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
+                    std::iter::once(*self.uuid).collect(),
+                    -*delta,
+                ));
+                let mut void = vec![];
+                self.sections.iter_mut().for_each(|v| {
+                    v.write().apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
+                });
+            }
+            InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
+                if self.sections.iter().any(|e| uuids.contains(&e.read().uuid)) {
+                    let mut targets = HashSet::new();
+                    let mut delta_x = egui::Vec2::ZERO;
+                    let (mut u, mut v) = Default::default();
+
+                    for e in self.sections.iter() {
+                        let mut w = e.write();
+                        w.apply_command(&InsensitiveCommand::MovePositionalAll(delta_x), &mut u, &mut v);
+                        w.bounds_rect.max.y += delta.y;
+                        if uuids.contains(&w.uuid) {
+                            targets.insert(*w.uuid);
+                            w.bounds_rect.max.x += delta.x;
+                            delta_x.x += delta.x;
+                        }
+                    }
+
+                    undo_accumulator.push(InsensitiveCommand::ResizeSpecificElementsBy(
+                        targets,
+                        *align,
+                        -*delta,
+                    ));
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::ResizeSpecificElementsTo(..) => {
+                recurse!();
+            }
+            InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
+                for element in self.sections.iter().filter(|v| uuids.contains(&v.read().uuid)) {
+                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
+                        (1, None)
+                    } else if let Some((b, pos)) = self.model.read().get_element_pos(&element.read().model_uuid()) {
+                        (b, Some(pos))
+                    } else {
+                        continue;
+                    };
+
+                    undo_accumulator.push(InsensitiveCommand::AddDependency(
+                        *self.uuid,
+                        b,
+                        pos,
+                        UmlActivityElementView::from(element.clone()).into(),
+                        false,
+                    ));
+                }
+                let mut delta = egui::Vec2::ZERO;
+                let (mut u, mut m) = Default::default();
+                let old_sections = std::mem::take(&mut self.sections);
+                for e in old_sections {
+                    let mut w = e.write();
+                    if uuids.contains(&w.uuid) {
+                        delta.x += w.bounds_rect.width();
+                    } else {
+                        w.apply_command(&InsensitiveCommand::MovePositionalAll(-delta), &mut u, &mut m);
+                        drop(w);
+                        self.sections.push(e);
+                    }
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::PasteSpecificElements(target, _elements) => {
+                if *target == *self.uuid {
+                    todo!("undo = delete")
+                }
+
+                recurse!();
+            },
+            InsensitiveCommand::AddDependency(target, b, pos, element, into_model) => {
+                if *target == *self.uuid {
+                    let mut w = self.model.write();
+                    if *b == 0
+                        && let Ok(UmlActivityElementView::PartitionSection(view)) = element.clone().try_into() {
+                        let mut vw = view.write();
+                        if let Some(model_pos) = w.get_element_pos(&vw.model_uuid()).map(|e| e.1)
+                            .or_else(|| if *into_model { w.insert_element(*b, *pos, vw.model()).ok() } else { None }) {
+                            let uuid = *vw.uuid;
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                                *self.uuid,
+                                *b,
+                                uuid,
+                                *into_model,
+                            ));
+
+                            if *into_model {
+                                affected_models.insert(*w.uuid);
+                            }
+                            let mut model_transitives = HashMap::new();
+                            vw.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                            affected_models.extend(model_transitives.into_keys());
+
+                            let view_pos = {
+                                let mut view_pos: PositionNoT = 0;
+                                for e in &self.sections {
+                                    let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid()) else {
+                                        unreachable!()
+                                    };
+                                    if pos < model_pos {
+                                        view_pos += 1;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                view_pos
+                            };
+
+                            let old_position = if self.sections.len() == view_pos.into() {
+                                self.sections.last().map(|e| e.read().bounds_rect.right_top())
+                            } else {
+                                self.sections.iter().skip(view_pos.into()).map(|e| e.read().bounds_rect.min).next()
+                            }.unwrap_or_default();
+                            let delta = (vw.bounds_rect.width(), 0.0).into();
+                            let (mut u, mut m) = Default::default();
+                            for e in self.sections.iter().skip(view_pos.into()) {
+                                e.write().apply_command(&InsensitiveCommand::MovePositionalAll(delta), &mut u, &mut m);
+                            }
+                            let delta = old_position - vw.bounds_rect.min;
+                            vw.apply_command(&InsensitiveCommand::MovePositionalAll(delta), &mut u, &mut m);
+                            self.sections.insert(view_pos.try_into().unwrap(), view.clone());
+                        }
+                    }
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::RemoveDependency(target, b, element, into_model) => {
+                if *target == *self.uuid {
+                    let mut w = self.model.write();
+                    if *b == 0
+                        && let Some(view) = self.sections.iter().find(|v| *v.read().uuid == *element).cloned() {
+                        let model_uuid = *view.read().model_uuid();
+
+                        if let Some((_b, pos)) = w.remove_element(&model_uuid) {
+                            undo_accumulator.push(InsensitiveCommand::AddDependency(
+                                *self.uuid,
+                                *b,
+                                Some(pos),
+                                UmlActivityElementView::from(view.clone()).into(),
+                                *into_model,
+                            ));
+
+                            if *into_model {
+                                affected_models.insert(*w.uuid);
+                            }
+
+                            let mut delta = egui::Vec2::ZERO;
+                            let (mut u, mut m) = Default::default();
+                            let old_sections = std::mem::take(&mut self.sections);
+                            for e in old_sections {
+                                let mut w = e.write();
+                                if *w.uuid == *element {
+                                    delta.x += w.bounds_rect.width();
+                                } else {
+                                    w.apply_command(&InsensitiveCommand::MovePositionalAll(-delta), &mut u, &mut m);
+                                    drop(w);
+                                    self.sections.push(e);
+                                }
+                            }
+                        }
+                    }
+                }
+                recurse!();
+            }
+            InsensitiveCommand::ArrangeSpecificElements(_uuids, _arr) => {},
+            InsensitiveCommand::MoveOrdinal(uuids, direction) => {
+                let mut undo_uuids = HashSet::new();
+                match direction {
+                    UmlActivityOrdinalMovement::Left | UmlActivityOrdinalMovement::Right => {
+                        let lifelines_iter: Box<dyn Iterator<Item = &mut ERef<UmlActivityPartitionSectionView>>> = match direction {
+                            UmlActivityOrdinalMovement::Left => Box::new(self.sections.iter_mut()),
+                            UmlActivityOrdinalMovement::Right => Box::new(self.sections.iter_mut().rev()),
+                        };
+                        let mut lifelines_iter = lifelines_iter.peekable();
+                        while let Some(dest) = lifelines_iter.next()
+                            && let Some(src) = lifelines_iter.peek_mut() {
+                            if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
+                                {
+                                let (mut srcw, mut destw) = (src.write(), dest.write());
+                                let mut w = self.model.write();
+                                let Some(new_pos) = w.get_element_pos(&destw.model_uuid()) else { continue; };
+                                w.move_element(&srcw.model_uuid(), 0, new_pos.1);
+                                undo_uuids.insert(*srcw.uuid);
+                                let (src_d, dest_d) = match direction {
+                                    UmlActivityOrdinalMovement::Left => {
+                                        ((-destw.bounds_rect.width(), 0.0).into(), (srcw.bounds_rect.width(), 0.0).into())
+                                    },
+                                    UmlActivityOrdinalMovement::Right => {
+                                        ((destw.bounds_rect.width(), 0.0).into(), (-srcw.bounds_rect.width(), 0.0).into())
+                                    },
+                                };
+                                let (mut u, mut m) = Default::default();
+                                srcw.apply_command(&InsensitiveCommand::MovePositionalAll(src_d), &mut u, &mut m);
+                                destw.apply_command(&InsensitiveCommand::MovePositionalAll(dest_d), &mut u, &mut m);
+                                }
+                                std::mem::swap(dest, *src);
+                            }
+                        }
+                    }
+                }
+                if !undo_uuids.is_empty() {
+                    undo_accumulator.push(InsensitiveCommand::MoveOrdinal(undo_uuids, direction.inverse()));
+                }
+                recurse!();
+            }
+            InsensitiveCommand::PropertyChange(..) => {
+                recurse!();
+            }
+        }
+    }
+
+    fn refresh_buffers(&mut self) {}
+
+    fn head_count(
+        &mut self,
+        flattened_views: &mut HashMap<ViewUuid, (UmlActivityElementView, ViewUuid)>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        flattened_views_status.insert(*self.uuid, self.temporaries.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+
+        self.sections.iter().for_each(|s| {
+            let mut w = s.write();
+            w.head_count(flattened_views, flattened_views_status, flattened_represented_models);
+            flattened_views.insert(*w.uuid(), (s.clone().into(), *self.uuid));
+        });
+    }
+
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, <UmlActivityDomain as Domain>::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, <UmlActivityDomain as Domain>::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, <UmlActivityDomain as Domain>::CommonElementT>,
+    ) {
+        if requested.is_none_or(|e| e.contains(&self.uuid)) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        } else {
+            self.sections.iter().for_each(|v|
+                v.read().deep_copy_walk(requested, uuid_present, tlc, c, m)
+            );
+        }
+    }
+
+    fn deep_copy_clone(
+        &self,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, <UmlActivityDomain as Domain>::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, <UmlActivityDomain as Domain>::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, <UmlActivityDomain as Domain>::CommonElementT>,
+    ) {
+        let old_model = self.model.read();
+
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
+        } else {
+            (*self.uuid, *old_model.uuid)
+        };
+
+        let model = if let Some(UmlActivityElement::Partition(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(model_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        let mut inner = HashMap::new();
+        let new_sections = self.sections.iter().map(|v| {
+            let v = v.read();
+            v.deep_copy_clone(uuid_present, &mut inner, c, m);
+            let Some(UmlActivityElementView::PartitionSection(s)) = c.get(&v.uuid) else {
+                unreachable!()
+            };
+            s.clone()
+        }).collect();
+
+        let cloneish = ERef::new(Self {
+            uuid: view_uuid.into(),
+            model,
+            sections: new_sections,
+
+            bounds_rect: self.bounds_rect,
+            temporaries: self.temporaries.clone(),
+        });
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
+    }
+
+    fn deep_copy_relink(
+        &mut self,
+        c: &HashMap<ViewUuid, <UmlActivityDomain as Domain>::CommonElementViewT>,
+        m: &HashMap<ModelUuid, <UmlActivityDomain as Domain>::CommonElementT>,
+    ) {
+        self.sections.iter_mut().for_each(|v|
+            v.write().deep_copy_relink(c, m)
+        );
+
+        let mut w = self.model.write();
+        for e in w.sections.iter_mut() {
+            let uuid = *e.read().uuid;
+            if let Some(UmlActivityElement::PartitionSection(new_model)) = m.get(&uuid) {
                 *e = new_model.clone();
+            }
+        }
+    }
+}
+
+
+pub fn new_umlactivity_partitionsection(
+    name: &str,
+    stereotype: &str,
+    bounds_rect: egui::Rect,
+) -> (ERef<UmlActivityPartitionSection>, ERef<UmlActivityPartitionSectionView>) {
+    let package_model = ERef::new(UmlActivityPartitionSection::new(
+        ModelUuid::now_v7(),
+        stereotype.to_owned(),
+        name.to_owned(),
+        Vec::new(),
+    ));
+    let package_view = new_umlactivity_partitionsection_view(package_model.clone(), bounds_rect);
+
+    (package_model, package_view)
+}
+pub fn new_umlactivity_partitionsection_view(
+    model: ERef<UmlActivityPartitionSection>,
+    bounds_rect: egui::Rect,
+) -> ERef<UmlActivityPartitionSectionView> {
+    ERef::new(
+        UmlActivityPartitionSectionView {
+            uuid: ViewUuid::now_v7().into(),
+            model,
+            contained_elements: Vec::new(),
+            bounds_rect,
+            background_color: MGlobalColor::None,
+            temporaries: Default::default(),
+        }
+    )
+}
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlActivityPartitionSectionView {
+    uuid: Arc<ViewUuid>,
+    #[nh_context_serde(entity)]
+    model: ERef<UmlActivityPartitionSection>,
+    #[nh_context_serde(entity)]
+    contained_elements: Vec<UmlActivityElementView>,
+
+    pub bounds_rect: egui::Rect,
+    background_color: MGlobalColor,
+    #[nh_context_serde(skip_and_default)]
+    temporaries: UmlActivityPartitionSectionViewTemporaries,
+}
+
+#[derive(Clone, Default)]
+struct UmlActivityPartitionSectionViewTemporaries {
+    stereotype_in_guillemets: String,
+    stereotype_buffer: String,
+    name_buffer: String,
+
+    dragged_type_and_shape: Option<(PackageDragType, egui::Rect)>,
+    highlight: canvas::Highlight,
+    selected_direct_elements: HashSet<ViewUuid>,
+}
+
+impl UmlActivityPartitionSectionView {
+    fn handle_size(&self, ui_scale: f32) -> f32 {
+        10.0_f32
+            .min(self.bounds_rect.width() * ui_scale / 6.0)
+            .min(self.bounds_rect.height() * ui_scale / 3.0)
+    }
+    fn drag_handle_position(&self, ui_scale: f32) -> egui::Pos2 {
+        egui::Pos2::new(
+            (self.bounds_rect.right() - 2.0 * self.handle_size(ui_scale) / ui_scale)
+                .max((self.bounds_rect.center().x + self.bounds_rect.right()) / 2.0),
+            self.bounds_rect.top()
+        )
+    }
+
+    fn show_properties_inner(
+        &mut self,
+        drawing_context: &GlobalDrawingContext,
+        q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        ui: &mut egui::Ui,
+        commands: &mut Vec<InsensitiveCommand<
+            <UmlActivityDomain as Domain>::OrdinalMovementT,
+            <UmlActivityDomain as Domain>::AddCommandElementT,
+            <UmlActivityDomain as Domain>::PropChangeT,
+        >>,
+    ) -> (PropertiesStatus<UmlActivityDomain>, Option<UmlActivityOrdinalMovement>) {
+        let mut add_sibling = None::<UmlActivityOrdinalMovement>;
+
+        if let Some(child) = self.contained_elements.iter_mut()
+            .filter_map(|v| v.show_properties(drawing_context, q, ui, commands).to_non_default())
+            .next()
+        {
+            return (child, add_sibling);
+        }
+
+        if !self.temporaries.highlight.selected {
+            return (PropertiesStatus::NotShown, add_sibling);
+        }
+
+        ui.label("Model properties");
+
+        if ui.labeled_text_edit_singleline("Stereotype:", &mut self.temporaries.stereotype_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlActivityPropChange::StereotypeChange(Arc::new(self.temporaries.stereotype_buffer.clone())),
+            ));
+        }
+
+        if ui.labeled_text_edit_multiline("Name:", &mut self.temporaries.name_buffer).changed() {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlActivityPropChange::NameChange(Arc::new(self.temporaries.name_buffer.clone())),
+            ));
+        }
+
+        ui.label("View properties");
+
+        ui.horizontal(|ui| {
+            let egui::Pos2 { mut x, mut y } = self.bounds_rect.left_top();
+
+            ui.label("x");
+            if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.bounds_rect.left(), 0.0)));
+            }
+            ui.label("y");
+            if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
+                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.bounds_rect.top())));
+            }
+        });
+
+        ui.label("Background color:");
+        if crate::common::controller::mglobalcolor_edit_button(
+            drawing_context,
+            ui,
+            &mut self.background_color,
+        ) {
+            return (PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color)), add_sibling);
+        }
+
+        ui.horizontal(|ui| {
+            if ui.button("Add sibling left").clicked() {
+                add_sibling = Some(UmlActivityOrdinalMovement::Left);
+            }
+            if ui.button("Add sibling right").clicked() {
+                add_sibling = Some(UmlActivityOrdinalMovement::Right);
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui.button("Move left").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(
+                    std::iter::once(*self.uuid).collect(),
+                    UmlActivityOrdinalMovement::Left,
+                ));
+            }
+            if ui.button("Move right").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(
+                    std::iter::once(*self.uuid).collect(),
+                    UmlActivityOrdinalMovement::Right,
+                ));
+            }
+        });
+
+        (PropertiesStatus::Shown, add_sibling)
+    }
+}
+
+impl Entity for UmlActivityPartitionSectionView {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl View for UmlActivityPartitionSectionView {
+    fn uuid(&self) -> Arc<ViewUuid> {
+        self.uuid.clone()
+    }
+    fn model_uuid(&self) -> Arc<ModelUuid> {
+        self.model.read().uuid.clone()
+    }
+}
+
+impl ElementController<UmlActivityElement> for UmlActivityPartitionSectionView {
+    fn model(&self) -> UmlActivityElement {
+        self.model.clone().into()
+    }
+
+    fn min_shape(&self) -> NHShape {
+        NHShape::Rect {
+            inner: self.bounds_rect,
+        }
+    }
+
+    fn position(&self) -> egui::Pos2 {
+        self.bounds_rect.center()
+    }
+}
+
+impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionView {
+    fn show_properties(
+        &mut self,
+        _drawing_context: &GlobalDrawingContext,
+        _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        _ui: &mut egui::Ui,
+        _commands: &mut Vec<InsensitiveCommand<
+            <UmlActivityDomain as Domain>::OrdinalMovementT,
+            <UmlActivityDomain as Domain>::AddCommandElementT,
+            <UmlActivityDomain as Domain>::PropChangeT,
+        >>,
+    ) -> PropertiesStatus<UmlActivityDomain> {
+        unreachable!()
+    }
+
+    fn draw_in(
+        &mut self,
+        q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        context: &GlobalDrawingContext,
+        settings: &UmlActivitySettings,
+        canvas: &mut dyn NHCanvas,
+        tool: &Option<(egui::Pos2, &NaiveUmlActivityTool)>,
+    ) -> TargettingStatus {
+        let background_color = context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE);
+        canvas.draw_rectangle(
+            self.bounds_rect,
+            egui::CornerRadius::ZERO,
+            background_color,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.temporaries.highlight,
+        );
+
+        let mut center_top_acc = self.bounds_rect.center_top();
+        if !self.temporaries.stereotype_in_guillemets.is_empty() {
+            canvas.draw_text(
+                center_top_acc,
+                egui::Align2::CENTER_TOP,
+                &self.temporaries.stereotype_in_guillemets,
+                canvas::CLASS_TOP_FONT_SIZE,
+                egui::Color32::BLACK,
+            );
+            center_top_acc = canvas.measure_text(
+                center_top_acc,
+                egui::Align2::CENTER_TOP,
+                &self.temporaries.stereotype_in_guillemets,
+                canvas::CLASS_TOP_FONT_SIZE,
+            ).center_bottom();
+        }
+        canvas.draw_text(
+            center_top_acc,
+            egui::Align2::CENTER_TOP,
+            &self.temporaries.name_buffer,
+            canvas::CLASS_MIDDLE_FONT_SIZE,
+            egui::Color32::BLACK,
+        );
+
+        // Draw resize/drag handles
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.temporaries.highlight.selected) {
+            let handle_size = self.handle_size(ui_scale);
+            for (h, c) in [
+                (self.bounds_rect.right_center(), ">"),
+                (self.bounds_rect.center_bottom(), "v"),
+                (self.bounds_rect.right_bottom(), "↘"),
+            ] {
+                canvas.draw_rectangle(
+                    egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size / ui_scale)),
+                    egui::CornerRadius::ZERO,
+                    egui::Color32::WHITE,
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_text(
+                    h,
+                    egui::Align2::CENTER_CENTER,
+                    c,
+                    10.0 / ui_scale,
+                    egui::Color32::BLACK,
+                );
+            }
+
+            let dc = self.drag_handle_position(ui_scale);
+            canvas.draw_rectangle(
+                egui::Rect::from_center_size(
+                    dc,
+                    egui::Vec2::splat(handle_size / ui_scale),
+                ),
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+
+            let da_radius = (handle_size / 2.0 - 1.0) / ui_scale;
+            canvas.draw_line(
+                [
+                    dc - egui::Vec2::new(0.0, da_radius),
+                    dc + egui::Vec2::new(0.0, da_radius),
+                ],
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_line(
+                [
+                    dc - egui::Vec2::new(da_radius, 0.0),
+                    dc + egui::Vec2::new(da_radius, 0.0),
+                ],
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+        }
+
+
+        macro_rules! draw_children {
+            () => {
+                {
+                let mut targetting_drawn = false;
+                for e in self.contained_elements.iter_mut() {
+                    targetting_drawn |= e.draw_in(q, context, settings, canvas, tool) != TargettingStatus::NotDrawn;
+                }
+                targetting_drawn
+                }
+            };
+        }
+        if draw_children!() {
+            return TargettingStatus::Drawn;
+        }
+
+        let Some((_, tool)) = tool.filter(|(pos, _)| self.bounds_rect.contains(*pos)) else {
+            return TargettingStatus::NotDrawn
+        };
+
+        canvas.draw_rectangle(
+            self.bounds_rect,
+            egui::CornerRadius::ZERO,
+            tool.targetting_for_section(Some(self.model.clone().into())),
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            self.temporaries.highlight,
+        );
+        draw_children!();
+        TargettingStatus::Drawn
+    }
+
+    fn collect_allignment(&mut self, am: &mut SnapManager) {
+        am.add_shape(*self.uuid, self.min_shape());
+
+        self.contained_elements.iter_mut().for_each(|v|
+            v.collect_allignment(am)
+        );
+    }
+    fn handle_event(
+        &mut self,
+        event: InputEvent,
+        ehc: &EventHandlingContext,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
+        q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
+        tool: &mut Option<NaiveUmlActivityTool>,
+        element_setup_modal: &mut Option<Box<dyn CustomModal>>,
+        commands: &mut Vec<InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>>,
+    ) -> EventHandlingStatus {
+        let k_status = self.contained_elements.iter_mut().flat_map(|v| {
+            let s = v.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
+            if s != EventHandlingStatus::NotHandled {
+                Some((*v.uuid(), s))
+            } else {
+                None
+            }
+        }).next();
+
+        match event {
+            InputEvent::MouseDown(_pos) | InputEvent::MouseUp(_pos) if k_status.is_some() => {
+                EventHandlingStatus::HandledByContainer
+            }
+            InputEvent::MouseDown(pos) => {
+                let handle_size = self.handle_size(1.0);
+                if self.temporaries.highlight.selected {
+                    for (a,h) in [(egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),
+                                (egui::Align2::CENTER_TOP, self.bounds_rect.center_bottom()),
+                                (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom())]
+                    {
+                        if egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
+                            self.temporaries.dragged_type_and_shape = Some((PackageDragType::Resize(a), self.bounds_rect));
+                            return EventHandlingStatus::HandledByElement;
+                        }
+                    }
+                }
+
+                if self.min_shape().border_distance(pos) <= 2.0 / ehc.ui_scale
+                    || egui::Rect::from_center_size(
+                        self.drag_handle_position(ehc.ui_scale),
+                        egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
+                    self.temporaries.dragged_type_and_shape = Some((PackageDragType::Move, self.bounds_rect));
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            }
+            InputEvent::MouseUp(_pos) => {
+                if self.temporaries.dragged_type_and_shape.is_some() {
+                    self.temporaries.dragged_type_and_shape = None;
+                    EventHandlingStatus::HandledByElement
+                } else {
+                    EventHandlingStatus::NotHandled
+                }
+            }
+            InputEvent::Click(pos) if self.bounds_rect.contains(pos) => {
+                if let Some(tool) = tool {
+                    tool.add_position(*event.mouse_position());
+                    tool.add_section(self.model.clone().into());
+
+                    if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid) {
+                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, new_e.into(), true).into());
+                        if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                            *element_setup_modal = esm;
+                        }
+                    }
+
+                    EventHandlingStatus::HandledByContainer
+                } else if let Some((k, status)) = k_status {
+                    if status == EventHandlingStatus::HandledByElement {
+                        if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                            commands.push(InsensitiveCommand::HighlightAll(false, canvas::Highlight::SELECTED).into());
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                true,
+                                canvas::Highlight::SELECTED,
+                            ).into());
+                        } else {
+                            commands.push(InsensitiveCommand::HighlightSpecific(
+                                std::iter::once(k).collect(),
+                                !self.temporaries.selected_direct_elements.contains(&k),
+                                canvas::Highlight::SELECTED,
+                            ).into());
+                        }
+                    }
+                    EventHandlingStatus::HandledByContainer
+                } else {
+                    EventHandlingStatus::HandledByElement
+                }
+            },
+            InputEvent::Drag { delta, .. } => match self.temporaries.dragged_type_and_shape {
+                Some((PackageDragType::Move, real_bounds)) => {
+                    let translated_bounds = real_bounds.translate(delta);
+                    self.temporaries.dragged_type_and_shape = Some((PackageDragType::Move, translated_bounds));
+                    let translated_real_shape = canvas::NHShape::Rect { inner: translated_bounds };
+                    let coerced_pos = ehc.snap_manager.coerce(translated_real_shape,
+                        |e| *e != *self.uuid
+                    );
+                    let coerced_delta = coerced_pos - self.position();
+
+                    if self.temporaries.highlight.selected {
+                        commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
+                    } else {
+                        commands.push(InsensitiveCommand::MovePositional(
+                            std::iter::once(*self.uuid).collect(),
+                            coerced_delta,
+                        ));
+                    }
+                    EventHandlingStatus::HandledByElement
+                },
+                Some((PackageDragType::Resize(align), real_bounds)) => {
+                    let (left, right) = match align.x() {
+                        egui::Align::Min => (0.0, delta.x),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => (-delta.x, 0.0),
+                    };
+                    let (top, bottom) = match align.y() {
+                        egui::Align::Min => (0.0, delta.y),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => (-delta.y, 0.0),
+                    };
+                    let new_real_bounds = real_bounds + egui::epaint::MarginF32 { left, right, top, bottom };
+                    self.temporaries.dragged_type_and_shape = Some((PackageDragType::Resize(align), new_real_bounds));
+                    let handle_x = match align.x() {
+                        egui::Align::Min => (new_real_bounds.right(), self.bounds_rect.right()),
+                        egui::Align::Center => (new_real_bounds.center().x, self.bounds_rect.center().x),
+                        egui::Align::Max => (new_real_bounds.left(), self.bounds_rect.left()),
+                    };
+                    let handle_y = match align.y() {
+                        egui::Align::Min => (new_real_bounds.bottom(), self.bounds_rect.bottom()),
+                        egui::Align::Center => (new_real_bounds.center().y, self.bounds_rect.center().y),
+                        egui::Align::Max => (new_real_bounds.top(), self.bounds_rect.top()),
+                    };
+                    let coerced_point = ehc.snap_manager.coerce(
+                        canvas::NHShape::Rect { inner: egui::Rect::from_min_size(egui::Pos2::new(handle_x.0, handle_y.0), egui::Vec2::ZERO) },
+                        |e| !ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    );
+                    let coerced_delta = coerced_point - egui::Pos2::new(handle_x.1, handle_y.1);
+
+                    commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), align, coerced_delta));
+                    EventHandlingStatus::HandledByElement
+                },
+                None => EventHandlingStatus::NotHandled,
+            },
+            _ => {
+                k_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled)
+            },
+        }
+    }
+
+    fn apply_command(
+        &mut self,
+        command: &InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>,
+        undo_accumulator: &mut Vec<InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>>,
+        affected_models: &mut HashSet<ModelUuid>,
+    ) {
+        macro_rules! recurse {
+            () => {
+                self.contained_elements.iter_mut().for_each(|v| v.apply_command(command, undo_accumulator, affected_models));
+            };
+        }
+        match command {
+            InsensitiveCommand::HighlightAll(set, h) => {
+                self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
+                if h.selected {
+                    match set {
+                        true => {
+                            self.temporaries.selected_direct_elements =
+                                self.contained_elements.iter().map(|v| *v.uuid()).collect();
+                        }
+                        false => self.temporaries.selected_direct_elements.clear(),
+                    }
+                }
+                recurse!();
+            }
+            InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
+                if uuids.contains(&*self.uuid) {
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
+                }
+
+                if h.selected {
+                    for k in self.contained_elements.iter().map(|v| *v.uuid()).filter(|k| uuids.contains(k)) {
+                        match set {
+                            true => self.temporaries.selected_direct_elements.insert(k),
+                            false => self.temporaries.selected_direct_elements.remove(&k),
+                        };
+                    }
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::SelectByDrag(rect, retain) => {
+                self.temporaries.highlight.selected =
+                    (self.temporaries.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
+
+                recurse!();
+            }
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
+                recurse!();
+            }
+            InsensitiveCommand::MovePositional(_, delta) | InsensitiveCommand::MovePositionalAll(delta) => {
+                self.bounds_rect.set_center(self.position() + *delta);
+                undo_accumulator.push(InsensitiveCommand::MovePositional(
+                    std::iter::once(*self.uuid).collect(),
+                    -*delta,
+                ));
+                let mut void = vec![];
+                self.contained_elements.iter_mut().for_each(|v| {
+                    v.apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
+                });
+            }
+            InsensitiveCommand::ResizeSpecificElementsBy(..)
+            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {
+                recurse!();
+            }
+            InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
+                for element in self.contained_elements.iter().filter(|v| uuids.contains(&v.uuid())) {
+                    let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
+                        (1, None)
+                    } else if let Some((b, pos)) = self.model.read().get_element_pos(&element.model_uuid()) {
+                        (b, Some(pos))
+                    } else {
+                        continue;
+                    };
+
+                    undo_accumulator.push(InsensitiveCommand::AddDependency(
+                        *self.uuid,
+                        b,
+                        pos,
+                        element.clone().into(),
+                        false,
+                    ));
+                }
+                self.contained_elements.retain(|v| !uuids.contains(&v.uuid()));
+
+                recurse!();
+            }
+            InsensitiveCommand::PasteSpecificElements(target, _elements) => {
+                if *target == *self.uuid {
+                    todo!("undo = delete")
+                }
+
+                recurse!();
+            },
+            InsensitiveCommand::AddDependency(target, b, pos, element, into_model) => {
+                if *target == *self.uuid {
+                    let mut w = self.model.write();
+                    if *b == 0
+                        && let Ok(mut view) = UmlActivityElementView::try_from(element.clone())
+                        && let Some(model_pos) = w.get_element_pos(&view.model_uuid()).map(|e| e.1)
+                            .or_else(|| if *into_model { w.insert_element(*b, *pos, view.model()).ok() } else { None }) {
+                        let uuid = *view.uuid();
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency(
+                            *self.uuid,
+                            *b,
+                            uuid,
+                            *into_model,
+                        ));
+
+                        if *into_model {
+                            affected_models.insert(*w.uuid);
+                        }
+                        let mut model_transitives = HashMap::new();
+                        view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                        affected_models.extend(model_transitives.into_keys());
+
+                        let view_pos = {
+                            let mut view_pos: PositionNoT = 0;
+                            for e in &self.contained_elements {
+                                let Some((_b, pos)) = w.get_element_pos(&e.model_uuid()) else {
+                                    unreachable!()
+                                };
+                                if pos < model_pos {
+                                    view_pos += 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            view_pos
+                        };
+                        self.contained_elements.insert(view_pos.try_into().unwrap(), view.clone());
+                    }
+                }
+
+                recurse!();
+            }
+            InsensitiveCommand::RemoveDependency(target, b, element, into_model) => {
+                if *target == *self.uuid {
+                    let mut w = self.model.write();
+                    if *b == 0
+                        && let Some(view) = self.contained_elements.iter().find(|v| *v.uuid() == *element).cloned()
+                        && let Some((_b, pos)) = w.remove_element(&view.model_uuid()) {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency(
+                            *self.uuid,
+                            *b,
+                            Some(pos),
+                            view.clone().into(),
+                            *into_model,
+                        ));
+
+                        if *into_model {
+                            affected_models.insert(*w.uuid);
+                        }
+
+                        self.contained_elements.retain(|v| *v.uuid() != *element);
+                    }
+                }
+                recurse!();
+            }
+            InsensitiveCommand::ArrangeSpecificElements(_uuids, _arr) => {},
+            InsensitiveCommand::MoveOrdinal(..) => {
+                recurse!();
+            },
+            InsensitiveCommand::PropertyChange(uuids, property) => {
+                if uuids.contains(&self.uuid) {
+                    let mut model = self.model.write();
+                    affected_models.insert(*model.uuid);
+                    match property {
+                        UmlActivityPropChange::StereotypeChange(stereotype) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlActivityPropChange::StereotypeChange(model.stereotype.clone()),
+                            ));
+                            model.stereotype = stereotype.clone();
+                        }
+                        UmlActivityPropChange::NameChange(name) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlActivityPropChange::NameChange(model.name.clone()),
+                            ));
+                            model.name = name.clone();
+                        }
+                        UmlActivityPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlActivityPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                            ));
+                            self.background_color = *color;
+                        }
+                        _ => {}
+                    }
+                }
+                recurse!();
+            }
+        }
+    }
+
+    fn refresh_buffers(&mut self) {
+        let r = self.model.read();
+
+        self.temporaries.stereotype_in_guillemets.clear();
+        if !r.stereotype.is_empty() {
+            self.temporaries.stereotype_in_guillemets = format!("«{}»", r.stereotype);
+        }
+        self.temporaries.stereotype_buffer = (*r.stereotype).clone();
+        self.temporaries.name_buffer = (*r.name).clone();
+    }
+
+    fn head_count(
+        &mut self,
+        flattened_views: &mut HashMap<ViewUuid, (UmlActivityElementView, ViewUuid)>,
+        flattened_views_status: &mut HashMap<ViewUuid, SelectionStatus>,
+        flattened_represented_models: &mut HashMap<ModelUuid, ViewUuid>,
+    ) {
+        flattened_views_status.insert(*self.uuid, self.temporaries.highlight.selected.into());
+        flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
+
+        self.contained_elements.iter_mut().for_each(|v| {
+            v.head_count(flattened_views, flattened_views_status, flattened_represented_models);
+            flattened_views.insert(*v.uuid(), (v.clone(), *self.uuid));
+        });
+    }
+
+    fn deep_copy_clone(
+        &self,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, UmlActivityElementView>,
+        c: &mut HashMap<ViewUuid, UmlActivityElementView>,
+        m: &mut HashMap<ModelUuid, UmlActivityElement>,
+    ) {
+        let old_model = self.model.read();
+
+        let (view_uuid, model_uuid) = if uuid_present(&*self.uuid) {
+            (ViewUuid::now_v7(), ModelUuid::now_v7())
+        } else {
+            (*self.uuid, *old_model.uuid)
+        };
+
+        let model = if let Some(UmlActivityElement::PartitionSection(m)) = m.get(&old_model.uuid) {
+            m.clone()
+        } else {
+            let modelish = old_model.clone_with(model_uuid);
+            m.insert(*old_model.uuid, modelish.clone().into());
+            modelish
+        };
+
+        let mut inner = HashMap::new();
+        let contained_elements = self.contained_elements.iter().map(|v| {
+            v.deep_copy_clone(uuid_present, &mut inner, c, m);
+            let Some(e) = c.get(&v.uuid()) else {
+                unreachable!()
+            };
+            e.clone()
+        }).collect();
+
+        let cloneish = ERef::new(Self {
+            uuid: view_uuid.into(),
+            model,
+            contained_elements,
+
+            bounds_rect: self.bounds_rect.clone(),
+            background_color: self.background_color.clone(),
+            temporaries: self.temporaries.clone(),
+        });
+        tlc.insert(view_uuid, cloneish.clone().into());
+        c.insert(*self.uuid, cloneish.clone().into());
+    }
+
+    fn deep_copy_relink(
+        &mut self,
+        c: &HashMap<ViewUuid, <UmlActivityDomain as Domain>::CommonElementViewT>,
+        m: &HashMap<ModelUuid, <UmlActivityDomain as Domain>::CommonElementT>,
+    ) {
+        self.contained_elements.iter_mut().for_each(|v|
+            v.deep_copy_relink(c, m)
+        );
+
+        let mut w = self.model.write();
+        for e in w.contained_elements.iter_mut() {
+            let uuid = *e.uuid();
+            if let Some(new_model) = m.get(&uuid).and_then(|e| e.as_standalone()) {
+                *e = new_model;
             }
         }
     }

@@ -23,9 +23,12 @@ pub fn deep_copy_diagram(d: &UmlActivityDiagram) -> (ERef<UmlActivityDiagram>, H
                     name: model.name.clone(),
                     parameters: model.stereotype.clone(),
                     contained_elements: model.contained_elements.iter().map(|e| {
-                        let new_model = walk(e, into);
+                        let new_model = walk(&e.clone().to_element(), into);
                         into.insert(*e.uuid(), new_model.clone());
-                        new_model
+                        match new_model.as_standalone() {
+                            Some(new_model) => new_model,
+                            None => unreachable!(),
+                        }
                     }).collect(),
                     comment: model.comment.clone()
                 };
@@ -39,9 +42,47 @@ pub fn deep_copy_diagram(d: &UmlActivityDiagram) -> (ERef<UmlActivityDiagram>, H
                     stereotype: model.stereotype.clone(),
                     name: model.name.clone(),
                     contained_elements: model.contained_elements.iter().map(|e| {
-                        let new_model = walk(e, into);
+                        let new_model = walk(&e.clone().to_element(), into);
                         into.insert(*e.uuid(), new_model.clone());
-                        new_model
+                        match new_model.as_standalone() {
+                            Some(new_model) => new_model,
+                            None => unreachable!(),
+                        }
+                    }).collect(),
+                };
+                ERef::new(new_model).into()
+            },
+            UmlActivityElement::Partition(inner) => {
+                let model = inner.read();
+
+                let new_model = UmlActivityPartition {
+                    uuid: new_uuid,
+                    sections: model.sections.iter().map(|e| {
+                        let new_model = walk(&e.clone().into(), into);
+                        if let UmlActivityElement::PartitionSection(new_model) = new_model {
+                            into.insert(*e.read().uuid(), new_model.clone().into());
+                            new_model
+                        } else {
+                            e.clone()
+                        }
+                    }).collect(),
+                };
+                ERef::new(new_model).into()
+            }
+            UmlActivityElement::PartitionSection(inner) => {
+                let model = inner.read();
+
+                let new_model = UmlActivityPartitionSection {
+                    uuid: new_uuid,
+                    stereotype: model.stereotype.clone(),
+                    name: model.name.clone(),
+                    contained_elements: model.contained_elements.iter().map(|e| {
+                        let new_model = walk(&e.clone().to_element(), into);
+                        into.insert(*e.uuid(), new_model.clone());
+                        match new_model.as_standalone() {
+                            Some(new_model) => new_model,
+                            None => unreachable!(),
+                        }
                     }).collect(),
                 };
                 ERef::new(new_model).into()
@@ -63,13 +104,25 @@ pub fn deep_copy_diagram(d: &UmlActivityDiagram) -> (ERef<UmlActivityDiagram>, H
             UmlActivityElement::Activity(inner) => {
                 let mut model = inner.write();
                 for e in model.contained_elements.iter_mut() {
-                    relink(e, all_models);
+                    relink(&mut e.clone().to_element(), all_models);
                 }
             },
             UmlActivityElement::InterruptibleRegion(inner) => {
                 let mut model = inner.write();
                 for e in model.contained_elements.iter_mut() {
-                    relink(e, all_models);
+                    relink(&mut e.clone().to_element(), all_models);
+                }
+            },
+            UmlActivityElement::Partition(inner) => {
+                let mut model = inner.write();
+                for e in model.sections.iter_mut() {
+                    relink(&mut e.clone().into(), all_models);
+                }
+            },
+            UmlActivityElement::PartitionSection(inner) => {
+                let mut model = inner.write();
+                for e in model.contained_elements.iter_mut() {
+                    relink(&mut e.clone().to_element(), all_models);
                 }
             },
             UmlActivityElement::ActionNode(..)
@@ -109,12 +162,16 @@ pub fn deep_copy_diagram(d: &UmlActivityDiagram) -> (ERef<UmlActivityDiagram>, H
     let mut all_models = HashMap::new();
     let mut new_contained_elements = Vec::new();
     for e in &d.contained_elements {
-        let new_model = walk(&e, &mut all_models);
+        let new_model = walk(&e.clone().to_element(), &mut all_models);
         all_models.insert(*e.uuid(), new_model.clone());
+        let new_model = match new_model.as_standalone() {
+            Some(new_model) => new_model,
+            None => unreachable!(),
+        };
         new_contained_elements.push(new_model);
     }
     for e in new_contained_elements.iter_mut() {
-        relink(e, &all_models);
+        relink(&mut e.clone().to_element(), &all_models);
     }
 
     let new_diagram = UmlActivityDiagram {
@@ -133,16 +190,32 @@ pub fn fake_copy_diagram(d: &UmlActivityDiagram) -> HashMap<ModelUuid, UmlActivi
                 let model = inner.read();
 
                 for e in &model.contained_elements {
-                    walk(e, into);
-                    into.insert(*e.uuid(), e.clone());
+                    walk(&e.clone().to_element(), into);
+                    into.insert(*e.uuid(), e.clone().to_element());
                 }
             },
             UmlActivityElement::InterruptibleRegion(inner) => {
                 let model = inner.read();
 
                 for e in &model.contained_elements {
-                    walk(e, into);
-                    into.insert(*e.uuid(), e.clone());
+                    walk(&e.clone().to_element(), into);
+                    into.insert(*e.uuid(), e.clone().to_element());
+                }
+            },
+            UmlActivityElement::Partition(inner) => {
+                let model = inner.read();
+
+                for e in &model.sections {
+                    walk(&e.clone().into(), into);
+                    into.insert(*e.read().uuid(), e.clone().into());
+                }
+            },
+            UmlActivityElement::PartitionSection(inner) => {
+                let model = inner.read();
+
+                for e in &model.contained_elements {
+                    walk(&e.clone().to_element(), into);
+                    into.insert(*e.uuid(), e.clone().to_element());
                 }
             },
             _ => {},
@@ -151,8 +224,8 @@ pub fn fake_copy_diagram(d: &UmlActivityDiagram) -> HashMap<ModelUuid, UmlActivi
 
     let mut all_models = HashMap::new();
     for e in &d.contained_elements {
-        walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), e.clone());
+        walk(&e.clone().to_element(), &mut all_models);
+        all_models.insert(*e.uuid(), e.clone().to_element());
     }
 
     all_models
@@ -168,7 +241,7 @@ pub fn transitive_closure(d: &UmlActivityDiagram, mut when_deleting: HashSet<Mod
                         enumerate(e, when_deleting);
                     } else {
                         for e in &r.contained_elements {
-                            walk(e, when_deleting);
+                            walk(&e.clone().to_element(), when_deleting);
                         }
                     }
                 },
@@ -178,14 +251,34 @@ pub fn transitive_closure(d: &UmlActivityDiagram, mut when_deleting: HashSet<Mod
                         enumerate(e, when_deleting);
                     } else {
                         for e in &r.contained_elements {
-                            walk(e, when_deleting);
+                            walk(&e.clone().to_element(), when_deleting);
+                        }
+                    }
+                },
+                UmlActivityElement::Partition(inner) => {
+                    let r = inner.read();
+                    if when_deleting.contains(&r.uuid) {
+                        enumerate(e, when_deleting);
+                    } else {
+                        for e in &r.sections {
+                            walk(&e.clone().into(), when_deleting);
+                        }
+                    }
+                },
+                UmlActivityElement::PartitionSection(inner) => {
+                    let r = inner.read();
+                    if when_deleting.contains(&r.uuid) {
+                        enumerate(e, when_deleting);
+                    } else {
+                        for e in &r.contained_elements {
+                            walk(&e.clone().to_element(), when_deleting);
                         }
                     }
                 },
                 _ => {}
             }
         }
-        walk(e, &mut when_deleting);
+        walk(&e.clone().to_element(), &mut when_deleting);
     }
 
     let mut also_delete = HashSet::new();
@@ -194,12 +287,22 @@ pub fn transitive_closure(d: &UmlActivityDiagram, mut when_deleting: HashSet<Mod
             match e {
                 UmlActivityElement::Activity(inner) => {
                     for e in &inner.read().contained_elements {
-                        walk(e, when_deleting, also_delete);
+                        walk(&e.clone().to_element(), when_deleting, also_delete);
                     }
                 },
                 UmlActivityElement::InterruptibleRegion(inner) => {
                     for e in &inner.read().contained_elements {
-                        walk(e, when_deleting, also_delete);
+                        walk(&e.clone().to_element(), when_deleting, also_delete);
+                    }
+                },
+                UmlActivityElement::Partition(inner) => {
+                    for e in &inner.read().sections {
+                        walk(&e.clone().into(), when_deleting, also_delete);
+                    }
+                },
+                UmlActivityElement::PartitionSection(inner) => {
+                    for e in &inner.read().contained_elements {
+                        walk(&e.clone().to_element(), when_deleting, also_delete);
                     }
                 },
                 UmlActivityElement::ActionNode(..)
@@ -228,7 +331,7 @@ pub fn transitive_closure(d: &UmlActivityDiagram, mut when_deleting: HashSet<Mod
             }
         }
         for e in &d.contained_elements {
-            walk(e, &when_deleting, &mut also_delete);
+            walk(&e.clone().to_element(), &when_deleting, &mut also_delete);
         }
         if also_delete.is_empty() {
             break;
@@ -244,12 +347,22 @@ fn enumerate(e: &UmlActivityElement, into: &mut HashSet<ModelUuid>) {
     match e {
         UmlActivityElement::Activity(inner) => {
             for e in &inner.read().contained_elements {
-                enumerate(e, into);
+                enumerate(&e.clone().to_element(), into);
             }
         },
         UmlActivityElement::InterruptibleRegion(inner) => {
             for e in &inner.read().contained_elements {
-                enumerate(e, into);
+                enumerate(&e.clone().to_element(), into);
+            }
+        },
+        UmlActivityElement::Partition(inner) => {
+            for e in &inner.read().sections {
+                enumerate(&e.clone().into(), into);
+            }
+        },
+        UmlActivityElement::PartitionSection(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate(&e.clone().to_element(), into);
             }
         },
         _ => {},
@@ -268,6 +381,10 @@ pub enum UmlActivityElement {
     Activity(ERef<UmlActivity>),
     #[container_model(passthrough = "eref")]
     InterruptibleRegion(ERef<UmlActivityInterruptibleRegion>),
+    #[container_model(passthrough = "eref")]
+    Partition(ERef<UmlActivityPartition>),
+    #[container_model(passthrough = "eref")]
+    PartitionSection(ERef<UmlActivityPartitionSection>),
     ActionNode(ERef<UmlActivityActionNode>),
     InitialNode(ERef<UmlActivityInitialNode>),
     FinalNode(ERef<UmlActivityFinalNode>),
@@ -277,6 +394,68 @@ pub enum UmlActivityElement {
     Edge(ERef<UmlActivityFlowEdge>),
     Comment(ERef<UmlActivityComment>),
     CommentLink(ERef<UmlActivityCommentLink>),
+}
+
+impl UmlActivityElement {
+    pub fn as_standalone(&self) -> Option<UmlActivityStandaloneElement> {
+        match &self {
+            UmlActivityElement::Activity(inner) => Some(inner.clone().into()),
+            UmlActivityElement::InterruptibleRegion(inner) => Some(inner.clone().into()),
+            UmlActivityElement::Partition(inner) => Some(inner.clone().into()),
+            UmlActivityElement::PartitionSection(_) => None,
+            UmlActivityElement::ActionNode(inner) => Some(inner.clone().into()),
+            UmlActivityElement::InitialNode(inner) => Some(inner.clone().into()),
+            UmlActivityElement::FinalNode(inner) => Some(inner.clone().into()),
+            UmlActivityElement::DecisionNode(inner) => Some(inner.clone().into()),
+            UmlActivityElement::ForkNode(inner) => Some(inner.clone().into()),
+            UmlActivityElement::ObjectNode(inner) => Some(inner.clone().into()),
+            UmlActivityElement::Edge(inner) => Some(inner.clone().into()),
+            UmlActivityElement::Comment(inner) => Some(inner.clone().into()),
+            UmlActivityElement::CommentLink(inner) => Some(inner.clone().into()),
+        }
+    }
+}
+
+#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
+#[model(default_passthrough = "eref")]
+#[container_model(element_type = UmlActivityElement, default_passthrough = "none")]
+#[full_text_searchable(default_passthrough = "eref")]
+#[nh_context_serde(uuid_type = ModelUuid)]
+pub enum UmlActivityStandaloneElement {
+    #[container_model(passthrough = "eref")]
+    Activity(ERef<UmlActivity>),
+    #[container_model(passthrough = "eref")]
+    InterruptibleRegion(ERef<UmlActivityInterruptibleRegion>),
+    #[container_model(passthrough = "eref")]
+    Partition(ERef<UmlActivityPartition>),
+    ActionNode(ERef<UmlActivityActionNode>),
+    InitialNode(ERef<UmlActivityInitialNode>),
+    FinalNode(ERef<UmlActivityFinalNode>),
+    DecisionNode(ERef<UmlActivityDecisionNode>),
+    ForkNode(ERef<UmlActivityForkNode>),
+    ObjectNode(ERef<UmlActivityObjectNode>),
+    Edge(ERef<UmlActivityFlowEdge>),
+    Comment(ERef<UmlActivityComment>),
+    CommentLink(ERef<UmlActivityCommentLink>),
+}
+
+impl UmlActivityStandaloneElement {
+    pub fn to_element(self) -> UmlActivityElement {
+        match self {
+            UmlActivityStandaloneElement::Activity(inner) => inner.into(),
+            UmlActivityStandaloneElement::InterruptibleRegion(inner) => inner.into(),
+            UmlActivityStandaloneElement::Partition(inner) => inner.into(),
+            UmlActivityStandaloneElement::ActionNode(inner) => inner.into(),
+            UmlActivityStandaloneElement::InitialNode(inner) => inner.into(),
+            UmlActivityStandaloneElement::FinalNode(inner) => inner.into(),
+            UmlActivityStandaloneElement::DecisionNode(inner) => inner.into(),
+            UmlActivityStandaloneElement::ForkNode(inner) => inner.into(),
+            UmlActivityStandaloneElement::ObjectNode(inner) => inner.into(),
+            UmlActivityStandaloneElement::Edge(inner) => inner.into(),
+            UmlActivityStandaloneElement::Comment(inner) => inner.into(),
+            UmlActivityStandaloneElement::CommentLink(inner) => inner.into(),
+        }
+    }
 }
 
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::NHContextSerDeTag)]
@@ -352,14 +531,28 @@ impl VisitableElement for UmlActivityElement {
             UmlActivityElement::Activity(inner) => {
                 v.open_complex(self);
                 for e in &inner.read().contained_elements {
-                    e.accept(v);
+                    e.clone().to_element().accept(v);
                 }
                 v.close_complex(self);
             },
             UmlActivityElement::InterruptibleRegion(inner) => {
                 v.open_complex(self);
                 for e in &inner.read().contained_elements {
-                    e.accept(v);
+                    e.clone().to_element().accept(v);
+                }
+                v.close_complex(self);
+            },
+            UmlActivityElement::Partition(inner) => {
+                v.open_complex(self);
+                for e in &inner.read().sections {
+                    UmlActivityElement::from(e.clone()).accept(v);
+                }
+                v.close_complex(self);
+            },
+            UmlActivityElement::PartitionSection(inner) => {
+                v.open_complex(self);
+                for e in &inner.read().contained_elements {
+                    e.clone().to_element().accept(v);
                 }
                 v.close_complex(self);
             },
@@ -375,7 +568,7 @@ pub struct UmlActivityDiagram {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
     #[nh_context_serde(entity)]
-    pub contained_elements: Vec<UmlActivityElement>,
+    pub contained_elements: Vec<UmlActivityStandaloneElement>,
 
     pub comment: Arc<String>,
 }
@@ -384,7 +577,7 @@ impl UmlActivityDiagram {
     pub fn new(
         uuid: ModelUuid,
         name: String,
-        contained_elements: Vec<UmlActivityElement>,
+        contained_elements: Vec<UmlActivityStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -425,9 +618,42 @@ impl UmlActivityDiagram {
                     let mut w = inner.write();
                     for (idx, e) in w.contained_elements.iter().enumerate() {
                         if uuids.contains(&e.uuid()) {
-                            undo.push((*w.uuid, e.clone(), 0, idx.try_into().unwrap()));
+                            undo.push((*w.uuid, e.clone().to_element(), 0, idx.try_into().unwrap()));
                         } else {
-                            r(e, uuids, undo);
+                            r(&e.clone().to_element(), uuids, undo);
+                        }
+                    }
+                    w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+                },
+                UmlActivityElement::InterruptibleRegion(inner) => {
+                    let mut w = inner.write();
+                    for (idx, e) in w.contained_elements.iter().enumerate() {
+                        if uuids.contains(&e.uuid()) {
+                            undo.push((*w.uuid, e.clone().to_element(), 0, idx.try_into().unwrap()));
+                        } else {
+                            r(&e.clone().to_element(), uuids, undo);
+                        }
+                    }
+                    w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+                },
+                UmlActivityElement::Partition(inner) => {
+                    let mut w = inner.write();
+                    for (idx, e) in w.sections.iter().enumerate() {
+                        if uuids.contains(&e.read().uuid) {
+                            undo.push((*w.uuid, e.clone().into(), 0, idx.try_into().unwrap()));
+                        } else {
+                            r(&e.clone().into(), uuids, undo);
+                        }
+                    }
+                    w.sections.retain(|e| !uuids.contains(&e.read().uuid));
+                },
+                UmlActivityElement::PartitionSection(inner) => {
+                    let mut w = inner.write();
+                    for (idx, e) in w.contained_elements.iter().enumerate() {
+                        if uuids.contains(&e.uuid()) {
+                            undo.push((*w.uuid, e.clone().to_element(), 0, idx.try_into().unwrap()));
+                        } else {
+                            r(&e.clone().to_element(), uuids, undo);
                         }
                     }
                     w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
@@ -438,9 +664,9 @@ impl UmlActivityDiagram {
 
         for (idx, e) in self.contained_elements.iter().enumerate() {
             if uuids.contains(&e.uuid()) {
-                undo.push((*self.uuid, e.clone(), 0, idx.try_into().unwrap()));
+                undo.push((*self.uuid, e.clone().to_element(), 0, idx.try_into().unwrap()));
             } else {
-                r(e, uuids, undo);
+                r(&e.clone().to_element(), uuids, undo);
             }
         }
         self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
@@ -463,7 +689,7 @@ impl VisitableDiagram for UmlActivityDiagram {
     fn accept(&self, v: &mut dyn DiagramVisitor<Self>) {
         v.open_diagram(self);
         for e in &self.contained_elements {
-            e.accept(v);
+            e.clone().to_element().accept(v);
         }
         v.close_diagram(self);
     }
@@ -475,7 +701,7 @@ impl ContainerModel for UmlActivityDiagram {
     fn find_element(&self, uuid: &ModelUuid) -> Option<(UmlActivityElement, ModelUuid)> {
         for e in &self.contained_elements {
             if *e.uuid() == *uuid {
-                return Some((e.clone(), *self.uuid));
+                return Some((e.clone().to_element(), *self.uuid));
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
@@ -495,6 +721,9 @@ impl ContainerModel for UmlActivityDiagram {
         if bucket != 0 {
             return Err(element);
         }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
 
         let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
@@ -537,7 +766,7 @@ pub struct UmlActivity {
     pub name: Arc<String>,
     pub parameters: Arc<String>,
     #[nh_context_serde(entity)]
-    pub contained_elements: Vec<UmlActivityElement>,
+    pub contained_elements: Vec<UmlActivityStandaloneElement>,
 
     pub comment: Arc<String>,
 }
@@ -548,7 +777,7 @@ impl UmlActivity {
         stereotype: String,
         name: String,
         parameters: String,
-        contained_elements: Vec<UmlActivityElement>,
+        contained_elements: Vec<UmlActivityStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -589,7 +818,7 @@ impl ContainerModel for UmlActivity {
     fn find_element(&self, uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
         for e in &self.contained_elements {
             if *e.uuid() == *uuid {
-                return Some((e.clone(), *self.uuid));
+                return Some((e.clone().to_element(), *self.uuid));
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
@@ -611,6 +840,9 @@ impl ContainerModel for UmlActivity {
         if bucket != 0 {
             return Err(element);
         }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
 
         let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
@@ -655,7 +887,7 @@ pub struct UmlActivityInterruptibleRegion {
     pub stereotype: Arc<String>,
     pub name: Arc<String>,
     #[nh_context_serde(entity)]
-    pub contained_elements: Vec<UmlActivityElement>,
+    pub contained_elements: Vec<UmlActivityStandaloneElement>,
 }
 
 impl UmlActivityInterruptibleRegion {
@@ -663,7 +895,7 @@ impl UmlActivityInterruptibleRegion {
         uuid: ModelUuid,
         stereotype: String,
         name: String,
-        contained_elements: Vec<UmlActivityElement>,
+        contained_elements: Vec<UmlActivityStandaloneElement>,
     ) -> Self {
         Self {
             uuid: Arc::new(uuid),
@@ -700,7 +932,7 @@ impl ContainerModel for UmlActivityInterruptibleRegion {
     fn find_element(&self, uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
         for e in &self.contained_elements {
             if *e.uuid() == *uuid {
-                return Some((e.clone(), *self.uuid));
+                return Some((e.clone().to_element(), *self.uuid));
             }
             if let Some(e) = e.find_element(uuid) {
                 return Some(e);
@@ -722,6 +954,9 @@ impl ContainerModel for UmlActivityInterruptibleRegion {
         if bucket != 0 {
             return Err(element);
         }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
 
         let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
@@ -740,6 +975,229 @@ impl ContainerModel for UmlActivityInterruptibleRegion {
 }
 
 impl FullTextSearchable for UmlActivityInterruptibleRegion {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+                &self.stereotype,
+                &self.name,
+            ],
+        );
+
+        for e in &self.contained_elements {
+            e.full_text_search(acc);
+        }
+    }
+}
+
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlActivityPartition {
+    pub uuid: Arc<ModelUuid>,
+    #[nh_context_serde(entity)]
+    pub sections: Vec<ERef<UmlActivityPartitionSection>>,
+}
+
+impl UmlActivityPartition {
+    pub fn new(
+        uuid: ModelUuid,
+        contained_elements: Vec<ERef<UmlActivityPartitionSection>>,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            sections: contained_elements,
+        }
+    }
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            sections: self.sections.clone(),
+        })
+    }
+
+    pub fn move_element(&mut self, element: &ModelUuid, within: BucketNoT, target_pos: PositionNoT) {
+        if within == 0 {
+            if let Some((idx, _e)) = self.sections.iter().enumerate().find(|e| *e.1.read().uuid() == *element) {
+                let e = self.sections.remove(idx);
+                self.sections.insert(target_pos.try_into().unwrap(), e);
+            }
+        }
+    }
+}
+
+impl Model for UmlActivityPartition {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+impl Entity for UmlActivityPartition {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl ContainerModel for UmlActivityPartition {
+    type ElementT = UmlActivityElement;
+
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
+        for e in &self.sections {
+            if *e.read().uuid() == *uuid {
+                return Some((e.clone().into(), *self.uuid));
+            }
+            if let Some(e) = e.read().find_element(uuid) {
+                return Some(e);
+            }
+        }
+        return None;
+    }
+
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.sections.iter().enumerate() {
+            if *e.read().uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        return None;
+    }
+
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: Self::ElementT) -> Result<PositionNoT, Self::ElementT> {
+        if bucket != 0 {
+            return Err(element);
+        }
+        let UmlActivityElement::PartitionSection(element) = element else {
+            return Err(element);
+        };
+
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.sections.len());
+        self.sections.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.sections.iter().enumerate() {
+            if *e.read().uuid() == *uuid {
+                self.sections.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
+}
+
+impl FullTextSearchable for UmlActivityPartition {
+    fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
+        acc.check_element(
+            *self.uuid,
+            &[
+                &self.uuid.to_string(),
+            ],
+        );
+
+        for e in &self.sections {
+            e.read().full_text_search(acc);
+        }
+    }
+}
+
+
+#[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[nh_context_serde(is_entity)]
+pub struct UmlActivityPartitionSection {
+    pub uuid: Arc<ModelUuid>,
+    pub stereotype: Arc<String>,
+    pub name: Arc<String>,
+    #[nh_context_serde(entity)]
+    pub contained_elements: Vec<UmlActivityStandaloneElement>,
+}
+
+impl UmlActivityPartitionSection {
+    pub fn new(
+        uuid: ModelUuid,
+        stereotype: String,
+        name: String,
+        contained_elements: Vec<UmlActivityStandaloneElement>,
+    ) -> Self {
+        Self {
+            uuid: Arc::new(uuid),
+            stereotype: Arc::new(stereotype),
+            name: Arc::new(name),
+            contained_elements,
+        }
+    }
+    pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            stereotype: self.stereotype.clone(),
+            name: self.name.clone(),
+            contained_elements: self.contained_elements.clone(),
+        })
+    }
+}
+
+impl Model for UmlActivityPartitionSection {
+    fn uuid(&self) -> Arc<ModelUuid> {
+        self.uuid.clone()
+    }
+}
+
+impl Entity for UmlActivityPartitionSection {
+    fn tagged_uuid(&self) -> EntityUuid {
+        (*self.uuid).into()
+    }
+}
+
+impl ContainerModel for UmlActivityPartitionSection {
+    type ElementT = UmlActivityElement;
+
+    fn find_element(&self, uuid: &ModelUuid) -> Option<(Self::ElementT, ModelUuid)> {
+        for e in &self.contained_elements {
+            if *e.uuid() == *uuid {
+                return Some((e.clone().to_element(), *self.uuid));
+            }
+            if let Some(e) = e.find_element(uuid) {
+                return Some(e);
+            }
+        }
+        return None;
+    }
+
+    fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        return None;
+    }
+
+    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: Self::ElementT) -> Result<PositionNoT, Self::ElementT> {
+        if bucket != 0 {
+            return Err(element);
+        }
+        let Some(element) = element.as_standalone() else {
+            return Err(element);
+        };
+
+        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        self.contained_elements.insert(pos, element);
+        Ok(pos.try_into().unwrap())
+    }
+
+    fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+        for (idx, e) in self.contained_elements.iter().enumerate() {
+            if *e.uuid() == *uuid {
+                self.contained_elements.remove(idx);
+                return Some((0, idx.try_into().unwrap()));
+            }
+        }
+        None
+    }
+}
+
+impl FullTextSearchable for UmlActivityPartitionSection {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
