@@ -955,6 +955,12 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         (circle_model.clone().into(), circle_view.clone().into()),
     );
 
+    let (instance, instance_view) = new_umlclass_instance(
+        "d", "Human", "person",
+        "firstName = \"Vojtěch\"\nlastName = \"Doležal\"",
+        egui::Pos2::new(650.0, 400.0),
+    );
+
     let name = format!("Demo UML class diagram {}", no);
     let diagram2 = ERef::new(UmlClassDiagram::new(
         ModelUuid::now_v7(),
@@ -982,6 +988,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             point_assoc_model.into(),
             comment2.into(),
             commentlink3.into(),
+            instance.into(),
         ],
     ));
     new_controlller(
@@ -1010,6 +1017,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             point_assoc_view.into(),
             comment2_view.into(),
             commentlink3_view.into(),
+            instance_view.into(),
         ],
     )
 }

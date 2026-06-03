@@ -20,7 +20,11 @@ impl UmlClassPlantUmlCollector {
     }
 
     fn stringify_uuid(uuid: &ModelUuid) -> String {
-        "m_".chars().chain(uuid.to_string().chars().filter(|e| *e != '-')).collect()
+        "m".chars().chain(uuid.to_string().chars().filter(|e| *e != '-')).collect()
+    }
+    fn replace_special_chars(s: &str) -> String {
+        s.replace("\n", "\\n")
+            .replace("\t", "\\t")
     }
 }
 
@@ -40,15 +44,25 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
         self.plantuml_structures.push_str("}\n");
     }
     fn visit_instance(&mut self, instance: &UmlClassInstance) {
+        let id = Self::stringify_uuid(&instance.uuid);
         self.plantuml_structures.push_str(&format!(
-            "object {} as {:?}\n",
-            Self::stringify_uuid(&instance.uuid),
+            "object {} as {:?}",
+            id,
             if instance.instance_name.is_empty() {
                 format!(":{}", instance.instance_type)
             } else {
                 format!("{}: {}", instance.instance_name, instance.instance_type)
             },
         ));
+        if !instance.stereotype.is_empty() {
+            self.plantuml_structures.push_str(&format!(" <<{}>>", instance.stereotype));
+        }
+        self.plantuml_structures.push_str("\n");
+        for e in instance.instance_slots.lines().filter(|e| !e.is_empty()) {
+            self.plantuml_structures.push_str(&format!(
+                "{} : {}\n", id, e,
+            ));
+        }
     }
     fn visit_class(&mut self, class: &UmlClass) {
         self.plantuml_structures.push_str(&format!(
@@ -56,6 +70,12 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
             Self::stringify_uuid(&class.uuid),
             class.name,
         ));
+        if !class.template_parameters.is_empty() {
+            self.plantuml_structures.push_str(&format!(
+                "<{}> ",
+                Self::replace_special_chars(&class.template_parameters),
+            ));
+        }
 
         if !class.stereotype.is_empty() {
             self.plantuml_structures.push_str(&format!("<<{}>> ", class.stereotype));
