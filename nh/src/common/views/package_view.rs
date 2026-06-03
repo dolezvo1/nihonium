@@ -611,8 +611,9 @@ where
                     std::iter::once(*self.uuid).collect(),
                     -*delta,
                 ));
+                let mut void = vec![];
                 self.owned_views.event_order_foreach_mut(|v| {
-                    v.apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut vec![], affected_models);
+                    v.apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
             }
             InsensitiveCommand::MoveOrdinal(..) => {

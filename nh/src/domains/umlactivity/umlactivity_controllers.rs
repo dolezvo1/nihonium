@@ -3,6 +3,7 @@ use crate::common::controller::{
     BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
+use crate::common::views::ordered_views::OrderedViews;
 use crate::common::views::package_view::{PackageAdapter, PackageDragType, PackageView};
 use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
 use crate::common::entity::{Entity, EntityUuid};
@@ -2604,7 +2605,7 @@ pub fn new_umlactivity_partitionsection_view(
         UmlActivityPartitionSectionView {
             uuid: ViewUuid::now_v7().into(),
             model,
-            contained_elements: Vec::new(),
+            contained_elements: OrderedViews::new(Vec::new()),
             bounds_rect,
             background_color: MGlobalColor::None,
             temporaries: Default::default(),
@@ -2619,7 +2620,7 @@ pub struct UmlActivityPartitionSectionView {
     #[nh_context_serde(entity)]
     model: ERef<UmlActivityPartitionSection>,
     #[nh_context_serde(entity)]
-    contained_elements: Vec<UmlActivityElementView>,
+    contained_elements: OrderedViews<UmlActivityElementView>,
 
     pub bounds_rect: egui::Rect,
     background_color: MGlobalColor,
@@ -2636,6 +2637,7 @@ struct UmlActivityPartitionSectionViewTemporaries {
     dragged_type_and_shape: Option<(PackageDragType, egui::Rect)>,
     highlight: canvas::Highlight,
     selected_direct_elements: HashSet<ViewUuid>,
+    all_elements: HashMap<ViewUuid, SelectionStatus>,
 }
 
 impl UmlActivityPartitionSectionView {
@@ -2665,9 +2667,8 @@ impl UmlActivityPartitionSectionView {
     ) -> (PropertiesStatus<UmlActivityDomain>, Option<UmlActivityOrdinalMovement>) {
         let mut add_sibling = None::<UmlActivityOrdinalMovement>;
 
-        if let Some(child) = self.contained_elements.iter_mut()
-            .filter_map(|v| v.show_properties(drawing_context, q, ui, commands).to_non_default())
-            .next()
+        if let Some(child) = self.contained_elements
+            .event_order_find_mut(|v| v.show_properties(drawing_context, q, ui, commands).to_non_default())
         {
             return (child, add_sibling);
         }
@@ -2833,15 +2834,16 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         // Draw resize/drag handles
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.temporaries.highlight.selected) {
             let handle_size = self.handle_size(ui_scale);
+            let handles_rect = self.bounds_rect.shrink(handle_size / 2.0);
             for (h, c) in [
-                (self.bounds_rect.left_top(), "↖"),
-                (self.bounds_rect.center_top(), "^"),
-                (self.bounds_rect.right_top(), "↗"),
-                (self.bounds_rect.left_center(), "<"),
-                (self.bounds_rect.right_center(), ">"),
-                (self.bounds_rect.left_bottom(), "↙"),
-                (self.bounds_rect.center_bottom(), "v"),
-                (self.bounds_rect.right_bottom(), "↘"),
+                (handles_rect.left_top(), "↖"),
+                (handles_rect.center_top(), "^"),
+                (handles_rect.right_top(), "↗"),
+                (handles_rect.left_center(), "<"),
+                (handles_rect.right_center(), ">"),
+                (handles_rect.left_bottom(), "↙"),
+                (handles_rect.center_bottom(), "v"),
+                (handles_rect.right_bottom(), "↘"),
             ] {
                 canvas.draw_rectangle(
                     egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size / ui_scale)),
@@ -2890,18 +2892,18 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
             );
         }
 
-
         macro_rules! draw_children {
             () => {
                 {
                 let mut targetting_drawn = false;
-                for e in self.contained_elements.iter_mut() {
+                self.contained_elements.draw_order_foreach_mut(|e| {
                     targetting_drawn |= e.draw_in(q, context, settings, canvas, tool) != TargettingStatus::NotDrawn;
-                }
+                });
                 targetting_drawn
                 }
             };
         }
+
         if draw_children!() {
             return TargettingStatus::Drawn;
         }
@@ -2924,7 +2926,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
     fn collect_allignment(&mut self, am: &mut SnapManager) {
         am.add_shape(*self.uuid, self.min_shape());
 
-        self.contained_elements.iter_mut().for_each(|v|
+        self.contained_elements.event_order_foreach_mut(|v|
             v.collect_allignment(am)
         );
     }
@@ -2938,14 +2940,14 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
         commands: &mut Vec<InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>>,
     ) -> EventHandlingStatus {
-        let k_status = self.contained_elements.iter_mut().flat_map(|v| {
+        let k_status = self.contained_elements.event_order_find_mut(|v| {
             let s = v.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
             if s != EventHandlingStatus::NotHandled {
                 Some((*v.uuid(), s))
             } else {
                 None
             }
-        }).next();
+        });
 
         match event {
             InputEvent::MouseDown(_pos) | InputEvent::MouseUp(_pos) if k_status.is_some() => {
@@ -2953,15 +2955,16 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
             }
             InputEvent::MouseDown(pos) => {
                 let handle_size = self.handle_size(1.0);
+                let handles_rect = self.bounds_rect.shrink(handle_size / 2.0);
                 if self.temporaries.highlight.selected {
-                    for (a,h) in [(egui::Align2::RIGHT_BOTTOM, self.bounds_rect.left_top()),
-                                (egui::Align2::CENTER_BOTTOM, self.bounds_rect.center_top()),
-                                (egui::Align2::LEFT_BOTTOM, self.bounds_rect.right_top()),
-                                (egui::Align2::RIGHT_CENTER, self.bounds_rect.left_center()),
-                                (egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),
-                                (egui::Align2::RIGHT_TOP, self.bounds_rect.left_bottom()),
-                                (egui::Align2::CENTER_TOP, self.bounds_rect.center_bottom()),
-                                (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom())]
+                    for (a,h) in [(egui::Align2::RIGHT_BOTTOM, handles_rect.left_top()),
+                                (egui::Align2::CENTER_BOTTOM, handles_rect.center_top()),
+                                (egui::Align2::LEFT_BOTTOM, handles_rect.right_top()),
+                                (egui::Align2::RIGHT_CENTER, handles_rect.left_center()),
+                                (egui::Align2::LEFT_CENTER, handles_rect.right_center()),
+                                (egui::Align2::RIGHT_TOP, handles_rect.left_bottom()),
+                                (egui::Align2::CENTER_TOP, handles_rect.center_bottom()),
+                                (egui::Align2::LEFT_TOP, handles_rect.right_bottom())]
                     {
                         if egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
                             self.temporaries.dragged_type_and_shape = Some((PackageDragType::Resize(a), self.bounds_rect));
@@ -3091,7 +3094,9 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
     ) {
         macro_rules! recurse {
             () => {
-                self.contained_elements.iter_mut().for_each(|v| v.apply_command(command, undo_accumulator, affected_models));
+                self.contained_elements.event_order_foreach_mut(|v|
+                    v.apply_command(command, undo_accumulator, affected_models)
+                );
             };
         }
         match command {
@@ -3101,7 +3106,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                     match set {
                         true => {
                             self.temporaries.selected_direct_elements =
-                                self.contained_elements.iter().map(|v| *v.uuid()).collect();
+                                self.contained_elements.iter_event_order_keys().collect()
                         }
                         false => self.temporaries.selected_direct_elements.clear(),
                     }
@@ -3114,7 +3119,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                 }
 
                 if h.selected {
-                    for k in self.contained_elements.iter().map(|v| *v.uuid()).filter(|k| uuids.contains(k)) {
+                    for k in self.contained_elements.iter_event_order_keys().filter(|k| uuids.contains(k)) {
                         match set {
                             true => self.temporaries.selected_direct_elements.insert(k),
                             false => self.temporaries.selected_direct_elements.remove(&k),
@@ -3140,7 +3145,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                     -*delta,
                 ));
                 let mut void = vec![];
-                self.contained_elements.iter_mut().for_each(|v| {
+                self.contained_elements.event_order_foreach_mut(|v| {
                     v.apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
             }
@@ -3149,7 +3154,11 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                 recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
-                for element in self.contained_elements.iter().filter(|v| uuids.contains(&v.uuid())) {
+                for (_uuid, element) in self
+                    .contained_elements
+                    .iter_event_order_pairs()
+                    .filter(|e| uuids.contains(&e.0))
+                {
                     let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
                         (1, None)
                     } else if let Some((b, pos)) = self.model.read().get_element_pos(&element.model_uuid()) {
@@ -3166,7 +3175,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                         false,
                     ));
                 }
-                self.contained_elements.retain(|v| !uuids.contains(&v.uuid()));
+                self.contained_elements.retain(|k, _v| !uuids.contains(k));
 
                 recurse!();
             }
@@ -3182,8 +3191,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                     let mut w = self.model.write();
                     if *b == 0
                         && let Ok(mut view) = UmlActivityElementView::try_from(element.clone())
-                        && let Some(model_pos) = w.get_element_pos(&view.model_uuid()).map(|e| e.1)
-                            .or_else(|| if *into_model { w.insert_element(*b, *pos, view.model()).ok() } else { None }) {
+                        && (!*into_model || w.insert_element(*b, *pos, view.model()).is_ok()) {
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::RemoveDependency(
                             *self.uuid,
@@ -3199,21 +3207,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                         view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
                         affected_models.extend(model_transitives.into_keys());
 
-                        let view_pos = {
-                            let mut view_pos: PositionNoT = 0;
-                            for e in &self.contained_elements {
-                                let Some((_b, pos)) = w.get_element_pos(&e.model_uuid()) else {
-                                    unreachable!()
-                                };
-                                if pos < model_pos {
-                                    view_pos += 1;
-                                } else {
-                                    break;
-                                }
-                            }
-                            view_pos
-                        };
-                        self.contained_elements.insert(view_pos.try_into().unwrap(), view.clone());
+                        self.contained_elements.push(uuid, view);
                     }
                 }
 
@@ -3223,7 +3217,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                 if *target == *self.uuid {
                     let mut w = self.model.write();
                     if *b == 0
-                        && let Some(view) = self.contained_elements.iter().find(|v| *v.uuid() == *element).cloned()
+                        && let Some(view) = self.contained_elements.get(element)
                         && let Some((_b, pos)) = w.remove_element(&view.model_uuid()) {
                         undo_accumulator.push(InsensitiveCommand::AddDependency(
                             *self.uuid,
@@ -3237,7 +3231,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                             affected_models.insert(*w.uuid);
                         }
 
-                        self.contained_elements.retain(|v| *v.uuid() != *element);
+                        self.contained_elements.retain(|k, _v| *k != *element);
                     }
                 }
                 recurse!();
@@ -3300,8 +3294,18 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         flattened_views_status.insert(*self.uuid, self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
 
-        self.contained_elements.iter_mut().for_each(|v| {
-            v.head_count(flattened_views, flattened_views_status, flattened_represented_models);
+        self.temporaries.all_elements.clear();
+        self.contained_elements.event_order_foreach_mut(|v|
+            v.head_count(flattened_views, &mut self.temporaries.all_elements, flattened_represented_models)
+        );
+        for e in &self.temporaries.all_elements {
+            flattened_views_status.insert(*e.0, match *e.1 {
+                SelectionStatus::NotSelected if self.temporaries.highlight.selected => SelectionStatus::TransitivelySelected,
+                e => e,
+            });
+        }
+
+        self.contained_elements.event_order_foreach_mut(|v| {
             flattened_views.insert(*v.uuid(), (v.clone(), *self.uuid));
         });
     }
@@ -3330,18 +3334,14 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         };
 
         let mut inner = HashMap::new();
-        let contained_elements = self.contained_elements.iter().map(|v| {
-            v.deep_copy_clone(uuid_present, &mut inner, c, m);
-            let Some(e) = c.get(&v.uuid()) else {
-                unreachable!()
-            };
-            e.clone()
-        }).collect();
+        self.contained_elements.event_order_foreach(|v|
+            v.deep_copy_clone(uuid_present, &mut inner, c, m)
+        );
 
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model,
-            contained_elements,
+            contained_elements: OrderedViews::new(inner.into_values().collect()),
 
             bounds_rect: self.bounds_rect.clone(),
             background_color: self.background_color.clone(),
@@ -3356,7 +3356,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         c: &HashMap<ViewUuid, <UmlActivityDomain as Domain>::CommonElementViewT>,
         m: &HashMap<ModelUuid, <UmlActivityDomain as Domain>::CommonElementT>,
     ) {
-        self.contained_elements.iter_mut().for_each(|v|
+        self.contained_elements.event_order_foreach_mut(|v|
             v.deep_copy_relink(c, m)
         );
 
