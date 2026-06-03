@@ -892,7 +892,7 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                 sw.name = section_name.clone().into();
                             }
                             if let UmlActivityElementView::Partition(view) = view {
-                                view.read().sections[0].write().refresh_buffers();
+                                view.read().section_views[0].write().refresh_buffers();
                             }
                         }
                     }
@@ -1995,13 +1995,13 @@ pub fn new_umlactivity_partition(
 }
 pub fn new_umlactivity_partition_view(
     model: ERef<UmlActivityPartition>,
-    sections: Vec<ERef<UmlActivityPartitionSectionView>>,
+    section_views: Vec<ERef<UmlActivityPartitionSectionView>>,
 ) -> ERef<UmlActivityPartitionView> {
     ERef::new(
         UmlActivityPartitionView {
             uuid: ViewUuid::now_v7().into(),
             model,
-            sections,
+            section_views,
             bounds_rect: egui::Rect::ZERO,
             temporaries: Default::default(),
         }
@@ -2015,7 +2015,7 @@ pub struct UmlActivityPartitionView {
     #[nh_context_serde(entity)]
     model: ERef<UmlActivityPartition>,
     #[nh_context_serde(entity)]
-    sections: Vec<ERef<UmlActivityPartitionSectionView>>,
+    section_views: Vec<ERef<UmlActivityPartitionSectionView>>,
 
     bounds_rect: egui::Rect,
     #[nh_context_serde(skip_and_default)]
@@ -2068,7 +2068,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
     ) -> TargettingStatus {
         let mut child_targetting_drawn = false;
         let mut r = egui::Rect::ZERO;
-        for e in self.sections.iter() {
+        for e in self.section_views.iter() {
             let mut w = e.write();
             child_targetting_drawn |= w.draw_in(q, context, settings, canvas, tool) != TargettingStatus::NotDrawn;
             r = r.union(w.bounds_rect);
@@ -2088,7 +2088,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>>,
     ) -> PropertiesStatus<UmlActivityDomain> {
-        for (idx, e) in self.sections.iter().enumerate() {
+        for (idx, e) in self.section_views.iter().enumerate() {
             let mut w = e.write();
             let child = w.show_properties_inner(gdc, q, ui, commands);
 
@@ -2121,7 +2121,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
     }
 
     fn collect_allignment(&mut self, am: &mut SnapManager) {
-        self.sections.iter().for_each(|v| v.write().collect_allignment(am));
+        self.section_views.iter().for_each(|v| v.write().collect_allignment(am));
     }
 
     fn handle_event(
@@ -2140,7 +2140,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
     ) -> EventHandlingStatus {
         match event {
             InputEvent::Click(_) => {
-                let k_status = self.sections.iter()
+                let k_status = self.section_views.iter()
                         .map(|e| {
                             let mut w = e.write();
                             (*w.uuid, w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands))
@@ -2170,7 +2170,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                 }
             },
             _ => {
-                let k_status = self.sections.iter()
+                let k_status = self.section_views.iter()
                         .map(|e| {
                             let mut w = e.write();
                             (*w.uuid, w.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands))
@@ -2197,7 +2197,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
     ) {
         macro_rules! recurse {
             () => {
-                self.sections.iter().for_each(|s| s.write().apply_command(command, undo_accumulator, affected_models));
+                self.section_views.iter().for_each(|s| s.write().apply_command(command, undo_accumulator, affected_models));
             };
         }
 
@@ -2208,7 +2208,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                     match set {
                         true => {
                             self.temporaries.selected_direct_elements =
-                                self.sections.iter().map(|v| *v.read().uuid).collect();
+                                self.section_views.iter().map(|v| *v.read().uuid).collect();
                         }
                         false => self.temporaries.selected_direct_elements.clear(),
                     }
@@ -2216,12 +2216,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                 recurse!();
             }
             InsensitiveCommand::HighlightSpecific(uuids, set, h) => {
-                if uuids.contains(&*self.uuid) {
-                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
-                }
-
                 if h.selected {
-                    for k in self.sections.iter().map(|v| *v.read().uuid).filter(|k| uuids.contains(k)) {
+                    for k in self.section_views.iter().map(|v| *v.read().uuid).filter(|k| uuids.contains(k)) {
                         match set {
                             true => self.temporaries.selected_direct_elements.insert(k),
                             false => self.temporaries.selected_direct_elements.remove(&k),
@@ -2230,16 +2226,24 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                 }
 
                 recurse!();
+
+                if uuids.contains(&*self.uuid) {
+                    self.temporaries.highlight = self.temporaries.highlight.combine(*set, *h);
+                } else {
+                    self.temporaries.highlight.selected = self.section_views.iter().all(|e| e.read().temporaries.highlight.selected);
+                }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
                 self.temporaries.highlight.selected =
                     (self.temporaries.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
 
                 recurse!();
+
+                self.temporaries.highlight.selected = self.section_views.iter().all(|e| e.read().temporaries.highlight.selected);
             }
             InsensitiveCommand::MovePositional(uuids, _)
                 if !uuids.contains(&self.uuid)
-                    && !self.sections.iter().any(|e| uuids.contains(&e.read().uuid)) => {
+                    && !self.section_views.iter().any(|e| uuids.contains(&e.read().uuid)) => {
                 recurse!();
             }
             InsensitiveCommand::MovePositional(_, delta) | InsensitiveCommand::MovePositionalAll(delta) => {
@@ -2248,23 +2252,36 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                     -*delta,
                 ));
                 let mut void = vec![];
-                self.sections.iter_mut().for_each(|v| {
+                self.section_views.iter_mut().for_each(|v| {
                     v.write().apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
             }
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
-                if self.sections.iter().any(|e| uuids.contains(&e.read().uuid)) {
+                if self.section_views.iter().any(|e| uuids.contains(&e.read().uuid)) {
                     let mut targets = HashSet::new();
                     let mut delta_x = egui::Vec2::ZERO;
                     let (mut u, mut v) = Default::default();
 
-                    for e in self.sections.iter() {
+                    let sections_iter: Box<dyn Iterator<Item = &ERef<UmlActivityPartitionSectionView>>> = match align.x() {
+                        egui::Align::Min | egui::Align::Center => Box::new(self.section_views.iter()),
+                        egui::Align::Max => Box::new(self.section_views.iter().rev()),
+                    };
+
+                    for e in sections_iter {
                         let mut w = e.write();
                         w.apply_command(&InsensitiveCommand::MovePositionalAll(delta_x), &mut u, &mut v);
-                        w.bounds_rect.max.y += delta.y;
+                        match align.y() {
+                            egui::Align::Min => w.bounds_rect.max.y += delta.y,
+                            egui::Align::Center => {},
+                            egui::Align::Max => w.bounds_rect.min.y += delta.y,
+                        }
                         if uuids.contains(&w.uuid) {
                             targets.insert(*w.uuid);
-                            w.bounds_rect.max.x += delta.x;
+                            match align.x() {
+                                egui::Align::Min => w.bounds_rect.max.x += delta.x,
+                                egui::Align::Center => {},
+                                egui::Align::Max => w.bounds_rect.min.x += delta.x,
+                            }
                             delta_x.x += delta.x;
                         }
                     }
@@ -2282,7 +2299,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                 recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
-                for element in self.sections.iter().filter(|v| uuids.contains(&v.read().uuid)) {
+                for element in self.section_views.iter().filter(|v| uuids.contains(&v.read().uuid)) {
                     let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
                         (1, None)
                     } else if let Some((b, pos)) = self.model.read().get_element_pos(&element.read().model_uuid()) {
@@ -2301,7 +2318,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                 }
                 let mut delta = egui::Vec2::ZERO;
                 let (mut u, mut m) = Default::default();
-                let old_sections = std::mem::take(&mut self.sections);
+                let old_sections = std::mem::take(&mut self.section_views);
                 for e in old_sections {
                     let mut w = e.write();
                     if uuids.contains(&w.uuid) {
@@ -2309,7 +2326,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                     } else {
                         w.apply_command(&InsensitiveCommand::MovePositionalAll(-delta), &mut u, &mut m);
                         drop(w);
-                        self.sections.push(e);
+                        self.section_views.push(e);
                     }
                 }
 
@@ -2347,7 +2364,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
 
                             let view_pos = {
                                 let mut view_pos: PositionNoT = 0;
-                                for e in &self.sections {
+                                for e in &self.section_views {
                                     let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid()) else {
                                         unreachable!()
                                     };
@@ -2360,19 +2377,19 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                                 view_pos
                             };
 
-                            let old_position = if self.sections.len() == view_pos.into() {
-                                self.sections.last().map(|e| e.read().bounds_rect.right_top())
+                            let old_position = if self.section_views.len() == view_pos.into() {
+                                self.section_views.last().map(|e| e.read().bounds_rect.right_top())
                             } else {
-                                self.sections.iter().skip(view_pos.into()).map(|e| e.read().bounds_rect.min).next()
+                                self.section_views.iter().skip(view_pos.into()).map(|e| e.read().bounds_rect.min).next()
                             }.unwrap_or_default();
                             let delta = (vw.bounds_rect.width(), 0.0).into();
                             let (mut u, mut m) = Default::default();
-                            for e in self.sections.iter().skip(view_pos.into()) {
+                            for e in self.section_views.iter().skip(view_pos.into()) {
                                 e.write().apply_command(&InsensitiveCommand::MovePositionalAll(delta), &mut u, &mut m);
                             }
                             let delta = old_position - vw.bounds_rect.min;
                             vw.apply_command(&InsensitiveCommand::MovePositionalAll(delta), &mut u, &mut m);
-                            self.sections.insert(view_pos.try_into().unwrap(), view.clone());
+                            self.section_views.insert(view_pos.try_into().unwrap(), view.clone());
                         }
                     }
                 }
@@ -2383,7 +2400,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
                     if *b == 0
-                        && let Some(view) = self.sections.iter().find(|v| *v.read().uuid == *element).cloned() {
+                        && let Some(view) = self.section_views.iter().find(|v| *v.read().uuid == *element).cloned() {
                         let model_uuid = *view.read().model_uuid();
 
                         if let Some((_b, pos)) = w.remove_element(&model_uuid) {
@@ -2401,7 +2418,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
 
                             let mut delta = egui::Vec2::ZERO;
                             let (mut u, mut m) = Default::default();
-                            let old_sections = std::mem::take(&mut self.sections);
+                            let old_sections = std::mem::take(&mut self.section_views);
                             for e in old_sections {
                                 let mut w = e.write();
                                 if *w.uuid == *element {
@@ -2409,7 +2426,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                                 } else {
                                     w.apply_command(&InsensitiveCommand::MovePositionalAll(-delta), &mut u, &mut m);
                                     drop(w);
-                                    self.sections.push(e);
+                                    self.section_views.push(e);
                                 }
                             }
                         }
@@ -2423,8 +2440,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                 match direction {
                     UmlActivityOrdinalMovement::Left | UmlActivityOrdinalMovement::Right => {
                         let lifelines_iter: Box<dyn Iterator<Item = &mut ERef<UmlActivityPartitionSectionView>>> = match direction {
-                            UmlActivityOrdinalMovement::Left => Box::new(self.sections.iter_mut()),
-                            UmlActivityOrdinalMovement::Right => Box::new(self.sections.iter_mut().rev()),
+                            UmlActivityOrdinalMovement::Left => Box::new(self.section_views.iter_mut()),
+                            UmlActivityOrdinalMovement::Right => Box::new(self.section_views.iter_mut().rev()),
                         };
                         let mut lifelines_iter = lifelines_iter.peekable();
                         while let Some(dest) = lifelines_iter.next()
@@ -2475,7 +2492,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
         flattened_views_status.insert(*self.uuid, self.temporaries.highlight.selected.into());
         flattened_represented_models.insert(*self.model_uuid(), *self.uuid);
 
-        self.sections.iter().for_each(|s| {
+        self.section_views.iter().for_each(|s| {
             let mut w = s.write();
             w.head_count(flattened_views, flattened_views_status, flattened_represented_models);
             flattened_views.insert(*w.uuid(), (s.clone().into(), *self.uuid));
@@ -2493,7 +2510,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
         if requested.is_none_or(|e| e.contains(&self.uuid)) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         } else {
-            self.sections.iter().for_each(|v|
+            self.section_views.iter().for_each(|v|
                 v.read().deep_copy_walk(requested, uuid_present, tlc, c, m)
             );
         }
@@ -2523,7 +2540,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
         };
 
         let mut inner = HashMap::new();
-        let new_sections = self.sections.iter().map(|v| {
+        let new_sections = self.section_views.iter().map(|v| {
             let v = v.read();
             v.deep_copy_clone(uuid_present, &mut inner, c, m);
             let Some(UmlActivityElementView::PartitionSection(s)) = c.get(&v.uuid) else {
@@ -2535,7 +2552,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
             model,
-            sections: new_sections,
+            section_views: new_sections,
 
             bounds_rect: self.bounds_rect,
             temporaries: self.temporaries.clone(),
@@ -2549,7 +2566,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
         c: &HashMap<ViewUuid, <UmlActivityDomain as Domain>::CommonElementViewT>,
         m: &HashMap<ModelUuid, <UmlActivityDomain as Domain>::CommonElementT>,
     ) {
-        self.sections.iter_mut().for_each(|v|
+        self.section_views.iter_mut().for_each(|v|
             v.write().deep_copy_relink(c, m)
         );
 
@@ -2817,7 +2834,12 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.temporaries.highlight.selected) {
             let handle_size = self.handle_size(ui_scale);
             for (h, c) in [
+                (self.bounds_rect.left_top(), "↖"),
+                (self.bounds_rect.center_top(), "^"),
+                (self.bounds_rect.right_top(), "↗"),
+                (self.bounds_rect.left_center(), "<"),
                 (self.bounds_rect.right_center(), ">"),
+                (self.bounds_rect.left_bottom(), "↙"),
                 (self.bounds_rect.center_bottom(), "v"),
                 (self.bounds_rect.right_bottom(), "↘"),
             ] {
@@ -2932,7 +2954,12 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
             InputEvent::MouseDown(pos) => {
                 let handle_size = self.handle_size(1.0);
                 if self.temporaries.highlight.selected {
-                    for (a,h) in [(egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),
+                    for (a,h) in [(egui::Align2::RIGHT_BOTTOM, self.bounds_rect.left_top()),
+                                (egui::Align2::CENTER_BOTTOM, self.bounds_rect.center_top()),
+                                (egui::Align2::LEFT_BOTTOM, self.bounds_rect.right_top()),
+                                (egui::Align2::RIGHT_CENTER, self.bounds_rect.left_center()),
+                                (egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),
+                                (egui::Align2::RIGHT_TOP, self.bounds_rect.left_bottom()),
                                 (egui::Align2::CENTER_TOP, self.bounds_rect.center_bottom()),
                                 (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom())]
                     {
