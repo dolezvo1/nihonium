@@ -145,37 +145,30 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<M
     (ERef::new(new_diagram), all_models)
 }
 
-pub fn fake_copy_diagram(d: &DemoCsdDiagram) -> HashMap<ModelUuid, DemoCsdElement> {
-    fn walk(e: &DemoCsdElement, into: &mut HashMap<ModelUuid, DemoCsdElement>) {
-        match e {
-            DemoCsdElement::DemoCsdPackage(inner) => {
-                let model = inner.read();
-
-                for e in &model.contained_elements {
-                    walk(e, into);
-                    into.insert(*e.uuid(), e.clone());
-                }
-            },
-            DemoCsdElement::DemoCsdTransactor(inner) => {
-                let model = inner.read();
-
-                if let UFOption::Some(tx) = &model.transaction {
-                    walk(&DemoCsdElement::DemoCsdTransaction(tx.clone()), into);
-                    into.insert(*tx.read().uuid(), DemoCsdElement::DemoCsdTransaction(tx.clone()));
-                }
-            },
-            DemoCsdElement::DemoCsdTransaction(..) => {},
-            DemoCsdElement::DemoCsdLink(..) => {},
-        }
-    }
-
+pub fn enumerate_diagram(d: &DemoCsdDiagram) -> HashMap<ModelUuid, DemoCsdElement> {
     let mut all_models = HashMap::new();
     for e in &d.contained_elements {
-        walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), e.clone());
+        enumerate_elements(e, &mut all_models);
     }
 
     all_models
+}
+fn enumerate_elements(e: &DemoCsdElement, into: &mut HashMap<ModelUuid, DemoCsdElement>) {
+    into.insert(*e.uuid(), e.clone());
+    match e {
+        DemoCsdElement::DemoCsdPackage(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate_elements(e, into);
+            }
+        },
+        DemoCsdElement::DemoCsdTransactor(inner) => {
+            if let UFOption::Some(e) = &inner.read().transaction {
+                enumerate_elements(&e.clone().into(), into);
+            }
+        },
+        DemoCsdElement::DemoCsdTransaction(..)
+        | DemoCsdElement::DemoCsdLink(..) => {},
+    }
 }
 
 pub fn transitive_closure(d: &DemoCsdDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
@@ -185,7 +178,9 @@ pub fn transitive_closure(d: &DemoCsdDiagram, mut when_deleting: HashSet<ModelUu
                 DemoCsdElement::DemoCsdPackage(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         for e in &r.contained_elements {
                             walk(e, when_deleting);
@@ -195,7 +190,9 @@ pub fn transitive_closure(d: &DemoCsdDiagram, mut when_deleting: HashSet<ModelUu
                 DemoCsdElement::DemoCsdTransactor(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         if let UFOption::Some(e) = &r.transaction {
                             walk(&e.clone().into(), when_deleting);
@@ -240,24 +237,6 @@ pub fn transitive_closure(d: &DemoCsdDiagram, mut when_deleting: HashSet<ModelUu
     }
 
     when_deleting
-}
-
-fn enumerate(e: &DemoCsdElement, into: &mut HashSet<ModelUuid>) {
-    into.insert(*e.uuid());
-    match e {
-        DemoCsdElement::DemoCsdPackage(inner) => {
-            for e in &inner.read().contained_elements {
-                enumerate(e, into);
-            }
-        },
-        DemoCsdElement::DemoCsdTransactor(inner) => {
-            if let UFOption::Some(e) = &inner.read().transaction {
-                enumerate(&e.clone().into(), into);
-            }
-        },
-        DemoCsdElement::DemoCsdTransaction(..)
-        | DemoCsdElement::DemoCsdLink(..) => {},
-    }
 }
 
 // ---

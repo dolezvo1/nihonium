@@ -199,31 +199,37 @@ pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<M
     (ERef::new(new_diagram), all_models)
 }
 
-pub fn fake_copy_diagram(d: &DemoPsdDiagram) -> HashMap<ModelUuid, DemoPsdElement> {
-    fn walk(e: &DemoPsdElement, into: &mut HashMap<ModelUuid, DemoPsdElement>) {
-        match e {
-            DemoPsdElement::DemoPsdPackage(inner) => {
-                let model = inner.read();
-
-                for e in &model.contained_elements {
-                    walk(e, into);
-                    into.insert(*e.uuid(), e.clone());
-                }
-            },
-            DemoPsdElement::DemoPsdTransaction(..)
-            | DemoPsdElement::DemoPsdFact(..)
-            | DemoPsdElement::DemoPsdAct(..)
-            | DemoPsdElement::DemoPsdLink(..) => {},
-        }
-    }
-
+pub fn enumerate_diagram(d: &DemoPsdDiagram) -> HashMap<ModelUuid, DemoPsdElement> {
     let mut all_models = HashMap::new();
     for e in &d.contained_elements {
-        walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), e.clone());
+        enumerate_elements(e, &mut all_models);
     }
-
     all_models
+}
+fn enumerate_elements(e: &DemoPsdElement, into: &mut HashMap<ModelUuid, DemoPsdElement>) {
+    into.insert(*e.uuid(), e.clone());
+    match e {
+        DemoPsdElement::DemoPsdPackage(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate_elements(e, into);
+            }
+        },
+        DemoPsdElement::DemoPsdTransaction(inner) => {
+            let r = inner.read();
+            for e in &r.before {
+                enumerate_elements(&e.state.clone().to_element(), into);
+            }
+            if let UFOption::Some(e) = &r.p_act {
+                enumerate_elements(&e.clone().into(), into);
+            }
+            for e in &r.after {
+                enumerate_elements(&e.state.clone().to_element(), into);
+            }
+        },
+        DemoPsdElement::DemoPsdFact(..)
+        | DemoPsdElement::DemoPsdAct(..)
+        | DemoPsdElement::DemoPsdLink(..) => {},
+    }
 }
 
 pub fn transitive_closure(d: &DemoPsdDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
@@ -233,7 +239,9 @@ pub fn transitive_closure(d: &DemoPsdDiagram, mut when_deleting: HashSet<ModelUu
                 DemoPsdElement::DemoPsdPackage(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         for e in &r.contained_elements {
                             walk(e, when_deleting);
@@ -243,7 +251,9 @@ pub fn transitive_closure(d: &DemoPsdDiagram, mut when_deleting: HashSet<ModelUu
                 DemoPsdElement::DemoPsdTransaction(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         for e in &r.before {
                             walk(&e.state.clone().to_element(), when_deleting);
@@ -296,32 +306,6 @@ pub fn transitive_closure(d: &DemoPsdDiagram, mut when_deleting: HashSet<ModelUu
     }
 
     when_deleting
-}
-
-fn enumerate(e: &DemoPsdElement, into: &mut HashSet<ModelUuid>) {
-    into.insert(*e.uuid());
-    match e {
-        DemoPsdElement::DemoPsdPackage(inner) => {
-            for e in &inner.read().contained_elements {
-                enumerate(e, into);
-            }
-        },
-        DemoPsdElement::DemoPsdTransaction(inner) => {
-            let r = inner.read();
-            for e in &r.before {
-                enumerate(&e.state.clone().to_element(), into);
-            }
-            if let UFOption::Some(e) = &r.p_act {
-                enumerate(&e.clone().into(), into);
-            }
-            for e in &r.after {
-                enumerate(&e.state.clone().to_element(), into);
-            }
-        },
-        DemoPsdElement::DemoPsdFact(..)
-        | DemoPsdElement::DemoPsdAct(..)
-        | DemoPsdElement::DemoPsdLink(..) => {},
-    }
 }
 
 

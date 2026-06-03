@@ -2306,7 +2306,7 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     );
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
-    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
+    fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, DomainT::CommonElementT>);
 }
 
 /// This is a generic DiagramController implementation.
@@ -3700,7 +3700,7 @@ impl<
     }
 
     fn shallow_copy(&self) -> ERef<Self> {
-        let (new_adapter, models) = self.adapter.fake_copy();
+        let (new_adapter, models) = self.adapter.enumerate_models();
         self.some_kind_of_copy(new_adapter, models)
     }
 }

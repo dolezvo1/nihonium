@@ -183,52 +183,38 @@ pub fn deep_copy_diagram(d: &UmlActivityDiagram) -> (ERef<UmlActivityDiagram>, H
     (ERef::new(new_diagram), all_models)
 }
 
-pub fn fake_copy_diagram(d: &UmlActivityDiagram) -> HashMap<ModelUuid, UmlActivityElement> {
-    fn walk(e: &UmlActivityElement, into: &mut HashMap<ModelUuid, UmlActivityElement>) {
-        match e {
-            UmlActivityElement::Activity(inner) => {
-                let model = inner.read();
-
-                for e in &model.contained_elements {
-                    walk(&e.clone().to_element(), into);
-                    into.insert(*e.uuid(), e.clone().to_element());
-                }
-            },
-            UmlActivityElement::InterruptibleRegion(inner) => {
-                let model = inner.read();
-
-                for e in &model.contained_elements {
-                    walk(&e.clone().to_element(), into);
-                    into.insert(*e.uuid(), e.clone().to_element());
-                }
-            },
-            UmlActivityElement::Partition(inner) => {
-                let model = inner.read();
-
-                for e in &model.sections {
-                    walk(&e.clone().into(), into);
-                    into.insert(*e.read().uuid(), e.clone().into());
-                }
-            },
-            UmlActivityElement::PartitionSection(inner) => {
-                let model = inner.read();
-
-                for e in &model.contained_elements {
-                    walk(&e.clone().to_element(), into);
-                    into.insert(*e.uuid(), e.clone().to_element());
-                }
-            },
-            _ => {},
-        }
-    }
-
+pub fn enumerate_diagram(d: &UmlActivityDiagram) -> HashMap<ModelUuid, UmlActivityElement> {
     let mut all_models = HashMap::new();
     for e in &d.contained_elements {
-        walk(&e.clone().to_element(), &mut all_models);
-        all_models.insert(*e.uuid(), e.clone().to_element());
+        enumerate_elements(&e.clone().to_element(), &mut all_models);
     }
-
     all_models
+}
+fn enumerate_elements(e: &UmlActivityElement, into: &mut HashMap<ModelUuid, UmlActivityElement>) {
+    into.insert(*e.uuid(), e.clone());
+    match e {
+        UmlActivityElement::Activity(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate_elements(&e.clone().to_element(), into);
+            }
+        },
+        UmlActivityElement::InterruptibleRegion(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate_elements(&e.clone().to_element(), into);
+            }
+        },
+        UmlActivityElement::Partition(inner) => {
+            for e in &inner.read().sections {
+                enumerate_elements(&e.clone().into(), into);
+            }
+        },
+        UmlActivityElement::PartitionSection(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate_elements(&e.clone().to_element(), into);
+            }
+        },
+        _ => {},
+    }
 }
 
 pub fn transitive_closure(d: &UmlActivityDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
@@ -238,7 +224,9 @@ pub fn transitive_closure(d: &UmlActivityDiagram, mut when_deleting: HashSet<Mod
                 UmlActivityElement::Activity(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         for e in &r.contained_elements {
                             walk(&e.clone().to_element(), when_deleting);
@@ -248,7 +236,9 @@ pub fn transitive_closure(d: &UmlActivityDiagram, mut when_deleting: HashSet<Mod
                 UmlActivityElement::InterruptibleRegion(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         for e in &r.contained_elements {
                             walk(&e.clone().to_element(), when_deleting);
@@ -258,7 +248,9 @@ pub fn transitive_closure(d: &UmlActivityDiagram, mut when_deleting: HashSet<Mod
                 UmlActivityElement::Partition(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         for e in &r.sections {
                             walk(&e.clone().into(), when_deleting);
@@ -268,7 +260,9 @@ pub fn transitive_closure(d: &UmlActivityDiagram, mut when_deleting: HashSet<Mod
                 UmlActivityElement::PartitionSection(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         for e in &r.contained_elements {
                             walk(&e.clone().to_element(), when_deleting);
@@ -340,33 +334,6 @@ pub fn transitive_closure(d: &UmlActivityDiagram, mut when_deleting: HashSet<Mod
     }
 
     when_deleting
-}
-
-fn enumerate(e: &UmlActivityElement, into: &mut HashSet<ModelUuid>) {
-    into.insert(*e.uuid());
-    match e {
-        UmlActivityElement::Activity(inner) => {
-            for e in &inner.read().contained_elements {
-                enumerate(&e.clone().to_element(), into);
-            }
-        },
-        UmlActivityElement::InterruptibleRegion(inner) => {
-            for e in &inner.read().contained_elements {
-                enumerate(&e.clone().to_element(), into);
-            }
-        },
-        UmlActivityElement::Partition(inner) => {
-            for e in &inner.read().sections {
-                enumerate(&e.clone().into(), into);
-            }
-        },
-        UmlActivityElement::PartitionSection(inner) => {
-            for e in &inner.read().contained_elements {
-                enumerate(&e.clone().to_element(), into);
-            }
-        },
-        _ => {},
-    }
 }
 
 

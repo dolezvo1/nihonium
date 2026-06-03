@@ -450,8 +450,8 @@ impl DiagramAdapter<DemoCsdDomain> for DemoCsdDiagramAdapter {
         )
     }
 
-    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DemoCsdElement>) {
-        let models = super::democsd_models::fake_copy_diagram(&self.model.read());
+    fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, DemoCsdElement>) {
+        let models = super::democsd_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
     }
 }

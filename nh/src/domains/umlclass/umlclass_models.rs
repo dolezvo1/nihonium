@@ -266,40 +266,35 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
     (ERef::new(new_diagram), all_models)
 }
 
-pub fn fake_copy_diagram(d: &UmlClassDiagram) -> HashMap<ModelUuid, UmlClassElement> {
-    fn walk(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClassElement>) {
-        match e {
-            UmlClassElement::Package(inner) => {
-                let model = inner.read();
-
-                for e in &model.contained_elements {
-                    walk(e, into);
-                    into.insert(*e.uuid(), e.clone());
-                }
-            },
-            UmlClassElement::Class(inner) => {
-                let model = inner.read();
-
-                for e in &model.properties {
-                    walk(&e.clone().into(), into);
-                    into.insert(*e.read().uuid, e.clone().into());
-                }
-                for e in &model.operations {
-                    walk(&e.clone().into(), into);
-                    into.insert(*e.read().uuid, e.clone().into());
-                }
-            }
-            _ => {},
-        }
-    }
-
+pub fn enumerate_diagram(d: &UmlClassDiagram) -> HashMap<ModelUuid, UmlClassElement> {
     let mut all_models = HashMap::new();
     for e in &d.contained_elements {
-        walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), e.clone());
+        enumerate_elements(e, &mut all_models);
     }
-
     all_models
+}
+fn enumerate_elements(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClassElement>) {
+    into.insert(*e.uuid(), e.clone());
+    match e {
+        UmlClassElement::Package(inner) => {
+            let model = inner.read();
+
+            for e in &model.contained_elements {
+                enumerate_elements(e, into);
+            }
+        },
+        UmlClassElement::Class(inner) => {
+            let model = inner.read();
+
+            for e in &model.properties {
+                enumerate_elements(&e.clone().into(), into);
+            }
+            for e in &model.operations {
+                enumerate_elements(&e.clone().into(), into);
+            }
+        }
+        _ => {},
+    }
 }
 
 pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
@@ -309,7 +304,9 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                 UmlClassElement::Package(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         for e in &r.contained_elements {
                             walk(e, when_deleting);
@@ -324,10 +321,14 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
                         for e in &r.properties {
-                            enumerate(&e.clone().into(), when_deleting);
+                            let mut c = Default::default();
+                            enumerate_elements(&e.clone().into(), &mut c);
+                            when_deleting.extend(c.into_keys());
                         }
                         for e in &r.operations {
-                            enumerate(&e.clone().into(), when_deleting);
+                            let mut c = Default::default();
+                            enumerate_elements(&e.clone().into(), &mut c);
+                            when_deleting.extend(c.into_keys());
                         }
                     } else {
                         for e in &r.properties {
@@ -416,36 +417,6 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
     }
 
     when_deleting
-}
-
-fn enumerate(e: &UmlClassElement, into: &mut HashSet<ModelUuid>) {
-    into.insert(*e.uuid());
-    match e {
-        UmlClassElement::Package(inner) => {
-            for e in &inner.read().contained_elements {
-                enumerate(e, into);
-            }
-        },
-        UmlClassElement::Instance(..)
-        | UmlClassElement::Property(..)
-        | UmlClassElement::Operation(..) => {},
-        UmlClassElement::Class(inner) => {
-            let r = inner.read();
-            for e in &r.properties {
-                enumerate(&e.clone().into(), into);
-            }
-            for e in &r.operations {
-                enumerate(&e.clone().into(), into);
-            }
-        },
-        UmlClassElement::UseCase(..)
-        | UmlClassElement::Generalization(..)
-        | UmlClassElement::Dependency(..)
-        | UmlClassElement::Association(..)
-        | UmlClassElement::UseCaseGeneralization(..)
-        | UmlClassElement::Comment(..)
-        | UmlClassElement::CommentLink(..) => {},
-    }
 }
 
 

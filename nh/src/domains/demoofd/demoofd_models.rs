@@ -227,28 +227,33 @@ pub fn deep_copy_diagram(d: &DemoOfdDiagram) -> (ERef<DemoOfdDiagram>, HashMap<M
     (ERef::new(new_diagram), all_models)
 }
 
-pub fn fake_copy_diagram(d: &DemoOfdDiagram) -> HashMap<ModelUuid, DemoOfdElement> {
-    fn walk(e: &DemoOfdElement, into: &mut HashMap<ModelUuid, DemoOfdElement>) {
-        match e {
-            DemoOfdElement::DemoOfdPackage(inner) => {
-                let model = inner.read();
-
-                for e in &model.contained_elements {
-                    walk(e, into);
-                    into.insert(*e.uuid(), e.clone());
-                }
-            },
-            _ => {},
-        }
-    }
-
+pub fn enumerate_diagram(d: &DemoOfdDiagram) -> HashMap<ModelUuid, DemoOfdElement> {
     let mut all_models = HashMap::new();
     for e in &d.contained_elements {
-        walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), e.clone());
+        enumerate_elements(e, &mut all_models);
     }
-
     all_models
+}
+fn enumerate_elements(e: &DemoOfdElement, into: &mut HashMap<ModelUuid, DemoOfdElement>) {
+    into.insert(*e.uuid(), e.clone());
+    match e {
+        DemoOfdElement::DemoOfdPackage(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate_elements(e, into);
+            }
+        },
+        DemoOfdElement::DemoOfdEntityType(..) => {},
+        DemoOfdElement::DemoOfdEventType(inner) => {
+            if let UFOption::Some(e) = &inner.read().specialization_entity_type {
+                enumerate_elements(&e.clone().into(), into);
+            }
+        },
+        DemoOfdElement::DemoOfdPropertyType(..)
+        | DemoOfdElement::DemoOfdSpecialization(..)
+        | DemoOfdElement::DemoOfdAggregation(..)
+        | DemoOfdElement::DemoOfdPrecedence(..)
+        | DemoOfdElement::DemoOfdExclusion(..) => {},
+    }
 }
 
 pub fn transitive_closure(d: &DemoOfdDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
@@ -258,7 +263,9 @@ pub fn transitive_closure(d: &DemoOfdDiagram, mut when_deleting: HashSet<ModelUu
                 DemoOfdElement::DemoOfdPackage(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         for e in &r.contained_elements {
                             walk(e, when_deleting);
@@ -269,7 +276,9 @@ pub fn transitive_closure(d: &DemoOfdDiagram, mut when_deleting: HashSet<ModelUu
                 DemoOfdElement::DemoOfdEventType(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         if let UFOption::Some(e) = &r.specialization_entity_type {
                             walk(&e.clone().into(), when_deleting);
@@ -355,28 +364,6 @@ pub fn transitive_closure(d: &DemoOfdDiagram, mut when_deleting: HashSet<ModelUu
     }
 
     when_deleting
-}
-
-fn enumerate(e: &DemoOfdElement, into: &mut HashSet<ModelUuid>) {
-    into.insert(*e.uuid());
-    match e {
-        DemoOfdElement::DemoOfdPackage(inner) => {
-            for e in &inner.read().contained_elements {
-                enumerate(e, into);
-            }
-        },
-        DemoOfdElement::DemoOfdEntityType(..) => {},
-        DemoOfdElement::DemoOfdEventType(inner) => {
-            if let UFOption::Some(e) = &inner.read().specialization_entity_type {
-                enumerate(&e.clone().into(), into);
-            }
-        },
-        DemoOfdElement::DemoOfdPropertyType(..)
-        | DemoOfdElement::DemoOfdSpecialization(..)
-        | DemoOfdElement::DemoOfdAggregation(..)
-        | DemoOfdElement::DemoOfdPrecedence(..)
-        | DemoOfdElement::DemoOfdExclusion(..) => {},
-    }
 }
 
 // ---

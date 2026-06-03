@@ -79,28 +79,27 @@ pub fn deep_copy_diagram(d: &NetworkDiagram) -> (ERef<NetworkDiagram>, HashMap<M
     (ERef::new(new_diagram), all_models)
 }
 
-pub fn fake_copy_diagram(d: &NetworkDiagram) -> HashMap<ModelUuid, NetworkElement> {
-    fn walk(e: &NetworkElement, into: &mut HashMap<ModelUuid, NetworkElement>) {
-        match e {
-            NetworkElement::Container(inner) => {
-                let model = inner.read();
-
-                for e in &model.contained_elements {
-                    walk(e, into);
-                    into.insert(*e.uuid(), e.clone());
-                }
-            },
-            _ => {},
-        }
-    }
-
+pub fn enumerate_diagram(d: &NetworkDiagram) -> HashMap<ModelUuid, NetworkElement> {
     let mut all_models = HashMap::new();
     for e in &d.contained_elements {
-        walk(e, &mut all_models);
-        all_models.insert(*e.uuid(), e.clone());
+        enumerate_elements(e, &mut all_models);
     }
-
     all_models
+}
+fn enumerate_elements(e: &NetworkElement, into: &mut HashMap<ModelUuid, NetworkElement>) {
+    into.insert(*e.uuid(), e.clone());
+    match e {
+        NetworkElement::Container(inner) => {
+            for e in &inner.read().contained_elements {
+                enumerate_elements(e, into);
+            }
+        },
+        NetworkElement::Node(_)
+        | NetworkElement::User(_)
+        | NetworkElement::File(_)
+        | NetworkElement::Association(_)
+        | NetworkElement::Comment(_) => {},
+    }
 }
 
 pub fn transitive_closure(d: &NetworkDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
@@ -110,7 +109,9 @@ pub fn transitive_closure(d: &NetworkDiagram, mut when_deleting: HashSet<ModelUu
                 NetworkElement::Container(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
-                        enumerate(e, when_deleting);
+                        let mut c = Default::default();
+                        enumerate_elements(e, &mut c);
+                        when_deleting.extend(c.into_keys());
                     } else {
                         for e in &r.contained_elements {
                             walk(e, when_deleting);
@@ -160,22 +161,6 @@ pub fn transitive_closure(d: &NetworkDiagram, mut when_deleting: HashSet<ModelUu
     }
 
     when_deleting
-}
-
-fn enumerate(e: &NetworkElement, into: &mut HashSet<ModelUuid>) {
-    into.insert(*e.uuid());
-    match e {
-        NetworkElement::Container(inner) => {
-            for e in &inner.read().contained_elements {
-                enumerate(e, into);
-            }
-        },
-        NetworkElement::Node(_)
-        | NetworkElement::User(_)
-        | NetworkElement::File(_)
-        | NetworkElement::Association(_)
-        | NetworkElement::Comment(_) => {},
-    }
 }
 
 

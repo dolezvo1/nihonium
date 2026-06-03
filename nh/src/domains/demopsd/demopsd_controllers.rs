@@ -596,8 +596,8 @@ impl DiagramAdapter<DemoPsdDomain> for DemoPsdDiagramAdapter {
         )
     }
 
-    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DemoPsdElement>) {
-        let models = super::demopsd_models::fake_copy_diagram(&self.model.read());
+    fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, DemoPsdElement>) {
+        let models = super::demopsd_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
     }
 }

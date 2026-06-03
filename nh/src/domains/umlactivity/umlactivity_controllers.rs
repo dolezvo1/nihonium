@@ -569,8 +569,8 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
         )
     }
 
-    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, UmlActivityElement>) {
-        let models = super::umlactivity_models::fake_copy_diagram(&self.model.read());
+    fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, UmlActivityElement>) {
+        let models = super::umlactivity_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
     }
 }

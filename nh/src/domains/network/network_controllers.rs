@@ -421,8 +421,8 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
         )
     }
 
-    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, NetworkElement>) {
-        let models = super::network_models::fake_copy_diagram(&self.model.read());
+    fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, NetworkElement>) {
+        let models = super::network_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
     }
 }

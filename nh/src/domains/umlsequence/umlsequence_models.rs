@@ -243,48 +243,41 @@ pub fn deep_copy_diagram(d: &UmlSequenceDiagramBoard) -> (ERef<UmlSequenceDiagra
     (ERef::new(new_diagram), all_models)
 }
 
-pub fn fake_copy_diagram(d: &UmlSequenceDiagramBoard) -> HashMap<ModelUuid, UmlSequenceElement> {
-    fn walk(e: &UmlSequenceElement, into: &mut HashMap<ModelUuid, UmlSequenceElement>) {
-        match e {
-            UmlSequenceElement::Diagram(inner) => {
-                let model = inner.read();
-
-                for e in &model.vertical_elements {
-                    walk(&e.clone().into(), into);
-                    into.insert(*e.read().uuid(), e.clone().into());
-                }
-                for e in &model.horizontal_elements {
-                    walk(&e.clone().to_element(), into);
-                    into.insert(*e.uuid(), e.clone().to_element());
-                }
-            },
-            UmlSequenceElement::CombinedFragment(inner) => {
-                let model = inner.read();
-
-                for e in &model.sections {
-                    walk(&e.clone().into(), into);
-                    into.insert(*e.read().uuid, e.clone().into());
-                }
-            }
-            UmlSequenceElement::CombinedFragmentSection(inner) => {
-                let model = inner.read();
-
-                for e in &model.horizontal_elements {
-                    walk(&e.clone().to_element(), into);
-                    into.insert(*e.uuid(), e.clone().to_element());
-                }
-            }
-            _ => {},
-        }
-    }
-
+pub fn enumerate_diagram(d: &UmlSequenceDiagramBoard) -> HashMap<ModelUuid, UmlSequenceElement> {
     let mut all_models = HashMap::new();
     for e in &d.elements {
-        walk(&e.clone().to_element(), &mut all_models);
-        all_models.insert(*e.uuid(), e.clone().to_element());
+        enumerate_elements(&e.clone().to_element(), &mut all_models);
     }
-
     all_models
+}
+fn enumerate_elements(e: &UmlSequenceElement, into: &mut HashMap<ModelUuid, UmlSequenceElement>) {
+    into.insert(*e.uuid(), e.clone());
+    match e {
+        UmlSequenceElement::Diagram(inner) => {
+            let r = inner.read();
+            for e in &r.vertical_elements {
+                enumerate_elements(&e.clone().into(), into);
+            }
+            for e in &r.horizontal_elements {
+                enumerate_elements(&e.clone().to_element(), into);
+            }
+        },
+        UmlSequenceElement::CombinedFragment(inner) => {
+            for s in &inner.read().sections {
+                enumerate_elements(&s.clone().into(), into);
+            }
+        }
+        UmlSequenceElement::CombinedFragmentSection(inner) => {
+            for e in &inner.read().horizontal_elements {
+                enumerate_elements(&e.clone().to_element(), into);
+            }
+        }
+        UmlSequenceElement::Lifeline(..)
+        | UmlSequenceElement::Message(..)
+        | UmlSequenceElement::Ref(..)
+        | UmlSequenceElement::Comment(..)
+        | UmlSequenceElement::CommentLink(..) => {},
+    }
 }
 
 pub fn transitive_closure(d: &UmlSequenceDiagramBoard, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
@@ -293,7 +286,9 @@ pub fn transitive_closure(d: &UmlSequenceDiagramBoard, mut when_deleting: HashSe
             UmlSequenceElement::Diagram(inner) => {
                 let r = inner.read();
                 if when_deleting.contains(&r.uuid) {
-                    enumerate(e, when_deleting);
+                    let mut c = Default::default();
+                    enumerate_elements(e, &mut c);
+                    when_deleting.extend(c.into_keys());
                 } else {
                     for e in &r.vertical_elements {
                         walk(&e.clone().into(), when_deleting);
@@ -306,7 +301,9 @@ pub fn transitive_closure(d: &UmlSequenceDiagramBoard, mut when_deleting: HashSe
             UmlSequenceElement::CombinedFragment(inner) => {
                 let r = inner.read();
                 if when_deleting.contains(&r.uuid) {
-                    enumerate(e, when_deleting);
+                    let mut c = Default::default();
+                    enumerate_elements(e, &mut c);
+                    when_deleting.extend(c.into_keys());
                 } else {
                     for e in &r.sections {
                         walk(&e.clone().into(), when_deleting);
@@ -316,7 +313,9 @@ pub fn transitive_closure(d: &UmlSequenceDiagramBoard, mut when_deleting: HashSe
             UmlSequenceElement::CombinedFragmentSection(inner) => {
                 let r = inner.read();
                 if when_deleting.contains(&r.uuid) {
-                    enumerate(e, when_deleting);
+                    let mut c = Default::default();
+                    enumerate_elements(e, &mut c);
+                    when_deleting.extend(c.into_keys());
                 } else {
                     for e in &r.horizontal_elements {
                         walk(&e.clone().to_element(), when_deleting);
@@ -388,36 +387,6 @@ pub fn transitive_closure(d: &UmlSequenceDiagramBoard, mut when_deleting: HashSe
     }
 
     when_deleting
-}
-
-fn enumerate(e: &UmlSequenceElement, into: &mut HashSet<ModelUuid>) {
-    into.insert(*e.uuid());
-    match e {
-        UmlSequenceElement::Diagram(inner) => {
-            let r = inner.read();
-            for e in &r.vertical_elements {
-                enumerate(&e.clone().into(), into);
-            }
-            for e in &r.horizontal_elements {
-                enumerate(&e.clone().to_element(), into);
-            }
-        },
-        UmlSequenceElement::CombinedFragment(inner) => {
-            for s in &inner.read().sections {
-                enumerate(&s.clone().into(), into);
-            }
-        }
-        UmlSequenceElement::CombinedFragmentSection(inner) => {
-            for e in &inner.read().horizontal_elements {
-                enumerate(&e.clone().to_element(), into);
-            }
-        }
-        UmlSequenceElement::Lifeline(..)
-        | UmlSequenceElement::Message(..)
-        | UmlSequenceElement::Ref(..)
-        | UmlSequenceElement::Comment(..)
-        | UmlSequenceElement::CommentLink(..) => {},
-    }
 }
 
 

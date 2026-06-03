@@ -545,8 +545,8 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
         )
     }
 
-    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, UmlSequenceElement>) {
-        let models = super::umlsequence_models::fake_copy_diagram(&self.model.read());
+    fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, UmlSequenceElement>) {
+        let models = super::umlsequence_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
     }
 }

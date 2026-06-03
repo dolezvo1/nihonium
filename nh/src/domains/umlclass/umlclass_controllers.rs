@@ -689,8 +689,8 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
         )
     }
 
-    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, UmlClassElement>) {
-        let models = super::umlclass_models::fake_copy_diagram(&self.model.read());
+    fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, UmlClassElement>) {
+        let models = super::umlclass_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
     }
 }

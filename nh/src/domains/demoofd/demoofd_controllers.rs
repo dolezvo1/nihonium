@@ -537,8 +537,8 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
         )
     }
 
-    fn fake_copy(&self) -> (Self, HashMap<ModelUuid, DemoOfdElement>) {
-        let models = super::demoofd_models::fake_copy_diagram(&self.model.read());
+    fn enumerate_models(&self) -> (Self, HashMap<ModelUuid, DemoOfdElement>) {
+        let models = super::demoofd_models::enumerate_diagram(&self.model.read());
         (self.clone(), models)
     }
 }
