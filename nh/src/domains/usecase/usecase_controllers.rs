@@ -5,7 +5,7 @@ use super::super::umlclass::{
 };
 use crate::{DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF, common::{
     controller::{
-        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MultiDiagramController, PositionNoT, ProjectCommand, View
+        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MultiDiagramController, PositionNoT, View
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
@@ -18,24 +18,6 @@ use std::collections::HashSet;
 #[derive(Clone, Default)]
 pub struct UseCaseProfile;
 impl UmlClassProfile for UseCaseProfile {
-    fn menubar_options_fun(
-        _model: &ERef<UmlClassDiagram>,
-        _view_uuid: &ViewUuid,
-        ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
-    ) {
-        /* TODO: PlantUML support?
-        if ui.button("PlantUML description").clicked() {
-            let uuid = uuid::Uuid::now_v7();
-            commands.push(ProjectCommand::AddCustomTab(
-                uuid,
-                Arc::new(RwLock::new(PlantUmlTab::new(model.clone()))),
-            ));
-        }
-        */
-        ui.separator();
-    }
-
     fn allows_class_rendering_as_stick_figure() -> bool {
         true
     }

@@ -4,186 +4,24 @@ use crate::common::eref::ERef;
 use crate::common::search::FullTextSearchable;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
+use crate::domains::umlclass::umlclass_plantuml::UmlClassPlantUmlCollector;
 use std::collections::HashSet;
 use std::{
     collections::HashMap,
     sync::Arc,
 };
 
-pub struct UmlClassCollector {
-    collecting_absolute_paths: bool,
-    package_stack: Vec<String>,
-    absolute_paths: HashMap<ModelUuid, String>,
-    plantuml_data: String,
-}
-
-impl UmlClassCollector {
-    fn absolute_with_current_stack(&self, name: &str) -> String {
-        if self.package_stack.is_empty() {
-            format!("{:?}", name)
-        } else {
-            format!("{:?}", self.package_stack.join(".") + "." + name)
-        }
-    }
-
-    fn visit_package(&mut self, package: &UmlClassPackage) {
-        self.package_stack.push((*package.name).clone());
-        if !self.collecting_absolute_paths {
-            self.plantuml_data
-                .push_str(&format!("package {:?} {{\n", package.name));
-        }
-
-        for e in &package.contained_elements {
-            e.accept_uml(self);
-        }
-
-        self.package_stack.pop();
-        if !self.collecting_absolute_paths {
-            self.plantuml_data.push_str("}\n");
-        }
-    }
-    fn visit_object(&mut self, object: &UmlClassInstance) {
-        if self.collecting_absolute_paths {
-            self.absolute_paths.insert(
-                (*object.uuid).clone(),
-                self.absolute_with_current_stack(&*object.instance_type),
-            );
-        } else {
-            self.plantuml_data.push_str(&format!(
-                "object {:?}\n",
-                if object.instance_name.is_empty() {
-                    format!(":{}", object.instance_type)
-                } else {
-                    format!("{}: {}", object.instance_name, object.instance_type)
-                }
-            ));
-        }
-    }
-    fn visit_class(&mut self, class: &UmlClass) {
-        if self.collecting_absolute_paths {
-            self.absolute_paths.insert(
-                (*class.uuid).clone(),
-                self.absolute_with_current_stack(&*class.name),
-            );
-        } else {
-            self.plantuml_data.push_str(&format!(
-                "class {:?} ",
-                class.name,
-            ));
-
-            if !class.stereotype.is_empty() {
-                self.plantuml_data.push_str(&format!("<<{}>> ", class.stereotype));
-            }
-            self.plantuml_data.push_str("{\n");
-            for e in &class.properties {
-                let r = e.read();
-                let visibility = r.visibility.as_ref().map(|e| e.as_char()).unwrap_or("");
-                let value_type = if !r.value_type.is_empty() {
-                    format!(": {}", r.value_type)
-                } else {
-                    "".to_owned()
-                };
-                self.plantuml_data.push_str(&format!("  {}{}{}\n", visibility, r.name, value_type));
-            }
-            for e in &class.operations {
-                let r = e.read();
-                let visibility = r.visibility.as_ref().map(|e| e.as_char()).unwrap_or("");
-                let return_type = if !r.return_type.is_empty() {
-                    format!(": {}", r.return_type)
-                } else {
-                    "".to_owned()
-                };
-                self.plantuml_data.push_str(&format!("  {}{}({}){}\n", visibility, r.name, r.parameters, return_type));
-            }
-            self.plantuml_data.push_str("}\n");
-        }
-    }
-    fn visit_generalization(&mut self, link: &UmlClassGeneralization) {
-        if !self.collecting_absolute_paths {
-            for source_name in link.sources.iter().flat_map(|e| self.absolute_paths.get(&e.read().uuid)) {
-                for target_name in link.targets.iter().flat_map(|e| self.absolute_paths.get(&e.read().uuid)) {
-                    self.plantuml_data.push_str(source_name);
-                    self.plantuml_data.push_str(" --|> ");
-                    self.plantuml_data.push_str(target_name);
-                    self.plantuml_data.push_str("\n");
-                }
-            }
-        }
-    }
-    fn visit_dependency(&mut self, link: &UmlClassDependency) {
-        if !self.collecting_absolute_paths {
-            let source_name = self.absolute_paths.get(&link.source.uuid()).unwrap();
-            let target_name = self.absolute_paths.get(&link.target.uuid()).unwrap();
-
-            self.plantuml_data.push_str(source_name);
-            if link.target_arrow_open {
-                self.plantuml_data.push_str(" ..> ");
-            } else {
-                self.plantuml_data.push_str(" ..|> ");
-            }
-            self.plantuml_data.push_str(target_name);
-            if !link.stereotype.is_empty() {
-                self.plantuml_data.push_str(&format!(": <<{}>>", link.stereotype));
-            }
-            self.plantuml_data.push_str("\n");
-        }
-    }
-    fn visit_association(&mut self, link: &UmlClassAssociation) {
-        if !self.collecting_absolute_paths {
-            let source_name = self.absolute_paths.get(&link.source.uuid()).unwrap();
-            let target_name = self.absolute_paths.get(&link.target.uuid()).unwrap();
-
-            self.plantuml_data.push_str(source_name);
-            if !link.source_label_multiplicity.is_empty() {
-                self.plantuml_data
-                    .push_str(&format!(" {:?}", link.source_label_multiplicity));
-            }
-            fn ah(
-                target: bool,
-                n: UmlClassAssociationNavigability,
-                a: UmlClassAssociationAggregation,
-            ) -> &'static str {
-                match a {
-                    UmlClassAssociationAggregation::None => match n {
-                        UmlClassAssociationNavigability::Unspecified => "",
-                        UmlClassAssociationNavigability::NonNavigable => "x",
-                        UmlClassAssociationNavigability::Navigable => if !target { "<" } else { ">" },
-                    }
-                    UmlClassAssociationAggregation::Shared => "o",
-                    UmlClassAssociationAggregation::Composite => "*",
-                }
-            }
-            self.plantuml_data.push_str(
-                &format!(
-                    " {}-{} ",
-                    ah(false, link.source_navigability, link.source_aggregation),
-                    ah(true, link.target_navigability, link.target_aggregation),
-                )
-            );
-            if !link.target_label_multiplicity.is_empty() {
-                self.plantuml_data
-                    .push_str(&format!("{:?} ", link.target_label_multiplicity));
-            }
-            self.plantuml_data.push_str(target_name);
-            if !link.stereotype.is_empty() {
-                self.plantuml_data.push_str(&format!(": <<{}>>", link.stereotype));
-            }
-            self.plantuml_data.push_str("\n");
-        }
-    }
-    fn visit_comment(&mut self, comment: &UmlClassComment) {
-        if !self.collecting_absolute_paths {
-            let comment_name: String = comment.uuid.to_string().chars().filter(|e| *e != '-').collect();
-            self.plantuml_data.push_str(&format!("note {:?} as N{}\n", comment.text, comment_name));
-        }
-    }
-    fn visit_commentlink(&mut self, comment_link: &UmlClassCommentLink) {
-        if !self.collecting_absolute_paths {
-            let comment_name: String = comment_link.source.read().uuid.to_string().chars().filter(|e| *e != '-').collect();
-            let target_name = self.absolute_paths.get(&comment_link.target.uuid()).unwrap();
-            self.plantuml_data.push_str(&format!("N{} .. {}\n", comment_name, target_name));
-        }
-    }
+pub trait UmlClassVisitor {
+    fn visit_package(&mut self, package: &UmlClassPackage);
+    fn visit_instance(&mut self, instance: &UmlClassInstance);
+    fn visit_class(&mut self, class: &UmlClass);
+    fn visit_usecase(&mut self, usecase: &UmlUseCase);
+    fn visit_generalization(&mut self, generalization: &UmlClassGeneralization);
+    fn visit_dependency(&mut self, dependency: &UmlClassDependency);
+    fn visit_association(&mut self, association: &UmlClassAssociation);
+    fn visit_usecasegeneralization(&mut self, usecasegen: &UmlUseCaseGeneralization);
+    fn visit_comment(&mut self, comment: &UmlClassComment);
+    fn visit_commentlink(&mut self, commentlink: &UmlClassCommentLink);
 }
 
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
@@ -243,18 +81,18 @@ impl UmlClassElement {
         }
     }
 
-    fn accept_uml(&self, visitor: &mut UmlClassCollector) {
+    pub fn accept_uml(&self, visitor: &mut dyn UmlClassVisitor) {
         match self {
             UmlClassElement::Package(inner) => visitor.visit_package(&inner.read()),
-            UmlClassElement::Instance(inner) => visitor.visit_object(&inner.read()),
+            UmlClassElement::Instance(inner) => visitor.visit_instance(&inner.read()),
             UmlClassElement::Class(inner) => visitor.visit_class(&inner.read()),
             UmlClassElement::Property(..)
-            | UmlClassElement::Operation(..)
-            | UmlClassElement::UseCase(..) => unreachable!(),
+            | UmlClassElement::Operation(..) => unreachable!(),
+            UmlClassElement::UseCase(inner) => visitor.visit_usecase(&inner.read()),
             UmlClassElement::Generalization(inner) => visitor.visit_generalization(&inner.read()),
             UmlClassElement::Dependency(inner) => visitor.visit_dependency(&inner.read()),
             UmlClassElement::Association(inner) => visitor.visit_association(&inner.read()),
-            UmlClassElement::UseCaseGeneralization(..) => unreachable!(),
+            UmlClassElement::UseCaseGeneralization(inner) => visitor.visit_usecasegeneralization(&inner.read()),
             UmlClassElement::Comment(inner) => visitor.visit_comment(&inner.read()),
             UmlClassElement::CommentLink(inner) => visitor.visit_commentlink(&inner.read()),
         }
@@ -638,24 +476,13 @@ impl UmlClassDiagram {
     }
 
     pub fn plantuml(&self) -> String {
-        let mut collector = UmlClassCollector {
-            collecting_absolute_paths: true,
-            package_stack: Vec::new(),
-            absolute_paths: HashMap::new(),
-            plantuml_data: "".to_owned(),
-        };
+        let mut collector = UmlClassPlantUmlCollector::new();
 
         for e in &self.contained_elements {
             e.accept_uml(&mut collector);
         }
 
-        collector.collecting_absolute_paths = false;
-
-        for e in &self.contained_elements {
-            e.accept_uml(&mut collector);
-        }
-
-        collector.plantuml_data
+        collector.finish()
     }
 
     pub fn get_element_pos_in(&self, parent: &ModelUuid, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
