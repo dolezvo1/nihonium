@@ -138,6 +138,7 @@ pub enum SimpleProjectCommand {
     CloseProject(bool),
     Exit(bool),
     SwapTopLanguages,
+    CycleShadesProfiles,
 }
 
 impl From<DiagramCommand> for SimpleProjectCommand {

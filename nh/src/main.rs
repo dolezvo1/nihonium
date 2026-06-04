@@ -244,6 +244,23 @@ struct DiagramCreationData {
     constructors: &'static [(&'static str, &'static DiagramConstructorF)],
 }
 
+struct ShadesProfile {
+    name: String,
+    default_color: egui::Color32,
+}
+
+impl ShadesProfile {
+    fn new(name: &str, default_color: egui::Color32) -> Self {
+        Self {
+            name: name.to_owned(),
+            default_color,
+        }
+    }
+    fn get(&self, _diagram_type: &str) -> egui::Color32 {
+        self.default_color
+    }
+}
+
 struct NHContext {
     file_io_channel: (Sender<FileIOOperation>, Receiver<FileIOOperation>),
     project_path: Option<std::path::PathBuf>,
@@ -263,8 +280,8 @@ struct NHContext {
     diagram_type_hierarchy: DiagramTypeHierarchyNode,
     diagram_settings: HashMap<&'static str, Box<dyn DiagramSettings>>,
     diagram_settings_functions: HashMap<&'static str, &'static ShowSettingsF>,
-    diagram_shades: HashMap<&'static str, Vec<egui::Color32>>,
-    selected_diagram_shades: HashMap<&'static str, usize>,
+    shades_profiles: Vec<ShadesProfile>,
+    selected_shades_profile: usize,
     selected_language: usize,
     languages_order: Vec<unic_langid::LanguageIdentifier>,
     shortcut_top_order: Vec<(SimpleProjectCommand, egui::KeyboardShortcut)>,
@@ -978,9 +995,14 @@ impl NHContext {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some(c) = self.diagram_controllers.get(last_focused_diagram) else { return; };
         let mut c = c.write();
-        let Some(s) = self.diagram_settings.get(c.controller_type()) else { return; };
+        let ctype = c.controller_type();
+        let Some(s) = self.diagram_settings.get(ctype) else { return; };
+        let outline_rect = ui.content_rect();
 
         c.show_outline(last_focused_diagram, &self.drawing_context, s, ui);
+
+        let shade_color = self.shades_profiles[self.selected_shades_profile].get(ctype);
+        ui.painter().rect(outline_rect, egui::CornerRadius::ZERO, shade_color, egui::Stroke::NONE, egui::StrokeKind::Middle);
     }
 
     fn show_newdiagram_tab(&mut self, ui: &mut egui::Ui) {
@@ -1466,18 +1488,23 @@ impl NHContext {
             });
         });
         
-        ui.collapsing("Diagram shades", |ui| {
-            for (ctype, ctypename) in self.diagram_type_hierarchy.iter_diagrams() {
-                if let Some(values) = self.diagram_shades.get_mut(ctype) {
-                    ui.horizontal(|ui| {
-                        ui.label(ctypename);
-                        egui::widgets::color_picker::color_edit_button_srgba(
-                            ui,
-                            values.first_mut().unwrap(),
-                            egui::widgets::color_picker::Alpha::OnlyBlend
-                        );
-                    });
-                }
+        ui.collapsing("Diagram shades profiles", |ui| {
+            for (idx, e) in self.shades_profiles.iter_mut().enumerate() {
+                ui.horizontal(|ui| {
+                    let l = if idx == self.selected_shades_profile {
+                        ui.label(&format!("[{}]", e.name))
+                    } else {
+                        ui.label(&e.name)
+                    };
+                    if l.clicked() {
+                        self.selected_shades_profile = idx;
+                    }
+                    egui::widgets::color_picker::color_edit_button_srgba(
+                        ui,
+                        &mut e.default_color,
+                        egui::widgets::color_picker::Alpha::OnlyBlend
+                    );
+                });
             }
         });
 
@@ -1584,6 +1611,7 @@ impl NHContext {
             ui.label("Shortcuts");
             egui::Grid::new("shortcut editor grid").show(ui, |ui| {
                 for (l, c) in &[("Swap top languages:", SimpleProjectCommand::SwapTopLanguages),
+                                ("Cycle shades profiles:", SimpleProjectCommand::CycleShadesProfiles),
                                 ("Save project:", SimpleProjectCommand::SaveProject),
                                 ("Save project as:", SimpleProjectCommand::SaveProjectAs),
                                 ("Arrange - Bring to Front:", DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into()),
@@ -1633,7 +1661,7 @@ impl NHContext {
         });
 
         diagram_controller.draw_in(tab_uuid, &self.drawing_context, settings, ui_canvas.as_mut(), pos);
-        let shade_color = self.diagram_shades[ctype][self.selected_diagram_shades[ctype]];
+        let shade_color = self.shades_profiles[self.selected_shades_profile].get(ctype);
         ui_canvas.draw_rectangle(egui::Rect::EVERYTHING, egui::CornerRadius::ZERO, shade_color, common::canvas::Stroke::NONE, Highlight::NONE);
 
         diagram_controller.handle_input(
@@ -1838,8 +1866,11 @@ impl Default for NHApp {
         let diagram_settings_functions = diagram_infos.iter().map(|e| (e.type_indentifier, e.show_settings_function)).collect();
         let diagram_deserializers = diagram_infos.iter().map(|e| (e.type_indentifier.to_owned(), e.deserializer)).collect();
 
-        let diagram_shades = diagram_infos.iter().map(|e| (e.type_indentifier, vec![egui::Color32::TRANSPARENT])).collect();
-        let selected_diagram_shades = diagram_infos.iter().map(|e| (e.type_indentifier, 0)).collect();
+        let shades_profiles = vec![
+            ShadesProfile::new("Light", egui::Color32::TRANSPARENT),
+            ShadesProfile::new("Medium", egui::Color32::BLACK.gamma_multiply(0.4)),
+            ShadesProfile::new("Dark", egui::Color32::BLACK.gamma_multiply(0.6)),
+        ];
         let languages_order = common::fluent::AVAILABLE_LANGUAGES.iter().map(|e| e.0.clone()).collect();
         let fluent_bundle = common::fluent::create_fluent_bundle(&languages_order)
             .expect("Could not establish base FluentBundle");
@@ -1863,8 +1894,8 @@ impl Default for NHApp {
             diagram_type_hierarchy,
             diagram_settings,
             diagram_settings_functions,
-            diagram_shades,
-            selected_diagram_shades,
+            shades_profiles,
+            selected_shades_profile: 0,
             selected_language: 0,
             languages_order,
             modifier_settings: Default::default(),
@@ -1907,6 +1938,7 @@ impl Default for NHApp {
         };
         
         context.drawing_context.shortcuts.insert(SimpleProjectCommand::SwapTopLanguages, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::L));
+        context.drawing_context.shortcuts.insert(SimpleProjectCommand::CycleShadesProfiles, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::K));
         context.drawing_context.shortcuts.insert(SimpleProjectCommand::OpenProject(false), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O));
         context.drawing_context.shortcuts.insert(SimpleProjectCommand::SaveProject, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S));
         context.drawing_context.shortcuts.insert(SimpleProjectCommand::SaveProjectAs, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S));
@@ -2798,6 +2830,9 @@ impl eframe::App for NHApp {
                             self.context.languages_order.swap(0, 1);
                         }
                         self.context.drawing_context.fluent_bundle = common::fluent::create_fluent_bundle(&self.context.languages_order).unwrap();
+                    }
+                    SimpleProjectCommand::CycleShadesProfiles => {
+                        self.context.selected_shades_profile = (self.context.selected_shades_profile + 1) % self.context.shades_profiles.len();
                     }
                     SimpleProjectCommand::OpenProject(b) => if !self.context.has_unsaved_changes || b {
                         let mut dialog = rfd::AsyncFileDialog::new();
