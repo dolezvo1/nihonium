@@ -1164,7 +1164,7 @@ pub trait DiagramSettings2<DomainT: Domain>: DiagramSettings {
 
 
 pub type BucketNoT = u8;
-pub type PositionNoT = u16;
+pub type PositionNoT = usize;
 /// Selection insensitive command - inherently repeatable
 #[derive(Clone, PartialEq, Debug)]
 pub enum InsensitiveCommand<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug> {
