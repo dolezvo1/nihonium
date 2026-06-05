@@ -761,7 +761,11 @@ pub trait NHCanvas {
 pub struct UiCanvas {
     is_interactive: bool,
     highlight_colors: [egui::Color32; 4],
-    painter: egui::Painter,
+
+    top_header_painter: egui::Painter,
+    left_header_painter: egui::Painter,
+    main_area_painter: egui::Painter,
+
     canvas: egui::Rect,
     camera_offset: egui::Pos2,
     camera_scale: f32,
@@ -772,9 +776,13 @@ pub struct UiCanvas {
 }
 
 impl UiCanvas {
+    const HEADER_TEXT_SIZE: f32 = CLASS_MIDDLE_FONT_SIZE;
+    const HEADER_SIZE: f32 = CLASS_MIDDLE_FONT_SIZE + 2.0;
+    const HEADER_BACKGROUND: egui::Color32 = egui::Color32::LIGHT_GRAY;
+
     pub fn new(
         is_interactive: bool,
-        painter: egui::Painter,
+        main_area_painter: egui::Painter,
         canvas: egui::Rect,
         camera_offset: egui::Pos2,
         camera_scale: f32,
@@ -782,6 +790,42 @@ impl UiCanvas {
         highlight_filter: Highlight,
         enable_headers: (bool, bool),
     ) -> Self {
+        let (top_clip_rect, left_clip_rect, remainder) = {
+            let mut remainder = canvas;
+            let top_clip = if enable_headers.0 {
+                let r = egui::Rect::from_min_size(remainder.min, egui::Vec2::new(remainder.width(), Self::HEADER_SIZE));
+                remainder.min.y += Self::HEADER_SIZE;
+                r
+            } else {
+                egui::Rect::NOTHING
+            };
+            let left_clip = if enable_headers.1 {
+                let r = egui::Rect::from_min_size(remainder.min, egui::Vec2::new(Self::HEADER_SIZE, remainder.height()));
+                remainder.min.x += Self::HEADER_SIZE;
+                r
+            } else {
+                egui::Rect::NOTHING
+            };
+            (top_clip, left_clip, remainder)
+        };
+        let top_header_painter = main_area_painter.with_clip_rect(top_clip_rect);
+        let left_header_painter = main_area_painter.with_clip_rect(left_clip_rect);
+        let main_area_painter = main_area_painter.with_clip_rect(remainder);
+        top_header_painter.rect(
+            top_clip_rect,
+            egui::CornerRadius::ZERO,
+            Self::HEADER_BACKGROUND,
+            egui::Stroke::new(1.0_f32, egui::Color32::BLACK),
+            egui::StrokeKind::Middle,
+        );
+        left_header_painter.rect(
+            left_clip_rect,
+            egui::CornerRadius::ZERO,
+            Self::HEADER_BACKGROUND,
+            egui::Stroke::new(1.0_f32, egui::Color32::BLACK),
+            egui::StrokeKind::Middle,
+        );
+
         Self {
             is_interactive,
             highlight_colors: [
@@ -790,7 +834,9 @@ impl UiCanvas {
                 egui::Color32::RED,
                 egui::Color32::ORANGE,
             ],
-            painter,
+            top_header_painter,
+            left_header_painter,
+            main_area_painter,
             canvas,
             camera_offset,
             camera_scale,
@@ -802,7 +848,7 @@ impl UiCanvas {
     }
 
     pub fn clear(&self, color: egui::Color32) {
-        self.painter
+        self.main_area_painter
             .rect(self.canvas, egui::CornerRadius::ZERO, color, egui::Stroke::NONE, egui::StrokeKind::Middle);
     }
 
@@ -817,7 +863,7 @@ impl UiCanvas {
             for x in
                 (0..((canvas_size_scaled.x / distance_x) as u32 + 2)).map(|e| distance_x * e as f32)
             {
-                self.painter.vline(
+                self.main_area_painter.vline(
                     self.canvas.min.x
                         + self.camera_offset.x % (distance_x * self.camera_scale)
                         + x * self.camera_scale,
@@ -830,7 +876,7 @@ impl UiCanvas {
             for y in
                 (0..((canvas_size_scaled.y / distance_y) as u32 + 2)).map(|e| distance_y * e as f32)
             {
-                self.painter.hline(
+                self.main_area_painter.hline(
                     egui::Rangef::new(self.canvas.min.x, self.canvas.max.x),
                     self.canvas.min.y
                         + self.camera_offset.y % (distance_y * self.camera_scale)
@@ -880,11 +926,11 @@ impl NHCanvas for UiCanvas {
 
         match stroke.line_type {
             LineType::Solid => {
-                self.painter
+                self.main_area_painter
                     .line_segment([p1, p2], egui::Stroke::from(stroke));
             }
             LineType::Dashed => {
-                self.painter.add(eframe::epaint::Shape::dashed_line(
+                self.main_area_painter.add(eframe::epaint::Shape::dashed_line(
                     &[p1, p2],
                     egui::Stroke::from(stroke),
                     10.0,
@@ -892,7 +938,7 @@ impl NHCanvas for UiCanvas {
                 ));
             }
             LineType::Dotted => {
-                self.painter.add(eframe::epaint::Shape::dotted_line(
+                self.main_area_painter.add(eframe::epaint::Shape::dotted_line(
                     &[p1, p2],
                     stroke.color,
                     4.0,
@@ -930,7 +976,7 @@ impl NHCanvas for UiCanvas {
             };
 
             if self.canvas.intersects(translated_rect) {
-                self.painter.rect(
+                self.main_area_painter.rect(
                     translated_rect,
                     corner_radius,
                     color,
@@ -951,7 +997,7 @@ impl NHCanvas for UiCanvas {
     ) {
         let stroke = self.filtered_stroke(stroke, highlight).into();
 
-        self.painter.add(eframe::epaint::EllipseShape {
+        self.main_area_painter.add(eframe::epaint::EllipseShape {
             center: self.sc_tr(position),
             radius: radius * self.camera_scale,
             angle: 0.0,
@@ -987,7 +1033,7 @@ impl NHCanvas for UiCanvas {
     ) {
         let stroke = self.filtered_stroke(stroke, highlight);
         let vertices = vertices.into_iter().map(|p| self.sc_tr(p)).collect();
-        self.painter.add(egui::Shape::convex_polygon(
+        self.main_area_painter.add(egui::Shape::convex_polygon(
             vertices,
             color,
             egui::Stroke::from(stroke),
@@ -1001,7 +1047,7 @@ impl NHCanvas for UiCanvas {
         text: &str,
         font_size: f32,
     ) -> egui::Rect {
-        self.painter
+        self.main_area_painter
             .text(
                 self.sc_tr(position),
                 anchor,
@@ -1021,7 +1067,7 @@ impl NHCanvas for UiCanvas {
         text_color: egui::Color32,
     ) {
         if font_size * self.camera_scale >= 4.0 {
-            self.painter.text(
+            self.main_area_painter.text(
                 self.sc_tr(position),
                 anchor,
                 text,
@@ -1073,21 +1119,21 @@ impl NHCanvas for UiCanvas {
         match pos {
             HeaderLocation::Horizontal(pos) if self.header_horizontal => {
                 let p = egui::Pos2::new((pos.start() + pos.end()) / 2.0, self.camera_offset.y / -self.camera_scale);
-                self.painter.text(
+                self.top_header_painter.text(
                     self.sc_tr(p),
                     egui::Align2::CENTER_TOP,
                     text,
-                    egui::FontId::proportional(CLASS_TOP_FONT_SIZE),
+                    egui::FontId::proportional(Self::HEADER_TEXT_SIZE),
                     egui::Color32::BLACK,
                 );
             },
             HeaderLocation::Vertical(pos) if self.header_vertical => {
                 let p = egui::Pos2::new(self.camera_offset.x / -self.camera_scale, (pos.start() + pos.end()) / 2.0);
-                self.painter.text(
+                self.left_header_painter.text(
                     self.sc_tr(p),
                     egui::Align2::LEFT_CENTER,
                     text,
-                    egui::FontId::proportional(CLASS_TOP_FONT_SIZE),
+                    egui::FontId::proportional(Self::HEADER_TEXT_SIZE),
                     egui::Color32::BLACK,
                 );
             },
