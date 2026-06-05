@@ -665,68 +665,133 @@ impl DiagramSettings2<DemoOfdDomain> for DemoOfdSettings {
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    let (entity_m, entity_view) = new_demoofd_entitytype("MEMBERSHIP", "\n\n\n\n", true, egui::Pos2::ZERO);
-    let (event, event_view) = new_demoofd_eventtype(
-        "01", "is started", DemoTransactionKind::Performa,
-        (entity_m.clone(), entity_view.clone().into()),
-        None,
-        egui::Pos2::new(100.0, 0.0),
-    );
-    let entity_2 = (entity_m.clone().into(), entity_view.into());
-
-    let (d, dv) = new_demoofd_entitytype("dummy", "", false, egui::Pos2::new(175.0, 125.0));
-    dv.write().bounds_rect = egui::Rect::from_center_size(egui::Pos2::new(175.0, 125.0), egui::Vec2::new(100.0, 100.0));
-    let (dummy_event, dummy_event_view) = new_demoofd_eventtype(
-        "01", "is started", DemoTransactionKind::Performa,
-        entity_2.clone(),
-        None,
-        egui::Pos2::new(200.0, 75.0),
-    );
-
-    let (_prop, prop_view) = new_demoofd_propertytype("", "0..*", "1..1", None, entity_2.clone(), (d.clone(), dv.clone().into()));
-    let (_spec, spec_view) = new_demoofd_specialization(None, entity_2.clone(), (d.clone(), dv.clone().into()));
-    let (_aggr, aggr_view) = new_demoofd_aggregation(None, entity_2.clone(), (d.clone(), dv.clone().into()));
-    let (_prec, prec_view) = new_demoofd_precedence(None, (event.clone(), event_view.clone().into()), (dummy_event.clone(), dummy_event_view.clone().into()));
-    let (_excl, excl_view) = new_demoofd_exclusion(None, (event.clone().into(), event_view.clone().into()), (dummy_event.clone().into(), dummy_event_view.clone().into()));
-
-    let (_package, package_view) = new_demoofd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-
     let palette_items = vec![
         ("Elements", vec![
             (DemoOfdToolStage::Entity(EntityStageData {
                 name: "MEMBERSHIP".to_owned(),
-                properties: "".to_owned(),
+                properties: "\n\n\n\n".to_owned(),
                 internal: true,
-            }), "Entity Type", entity_2.1.into()),
+            }), "Entity Class Type"),
+            (DemoOfdToolStage::Entity(EntityStageData {
+                name: "[YEAR]".to_owned(),
+                properties: "".to_owned(),
+                internal: false,
+            }), "Value Class Type"),
             (DemoOfdToolStage::EventStart {
                 identifier: "01".to_owned(),
                 name: "is started".to_owned(),
                 transaction_kind: DemoTransactionKind::Performa,
                 specialization: None,
-            }, "Event Type", event_view.into()),
+            }, "Event Type"),
         ]),
         ("Relationships", vec![
             (DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType {
                 name: "".to_owned(),
                 domain_multiplicity: "0..*".to_owned(),
                 range_multiplicity: "1..1".to_owned(),
-            } }, "Property Type", prop_view.into()),
-            (DemoOfdToolStage::LinkStart { link_type: LinkType::Specialization }, "Specialization", spec_view.into()),
-            (DemoOfdToolStage::LinkStart { link_type: LinkType::Aggregation }, "Aggregation/Generalization", aggr_view.into()),
-            (DemoOfdToolStage::LinkStart { link_type: LinkType::Precedence }, "Precedence", prec_view.into()),
-            (DemoOfdToolStage::LinkStart { link_type: LinkType::Exclusion }, "Exclusion", excl_view.into()),
+            } }, "Property Type"),
+            (DemoOfdToolStage::LinkStart { link_type: LinkType::Specialization }, "Specialization"),
+            (DemoOfdToolStage::LinkStart { link_type: LinkType::Aggregation }, "Aggregation/Generalization"),
+            (DemoOfdToolStage::LinkStart { link_type: LinkType::Precedence }, "Precedence"),
+            (DemoOfdToolStage::LinkStart { link_type: LinkType::Exclusion }, "Exclusion"),
         ]),
         ("Other", vec![
             (DemoOfdToolStage::PackageStart {
                 name: "A package".to_owned(),
-            }, "Package", package_view.into()),
+            }, "Package"),
         ]),
-    ];
+    ].into_iter().map(|e| (e.0, e.1.into_iter().map(|e| {
+        let v = view_for_stage(&e.0);
+        (e.0, e.1, v)
+    }).collect())).collect();
 
     Box::new(DemoOfdSettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
     })
+}
+
+fn view_for_stage(s: &DemoOfdToolStage) -> DemoOfdElementView {
+    match s {
+        DemoOfdToolStage::Entity(data) => {
+            let entity_view = new_demoofd_entitytype(&data.name, &data.properties, data.internal, egui::Pos2::ZERO).1;
+            entity_view.write().refresh_buffers();
+            entity_view.into()
+        },
+        DemoOfdToolStage::EventStart { identifier, name, transaction_kind, specialization } => {
+            let d1 = new_demoofd_entitytype("dummy", "", true, egui::Pos2::ZERO);
+            let specialization = specialization.as_ref()
+                .map(|e| new_demoofd_entitytype(&e.name, &e.properties, e.internal, egui::Pos2::ZERO));
+            let event_view = new_demoofd_eventtype(
+                identifier, name, *transaction_kind,
+                (d1.0, d1.1.into()),
+                specialization,
+                egui::Pos2::new(200.0, 75.0),
+            ).1;
+            event_view.write().refresh_buffers();
+            event_view.into()
+        },
+        DemoOfdToolStage::LinkStart { link_type } => {
+            let (p0, p1) = (egui::Pos2::ZERO, egui::Pos2::new(100.0, 50.0));
+            let d1 = new_demoofd_entitytype("dummy", "", true, p0);
+            let d2 = new_demoofd_entitytype("dummy", "", true, p1);
+            let d3 = new_demoofd_eventtype(
+                "dummy", "", DemoTransactionKind::Performa,
+                (d1.0.clone(), d1.1.clone().into()), None, p0,
+            );
+            let d4 = new_demoofd_eventtype(
+                "dummy", "", DemoTransactionKind::Performa,
+                (d1.0.clone(), d1.1.clone().into()), None, p1,
+            );
+
+            match link_type {
+                LinkType::PropertyType { name, domain_multiplicity, range_multiplicity } => {
+                    let prop_view = new_demoofd_propertytype(
+                        name, domain_multiplicity, range_multiplicity, None,
+                        (d1.0, d1.1.into()), (d2.0, d2.1.into()),
+                    ).1;
+                    prop_view.into()
+                },
+                LinkType::Specialization => {
+                    let spec_view = new_demoofd_specialization(
+                        None,
+                        (d1.0, d1.1.into()), (d2.0, d2.1.into()),
+                    ).1;
+                    spec_view.into()
+                },
+                LinkType::Aggregation => {
+                    let aggr_view = new_demoofd_aggregation(
+                        None,
+                        (d1.0, d1.1.into()), (d2.0, d2.1.into()),
+                    ).1;
+                    aggr_view.into()
+                },
+                LinkType::Precedence => {
+                    let prec_view = new_demoofd_precedence(
+                        None,
+                        (d3.0, d3.1.into()), (d4.0, d4.1.into()),
+                    ).1;
+                    prec_view.into()
+                },
+                LinkType::Exclusion => {
+                    let excl_view = new_demoofd_exclusion(
+                        None,
+                        (d3.0.into(), d3.1.into()), (d4.0.into(), d4.1.into()),
+                    ).1;
+                    excl_view.into()
+                },
+            }
+        },
+        DemoOfdToolStage::PackageStart { name } => {
+            let package_view = new_demoofd_package(name, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) }).1;
+            package_view.write().refresh_buffers();
+            package_view.into()
+        },
+        DemoOfdToolStage::EventEnd
+        | DemoOfdToolStage::LinkEnd
+        | DemoOfdToolStage::LinkAddEnding { .. }
+        | DemoOfdToolStage::PackageEnd => unreachable!(),
+    }
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
@@ -753,25 +818,13 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match (tool, view.model()) {
-                    (
-                        DemoOfdToolStage::Entity(EntityStageData { name, properties, internal }),
-                        DemoOfdElement::DemoOfdEntityType(inner),
-                    ) => {
+                match tool {
+                    DemoOfdToolStage::Entity(EntityStageData { name, properties, internal }) => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Properties", properties).changed();
                         modified |= columns[1].checkbox(internal, "internal").changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.name = name.clone().into();
-                            mw.properties = properties.clone().into();
-                            mw.internal = *internal;
-                        }
                     },
-                    (
-                        DemoOfdToolStage::EventStart { identifier, name, transaction_kind, specialization },
-                        DemoOfdElement::DemoOfdEventType(inner),
-                    ) => {
+                    DemoOfdToolStage::EventStart { identifier, name, transaction_kind, specialization } => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
@@ -789,51 +842,24 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                             modified |= columns[1].labeled_text_edit_singleline("Properties", &mut s.properties).changed();
                             modified |= columns[1].checkbox(&mut s.internal, "internal").changed();
                         }
-
-                        if modified && let mut mw = inner.write() {
-                            mw.identifier = identifier.clone().into();
-                            mw.name = name.clone().into();
-                            mw.kind = *transaction_kind;
-
-                            if let Some(sm) = mw.specialization_entity_type.as_ref()
-                                && let mut sm = sm.write()
-                                && let Some(sb) = specialization {
-                                sm.name = sb.name.clone().into();
-                                sm.properties = sb.properties.clone().into();
-                                sm.internal = sb.internal;
-                            }
-                        }
                     },
-                    (
-                        DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType { name, domain_multiplicity, range_multiplicity }, },
-                        DemoOfdElement::DemoOfdPropertyType(inner),
-                    ) => {
+                    DemoOfdToolStage::LinkStart { link_type: LinkType::PropertyType { name, domain_multiplicity, range_multiplicity }, } => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Domain multiplicity", domain_multiplicity).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Range multiplicity", range_multiplicity).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.name = name.clone().into();
-                            mw.domain_multiplicity = domain_multiplicity.clone().into();
-                            mw.range_multiplicity = range_multiplicity.clone().into();
-                        }
                     },
-                    (DemoOfdToolStage::LinkStart { .. }, _) => {}
-                    (
-                        DemoOfdToolStage::PackageStart { name },
-                        DemoOfdElement::DemoOfdPackage(inner),
-                    ) => {
+                    DemoOfdToolStage::LinkStart { .. } => {}
+                    DemoOfdToolStage::PackageStart { name } => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.name = name.clone().into();
-                        }
                     },
-                    _ => unreachable!(),
+                    DemoOfdToolStage::EventEnd
+                    | DemoOfdToolStage::LinkEnd
+                    | DemoOfdToolStage::LinkAddEnding { .. }
+                    | DemoOfdToolStage::PackageEnd => unreachable!(),
                 }
 
                 if modified {
-                    view.refresh_buffers();
+                    *view = view_for_stage(&tool);
                     w.set_from_buffer(buffer.clone());
                 }
             },

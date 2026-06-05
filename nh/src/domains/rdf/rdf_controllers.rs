@@ -538,41 +538,61 @@ impl DiagramSettings2<RdfDomain> for RdfSettings {
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    let (literal, literal_view) = new_rdf_literal("Eric Miller", "http://www.w3.org/2001/XMLSchema#string", "en", egui::Pos2::new(100.0, 75.0));
-    let literal = (literal.into(), literal_view.into());
-    let (node, node_view) = new_rdf_node("http://iri", egui::Pos2::ZERO);
-    let node = (node, node_view.into());
-    let (_predicate, predicate_view) = new_rdf_predicate("http://iri", node.clone(), literal.clone());
-
-    let (_graph, graph_view) = new_rdf_graph("http://graph", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-
     let palette_items = vec![
         ("Elements", vec![
             (RdfToolStage::Literal {
                 content: "Eric Miller".to_owned(),
                 datatype: "http://www.w3.org/2001/XMLSchema#string".to_owned(),
                 language: "en".to_owned(),
-            }, "Literal", literal.1),
+            }, "Literal"),
             (RdfToolStage::Node {
                 iri: "http://iri".to_owned(),
-            }, "Node", node.1),
+            }, "Node"),
         ]),
         ("Relationships", vec![
             (RdfToolStage::PredicateStart {
                 iri: "http://iri".to_owned(),
-            }, "Predicate", predicate_view.into()),
+            }, "Predicate"),
         ]),
         ("Other", vec![
             (RdfToolStage::GraphStart {
                 iri: "http://graph".to_owned(),
-            }, "Graph", graph_view.into()),
+            }, "Graph"),
         ]),
-    ];
+    ].into_iter().map(|e| (e.0, e.1.into_iter().map(|e| {
+        let v = view_for_stage(&e.0);
+        (e.0, e.1, v)
+    }).collect())).collect();
 
     Box::new(RdfSettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
     })
+}
+
+fn view_for_stage(s: &RdfToolStage) -> RdfElementView {
+    match s {
+        RdfToolStage::Literal { content, datatype, language } => {
+            let literal_view = new_rdf_literal(content, datatype, language, egui::Pos2::ZERO).1;
+            literal_view.into()
+        },
+        RdfToolStage::Node { iri } => {
+            let node_view = new_rdf_node(iri, egui::Pos2::ZERO).1;
+            node_view.into()
+        },
+        RdfToolStage::PredicateStart { iri } => {
+            let d1 = new_rdf_node("dummy", egui::Pos2::ZERO);
+            let d2 = new_rdf_literal("dummy", "", "", egui::Pos2::new(100.0, 75.0));
+            let predicate_view = new_rdf_predicate(iri, (d1.0, d1.1.into()), (d2.0.into(), d2.1.into())).1;
+            predicate_view.into()
+        },
+        RdfToolStage::GraphStart { iri } => {
+            let graph_view = new_rdf_graph(iri, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) }).1;
+            graph_view.into()
+        },
+        RdfToolStage::PredicateEnd
+        | RdfToolStage::GraphEnd => unreachable!(),
+    }
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
@@ -599,56 +619,27 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match (tool, view.model()) {
-                    (
-                        RdfToolStage::Literal { content, datatype, language },
-                        RdfElement::RdfLiteral(inner),
-                    ) => {
+                match tool {
+                    RdfToolStage::Literal { content, datatype, language } => {
                         modified |= columns[1].labeled_text_edit_singleline("Content", content).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Datatype", datatype).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Language", language).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.content = content.clone().into();
-                            mw.datatype = datatype.clone().into();
-                            mw.langtag = language.clone().into();
-                        }
                     },
-                    (
-                        RdfToolStage::Node { iri },
-                        RdfElement::RdfNode(inner),
-                    )  => {
+                    RdfToolStage::Node { iri } => {
                         modified |= columns[1].labeled_text_edit_singleline("IRI", iri).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.iri = iri.clone().into();
-                        }
                     },
-                    (
-                        RdfToolStage::PredicateStart { iri },
-                        RdfElement::RdfPredicate(inner),
-                    )  => {
+                    RdfToolStage::PredicateStart { iri } => {
                         modified |= columns[1].labeled_text_edit_singleline("IRI", iri).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.iri = iri.clone().into();
-                        }
                     },
-                    (
-                        RdfToolStage::GraphStart { iri },
-                        RdfElement::RdfGraph(inner),
-                    ) => {
+                    RdfToolStage::GraphStart { iri } => {
                         modified |= columns[1].labeled_text_edit_singleline("IRI", iri).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.iri = iri.clone().into();
-                        }
                     },
-                    _ => unreachable!(),
+                    RdfToolStage::PredicateEnd
+                    | RdfToolStage::GraphEnd => unreachable!(),
                 }
 
                 if modified {
-                    view.refresh_buffers();
+                    *view = view_for_stage(tool);
                     w.set_from_buffer(buffer.clone());
                 }
             },
@@ -1629,7 +1620,7 @@ fn new_rdf_literal_view(
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position: position,
-        bounds_rect: egui::Rect::ZERO,
+        bounds_rect: egui::Rect::from_pos(position),
     });
     literal_view
 }

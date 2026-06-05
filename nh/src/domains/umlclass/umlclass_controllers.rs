@@ -1063,10 +1063,15 @@ impl<P: UmlClassProfile> DiagramSettings2<UmlClassDomain<P>> for UmlClassSetting
 }
 
 pub fn default_settings_helper<P: UmlClassProfile>(
-    palette_items: Vec<(&'static str, Vec<(UmlClassToolStage, &'static str, UmlClassElementView<P>)>)>,
+    palette_items: Vec<(&'static str, Vec<(UmlClassToolStage, &'static str)>)>,
     instance_buttons: Vec<(&'static str, &'static dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<P>, bool))>,
     class_buttons: Vec<(&'static str, &'static dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<P>, bool))>,
 ) -> Box<UmlClassSettings<P>> {
+    let palette_items = palette_items.into_iter().map(|e| (e.0, e.1.into_iter().map(|e| {
+        let v = view_for_stage(&e.0);
+        (e.0, e.1, v)
+    }).collect())).collect();
+
     Box::new(UmlClassSettings {
         comment_indication: CommentIndication::Icon,
         palette: RwLock::new(ToolPalette::new(palette_items)),
@@ -1076,107 +1081,145 @@ pub fn default_settings_helper<P: UmlClassProfile>(
     })
 }
 
+fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementView<P> {
+    match s {
+        UmlClassToolStage::Instance { instance_name, instance_type, stereotype } => {
+            let instance_view = new_umlclass_instance(instance_name, instance_type, stereotype, "", egui::Pos2::ZERO).1;
+            instance_view.write().refresh_buffers();
+            instance_view.into()
+        },
+        UmlClassToolStage::Class { name, stereotype, is_abstract, render_style } => {
+            let class_view = new_umlclass_class(name, stereotype, *is_abstract, Vec::new(), Vec::new(), egui::Pos2::ZERO, *render_style).1;
+            class_view.write().refresh_buffers();
+            class_view.into()
+        },
+        UmlClassToolStage::ClassProperty { name, property_type, stereotype } => {
+            let property_view = new_umlclass_property(UFOption::None, name, property_type, "", "", stereotype).1;
+            property_view.write().refresh_buffers();
+            property_view.into()
+        },
+        UmlClassToolStage::ClassOperation { name, return_type, stereotype } => {
+            let operation_view = new_umlclass_operation(UFOption::None, name, "", return_type, stereotype).1;
+            operation_view.write().refresh_buffers();
+            operation_view.into()
+        },
+        UmlClassToolStage::UseCase { name, stereotype, is_abstract } => {
+            let uc_view = new_uml_usecase(name, stereotype, *is_abstract, egui::Pos2::ZERO).1;
+            uc_view.write().refresh_buffers();
+            uc_view.into()
+        },
+        UmlClassToolStage::LinkStart { link_type } => {
+            let d1 = new_umlclass_class("dummy", "", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
+            let d2 = new_umlclass_class("dummy", "", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 50.0), UmlClassRenderStyle::Class);
+
+            match link_type {
+                LinkType::Generalization { set_name } => {
+                    let g = new_umlclass_generalization(set_name, None, (d1.0, d1.1.into()), (d2.0, d2.1.into())).1;
+                    g.into()
+                },
+                LinkType::Dependency { target_arrow_open, stereotype, name } => {
+                    let d = new_umlclass_dependency(stereotype, name, *target_arrow_open, None, (d1.0.into(), d1.1.into()), (d2.0.into(), d2.1.into())).1;
+                    d.into()
+                },
+                LinkType::Association { stereotype, source_multiplicity, target_multiplicity } => {
+                    let a = new_umlclass_association(stereotype, "", source_multiplicity, target_multiplicity, None, (d1.0.into(), d1.1.into()), (d2.0.into(), d2.1.into())).1;
+                    a.into()
+                },
+            }
+        },
+        UmlClassToolStage::PackageStart { name, stereotype, kind } => {
+            let package_view = new_umlclass_package(name, stereotype, *kind, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) }).1;
+            package_view.write().refresh_buffers();
+            package_view.into()
+        },
+        UmlClassToolStage::Comment { stereotype, text, align } => {
+            let comment_view = new_umlclass_comment(
+                text,
+                stereotype,
+                egui::Pos2::ZERO,
+                *align,
+            ).1;
+            comment_view.write().refresh_buffers();
+            comment_view.into()
+        },
+        UmlClassToolStage::CommentLinkStart => {
+            let d1 = new_umlclass_comment("", "", egui::Pos2::ZERO, egui::Align2::CENTER_CENTER);
+            let d2 = new_umlclass_class("dummy", "", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 50.0), UmlClassRenderStyle::Class);
+            let commentlink = new_umlclass_commentlink(None, (d1.0, d1.1.into()), (d2.0.into(), d2.1.into())).1;
+            commentlink.into()
+        },
+        UmlClassToolStage::LinkEnd
+        | UmlClassToolStage::LinkAddEnding { .. }
+        | UmlClassToolStage::PackageEnd
+        | UmlClassToolStage::CommentLinkEnd => unreachable!(),
+    }
+}
+
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    let (_instance, instance_view) = new_umlclass_instance("o", "Type", "", "", egui::Pos2::ZERO);
-    instance_view.write().refresh_buffers();
-    let (_class, class_view) = new_umlclass_class("ClassName", "class", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
-    class_view.write().refresh_buffers();
-
-    let (_property, property_view) = new_umlclass_property(UFOption::None, "property", "Type", "", "", "");
-    property_view.write().refresh_buffers();
-    let (_operation, operation_view) = new_umlclass_operation(UFOption::None, "operation", "", "ReturnType", "");
-    operation_view.write().refresh_buffers();
-
-    let (d, dv) = new_umlclass_class("dummy", "class", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
-    dv.write().bounds_rect = egui::Rect::from_center_size(egui::Pos2::ZERO, egui::Vec2::new(100.0, 100.0));
-    let dummy_1_class = (d.clone(), dv.clone().into());
-    let dummy_1_associable = (d.into(), dv.into());
-    let (d, dv) = new_umlclass_class("dummy", "class", false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0), UmlClassRenderStyle::Class);
-    dv.write().bounds_rect = egui::Rect::from_center_size(egui::Pos2::new(200.0, 150.0), egui::Vec2::new(100.0, 100.0));
-    let dummy_2_class = (d.clone(), dv.clone().into());
-    let dummy_2_associable = (d.clone().into(), dv.clone().into());
-    let dummy_2_element = (d.into(), dv.into());
-
-    let (_gen, gen_view) = new_umlclass_generalization("", None, dummy_1_class, dummy_2_class);
-    let (_assoc, assoc_view) = new_umlclass_association("", "", "0..*", "1..1", None, dummy_1_associable.clone(), dummy_2_associable.clone());
-    let (_intreal, intreal_view) = new_umlclass_dependency("", "", false, None, dummy_1_associable.clone(), dummy_2_associable.clone());
-    let (_usage, usage_view) = new_umlclass_dependency("use", "", true, None, dummy_1_associable.clone(), dummy_2_associable.clone());
-
-    let (_package, package_view) = new_umlclass_package("a package", "", UmlClassPackageKind::Package, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-    package_view.write().refresh_buffers();
-    let (comment, comment_view) = new_umlclass_comment(
-        "a comment",
-        "",
-        egui::Pos2::ZERO,
-        egui::Align2::CENTER_CENTER,
-    );
-    comment_view.write().refresh_buffers();
-    let comment = (comment, comment_view.into());
-    let commentlink = new_umlclass_commentlink(None, comment.clone(), dummy_2_element.clone());
-
     let palette_items = vec![
         ("Elements", vec![
             (UmlClassToolStage::Instance {
                 instance_name: "o".to_owned(),
                 instance_type: "Type".to_owned(),
                 stereotype: "".to_owned(),
-            }, "Instance", instance_view.into()),
+            }, "Instance"),
             (UmlClassToolStage::Class {
                 name: "ClassName".to_owned(),
                 stereotype: "class".to_owned(),
+                is_abstract: false,
                 render_style: UmlClassRenderStyle::Class,
-            }, "Class", class_view.into()),
+            }, "Class"),
             (UmlClassToolStage::ClassProperty {
                 name: "property".to_owned(),
                 property_type: "PropertyType".to_owned(),
                 stereotype: "".to_owned(),
-            }, "Property", property_view.into()),
+            }, "Property"),
             (UmlClassToolStage::ClassOperation {
                 name: "operation".to_owned(),
                 return_type: "ReturnType".to_owned(),
                 stereotype: "".to_owned(),
-            }, "Operation", operation_view.into()),
+            }, "Operation"),
         ]),
         ("Relationships", vec![
             (UmlClassToolStage::LinkStart {
                 link_type: LinkType::Generalization {
                     set_name: "".to_owned(),
                 },
-            }, "Generalization (Set)", gen_view.into()),
+            }, "Generalization (Set)"),
             (UmlClassToolStage::LinkStart {
                 link_type: LinkType::Association {
                     stereotype: "".to_owned(),
                     source_multiplicity: "0..*".to_owned(),
                     target_multiplicity: "1..1".to_owned(),
                 },
-            }, "Association", assoc_view.into()),
+            }, "Association"),
             (UmlClassToolStage::LinkStart {
                 link_type: LinkType::Dependency {
                     target_arrow_open: false,
                     stereotype: "".to_owned(),
                     name: "".to_owned(),
                 },
-            }, "IntReal", intreal_view.into()),
+            }, "Interface Realization"),
             (UmlClassToolStage::LinkStart {
                 link_type: LinkType::Dependency {
                     target_arrow_open: true,
                     stereotype: "use".to_owned(),
                     name: "".to_owned(),
                 },
-            }, "Usage", usage_view.into()),
+            }, "Usage"),
         ]),
         ("Other", vec![
             (UmlClassToolStage::PackageStart {
                 name: "a package".to_owned(),
                 stereotype: "".to_owned(),
                 kind: UmlClassPackageKind::Package,
-            }, "Package", package_view.into()),
+            }, "Package"),
             (UmlClassToolStage::Comment {
                 stereotype: "".to_owned(),
                 text: "a comment".to_owned(),
                 align: egui::Align2::CENTER_CENTER,
-            }, "Comment", comment.1),
-            (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
+            }, "Comment"),
+            (UmlClassToolStage::CommentLinkStart, "Comment Link"),
         ]),
     ];
 
@@ -1288,142 +1331,89 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
                 // TODO: make the stereotypes more efficient
-                match (tool, view.model()) {
-                    (
-                        UmlClassToolStage::Instance { instance_name, instance_type, stereotype },
-                        UmlClassElement::Instance(inner),
-                    ) => {
+                match tool {
+                    UmlClassToolStage::Instance { instance_name, instance_type, stereotype } => {
                         let mut sc = P::InstanceStereotypeController::default();
                         sc.refresh(&stereotype);
-                        modified |= sc.show(&mut columns[1]);
+                        if sc.show(&mut columns[1]) {
+                            modified = true;
+                            *stereotype = sc.get_raw();
+                        }
                         modified |= columns[1].labeled_text_edit_singleline("Instance name", instance_name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Instance type", instance_type).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            *stereotype = sc.get_raw();
-                            mw.stereotype = stereotype.clone().into();
-                            mw.instance_name = instance_name.clone().into();
-                            mw.instance_type = instance_type.clone().into();
-                        }
                     },
-                    (
-                        UmlClassToolStage::Class { name, stereotype, .. },
-                        UmlClassElement::Class(inner),
-                    ) => {
+                    UmlClassToolStage::Class { name, stereotype, is_abstract, render_style: _ } => {
                         let mut sc = P::ClassStereotypeController::default();
                         sc.refresh(&stereotype);
-                        modified |= sc.show(&mut columns[1]);
-                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
-
-                        if modified && let mut mw = inner.write() {
+                        if sc.show(&mut columns[1]) {
+                            modified = true;
                             *stereotype = sc.get_raw();
-                            mw.stereotype = stereotype.clone().into();
-                            mw.name = name.clone().into();
                         }
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+                        modified |= columns[1].checkbox(is_abstract, "isAbstract").changed();
                     },
-                    (
-                        UmlClassToolStage::ClassProperty { name, property_type, stereotype },
-                        UmlClassElement::Property(inner),
-                    ) => {
+                    UmlClassToolStage::ClassProperty { name, property_type, stereotype } => {
                         let mut sc = P::ClassPropertyStereotypeController::default();
                         sc.refresh(&stereotype);
-                        modified |= sc.show(&mut columns[1]);
+                        if sc.show(&mut columns[1]) {
+                            modified = true;
+                            *stereotype = sc.get_raw();
+                        }
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Property type", property_type).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            *stereotype = sc.get_raw();
-                            mw.stereotype = stereotype.clone().into();
-                            mw.name = name.clone().into();
-                            mw.value_type = property_type.clone().into();
-                        }
                     },
-                    (
-                        UmlClassToolStage::ClassOperation { name, return_type, stereotype },
-                        UmlClassElement::Operation(inner),
-                    ) => {
+                    UmlClassToolStage::ClassOperation { name, return_type, stereotype } => {
                         let mut sc = P::ClassOperationStereotypeController::default();
                         sc.refresh(&stereotype);
-                        modified |= sc.show(&mut columns[1]);
+                        if sc.show(&mut columns[1]) {
+                            modified = true;
+                            *stereotype = sc.get_raw();
+                        }
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Return type", return_type).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            *stereotype = sc.get_raw();
-                            mw.stereotype = stereotype.clone().into();
-                            mw.name = name.clone().into();
-                            mw.return_type = return_type.clone().into();
-                        }
                     },
-                    (
-                        UmlClassToolStage::UseCase { name, stereotype },
-                        UmlClassElement::UseCase(inner),
-                    ) => {
+                    UmlClassToolStage::UseCase { name, stereotype, is_abstract } => {
                         let mut sc = P::UseCaseStereotypeController::default();
                         sc.refresh(&stereotype);
-                        modified |= sc.show(&mut columns[1]);
-                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
-
-                        if modified && let mut mw = inner.write() {
+                        if sc.show(&mut columns[1]) {
+                            modified = true;
                             *stereotype = sc.get_raw();
-                            mw.stereotype = stereotype.clone().into();
-                            mw.name = name.clone().into();
                         }
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+                        modified |= columns[1].checkbox(is_abstract, "isAbstract").changed();
                     },
-                    (UmlClassToolStage::LinkStart { link_type }, lm) => match (link_type, lm) {
-                        (
-                            LinkType::Generalization { set_name },
-                            UmlClassElement::Generalization(inner),
-                        ) => {
+                    UmlClassToolStage::LinkStart { link_type } => match link_type {
+                        LinkType::Generalization { set_name } => {
                             modified |= columns[1].labeled_text_edit_singleline("Set name", set_name).changed();
-
-                            if modified && let mut mw = inner.write() {
-                                mw.set_name = set_name.clone().into();
-                            }
                         },
-                        (
-                            LinkType::Dependency { target_arrow_open, stereotype, name },
-                            UmlClassElement::Dependency(inner),
-                        ) => {
+                        LinkType::Dependency { target_arrow_open, stereotype, name } => {
                             let mut sc = P::DependencyStereotypeController::default();
                             sc.refresh(&stereotype);
-                            modified |= sc.show(&mut columns[1]);
+                            if sc.show(&mut columns[1]) {
+                                modified = true;
+                                *stereotype = sc.get_raw();
+                            }
                             modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                             modified |= columns[1].checkbox(target_arrow_open, "target arrow open").changed();
-
-                            if modified && let mut mw = inner.write() {
-                                *stereotype = sc.get_raw();
-                                mw.stereotype = stereotype.clone().into();
-                                mw.name = name.clone().into();
-                                mw.target_arrow_open = *target_arrow_open;
-                            }
                         },
-                        (
-                            LinkType::Association { stereotype, source_multiplicity, target_multiplicity },
-                            UmlClassElement::Association(inner),
-                        ) => {
+                        LinkType::Association { stereotype, source_multiplicity, target_multiplicity } => {
                             let mut sc = P::AssociationStereotypeController::default();
                             sc.refresh(&stereotype);
-                            modified |= sc.show(&mut columns[1]);
+                            if sc.show(&mut columns[1]) {
+                                modified = true;
+                                *stereotype = sc.get_raw();
+                            }
                             modified |= columns[1].labeled_text_edit_singleline("Source multiplicity", source_multiplicity).changed();
                             modified |= columns[1].labeled_text_edit_singleline("Target multiplicity", target_multiplicity).changed();
-
-                            if modified && let mut mw = inner.write() {
-                                *stereotype = sc.get_raw();
-                                mw.stereotype = stereotype.clone().into();
-                                mw.source_label_multiplicity = source_multiplicity.clone().into();
-                                mw.target_label_multiplicity = target_multiplicity.clone().into();
-                            }
                         },
-                        _ => {}
                     },
-                    (
-                        UmlClassToolStage::PackageStart { name, stereotype, kind },
-                        UmlClassElement::Package(inner),
-                    ) => {
+                    UmlClassToolStage::PackageStart { name, stereotype, kind } => {
                         let mut sc = P::PackageStereotypeController::default();
                         sc.refresh(&stereotype);
-                        modified |= sc.show(&mut columns[1]);
+                        if sc.show(&mut columns[1]) {
+                            modified = true;
+                            *stereotype = sc.get_raw();
+                        }
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                         columns[1].label("Package kind");
@@ -1434,21 +1424,14 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            *stereotype = sc.get_raw();
-                            mw.stereotype = stereotype.clone().into();
-                            mw.name = name.clone().into();
-                            mw.kind = *kind;
-                        }
                     },
-                    (
-                        UmlClassToolStage::Comment { stereotype, text, align },
-                        UmlClassElement::Comment(inner),
-                    ) => {
+                    UmlClassToolStage::Comment { stereotype, text, align } => {
                         let mut sc = P::CommentStereotypeController::default();
                         sc.refresh(&stereotype);
-                        modified |= sc.show(&mut columns[1]);
+                        if sc.show(&mut columns[1]) {
+                            modified = true;
+                            *stereotype = sc.get_raw();
+                        }
                         modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
 
                         egui::ComboBox::new("horizontal align", "Horizontal align")
@@ -1465,19 +1448,16 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                                     modified |= ui.selectable_value(&mut align.0[1], e, format!("{:?}", e)).changed();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            *stereotype = sc.get_raw();
-                            mw.stereotype = stereotype.clone().into();
-                            mw.text = text.clone().into();
-                        }
                     },
-                    (UmlClassToolStage::CommentLinkStart, _) => {},
-                    _ => unreachable!(),
+                    UmlClassToolStage::CommentLinkStart => {},
+                    UmlClassToolStage::LinkEnd
+                    | UmlClassToolStage::LinkAddEnding { .. }
+                    | UmlClassToolStage::PackageEnd
+                    | UmlClassToolStage::CommentLinkEnd => unreachable!(),
                 }
 
                 if modified {
-                    view.refresh_buffers();
+                    *view = view_for_stage(tool);
                     w.set_from_buffer(buffer.clone());
                 }
             },
@@ -1542,6 +1522,7 @@ pub enum UmlClassToolStage {
     Class {
         name: String,
         stereotype: String,
+        is_abstract: bool,
         render_style: UmlClassRenderStyle,
     },
     ClassProperty {
@@ -1557,6 +1538,7 @@ pub enum UmlClassToolStage {
     UseCase {
         name: String,
         stereotype: String,
+        is_abstract: bool,
     },
     LinkStart {
         link_type: LinkType,
@@ -1815,14 +1797,14 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 self.result = PartialUmlClassElement::Some(object_view.into());
                 self.event_lock = true;
             }
-            (UmlClassToolStage::Class { name, stereotype, render_style }, _) => {
+            (UmlClassToolStage::Class { name, stereotype, is_abstract, render_style }, _) => {
                 let (_class_model, class_view) =
-                    new_umlclass_class(&name, &stereotype, false, Vec::new(), Vec::new(), pos, *render_style);
+                    new_umlclass_class(&name, &stereotype, *is_abstract, Vec::new(), Vec::new(), pos, *render_style);
                 self.result = PartialUmlClassElement::Some(class_view.into());
                 self.event_lock = true;
             }
-            (UmlClassToolStage::UseCase { name, stereotype }, _) => {
-                let (_usecase_model, usecase_view) = new_uml_usecase(&name, &stereotype, false, pos);
+            (UmlClassToolStage::UseCase { name, stereotype, is_abstract }, _) => {
+                let (_usecase_model, usecase_view) = new_uml_usecase(&name, &stereotype, *is_abstract, pos);
                 self.result = PartialUmlClassElement::Some(usecase_view.into());
                 self.event_lock = true;
             }
@@ -5941,7 +5923,11 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             egui::Align2::CENTER_CENTER,
             &self.name_buffer,
             canvas::CLASS_MIDDLE_FONT_SIZE,
-            egui::Color32::BLACK,
+            if !self.is_abstract_buffer {
+                egui::Color32::BLACK
+            } else {
+                IS_ABSTRACT_COLOR
+            },
         );
         if let Some(s) = &self.stereotype_in_guillemets {
             canvas.draw_text(

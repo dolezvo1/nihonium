@@ -1,6 +1,6 @@
 use super::super::umlclass::{
         umlclass_models::UmlClassDiagram,
-        umlclass_controllers::{LinkType, PlantUmlTab, UmlClassDiagramAdapter, UmlClassDomain, UmlClassElementView, UmlClassProfile, UmlClassToolStage, StereotypeController, UmlClassElementOrVertex, new_umlclass_association, new_umlclass_class, new_umlclass_comment, new_umlclass_commentlink, new_umlclass_generalization, new_umlclass_package},
+        umlclass_controllers::{LinkType, PlantUmlTab, UmlClassDiagramAdapter, UmlClassDomain, UmlClassElementView, UmlClassProfile, UmlClassToolStage, StereotypeController, UmlClassElementOrVertex, new_umlclass_association, new_umlclass_class, new_umlclass_generalization},
 };
 use crate::{DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF, common::{
     controller::{
@@ -240,33 +240,21 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         (ontouml_models::MODE, "Mode", "Intention", false),
         (ontouml_models::QUALITY, "Quality", "Height", false),
     ] {
-        let (_c, c_view) = new_ontouml_class(name, stereotype, is_abstract, egui::Pos2::ZERO);
-        c_view.write().refresh_buffers();
         classes.push(
             (UmlClassToolStage::Class {
                 name: name.to_owned(),
                 stereotype: stereotype.to_owned(),
+                is_abstract,
                 render_style: UmlClassRenderStyle::Class,
-            }, label, c_view.into()),
+            }, label),
         );
     }
 
-    let (d, dv) = new_umlclass_class("dummy", "", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
-    dv.write().bounds_rect = egui::Rect::from_center_size(egui::Pos2::ZERO, egui::Vec2::new(100.0, 100.0));
-    let dummy_1_class = (d.clone(), dv.clone().into());
-    let dummy_1_associable = (d.into(), dv.into());
-    let (d, dv) = new_umlclass_class("dummy", "", false, Vec::new(), Vec::new(), egui::Pos2::new(200.0, 150.0), UmlClassRenderStyle::Class);
-    dv.write().bounds_rect = egui::Rect::from_center_size(egui::Pos2::new(200.0, 150.0), egui::Vec2::new(100.0, 100.0));
-    let dummy_2_class = (d.clone(), dv.clone().into());
-    let dummy_2_associable = (d.clone().into(), dv.clone().into());
-    let dummy_2_element = (d.into(), dv.into());
-
     let mut relationships = Vec::new();
-    let (_gen, gen_view) = new_umlclass_generalization("", None, dummy_1_class, dummy_2_class);
     relationships.push(
         (UmlClassToolStage::LinkStart {
             link_type: LinkType::Generalization { set_name: "".to_owned() },
-        }, "Generalization (Set)", gen_view.into()),
+        }, "Generalization (Set)"),
     );
     for (stereotype, label) in [
         (ontouml_models::FORMAL, "Formal"),
@@ -279,7 +267,6 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         (ontouml_models::SUBCOLLECTION_OF, "SubcollectionOf"),
         (ontouml_models::SUBQUANTITY_OF, "SubquantityOf"),
     ] {
-        let (_m, m_view) = new_umlclass_association(stereotype, "", "0..*", "1..1", None, dummy_1_associable.clone(), dummy_2_associable.clone());
         relationships.push(
             (UmlClassToolStage::LinkStart {
                 link_type: LinkType::Association {
@@ -287,21 +274,9 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     source_multiplicity: "0..*".to_owned(),
                     target_multiplicity: "1..1".to_owned(),
                 }
-            }, label, m_view.into()),
+            }, label),
         );
     }
-
-    let (_package, package_view) = new_umlclass_package("a package", "", UmlClassPackageKind::Package, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-    package_view.write().refresh_buffers();
-    let (comment, comment_view) = new_umlclass_comment(
-        "a comment",
-        "",
-        egui::Pos2::new(-100.0, -75.0),
-        egui::Align2::CENTER_CENTER,
-    );
-    comment_view.write().refresh_buffers();
-    let comment = (comment, comment_view.into());
-    let commentlink = new_umlclass_commentlink(None, comment.clone(), dummy_2_element);
 
     let palette_items = vec![
         ("Classes", classes),
@@ -311,13 +286,13 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 name: "a package".to_owned(),
                 stereotype: "".to_owned(),
                 kind: UmlClassPackageKind::Package,
-            }, "Package", package_view.into()),
+            }, "Package"),
             (UmlClassToolStage::Comment {
                 stereotype: "".to_owned(),
                 text: "a comment".to_owned(),
                 align: egui::Align2::CENTER_CENTER,
-            }, "Comment", comment.1),
-            (UmlClassToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
+            }, "Comment"),
+            (UmlClassToolStage::CommentLinkStart, "Comment Link"),
         ]),
     ];
 

@@ -79,15 +79,19 @@ fn segment_rect_point(p: egui::Pos2, rect: egui::Rect) -> Option<egui::Pos2> {
 fn segment_ellipse_point(
     p: egui::Pos2,
     (center, radius): (egui::Pos2, egui::Vec2),
-) -> Option<egui::Pos2> {
+) -> egui::Pos2 {
+    if radius.x == 0.0 || radius.y == 0.0 {
+        return center;
+    }
+
     let theta = (center.y - p.y).atan2(center.x - p.x);
     let r = ((center.y - p.y).powf(2.0) + (center.x - p.x).powf(2.0)).sqrt()
         - ((radius.x * radius.y)
             / ((radius.y * theta.cos()).powf(2.0) + (radius.x * theta.sin()).powf(2.0)).sqrt());
-    return Some(egui::Pos2::new(
+    return egui::Pos2::new(
         p.x + r * theta.cos(),
         p.y + r * theta.sin(),
-    ));
+    );
 }
 
 fn segment_rhombus_point(
@@ -155,11 +159,7 @@ pub enum NHShape {
 }
 
 impl NHShape {
-    pub const ELLIPSE_ZERO: Self = Self::Ellipse {
-        position: egui::Pos2::ZERO,
-        bounds_radius: egui::Vec2::ZERO,
-    };
-
+    /// Returns copy of a shape translated by delta
     pub fn translate(&self, delta: egui::Vec2) -> Self {
         match self {
             NHShape::Rect { inner } => NHShape::Rect {
@@ -182,6 +182,7 @@ impl NHShape {
         }
     }
 
+    /// Returns the center point of the shape
     pub fn center(&self) -> egui::Pos2 {
         match &self {
             NHShape::Rect { inner } => inner.center(),
@@ -190,20 +191,23 @@ impl NHShape {
         }
     }
 
+    /// Returns the intersection of a segment from given point to shape's center and the shape's border
     pub fn center_intersect(&self, point: egui::Pos2) -> egui::Pos2 {
         match &self {
             NHShape::Rect { inner } => segment_rect_point(point, *inner).unwrap_or(point),
             NHShape::Ellipse {
                 position,
                 bounds_radius,
-            } => segment_ellipse_point(point, (*position, *bounds_radius)).unwrap_or(point),
+            } => segment_ellipse_point(point, (*position, *bounds_radius)),
             NHShape::Rhombus {
                 position,
                 bounds_radius,
             } => segment_rhombus_point(point, (*position, *bounds_radius)).unwrap_or(point),
         }
     }
-    /// returns None iff point is not orthogonally aligned
+    /// Returns a point of intersection between shape's border
+    /// and orthogonal segment originating from given point,
+    /// or None if the point is not orthogonally aligned
     pub fn orthogonal_intersect(&self, point: egui::Pos2) -> Option<egui::Pos2> {
         match &self {
             NHShape::Rect { inner } => match point {
@@ -247,6 +251,7 @@ impl NHShape {
             },
         }
     }
+    /// Returns smallest rectangle that contains given shape
     pub fn bounding_box(&self) -> egui::Rect {
         match self {
             NHShape::Rect { inner } => *inner,
@@ -269,9 +274,9 @@ impl NHShape {
                 (a.top().clamp(b.top(), b.bottom()) + a.bottom().clamp(b.top(), b.bottom())) / 2.0,
             )
         } else {
-            (self.center_intersect(other.center())
-                + other.center_intersect(self.center()).to_vec2())
-                / 2.0
+            let ci_s = self.center_intersect(other.center());
+            let ci_o = other.center_intersect(self.center()).to_vec2();
+            (ci_s + ci_o) / 2.0
         }
     }
     pub fn border_distance(&self, point: egui::Pos2) -> f32 {

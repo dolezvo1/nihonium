@@ -3121,7 +3121,7 @@ impl<
                         let painter = ui.painter().with_clip_rect(icon_rect);
                         let mut mc = canvas::MeasuringCanvas::new(&painter);
                         view.draw_in(&empty_q, gdc, settings, &mut mc, &None);
-                        let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::new(button_height, button_height));
+                        let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::splat(button_height));
                         let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE, (false, false));
                         c.clear(egui::Color32::GRAY);
                         view.draw_in(&empty_q, gdc, settings, &mut c, &None);

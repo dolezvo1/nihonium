@@ -597,20 +597,6 @@ impl DiagramSettings2<DemoCsdDomain> for DemoCsdSettings {
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    let (client, client_view) = new_democsd_transactor("CTAR01", "Client", false, true, None, false, egui::Pos2::ZERO);
-    let (_actor, actor_view) = {
-        let tx = new_democsd_transaction("TK01", "Transaction", DemoTransactionKind::Performa, false, egui::Pos2::ZERO, true);
-        new_democsd_transactor("AR01", "Transactor", true, false, Some(tx), false, egui::Pos2::ZERO)
-    };
-    let (bank, bank_view) = new_democsd_transaction("TK01", "Bank", DemoTransactionKind::Performa, false, egui::Pos2::new(100.0, 75.0), false);
-    let bank = (bank, bank_view.into());
-
-    let (_init, init_view) = new_democsd_link(DemoCsdLinkType::InitiatorLink, "", (client.clone(), client_view.clone().into()), bank.clone());
-    let (_ints, ints_view) = new_democsd_link(DemoCsdLinkType::AccessLink, "", (client.clone(), client_view.clone().into()), bank.clone());
-    let (_inim, inim_view) = new_democsd_link(DemoCsdLinkType::WaitLink, "", (client.clone(), client_view.clone().into()), bank.clone());
-
-    let (_package, package_view) = new_democsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-
     let palette_items = vec![
         ("Elements", vec![
             (DemoCsdToolStage::Transactor {
@@ -620,7 +606,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 composite: true,
                 self_activating: false,
                 transaction: None,
-            }, "Client Role", client_view.into()),
+            }, "Client Role"),
             (DemoCsdToolStage::Transactor {
                 identifier: "AR01".to_owned(),
                 name: "Transaction".to_owned(),
@@ -632,38 +618,65 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     name: "Bank".to_owned(),
                     kind: DemoTransactionKind::Performa,
                 }),
-            }, "Actor Role", actor_view.into()),
+            }, "Actor Role"),
             (DemoCsdToolStage::Bank(TransactionStageData {
                 identifier: "TK01".to_owned(),
                 name: "Bank".to_owned(),
                 kind: DemoTransactionKind::Performa,
-            }), "Transaction Bank", bank.1.into()),
+            }), "Transaction Bank"),
         ]),
         ("Relationships", vec![
             (DemoCsdToolStage::LinkStart {
                 link_type: DemoCsdLinkType::InitiatorLink,
                 multiplicity: "".to_owned(),
-            }, "Initiator Link", init_view.into()),
+            }, "Initiator Link"),
             (DemoCsdToolStage::LinkStart {
                 link_type: DemoCsdLinkType::AccessLink,
                 multiplicity: "".to_owned(),
-            }, "Access Link", ints_view.into()),
+            }, "Access Link"),
             (DemoCsdToolStage::LinkStart {
                 link_type: DemoCsdLinkType::WaitLink,
                 multiplicity: "".to_owned(),
-            }, "Wait Link", inim_view.into()),
+            }, "Wait Link"),
         ]),
         ("Other", vec![
             (DemoCsdToolStage::PackageStart {
                 name: "A package".to_owned(),
-            }, "Package", package_view.into()),
+            }, "Package"),
         ]),
-    ];
+    ].into_iter().map(|e| (e.0, e.1.into_iter().map(|e| {
+        let v = view_for_stage(&e.0);
+        (e.0, e.1, v)
+    }).collect())).collect();
 
     Box::new(DemoCsdSettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
     })
+}
+
+fn view_for_stage(s: &DemoCsdToolStage) -> DemoCsdElementView {
+    match s {
+        DemoCsdToolStage::Transactor { identifier, name, internal, composite, self_activating, transaction } => {
+            let tx = transaction.as_ref().map(|e| new_democsd_transaction(&e.identifier, &e.name, e.kind, false, egui::Pos2::ZERO, true));
+            new_democsd_transactor(&identifier, &name, *internal, *composite, tx, *self_activating, egui::Pos2::ZERO).1.into()
+        },
+        DemoCsdToolStage::Bank(data) => {
+            new_democsd_transaction(&data.identifier, &data.name, data.kind, false, egui::Pos2::new(100.0, 75.0), false).1.into()
+        },
+        DemoCsdToolStage::LinkStart { link_type, multiplicity } => {
+            let d1 = new_democsd_transactor("dummy", "", false, true, None, false, egui::Pos2::ZERO);
+            let d2 = new_democsd_transaction("dummy", "", DemoTransactionKind::Performa, false, egui::Pos2::new(100.0, 75.0), false);
+            let v = new_democsd_link(*link_type, multiplicity, (d1.0, d1.1.into()), (d2.0, d2.1.into())).1;
+            v.write().refresh_buffers();
+            v.into()
+        },
+        DemoCsdToolStage::PackageStart { name } => {
+            new_democsd_package(name, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) }).1.into()
+        },
+        DemoCsdToolStage::LinkEnd
+        | DemoCsdToolStage::PackageEnd => unreachable!(),
+    }
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
@@ -690,11 +703,8 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match (tool, view.model()) {
-                    (
-                        DemoCsdToolStage::Transactor { identifier, name, internal, composite, self_activating, transaction },
-                        DemoCsdElement::DemoCsdTransactor(inner),
-                    ) => {
+                match tool {
+                    DemoCsdToolStage::Transactor { identifier, name, internal, composite, self_activating, transaction } => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].checkbox(internal, "internal").changed();
@@ -716,27 +726,8 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     }
                                 });
                         }
-
-                        if modified && let mut mw = inner.write() {
-                            mw.identifier = identifier.clone().into();
-                            mw.name = name.clone().into();
-                            mw.internal = *internal;
-                            mw.composite = *composite;
-                            mw.transaction_selfactivating = *self_activating;
-
-                            if let Some(tm) = mw.transaction.as_ref()
-                                && let mut tm = tm.write()
-                                && let Some(tb) = transaction {
-                                tm.kind = tb.kind;
-                                tm.identifier = tb.identifier.clone().into();
-                                tm.name = tb.name.clone().into();
-                            }
-                        }
                     },
-                    (
-                        DemoCsdToolStage::Bank(TransactionStageData { identifier, name, kind }),
-                        DemoCsdElement::DemoCsdTransaction(inner),
-                    ) => {
+                    DemoCsdToolStage::Bank(TransactionStageData { identifier, name, kind }) => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
@@ -748,17 +739,8 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            mw.kind = *kind;
-                            mw.identifier = identifier.clone().into();
-                            mw.name = name.clone().into();
-                        }
                     },
-                    (
-                        DemoCsdToolStage::LinkStart { link_type, multiplicity },
-                        DemoCsdElement::DemoCsdLink(inner),
-                    ) => {
+                    DemoCsdToolStage::LinkStart { link_type, multiplicity } => {
                         columns[1].label("Link type");
                         egui::ComboBox::from_id_salt("link type")
                             .selected_text(link_type.as_str())
@@ -769,27 +751,15 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                             });
 
                         modified |= columns[1].labeled_text_edit_singleline("Multiplicity", multiplicity).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.link_type = *link_type;
-                            mw.multiplicity = multiplicity.clone().into();
-                        }
                     },
-                    (
-                        DemoCsdToolStage::PackageStart { name },
-                        DemoCsdElement::DemoCsdPackage(inner),
-                    ) => {
+                    DemoCsdToolStage::PackageStart { name } => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.name = name.clone().into();
-                        }
                     },
                     _ => unreachable!(),
                 }
 
                 if modified {
-                    view.refresh_buffers();
+                    *view = view_for_stage(tool);
                     w.set_from_buffer(buffer.clone());
                 }
             },
@@ -1334,7 +1304,7 @@ fn new_democsd_transactor_view(
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position,
-        bounds_rect: egui::Rect::ZERO,
+        bounds_rect: egui::Rect::from_pos(position),
     })
 }
 
@@ -2185,7 +2155,7 @@ fn new_democsd_transaction_view(
             } else {
                 egui::Vec2::ZERO
             },
-        min_shape: canvas::NHShape::ELLIPSE_ZERO,
+        min_shape: canvas::NHShape::Ellipse { position, bounds_radius: egui::Vec2::ZERO },
     })
 }
 

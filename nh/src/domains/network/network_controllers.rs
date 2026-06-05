@@ -529,115 +529,123 @@ impl DiagramSettings2<NetworkDomain> for NetworkSettings {
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    let (node_model, node_view) = new_network_node("Workstation", NetworkNodeKind::Workstation, egui::Pos2::new(100.0, 75.0));
-    let node = (node_model.into(), node_view.into());
-    let (_laptop_model, laptop_view) = new_network_node("Laptop", NetworkNodeKind::Laptop, egui::Pos2::ZERO);
-    let (_router_model, router_view) = new_network_node("Router", NetworkNodeKind::Router, egui::Pos2::ZERO);
-    let (_switch_model, switch_view) = new_network_node("Switch", NetworkNodeKind::Switch, egui::Pos2::ZERO);
-
-    let (user_model, user_view) = new_network_user("User", NetworkUserKind::Normal, egui::Pos2::ZERO);
-    let user = (user_model.into(), user_view.into());
-    let (_developer_model, developer_view) = new_network_user("Developer", NetworkUserKind::Developer, egui::Pos2::ZERO);
-    let (_audit_model, audit_view) = new_network_user("Audit", NetworkUserKind::Audit, egui::Pos2::ZERO);
-    let (_blackhat_model, blackhat_view) = new_network_user("Black Hat", NetworkUserKind::BlackHat, egui::Pos2::ZERO);
-
-    let (_file, file_view) = new_network_file("File", NetworkFileKind::Unspecified, egui::Pos2::ZERO);
-
-    let (_association1, association1_view) = new_network_association(
-        NetworkAssociationLineType::Solid,
-        user.clone(), NetworkAssociationArrowheadType::None,
-        node.clone(), NetworkAssociationArrowheadType::None,
-    );
-    let (_association2, association2_view) = new_network_association(
-        NetworkAssociationLineType::Solid,
-        user.clone(), NetworkAssociationArrowheadType::None,
-        node.clone(), NetworkAssociationArrowheadType::OpenTriangle,
-    );
-    let (_association3, association3_view) = new_network_association(
-        NetworkAssociationLineType::Dashed,
-        user.clone(), NetworkAssociationArrowheadType::None,
-        node.clone(), NetworkAssociationArrowheadType::None,
-    );
-
-    let (_container, container_view) = new_network_container(
-        "Subnet", NetworkContainerShapeKind::Rectangle,
-        egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) },
-    );
-    let (_comment, comment_view) = new_network_comment("a comment", egui::Pos2::ZERO, egui::Align2::CENTER_CENTER);
-
     let palette_items = vec![
         ("Nodes", vec![
             (NetworkToolStage::Node {
                 name: "Workstation".to_owned(),
                 kind: NetworkNodeKind::Workstation,
-            }, "Workstation", node.1),
+            }, "Workstation"),
             (NetworkToolStage::Node {
                 name: "Laptop".to_owned(),
                 kind: NetworkNodeKind::Laptop,
-            }, "Laptop", laptop_view.into()),
+            }, "Laptop"),
             (NetworkToolStage::Node {
                 name: "Router".to_owned(),
                 kind: NetworkNodeKind::Router,
-            }, "Router", router_view.into()),
+            }, "Router"),
             (NetworkToolStage::Node {
                 name: "Switch".to_owned(),
                 kind: NetworkNodeKind::Switch,
-            }, "Switch", switch_view.into()),
+            }, "Switch"),
         ]),
         ("Users", vec![
             (NetworkToolStage::User {
                 name: "User".to_owned(),
                 kind: NetworkUserKind::Normal,
-            }, "User", user.1),
+            }, "User"),
             (NetworkToolStage::User {
                 name: "Developer".to_owned(),
                 kind: NetworkUserKind::Developer,
-            }, "Developer", developer_view.into()),
+            }, "Developer"),
             (NetworkToolStage::User {
                 name: "Audit".to_owned(),
                 kind: NetworkUserKind::Audit,
-            }, "Audit", audit_view.into()),
+            }, "Audit"),
             (NetworkToolStage::User {
                 name: "Black Hat".to_owned(),
                 kind: NetworkUserKind::BlackHat,
-            }, "Black Hat", blackhat_view.into()),
+            }, "Black Hat"),
         ]),
         ("Files", vec![
             (NetworkToolStage::File {
                 name: "File".to_owned(),
                 kind: NetworkFileKind::Unspecified,
-            }, "File", file_view.into()),
+            }, "File"),
         ]),
         ("Relationships", vec![
             (NetworkToolStage::AssociationStart {
                 line_type: NetworkAssociationLineType::Solid,
                 source_arrowhead: NetworkAssociationArrowheadType::None,
                 target_arrowhead: NetworkAssociationArrowheadType::None,
-            }, "Association (solid)", association1_view.into()),
+            }, "Association (solid)"),
             (NetworkToolStage::AssociationStart {
                 line_type: NetworkAssociationLineType::Solid,
                 source_arrowhead: NetworkAssociationArrowheadType::None,
                 target_arrowhead: NetworkAssociationArrowheadType::OpenTriangle,
-            }, "Association (solid, arrow)", association2_view.into()),
+            }, "Association (solid, arrow)"),
             (NetworkToolStage::AssociationStart {
                 line_type: NetworkAssociationLineType::Dashed,
                 source_arrowhead: NetworkAssociationArrowheadType::None,
                 target_arrowhead: NetworkAssociationArrowheadType::None,
-            }, "Association (dashed)", association3_view.into()),
+            }, "Association (dashed)"),
         ]),
         ("Other", vec![
-            (NetworkToolStage::ContainerStart { name: "Subnet".to_owned() }, "Container", container_view.into()),
+            (NetworkToolStage::ContainerStart { name: "Subnet".to_owned() }, "Container"),
             (NetworkToolStage::Comment {
                 text: "a comment".to_owned(),
                 align: egui::Align2::CENTER_CENTER,
-            }, "Comment", comment_view.into()),
+            }, "Comment"),
         ]),
-    ];
+    ].into_iter().map(|e| (e.0, e.1.into_iter().map(|e| {
+        let v = view_for_stage(&e.0);
+        (e.0, e.1, v)
+    }).collect())).collect();
 
     Box::new(NetworkSettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
     })
+}
+
+fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
+    match s {
+        NetworkToolStage::Node { name, kind } => {
+            let node_view = new_network_node(name, *kind, egui::Pos2::ZERO).1;
+            node_view.into()
+        },
+        NetworkToolStage::User { name, kind } => {
+            let user_view = new_network_user(name, *kind, egui::Pos2::ZERO).1;
+            user_view.into()
+        },
+        NetworkToolStage::File { name, kind } => {
+            let file_view = new_network_file(name, *kind, egui::Pos2::ZERO).1;
+            file_view.into()
+        },
+        NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead } => {
+            let d1 = new_network_user("dummy", NetworkUserKind::Normal, egui::Pos2::ZERO);
+            let d2 = new_network_node("dummy", NetworkNodeKind::Workstation, egui::Pos2::new(100.0, 75.0));
+
+            let association_view = new_network_association(
+                *line_type,
+                (d1.0.into(), d1.1.into()), *source_arrowhead,
+                (d2.0.into(), d2.1.into()), *target_arrowhead,
+            ).1;
+            association_view.into()
+        },
+        NetworkToolStage::ContainerStart { name } => {
+            let container_view = new_network_container(
+                name, NetworkContainerShapeKind::Rectangle,
+                egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) },
+            ).1;
+            container_view.into()
+        },
+        NetworkToolStage::Comment { text, align } => {
+            let comment_view = new_network_comment(text, egui::Pos2::ZERO, *align).1;
+            comment_view.into()
+        },
+        NetworkToolStage::AssociationEnd
+        | NetworkToolStage::ContainerEnd => unreachable!(),
+    }
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
@@ -664,11 +672,8 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match (tool, view.model()) {
-                    (
-                        NetworkToolStage::Node { name, kind },
-                        NetworkElement::Node(inner),
-                    ) => {
+                match tool {
+                    NetworkToolStage::Node { name, kind } => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                         columns[1].label("Kind");
@@ -679,16 +684,8 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            mw.name = name.clone().into();
-                            mw.kind = *kind;
-                        }
                     },
-                    (
-                        NetworkToolStage::User { name, kind },
-                        NetworkElement::User(inner),
-                    ) => {
+                    NetworkToolStage::User { name, kind } => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                         columns[1].label("Kind");
@@ -699,16 +696,8 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            mw.name = name.clone().into();
-                            mw.kind = *kind;
-                        }
                     },
-                    (
-                        NetworkToolStage::File { name, kind },
-                        NetworkElement::File(inner),
-                    ) => {
+                    NetworkToolStage::File { name, kind } => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                         columns[1].label("Kind");
@@ -719,16 +708,8 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            mw.name = name.clone().into();
-                            mw.kind = *kind;
-                        }
                     },
-                    (
-                        NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead },
-                        NetworkElement::Association(inner),
-                    ) => {
+                    NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead } => {
                         columns[1].label("Line type");
                         egui::ComboBox::from_id_salt("line type")
                             .selected_text(line_type.as_str())
@@ -755,27 +736,11 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(target_arrowhead, e, e.as_str()).clicked();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            mw.line_type = *line_type;
-                            mw.source_arrowhead = *source_arrowhead;
-                            mw.target_arrowhead = *target_arrowhead;
-                        }
                     },
-                    (
-                        NetworkToolStage::ContainerStart { name },
-                        NetworkElement::Container(inner),
-                    ) => {
+                    NetworkToolStage::ContainerStart { name } => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.name = name.clone().into();
-                        }
                     },
-                    (
-                        NetworkToolStage::Comment { text, align },
-                        NetworkElement::Comment(inner),
-                    ) => {
+                    NetworkToolStage::Comment { text, align } => {
                         modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
 
                         egui::ComboBox::new("horizontal align", "Horizontal align")
@@ -792,16 +757,13 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(&mut align.0[1], e, format!("{:?}", e)).changed();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            mw.text = text.clone().into();
-                        }
                     },
-                    _ => unreachable!(),
+                    NetworkToolStage::AssociationEnd
+                    | NetworkToolStage::ContainerEnd => unreachable!(),
                 }
 
                 if modified {
-                    view.refresh_buffers();
+                    *view = view_for_stage(tool);
                     w.set_from_buffer(buffer.clone());
                 }
             },
@@ -1312,7 +1274,7 @@ fn new_network_node_view(
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position: position,
-        bounds_rect: egui::Rect::ZERO,
+        bounds_rect: egui::Rect::from_pos(position),
     })
 }
 
@@ -2012,7 +1974,7 @@ fn new_network_user_view(
         dragged_shape: None,
         highlight: canvas::Highlight::NONE,
         position: position,
-        bounds_rect: egui::Rect::ZERO,
+        bounds_rect: egui::Rect::from_pos(position),
         background_color: MGlobalColor::None,
     })
 }

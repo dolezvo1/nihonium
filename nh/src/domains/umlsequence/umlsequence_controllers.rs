@@ -655,81 +655,124 @@ impl DiagramSettings2<UmlSequenceDomain> for UmlSequenceSettings {
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    let (_, diagram_view) = new_umlsequence_diagram("Diagram", Vec::new(), Vec::new(), egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(100.0, 75.0)));
-    diagram_view.write().refresh_buffers();
-    let (_, combined_fragment_view) = {
-        let section = new_umlsequence_combinedfragmentsection("no errors", Vec::new());
-        section.1.write().refresh_buffers();
-        new_umlsequence_combinedfragment(UmlSequenceCombinedFragmentKind::Opt, "", HashSet::new(), vec![section.into()])
-    };
-    combined_fragment_view.write().refresh_buffers();
-    let (lifeline_model1, lifeline_view1) = new_umlsequence_lifeline("User", "", UmlSequenceLifelineRenderStyle::StickFigure);
-    let (lifeline_model2, lifeline_view2) = new_umlsequence_lifeline("Service", "", UmlSequenceLifelineRenderStyle::Object);
-    lifeline_view2.write().bounds_rect = egui::Rect::from_x_y_ranges(150.0..=150.0, 0.0..=0.0);
-    let (_, message_view1) = new_umlsequence_message("", "", UmlSequenceMessageSynchronicityKind::Synchronous, UmlSequenceMessageLifecycleKind::None, false,
-        (lifeline_model1.clone(), lifeline_view1.clone().into()),
-        (lifeline_model2.clone(), lifeline_view2.clone().into()));
-    message_view1.write().refresh_buffers();
-    let (_, message_view2) = new_umlsequence_message("", "", UmlSequenceMessageSynchronicityKind::Synchronous, UmlSequenceMessageLifecycleKind::None, true,
-        (lifeline_model1.clone(), lifeline_view1.clone().into()),
-        (lifeline_model2.clone(), lifeline_view2.clone().into()));
-    message_view2.write().refresh_buffers();
-    let (_, message_view3) = new_umlsequence_message("", "", UmlSequenceMessageSynchronicityKind::AsynchronousCall, UmlSequenceMessageLifecycleKind::None, false,
-        (lifeline_model1.clone(), lifeline_view1.clone().into()),
-        (lifeline_model2.clone(), lifeline_view2.clone().into()));
-    message_view3.write().refresh_buffers();
-    let (_, message_view4) = new_umlsequence_message("", "", UmlSequenceMessageSynchronicityKind::AsynchronousSignal, UmlSequenceMessageLifecycleKind::None, false,
-        (lifeline_model1.clone(), lifeline_view1.clone().into()),
-        (lifeline_model2.clone(), lifeline_view2.clone().into()));
-    message_view4.write().refresh_buffers();
-    let (_, ref_view) = new_umlsequence_ref("Checkout", HashSet::new());
-    let (_, comment_view) = new_umlsequence_comment("Comment", egui::Pos2::ZERO, egui::Align2::CENTER_CENTER);
-
     let palette_items = vec![
         ("Containers", vec![
-            (UmlSequenceToolStage::DiagramStart, "Diagram", diagram_view.into()),
-            (UmlSequenceToolStage::CombinedFragmentStart { kind: UmlSequenceCombinedFragmentKind::Opt }, "Combined Fragment", combined_fragment_view.into()),
+            (UmlSequenceToolStage::DiagramStart, "Diagram"),
+            (UmlSequenceToolStage::CombinedFragmentStart {
+                kind: UmlSequenceCombinedFragmentKind::Opt,
+            }, "Combined Fragment"),
         ]),
         ("Elements", vec![
-            (UmlSequenceToolStage::Lifeline { name: "User", stereotype: "", render_style: UmlSequenceLifelineRenderStyle::StickFigure }, "Actor Lifeline", lifeline_view1.into()),
-            (UmlSequenceToolStage::Lifeline { name: "Service", stereotype: "", render_style: UmlSequenceLifelineRenderStyle::Object }, "Object Lifeline", lifeline_view2.into()),
+            (UmlSequenceToolStage::Lifeline {
+                name: "User".to_owned(),
+                stereotype: "".to_owned(),
+                render_style: UmlSequenceLifelineRenderStyle::StickFigure,
+            }, "Actor Lifeline"),
+            (UmlSequenceToolStage::Lifeline {
+                name: "s: Service".to_owned(),
+                stereotype: "".to_owned(),
+                render_style: UmlSequenceLifelineRenderStyle::Object,
+            }, "Object Lifeline"),
         ]),
         ("Messages", vec![
             (UmlSequenceToolStage::LinkStart { link_type: LinkType::Message {
                 synchronicity_kind: UmlSequenceMessageSynchronicityKind::Synchronous,
                 is_return: false,
                 name: "",
-            } }, "Synchronous Message", message_view1.into()),
+            } }, "Synchronous Message"),
             (UmlSequenceToolStage::LinkStart { link_type: LinkType::Message {
                 synchronicity_kind: UmlSequenceMessageSynchronicityKind::Synchronous,
                 is_return: true,
                 name: "",
-            } }, "Synchronous Return", message_view2.into()),
+            } }, "Synchronous Return"),
             (UmlSequenceToolStage::LinkStart { link_type: LinkType::Message {
                 synchronicity_kind: UmlSequenceMessageSynchronicityKind::AsynchronousCall,
                 is_return: false,
                 name: "",
-            } }, "Asynchronous Call", message_view3.into()),
+            } }, "Asynchronous Call"),
             (UmlSequenceToolStage::LinkStart { link_type: LinkType::Message {
                 synchronicity_kind: UmlSequenceMessageSynchronicityKind::AsynchronousSignal,
                 is_return: false,
                 name: "",
-            } }, "Asynchronous Signal", message_view4.into()),
+            } }, "Asynchronous Signal"),
         ]),
         ("Other", vec![
-            (UmlSequenceToolStage::RefStart, "Interaction Fragment", ref_view.into()),
+            (UmlSequenceToolStage::RefStart {
+                text: "Checkout".to_owned(),
+            }, "Interaction Fragment"),
             (UmlSequenceToolStage::Comment {
                 text: "a comment".to_owned(),
                 align: egui::Align2::CENTER_CENTER,
-            }, "Comment", comment_view.into()),
+            }, "Comment"),
             //(UmlSequenceToolStage::CommentLinkStart, "Comment Link", commentlink.1.into()),
         ]),
-    ];
+    ].into_iter().map(|e| (e.0, e.1.into_iter().map(|e| {
+        let v = view_for_stage(&e.0);
+        (e.0, e.1, v)
+    }).collect())).collect();
+
     Box::new(UmlSequenceSettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
     })
 }
+
+fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
+    match s {
+        UmlSequenceToolStage::DiagramStart => {
+            let diagram_view = new_umlsequence_diagram("Diagram", Vec::new(), Vec::new(), egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(100.0, 75.0))).1;
+            diagram_view.write().refresh_buffers();
+            diagram_view.into()
+        },
+        UmlSequenceToolStage::CombinedFragmentStart { kind } => {
+            let combined_fragment_view = {
+                let section = new_umlsequence_combinedfragmentsection("no errors", Vec::new());
+                section.1.write().refresh_buffers();
+                new_umlsequence_combinedfragment(*kind, "", HashSet::new(), vec![section.into()]).1
+            };
+            combined_fragment_view.write().refresh_buffers();
+            combined_fragment_view.into()
+        },
+        UmlSequenceToolStage::Lifeline { name, stereotype, render_style } => {
+            let lifeline_view = new_umlsequence_lifeline(name, stereotype, *render_style).1;
+            lifeline_view.into()
+        },
+        UmlSequenceToolStage::LinkStart { link_type } => {
+            let d1 = new_umlsequence_lifeline("dummy", "", UmlSequenceLifelineRenderStyle::StickFigure);
+            let d2 = new_umlsequence_lifeline("dummy", "", UmlSequenceLifelineRenderStyle::Object);
+            d2.1.write().bounds_rect = egui::Rect::from_x_y_ranges(150.0..=150.0, 0.0..=0.0);
+
+            match link_type {
+                LinkType::Message { synchronicity_kind, is_return, name } => {
+                    let message_view = new_umlsequence_message(
+                        name, "",
+                        *synchronicity_kind, UmlSequenceMessageLifecycleKind::None, *is_return,
+                        (d1.0, d1.1.into()), (d2.0, d2.1.into()),
+                    ).1;
+                    message_view.write().refresh_buffers();
+                    message_view.into()
+                },
+            }
+        },
+        UmlSequenceToolStage::RefStart { text } => {
+            let ref_view = new_umlsequence_ref(text, HashSet::new()).1;
+            ref_view.write().refresh_buffers();
+            ref_view.into()
+        },
+        UmlSequenceToolStage::Comment { text, align } => {
+            let comment_view = new_umlsequence_comment(text, egui::Pos2::ZERO, *align).1;
+            comment_view.into()
+        },
+        UmlSequenceToolStage::CommentLinkStart => todo!(),
+
+        UmlSequenceToolStage::DiagramEnd
+        | UmlSequenceToolStage::CombinedFragmentEnd
+        | UmlSequenceToolStage::LinkEnd
+        | UmlSequenceToolStage::RefEnd
+        | UmlSequenceToolStage::CommentLinkEnd => unreachable!(),
+    }
+}
+
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<UmlSequenceSettings>() else { return; };
 
@@ -754,11 +797,34 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match (tool, view.model()) {
-                    (
-                        UmlSequenceToolStage::Comment { text, align },
-                        UmlSequenceElement::Comment(inner),
-                    ) => {
+                match tool {
+                    UmlSequenceToolStage::CombinedFragmentStart { kind } => {
+                        columns[1].label("Kind:");
+                        egui::ComboBox::from_id_salt("Kind:")
+                            .selected_text(kind.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in UmlSequenceCombinedFragmentKind::VARIANTS {
+                                    modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
+                                }
+                            });
+                    }
+                    UmlSequenceToolStage::Lifeline { name, stereotype, render_style } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
+                        modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+
+                        columns[1].label("Render style");
+                        egui::ComboBox::from_id_salt("render style")
+                            .selected_text(render_style.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in UmlSequenceLifelineRenderStyle::VARIANTS {
+                                    modified |= ui.selectable_value(render_style, e, e.as_str()).clicked();
+                                }
+                            });
+                    }
+                    UmlSequenceToolStage::RefStart { text } => {
+                        modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
+                    }
+                    UmlSequenceToolStage::Comment { text, align } => {
                         modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
 
                         egui::ComboBox::new("horizontal align", "Horizontal align")
@@ -775,15 +841,12 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(&mut align.0[1], e, format!("{:?}", e)).changed();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            mw.text = text.clone().into();
-                        }
                     }
                     _ => {}
                 }
 
                 if modified {
+                    *view = view_for_stage(tool);
                     w.set_from_buffer(buffer.clone());
                 }
             },
@@ -821,14 +884,25 @@ pub enum LinkType {
 pub enum UmlSequenceToolStage {
     DiagramStart,
     DiagramEnd,
-    CombinedFragmentStart { kind: UmlSequenceCombinedFragmentKind },
+    CombinedFragmentStart {
+        kind: UmlSequenceCombinedFragmentKind,
+    },
     CombinedFragmentEnd,
-    Lifeline { name: &'static str, stereotype: &'static str, render_style: UmlSequenceLifelineRenderStyle },
+    Lifeline {
+        name: String,
+        stereotype: String,
+        render_style: UmlSequenceLifelineRenderStyle,
+    },
     LinkStart { link_type: LinkType },
     LinkEnd,
-    RefStart,
+    RefStart {
+        text: String,
+    },
     RefEnd,
-    Comment { text: String, align: egui::Align2 },
+    Comment {
+        text: String,
+        align: egui::Align2,
+    },
     CommentLinkStart,
     CommentLinkEnd,
 }
@@ -851,6 +925,7 @@ enum PartialUmlSequenceElement {
         dest: Option<ERef<UmlSequenceLifeline>>,
     },
     Ref {
+        text: String,
         source: ERef<UmlSequenceLifeline>,
         dest: Option<ERef<UmlSequenceLifeline>>,
     },
@@ -916,7 +991,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 | UmlSequenceToolStage::LinkEnd
                 | UmlSequenceToolStage::CombinedFragmentStart { .. }
                 | UmlSequenceToolStage::CombinedFragmentEnd
-                | UmlSequenceToolStage::RefStart
+                | UmlSequenceToolStage::RefStart { .. }
                 | UmlSequenceToolStage::RefEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR
             }
@@ -925,7 +1000,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 | UmlSequenceToolStage::LinkEnd
                 | UmlSequenceToolStage::CombinedFragmentStart { .. }
                 | UmlSequenceToolStage::CombinedFragmentEnd
-                | UmlSequenceToolStage::RefStart
+                | UmlSequenceToolStage::RefStart { .. }
                 | UmlSequenceToolStage::RefEnd => TARGETTABLE_COLOR,
                 _ => NON_TARGETTABLE_COLOR,
             }
@@ -1059,8 +1134,9 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                         *dest = Some(inner);
                         self.event_lock = true;
                     },
-                    (UmlSequenceToolStage::RefStart, PartialUmlSequenceElement::None) => {
+                    (UmlSequenceToolStage::RefStart { text }, PartialUmlSequenceElement::None) => {
                         self.result = PartialUmlSequenceElement::Ref {
+                            text: text.clone(),
                             source: inner,
                             dest: None,
                         };
@@ -1164,11 +1240,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     None
                 }
             }
-            PartialUmlSequenceElement::Ref {
-                source,
-                dest: Some(dest),
-                ..
-            } => {
+            PartialUmlSequenceElement::Ref { text, source, dest: Some(dest) } => {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.read().uuid());
                 if let (Some(source_view), Some(target_view)) = (
                     q.get_view_for(&source_uuid),
@@ -1178,7 +1250,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     self.current_stage = self.initial_stage.clone();
 
                     let ref_view = new_umlsequence_ref(
-                        "",
+                        text,
                         [source_uuid, target_uuid].into_iter().collect(),
                     ).1.into();
 
@@ -1618,7 +1690,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         | UmlSequenceToolStage::LinkEnd
                         | UmlSequenceToolStage::CombinedFragmentStart { .. }
                         | UmlSequenceToolStage::CombinedFragmentEnd
-                        | UmlSequenceToolStage::RefStart
+                        | UmlSequenceToolStage::RefStart { .. }
                         | UmlSequenceToolStage::RefEnd => {
                             if let Some((.., lr, hr)) = self.horizontal_insertion_place(*pos) {
                                 canvas.draw_rectangle(
@@ -3165,7 +3237,7 @@ impl UmlSequenceCombinedFragmentSectionView {
                     | UmlSequenceToolStage::LinkEnd
                     | UmlSequenceToolStage::CombinedFragmentStart { .. }
                     | UmlSequenceToolStage::CombinedFragmentEnd
-                    | UmlSequenceToolStage::RefStart
+                    | UmlSequenceToolStage::RefStart { .. }
                     | UmlSequenceToolStage::RefEnd => {
                         if let Some((.., lr, hr)) = self.horizontal_insertion_place(lifeline_views, *pos) {
                             canvas.draw_rectangle(

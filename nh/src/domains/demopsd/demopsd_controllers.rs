@@ -722,54 +722,78 @@ impl DiagramSettings2<DemoPsdDomain> for DemoPsdSettings {
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    let (ta, ta_view) = new_demopsd_transaction("01", "", DemoTransactionKind::Performa, vec![], None, vec![], egui::Pos2::new(100.0, 75.0), 200.0);
-    let ta = (ta, ta_view.into());
-
-    let (fact, fact_view) = new_demopsd_fact("rq", true, egui::Pos2::ZERO);
-    let fact = (fact, fact_view.into());
-    let (act, act_view) = new_demopsd_act("rq", true, egui::Pos2::new(100.0, 75.0));
-    let act = (act, act_view.into());
-
-    let (_response, response_view) = new_demopsd_link(DemoPsdLinkType::ResponseLink, "", fact.clone(), act.clone(), None);
-    let (_wait, wait_view) = new_demopsd_link(DemoPsdLinkType::WaitLink, "", fact.clone(), act.clone(), None);
-
-    let (_package, package_view) = new_demopsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-
     let palette_items = vec![
         ("Elements", vec![
             (DemoPsdToolStage::TransactionStart {
                 identifier: "01".to_owned(),
-                name: "".to_owned(),
+                name: "resource seizing".to_owned(),
                 transaction_kind: DemoTransactionKind::Performa,
-            }, "Transaction", ta.1),
+            }, "Transaction"),
             (DemoPsdToolStage::Fact {
-                identifier: "".to_owned(),
+                identifier: "rq".to_owned(),
                 internal: true,
-            }, "Fact", fact.1),
+            }, "Fact"),
             (DemoPsdToolStage::Act {
-                identifier: "".to_owned(),
+                identifier: "rq".to_owned(),
                 internal: true,
-            }, "Act", act.1),
+            }, "Act"),
         ]),
         ("Relationships", vec![
             (DemoPsdToolStage::LinkStart {
                 link_type: DemoPsdLinkType::ResponseLink,
                 multiplicity: "".to_owned(),
-            }, "Response Link", response_view.into()),
+            }, "Response Link"),
             (DemoPsdToolStage::LinkStart {
                 link_type: DemoPsdLinkType::WaitLink,
                 multiplicity: "".to_owned(),
-            }, "Wait Link", wait_view.into()),
+            }, "Wait Link"),
         ]),
         ("Other", vec![
-            (DemoPsdToolStage::PackageStart, "Package", package_view.into()),
+            (DemoPsdToolStage::PackageStart, "Package"),
         ]),
-    ];
+    ].into_iter().map(|e| (e.0, e.1.into_iter().map(|e| {
+        let v = view_for_stage(&e.0);
+        (e.0, e.1, v)
+    }).collect())).collect();
 
     Box::new(DemoPsdSettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
     })
+}
+
+fn view_for_stage(s: &DemoPsdToolStage) -> DemoPsdElementView {
+    match s {
+        DemoPsdToolStage::TransactionStart { identifier, name, transaction_kind } => {
+            let ta_view = new_demopsd_transaction(identifier, name, *transaction_kind, vec![], None, vec![], egui::Pos2::new(100.0, 75.0), 200.0).1;
+            ta_view.write().refresh_buffers();
+            ta_view.into()
+        },
+        DemoPsdToolStage::Fact { identifier, internal } => {
+            let fact_view = new_demopsd_fact(identifier, *internal, egui::Pos2::ZERO).1;
+            fact_view.write().refresh_buffers();
+            fact_view.into()
+        },
+        DemoPsdToolStage::Act { identifier, internal } => {
+            let act_view = new_demopsd_act(identifier, *internal, egui::Pos2::new(100.0, 75.0)).1;
+            act_view.write().refresh_buffers();
+            act_view.into()
+        },
+        DemoPsdToolStage::LinkStart { link_type, multiplicity } => {
+            let d1 = new_demopsd_fact("dummy", true, egui::Pos2::ZERO);
+            let d2 = new_demopsd_act("dummy", true, egui::Pos2::new(100.0, 75.0));
+
+            let link_view = new_demopsd_link(*link_type, multiplicity, (d1.0, d1.1.into()), (d2.0, d2.1.into()), None).1;
+            link_view.into()
+        },
+        DemoPsdToolStage::PackageStart => {
+            let package_view = new_demopsd_package("A package", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) }).1;
+            package_view.into()
+        },
+        DemoPsdToolStage::TransactionEnd
+        | DemoPsdToolStage::LinkEnd
+        | DemoPsdToolStage::PackageEnd => unreachable!(),
+    }
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
@@ -796,11 +820,8 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match (tool, view.model()) {
-                    (
-                        DemoPsdToolStage::TransactionStart { identifier, name, transaction_kind },
-                        DemoPsdElement::DemoPsdTransaction(inner),
-                    ) => {
+                match tool {
+                    DemoPsdToolStage::TransactionStart { identifier, name, transaction_kind } => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
@@ -812,41 +833,16 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(transaction_kind, e, e.as_str()).clicked();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            mw.identifier = identifier.clone().into();
-                            mw.name = name.clone().into();
-                            mw.kind = *transaction_kind;
-                        }
                     },
-                    (
-                        DemoPsdToolStage::Fact { identifier, internal },
-                        DemoPsdElement::DemoPsdFact(inner),
-                    ) => {
+                    DemoPsdToolStage::Fact { identifier, internal } => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].checkbox(internal, "internal").changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.identifier = identifier.clone().into();
-                            mw.internal = *internal;
-                        }
                     },
-                    (
-                        DemoPsdToolStage::Act { identifier, internal },
-                        DemoPsdElement::DemoPsdAct(inner),
-                    ) => {
+                    DemoPsdToolStage::Act { identifier, internal } => {
                         modified |= columns[1].labeled_text_edit_singleline("Identifier", identifier).changed();
                         modified |= columns[1].checkbox(internal, "internal").changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.identifier = identifier.clone().into();
-                            mw.internal = *internal;
-                        }
                     },
-                    (
-                        DemoPsdToolStage::LinkStart { link_type, multiplicity },
-                        DemoPsdElement::DemoPsdLink(inner),
-                    ) => {
+                    DemoPsdToolStage::LinkStart { link_type, multiplicity } => {
                         columns[1].label("Link type");
                         egui::ComboBox::from_id_salt("link type")
                             .selected_text(link_type.as_str())
@@ -857,20 +853,15 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                             });
 
                         modified |= columns[1].labeled_text_edit_singleline("Multiplicity", multiplicity).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.link_type = *link_type;
-                            mw.multiplicity = multiplicity.clone().into();
-                        }
                     },
-                    (DemoPsdToolStage::PackageStart, _) => {
-
-                    },
-                    _ => unreachable!(),
+                    DemoPsdToolStage::PackageStart => {},
+                    DemoPsdToolStage::TransactionEnd
+                    | DemoPsdToolStage::LinkEnd
+                    | DemoPsdToolStage::PackageEnd => unreachable!(),
                 }
 
                 if modified {
-                    view.refresh_buffers();
+                    *view = view_for_stage(&tool);
                     w.set_from_buffer(buffer.clone());
                 }
             },
