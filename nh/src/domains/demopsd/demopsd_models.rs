@@ -557,6 +557,12 @@ pub struct DemoPsdTransaction {
 }
 
 impl DemoPsdTransaction {
+    pub const CENTER_BUCKET: BucketNoT = 1;
+    pub const BEFORE_INITIATOR_BUCKET: BucketNoT = 2;
+    pub const BEFORE_EXECUTOR_BUCKET: BucketNoT = 3;
+    pub const AFTER_EXECUTOR_BUCKET: BucketNoT = 4;
+    pub const AFTER_INITIATOR_BUCKET: BucketNoT = 5;
+
     pub fn new(
         uuid: ModelUuid,
         kind: DemoTransactionKind,
@@ -644,21 +650,27 @@ impl ContainerModel for DemoPsdTransaction {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.before.iter().enumerate() {
             if *e.state.uuid() == *uuid {
-                return Some((if !e.executor {1} else {2}, idx.try_into().unwrap()));
+                return Some((
+                    if !e.executor {Self::BEFORE_INITIATOR_BUCKET} else {Self::BEFORE_EXECUTOR_BUCKET},
+                    idx.try_into().unwrap(),
+                ));
             }
         }
         if let UFOption::Some(e) = &self.p_act && *e.read().uuid == *uuid {
-            return Some((0, 0));
+            return Some((Self::CENTER_BUCKET, 0));
         }
         for (idx, e) in self.after.iter().enumerate() {
             if *e.state.uuid() == *uuid {
-                return Some((if !e.executor {4} else {3}, idx.try_into().unwrap()));
+                return Some((
+                    if !e.executor {Self::AFTER_INITIATOR_BUCKET} else {Self::AFTER_EXECUTOR_BUCKET},
+                    idx.try_into().unwrap(),
+                ));
             }
         }
         None
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoPsdElement) -> Result<PositionNoT, DemoPsdElement> {
-        if bucket == 0 {
+        if bucket == Self::CENTER_BUCKET {
             if !self.p_act.is_some()
                 && let DemoPsdElement::DemoPsdAct(act) = element {
                 self.p_act = UFOption::Some(act.clone());
@@ -668,13 +680,13 @@ impl ContainerModel for DemoPsdTransaction {
             }
         } else if let Some(state) = element.clone().to_state() {
             let after = match bucket {
-                1 | 2 => false,
-                3 | 4 => true,
+                Self::BEFORE_INITIATOR_BUCKET | Self::BEFORE_EXECUTOR_BUCKET => false,
+                Self::AFTER_EXECUTOR_BUCKET | Self::AFTER_INITIATOR_BUCKET => true,
                 _ => unreachable!(),
             };
             let executor = match bucket {
-                1 | 4 => false,
-                2 | 3 => true,
+                Self::BEFORE_INITIATOR_BUCKET | Self::AFTER_INITIATOR_BUCKET => false,
+                Self::BEFORE_EXECUTOR_BUCKET | Self::AFTER_EXECUTOR_BUCKET => true,
                 _ => unreachable!(),
             };
             if !after {
@@ -695,18 +707,24 @@ impl ContainerModel for DemoPsdTransaction {
             if *e.state.uuid() == *uuid {
                 let is_executor = e.executor;
                 self.before.remove(idx);
-                return Some((if !is_executor {1} else {2}, idx.try_into().unwrap()));
+                return Some((
+                    if !is_executor {Self::BEFORE_INITIATOR_BUCKET} else {Self::BEFORE_EXECUTOR_BUCKET},
+                    idx.try_into().unwrap(),
+                ));
             }
         }
         if let UFOption::Some(e) = &self.p_act && *e.read().uuid == *uuid {
             self.p_act = UFOption::None;
-            return Some((0, 0))
+            return Some((Self::CENTER_BUCKET, 0))
         }
         for (idx, e) in self.after.iter().enumerate() {
             if *e.state.uuid() == *uuid {
                 let is_executor = e.executor;
                 self.after.remove(idx);
-                return Some((if !is_executor {4} else {3}, idx.try_into().unwrap()));
+                return Some((
+                    if !is_executor {Self::AFTER_INITIATOR_BUCKET} else {Self::AFTER_EXECUTOR_BUCKET},
+                    idx.try_into().unwrap(),
+                ));
             }
         }
         None

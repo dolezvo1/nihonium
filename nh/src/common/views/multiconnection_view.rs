@@ -122,9 +122,9 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
     );
 }
 
-pub const MULTICONNECTION_SOURCE_BUCKET: BucketNoT = 0;
-pub const MULTICONNECTION_TARGET_BUCKET: BucketNoT = 1;
-pub const MULTICONNECTION_VERTEX_BUCKET: BucketNoT = 2;
+pub const MULTICONNECTION_SOURCE_BUCKET: BucketNoT = 1;
+pub const MULTICONNECTION_TARGET_BUCKET: BucketNoT = 2;
+pub const MULTICONNECTION_VERTEX_BUCKET: BucketNoT = 3;
 
 #[derive(Clone, Debug)]
 pub struct VertexInformation {
@@ -673,7 +673,7 @@ where
                         self.dragged_node = Some((ViewUuid::now_v7(), pos));
                         commands.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
-                            bucket: 3,
+                            bucket: MULTICONNECTION_VERTEX_BUCKET,
                             position: None,
                             element: VertexInformation {
                                 after: ViewUuid::nil(),
@@ -989,18 +989,18 @@ where
                 delete_vertices!(targets);
 
                 // Handle dependencies being deleted
-                let mut rtin = |e: &Ending<DomainT::CommonElementViewT>| if uuids.contains(&e.element.uuid()) {
+                let mut retain = |b: BucketNoT, e: &Ending<DomainT::CommonElementViewT>| if uuids.contains(&e.element.uuid()) {
                     undo_accumulator.push(InsensitiveCommand::AddDependency {
                         target: self_uuid,
-                        bucket: 0,
+                        bucket: b,
                         position: None,
                         element: e.element.clone().into(),
                         into_model: false,
                     });
                     false
                 } else { true };
-                self.sources.retain(&mut rtin);
-                self.targets.retain(&mut rtin);
+                self.sources.retain(|e| retain(MULTICONNECTION_SOURCE_BUCKET, e));
+                self.targets.retain(|e| retain(MULTICONNECTION_TARGET_BUCKET, e));
             }
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {

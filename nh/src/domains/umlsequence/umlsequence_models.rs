@@ -390,6 +390,10 @@ pub fn transitive_closure(d: &UmlSequenceDiagramBoard, mut when_deleting: HashSe
 }
 
 
+pub const VERTICALS_BUCKET: BucketNoT = 1;
+pub const HORIZONTALS_BUCKET: BucketNoT = 2;
+
+
 #[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = UmlSequenceElement, default_passthrough = "none")]
@@ -491,7 +495,7 @@ impl UmlSequenceDiagramBoard {
 
                     for (idx, e) in w.vertical_elements.iter().enumerate() {
                         if uuids.contains(&e.read().uuid()) {
-                            undo.push((*w.uuid, e.clone().into(), 0, idx.try_into().unwrap()));
+                            undo.push((*w.uuid, e.clone().into(), VERTICALS_BUCKET, idx.try_into().unwrap()));
                         } else {
                             r(&e.clone().into(), uuids, undo);
                         }
@@ -500,7 +504,7 @@ impl UmlSequenceDiagramBoard {
 
                     for (idx, e) in w.horizontal_elements.iter().enumerate() {
                         if uuids.contains(&e.uuid()) {
-                            undo.push((*w.uuid, e.clone().to_element(), 1, idx.try_into().unwrap()));
+                            undo.push((*w.uuid, e.clone().to_element(), HORIZONTALS_BUCKET, idx.try_into().unwrap()));
                         } else {
                             r(&e.clone().to_element(), uuids, undo);
                         }
@@ -511,7 +515,7 @@ impl UmlSequenceDiagramBoard {
                     let mut w = inner.write();
                     for (idx, e) in w.sections.iter().enumerate() {
                         if uuids.contains(&e.read().uuid()) {
-                            undo.push((*w.uuid, e.clone().into(), 1, idx.try_into().unwrap()));
+                            undo.push((*w.uuid, e.clone().into(), HORIZONTALS_BUCKET, idx.try_into().unwrap()));
                         } else {
                             r(&e.clone().into(), uuids, undo);
                         }
@@ -522,7 +526,7 @@ impl UmlSequenceDiagramBoard {
                     let mut w = inner.write();
                     for (idx, e) in w.horizontal_elements.iter().enumerate() {
                         if uuids.contains(&e.uuid()) {
-                            undo.push((*w.uuid, e.clone().to_element(), 1, idx.try_into().unwrap()));
+                            undo.push((*w.uuid, e.clone().to_element(), HORIZONTALS_BUCKET, idx.try_into().unwrap()));
                         } else {
                             r(&e.clone().to_element(), uuids, undo);
                         }
@@ -676,12 +680,12 @@ impl UmlSequenceDiagram {
         })
     }
     pub fn move_element(&mut self, element: &ModelUuid, within: BucketNoT, target_pos: PositionNoT) {
-        if within == 0 {
+        if within == VERTICALS_BUCKET {
             if let Some((idx, _e)) = self.vertical_elements.iter().enumerate().find(|e| *e.1.read().uuid() == *element) {
                 let e = self.vertical_elements.remove(idx);
                 self.vertical_elements.insert(target_pos.try_into().unwrap(), e);
             }
-        } else if within == 1 {
+        } else if within == HORIZONTALS_BUCKET {
             if let Some((idx, _e)) = self.horizontal_elements.iter().enumerate().find(|e| *e.1.uuid() == *element) {
                 let e = self.horizontal_elements.remove(idx);
                 self.horizontal_elements.insert(target_pos.try_into().unwrap(), e);
@@ -724,19 +728,19 @@ impl ContainerModel for UmlSequenceDiagram {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.vertical_elements.iter().enumerate() {
             if *e.read().uuid == *uuid {
-                return Some((0, idx.try_into().unwrap()));
+                return Some((VERTICALS_BUCKET, idx.try_into().unwrap()));
             }
         }
         for (idx, e) in self.horizontal_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((1, idx.try_into().unwrap()));
+                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
             }
         }
         return None;
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlSequenceElement) -> Result<PositionNoT, UmlSequenceElement> {
         match bucket {
-            0 => {
+            VERTICALS_BUCKET => {
                 let UmlSequenceElement::Lifeline(element) = element else {
                     return Err(element);
                 };
@@ -744,7 +748,7 @@ impl ContainerModel for UmlSequenceDiagram {
                 self.vertical_elements.insert(pos, element);
                 Ok(pos.try_into().unwrap())
             }
-            1 => {
+            HORIZONTALS_BUCKET => {
                 let Some(element) = element.clone().as_horizontal() else {
                     return Err(element);
                 };
@@ -759,13 +763,13 @@ impl ContainerModel for UmlSequenceDiagram {
         for (idx, e) in self.vertical_elements.iter().enumerate() {
             if *e.read().uuid == *uuid {
                 self.vertical_elements.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+                return Some((VERTICALS_BUCKET, idx.try_into().unwrap()));
             }
         }
         for (idx, e) in self.horizontal_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
                 self.horizontal_elements.remove(idx);
-                return Some((1, idx.try_into().unwrap()));
+                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
             }
         }
         None
@@ -1111,13 +1115,13 @@ impl ContainerModel for UmlSequenceCombinedFragment {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.sections.iter().enumerate() {
             if *e.read().uuid() == *uuid {
-                return Some((1, idx.try_into().unwrap()));
+                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
             }
         }
         return None;
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlSequenceElement) -> Result<PositionNoT, UmlSequenceElement> {
-        if bucket != 1 {
+        if bucket != HORIZONTALS_BUCKET {
             return Err(element);
         }
         let UmlSequenceElement::CombinedFragmentSection(section) = element else {
@@ -1132,7 +1136,7 @@ impl ContainerModel for UmlSequenceCombinedFragment {
         for (idx, e) in self.sections.iter().enumerate() {
             if *e.read().uuid() == *uuid {
                 self.sections.remove(idx);
-                return Some((1, idx.try_into().unwrap()));
+                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
             }
         }
         None
@@ -1224,13 +1228,13 @@ impl ContainerModel for UmlSequenceCombinedFragmentSection {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.horizontal_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
-                return Some((1, idx.try_into().unwrap()));
+                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
             }
         }
         return None;
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlSequenceElement) -> Result<PositionNoT, UmlSequenceElement> {
-        if bucket != 1 {
+        if bucket != HORIZONTALS_BUCKET {
             return Err(element);
         }
         let Some(element) = element.as_horizontal() else {
@@ -1245,7 +1249,7 @@ impl ContainerModel for UmlSequenceCombinedFragmentSection {
         for (idx, e) in self.horizontal_elements.iter().enumerate() {
             if *e.uuid() == *uuid {
                 self.horizontal_elements.remove(idx);
-                return Some((1, idx.try_into().unwrap()));
+                return Some((HORIZONTALS_BUCKET, idx.try_into().unwrap()));
             }
         }
         None

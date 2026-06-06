@@ -4,6 +4,7 @@ use crate::common::eref::ERef;
 use crate::common::search::FullTextSearchable;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
+use crate::common::views::multiconnection_view::{MULTICONNECTION_SOURCE_BUCKET, MULTICONNECTION_TARGET_BUCKET};
 use crate::domains::umlclass::umlclass_plantuml::UmlClassPlantUmlCollector;
 use std::collections::HashSet;
 use std::{
@@ -501,7 +502,7 @@ impl UmlClassDiagram {
                     let mut w = inner.write();
                     for (idx, e) in w.properties.iter().enumerate() {
                         if uuids.contains(&e.read().uuid) {
-                            undo.push((*w.uuid, e.clone().into(), 0, idx.try_into().unwrap()));
+                            undo.push((*w.uuid, e.clone().into(), UmlClass::PROPERTIES_BUCKET, idx.try_into().unwrap()));
                         } else {
                             r(&e.clone().into(), uuids, undo);
                         }
@@ -509,7 +510,7 @@ impl UmlClassDiagram {
                     w.properties.retain(|e| !uuids.contains(&e.read().uuid));
                     for (idx, e) in w.operations.iter().enumerate() {
                         if uuids.contains(&e.read().uuid) {
-                            undo.push((*w.uuid, e.clone().into(), 1, idx.try_into().unwrap()));
+                            undo.push((*w.uuid, e.clone().into(), UmlClass::OPERATIONS_BUCKET, idx.try_into().unwrap()));
                         } else {
                             r(&e.clone().into(), uuids, undo);
                         }
@@ -1034,6 +1035,9 @@ pub struct UmlClass {
 }
 
 impl UmlClass {
+    pub const PROPERTIES_BUCKET: BucketNoT = 1;
+    pub const OPERATIONS_BUCKET: BucketNoT = 2;
+
     pub fn new(
         uuid: ModelUuid,
         name: String,
@@ -1067,12 +1071,12 @@ impl UmlClass {
         })
     }
     pub fn move_element(&mut self, element: &ModelUuid, within: BucketNoT, target_pos: PositionNoT) {
-        if within == 0 {
+        if within == Self::PROPERTIES_BUCKET {
             if let Some((idx, _e)) = self.properties.iter().enumerate().find(|e| *e.1.read().uuid() == *element) {
                 let e = self.properties.remove(idx);
                 self.properties.insert(target_pos.try_into().unwrap(), e);
             }
-        } else if within == 1 {
+        } else if within == Self::OPERATIONS_BUCKET {
             if let Some((idx, _e)) = self.operations.iter().enumerate().find(|e| *e.1.read().uuid() == *element) {
                 let e = self.operations.remove(idx);
                 self.operations.insert(target_pos.try_into().unwrap(), e);
@@ -1112,22 +1116,22 @@ impl ContainerModel for UmlClass {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         for (idx, e) in self.properties.iter().enumerate() {
             if *e.read().uuid == *uuid {
-                return Some((0, idx.try_into().unwrap()));
+                return Some((Self::PROPERTIES_BUCKET, idx.try_into().unwrap()));
             }
         }
         for (idx, e) in self.operations.iter().enumerate() {
             if *e.read().uuid == *uuid {
-                return Some((1, idx.try_into().unwrap()));
+                return Some((Self::OPERATIONS_BUCKET, idx.try_into().unwrap()));
             }
         }
         None
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
-        if bucket == 0 && let UmlClassElement::Property(p) = element {
+        if bucket == Self::PROPERTIES_BUCKET && let UmlClassElement::Property(p) = element {
             let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.properties.len());
             self.properties.insert(pos, p);
             Ok(pos.try_into().unwrap())
-        } else if bucket == 1 && let UmlClassElement::Operation(o) = element {
+        } else if bucket == Self::OPERATIONS_BUCKET && let UmlClassElement::Operation(o) = element {
             let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.operations.len());
             self.operations.insert(pos, o);
             Ok(pos.try_into().unwrap())
@@ -1139,13 +1143,13 @@ impl ContainerModel for UmlClass {
         for (idx, e) in self.properties.iter().enumerate() {
             if *e.read().uuid == *uuid {
                 self.properties.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+                return Some((Self::PROPERTIES_BUCKET, idx.try_into().unwrap()));
             }
         }
         for (idx, e) in self.operations.iter().enumerate() {
             if *e.read().uuid == *uuid {
                 self.operations.remove(idx);
-                return Some((1, idx.try_into().unwrap()));
+                return Some((Self::OPERATIONS_BUCKET, idx.try_into().unwrap()));
             }
         }
         None
@@ -1304,22 +1308,20 @@ impl ContainerModel for UmlClassGeneralization {
         None
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
-        if bucket > 1 {
-            return Err(element);
-        }
-
-        let UmlClassElement::Class(c) = element else {
-            return Err(element);
-        };
-
-        if bucket == 0 {
-            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.sources.len());
-            self.sources.insert(pos, c);
-            Ok(pos.try_into().unwrap())
-        } else {
-            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.targets.len());
-            self.targets.insert(pos, c);
-            Ok(pos.try_into().unwrap())
+        match bucket {
+            MULTICONNECTION_SOURCE_BUCKET if let UmlClassElement::Class(c) = element => {
+                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.sources.len());
+                self.sources.insert(pos, c);
+                Ok(pos.try_into().unwrap())
+            }
+            MULTICONNECTION_TARGET_BUCKET if let UmlClassElement::Class(c) = element => {
+                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.targets.len());
+                self.targets.insert(pos, c);
+                Ok(pos.try_into().unwrap())
+            }
+            _ => {
+                Err(element)
+            }
         }
     }
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -1327,7 +1329,7 @@ impl ContainerModel for UmlClassGeneralization {
             for (idx, e) in self.sources.iter().enumerate() {
                 if *e.read().uuid == *uuid {
                     self.sources.remove(idx);
-                    return Some((0, idx.try_into().unwrap()));
+                    return Some((MULTICONNECTION_SOURCE_BUCKET, idx.try_into().unwrap()));
                 }
             }
         }
@@ -1335,7 +1337,7 @@ impl ContainerModel for UmlClassGeneralization {
             for (idx, e) in self.targets.iter().enumerate() {
                 if *e.read().uuid == *uuid {
                     self.targets.remove(idx);
-                    return Some((1, idx.try_into().unwrap()));
+                    return Some((MULTICONNECTION_TARGET_BUCKET, idx.try_into().unwrap()));
                 }
             }
         }
@@ -1621,22 +1623,20 @@ impl ContainerModel for UmlUseCaseGeneralization {
         None
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
-        if bucket > 1 {
-            return Err(element);
-        }
-
-        let UmlClassElement::UseCase(c) = element else {
-            return Err(element);
-        };
-
-        if bucket == 0 {
-            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.sources.len());
-            self.sources.insert(pos, c);
-            Ok(pos.try_into().unwrap())
-        } else {
-            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.targets.len());
-            self.targets.insert(pos, c);
-            Ok(pos.try_into().unwrap())
+        match bucket {
+            MULTICONNECTION_SOURCE_BUCKET if let UmlClassElement::UseCase(c) = element => {
+                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.sources.len());
+                self.sources.insert(pos, c);
+                Ok(pos.try_into().unwrap())
+            }
+            MULTICONNECTION_TARGET_BUCKET if let UmlClassElement::UseCase(c) = element => {
+                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.targets.len());
+                self.targets.insert(pos, c);
+                Ok(pos.try_into().unwrap())
+            }
+            _ => {
+                Err(element)
+            }
         }
     }
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -1644,7 +1644,7 @@ impl ContainerModel for UmlUseCaseGeneralization {
             for (idx, e) in self.sources.iter().enumerate() {
                 if *e.read().uuid == *uuid {
                     self.sources.remove(idx);
-                    return Some((0, idx.try_into().unwrap()));
+                    return Some((MULTICONNECTION_SOURCE_BUCKET, idx.try_into().unwrap()));
                 }
             }
         }
@@ -1652,7 +1652,7 @@ impl ContainerModel for UmlUseCaseGeneralization {
             for (idx, e) in self.targets.iter().enumerate() {
                 if *e.read().uuid == *uuid {
                     self.targets.remove(idx);
-                    return Some((1, idx.try_into().unwrap()));
+                    return Some((MULTICONNECTION_TARGET_BUCKET, idx.try_into().unwrap()));
                 }
             }
         }

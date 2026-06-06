@@ -283,7 +283,11 @@ impl ControllerAdapter<DemoPsdDomain> for DemoPsdControllerAdapter {
                     let mut w = inner.write();
                     for (idx, e) in w.before.iter().enumerate() {
                         if uuids.contains(&e.state.uuid()) {
-                            undo.push((*w.uuid, e.state.clone().to_element(), if !e.executor { 1 } else { 2 }, idx.try_into().unwrap()));
+                            undo.push((
+                                *w.uuid, e.state.clone().to_element(),
+                                if !e.executor { DemoPsdTransaction::BEFORE_INITIATOR_BUCKET } else { DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET },
+                                idx.try_into().unwrap(),
+                            ));
                         } else {
                             r(&e.state.clone().to_element(), uuids, undo);
                         }
@@ -291,12 +295,16 @@ impl ControllerAdapter<DemoPsdDomain> for DemoPsdControllerAdapter {
                     w.before.retain(|e| !uuids.contains(&e.state.uuid()));
                     if let UFOption::Some(e) = &w.p_act
                         && uuids.contains(&e.read().uuid) {
-                        undo.push((*w.uuid, e.clone().into(), 0, 0));
+                        undo.push((*w.uuid, e.clone().into(), DemoPsdTransaction::CENTER_BUCKET, 0));
                         w.p_act = UFOption::None;
                     }
                     for (idx, e) in w.after.iter().enumerate() {
                         if uuids.contains(&e.state.uuid()) {
-                            undo.push((*w.uuid, e.state.clone().to_element(), if !e.executor { 4 } else { 3 }, idx.try_into().unwrap()));
+                            undo.push((
+                                *w.uuid, e.state.clone().to_element(),
+                                if !e.executor { DemoPsdTransaction::AFTER_INITIATOR_BUCKET } else { DemoPsdTransaction::AFTER_EXECUTOR_BUCKET },
+                                idx.try_into().unwrap(),
+                            ));
                         } else {
                             r(&e.state.clone().to_element(), uuids, undo);
                         }
@@ -2035,11 +2043,11 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                || (quadrant != egui::Align2::CENTER_CENTER
                                    && matches!(new_e, DemoPsdElementView::Act(_) | DemoPsdElementView::Fact(_))) {
                                 let quadrant_no = match quadrant {
-                                    egui::Align2::CENTER_CENTER => 0,
-                                    egui::Align2::LEFT_TOP => 1,
-                                    egui::Align2::LEFT_BOTTOM => 2,
-                                    egui::Align2::RIGHT_BOTTOM => 3,
-                                    egui::Align2::RIGHT_TOP => 4,
+                                    egui::Align2::CENTER_CENTER => DemoPsdTransaction::CENTER_BUCKET,
+                                    egui::Align2::LEFT_TOP => DemoPsdTransaction::BEFORE_INITIATOR_BUCKET,
+                                    egui::Align2::LEFT_BOTTOM => DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET,
+                                    egui::Align2::RIGHT_BOTTOM => DemoPsdTransaction::AFTER_EXECUTOR_BUCKET,
+                                    egui::Align2::RIGHT_TOP => DemoPsdTransaction::AFTER_INITIATOR_BUCKET,
                                     _ => unreachable!(),
                                 };
                                 let pos = self.state_insertion_place(quadrant, pos).0;
@@ -2283,7 +2291,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *bucket == 0 {
+                    if *bucket == DemoPsdTransaction::CENTER_BUCKET {
                         if self.p_act_view.as_ref().is_none()
                             && let DemoPsdElementOrVertex::Element(DemoPsdElementView::Act(e)) = element {
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency {
@@ -2302,14 +2310,14 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         && let Some(e) = e.clone().as_state_view() {
                         if let Some(model_pos) = w.get_element_pos(&e.model_uuid()).map(|e| e.1)
                             .or_else(|| if *into_model { w.insert_element(*bucket, *position, e.model()).ok() } else { None }) {
-                            let after = match bucket {
-                                1 | 2 => false,
-                                3 | 4 => true,
+                            let after = match *bucket {
+                                DemoPsdTransaction::BEFORE_INITIATOR_BUCKET | DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET => false,
+                                DemoPsdTransaction::AFTER_EXECUTOR_BUCKET | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => true,
                                 _ => unreachable!(),
                             };
-                            let executor = match bucket {
-                                1 | 4 => false,
-                                2 | 3 => true,
+                            let executor = match *bucket {
+                                DemoPsdTransaction::BEFORE_INITIATOR_BUCKET | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => false,
+                                DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET | DemoPsdTransaction::AFTER_EXECUTOR_BUCKET => true,
                                 _ => unreachable!()
                             };
 
@@ -2353,7 +2361,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *bucket == 0 {
+                    if *bucket == DemoPsdTransaction::CENTER_BUCKET {
                         if let Some(e) = self.p_act_view.as_ref()
                             && *element == *e.read().uuid {
                             undo_accumulator.push(InsensitiveCommand::AddDependency {
@@ -2381,9 +2389,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                  });
                                 false
                             } else { true };
-                        match bucket {
-                            1 | 2 => self.before_views.retain(closure),
-                            3 | 4 => self.after_views.retain(closure),
+                        match *bucket {
+                            DemoPsdTransaction::BEFORE_INITIATOR_BUCKET
+                            | DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET
+                                => self.before_views.retain(closure),
+                            DemoPsdTransaction::AFTER_EXECUTOR_BUCKET
+                            | DemoPsdTransaction::AFTER_INITIATOR_BUCKET
+                                => self.after_views.retain(closure),
                             _ => unreachable!(),
                         };
                     }

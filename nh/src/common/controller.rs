@@ -1163,6 +1163,8 @@ pub trait DiagramSettings2<DomainT: Domain>: DiagramSettings {
 }
 
 
+/// Index of a container partition. Note that 0 means "any owning partition"
+/// and thus should not be used if container has multiple and/or non-owning buckets.
 pub type BucketNoT = u8;
 pub type PositionNoT = usize;
 /// Selection insensitive command - inherently repeatable

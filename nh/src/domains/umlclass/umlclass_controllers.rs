@@ -926,7 +926,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     gen_view.write().apply_command(
         &InsensitiveCommand::AddDependency {
             target: gen_uuid,
-            bucket: 0,
+            bucket: MULTICONNECTION_SOURCE_BUCKET,
             position: None,
             element: UmlClassElementOrVertex::Element(circle_view.clone().into()),
             into_model: true,
@@ -2009,7 +2009,11 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
     fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
         match &mut self.result {
             PartialUmlClassElement::LinkEnding { source, gen_model, new_model } if new_model.is_some() => {
-                let r = Some((if *source { 0 } else { 1 }, *gen_model.uuid(), new_model.unwrap()));
+                let r = Some((
+                    if *source { MULTICONNECTION_SOURCE_BUCKET } else { MULTICONNECTION_TARGET_BUCKET },
+                    *gen_model.uuid(),
+                    new_model.unwrap(),
+                ));
                 *new_model = None;
                 r
             }
@@ -5179,7 +5183,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                             UmlClassElementView::ClassProperty(_) => {
                                 commands.push(InsensitiveCommand::AddDependency {
                                     target: *self.uuid,
-                                    bucket: 0,
+                                    bucket: UmlClass::PROPERTIES_BUCKET,
                                     position: None,
                                     element: view.into(),
                                     into_model: true,
@@ -5191,7 +5195,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                             UmlClassElementView::ClassOperation(_) => {
                                 commands.push(InsensitiveCommand::AddDependency {
                                     target: *self.uuid,
-                                    bucket: 1,
+                                    bucket: UmlClass::OPERATIONS_BUCKET,
                                     position: None,
                                     element: view.into(),
                                     into_model: true,
@@ -5442,7 +5446,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
                 if *target == *self.uuid && *including_model {
                     let mut removed_any = false;
-                    if *bucket == 0 {
+                    if *bucket == UmlClass::PROPERTIES_BUCKET {
                         self.properties_views.retain(
                             |e| {
                                 let r = e.read();
@@ -5462,7 +5466,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                 }
                             }
                         );
-                    } else if *bucket == 1 {
+                    } else if *bucket == UmlClass::OPERATIONS_BUCKET {
                         self.operations_views.retain(
                             |e| {
                                 let r = e.read();
@@ -5503,7 +5507,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
                             let mut w = self.model.write();
                             let Some(new_pos) = w.get_element_pos(&dest.read().model_uuid()) else { continue; };
-                            w.move_element(&src.read().model_uuid(), 0, new_pos.1);
+                            w.move_element(&src.read().model_uuid(), UmlClass::PROPERTIES_BUCKET, new_pos.1);
                             undo_uuids.insert(*src.read().uuid);
                             std::mem::swap(dest, *src);
                         }
@@ -5520,7 +5524,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                         if uuids.contains(&src.read().uuid) && !uuids.contains(&dest.read().uuid) {
                             let mut w = self.model.write();
                             let Some(new_pos) = w.get_element_pos(&dest.read().model_uuid()) else { continue; };
-                            w.move_element(&src.read().model_uuid(), 1, new_pos.1);
+                            w.move_element(&src.read().model_uuid(), UmlClass::OPERATIONS_BUCKET, new_pos.1);
                             undo_uuids.insert(*src.read().uuid);
                             std::mem::swap(dest, *src);
                         }

@@ -8,7 +8,7 @@ use crate::{DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, Diagr
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
-    uuid::{ControllerUuid, ModelUuid, ViewUuid},
+    uuid::{ControllerUuid, ModelUuid, ViewUuid}, views::multiconnection_view::MULTICONNECTION_SOURCE_BUCKET,
 }, domains::{ontouml::ontouml_models, umlclass::{umlclass_controllers::{PartialUmlClassElement, UmlClassRenderStyle, UmlClassView}, umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind}}}};
 use eframe::egui;
 use std::{
@@ -148,7 +148,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     gen_phase_view.write().apply_command(
         &InsensitiveCommand::AddDependency {
             target: gen_uuid,
-            bucket: 0,
+            bucket: MULTICONNECTION_SOURCE_BUCKET,
             position: None,
             element: UmlClassElementOrVertex::Element(dead_view.clone().into()),
             into_model: true,
