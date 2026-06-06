@@ -146,7 +146,13 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     gen_phase_model.write().set_is_disjoint = true;
     let gen_uuid = *gen_phase_view.read().uuid();
     gen_phase_view.write().apply_command(
-        &InsensitiveCommand::AddDependency(gen_uuid, 0, None, UmlClassElementOrVertex::Element(dead_view.clone().into()), true),
+        &InsensitiveCommand::AddDependency {
+            target: gen_uuid,
+            bucket: 0,
+            position: None,
+            element: UmlClassElementOrVertex::Element(dead_view.clone().into()),
+            into_model: true,
+        },
         &mut Vec::new(),
         &mut HashSet::new(),
     );

@@ -1505,8 +1505,8 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -1938,8 +1938,8 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {

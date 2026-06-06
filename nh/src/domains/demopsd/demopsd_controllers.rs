@@ -2044,7 +2044,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                 };
                                 let pos = self.state_insertion_place(quadrant, pos).0;
 
-                                commands.push(InsensitiveCommand::AddDependency(*self.uuid, quadrant_no, Some(pos), new_e.into(), true).into());
+                                commands.push(InsensitiveCommand::AddDependency {
+                                    target: *self.uuid,
+                                    bucket: quadrant_no,
+                                    position: Some(pos),
+                                    element: new_e.into(),
+                                    into_model: true,
+                                }.into());
                                 if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                     *element_setup_modal = esm;
                                 }
@@ -2247,25 +2253,25 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
                     if let Some(e) = self.p_act_view.as_ref()
                         && uuids.contains(&e.read().uuid) {
-                        undo_accumulator.push(InsensitiveCommand::AddDependency(
-                            *self.uuid,
-                            0,
-                            None,
-                            DemoPsdElementOrVertex::Element(e.clone().into()),
-                            false,
-                        ));
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: 0,
+                            position: None,
+                            element: DemoPsdElementOrVertex::Element(e.clone().into()),
+                            into_model: false,
+                         });
                         self.p_act_view = UFOption::None;
                     }
 
                     let mut closure = |e: &DemoPsdStateViewInfo| if uuids.contains(&e.view.uuid())
                         && let Some((b, pos)) = r.get_element_pos(&e.view.model_uuid()) {
-                            undo_accumulator.push(InsensitiveCommand::AddDependency(
-                                *self.uuid,
-                                b,
-                                Some(pos),
-                                DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
-                                false,
-                            ));
+                            undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                target: *self.uuid,
+                                bucket: b,
+                                position: Some(pos),
+                                element: DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
+                                into_model: false,
+                             });
                             false
                         } else { true };
                     self.before_views.retain(&mut closure);
@@ -2274,45 +2280,45 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 recurse!();
             }
             InsensitiveCommand::PasteSpecificElements(..) => {}
-            InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
-                if *v == *self.uuid {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+                if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *b == 0 {
+                    if *bucket == 0 {
                         if self.p_act_view.as_ref().is_none()
-                            && let DemoPsdElementOrVertex::Element(DemoPsdElementView::Act(e)) = e {
-                            undo_accumulator.push(InsensitiveCommand::RemoveDependency(
-                                *v,
-                                *b,
-                                *e.read().uuid,
-                                *into_model,
-                            ));
+                            && let DemoPsdElementOrVertex::Element(DemoPsdElementView::Act(e)) = element {
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                                target: *target,
+                                bucket: *bucket,
+                                element: *e.read().uuid,
+                                including_model: *into_model,
+                             });
                             if *into_model {
                                 affected_models.insert(*e.read().model_uuid());
                                 w.p_act = UFOption::Some(e.read().model.clone());
                             }
                             self.p_act_view = UFOption::Some(e.clone());
                         }
-                    } else if let DemoPsdElementOrVertex::Element(e) = e
+                    } else if let DemoPsdElementOrVertex::Element(e) = element
                         && let Some(e) = e.clone().as_state_view() {
                         if let Some(model_pos) = w.get_element_pos(&e.model_uuid()).map(|e| e.1)
-                            .or_else(|| if *into_model { w.insert_element(*b, *pos, e.model()).ok() } else { None }) {
-                            let after = match b {
+                            .or_else(|| if *into_model { w.insert_element(*bucket, *position, e.model()).ok() } else { None }) {
+                            let after = match bucket {
                                 1 | 2 => false,
                                 3 | 4 => true,
                                 _ => unreachable!(),
                             };
-                            let executor = match b {
+                            let executor = match bucket {
                                 1 | 4 => false,
                                 2 | 3 => true,
                                 _ => unreachable!()
                             };
 
-                            undo_accumulator.push(InsensitiveCommand::RemoveDependency(
-                                *v,
-                                *b,
-                                *e.uuid(),
-                                *into_model,
-                            ));
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                                target: *target,
+                                bucket: *bucket,
+                                element: *e.uuid(),
+                                including_model: *into_model,
+                             });
                             if *into_model {
                                 affected_models.insert(*e.model_uuid());
                             }
@@ -2344,38 +2350,38 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 }
                 recurse!();
             }
-            InsensitiveCommand::RemoveDependency(v, b, duuid, into_model) => {
-                if *v == *self.uuid {
+            InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
+                if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *b == 0 {
+                    if *bucket == 0 {
                         if let Some(e) = self.p_act_view.as_ref()
-                            && *duuid == *e.read().uuid {
-                            undo_accumulator.push(InsensitiveCommand::AddDependency(
-                                *v,
-                                *b,
-                                None,
-                                DemoPsdElementOrVertex::Element(e.clone().into()),
-                                *into_model,
-                            ));
-                            if *into_model {
+                            && *element == *e.read().uuid {
+                            undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                target: *target,
+                                bucket: *bucket,
+                                position: None,
+                                element: DemoPsdElementOrVertex::Element(e.clone().into()),
+                                into_model: *including_model,
+                             });
+                            if *including_model {
                                 w.p_act = UFOption::None;
                             }
 
                             self.p_act_view = UFOption::None;
                         }
                     } else {
-                        let closure = |e: &DemoPsdStateViewInfo| if *e.view.uuid() == *duuid
+                        let closure = |e: &DemoPsdStateViewInfo| if *e.view.uuid() == *element
                             && let Some((b, pos)) = w.remove_element(&e.view.model_uuid()) {
-                                undo_accumulator.push(InsensitiveCommand::AddDependency(
-                                    *v,
-                                    b,
-                                    Some(pos),
-                                    DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
-                                    *into_model,
-                                ));
+                                undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                    target: *target,
+                                    bucket: b,
+                                    position: Some(pos),
+                                    element: DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
+                                    into_model: *including_model,
+                                 });
                                 false
                             } else { true };
-                        match b {
+                        match bucket {
                             1 | 2 => self.before_views.retain(closure),
                             3 | 4 => self.after_views.retain(closure),
                             _ => unreachable!(),
@@ -2965,8 +2971,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -3395,8 +3401,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {

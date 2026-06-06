@@ -121,7 +121,13 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             usecase_view.into()
         ] {
             w.apply_command(
-                &InsensitiveCommand::AddDependency(boundary_uuid, 0, None, UmlClassElementOrVertex::Element(e), true),
+                &InsensitiveCommand::AddDependency {
+                    target: boundary_uuid,
+                    bucket: 0,
+                    position: None,
+                    element: UmlClassElementOrVertex::Element(e),
+                    into_model: true,
+                },
                 &mut u, &mut a,
             );
         }

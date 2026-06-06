@@ -1852,8 +1852,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -2420,8 +2420,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -2890,8 +2890,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -3782,8 +3782,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {

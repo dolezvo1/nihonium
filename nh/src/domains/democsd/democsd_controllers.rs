@@ -1799,7 +1799,13 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                                 self.position.y - 3.84 * canvas::CLASS_MIDDLE_FONT_SIZE,
                             );
 
-                            commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, new_e.into(), true));
+                            commands.push(InsensitiveCommand::AddDependency {
+                                target: *self.uuid,
+                                bucket: 0,
+                                position: None,
+                                element: new_e.into(),
+                                into_model: true,
+                            });
                             if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                 *element_setup_modal = esm;
                             }
@@ -1893,19 +1899,19 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::MoveOrdinal(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
-            InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
-                if *v == *self.uuid
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+                if *target == *self.uuid
                     && self.transaction_view.as_ref().is_none()
-                    && let DemoCsdElementOrVertex::Element(DemoCsdElementView::Transaction(e)) = e {
+                    && let DemoCsdElementOrVertex::Element(DemoCsdElementView::Transaction(e)) = element {
                     let mut w = self.model.write();
                     if let Some(_) = w.get_element_pos(&e.read().model_uuid()).map(|e| e.1)
-                        .or_else(|| if *into_model { w.insert_element(*b, *pos, e.read().model.clone().into()).ok() } else { None }) {
-                        undo_accumulator.push(InsensitiveCommand::RemoveDependency(
-                            *v,
-                            *b,
-                            *e.read().uuid,
-                            *into_model,
-                        ));
+                        .or_else(|| if *into_model { w.insert_element(*bucket, *position, e.read().model.clone().into()).ok() } else { None }) {
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                            target: *target,
+                            bucket: *bucket,
+                            element: *e.read().uuid,
+                            including_model: *into_model,
+                         });
                         if *into_model {
                             affected_models.insert(*w.uuid);
                         }
@@ -1913,20 +1919,20 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                     }
                 }
             }
-            InsensitiveCommand::RemoveDependency(v, b, e, from_model) => {
-                if *v == *self.uuid && *b == 0
+            InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
+                if *target == *self.uuid && *bucket == 0
                     && let Some(tx) = self.transaction_view.as_ref()
-                    && *e == *tx.read().uuid {
+                    && *element == *tx.read().uuid {
                     let model_uuid = *tx.read().model_uuid();
                     if let Some(_) = self.model.write().remove_element(&model_uuid) {
-                        undo_accumulator.push(InsensitiveCommand::AddDependency(
-                            *self.uuid,
-                            0,
-                            Some(0),
-                            DemoCsdElementOrVertex::Element(tx.clone().into()),
-                            *from_model,
-                        ));
-                        if *from_model {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: 0,
+                            position: Some(0),
+                            element: DemoCsdElementOrVertex::Element(tx.clone().into()),
+                            into_model: *including_model,
+                         });
+                        if *including_model {
                             affected_models.insert(model_uuid);
                         }
                         self.transaction_view = UFOption::None;
@@ -1939,13 +1945,13 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                     && uuids.contains(&*e.read().uuid) {
                     let model_uuid = e.read().model_uuid();
                     if let Some(_) = self.model.write().get_element_pos(&model_uuid) {
-                        undo_accumulator.push(InsensitiveCommand::AddDependency(
-                            *self.uuid,
-                            0,
-                            Some(0),
-                            DemoCsdElementOrVertex::Element(e.clone().into()),
-                            false,
-                        ));
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: 0,
+                            position: Some(0),
+                            element: DemoCsdElementOrVertex::Element(e.clone().into()),
+                            into_model: false,
+                         });
                         self.transaction_view = UFOption::None;
                     }
                 }
@@ -2589,8 +2595,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             | InsensitiveCommand::MoveOrdinal(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {

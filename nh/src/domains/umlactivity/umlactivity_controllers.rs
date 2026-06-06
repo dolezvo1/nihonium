@@ -650,7 +650,13 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             e8_view.into(), e9_view.into(),
         ] {
             w.apply_command(
-                &InsensitiveCommand::AddDependency(activity_uuid, 0, None, UmlActivityElementOrVertex::Element(e), true),
+                &InsensitiveCommand::AddDependency {
+                    target: activity_uuid,
+                    bucket: 0,
+                    position: None,
+                    element: UmlActivityElementOrVertex::Element(e),
+                    into_model: true,
+                },
                 &mut u, &mut a,
             );
         }
@@ -2110,7 +2116,13 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                         w.bounds_rect.y_range(),
                     ),
                 );
-                commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, Some(idx.try_into().unwrap()), UmlActivityElementOrVertex::Element(sibling.1.into()), true));
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *self.uuid,
+                    bucket: 0,
+                    position: Some(idx.try_into().unwrap()),
+                    element: UmlActivityElementOrVertex::Element(sibling.1.into()),
+                    into_model: true,
+                });
             }
 
             if let Some(child) = child.0.to_non_default() {
@@ -2309,13 +2321,13 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                         continue;
                     };
 
-                    undo_accumulator.push(InsensitiveCommand::AddDependency(
-                        *self.uuid,
-                        b,
-                        pos,
-                        UmlActivityElementView::from(element.clone()).into(),
-                        false,
-                    ));
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: b,
+                        position: pos,
+                        element: UmlActivityElementView::from(element.clone()).into(),
+                        into_model: false,
+                     });
                 }
                 let mut delta = egui::Vec2::ZERO;
                 let (mut u, mut m) = Default::default();
@@ -2340,21 +2352,21 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
 
                 recurse!();
             },
-            InsensitiveCommand::AddDependency(target, b, pos, element, into_model) => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *b == 0
+                    if *bucket == 0
                         && let Ok(UmlActivityElementView::PartitionSection(view)) = element.clone().try_into() {
                         let mut vw = view.write();
                         if let Some(model_pos) = w.get_element_pos(&vw.model_uuid()).map(|e| e.1)
-                            .or_else(|| if *into_model { w.insert_element(*b, *pos, vw.model()).ok() } else { None }) {
+                            .or_else(|| if *into_model { w.insert_element(*bucket, *position, vw.model()).ok() } else { None }) {
                             let uuid = *vw.uuid;
-                            undo_accumulator.push(InsensitiveCommand::RemoveDependency(
-                                *self.uuid,
-                                *b,
-                                uuid,
-                                *into_model,
-                            ));
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                                target: *self.uuid,
+                                bucket: *bucket,
+                                element: uuid,
+                                including_model: *into_model,
+                             });
 
                             if *into_model {
                                 affected_models.insert(*w.uuid);
@@ -2397,23 +2409,23 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
 
                 recurse!();
             }
-            InsensitiveCommand::RemoveDependency(target, b, element, into_model) => {
+            InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *b == 0
+                    if *bucket == 0
                         && let Some(view) = self.section_views.iter().find(|v| *v.read().uuid == *element).cloned() {
                         let model_uuid = *view.read().model_uuid();
 
                         if let Some((_b, pos)) = w.remove_element(&model_uuid) {
-                            undo_accumulator.push(InsensitiveCommand::AddDependency(
-                                *self.uuid,
-                                *b,
-                                Some(pos),
-                                UmlActivityElementView::from(view.clone()).into(),
-                                *into_model,
-                            ));
+                            undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                target: *self.uuid,
+                                bucket: *bucket,
+                                position: Some(pos),
+                                element: UmlActivityElementView::from(view.clone()).into(),
+                                into_model: *including_model,
+                             });
 
-                            if *into_model {
+                            if *including_model {
                                 affected_models.insert(*w.uuid);
                             }
 
@@ -2997,7 +3009,13 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                     tool.add_section(self.model.clone().into());
 
                     if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid) {
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, new_e.into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: 0,
+                            position: None,
+                            element: new_e.into(),
+                            into_model: true,
+                        }.into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -3167,13 +3185,13 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                         continue;
                     };
 
-                    undo_accumulator.push(InsensitiveCommand::AddDependency(
-                        *self.uuid,
-                        b,
-                        pos,
-                        element.clone().into(),
-                        false,
-                    ));
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: b,
+                        position: pos,
+                        element: element.clone().into(),
+                        into_model: false,
+                     });
                 }
                 self.contained_elements.retain(|k, _v| !uuids.contains(k));
 
@@ -3186,19 +3204,19 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
 
                 recurse!();
             },
-            InsensitiveCommand::AddDependency(target, b, pos, element, into_model) => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *b == 0
+                    if *bucket == 0
                         && let Ok(mut view) = UmlActivityElementView::try_from(element.clone())
-                        && (!*into_model || w.insert_element(*b, *pos, view.model()).is_ok()) {
+                        && (!*into_model || w.insert_element(*bucket, *position, view.model()).is_ok()) {
                         let uuid = *view.uuid();
-                        undo_accumulator.push(InsensitiveCommand::RemoveDependency(
-                            *self.uuid,
-                            *b,
-                            uuid,
-                            *into_model,
-                        ));
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                            target: *self.uuid,
+                            bucket: *bucket,
+                            element: uuid,
+                            including_model: *into_model,
+                         });
 
                         if *into_model {
                             affected_models.insert(*w.uuid);
@@ -3213,21 +3231,21 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
 
                 recurse!();
             }
-            InsensitiveCommand::RemoveDependency(target, b, element, into_model) => {
+            InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *b == 0
+                    if *bucket == 0
                         && let Some(view) = self.contained_elements.get(element)
                         && let Some((_b, pos)) = w.remove_element(&view.model_uuid()) {
-                        undo_accumulator.push(InsensitiveCommand::AddDependency(
-                            *self.uuid,
-                            *b,
-                            Some(pos),
-                            view.clone().into(),
-                            *into_model,
-                        ));
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: *bucket,
+                            position: Some(pos),
+                            element: view.clone().into(),
+                            into_model: *including_model,
+                         });
 
-                        if *into_model {
+                        if *including_model {
                             affected_models.insert(*w.uuid);
                         }
 
@@ -3845,8 +3863,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -4196,8 +4214,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
             InsensitiveCommand::DeleteSpecificElements(..) => {}
             InsensitiveCommand::PasteSpecificElements(..) => {}
-            InsensitiveCommand::AddDependency(..) => {}
-            InsensitiveCommand::RemoveDependency(..) => {}
+            InsensitiveCommand::AddDependency { .. } => {}
+            InsensitiveCommand::RemoveDependency { .. } => {}
             InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(..) => {}
@@ -4562,8 +4580,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
             InsensitiveCommand::DeleteSpecificElements(..) => {}
             InsensitiveCommand::PasteSpecificElements(..) => {}
-            InsensitiveCommand::AddDependency(..) => {}
-            InsensitiveCommand::RemoveDependency(..) => {}
+            InsensitiveCommand::AddDependency { .. } => {}
+            InsensitiveCommand::RemoveDependency { .. } => {}
             InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -4930,8 +4948,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -5278,8 +5296,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -5672,8 +5690,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -6412,8 +6430,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {

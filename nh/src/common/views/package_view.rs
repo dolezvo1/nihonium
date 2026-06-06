@@ -441,7 +441,13 @@ where
                     tool.add_section(self.adapter.model_section());
 
                     if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid) {
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, new_e.into(), true).into());
+                        commands.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: 0,
+                            position: None,
+                            element: new_e.into(),
+                            into_model: true,
+                        }.into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -659,13 +665,13 @@ where
                         continue;
                     };
 
-                    undo_accumulator.push(InsensitiveCommand::AddDependency(
-                        *self.uuid,
-                        b,
-                        pos,
-                        element.clone().into(),
-                        false,
-                    ));
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: b,
+                        position: pos,
+                        element: element.clone().into(),
+                        into_model: false,
+                     });
                 }
 
                 self.owned_views.retain(|k, _v| !uuids.contains(k));
@@ -679,17 +685,17 @@ where
 
                 recurse!();
             },
-            InsensitiveCommand::AddDependency(target, b, pos, element, into_model) => {
-                if *target == *self.uuid && *b == 0 {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+                if *target == *self.uuid && *bucket == 0 {
                     if let Ok(mut view) = element.clone().try_into()
-                        && (!*into_model || self.adapter.insert_element(*pos, view.model()).is_ok()){
+                        && (!*into_model || self.adapter.insert_element(*position, view.model()).is_ok()){
                         let uuid = *view.uuid();
-                        undo_accumulator.push(InsensitiveCommand::RemoveDependency(
-                            *self.uuid,
-                            *b,
-                            uuid,
-                            *into_model,
-                        ));
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                            target: *self.uuid,
+                            bucket: *bucket,
+                            element: uuid,
+                            including_model: *into_model,
+                         });
 
                         if *into_model {
                             affected_models.insert(*self.adapter.model_uuid());
@@ -704,19 +710,19 @@ where
 
                 recurse!();
             }
-            InsensitiveCommand::RemoveDependency(target, b, element, into_model) => {
-                if *target == *self.uuid && *b == 0 {
+            InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
+                if *target == *self.uuid && *bucket == 0 {
                     if let Some(view) = self.owned_views.get(element)
                         && let Some(pos) = self.adapter.delete_element(&view.model_uuid()) {
-                        undo_accumulator.push(InsensitiveCommand::AddDependency(
-                            *self.uuid,
-                            *b,
-                            Some(pos),
-                            view.clone().into(),
-                            *into_model,
-                        ));
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: *bucket,
+                            position: Some(pos),
+                            element: view.clone().into(),
+                            into_model: *including_model,
+                         });
 
-                        if *into_model {
+                        if *including_model {
                             affected_models.insert(*self.adapter.model_uuid());
                         }
 

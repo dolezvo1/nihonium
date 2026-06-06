@@ -432,15 +432,31 @@ where
                     ui.label(&*lp.get(model_uuid));
                     if let Some(e) = e {
                         if ui.add_enabled(views.len() > 1, egui::Button::new("Remove from view")).clicked() {
-                            commands.push(InsensitiveCommand::RemoveDependency(self_uuid, b, *e.element.uuid(), false).into());
+                            commands.push(InsensitiveCommand::RemoveDependency {
+                                target: self_uuid,
+                                bucket: b,
+                                element: *e.element.uuid(),
+                                including_model: false,
+                            }.into());
                         }
                         if ui.add_enabled(models.len() > 1, egui::Button::new("Remove from model")).clicked() {
-                            commands.push(InsensitiveCommand::RemoveDependency(self_uuid, b, *e.element.uuid(), true).into());
+                            commands.push(InsensitiveCommand::RemoveDependency {
+                                target: self_uuid,
+                                bucket: b,
+                                element: *e.element.uuid(),
+                                including_model: true,
+                            }.into());
                         }
                     } else {
                         if ui.button("Add to view").clicked() {
                             if let Some(v) = q.get_view_for(model_uuid) {
-                                commands.push(InsensitiveCommand::AddDependency(self_uuid, b, None, v.into(), false).into());
+                                commands.push(InsensitiveCommand::AddDependency {
+                                    target: self_uuid,
+                                    bucket: b,
+                                    position: None,
+                                    element: v.into(),
+                                    into_model: false,
+                                }.into());
                             }
                         }
                         if ui.add_enabled(models.len() > 1, egui::Button::new("Remove from model")).clicked() {
@@ -655,18 +671,18 @@ where
                     }
                     UFOption::None if is_over(pos, self.position()) => {
                         self.dragged_node = Some((ViewUuid::now_v7(), pos));
-                        commands.push(InsensitiveCommand::AddDependency(
-                            *self.uuid,
-                            3,
-                            None,
-                            VertexInformation {
+                        commands.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: 3,
+                            position: None,
+                            element: VertexInformation {
                                 after: ViewUuid::nil(),
                                 id: self.dragged_node.unwrap().0,
                                 position: self.position(),
                             }
                             .into(),
-                            false,
-                        ).into());
+                            into_model: false,
+                         }.into());
 
                         return EventHandlingStatus::HandledByContainer;
                     }
@@ -694,18 +710,18 @@ where
                                 let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
                                 if is_over(pos, midpoint) {
                                     self.dragged_node = Some((ViewUuid::now_v7(), pos));
-                                    commands.push(InsensitiveCommand::AddDependency(
-                                        *self.uuid,
-                                        MULTICONNECTION_VERTEX_BUCKET,
-                                        None,
-                                        VertexInformation {
+                                    commands.push(InsensitiveCommand::AddDependency {
+                                        target: *self.uuid,
+                                        bucket: MULTICONNECTION_VERTEX_BUCKET,
+                                        position: None,
+                                        element: VertexInformation {
                                             after: u.0,
                                             id: self.dragged_node.unwrap().0,
                                             position: pos,
                                         }
                                         .into(),
-                                        false,
-                                    ).into());
+                                        into_model: false,
+                                    }.into());
 
                                     return EventHandlingStatus::HandledByContainer;
                                 }
@@ -917,17 +933,17 @@ where
                 if let Some(center_point) =
                     self.center_point.as_mut().filter(|e| uuids.contains(&e.0))
                 {
-                    undo_accumulator.push(InsensitiveCommand::AddDependency(
-                        self_uuid,
-                        MULTICONNECTION_VERTEX_BUCKET,
-                        None,
-                        DomainT::AddCommandElementT::from(VertexInformation {
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: self_uuid,
+                        bucket: MULTICONNECTION_VERTEX_BUCKET,
+                        position: None,
+                        element: DomainT::AddCommandElementT::from(VertexInformation {
                             after: ViewUuid::nil(),
                             id: center_point.0,
                             position: center_point.1,
                         }),
-                        false,
-                    ));
+                        into_model: false,
+                     });
 
                     // Move any last point to the center
                     self.center_point = 'a: {
@@ -951,17 +967,17 @@ where
                                     break;
                                 };
                                 if uuids.contains(&b.0) {
-                                    undo_accumulator.push(InsensitiveCommand::AddDependency(
-                                        self_uuid,
-                                        MULTICONNECTION_VERTEX_BUCKET,
-                                        None,
-                                        DomainT::AddCommandElementT::from(VertexInformation {
+                                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                        target: self_uuid,
+                                        bucket: MULTICONNECTION_VERTEX_BUCKET,
+                                        position: None,
+                                        element: DomainT::AddCommandElementT::from(VertexInformation {
                                             after: a.0,
                                             id: b.0,
                                             position: b.1,
                                         }),
-                                        false,
-                                    ));
+                                        into_model: false,
+                                    });
                                 }
                             }
 
@@ -974,19 +990,30 @@ where
 
                 // Handle dependencies being deleted
                 let mut rtin = |e: &Ending<DomainT::CommonElementViewT>| if uuids.contains(&e.element.uuid()) {
-                    undo_accumulator.push(InsensitiveCommand::AddDependency(self_uuid, 0, None, e.element.clone().into(), false));
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: self_uuid,
+                        bucket: 0,
+                        position: None,
+                        element: e.element.clone().into(),
+                        into_model: false,
+                    });
                     false
                 } else { true };
                 self.sources.retain(&mut rtin);
                 self.targets.retain(&mut rtin);
             }
-            InsensitiveCommand::AddDependency(target, b, pos, element, into_model) => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {
                     // source/target
                     if let Ok(e) = TryInto::<DomainT::CommonElementViewT>::try_into(element.clone()) {
-                        if *b == MULTICONNECTION_SOURCE_BUCKET
-                            && (!into_model || self.adapter.insert_source(*pos, e.model()).is_ok()) {
-                            undo_accumulator.push(InsensitiveCommand::RemoveDependency(*self.uuid, *b, *e.uuid(), *into_model));
+                        if *bucket == MULTICONNECTION_SOURCE_BUCKET
+                            && (!into_model || self.adapter.insert_source(*position, e.model()).is_ok()) {
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                                target: *self.uuid,
+                                bucket: *bucket,
+                                element: *e.uuid(),
+                                including_model: *into_model,
+                            });
 
                             self.sources.push(Ending {
                                 element: e,
@@ -994,9 +1021,14 @@ where
                             });
 
                             affected_models.insert(*self.adapter.model_uuid());
-                        } else if *b == MULTICONNECTION_TARGET_BUCKET
-                            && (!into_model || self.adapter.insert_target(*pos, e.model()).is_ok()) {
-                            undo_accumulator.push(InsensitiveCommand::RemoveDependency(*self.uuid, *b, *e.uuid(), *into_model));
+                        } else if *bucket == MULTICONNECTION_TARGET_BUCKET
+                            && (!into_model || self.adapter.insert_target(*position, e.model()).is_ok()) {
+                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                                target: *self.uuid,
+                                bucket: *bucket,
+                                element: *e.uuid(),
+                                including_model: *into_model,
+                            });
 
                             self.targets.push(Ending {
                                 element: e,
@@ -1056,10 +1088,10 @@ where
                     }
                 }
             }
-            InsensitiveCommand::RemoveDependency(uuid, b, duuid, including_model) => {
-                if *uuid == *self.uuid {
-                    if *b == MULTICONNECTION_SOURCE_BUCKET && self.sources.len() > 1 {
-                        self.sources.retain(|e| if *duuid == *e.element.uuid() {
+            InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
+                if *target == *self.uuid {
+                    if *bucket == MULTICONNECTION_SOURCE_BUCKET && self.sources.len() > 1 {
+                        self.sources.retain(|e| if *element == *e.element.uuid() {
                             let pos = if !including_model {
                                 None
                             } else if let Some(pos) = self.adapter.remove_source(&*e.element.model_uuid()) {
@@ -1068,13 +1100,19 @@ where
                                 return true;
                             };
 
-                            undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid, *b, pos, e.element.clone().into(), *including_model));
+                            undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                target: *self.uuid,
+                                bucket: *bucket,
+                                position: pos,
+                                element: e.element.clone().into(),
+                                into_model: *including_model,
+                            });
                             false
                         } else { true });
 
                         affected_models.insert(*self.adapter.model_uuid());
-                    } else if *b == MULTICONNECTION_TARGET_BUCKET && self.targets.len() > 1 {
-                        self.targets.retain(|e| if *duuid == *e.element.uuid() {
+                    } else if *bucket == MULTICONNECTION_TARGET_BUCKET && self.targets.len() > 1 {
+                        self.targets.retain(|e| if *element == *e.element.uuid() {
                             let pos = if !including_model {
                                 None
                             } else if let Some(pos) = self.adapter.remove_target(&*e.element.model_uuid()) {
@@ -1083,7 +1121,13 @@ where
                                 return true;
                             };
 
-                            undo_accumulator.push(InsensitiveCommand::AddDependency(*self.uuid, *b, pos, e.element.clone().into(), *including_model));
+                            undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                target: *self.uuid,
+                                bucket: *bucket,
+                                position: pos,
+                                element: e.element.clone().into(),
+                                into_model: *including_model,
+                            });
                             false
                         } else { true });
 

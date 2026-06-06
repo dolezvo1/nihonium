@@ -2234,8 +2234,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::PasteSpecificElements(..)
-            | InsensitiveCommand::AddDependency(..)
-            | InsensitiveCommand::RemoveDependency(..)
+            | InsensitiveCommand::AddDependency { .. }
+            | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(uuids, property) => {
@@ -2722,7 +2722,13 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     if !self.specialization_view.is_some()
                         && let Some((DemoOfdElementView::EntityType(new_e), esm)) = tool.try_construct_view(q, &self.uuid) {
                         new_e.write().position = self.position;
-                        commands.push(InsensitiveCommand::AddDependency(*self.uuid, 0, None, DemoOfdElementView::from(new_e).into(), true));
+                        commands.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: 0,
+                            position: None,
+                            element: DemoOfdElementView::from(new_e).into(),
+                            into_model: true,
+                        });
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -2856,18 +2862,18 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::PasteSpecificElements(..) => {}
-            InsensitiveCommand::AddDependency(v, b, pos, e, into_model) => {
-                if *v == *self.uuid
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+                if *target == *self.uuid
                     && self.specialization_view.as_ref().is_none()
-                    && let DemoOfdElementOrVertex::Element(DemoOfdElementView::EntityType(e)) = e
-                    && (!*into_model || self.model.write().insert_element(*b, *pos, e.read().model.clone().into()).is_ok())
+                    && let DemoOfdElementOrVertex::Element(DemoOfdElementView::EntityType(e)) = element
+                    && (!*into_model || self.model.write().insert_element(*bucket, *position, e.read().model.clone().into()).is_ok())
                     {
-                    undo_accumulator.push(InsensitiveCommand::RemoveDependency(
-                        *self.uuid,
-                        *b,
-                        *e.read().uuid,
-                        *into_model,
-                    ));
+                    undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                        target: *self.uuid,
+                        bucket: *bucket,
+                        element: *e.read().uuid,
+                        including_model: *into_model,
+                     });
 
                     if *into_model {
                         affected_models.insert(*self.model_uuid());
@@ -2878,23 +2884,23 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 }
                 recurse!();
             }
-            InsensitiveCommand::RemoveDependency(v, b, e, from_model) => {
-                if *v == *self.uuid
+            InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
+                if *target == *self.uuid
                     && let Some(sv) = self.specialization_view.as_ref() {
                     let mut w = self.model.write();
                     let (sv_uuid, sm_uuid) = (*sv.read().uuid, *sv.read().model_uuid());
 
-                    if *e == sv_uuid
-                        && (!*from_model || w.remove_element(&sm_uuid).is_some()) {
-                        undo_accumulator.push(InsensitiveCommand::AddDependency(
-                            *self.uuid,
-                            *b,
-                            Some(0),
-                            DemoOfdElementView::from(sv.clone()).into(),
-                            *from_model,
-                        ));
+                    if *element == sv_uuid
+                        && (!*including_model || w.remove_element(&sm_uuid).is_some()) {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: *self.uuid,
+                            bucket: *bucket,
+                            position: Some(0),
+                            element: DemoOfdElementView::from(sv.clone()).into(),
+                            into_model: *including_model,
+                         });
 
-                        if *from_model {
+                        if *including_model {
                             affected_models.insert(*w.uuid);
                         }
 
@@ -2908,13 +2914,13 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             InsensitiveCommand::DeleteSpecificElements(uuids, _) => {
                 if let Some(e) = self.specialization_view.as_ref()
                     && uuids.contains(&*e.read().uuid) {
-                    undo_accumulator.push(InsensitiveCommand::AddDependency(
-                        *self.uuid,
-                        0,
-                        None,
-                        DemoOfdElementOrVertex::Element(e.clone().into()),
-                        false,
-                    ));
+                    undo_accumulator.push(InsensitiveCommand::AddDependency {
+                        target: *self.uuid,
+                        bucket: 0,
+                        position: None,
+                        element: DemoOfdElementOrVertex::Element(e.clone().into()),
+                        into_model: false,
+                     });
                     self.specialization_view = UFOption::None;
                 }
                 recurse!();
