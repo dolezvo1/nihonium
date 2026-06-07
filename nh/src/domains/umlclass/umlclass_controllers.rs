@@ -5259,8 +5259,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     if let Some((view, esm)) = tool.try_construct_view(q, &self.uuid)
                         && matches!(view, UmlClassElementView::ClassProperty(_) | UmlClassElementView::ClassOperation(_)) {
                         let b = match view {
-                            UmlClassElementView::ClassProperty(_) => 0,
-                            UmlClassElementView::ClassOperation(_) => 1,
+                            UmlClassElementView::ClassProperty(_) => UmlClass::PROPERTIES_BUCKET,
+                            UmlClassElementView::ClassOperation(_) => UmlClass::OPERATIONS_BUCKET,
                             _ => unreachable!()
                         };
                         commands.push(InsensitiveCommand::AddDependency {
@@ -5409,37 +5409,62 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid && let UmlClassElementOrVertex::Element(e) = element {
                     let mut w = self.model.write();
-                    let view_insert_pos = if !*into_model {
-                        position.and_then(|e| e.try_into().ok()).unwrap_or(usize::max_value())
-                    } else {
-                        let Ok(pos) = w.insert_element(*bucket, *position, e.model()) else {
-                            return
-                        };
-                        pos.into()
-                    };
+                    if let Some(model_pos) = w.get_element_pos(&e.model_uuid()).map(|e| e.1)
+                        .or_else(|| if *into_model { w.insert_element(*bucket, *position, e.model()).ok() } else { None }) {
 
-                    let mut model_transitives = HashMap::new();
-                    e.clone().head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
-                    affected_models.extend(model_transitives.into_keys());
+                        let mut model_transitives = HashMap::new();
+                        e.clone().head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                        affected_models.extend(model_transitives.into_keys());
 
-                    match e {
-                        UmlClassElementView::ClassProperty(inner) => {
-                            self.properties_views.insert(view_insert_pos, inner.clone());
-                        },
-                        UmlClassElementView::ClassOperation(inner) => {
-                            self.operations_views.insert(view_insert_pos, inner.clone());
-                        },
-                        _ => return,
+                        match e {
+                            UmlClassElementView::ClassProperty(inner) => {
+                                let view_pos = |arr: &Vec<ERef<UmlClassPropertyView<_>>>| {
+                                    let mut view_pos: PositionNoT = 0;
+                                    for e in arr {
+                                        let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid()) else {
+                                            unreachable!()
+                                        };
+                                        if pos < model_pos {
+                                            view_pos += 1;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    view_pos
+                                };
+                                let view_pos = view_pos(&self.properties_views);
+                                self.properties_views.insert(view_pos, inner.clone());
+                            },
+                            UmlClassElementView::ClassOperation(inner) => {
+                                let view_pos = |arr: &Vec<ERef<UmlClassOperationView<_>>>| {
+                                    let mut view_pos: PositionNoT = 0;
+                                    for e in arr {
+                                        let Some((_b, pos)) = w.get_element_pos(&e.read().model_uuid()) else {
+                                            unreachable!()
+                                        };
+                                        if pos < model_pos {
+                                            view_pos += 1;
+                                        } else {
+                                            break;
+                                        }
+                                    }
+                                    view_pos
+                                };
+                                let view_pos = view_pos(&self.operations_views);
+                                self.operations_views.insert(view_pos, inner.clone());
+                            },
+                            _ => return,
+                        }
+
+                        let uuid = *e.uuid();
+                        undo_accumulator.push(InsensitiveCommand::RemoveDependency {
+                            target: *self.uuid,
+                            bucket: *bucket,
+                            element: uuid,
+                            including_model: *into_model,
+                        });
+                        affected_models.insert(*w.uuid);
                     }
-
-                    let uuid = *e.uuid();
-                    undo_accumulator.push(InsensitiveCommand::RemoveDependency {
-                        target: *self.uuid,
-                        bucket: *bucket,
-                        element: uuid,
-                        including_model: *into_model,
-                     });
-                    affected_models.insert(*w.uuid);
                 }
             }
             InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
