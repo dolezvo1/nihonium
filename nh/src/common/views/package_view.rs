@@ -739,6 +739,7 @@ where
 
                 recurse!();
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {

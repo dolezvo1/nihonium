@@ -2999,6 +2999,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -3659,6 +3660,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
 
@@ -4346,6 +4348,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
 
@@ -5594,6 +5597,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
                 recurse!();
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -6158,6 +6162,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -8179,6 +8184,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {

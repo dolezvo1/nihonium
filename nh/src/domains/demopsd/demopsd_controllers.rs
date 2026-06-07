@@ -2498,6 +2498,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 }
                 recurse!();
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -3017,6 +3018,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -3446,6 +3448,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {

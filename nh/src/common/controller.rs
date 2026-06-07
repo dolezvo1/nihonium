@@ -6,6 +6,7 @@ use crate::common::views::ordered_views::OrderedViewRefs;
 use crate::{CustomModal, CustomModalResult, CustomTab, NHTab};
 use eframe::egui;
 use egui_ltreeview::DirPosition;
+use fluent_bundle::FluentMessage;
 use std::any::Any;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -390,6 +391,9 @@ impl GlobalDrawingContext {
             .map(|e| ui.ctx().format_shortcut(&e))
     }
 
+    pub fn get_message<'a, 'b>(&'a self, msg_name: &'b str) -> Result<FluentMessage<'a>, &'b str> {
+        self.fluent_bundle.get_message(msg_name).ok_or(msg_name)
+    }
     pub fn translate_0(&self, msg_name: &str) -> std::borrow::Cow<'_, str> {
         self.fluent_bundle.format_pattern(
             self.fluent_bundle.get_message(msg_name).unwrap().value().unwrap(),
@@ -1196,55 +1200,67 @@ pub enum InsensitiveCommand<OrdinalMovementT: Clone + Debug, AddElementT: Clone 
         including_model: bool,
     },
     PropertyChange(HashSet<ViewUuid>, PropChangeT),
+    Macro(Arc<String>, Arc<Vec<Self>>),
 }
 
 impl<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug>
     InsensitiveCommand<OrdinalMovementT, AddElementT, PropChangeT>
 {
-    fn info_text<'a>(
+    fn info_text<'a, F, T>(
         &self,
         gdc: &'a GlobalDrawingContext,
         diagram_name: &str,
-    ) -> std::borrow::Cow<'a, str> {
+        f: F,
+    ) -> T
+        where F: FnOnce(&str) -> T,
+    {
         let (msg, count) = match self {
             InsensitiveCommand::DeleteSpecificElements(uuids, b) => if *b == DeleteKind::DeleteView {
-                (gdc.fluent_bundle.get_message("nh-viewcommand-deleteelementsfrom").unwrap(), uuids.len())
+                (gdc.get_message("nh-viewcommand-deleteelementsfrom"), uuids.len())
             } else {
-                (gdc.fluent_bundle.get_message("nh-viewcommand-deleteelements").unwrap(), uuids.len())
+                (gdc.get_message("nh-viewcommand-deleteelements"), uuids.len())
             },
             InsensitiveCommand::MovePositional(uuids, ..)
             | InsensitiveCommand::MoveOrdinal(uuids, ..)
-                => (gdc.fluent_bundle.get_message("nh-viewcommand-moveelements").unwrap(), uuids.len()),
+                => (gdc.get_message("nh-viewcommand-moveelements"), uuids.len()),
             InsensitiveCommand::MovePositionalAll(_delta)
-                => (gdc.fluent_bundle.get_message("nh-viewcommand-moveallelements").unwrap(), 0),
+                => (gdc.get_message("nh-viewcommand-moveallelements"), 0),
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, _, _)
             | InsensitiveCommand::ResizeSpecificElementsTo(uuids, _, _)
-                => (gdc.fluent_bundle.get_message("nh-viewcommand-resizeelements").unwrap(), uuids.len()),
+                => (gdc.get_message("nh-viewcommand-resizeelements"), uuids.len()),
             InsensitiveCommand::ArrangeSpecificElements(uuids, _)
-                => (gdc.fluent_bundle.get_message("nh-viewcommand-arrangeelements").unwrap(), uuids.len()),
+                => (gdc.get_message("nh-viewcommand-arrangeelements"), uuids.len()),
             InsensitiveCommand::AddDependency { into_model, .. } => if *into_model {
-                (gdc.fluent_bundle.get_message("nh-viewcommand-addelements").unwrap(), 1)
+                (gdc.get_message("nh-viewcommand-addelements"), 1)
             } else {
-                (gdc.fluent_bundle.get_message("nh-viewcommand-addelementsinto").unwrap(), 1)
+                (gdc.get_message("nh-viewcommand-addelementsinto"), 1)
             },
             InsensitiveCommand::RemoveDependency { including_model, .. } => if *including_model {
-                (gdc.fluent_bundle.get_message("nh-viewcommand-removeelements").unwrap(), 1)
+                (gdc.get_message("nh-viewcommand-removeelements"), 1)
             } else {
-                (gdc.fluent_bundle.get_message("nh-viewcommand-removeelementsfrom").unwrap(), 1)
+                (gdc.get_message("nh-viewcommand-removeelementsfrom"), 1)
             },
             InsensitiveCommand::PropertyChange(uuids, ..)
-                => (gdc.fluent_bundle.get_message("nh-viewcommand-modifyelements").unwrap(), uuids.len()),
+                => (gdc.get_message("nh-viewcommand-modifyelements"), uuids.len()),
+            InsensitiveCommand::Macro(msg, cmds)
+                => (gdc.get_message(&msg), cmds.len()),
             InsensitiveCommand::HighlightAll(..) | InsensitiveCommand::HighlightSpecific(..) | InsensitiveCommand::SelectByDrag(..) => {
                 unreachable!()
             }
         };
 
-        let pattern = msg.value().unwrap();
-        let mut args = fluent_bundle::FluentArgs::new();
-        args.set("count", count);
-        args.set("diagram", diagram_name);
-        let mut errors = Vec::new();
-        gdc.fluent_bundle.format_pattern(&pattern, Some(&args), &mut errors)
+        match msg {
+            Err(msg_name) => f(msg_name),
+            Ok(msg) => {
+                let pattern = msg.value().unwrap();
+                let mut args = fluent_bundle::FluentArgs::new();
+                args.set("count", count);
+                args.set("diagram", diagram_name);
+                let mut errors = Vec::new();
+                let msg = gdc.fluent_bundle.format_pattern(&pattern, Some(&args), &mut errors);
+                f(&msg)
+            },
+        }
     }
 }
 
@@ -1634,6 +1650,53 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         self.views.keys().map(|e| (*e).into()).collect()
     }
 
+    fn recurse_delete(
+        &self,
+        view: &ERef<DiagramViewT>,
+        mut c: InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
+        u: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        m: &mut HashSet<ModelUuid>,
+    ) -> InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT> {
+        match c {
+            InsensitiveCommand::Macro(lbl, cmds) => {
+                let cmds = cmds.iter().map(|c| self.recurse_delete(view, c.clone(), u, m)).collect::<Vec<_>>();
+                InsensitiveCommand::Macro(lbl, cmds.into())
+            }
+            InsensitiveCommand::DeleteSpecificElements(ref mut uuids, delete_kind) => {
+                let mut original_models = HashSet::new();
+                self.views.draw_order_foreach(|e| e.extend_models_for(&uuids, &mut original_models));
+
+                match delete_kind {
+                    DeleteKind::DeleteView => {
+                        let model_uuids = self.adapter.model_transitive_closure(original_models);
+                        let r = view.read();
+                        uuids.extend(model_uuids.iter().flat_map(|m| r.get_view_for(m)));
+                    }
+                    DeleteKind::DeleteModelIfOnlyView => {
+                        let mut view_counts = HashMap::<ModelUuid, Vec<ViewUuid>>::new();
+
+                        self.views.draw_order_foreach(|v| {
+                            original_models.iter()
+                                .for_each(|m| if let Some(v2) = v.get_view_for(m) {
+                                    view_counts.entry(*m).or_default().push(v2);
+                                });
+                        });
+                        m.extend(original_models.iter().filter(|e| view_counts.get(*e).is_none_or(|e| e.len() <= 1)).copied());
+                        *m = self.adapter.model_transitive_closure(m.clone());
+                        self.views.draw_order_foreach(|v| uuids.extend(m.iter().flat_map(|m| v.get_view_for(m))));
+                    }
+                    DeleteKind::DeleteAll => {
+                        *m = self.adapter.model_transitive_closure(original_models);
+                        self.views.draw_order_foreach(|v| uuids.extend(m.iter().flat_map(|m| v.get_view_for(m))));
+                    }
+                }
+                self.views.draw_order_foreach(|v| v.view_transitive_closure(uuids));
+                c
+            },
+            c => c,
+        }
+    }
+
     fn apply_commands(
         &mut self,
         view_uuid: &ViewUuid,
@@ -1648,39 +1711,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
             let mut undo_accumulator = Vec::new();
             let mut models_to_remove = HashSet::new();
 
-            match c {
-                InsensitiveCommand::DeleteSpecificElements(ref mut uuids, delete_kind) => {
-                    let mut original_models = HashSet::new();
-                    self.views.draw_order_foreach(|e| e.extend_models_for(&uuids, &mut original_models));
-
-                    match delete_kind {
-                        DeleteKind::DeleteView => {
-                            let model_uuids = self.adapter.model_transitive_closure(original_models);
-                            let r = view.read();
-                            uuids.extend(model_uuids.iter().flat_map(|m| r.get_view_for(m)));
-                        }
-                        DeleteKind::DeleteModelIfOnlyView => {
-                            let mut view_counts = HashMap::<ModelUuid, Vec<ViewUuid>>::new();
-
-                            self.views.draw_order_foreach(|v| {
-                                original_models.iter()
-                                    .for_each(|m| if let Some(v2) = v.get_view_for(m) {
-                                        view_counts.entry(*m).or_default().push(v2);
-                                    });
-                            });
-                            models_to_remove.extend(original_models.iter().filter(|e| view_counts.get(*e).is_none_or(|e| e.len() <= 1)).copied());
-                            models_to_remove = self.adapter.model_transitive_closure(models_to_remove);
-                            self.views.draw_order_foreach(|v| uuids.extend(models_to_remove.iter().flat_map(|m| v.get_view_for(m))));
-                        }
-                        DeleteKind::DeleteAll => {
-                            models_to_remove = self.adapter.model_transitive_closure(original_models);
-                            self.views.draw_order_foreach(|v| uuids.extend(models_to_remove.iter().flat_map(|m| v.get_view_for(m))));
-                        }
-                    }
-                    self.views.draw_order_foreach(|v| v.view_transitive_closure(uuids));
-                },
-                _ => {},
-            };
+            c = self.recurse_delete(&view, c, &mut undo_accumulator, &mut models_to_remove);
 
             if matches!(c, InsensitiveCommand::HighlightAll(..)
                             | InsensitiveCommand::SelectByDrag(..)
@@ -2201,7 +2232,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
             let _ = ui.add_enabled(false, button);
         } else {
             for (ii, (v, c, _, _)) in self.undo_stack.iter().rev().enumerate() {
-                let mut button = egui::Button::new(&*c.info_text(gdc, &self.views.get(v).unwrap().read().view_name()));
+                let mut button = c.info_text(gdc, &self.views.get(v).unwrap().read().view_name(), |e| egui::Button::new(e));
                 if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
                     button = button.shortcut_text(shortcut_text);
                 }
@@ -2232,7 +2263,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
             let _ = ui.add_enabled(false, button);
         } else {
             for (ii, (v, c)) in self.redo_stack.iter().rev().enumerate() {
-                let mut button = egui::Button::new(&*c.info_text(gdc, &self.views.get(v).unwrap().read().view_name()));
+                let mut button = c.info_text(gdc, &self.views.get(v).unwrap().read().view_name(), |e| egui::Button::new(e));
                 if let Some(shortcut_text) = shortcut_text.as_ref().filter(|_| ii == 0) {
                     button = button.shortcut_text(shortcut_text);
                 }
@@ -2744,11 +2775,18 @@ impl<
                     );
                 }
             }
+            InsensitiveCommand::Macro(_, cmds) => {
+                for e in cmds.iter() {
+                    self.apply_command_inner(e, undo_accumulator, affected_models);
+                }
+            }
         }
 
-        self.owned_views.event_order_foreach_mut(|v| {
-            v.apply_command(&command, undo_accumulator, affected_models);
-        });
+        if !matches!(command, InsensitiveCommand::Macro(..)) {
+            self.owned_views.event_order_foreach_mut(|v| {
+                v.apply_command(&command, undo_accumulator, affected_models);
+            });
+        }
 
         let modifies_selection = match command {
             InsensitiveCommand::HighlightAll(..)
@@ -2763,7 +2801,8 @@ impl<
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
-            | InsensitiveCommand::PropertyChange(..) => false,
+            | InsensitiveCommand::PropertyChange(..)
+            | InsensitiveCommand::Macro(..) => false,
         };
 
         if modifies_selection {
@@ -3530,15 +3569,24 @@ impl<
                 return match command {
                         DiagramCommand::DeleteSelectedElements(b)
                             => vec![InsensitiveCommand::DeleteSpecificElements(se!(), b.unwrap_or_default())],
-                        DiagramCommand::CutSelectedElements
-                            => vec![InsensitiveCommand::DeleteSpecificElements(se!(), DeleteKind::DeleteAll)],
+                        DiagramCommand::CutSelectedElements => {
+                            vec![
+                                InsensitiveCommand::Macro(
+                                    "nh-viewcommand-cutelements".to_owned().into(),
+                                    vec![
+                                        InsensitiveCommand::DeleteSpecificElements(se!(), DeleteKind::DeleteAll)
+                                    ].into(),
+                                )
+                            ]
+                        },
                         DiagramCommand::PasteClipboardElements(target) => {
                             let target = target.and_then(|e| self.get_view_for(&e)).unwrap_or(*self.uuid);
 
                             let mut cmds = Vec::new();
                             cmds.push(InsensitiveCommand::HighlightAll(false, canvas::Highlight::SELECTED));
-
-                            for e in Self::elements_deep_copy(
+                            cmds.push(InsensitiveCommand::Macro(
+                                "nh-viewcommand-pasteelements".to_owned().into(),
+                                Self::elements_deep_copy(
                                         None,
                                         |_| true,
                                         HashMap::new(),
@@ -3546,15 +3594,16 @@ impl<
                                             .filter_map(|e| if let Some(e) = e.downcast_ref::<DomainT::CommonElementViewT>() {
                                                 Some((*e.uuid(), e.clone()))
                                             } else { None }),
-                                    ).into_iter().map(|e| e.1) {
-                                cmds.push(InsensitiveCommand::AddDependency {
-                                    target,
-                                    bucket: 0,
-                                    position: None,
-                                    element: e.into(),
-                                    into_model: true,
-                                });
-                            }
+                                    ).into_iter().map(|e| InsensitiveCommand::AddDependency {
+                                        target,
+                                        bucket: 0,
+                                        position: None,
+                                        element: e.1.into(),
+                                        into_model: true,
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .into()
+                            ));
 
                             cmds
                         },

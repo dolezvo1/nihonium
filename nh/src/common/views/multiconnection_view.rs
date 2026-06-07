@@ -1149,6 +1149,7 @@ where
                     affected_models.insert(*self.adapter.model_uuid());
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {

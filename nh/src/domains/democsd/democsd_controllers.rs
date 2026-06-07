@@ -2017,6 +2017,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
                 recurse!();
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
 
@@ -2649,6 +2650,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {

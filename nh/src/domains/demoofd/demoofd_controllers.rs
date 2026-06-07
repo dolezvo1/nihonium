@@ -2276,6 +2276,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -2963,6 +2964,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 }
                 recurse!();
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {

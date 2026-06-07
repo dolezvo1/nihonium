@@ -1885,6 +1885,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -2459,6 +2460,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -2928,6 +2930,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -3820,6 +3823,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {

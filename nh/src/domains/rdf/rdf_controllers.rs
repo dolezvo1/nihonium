@@ -1531,6 +1531,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -1977,6 +1978,7 @@ impl ElementControllerGen2<RdfDomain> for RdfLiteralView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {

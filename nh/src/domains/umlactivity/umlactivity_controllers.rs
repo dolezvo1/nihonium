@@ -2484,6 +2484,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
             InsensitiveCommand::PropertyChange(..) => {
                 recurse!();
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
 
@@ -3275,6 +3276,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                 }
                 recurse!();
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
 
@@ -3889,6 +3891,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -4203,6 +4206,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
             InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::PropertyChange(..) => {}
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
 
@@ -4583,6 +4587,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -4950,6 +4955,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -5303,6 +5309,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {}
@@ -5704,6 +5711,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
@@ -6458,6 +6466,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
                     }
                 }
             }
+            InsensitiveCommand::Macro(..) => unreachable!(),
         }
     }
     fn refresh_buffers(&mut self) {
