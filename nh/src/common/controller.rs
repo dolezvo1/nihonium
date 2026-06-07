@@ -1192,6 +1192,7 @@ pub enum InsensitiveCommand<OrdinalMovementT: Clone + Debug, AddElementT: Clone 
         position: Option<PositionNoT>,
         element: AddElementT,
         into_model: bool,
+        adjust_location: bool,
     },
     RemoveDependency {
         target: ViewUuid,
@@ -2591,6 +2592,7 @@ impl<
                             position: None,
                             element: dependency_view.clone().into(),
                             into_model: true,
+                            adjust_location: false,
                         }.into());
                         handled = true;
                     };
@@ -2602,6 +2604,7 @@ impl<
                         position: None,
                         element: DomainT::AddCommandElementT::from(new_e),
                         into_model: true,
+                        adjust_location: false,
                      }.into());
                     if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         *element_setup_modal = esm;
@@ -2691,7 +2694,7 @@ impl<
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model, adjust_location } => {
                 if *target == *self.uuid && *bucket == 0 {
                     if let Ok(mut view) = element.clone().try_into()
                         && (!*into_model || self.adapter.insert_element(*bucket, *position, view.model()).is_ok()){
@@ -2709,6 +2712,16 @@ impl<
                         let mut model_transitives = HashMap::new();
                         view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
                         affected_models.extend(model_transitives.into_keys());
+
+                        if *adjust_location {
+                            view.apply_command(
+                                &InsensitiveCommand::MovePositionalAll(
+                                    -self.temporaries.camera_offset.to_vec2() / self.temporaries.camera_scale
+                                ),
+                                &mut Default::default(),
+                                &mut Default::default(),
+                            );
+                        }
 
                         self.owned_views.push(uuid, view);
                     }
@@ -2734,6 +2747,7 @@ impl<
                             position: pos,
                             element: element.clone().into(),
                             into_model: *including_model,
+                            adjust_location: false,
                         });
                     }
                     self.owned_views.retain(|k, _v| *k != *element);
@@ -2758,6 +2772,7 @@ impl<
                         position: pos,
                         element: element.clone().into(),
                         into_model: false,
+                        adjust_location: false,
                     });
                 }
                 self.owned_views.retain(|k, _v| !uuids.contains(k));
@@ -3584,25 +3599,40 @@ impl<
 
                             let mut cmds = Vec::new();
                             cmds.push(InsensitiveCommand::HighlightAll(false, canvas::Highlight::SELECTED));
+
+                            let mut add_commands = Vec::new();
+                            let elements = Self::elements_deep_copy(
+                                None,
+                                |_| true,
+                                HashMap::new(),
+                                clipboard.iter()
+                                    .filter_map(|e| if let Some(e) = e.downcast_ref::<DomainT::CommonElementViewT>() {
+                                        Some((*e.uuid(), e.clone()))
+                                    } else { None }),
+                            );
+                            let mut new_elements_area = egui::Rect::NOTHING;
+                            for (_k, v) in elements.iter() {
+                                new_elements_area = new_elements_area.union(v.bounding_box());
+                            }
+                            let (mut u, mut a) = Default::default();
+                            for (_k, mut v) in elements.into_iter() {
+                                v.apply_command(
+                                    &InsensitiveCommand::MovePositionalAll(-new_elements_area.min.to_vec2()),
+                                    &mut u,
+                                    &mut a,
+                                );
+                                add_commands.push(InsensitiveCommand::AddDependency {
+                                    target,
+                                    bucket: 0,
+                                    position: None,
+                                    element: v.into(),
+                                    into_model: true,
+                                    adjust_location: true,
+                                });
+                            }
                             cmds.push(InsensitiveCommand::Macro(
                                 "nh-viewcommand-pasteelements".to_owned().into(),
-                                Self::elements_deep_copy(
-                                        None,
-                                        |_| true,
-                                        HashMap::new(),
-                                        clipboard.iter()
-                                            .filter_map(|e| if let Some(e) = e.downcast_ref::<DomainT::CommonElementViewT>() {
-                                                Some((*e.uuid(), e.clone()))
-                                            } else { None }),
-                                    ).into_iter().map(|e| InsensitiveCommand::AddDependency {
-                                        target,
-                                        bucket: 0,
-                                        position: None,
-                                        element: e.1.into(),
-                                        into_model: true,
-                                    })
-                                    .collect::<Vec<_>>()
-                                    .into()
+                                add_commands.into(),
                             ));
 
                             cmds
@@ -3696,6 +3726,7 @@ impl<
                                         position: Some(pos),
                                         element: new_view.into(),
                                         into_model: false,
+                                        adjust_location: false,
                                     }.into());
                                     models_to_create_views_for.pop();
                                 },

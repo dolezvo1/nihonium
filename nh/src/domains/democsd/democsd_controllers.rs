@@ -1800,6 +1800,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                                 position: None,
                                 element: new_e.into(),
                                 into_model: true,
+                                adjust_location: false,
                             });
                             if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                 *element_setup_modal = esm;
@@ -1893,7 +1894,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model, adjust_location: _ } => {
                 if *target == *self.uuid
                     && self.transaction_view.as_ref().is_none()
                     && let DemoCsdElementOrVertex::Element(DemoCsdElementView::Transaction(e)) = element {
@@ -1931,6 +1932,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                             position: Some(0),
                             element: DemoCsdElementOrVertex::Element(tx.clone().into()),
                             into_model: *including_model,
+                            adjust_location: false,
                          });
                         if *including_model {
                             affected_models.insert(model_uuid);
@@ -1951,6 +1953,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                             position: Some(0),
                             element: DemoCsdElementOrVertex::Element(e.clone().into()),
                             into_model: false,
+                            adjust_location: false,
                          });
                         self.transaction_view = UFOption::None;
                     }

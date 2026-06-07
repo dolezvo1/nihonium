@@ -447,6 +447,7 @@ where
                             position: None,
                             element: new_e.into(),
                             into_model: true,
+                            adjust_location: false,
                         }.into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
@@ -671,6 +672,7 @@ where
                         position: pos,
                         element: element.clone().into(),
                         into_model: false,
+                        adjust_location: false,
                      });
                 }
 
@@ -678,7 +680,7 @@ where
 
                 recurse!();
             }
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model, adjust_location } => {
                 if *target == *self.uuid && *bucket == 0 {
                     if let Ok(mut view) = element.clone().try_into()
                         && (!*into_model || self.adapter.insert_element(*position, view.model()).is_ok()){
@@ -697,6 +699,14 @@ where
                         view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
                         affected_models.extend(model_transitives.into_keys());
 
+                        if *adjust_location {
+                            view.apply_command(
+                                &InsensitiveCommand::MovePositionalAll(self.bounds_rect.min.to_vec2()),
+                                &mut Default::default(),
+                                &mut Default::default(),
+                            );
+                        }
+
                         self.owned_views.push(uuid, view);
                     }
                 }
@@ -713,6 +723,7 @@ where
                             position: Some(pos),
                             element: view.clone().into(),
                             into_model: *including_model,
+                            adjust_location: false,
                          });
 
                         if *including_model {

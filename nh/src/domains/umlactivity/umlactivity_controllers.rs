@@ -656,6 +656,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
                     position: None,
                     element: UmlActivityElementOrVertex::Element(e),
                     into_model: true,
+                    adjust_location: false,
                 },
                 &mut u, &mut a,
             );
@@ -2122,6 +2123,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                     position: Some(idx.try_into().unwrap()),
                     element: UmlActivityElementOrVertex::Element(sibling.1.into()),
                     into_model: true,
+                    adjust_location: false,
                 });
             }
 
@@ -2327,6 +2329,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                         position: pos,
                         element: UmlActivityElementView::from(element.clone()).into(),
                         into_model: false,
+                        adjust_location: false,
                      });
                 }
                 let mut delta = egui::Vec2::ZERO;
@@ -2345,7 +2348,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
 
                 recurse!();
             }
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model, adjust_location: _ } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
                     if *bucket == 0
@@ -2416,6 +2419,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                                 position: Some(pos),
                                 element: UmlActivityElementView::from(view.clone()).into(),
                                 into_model: *including_model,
+                                adjust_location: false,
                              });
 
                             if *including_model {
@@ -3009,6 +3013,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                             position: None,
                             element: new_e.into(),
                             into_model: true,
+                            adjust_location: false,
                         }.into());
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
@@ -3185,13 +3190,14 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                         position: pos,
                         element: element.clone().into(),
                         into_model: false,
+                        adjust_location: false,
                      });
                 }
                 self.contained_elements.retain(|k, _v| !uuids.contains(k));
 
                 recurse!();
             }
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model, adjust_location } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
                     if *bucket == 0
@@ -3212,6 +3218,14 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                         view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
                         affected_models.extend(model_transitives.into_keys());
 
+                        if *adjust_location {
+                            view.apply_command(
+                                &InsensitiveCommand::MovePositionalAll(self.bounds_rect.min.to_vec2()),
+                                &mut Default::default(),
+                                &mut Default::default(),
+                            );
+                        }
+
                         self.contained_elements.push(uuid, view);
                     }
                 }
@@ -3230,6 +3244,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                             position: Some(pos),
                             element: view.clone().into(),
                             into_model: *including_model,
+                            adjust_location: false,
                          });
 
                         if *including_model {

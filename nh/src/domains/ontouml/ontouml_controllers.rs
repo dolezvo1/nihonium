@@ -152,6 +152,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             position: None,
             element: UmlClassElementOrVertex::Element(dead_view.clone().into()),
             into_model: true,
+            adjust_location: false,
         },
         &mut Vec::new(),
         &mut HashSet::new(),

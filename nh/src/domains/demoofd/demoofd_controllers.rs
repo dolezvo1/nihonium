@@ -2728,6 +2728,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                             position: None,
                             element: DemoOfdElementView::from(new_e).into(),
                             into_model: true,
+                            adjust_location: false,
                         });
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
@@ -2861,7 +2862,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model, adjust_location: _ } => {
                 if *target == *self.uuid
                     && self.specialization_view.as_ref().is_none()
                     && let DemoOfdElementOrVertex::Element(DemoOfdElementView::EntityType(e)) = element
@@ -2897,6 +2898,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                             position: Some(0),
                             element: DemoOfdElementView::from(sv.clone()).into(),
                             into_model: *including_model,
+                            adjust_location: false,
                          });
 
                         if *including_model {
@@ -2919,6 +2921,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                         position: None,
                         element: DemoOfdElementOrVertex::Element(e.clone().into()),
                         into_model: false,
+                        adjust_location: false,
                      });
                     self.specialization_view = UFOption::None;
                 }

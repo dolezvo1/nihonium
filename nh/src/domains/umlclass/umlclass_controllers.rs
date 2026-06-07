@@ -930,6 +930,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             position: None,
             element: UmlClassElementOrVertex::Element(circle_view.clone().into()),
             into_model: true,
+            adjust_location: false,
         },
         &mut Vec::new(),
         &mut HashSet::new(),
@@ -5187,6 +5188,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                     position: None,
                                     element: view.into(),
                                     into_model: true,
+                                    adjust_location: false,
                                 }.into());
                                 if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                     *element_setup_modal = esm;
@@ -5199,6 +5201,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                     position: None,
                                     element: view.into(),
                                     into_model: true,
+                                    adjust_location: false,
                                 }.into());
                                 if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                     *element_setup_modal = esm;
@@ -5269,6 +5272,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                             position: None,
                             element: view.into(),
                             into_model: true,
+                            adjust_location: false,
                         });
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
@@ -5373,6 +5377,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                     position: Some(pos),
                                     element: UmlClassElementOrVertex::Element(e.clone().into()),
                                     into_model: false,
+                                    adjust_location: false,
                                  });
                                 removed_any = true;
                                 false
@@ -5392,6 +5397,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                     position: Some(pos),
                                     element: UmlClassElementOrVertex::Element(e.clone().into()),
                                     into_model: false,
+                                    adjust_location: false,
                                  });
                                 removed_any = true;
                                 false
@@ -5406,7 +5412,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     }
                 }
             }
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model, adjust_location: _ } => {
                 if *target == *self.uuid && let UmlClassElementOrVertex::Element(e) = element {
                     let mut w = self.model.write();
                     if let Some(model_pos) = w.get_element_pos(&e.model_uuid()).map(|e| e.1)
@@ -5482,6 +5488,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                         position: Some(pos),
                                         element: UmlClassElementOrVertex::Element(e.clone().into()),
                                         into_model: true,
+                                        adjust_location: false,
                                      });
                                     removed_any = true;
                                     false
@@ -5503,6 +5510,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                         position: Some(pos),
                                         element: UmlClassElementOrVertex::Element(e.clone().into()),
                                         into_model: true,
+                                        adjust_location: false,
                                      });
                                     removed_any = true;
                                     false
