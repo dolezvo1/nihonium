@@ -1192,7 +1192,6 @@ pub enum InsensitiveCommand<OrdinalMovementT: Clone + Debug, AddElementT: Clone 
         position: Option<PositionNoT>,
         element: AddElementT,
         into_model: bool,
-        adjust_location: bool,
     },
     RemoveDependency {
         target: ViewUuid,
@@ -2592,7 +2591,6 @@ impl<
                             position: None,
                             element: dependency_view.clone().into(),
                             into_model: true,
-                            adjust_location: false,
                         }.into());
                         handled = true;
                     };
@@ -2604,7 +2602,6 @@ impl<
                         position: None,
                         element: DomainT::AddCommandElementT::from(new_e),
                         into_model: true,
-                        adjust_location: false,
                      }.into());
                     if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         *element_setup_modal = esm;
@@ -2694,7 +2691,7 @@ impl<
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model, adjust_location } => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid && *bucket == 0 {
                     if let Ok(mut view) = element.clone().try_into()
                         && (!*into_model || self.adapter.insert_element(*bucket, *position, view.model()).is_ok()){
@@ -2712,16 +2709,6 @@ impl<
                         let mut model_transitives = HashMap::new();
                         view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
                         affected_models.extend(model_transitives.into_keys());
-
-                        if *adjust_location {
-                            view.apply_command(
-                                &InsensitiveCommand::MovePositionalAll(
-                                    -self.temporaries.camera_offset.to_vec2() / self.temporaries.camera_scale
-                                ),
-                                &mut Default::default(),
-                                &mut Default::default(),
-                            );
-                        }
 
                         self.owned_views.push(uuid, view);
                     }
@@ -2747,7 +2734,6 @@ impl<
                             position: pos,
                             element: element.clone().into(),
                             into_model: *including_model,
-                            adjust_location: false,
                         });
                     }
                     self.owned_views.retain(|k, _v| *k != *element);
@@ -2772,7 +2758,6 @@ impl<
                         position: pos,
                         element: element.clone().into(),
                         into_model: false,
-                        adjust_location: false,
                     });
                 }
                 self.owned_views.retain(|k, _v| !uuids.contains(k));
@@ -3615,9 +3600,16 @@ impl<
                                 new_elements_area = new_elements_area.union(v.bounding_box());
                             }
                             let (mut u, mut a) = Default::default();
+                            let offset = if target == *self.uuid {
+                                -self.temporaries.camera_offset.to_vec2() / self.temporaries.camera_scale
+                            } else {
+                                self.temporaries.flattened_views
+                                    .get(&target).map(|e| e.0.bounding_box().min.to_vec2())
+                                    .unwrap_or_default()
+                            };
                             for (_k, mut v) in elements.into_iter() {
                                 v.apply_command(
-                                    &InsensitiveCommand::MovePositionalAll(-new_elements_area.min.to_vec2()),
+                                    &InsensitiveCommand::MovePositionalAll(-new_elements_area.min.to_vec2() + offset),
                                     &mut u,
                                     &mut a,
                                 );
@@ -3627,7 +3619,6 @@ impl<
                                     position: None,
                                     element: v.into(),
                                     into_model: true,
-                                    adjust_location: true,
                                 });
                             }
                             cmds.push(InsensitiveCommand::Macro(
@@ -3726,7 +3717,6 @@ impl<
                                         position: Some(pos),
                                         element: new_view.into(),
                                         into_model: false,
-                                        adjust_location: false,
                                     }.into());
                                     models_to_create_views_for.pop();
                                 },

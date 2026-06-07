@@ -456,7 +456,6 @@ where
                                     position: None,
                                     element: v.into(),
                                     into_model: false,
-                                    adjust_location: false,
                                 }.into());
                             }
                         }
@@ -683,7 +682,6 @@ where
                             }
                             .into(),
                             into_model: false,
-                            adjust_location: false,
                          }.into());
 
                         return EventHandlingStatus::HandledByContainer;
@@ -723,7 +721,6 @@ where
                                         }
                                         .into(),
                                         into_model: false,
-                                        adjust_location: false,
                                     }.into());
 
                                     return EventHandlingStatus::HandledByContainer;
@@ -945,7 +942,6 @@ where
                             position: center_point.1,
                         }),
                         into_model: false,
-                        adjust_location: false,
                      });
 
                     // Move any last point to the center
@@ -980,7 +976,6 @@ where
                                             position: b.1,
                                         }),
                                         into_model: false,
-                                        adjust_location: false,
                                     });
                                 }
                             }
@@ -1000,14 +995,13 @@ where
                         position: None,
                         element: e.element.clone().into(),
                         into_model: false,
-                        adjust_location: false,
                     });
                     false
                 } else { true };
                 self.sources.retain(|e| retain(MULTICONNECTION_SOURCE_BUCKET, e));
                 self.targets.retain(|e| retain(MULTICONNECTION_TARGET_BUCKET, e));
             }
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model, adjust_location: _ } => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {
                     // source/target
                     if let Ok(e) = TryInto::<DomainT::CommonElementViewT>::try_into(element.clone()) {
@@ -1111,7 +1105,6 @@ where
                                 position: pos,
                                 element: e.element.clone().into(),
                                 into_model: *including_model,
-                                adjust_location: false,
                             });
                             false
                         } else { true });
@@ -1133,7 +1126,6 @@ where
                                 position: pos,
                                 element: e.element.clone().into(),
                                 into_model: *including_model,
-                                adjust_location: false,
                             });
                             false
                         } else { true });

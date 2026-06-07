@@ -2063,7 +2063,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                     position: Some(pos),
                                     element: new_e.into(),
                                     into_model: true,
-                                    adjust_location: false,
                                 }.into());
                                 if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                     *element_setup_modal = esm;
@@ -2273,7 +2272,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                             position: None,
                             element: DemoPsdElementOrVertex::Element(e.clone().into()),
                             into_model: false,
-                            adjust_location: false,
                          });
                         self.p_act_view = UFOption::None;
                     }
@@ -2286,7 +2284,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                 position: Some(pos),
                                 element: DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
                                 into_model: false,
-                                adjust_location: false,
                              });
                             false
                         } else { true };
@@ -2295,7 +2292,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 }
                 recurse!();
             }
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model, adjust_location: _ } => {
+            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
                     if *bucket == DemoPsdTransaction::CENTER_BUCKET {
@@ -2377,7 +2374,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                 position: None,
                                 element: DemoPsdElementOrVertex::Element(e.clone().into()),
                                 into_model: *including_model,
-                                adjust_location: false,
                              });
                             if *including_model {
                                 w.p_act = UFOption::None;
@@ -2394,7 +2390,6 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                                 position: Some(pos),
                                 element: DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
                                 into_model: *including_model,
-                                adjust_location: false,
                             });
                             false
                         } else { true };
