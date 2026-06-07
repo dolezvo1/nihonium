@@ -678,13 +678,6 @@ where
 
                 recurse!();
             }
-            InsensitiveCommand::PasteSpecificElements(target, _elements) => {
-                if *target == *self.uuid {
-                    todo!("undo = delete")
-                }
-
-                recurse!();
-            },
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid && *bucket == 0 {
                     if let Ok(mut view) = element.clone().try_into()

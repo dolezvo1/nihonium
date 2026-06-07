@@ -2089,17 +2089,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
                 recurse!();
             }
-            InsensitiveCommand::PasteSpecificElements(target, _elements) => {
-                if *target == *self.uuid {
-                    todo!("undo = delete")
-                }
-
-                recurse!();
-            },
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *bucket == VERTICALS_BUCKET
+                    if (*bucket == 0 || *bucket == VERTICALS_BUCKET)
                         && let Ok(UmlSequenceElementView::Lifeline(view)) = element.clone().try_into() {
                         let mut vw = view.write();
                         if let Some(model_pos) = w.get_element_pos(&vw.model_uuid()).map(|e| e.1)
@@ -2136,7 +2129,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             self.lifeline_views.insert(view_pos.try_into().unwrap(), view.clone());
                         }
                     }
-                    if *bucket == HORIZONTALS_BUCKET
+                    if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Ok(mut view) = UmlSequenceElementView::try_from(element.clone()).and_then(|v| v.as_horizontal().ok_or(()))
                         && let Some(model_pos) = w.get_element_pos(&view.model_uuid()).map(|e| e.1)
                             .or_else(|| if *into_model { w.insert_element(*bucket, *position, view.model()).ok() } else { None }) {
@@ -2178,7 +2171,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *bucket == VERTICALS_BUCKET
+                    if (*bucket == 0 || *bucket == VERTICALS_BUCKET)
                         && let Some(view) = self.lifeline_views.iter().find(|v| *v.read().uuid == *element).cloned()
                         && let Some((_b, pos)) = w.remove_element(&view.read().model_uuid()) {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
@@ -2195,7 +2188,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
                         self.lifeline_views.retain(|v| *v.read().uuid != *element);
                     }
-                    if *bucket == HORIZONTALS_BUCKET
+                    if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Some(view) = self.horizontal_element_views.iter().find(|v| *v.uuid() == *element).cloned()
                         && let Some((_b, pos)) = w.remove_element(&view.model_uuid()) {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
@@ -2899,17 +2892,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
 
                 recurse!();
             }
-            InsensitiveCommand::PasteSpecificElements(target, _elements) => {
-                if *target == *self.uuid {
-                    todo!("undo = delete")
-                }
-
-                recurse!();
-            },
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *bucket == HORIZONTALS_BUCKET
+                    if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Ok(UmlSequenceElementView::CombinedFragmentSection(view)) = element.clone().try_into() {
                         let mut vw = view.write();
                         if let Some(model_pos) = w.get_element_pos(&vw.model_uuid()).map(|e| e.1)
@@ -2953,7 +2939,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
             InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *bucket == HORIZONTALS_BUCKET
+                    if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Some(view) = self.sections.iter().find(|v| *v.read().uuid == *element).cloned()
                         && let Some((_b, pos)) = w.remove_element(&view.read().model_uuid()) {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
@@ -3605,17 +3591,10 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
 
                 recurse!();
             }
-            InsensitiveCommand::PasteSpecificElements(target, _elements) => {
-                if *target == *self.uuid {
-                    todo!("undo = delete")
-                }
-
-                recurse!();
-            },
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *bucket == HORIZONTALS_BUCKET
+                    if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Ok(mut view) = UmlSequenceElementView::try_from(element.clone()).and_then(|v| v.as_horizontal().ok_or(()))
                         && let Some(model_pos) = w.get_element_pos(&view.model_uuid()).map(|e| e.1)
                             .or_else(|| if *into_model { w.insert_element(*bucket, *position, view.model()).ok() } else { None }) {
@@ -3657,7 +3636,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
             InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *bucket == HORIZONTALS_BUCKET
+                    if (*bucket == 0 || *bucket == HORIZONTALS_BUCKET)
                         && let Some(view) = self.horizontal_element_views.iter().find(|v| *v.uuid() == *element).cloned()
                         && let Some((_b, pos)) = w.remove_element(&view.model_uuid()) {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
@@ -4323,7 +4302,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
@@ -5249,7 +5227,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
             InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
@@ -5702,7 +5679,6 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)

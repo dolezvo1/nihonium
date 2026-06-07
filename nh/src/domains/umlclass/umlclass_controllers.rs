@@ -2940,7 +2940,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
@@ -3557,7 +3556,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassPr
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
@@ -4259,7 +4257,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassOp
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
@@ -5406,7 +5403,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     }
                 }
             }
-            InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid && let UmlClassElementOrVertex::Element(e) = element {
                     let mut w = self.model.write();
@@ -5446,7 +5442,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
                 if *target == *self.uuid && *including_model {
                     let mut removed_any = false;
-                    if *bucket == UmlClass::PROPERTIES_BUCKET {
+                    if *bucket == 0 || *bucket == UmlClass::PROPERTIES_BUCKET {
                         self.properties_views.retain(
                             |e| {
                                 let r = e.read();
@@ -5466,7 +5462,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                                 }
                             }
                         );
-                    } else if *bucket == UmlClass::OPERATIONS_BUCKET {
+                    }
+                    if *bucket == 0 || *bucket == UmlClass::OPERATIONS_BUCKET {
                         self.operations_views.retain(
                             |e| {
                                 let r = e.read();
@@ -5640,6 +5637,26 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             let mut w = e.write();
             w.head_count(flattened_views, flattened_views_status, flattened_represented_models);
             flattened_views.insert(*w.uuid(), (e.clone().into(), *self.uuid));
+        }
+    }
+
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, <UmlClassDomain<P> as Domain>::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, <UmlClassDomain<P> as Domain>::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, <UmlClassDomain<P> as Domain>::CommonElementT>,
+    ) {
+        if requested.is_none_or(|e| e.contains(&self.uuid())) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        } else {
+            for e in &self.properties_views {
+                e.read().deep_copy_walk(requested, uuid_present, tlc, c, m);
+            }
+            for e in &self.operations_views {
+                e.read().deep_copy_walk(requested, uuid_present, tlc, c, m);
+            }
         }
     }
 
@@ -6085,7 +6102,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlUseCase
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
@@ -8110,7 +8126,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassCo
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)

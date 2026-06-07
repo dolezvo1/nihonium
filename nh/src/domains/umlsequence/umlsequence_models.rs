@@ -740,18 +740,12 @@ impl ContainerModel for UmlSequenceDiagram {
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlSequenceElement) -> Result<PositionNoT, UmlSequenceElement> {
         match bucket {
-            VERTICALS_BUCKET => {
-                let UmlSequenceElement::Lifeline(element) = element else {
-                    return Err(element);
-                };
+            0 | VERTICALS_BUCKET if let UmlSequenceElement::Lifeline(element) = element => {
                 let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.vertical_elements.len());
                 self.vertical_elements.insert(pos, element);
                 Ok(pos.try_into().unwrap())
             }
-            HORIZONTALS_BUCKET => {
-                let Some(element) = element.clone().as_horizontal() else {
-                    return Err(element);
-                };
+            0 | HORIZONTALS_BUCKET if let Some(element) = element.clone().as_horizontal() => {
                 let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.horizontal_elements.len());
                 self.horizontal_elements.insert(pos, element);
                 Ok(pos.try_into().unwrap())
@@ -1121,7 +1115,7 @@ impl ContainerModel for UmlSequenceCombinedFragment {
         return None;
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlSequenceElement) -> Result<PositionNoT, UmlSequenceElement> {
-        if bucket != HORIZONTALS_BUCKET {
+        if bucket != 0 && bucket != HORIZONTALS_BUCKET {
             return Err(element);
         }
         let UmlSequenceElement::CombinedFragmentSection(section) = element else {
@@ -1234,7 +1228,7 @@ impl ContainerModel for UmlSequenceCombinedFragmentSection {
         return None;
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlSequenceElement) -> Result<PositionNoT, UmlSequenceElement> {
-        if bucket != HORIZONTALS_BUCKET {
+        if bucket != 0 && bucket != HORIZONTALS_BUCKET {
             return Err(element);
         }
         let Some(element) = element.as_horizontal() else {

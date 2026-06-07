@@ -2233,7 +2233,6 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
@@ -2860,8 +2859,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                 }
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
-            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid
                     && self.specialization_view.as_ref().is_none()
@@ -3003,6 +3001,21 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
         deleting.contains(&*self.base_entity_type.uuid())
     }
 
+
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, <DemoOfdDomain as Domain>::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, <DemoOfdDomain as Domain>::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, <DemoOfdDomain as Domain>::CommonElementT>,
+    ) {
+        if requested.is_none_or(|e| e.contains(&self.uuid())) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        } else if let UFOption::Some(s) = &self.specialization_view {
+            s.read().deep_copy_walk(requested, uuid_present, tlc, c, m);
+        }
+    }
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,

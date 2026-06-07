@@ -1127,11 +1127,13 @@ impl ContainerModel for UmlClass {
         None
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
-        if bucket == Self::PROPERTIES_BUCKET && let UmlClassElement::Property(p) = element {
+        if (bucket == 0 || bucket == Self::PROPERTIES_BUCKET)
+            && let UmlClassElement::Property(p) = element {
             let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.properties.len());
             self.properties.insert(pos, p);
             Ok(pos.try_into().unwrap())
-        } else if bucket == Self::OPERATIONS_BUCKET && let UmlClassElement::Operation(o) = element {
+        } else if (bucket == 0 || bucket == Self::OPERATIONS_BUCKET)
+            && let UmlClassElement::Operation(o) = element {
             let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.operations.len());
             self.operations.insert(pos, o);
             Ok(pos.try_into().unwrap())

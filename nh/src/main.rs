@@ -883,7 +883,13 @@ impl NHContext {
     fn show_model_hierarchy(&mut self, ui: &mut egui::Ui) {
         let Some(last_focused_diagram) = &self.last_focused_diagram else { return; };
         let Some(lfc) = self.diagram_controllers.get(last_focused_diagram) else { return; };
-        lfc.write().show_model_hierarchy(last_focused_diagram, &self.drawing_context, ui, &mut self.affected_models);
+        lfc.write().show_model_hierarchy(
+            last_focused_diagram,
+            &self.drawing_context,
+            ui,
+            &mut self.unprocessed_commands,
+            &mut self.affected_models,
+        );
     }
 
     fn show_search(&mut self, ui: &mut egui::Ui) {
@@ -1958,7 +1964,7 @@ impl Default for NHApp {
         ));
         context.drawing_context.shortcuts.insert(DiagramCommand::CutSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X));
         context.drawing_context.shortcuts.insert(DiagramCommand::CopySelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C));
-        context.drawing_context.shortcuts.insert(DiagramCommand::PasteClipboardElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
+        context.drawing_context.shortcuts.insert(DiagramCommand::PasteClipboardElements(None).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
         context.drawing_context.shortcuts.insert(DiagramCommand::DeleteSelectedElements(None).into(), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
 
         context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Plus));
@@ -2244,7 +2250,7 @@ impl eframe::App for NHApp {
                                 commands.push(SimpleProjectCommand::from(match e {
                                     egui::Event::Cut => DiagramCommand::CutSelectedElements,
                                     egui::Event::Copy => DiagramCommand::CopySelectedElements,
-                                    egui::Event::Paste(_) => DiagramCommand::PasteClipboardElements,
+                                    egui::Event::Paste(_) => DiagramCommand::PasteClipboardElements(None),
                                     _ => unreachable!(),
                                 }).into())
                             }
@@ -2286,7 +2292,7 @@ impl eframe::App for NHApp {
                                         | DiagramCommand::DeleteSelectedElements(_)
                                         | DiagramCommand::CutSelectedElements
                                         | DiagramCommand::CopySelectedElements
-                                        | DiagramCommand::PasteClipboardElements => {
+                                        | DiagramCommand::PasteClipboardElements(_) => {
                                             if matches!(self.tree.find_active_focused(), Some((_, NHTab::Diagram { .. }))) {
                                                 commands.push(e.into())
                                             }
@@ -2387,7 +2393,7 @@ impl eframe::App for NHApp {
 
                     button!(ui, "nh-edit-cut", SimpleProjectCommand::from(DiagramCommand::CutSelectedElements));
                     button!(ui, "nh-edit-copy", SimpleProjectCommand::from(DiagramCommand::CopySelectedElements));
-                    button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements));
+                    button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements(None)));
                     ui.separator();
 
                     ui.menu_button(translate!("nh-edit-delete"), |ui| {

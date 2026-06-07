@@ -2345,13 +2345,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
 
                 recurse!();
             }
-            InsensitiveCommand::PasteSpecificElements(target, _elements) => {
-                if *target == *self.uuid {
-                    todo!("undo = delete")
-                }
-
-                recurse!();
-            },
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
@@ -3197,13 +3190,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
 
                 recurse!();
             }
-            InsensitiveCommand::PasteSpecificElements(target, _elements) => {
-                if *target == *self.uuid {
-                    todo!("undo = delete")
-                }
-
-                recurse!();
-            },
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
@@ -3862,7 +3848,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
@@ -4213,7 +4198,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
             InsensitiveCommand::DeleteSpecificElements(..) => {}
-            InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency { .. } => {}
             InsensitiveCommand::RemoveDependency { .. } => {}
             InsensitiveCommand::ArrangeSpecificElements(..) => {}
@@ -4579,7 +4563,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
             InsensitiveCommand::DeleteSpecificElements(..) => {}
-            InsensitiveCommand::PasteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency { .. } => {}
             InsensitiveCommand::RemoveDependency { .. } => {}
             InsensitiveCommand::ArrangeSpecificElements(..) => {}
@@ -4947,7 +4930,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
@@ -5295,7 +5277,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
@@ -5689,7 +5670,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)
@@ -6429,7 +6409,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..)

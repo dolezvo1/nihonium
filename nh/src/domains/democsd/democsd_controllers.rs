@@ -1793,12 +1793,7 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                     if self.transaction_view.as_ref().is_none() {
                         tool.add_position(*event.mouse_position());
                         if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid)
-                            && let DemoCsdElementView::Transaction(ref tx) = new_e {
-                            tx.write().position = egui::Pos2::new(
-                                self.position.x,
-                                self.position.y - 3.84 * canvas::CLASS_MIDDLE_FONT_SIZE,
-                            );
-
+                            && let DemoCsdElementView::Transaction(_) = new_e {
                             commands.push(InsensitiveCommand::AddDependency {
                                 target: *self.uuid,
                                 bucket: 0,
@@ -1897,19 +1892,24 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
             }
             InsensitiveCommand::ResizeSpecificElementsBy(..)
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
-            | InsensitiveCommand::MoveOrdinal(..)
-            | InsensitiveCommand::PasteSpecificElements(..) => {}
+            | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid
                     && self.transaction_view.as_ref().is_none()
                     && let DemoCsdElementOrVertex::Element(DemoCsdElementView::Transaction(e)) = element {
                     let mut w = self.model.write();
-                    if let Some(_) = w.get_element_pos(&e.read().model_uuid()).map(|e| e.1)
-                        .or_else(|| if *into_model { w.insert_element(*bucket, *position, e.read().model.clone().into()).ok() } else { None }) {
+                    let mut vw = e.write();
+                    if let Some(_) = w.get_element_pos(&vw.model_uuid()).map(|e| e.1)
+                        .or_else(|| if *into_model { w.insert_element(*bucket, *position, vw.model.clone().into()).ok() } else { None }) {
+                        vw.position = egui::Pos2::new(
+                            self.position.x,
+                            self.position.y - 3.84 * canvas::CLASS_MIDDLE_FONT_SIZE,
+                        );
+
                         undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                             target: *target,
                             bucket: *bucket,
-                            element: *e.read().uuid,
+                            element: *vw.uuid,
                             including_model: *into_model,
                          });
                         if *into_model {
@@ -2053,8 +2053,10 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
         c: &mut HashMap<ViewUuid, DemoCsdElementView>,
         m: &mut HashMap<ModelUuid, DemoCsdElement>,
     ) {
-        if requested.is_none_or(|e| e.contains(&self.uuid()) || self.transaction_view.as_ref().is_some_and(|t| e.contains(&t.read().uuid()))) {
+        if requested.is_none_or(|e| e.contains(&self.uuid())) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
+        } else if let UFOption::Some(ta) = &self.transaction_view {
+            ta.read().deep_copy_walk(requested, uuid_present, tlc, c, m);
         }
     }
     fn deep_copy_clone(
@@ -2594,7 +2596,6 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
             | InsensitiveCommand::ResizeSpecificElementsTo(..)
             | InsensitiveCommand::MoveOrdinal(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}

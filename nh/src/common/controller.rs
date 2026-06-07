@@ -157,7 +157,7 @@ pub enum DiagramCommand {
     DeleteSelectedElements(Option<DeleteKind>),
     CutSelectedElements,
     CopySelectedElements,
-    PasteClipboardElements,
+    PasteClipboardElements(Option<ModelUuid>),
     ArrangeSelected(Arrangement),
     ColorSelected(u8, MGlobalColor),
     HighlightAllElements(/*set: */bool, Highlight),
@@ -574,6 +574,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         uuid: &ViewUuid,
         gdc: &GlobalDrawingContext,
         ui: &mut egui::Ui,
+        commands: &mut Vec<ProjectCommand>,
         affected_models: &mut HashSet<ModelUuid>,
     );
 
@@ -1180,7 +1181,6 @@ pub enum InsensitiveCommand<OrdinalMovementT: Clone + Debug, AddElementT: Clone 
     ResizeSpecificElementsBy(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     ResizeSpecificElementsTo(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     DeleteSpecificElements(HashSet<ViewUuid>, DeleteKind),
-    PasteSpecificElements(ViewUuid, Vec<AddElementT>),
     ArrangeSpecificElements(HashSet<ViewUuid>, Arrangement),
     AddDependency {
         target: ViewUuid,
@@ -1220,8 +1220,6 @@ impl<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: T
             InsensitiveCommand::ResizeSpecificElementsBy(uuids, _, _)
             | InsensitiveCommand::ResizeSpecificElementsTo(uuids, _, _)
                 => (gdc.fluent_bundle.get_message("nh-viewcommand-resizeelements").unwrap(), uuids.len()),
-            InsensitiveCommand::PasteSpecificElements(_, elements)
-                => (gdc.fluent_bundle.get_message("nh-viewcommand-pasteelements").unwrap(), elements.len()),
             InsensitiveCommand::ArrangeSpecificElements(uuids, _)
                 => (gdc.fluent_bundle.get_message("nh-viewcommand-arrangeelements").unwrap(), uuids.len()),
             InsensitiveCommand::AddDependency { into_model, .. } => if *into_model {
@@ -1768,7 +1766,8 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         uuid: &ViewUuid,
         gdc: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        affected_models: &mut HashSet<ModelUuid>,
+        commands: &mut Vec<ProjectCommand>,
+        _affected_models: &mut HashSet<ModelUuid>,
     ) {
         let Some(view) = self.views.get(uuid).cloned() else {
             return;
@@ -1779,7 +1778,8 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 <ModelT as ContainerModel>::ElementT: VisitableElement,
         {
             gdc: &'a GlobalDrawingContext,
-            commands: Vec<DiagramCommand>,
+            diagram_uuid: ViewUuid,
+            commands: &'a mut Vec<ProjectCommand>,
             is_represented: &'a dyn Fn(ModelUuid) -> bool,
             builder: &'a mut egui_ltreeview::TreeViewBuilder<'ui, ModelUuid>,
             model: PhantomData<ModelT>,
@@ -1792,6 +1792,16 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 if (self.is_represented)(*m) {"[x]"} else {"[ ]"}
             }
             fn show_element(&mut self, is_dir: bool, model_uuid: &ModelUuid) {
+                macro_rules! push_dia {
+                    ($c:expr) => {
+                        self.commands.push(ProjectCommand::SimpleProjectCommand(
+                            SimpleProjectCommand::SpecificDiagramCommand(
+                                self.diagram_uuid,
+                                $c,
+                            )
+                        ))
+                    }
+                }
                 self.builder.node(
                     if is_dir {
                         egui_ltreeview::NodeBuilder::dir(*model_uuid).activatable(true)
@@ -1805,26 +1815,49 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                             if is_represented {
                                 if ui.button(self.gdc.translate_0("nh-tab-modelhierarchy-jumpto")).clicked() {
                                     let model_uuid = (*model_uuid).into();
-                                    self.commands.push(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED));
-                                    self.commands.push(DiagramCommand::HighlightElement(model_uuid, true, Highlight::SELECTED));
-                                    self.commands.push(DiagramCommand::PanToElement(model_uuid, true));
+                                    push_dia!(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED));
+                                    push_dia!(DiagramCommand::HighlightElement(model_uuid, true, Highlight::SELECTED));
+                                    push_dia!(DiagramCommand::PanToElement(model_uuid, true));
                                     ui.close();
                                 }
                                 ui.separator();
                             }
 
+                            if ui.button(self.gdc.translate_0("nh-edit-cut")).clicked() {
+                                let model_uuid = (*model_uuid).into();
+                                push_dia!(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED));
+                                push_dia!(DiagramCommand::HighlightElement(model_uuid, true, Highlight::SELECTED));
+                                push_dia!(DiagramCommand::CutSelectedElements);
+                                ui.close();
+                            }
+
+                            if ui.button(self.gdc.translate_0("nh-edit-copy")).clicked() {
+                                let model_uuid = (*model_uuid).into();
+                                push_dia!(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED));
+                                push_dia!(DiagramCommand::HighlightElement(model_uuid, true, Highlight::SELECTED));
+                                push_dia!(DiagramCommand::CopySelectedElements);
+                                ui.close();
+                            }
+
+                            if ui.button(self.gdc.translate_0("nh-edit-pastehere")).clicked() {
+                                push_dia!(DiagramCommand::PasteClipboardElements(Some(*model_uuid)));
+                                ui.close();
+                            }
+
+                            ui.separator();
+
                             if !is_represented && ui.button(self.gdc.translate_0("nh-tab-modelhierarchy-createview")).clicked() {
-                                self.commands.push(DiagramCommand::CreateViewFor(*model_uuid));
+                                push_dia!(DiagramCommand::CreateViewFor(*model_uuid));
                                 ui.close();
                             }
 
                             if is_represented && ui.button(self.gdc.translate_0("nh-tab-modelhierarchy-deleteview")).clicked() {
-                                self.commands.push(DiagramCommand::DeleteViewFor(*model_uuid, false));
+                                push_dia!(DiagramCommand::DeleteViewFor(*model_uuid, false));
                                 ui.close();
                             }
 
                             if ui.button(self.gdc.translate_0("nh-tab-modelhierarchy-deletemodel")).clicked() {
-                                self.commands.push(DiagramCommand::DeleteViewFor(*model_uuid, true));
+                                push_dia!(DiagramCommand::DeleteViewFor(*model_uuid, true));
                                 ui.close();
                             }
                         })
@@ -1856,6 +1889,18 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 self.builder.node(
                     egui_ltreeview::NodeBuilder::dir(model_uuid)
                         .label(&*self.gdc.model_labels.get(&model_uuid))
+                        .context_menu(|ui| {
+                            if ui.button("Paste here").clicked() {
+                                self.commands.push(ProjectCommand::SimpleProjectCommand(
+                                    SimpleProjectCommand::SpecificDiagramCommand(
+                                        self.diagram_uuid,
+                                        DiagramCommand::PasteClipboardElements(Some(model_uuid)),
+                                    )
+                                ));
+                                ui.close();
+                            }
+                        })
+
                 );
             }
 
@@ -1865,7 +1910,6 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         }
 
         let mut set_state = None;
-        let mut c = vec![];
         ui.horizontal(|ui| {
             if ui.button(gdc.translate_0("nh-tab-projecthierarchy-collapseall")).clicked() {
                 set_state = Some(false);
@@ -1882,23 +1926,24 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
 
             let mut hvv = HierarchyViewVisitor {
                 gdc,
-                commands: vec![],
+                diagram_uuid: *uuid,
+                commands,
                 is_represented: &is_represented,
                 builder,
                 model: PhantomData,
             };
 
             self.adapter.model().read().accept(&mut hvv);
-
-            c = hvv.commands;
         });
 
         for e in a {
             if let egui_ltreeview::Action::Activate(activate) = e {
                 let e = activate.selected[0].into();
-                c.push(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED));
-                c.push(DiagramCommand::HighlightElement(e, true, Highlight::SELECTED));
-                c.push(DiagramCommand::PanToElement(e, true));
+                commands.extend([
+                    DiagramCommand::HighlightAllElements(false, Highlight::SELECTED),
+                    DiagramCommand::HighlightElement(e, true, Highlight::SELECTED),
+                    DiagramCommand::PanToElement(e, true),
+                ].map(|e| ProjectCommand::SimpleProjectCommand(SimpleProjectCommand::FocusedDiagramCommand(e))));
             }
         }
 
@@ -1940,11 +1985,6 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                 state: &mut self.tree_view_state,
                 model: PhantomData,
             });
-        }
-
-        if !c.is_empty() {
-            let c = c.into_iter().flat_map(|c| view.write().diagram_command_to_sensitives(c, &mut Vec::new())).collect();
-            self.apply_commands(uuid, c, true, affected_models);
         }
     }
 
@@ -2691,27 +2731,6 @@ impl<
                 }
                 self.owned_views.retain(|k, _v| !uuids.contains(k));
             }
-            InsensitiveCommand::PasteSpecificElements(target, elements) => {
-                if *target == *self.uuid {
-                    for element in elements {
-                        if let Ok(mut view) = element.clone().try_into()
-                            && let Ok(_) = self.adapter.insert_element(0, None, view.model()) {
-                            let uuid = *view.uuid();
-                            undo_accumulator.push(InsensitiveCommand::DeleteSpecificElements(
-                                std::iter::once(uuid).collect(),
-                                DeleteKind::DeleteAll,
-                            ));
-
-                            affected_models.insert(*self.adapter.model_uuid());
-                            let mut model_transitives = HashMap::new();
-                            view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
-                            affected_models.extend(model_transitives.into_keys());
-
-                            self.owned_views.push(uuid, view);
-                        }
-                    }
-                }
-            }
             InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {
                 self.owned_views.apply_arrangement(uuids, *arr);
             },
@@ -2735,8 +2754,7 @@ impl<
             InsensitiveCommand::HighlightAll(..)
             | InsensitiveCommand::HighlightSpecific(..)
             | InsensitiveCommand::SelectByDrag(..)
-            | InsensitiveCommand::DeleteSpecificElements(..)
-            | InsensitiveCommand::PasteSpecificElements(..) => true,
+            | InsensitiveCommand::DeleteSpecificElements(..) => true,
             InsensitiveCommand::MovePositional(..)
             | InsensitiveCommand::MovePositionalAll(..)
             | InsensitiveCommand::ResizeSpecificElementsBy(..)
@@ -3048,7 +3066,7 @@ impl<
 
         button!(ui, "nh-edit-cut", SimpleProjectCommand::from(DiagramCommand::CutSelectedElements));
         button!(ui, "nh-edit-copy", SimpleProjectCommand::from(DiagramCommand::CopySelectedElements));
-        button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements));
+        button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements(None)));
         ui.separator();
 
         ui.menu_button(gdc.translate_0("nh-edit-delete"), |ui| {
@@ -3503,7 +3521,7 @@ impl<
             }
             DiagramCommand::DeleteSelectedElements(_)
             | DiagramCommand::CutSelectedElements
-            | DiagramCommand::PasteClipboardElements
+            | DiagramCommand::PasteClipboardElements(_)
             | DiagramCommand::ArrangeSelected(_) => {
                 if matches!(command, DiagramCommand::CutSelectedElements) {
                     self.set_clipboard_from_selected(clipboard);
@@ -3514,21 +3532,32 @@ impl<
                             => vec![InsensitiveCommand::DeleteSpecificElements(se!(), b.unwrap_or_default())],
                         DiagramCommand::CutSelectedElements
                             => vec![InsensitiveCommand::DeleteSpecificElements(se!(), DeleteKind::DeleteAll)],
-                        DiagramCommand::PasteClipboardElements => vec![
-                            InsensitiveCommand::HighlightAll(false, canvas::Highlight::SELECTED),
-                            InsensitiveCommand::PasteSpecificElements(
-                                *self.uuid,
-                                Self::elements_deep_copy(
-                                    None,
-                                    |_| true,
-                                    HashMap::new(),
-                                    clipboard.iter()
-                                        .filter_map(|e| if let Some(e) = e.downcast_ref::<DomainT::CommonElementViewT>() {
-                                            Some((*e.uuid(), e.clone()))
-                                        } else { None }),
-                                ).into_iter().map(|e| e.1.into()).collect(),
-                            ),
-                        ],
+                        DiagramCommand::PasteClipboardElements(target) => {
+                            let target = target.and_then(|e| self.get_view_for(&e)).unwrap_or(*self.uuid);
+
+                            let mut cmds = Vec::new();
+                            cmds.push(InsensitiveCommand::HighlightAll(false, canvas::Highlight::SELECTED));
+
+                            for e in Self::elements_deep_copy(
+                                        None,
+                                        |_| true,
+                                        HashMap::new(),
+                                        clipboard.iter()
+                                            .filter_map(|e| if let Some(e) = e.downcast_ref::<DomainT::CommonElementViewT>() {
+                                                Some((*e.uuid(), e.clone()))
+                                            } else { None }),
+                                    ).into_iter().map(|e| e.1) {
+                                cmds.push(InsensitiveCommand::AddDependency {
+                                    target,
+                                    bucket: 0,
+                                    position: None,
+                                    element: e.into(),
+                                    into_model: true,
+                                });
+                            }
+
+                            cmds
+                        },
                         DiagramCommand::ArrangeSelected(arr) => vec![InsensitiveCommand::ArrangeSpecificElements(se!(), arr)],
                         _ => unreachable!(),
                     };

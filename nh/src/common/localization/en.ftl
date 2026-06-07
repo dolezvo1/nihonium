@@ -33,6 +33,7 @@ nh-edit-redo-nothingtoredo = (nothing to redo)
 nh-edit-cut = Cut
 nh-edit-copy = Copy
 nh-edit-paste = Paste
+nh-edit-pastehere = Paste here
 nh-edit-delete = Delete
 nh-edit-clearhighlight = Clear highlight
 nh-edit-arrange = Arrange
