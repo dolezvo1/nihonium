@@ -47,8 +47,10 @@ impl Domain for DemoPsdDomain {
 type PackageViewT = PackageView<DemoPsdDomain, DemoPsdPackageAdapter>;
 type LinkViewT = MulticonnectionView<DemoPsdDomain, DemoPsdLinkAdapter>;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum DemoPsdOrdinalMovement {
+    StateUp,
+    StateDown,
     StateLeft,
     StateRight,
 }
@@ -56,6 +58,8 @@ pub enum DemoPsdOrdinalMovement {
 impl DemoPsdOrdinalMovement {
     fn inverse(&self) -> Self {
         match self {
+            Self::StateUp => Self::StateDown,
+            Self::StateDown => Self::StateUp,
             Self::StateLeft => Self::StateRight,
             Self::StateRight => Self::StateLeft,
         }
@@ -114,6 +118,7 @@ impl TryMerge for DemoPsdPropChange {
         match (self, newer) {
             (Self::NameChange(_), newer @ Self::NameChange(_))
             | (Self::IdentifierChange(_), newer @ Self::IdentifierChange(_))
+            | (Self::TransactionPercentageChange(_), newer @ Self::TransactionPercentageChange(_))
             | (Self::LinkMultiplicityChange(_), newer @ Self::LinkMultiplicityChange(_))
             | (Self::CommentChange(_), newer @ Self::CommentChange(_))
                 => Some(newer.clone()),
@@ -2310,12 +2315,12 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                         if let Some(model_pos) = w.get_element_pos(&e.model_uuid()).map(|e| e.1)
                             .or_else(|| if *into_model { w.insert_element(*bucket, *position, e.model()).ok() } else { None }) {
                             let after = match *bucket {
-                                DemoPsdTransaction::BEFORE_INITIATOR_BUCKET | DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET => false,
+                                0 | DemoPsdTransaction::BEFORE_INITIATOR_BUCKET | DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET => false,
                                 DemoPsdTransaction::AFTER_EXECUTOR_BUCKET | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => true,
-                                _ => unreachable!(),
+                                _ => return,
                             };
                             let executor = match *bucket {
-                                DemoPsdTransaction::BEFORE_INITIATOR_BUCKET | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => false,
+                                0 | DemoPsdTransaction::BEFORE_INITIATOR_BUCKET | DemoPsdTransaction::AFTER_INITIATOR_BUCKET => false,
                                 DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET | DemoPsdTransaction::AFTER_EXECUTOR_BUCKET => true,
                                 _ => unreachable!()
                             };
@@ -2360,7 +2365,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
                 if *target == *self.uuid {
                     let mut w = self.model.write();
-                    if *bucket == DemoPsdTransaction::CENTER_BUCKET {
+                    if matches!(*bucket, 0 | DemoPsdTransaction::CENTER_BUCKET) {
                         if let Some(e) = self.p_act_view.as_ref()
                             && *element == *e.read().uuid {
                             undo_accumulator.push(InsensitiveCommand::AddDependency {
@@ -2376,27 +2381,27 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
                             self.p_act_view = UFOption::None;
                         }
-                    } else {
-                        let closure = |e: &DemoPsdStateViewInfo| if *e.view.uuid() == *element
-                            && let Some((b, pos)) = w.remove_element(&e.view.model_uuid()) {
-                                undo_accumulator.push(InsensitiveCommand::AddDependency {
-                                    target: *target,
-                                    bucket: b,
-                                    position: Some(pos),
-                                    element: DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
-                                    into_model: *including_model,
-                                 });
-                                false
-                            } else { true };
-                        match *bucket {
-                            DemoPsdTransaction::BEFORE_INITIATOR_BUCKET
-                            | DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET
-                                => self.before_views.retain(closure),
-                            DemoPsdTransaction::AFTER_EXECUTOR_BUCKET
-                            | DemoPsdTransaction::AFTER_INITIATOR_BUCKET
-                                => self.after_views.retain(closure),
-                            _ => unreachable!(),
-                        };
+                    }
+                    let mut closure = |e: &DemoPsdStateViewInfo| if *e.view.uuid() == *element
+                        && let Some((b, pos)) = w.remove_element(&e.view.model_uuid()) {
+                            undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                target: *target,
+                                bucket: b,
+                                position: Some(pos),
+                                element: DemoPsdElementOrVertex::Element(e.view.clone().as_element_view()),
+                                into_model: *including_model,
+                                });
+                            false
+                        } else { true };
+                    if matches!(*bucket, 0
+                        | DemoPsdTransaction::BEFORE_INITIATOR_BUCKET
+                        | DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET) {
+                        self.before_views.retain(&mut closure);
+                    }
+                    if matches!(*bucket, 0
+                        | DemoPsdTransaction::AFTER_EXECUTOR_BUCKET
+                        | DemoPsdTransaction::AFTER_INITIATOR_BUCKET) {
+                        self.after_views.retain(&mut closure);
                     }
                 }
                 recurse!();
@@ -2404,40 +2409,95 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
             | InsensitiveCommand::ArrangeSpecificElements(..) => {}
             InsensitiveCommand::MoveOrdinal(uuids, direction) => {
                 let mut undo_uuids = HashSet::new();
-                {
-                    let before_iter: Box<dyn Iterator<Item = &mut DemoPsdStateViewInfo>> = match direction {
-                        DemoPsdOrdinalMovement::StateLeft => Box::new(self.before_views.iter_mut()),
-                        DemoPsdOrdinalMovement::StateRight => Box::new(self.before_views.iter_mut().rev()),
-                    };
-                    let mut before_iter = before_iter.peekable();
-                    while let Some(dest) = before_iter.next()
-                        && let Some(src) = before_iter.peek_mut() {
-                        if uuids.contains(&src.view.uuid()) && !uuids.contains(&dest.view.uuid()) {
-                            let mut w = self.model.write();
-                            let Some(new_pos) = w.get_element_pos(&dest.view.model_uuid()) else { continue; };
-                            w.move_element(&src.view.model_uuid(), new_pos.1);
-                            undo_uuids.insert(*src.view.uuid());
-                            std::mem::swap(dest, *src);
+                match direction {
+                    DemoPsdOrdinalMovement::StateUp | DemoPsdOrdinalMovement::StateDown => {
+                        let mut mw = self.model.write();
+                        let mut try_flip = |b: &mut Vec<DemoPsdStateInfo>, e: &mut DemoPsdStateViewInfo| {
+                            if uuids.contains(&e.view.uuid())
+                                && e.executor == (*direction == DemoPsdOrdinalMovement::StateUp) {
+                                let muiid = *e.view.model_uuid();
+                                b.iter_mut().for_each(|e| {
+                                    if *e.state.uuid() == muiid {
+                                        e.executor = !e.executor;
+                                    }
+                                });
+                                e.executor = !e.executor;
+                                undo_uuids.insert(*e.view.uuid());
+                            }
+                        };
+                        self.before_views.iter_mut().for_each(|e| try_flip(&mut mw.before, e));
+                        self.after_views.iter_mut().for_each(|e| try_flip(&mut mw.after, e));
+                    }
+                    DemoPsdOrdinalMovement::StateLeft | DemoPsdOrdinalMovement::StateRight => {
+                        let mut remainder = None;
+                        {
+                            let before_iter: Box<dyn Iterator<Item = &mut DemoPsdStateViewInfo>> = match direction {
+                                DemoPsdOrdinalMovement::StateLeft => Box::new(self.before_views.iter_mut()),
+                                DemoPsdOrdinalMovement::StateRight => Box::new(self.before_views.iter_mut().rev()),
+                                _ => unreachable!(),
+                            };
+                            let mut before_iter = before_iter.peekable();
+                            while let Some(dest) = before_iter.next()
+                                && let Some(src) = before_iter.peek_mut() {
+                                if uuids.contains(&src.view.uuid()) && !uuids.contains(&dest.view.uuid()) {
+                                    let mut w = self.model.write();
+                                    let Some(new_pos) = w.get_element_pos(&dest.view.model_uuid()) else { continue; };
+                                    w.move_element(&src.view.model_uuid(), new_pos.1);
+                                    undo_uuids.insert(*src.view.uuid());
+                                    std::mem::swap(dest, *src);
+                                }
+                            }
+                        }
+                        if *direction == DemoPsdOrdinalMovement::StateRight
+                            && self.before_views.last().filter(|e| uuids.contains(&e.view.uuid())).is_some() {
+                            remainder = Some((
+                                self.model.write().before.pop().unwrap(),
+                                self.before_views.pop().unwrap(),
+                            ));
+                        }
+                        {
+                            let after_iter: Box<dyn Iterator<Item = &mut DemoPsdStateViewInfo>> = match direction {
+                                DemoPsdOrdinalMovement::StateLeft => Box::new(self.after_views.iter_mut()),
+                                DemoPsdOrdinalMovement::StateRight => Box::new(self.after_views.iter_mut().rev()),
+                                _ => unreachable!(),
+                            };
+                            let mut after_iter = after_iter.peekable();
+                            while let Some(dest) = after_iter.next()
+                                && let Some(src) = after_iter.peek_mut() {
+                                if uuids.contains(&src.view.uuid()) && !uuids.contains(&dest.view.uuid()) {
+                                    let mut w = self.model.write();
+                                    let Some(new_pos) = w.get_element_pos(&dest.view.model_uuid()) else { continue; };
+                                    w.move_element(&src.view.model_uuid(), new_pos.1);
+                                    undo_uuids.insert(*src.view.uuid());
+                                    std::mem::swap(dest, *src);
+                                }
+                            }
+                        }
+                        if *direction == DemoPsdOrdinalMovement::StateLeft
+                            && self.after_views.first().filter(|e| uuids.contains(&e.view.uuid())).is_some() {
+                            remainder = Some((
+                                self.model.write().after.remove(0),
+                                self.after_views.remove(0),
+                            ));
+                        }
+                        if let Some((mi, vi)) = remainder {
+                            undo_uuids.insert(*vi.view.uuid());
+                            match direction {
+                                DemoPsdOrdinalMovement::StateLeft => {
+                                    self.model.write().before.push(mi);
+                                    self.before_views.push(vi);
+                                },
+                                DemoPsdOrdinalMovement::StateRight => {
+                                    self.model.write().after.insert(0, mi);
+                                    self.after_views.insert(0, vi);
+                                },
+                                DemoPsdOrdinalMovement::StateUp
+                                | DemoPsdOrdinalMovement::StateDown => unreachable!(),
+                            }
                         }
                     }
                 }
-                {
-                    let after_iter: Box<dyn Iterator<Item = &mut DemoPsdStateViewInfo>> = match direction {
-                        DemoPsdOrdinalMovement::StateLeft => Box::new(self.after_views.iter_mut()),
-                        DemoPsdOrdinalMovement::StateRight => Box::new(self.after_views.iter_mut().rev()),
-                    };
-                    let mut after_iter = after_iter.peekable();
-                    while let Some(dest) = after_iter.next()
-                        && let Some(src) = after_iter.peek_mut() {
-                        if uuids.contains(&src.view.uuid()) && !uuids.contains(&dest.view.uuid()) {
-                            let mut w = self.model.write();
-                            let Some(new_pos) = w.get_element_pos(&dest.view.model_uuid()) else { continue; };
-                            w.move_element(&src.view.model_uuid(), new_pos.1);
-                            undo_uuids.insert(*src.view.uuid());
-                            std::mem::swap(dest, *src);
-                        }
-                    }
-                }
+
                 if !undo_uuids.is_empty() {
                     undo_accumulator.push(InsensitiveCommand::MoveOrdinal(undo_uuids, direction.inverse()));
                 }
@@ -2552,6 +2612,29 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
         });
     }
 
+    fn deep_copy_walk(
+        &self,
+        requested: Option<&HashSet<ViewUuid>>,
+        uuid_present: &dyn Fn(&ViewUuid) -> bool,
+        tlc: &mut HashMap<ViewUuid, <DemoPsdDomain as Domain>::CommonElementViewT>,
+        c: &mut HashMap<ViewUuid, <DemoPsdDomain as Domain>::CommonElementViewT>,
+        m: &mut HashMap<ModelUuid, <DemoPsdDomain as Domain>::CommonElementT>,
+    )
+    {
+        if requested.is_none_or(|e| e.contains(&self.uuid())) {
+            self.deep_copy_clone(uuid_present, tlc, c, m);
+        } else {
+            for e in &self.before_views {
+                e.view.deep_copy_walk(requested, uuid_present, tlc, c, m);
+            }
+            if let UFOption::Some(act) = &self.p_act_view {
+                act.read().deep_copy_walk(requested, uuid_present, tlc, c, m);
+            }
+            for e in &self.after_views {
+                e.view.deep_copy_walk(requested, uuid_present, tlc, c, m);
+            }
+        }
+    }
     fn deep_copy_clone(
         &self,
         uuid_present: &dyn Fn(&ViewUuid) -> bool,
@@ -2823,6 +2906,15 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                 DemoPsdPropChange::StateInternalChange(self.internal_buffer),
             ));
         }
+
+        ui.horizontal(|ui| {
+            if ui.button("Move up").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), DemoPsdOrdinalMovement::StateUp));
+            }
+            if ui.button("Move down").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), DemoPsdOrdinalMovement::StateDown));
+            }
+        });
 
         ui.horizontal(|ui| {
             if ui.button("Move left").clicked() {
@@ -3253,6 +3345,15 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                 DemoPsdPropChange::StateInternalChange(self.internal_buffer),
             ));
         }
+
+        ui.horizontal(|ui| {
+            if ui.button("Move up").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), DemoPsdOrdinalMovement::StateUp));
+            }
+            if ui.button("Move down").clicked() {
+                commands.push(InsensitiveCommand::MoveOrdinal(q.selected_views(), DemoPsdOrdinalMovement::StateDown));
+            }
+        });
 
         ui.horizontal(|ui| {
             if ui.button("Move left").clicked() {

@@ -680,12 +680,12 @@ impl ContainerModel for DemoPsdTransaction {
             }
         } else if let Some(state) = element.clone().to_state() {
             let after = match bucket {
-                Self::BEFORE_INITIATOR_BUCKET | Self::BEFORE_EXECUTOR_BUCKET => false,
+                0 | Self::BEFORE_INITIATOR_BUCKET | Self::BEFORE_EXECUTOR_BUCKET => false,
                 Self::AFTER_EXECUTOR_BUCKET | Self::AFTER_INITIATOR_BUCKET => true,
-                _ => unreachable!(),
+                _ => return Err(element),
             };
             let executor = match bucket {
-                Self::BEFORE_INITIATOR_BUCKET | Self::AFTER_INITIATOR_BUCKET => false,
+                0 | Self::BEFORE_INITIATOR_BUCKET | Self::AFTER_INITIATOR_BUCKET => false,
                 Self::BEFORE_EXECUTOR_BUCKET | Self::AFTER_EXECUTOR_BUCKET => true,
                 _ => unreachable!(),
             };
