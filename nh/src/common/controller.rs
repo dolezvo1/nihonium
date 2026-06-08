@@ -1200,7 +1200,7 @@ pub enum InsensitiveCommand<OrdinalMovementT: Clone + Debug, AddElementT: Clone 
         including_model: bool,
     },
     PropertyChange(HashSet<ViewUuid>, PropChangeT),
-    Macro(Arc<String>, Arc<Vec<Self>>),
+    Macro(Arc<String>, usize, Arc<Vec<Self>>),
 }
 
 impl<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: TryMerge + Clone + Debug>
@@ -1242,8 +1242,8 @@ impl<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: T
             },
             InsensitiveCommand::PropertyChange(uuids, ..)
                 => (gdc.get_message("nh-viewcommand-modifyelements"), uuids.len()),
-            InsensitiveCommand::Macro(msg, cmds)
-                => (gdc.get_message(&msg), cmds.len()),
+            InsensitiveCommand::Macro(msg, arg, _)
+                => (gdc.get_message(&msg), *arg),
             InsensitiveCommand::HighlightAll(..) | InsensitiveCommand::HighlightSpecific(..) | InsensitiveCommand::SelectByDrag(..) => {
                 unreachable!()
             }
@@ -1658,9 +1658,9 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         m: &mut HashSet<ModelUuid>,
     ) -> InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT> {
         match c {
-            InsensitiveCommand::Macro(lbl, cmds) => {
+            InsensitiveCommand::Macro(lbl, arg, cmds) => {
                 let cmds = cmds.iter().map(|c| self.recurse_delete(view, c.clone(), u, m)).collect::<Vec<_>>();
-                InsensitiveCommand::Macro(lbl, cmds.into())
+                InsensitiveCommand::Macro(lbl, arg, cmds.into())
             }
             InsensitiveCommand::DeleteSpecificElements(ref mut uuids, delete_kind) => {
                 let mut original_models = HashSet::new();
@@ -2775,7 +2775,7 @@ impl<
                     );
                 }
             }
-            InsensitiveCommand::Macro(_, cmds) => {
+            InsensitiveCommand::Macro(_, _, cmds) => {
                 for e in cmds.iter() {
                     self.apply_command_inner(e, undo_accumulator, affected_models);
                 }
@@ -3584,11 +3584,13 @@ impl<
                         DiagramCommand::DeleteSelectedElements(b)
                             => vec![InsensitiveCommand::DeleteSpecificElements(se!(), b.unwrap_or_default())],
                         DiagramCommand::CutSelectedElements => {
+                            let se: HashSet<_> = se!();
                             vec![
                                 InsensitiveCommand::Macro(
                                     "nh-viewcommand-cutelements".to_owned().into(),
+                                    se.len(),
                                     vec![
-                                        InsensitiveCommand::DeleteSpecificElements(se!(), DeleteKind::DeleteAll)
+                                        InsensitiveCommand::DeleteSpecificElements(se, DeleteKind::DeleteAll)
                                     ].into(),
                                 )
                             ]
@@ -3613,7 +3615,6 @@ impl<
                             for (_k, v) in elements.iter() {
                                 new_elements_area = new_elements_area.union(v.bounding_box());
                             }
-                            let (mut u, mut a) = Default::default();
                             let offset = if target == *self.uuid {
                                 -self.temporaries.camera_offset.to_vec2() / self.temporaries.camera_scale
                             } else {
@@ -3621,12 +3622,15 @@ impl<
                                     .get(&target).map(|e| e.0.bounding_box().min.to_vec2())
                                     .unwrap_or_default()
                             };
+                            let (mut u, mut m) = Default::default();
+                            let (mut a, mut b, mut frm) = Default::default();
                             for (_k, mut v) in elements.into_iter() {
                                 v.apply_command(
                                     &InsensitiveCommand::MovePositionalAll(-new_elements_area.min.to_vec2() + offset),
                                     &mut u,
-                                    &mut a,
+                                    &mut m,
                                 );
+                                v.head_count(&mut a, &mut b, &mut frm);
                                 add_commands.push(InsensitiveCommand::AddDependency {
                                     target,
                                     bucket: 0,
@@ -3637,6 +3641,7 @@ impl<
                             }
                             cmds.push(InsensitiveCommand::Macro(
                                 "nh-viewcommand-pasteelements".to_owned().into(),
+                                frm.len(),
                                 add_commands.into(),
                             ));
 
