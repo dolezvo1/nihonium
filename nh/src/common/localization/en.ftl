@@ -46,6 +46,7 @@ nh-view = View
 nh-view-resetposition = Reset Position
 nh-view-resetscale = Reset Scale
 nh-view-zoomtofit = Zoom to fit
+nh-view-zoomtofitselected = Zoom to fit selected
 
 nh-diagram = Diagram
 nh-diagram-exportto = Export Diagram { $name } to

@@ -46,6 +46,7 @@ nh-view = Pohled
 nh-view-resetposition = Resetovat umístění
 nh-view-resetscale = Resetovat zoom
 nh-view-zoomtofit = Zoom podle obsahu
+nh-view-zoomtofitselected = Zoom podle vybraného obsahu
 
 nh-diagram = Diagram
 nh-diagram-exportto = Exportovat Diagram { $name } do

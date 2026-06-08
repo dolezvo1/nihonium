@@ -3496,6 +3496,7 @@ impl<
             };
         }
 
+        const PADDING: egui::Vec2 = egui::Vec2::splat(10.0);
         if ui.button(translate!("nh-view-resetposition")).clicked() {
             self.temporaries.camera_offset = egui::Pos2::ZERO;
         }
@@ -3504,8 +3505,6 @@ impl<
             self.temporaries.camera_scale = 1.0;
         }
         if ui.button(translate!("nh-view-zoomtofit")).clicked() {
-            const PADDING: egui::Vec2 = egui::Vec2::splat(10.0);
-
             let mut mc = canvas::MeasuringCanvas::new(ui.painter());
             self.draw_in(context, settings, &mut mc, None);
 
@@ -3513,6 +3512,21 @@ impl<
             let ratio = self.temporaries.last_interactive_canvas_rect.size() * self.temporaries.camera_scale / (rect.size() + PADDING);
             self.temporaries.camera_scale = ratio.x.min(ratio.y);
             self.temporaries.camera_offset = rect.min * -self.temporaries.camera_scale + PADDING / 2.0;
+        }
+        if ui.button(translate!("nh-view-zoomtofitselected")).clicked() {
+            let mut area = egui::Rect::NOTHING;
+            for e in self.temporaries.flattened_views_status.iter()
+                .filter(|e| *e.1 != SelectionStatus::NotSelected)
+                .flat_map(|e| self.temporaries.flattened_views.get(e.0))
+            {
+                area = area.union(e.0.bounding_box());
+            }
+
+            if area.is_positive() {
+                let ratio = self.temporaries.last_interactive_canvas_rect.size() * self.temporaries.camera_scale / (area.size() + PADDING);
+                self.temporaries.camera_scale = ratio.x.min(ratio.y);
+                self.temporaries.camera_offset = area.min * -self.temporaries.camera_scale + PADDING / 2.0;
+            }
         }
     }
     fn show_menubar_diagram_options(
