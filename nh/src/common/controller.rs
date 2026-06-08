@@ -3626,7 +3626,11 @@ impl<
                             let (mut a, mut b, mut frm) = Default::default();
                             for (_k, mut v) in elements.into_iter() {
                                 v.apply_command(
-                                    &InsensitiveCommand::MovePositionalAll(-new_elements_area.min.to_vec2() + offset),
+                                    &InsensitiveCommand::MovePositionalAll(
+                                        -new_elements_area.min.to_vec2()
+                                        + offset
+                                        + egui::Vec2::splat(10.0)
+                                    ),
                                     &mut u,
                                     &mut m,
                                 );
