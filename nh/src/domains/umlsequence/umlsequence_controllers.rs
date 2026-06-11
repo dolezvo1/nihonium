@@ -1533,7 +1533,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
                     ui.label("width");
                     if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), egui::Align2::LEFT_CENTER, egui::Vec2::new(x - self.bounds_rect.width(), 0.0)));
+                        commands.push(InsensitiveCommand::ResizeElementsBy(q.selected_views(), egui::Align2::LEFT_CENTER, egui::Vec2::new(x - self.bounds_rect.width(), 0.0)));
                     }
                     ui.end_row();
                 }
@@ -1913,7 +1913,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     );
                     let coerced_delta = coerced_point - egui::Pos2::new(handle_x.1, handle_y.1);
 
-                    commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), align, coerced_delta));
+                    commands.push(InsensitiveCommand::ResizeElementsBy(q.selected_views(), align, coerced_delta));
                     EventHandlingStatus::HandledByElement
                 },
                 None => EventHandlingStatus::NotHandled,
@@ -1933,29 +1933,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 self.horizontal_element_views.iter_mut().for_each(|v| v.apply_command(command, undo_accumulator, affected_models));
             };
         }
-        macro_rules! resize_by {
-            ($align:expr, $delta:expr) => {
-                let min_delta_x = Self::MIN_SIZE.x - self.bounds_rect.width();
-                let (left, right) = match $align.x() {
-                    egui::Align::Min => (0.0, $delta.x.max(min_delta_x)),
-                    egui::Align::Center => (0.0, 0.0),
-                    egui::Align::Max => ((-$delta.x).max(min_delta_x), 0.0),
-                };
-                let min_delta_y = Self::MIN_SIZE.y - self.bounds_rect.height();
-                let (top, bottom) = match $align.y() {
-                    egui::Align::Min => (0.0, $delta.y.max(min_delta_y)),
-                    egui::Align::Center => (0.0, 0.0),
-                    egui::Align::Max => ((-$delta.y).max(min_delta_y), 0.0),
-                };
-
-                let r = self.bounds_rect + epaint::MarginF32{left, right, top, bottom};
-
-                undo_accumulator.push(InsensitiveCommand::ResizeSpecificElementsTo(
-                    std::iter::once(*self.uuid).collect(),
-                    *$align,
-                    self.bounds_rect.size(),
+        macro_rules! resize_to {
+            ($rect:expr) => {
+                undo_accumulator.push(InsensitiveCommand::ResizeElementTo(
+                    *self.uuid,
+                    self.bounds_rect,
                 ));
-                self.bounds_rect = r;
+                self.bounds_rect = $rect;
             };
         }
 
@@ -2016,28 +2000,30 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                     v.apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
+            InsensitiveCommand::ResizeElementsBy(uuids, align, delta) => {
                 if uuids.contains(&self.uuid) {
-                    resize_by!(align, delta);
+                    let min_delta_x = Self::MIN_SIZE.x - self.bounds_rect.width();
+                    let (left, right) = match align.x() {
+                        egui::Align::Min => (0.0, delta.x.max(min_delta_x)),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => ((-delta.x).max(min_delta_x), 0.0),
+                    };
+                    let min_delta_y = Self::MIN_SIZE.y - self.bounds_rect.height();
+                    let (top, bottom) = match align.y() {
+                        egui::Align::Min => (0.0, delta.y.max(min_delta_y)),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => ((-delta.y).max(min_delta_y), 0.0),
+                    };
+
+                    let r = self.bounds_rect + epaint::MarginF32{left, right, top, bottom};
+                    resize_to!(r);
                 }
 
                 recurse!();
             }
-            InsensitiveCommand::ResizeSpecificElementsTo(uuids, align, size) => {
-                if uuids.contains(&self.uuid) {
-                    let delta_naive = *size - self.bounds_rect.size();
-                    let x = match align.x() {
-                        egui::Align::Min => delta_naive.x,
-                        egui::Align::Center => 0.0,
-                        egui::Align::Max => -delta_naive.x,
-                    };
-                    let y = match align.y() {
-                        egui::Align::Min => delta_naive.y,
-                        egui::Align::Center => 0.0,
-                        egui::Align::Max => -delta_naive.y,
-                    };
-
-                    resize_by!(align, egui::Vec2::new(x, y));
+            InsensitiveCommand::ResizeElementTo(uuid, rect) => {
+                if *uuid == *self.uuid {
+                    resize_to!(*rect);
                 }
 
                 recurse!();
@@ -2867,8 +2853,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                     v.write().apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..) => {
                 recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
@@ -3567,8 +3553,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentSec
                     v.apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..) => {
                 recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
@@ -4302,8 +4288,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
@@ -5228,8 +5214,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceRefView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..) => {}
             InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
@@ -5681,8 +5667,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }

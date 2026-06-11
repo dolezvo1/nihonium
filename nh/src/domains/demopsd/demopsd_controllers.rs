@@ -1761,7 +1761,7 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
 
             ui.label("width");
             if ui.add(egui::DragValue::new(&mut width).range(Self::MIN_SIZE.x..=5000.0).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::ResizeSpecificElementsBy(
+                commands.push(InsensitiveCommand::ResizeElementsBy(
                     q.selected_views(),
                     egui::Align2::LEFT_CENTER,
                     egui::Vec2::new(width - self.tx_outer_rectangle.width(), 0.0),
@@ -2146,23 +2146,13 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 }
             };
         }
-        macro_rules! resize_by {
-            ($align:expr, $delta:expr) => {
-                let min_delta_x = Self::MIN_SIZE.x - self.tx_outer_rectangle.width();
-                let (left, right) = match $align.x() {
-                    egui::Align::Min => (0.0, $delta.x.max(min_delta_x)),
-                    egui::Align::Center => (0.0, 0.0),
-                    egui::Align::Max => ((-$delta.x).max(min_delta_x), 0.0),
-                };
-
-                let r = self.tx_outer_rectangle + epaint::MarginF32{left, right, top: 0.0, bottom: 0.0};
-
-                undo_accumulator.push(InsensitiveCommand::ResizeSpecificElementsTo(
-                    std::iter::once(*self.uuid).collect(),
-                    *$align,
-                    self.tx_outer_rectangle.size(),
+        macro_rules! resize_to {
+            ($rect:expr) => {
+                undo_accumulator.push(InsensitiveCommand::ResizeElementTo(
+                    *self.uuid,
+                    self.tx_outer_rectangle,
                 ));
-                self.tx_outer_rectangle = r;
+                self.tx_outer_rectangle = $rect;
             };
         }
 
@@ -2235,27 +2225,23 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                 ));
             }
 
-            InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
+            InsensitiveCommand::ResizeElementsBy(uuids, align, delta) => {
                 if uuids.contains(&self.uuid) {
-                    resize_by!(align, delta);
+                    let min_delta_x = Self::MIN_SIZE.x - self.tx_outer_rectangle.width();
+                    let (left, right) = match align.x() {
+                        egui::Align::Min => (0.0, delta.x.max(min_delta_x)),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => ((-delta.x).max(min_delta_x), 0.0),
+                    };
+
+                    let r = self.tx_outer_rectangle + epaint::MarginF32{left, right, top: 0.0, bottom: 0.0};
+                    resize_to!(r);
                 }
                 recurse!();
             }
-            InsensitiveCommand::ResizeSpecificElementsTo(uuids, align, size) => {
-                if uuids.contains(&self.uuid) {
-                    let delta_naive = *size - self.tx_outer_rectangle.size();
-                    let x = match align.x() {
-                        egui::Align::Min => delta_naive.x,
-                        egui::Align::Center => 0.0,
-                        egui::Align::Max => -delta_naive.x,
-                    };
-                    let y = match align.y() {
-                        egui::Align::Min => delta_naive.y,
-                        egui::Align::Center => 0.0,
-                        egui::Align::Max => -delta_naive.y,
-                    };
-
-                    resize_by!(align, egui::Vec2::new(x, y));
+            InsensitiveCommand::ResizeElementTo(uuid, rect) => {
+                if *uuid == *self.uuid {
+                    resize_to!(*rect);
                 }
                 recurse!();
             }
@@ -3071,8 +3057,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdFactView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
@@ -3510,8 +3496,8 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdActView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }

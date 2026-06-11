@@ -1182,8 +1182,8 @@ pub enum InsensitiveCommand<OrdinalMovementT: Clone + Debug, AddElementT: Clone 
     HighlightSpecific(HashSet<ViewUuid>, /*set:*/ bool, Highlight),
     MovePositional(HashSet<ViewUuid>, egui::Vec2),
     MoveOrdinal(HashSet<ViewUuid>, OrdinalMovementT),
-    ResizeSpecificElementsBy(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
-    ResizeSpecificElementsTo(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
+    ResizeElementsBy(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
+    ResizeElementTo(ViewUuid, egui::Rect),
     DeleteSpecificElements(HashSet<ViewUuid>, DeleteKind),
     ArrangeSpecificElements(HashSet<ViewUuid>, Arrangement),
     AddDependency {
@@ -1225,9 +1225,10 @@ impl<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: T
                 => (gdc.get_message("nh-viewcommand-moveelements"), uuids.len()),
             InsensitiveCommand::MovePositionalAll(_delta)
                 => (gdc.get_message("nh-viewcommand-moveallelements"), 0),
-            InsensitiveCommand::ResizeSpecificElementsBy(uuids, _, _)
-            | InsensitiveCommand::ResizeSpecificElementsTo(uuids, _, _)
+            InsensitiveCommand::ResizeElementsBy(uuids, ..)
                 => (gdc.get_message("nh-viewcommand-resizeelements"), uuids.len()),
+            InsensitiveCommand::ResizeElementTo(..)
+                => (gdc.get_message("nh-viewcommand-resizeelements"), 1),
             InsensitiveCommand::ArrangeSpecificElements(uuids, _)
                 => (gdc.get_message("nh-viewcommand-arrangeelements"), uuids.len()),
             InsensitiveCommand::AddDependency { into_model, .. } => if *into_model {
@@ -1276,9 +1277,9 @@ impl<OrdinalMovementT: Clone + Debug, AddElementT: Clone + Debug, PropChangeT: T
                 *delta1 + *delta2,
             )),
             (
-                InsensitiveCommand::ResizeSpecificElementsBy(uuids1, align1, delta1),
-                InsensitiveCommand::ResizeSpecificElementsBy(uuids2, align2, delta2),
-            ) if uuids1 == uuids2 && align1 == align2 => Some(InsensitiveCommand::ResizeSpecificElementsBy(
+                InsensitiveCommand::ResizeElementsBy(uuids1, align1, delta1),
+                InsensitiveCommand::ResizeElementsBy(uuids2, align2, delta2),
+            ) if uuids1 == uuids2 && align1 == align2 => Some(InsensitiveCommand::ResizeElementsBy(
                 uuids1.clone(),
                 *align1,
                 *delta1 + *delta2,
@@ -2688,8 +2689,8 @@ impl<
             | InsensitiveCommand::SelectByDrag(..)
             | InsensitiveCommand::MovePositional(..)
             | InsensitiveCommand::MovePositionalAll(..)
-            | InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            | InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid && *bucket == 0 {
@@ -2795,8 +2796,8 @@ impl<
             | InsensitiveCommand::DeleteSpecificElements(..) => true,
             InsensitiveCommand::MovePositional(..)
             | InsensitiveCommand::MovePositionalAll(..)
-            | InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            | InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::MoveOrdinal(..)
             | InsensitiveCommand::ArrangeSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }

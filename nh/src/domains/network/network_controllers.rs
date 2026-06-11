@@ -1848,8 +1848,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
@@ -2416,8 +2416,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
@@ -2886,8 +2886,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
@@ -3778,8 +3778,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }

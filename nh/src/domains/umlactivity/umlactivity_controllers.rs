@@ -2269,7 +2269,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                     v.write().apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
+            InsensitiveCommand::ResizeElementsBy(uuids, align, delta) => {
                 if self.section_views.iter().any(|e| uuids.contains(&e.read().uuid)) {
                     let mut targets = HashSet::new();
                     let mut delta_x = egui::Vec2::ZERO;
@@ -2299,7 +2299,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                         }
                     }
 
-                    undo_accumulator.push(InsensitiveCommand::ResizeSpecificElementsBy(
+                    undo_accumulator.push(InsensitiveCommand::ResizeElementsBy(
                         targets,
                         *align,
                         -*delta,
@@ -2308,7 +2308,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
 
                 recurse!();
             }
-            InsensitiveCommand::ResizeSpecificElementsTo(..) => {
+            InsensitiveCommand::ResizeElementTo(..) => {
                 recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
@@ -3087,7 +3087,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                     );
                     let coerced_delta = coerced_point - egui::Pos2::new(handle_x.1, handle_y.1);
 
-                    commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), align, coerced_delta));
+                    commands.push(InsensitiveCommand::ResizeElementsBy(q.selected_views(), align, coerced_delta));
                     EventHandlingStatus::HandledByElement
                 },
                 None => EventHandlingStatus::NotHandled,
@@ -3161,8 +3161,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                     v.apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
                 });
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..) => {
                 recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
@@ -3847,8 +3847,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
@@ -4198,8 +4198,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..) => {}
             InsensitiveCommand::DeleteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency { .. } => {}
             InsensitiveCommand::RemoveDependency { .. } => {}
@@ -4564,8 +4564,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityFinalNodeView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..) => {}
             InsensitiveCommand::DeleteSpecificElements(..) => {}
             InsensitiveCommand::AddDependency { .. } => {}
             InsensitiveCommand::RemoveDependency { .. } => {}
@@ -4932,8 +4932,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
@@ -5280,8 +5280,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
@@ -5674,8 +5674,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
@@ -6414,8 +6414,8 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }

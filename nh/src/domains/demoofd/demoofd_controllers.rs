@@ -2230,8 +2230,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }
             | InsensitiveCommand::RemoveDependency { .. }
@@ -2859,8 +2859,8 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     s.write().apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut vec![], affected_models);
                 }
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..) => {}
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..) => {}
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid
                     && self.specialization_view.as_ref().is_none()

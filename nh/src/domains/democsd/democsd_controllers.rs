@@ -1890,8 +1890,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
                     t.write().apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut vec![], affected_models);
                 }
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::MoveOrdinal(..) => {}
             InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
                 if *target == *self.uuid
@@ -2593,8 +2593,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactionView {
                     -*delta,
                 ));
             }
-            InsensitiveCommand::ResizeSpecificElementsBy(..)
-            | InsensitiveCommand::ResizeSpecificElementsTo(..)
+            InsensitiveCommand::ResizeElementsBy(..)
+            | InsensitiveCommand::ResizeElementTo(..)
             | InsensitiveCommand::MoveOrdinal(..)
             | InsensitiveCommand::DeleteSpecificElements(..)
             | InsensitiveCommand::AddDependency { .. }

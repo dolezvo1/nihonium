@@ -214,11 +214,11 @@ where
 
                     ui.label("width");
                     if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), egui::Align2::LEFT_CENTER, egui::Vec2::new(x - self.bounds_rect.width(), 0.0)));
+                        commands.push(InsensitiveCommand::ResizeElementsBy(q.selected_views(), egui::Align2::LEFT_CENTER, egui::Vec2::new(x - self.bounds_rect.width(), 0.0)));
                     }
                     ui.label("height");
                     if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, y - self.bounds_rect.height())));
+                        commands.push(InsensitiveCommand::ResizeElementsBy(q.selected_views(), egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, y - self.bounds_rect.height())));
                     }
                     ui.end_row();
                 }
@@ -525,7 +525,7 @@ where
                     );
                     let coerced_delta = coerced_point - egui::Pos2::new(handle_x.1, handle_y.1);
 
-                    commands.push(InsensitiveCommand::ResizeSpecificElementsBy(q.selected_views(), align, coerced_delta));
+                    commands.push(InsensitiveCommand::ResizeElementsBy(q.selected_views(), align, coerced_delta));
                     EventHandlingStatus::HandledByElement
                 },
                 None => EventHandlingStatus::NotHandled,
@@ -546,29 +546,13 @@ where
                 );
             };
         }
-        macro_rules! resize_by {
-            ($align:expr, $delta:expr) => {
-                let min_delta_x = 40.0 - self.bounds_rect.width();
-                let (left, right) = match $align.x() {
-                    egui::Align::Min => (0.0, $delta.x.max(min_delta_x)),
-                    egui::Align::Center => (0.0, 0.0),
-                    egui::Align::Max => ((-$delta.x).max(min_delta_x), 0.0),
-                };
-                let min_delta_y = 20.0 - self.bounds_rect.height();
-                let (top, bottom) = match $align.y() {
-                    egui::Align::Min => (0.0, $delta.y.max(min_delta_y)),
-                    egui::Align::Center => (0.0, 0.0),
-                    egui::Align::Max => ((-$delta.y).max(min_delta_y), 0.0),
-                };
-
-                let r = self.bounds_rect + epaint::MarginF32{left, right, top, bottom};
-
-                undo_accumulator.push(InsensitiveCommand::ResizeSpecificElementsTo(
-                    std::iter::once(*self.uuid).collect(),
-                    *$align,
-                    self.bounds_rect.size(),
+        macro_rules! resize_to {
+            ($rect:expr) => {
+                undo_accumulator.push(InsensitiveCommand::ResizeElementTo(
+                    *self.uuid,
+                    self.bounds_rect,
                 ));
-                self.bounds_rect = r;
+                self.bounds_rect = $rect;
             };
         }
 
@@ -625,28 +609,30 @@ where
             InsensitiveCommand::MoveOrdinal(..) => {
                 recurse!();
             },
-            InsensitiveCommand::ResizeSpecificElementsBy(uuids, align, delta) => {
+            InsensitiveCommand::ResizeElementsBy(uuids, align, delta) => {
                 if uuids.contains(&self.uuid) {
-                    resize_by!(align, delta);
+                    let min_delta_x = 40.0 - self.bounds_rect.width();
+                    let (left, right) = match align.x() {
+                        egui::Align::Min => (0.0, delta.x.max(min_delta_x)),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => ((-delta.x).max(min_delta_x), 0.0),
+                    };
+                    let min_delta_y = 20.0 - self.bounds_rect.height();
+                    let (top, bottom) = match align.y() {
+                        egui::Align::Min => (0.0, delta.y.max(min_delta_y)),
+                        egui::Align::Center => (0.0, 0.0),
+                        egui::Align::Max => ((-delta.y).max(min_delta_y), 0.0),
+                    };
+
+                    let r = self.bounds_rect + epaint::MarginF32{left, right, top, bottom};
+                    resize_to!(r);
                 }
 
                 recurse!();
             }
-            InsensitiveCommand::ResizeSpecificElementsTo(uuids, align, size) => {
-                if uuids.contains(&self.uuid) {
-                    let delta_naive = *size - self.bounds_rect.size();
-                    let x = match align.x() {
-                        egui::Align::Min => delta_naive.x,
-                        egui::Align::Center => 0.0,
-                        egui::Align::Max => -delta_naive.x,
-                    };
-                    let y = match align.y() {
-                        egui::Align::Min => delta_naive.y,
-                        egui::Align::Center => 0.0,
-                        egui::Align::Max => -delta_naive.y,
-                    };
-
-                    resize_by!(align, egui::Vec2::new(x, y));
+            InsensitiveCommand::ResizeElementTo(uuid, rect) => {
+                if *uuid == *self.uuid {
+                    resize_to!(*rect);
                 }
 
                 recurse!();
