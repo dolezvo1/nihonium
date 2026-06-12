@@ -2271,7 +2271,6 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
             }
             InsensitiveCommand::ResizeElementsBy(uuids, align, delta) => {
                 if self.section_views.iter().any(|e| uuids.contains(&e.read().uuid)) {
-                    let mut targets = HashSet::new();
                     let mut delta_x = egui::Vec2::ZERO;
                     let (mut u, mut v) = Default::default();
 
@@ -2283,32 +2282,75 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                     for e in sections_iter {
                         let mut w = e.write();
                         w.apply_command(&InsensitiveCommand::MovePositionalAll(delta_x), &mut u, &mut v);
+                        let mut new_rect = w.bounds_rect;
                         match align.y() {
-                            egui::Align::Min => w.bounds_rect.max.y += delta.y,
-                            egui::Align::Center => {},
-                            egui::Align::Max => w.bounds_rect.min.y += delta.y,
+                            egui::Align::Min => new_rect.max.y += delta.y,
+                            egui::Align::Max => new_rect.min.y += delta.y,
+                            _ => {},
                         }
                         if uuids.contains(&w.uuid) {
-                            targets.insert(*w.uuid);
                             match align.x() {
-                                egui::Align::Min => w.bounds_rect.max.x += delta.x,
-                                egui::Align::Center => {},
-                                egui::Align::Max => w.bounds_rect.min.x += delta.x,
+                                egui::Align::Min => new_rect.max.x += delta.x,
+                                egui::Align::Max => new_rect.min.x += delta.x,
+                                _ => {}
                             }
-                            delta_x.x += delta.x;
+                            undo_accumulator.push(InsensitiveCommand::ResizeElementTo(
+                                *w.uuid,
+                                w.bounds_rect,
+                            ));
+                            if new_rect.width() >= 40.0 {
+                                w.bounds_rect.min.x = new_rect.min.x;
+                                w.bounds_rect.max.x = new_rect.max.x;
+                                delta_x.x += delta.x;
+                            }
+                        }
+                        if new_rect.height() >= 40.0 {
+                            w.bounds_rect.min.y = new_rect.min.y;
+                            w.bounds_rect.max.y = new_rect.max.y;
                         }
                     }
-
-                    undo_accumulator.push(InsensitiveCommand::ResizeElementsBy(
-                        targets,
-                        *align,
-                        -*delta,
-                    ));
                 }
 
                 recurse!();
             }
-            InsensitiveCommand::ResizeElementTo(..) => {
+            InsensitiveCommand::ResizeElementTo(uuid, rect) => {
+                if let Some((idx, br)) = self.section_views.iter()
+                    .enumerate()
+                    .filter_map(|(idx, e)| {
+                        if let r = e.read() && *r.uuid == *uuid { Some((idx, r.bounds_rect)) } else { None }
+                    }).next()
+                {
+                    {
+                        let mut w = self.section_views[idx].write();
+                        undo_accumulator.push(InsensitiveCommand::ResizeElementTo(*uuid, w.bounds_rect));
+                        w.bounds_rect = *rect;
+                    }
+
+                    let (mut u, mut v) = Default::default();
+                    macro_rules! adjust {
+                        ($w:expr, $dx:expr) => {
+                            $w.apply_command(
+                                &InsensitiveCommand::MovePositionalAll(
+                                    egui::Vec2::new($dx, 0.0),
+                                ),
+                                &mut u,
+                                &mut v,
+                            );
+                            $w.bounds_rect.set_height(rect.height());
+                        };
+                    }
+
+                    let delta_left = rect.min.x - br.min.x;
+                    for e in self.section_views.iter().take(idx).rev() {
+                        adjust!(e.write(), delta_left);
+                    }
+
+                    let delta_right = rect.max.x - br.max.x;
+                    for e in self.section_views.iter().skip(idx + 1) {
+                        adjust!(e.write(), delta_right);
+                    }
+                }
+
                 recurse!();
             }
             InsensitiveCommand::DeleteSpecificElements(uuids, delete_kind) => {
@@ -2354,12 +2396,38 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionView {
                         if let Some(model_pos) = w.get_element_pos(&vw.model_uuid()).map(|e| e.1)
                             .or_else(|| if *into_model { w.insert_element(*bucket, *position, vw.model()).ok() } else { None }) {
                             let uuid = *vw.uuid;
-                            undo_accumulator.push(InsensitiveCommand::RemoveDependency {
-                                target: *self.uuid,
-                                bucket: *bucket,
-                                element: uuid,
-                                including_model: *into_model,
-                             });
+
+                            let (old_uuid, old_rect) = self.section_views.first().map(|e| {
+                                let r = e.read();
+                                (*r.uuid, r.bounds_rect)
+                            }).unwrap();
+                            if old_rect.height() >= vw.bounds_rect.height() {
+                                vw.bounds_rect.set_height(old_rect.height());
+                            } else {
+                                for e in &self.section_views {
+                                    e.write().bounds_rect.set_height(vw.bounds_rect.height());
+                                }
+                            }
+                            let vertical_delta = old_rect.height() - vw.bounds_rect.height();
+
+                            undo_accumulator.extend([
+                                InsensitiveCommand::ResizeElementsBy(
+                                    std::iter::once(old_uuid).collect(),
+                                    egui::Align2::CENTER_TOP,
+                                    egui::Vec2::new(0.0, -vertical_delta),
+                                ),
+                                InsensitiveCommand::RemoveDependency {
+                                    target: *self.uuid,
+                                    bucket: *bucket,
+                                    element: uuid,
+                                    including_model: *into_model,
+                                },
+                                InsensitiveCommand::ResizeElementsBy(
+                                    std::iter::once(old_uuid).collect(),
+                                    egui::Align2::CENTER_TOP,
+                                    egui::Vec2::new(0.0, vertical_delta),
+                                ),
+                            ]);
 
                             if *into_model {
                                 affected_models.insert(*w.uuid);

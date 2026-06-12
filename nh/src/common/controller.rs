@@ -1182,8 +1182,13 @@ pub enum InsensitiveCommand<OrdinalMovementT: Clone + Debug, AddElementT: Clone 
     HighlightSpecific(HashSet<ViewUuid>, /*set:*/ bool, Highlight),
     MovePositional(HashSet<ViewUuid>, egui::Vec2),
     MoveOrdinal(HashSet<ViewUuid>, OrdinalMovementT),
+
+    /// Note: Always use `ResizeElementTo` for undo.
+    /// It is not possible to handle undo by `ResizeElementsBy`
+    /// while maintaining repeatibility and a minimal size condition.
     ResizeElementsBy(HashSet<ViewUuid>, egui::Align2, egui::Vec2),
     ResizeElementTo(ViewUuid, egui::Rect),
+
     DeleteSpecificElements(HashSet<ViewUuid>, DeleteKind),
     ArrangeSpecificElements(HashSet<ViewUuid>, Arrangement),
     AddDependency {
