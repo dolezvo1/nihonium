@@ -279,7 +279,7 @@ struct NHContext {
     zoom_with_keyboard: bool,
     diagram_type_hierarchy: DiagramTypeHierarchyNode,
     diagram_settings: HashMap<&'static str, Box<dyn DiagramSettings>>,
-    diagram_settings_functions: HashMap<&'static str, &'static ShowSettingsF>,
+    diagram_settings_functions: HashMap<&'static str, (&'static ShowSettingsF, &'static DefaultSettingsF)>,
     shades_profiles: Vec<ShadesProfile>,
     selected_shades_profile: usize,
     selected_language: usize,
@@ -1516,9 +1516,13 @@ impl NHContext {
 
         ui.collapsing("Diagram specific settings", |ui| {
             for (ctype, ctypename) in self.diagram_type_hierarchy.iter_diagrams() {
-                if let (Some(s), Some(f)) = (self.diagram_settings.get_mut(ctype), self.diagram_settings_functions.get(ctype)) {
+                if let (Some(s), Some((f, d))) = (self.diagram_settings.get_mut(ctype), self.diagram_settings_functions.get(ctype)) {
                     ui.collapsing(ctypename, |ui| {
                         f(&mut self.drawing_context, ui, s);
+
+                        if ui.button("Reset").clicked() {
+                            *s = d();
+                        }
                     });
                 }
             }
@@ -1869,7 +1873,7 @@ impl Default for NHApp {
         };
 
         let diagram_settings = diagram_infos.iter().map(|e| (e.type_indentifier, (e.default_settings)())).collect();
-        let diagram_settings_functions = diagram_infos.iter().map(|e| (e.type_indentifier, e.show_settings_function)).collect();
+        let diagram_settings_functions = diagram_infos.iter().map(|e| (e.type_indentifier, (e.show_settings_function, e.default_settings))).collect();
         let diagram_deserializers = diagram_infos.iter().map(|e| (e.type_indentifier.to_owned(), e.deserializer)).collect();
 
         let shades_profiles = vec![
