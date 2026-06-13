@@ -19,6 +19,10 @@ Nihonium is a small diagramming / CASE modelling platform written in Rust using 
 
 You can visit https://dolezvo1.github.io/nihonium/, where it should be running.
 
+Note: The following browser settings are recommended for optimal experience:
+* enable asking for download file location (set `about:config` > `browser.download.useDownloadDir` to `false`)
+* disable middle mouse button pasting (set `about:config` > `middlemouse.paste` to `false`)
+
 ### As a native binary
 
 If you don't have `cargo` on your system, [install it first](https://rustup.rs/).
