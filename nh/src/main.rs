@@ -1666,9 +1666,13 @@ impl NHContext {
 
         let input_probably_blocked = self.confirm_modal_reason.is_some() || self.custom_modal.is_some();
         let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(tab_uuid, &self.drawing_context, ui, !input_probably_blocked);
+
         response.context_menu(|ui| {
-            diagram_controller.context_menu(tab_uuid, &self.drawing_context, ui, &mut self.unprocessed_commands, &mut self.affected_models);
+            diagram_controller.show_context_menu(tab_uuid, &self.drawing_context, ui, &response, &mut self.unprocessed_commands, &mut self.affected_models);
         });
+        if !response.context_menu_opened() {
+            diagram_controller.unset_context_menu(tab_uuid);
+        }
 
         diagram_controller.draw_in(tab_uuid, &self.drawing_context, settings, ui_canvas.as_mut(), pos);
         let shade_color = self.shades_profiles[self.selected_shades_profile].get(ctype);
@@ -1968,7 +1972,7 @@ impl Default for NHApp {
         ));
         context.drawing_context.shortcuts.insert(DiagramCommand::CutSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X));
         context.drawing_context.shortcuts.insert(DiagramCommand::CopySelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C));
-        context.drawing_context.shortcuts.insert(DiagramCommand::PasteClipboardElements(None).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
+        context.drawing_context.shortcuts.insert(DiagramCommand::PasteClipboardElements(None, None).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
         context.drawing_context.shortcuts.insert(DiagramCommand::DeleteSelectedElements(None).into(), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
 
         context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Plus));
@@ -2254,7 +2258,7 @@ impl eframe::App for NHApp {
                                 commands.push(SimpleProjectCommand::from(match e {
                                     egui::Event::Cut => DiagramCommand::CutSelectedElements,
                                     egui::Event::Copy => DiagramCommand::CopySelectedElements,
-                                    egui::Event::Paste(_) => DiagramCommand::PasteClipboardElements(None),
+                                    egui::Event::Paste(_) => DiagramCommand::PasteClipboardElements(None, None),
                                     _ => unreachable!(),
                                 }).into())
                             }
@@ -2296,7 +2300,7 @@ impl eframe::App for NHApp {
                                         | DiagramCommand::DeleteSelectedElements(_)
                                         | DiagramCommand::CutSelectedElements
                                         | DiagramCommand::CopySelectedElements
-                                        | DiagramCommand::PasteClipboardElements(_) => {
+                                        | DiagramCommand::PasteClipboardElements(..) => {
                                             if matches!(self.tree.find_active_focused(), Some((_, NHTab::Diagram { .. }))) {
                                                 commands.push(e.into())
                                             }
@@ -2397,7 +2401,7 @@ impl eframe::App for NHApp {
 
                     button!(ui, "nh-edit-cut", SimpleProjectCommand::from(DiagramCommand::CutSelectedElements));
                     button!(ui, "nh-edit-copy", SimpleProjectCommand::from(DiagramCommand::CopySelectedElements));
-                    button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements(None)));
+                    button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements(None, None)));
                     ui.separator();
 
                     ui.menu_button(translate!("nh-edit-delete"), |ui| {

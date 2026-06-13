@@ -34,6 +34,7 @@ nh-edit-cut = Vyjmout
 nh-edit-copy = Kopírovat
 nh-edit-paste = Vložit
 nh-edit-pastehere = Vložit zde
+nh-edit-pasteinto = Vložit do '{ $name }'
 nh-edit-delete = Odstranit
 nh-edit-clearhighlight = Vyčistit zvýraznění
 nh-edit-arrange = Uspořádat

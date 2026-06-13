@@ -158,7 +158,7 @@ pub enum DiagramCommand {
     DeleteSelectedElements(Option<DeleteKind>),
     CutSelectedElements,
     CopySelectedElements,
-    PasteClipboardElements(Option<ModelUuid>),
+    PasteClipboardElements(Option<ModelUuid>, Option<(i64, i64)>),
     ArrangeSelected(Arrangement),
     ColorSelected(u8, MGlobalColor),
     HighlightAllElements(/*set: */bool, Highlight),
@@ -486,12 +486,14 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         mouse_pos: Option<egui::Pos2>,
     );
 
-    fn context_menu(
+    fn show_context_menu(
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
+        response: &egui::Response,
         commands: &mut Vec<ProjectCommand>,
     );
+    fn unset_context_menu(&mut self);
 
     fn show_toolbar(
         &mut self,
@@ -610,13 +612,18 @@ pub trait DiagramController: Any + NHContextSerialize {
         mouse_pos: Option<egui::Pos2>,
     );
 
-    fn context_menu(
+    fn show_context_menu(
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
+        response: &egui::Response,
         commands: &mut Vec<ProjectCommand>,
         affected_models: &mut HashSet<ModelUuid>,
+    );
+    fn unset_context_menu(
+        &mut self,
+        uuid: &ViewUuid,
     );
 
     fn show_toolbar(
@@ -1877,7 +1884,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                             }
 
                             if ui.button(self.gdc.translate_0("nh-edit-pastehere")).clicked() {
-                                push_dia!(DiagramCommand::PasteClipboardElements(Some(*model_uuid)));
+                                push_dia!(DiagramCommand::PasteClipboardElements(Some(*model_uuid), None));
                                 ui.close();
                             }
 
@@ -1931,7 +1938,7 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
                                 self.commands.push(ProjectCommand::SimpleProjectCommand(
                                     SimpleProjectCommand::SpecificDiagramCommand(
                                         self.diagram_uuid,
-                                        DiagramCommand::PasteClipboardElements(Some(model_uuid)),
+                                        DiagramCommand::PasteClipboardElements(Some(model_uuid), None),
                                     )
                                 ));
                                 ui.close();
@@ -2087,16 +2094,25 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         view.write().draw_in(context, settings, canvas, mouse_pos);
     }
 
-    fn context_menu(
+    fn show_context_menu(
         &mut self,
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
+        response: &egui::Response,
         commands: &mut Vec<ProjectCommand>,
         _affected_models: &mut HashSet<ModelUuid>,
     ) {
         let view = self.views.get(uuid).unwrap();
-        view.write().context_menu(context, ui, commands);
+        view.write().show_context_menu(context, ui, response, commands);
+    }
+    fn unset_context_menu(
+        &mut self,
+        uuid: &ViewUuid,
+    )
+    {
+        let view = self.views.get(uuid).unwrap();
+        view.write().unset_context_menu();
     }
 
     fn show_toolbar(
@@ -2433,6 +2449,7 @@ struct DiagramControllerGen2Temporaries<DomainT: Domain> {
     snap_manager: SnapManager,
     current_tool: Option<DomainT::ToolT>,
     select_by_drag: Option<(egui::Pos2, egui::Pos2)>,
+    context_menu_target: Option<(egui::Pos2, ViewUuid, ModelUuid)>,
 
     last_change_flag: bool,
 }
@@ -2452,6 +2469,7 @@ impl<DomainT: Domain> Default for DiagramControllerGen2Temporaries<DomainT> {
             snap_manager: Default::default(),
             current_tool: Default::default(),
             select_by_drag: Default::default(),
+            context_menu_target: Default::default(),
             last_change_flag: Default::default(),
         }
     }
@@ -3086,12 +3104,49 @@ impl<
     fn cancel_tool(&mut self) {
         self.temporaries.current_tool = None;
     }
-    fn context_menu(
+    fn show_context_menu(
         &mut self,
         gdc: &GlobalDrawingContext,
         ui: &mut egui::Ui,
+        response: &egui::Response,
         commands: &mut Vec<ProjectCommand>,
     ) {
+        if self.temporaries.context_menu_target.is_none() {
+            let Some(screen_pos) = ui.pointer_interact_pos() else {
+                self.temporaries.context_menu_target = Some((egui::Pos2::NAN, *self.uuid, *self.adapter.model_uuid()));
+                return;
+            };
+            let local_pos = ((screen_pos - self.temporaries.camera_offset - response.rect.min.to_vec2()) / self.temporaries.camera_scale).to_pos2();
+            let (v, m) = {
+                let all_containing_views: Vec<ViewUuid>
+                    = self.temporaries.flattened_views.iter()
+                    .filter(|e| e.1.0.min_shape().contains(local_pos))
+                    .map(|e| *e.0)
+                    .collect();
+                let mut parents = HashSet::new();
+                for e in &all_containing_views {
+                    let mut it = *e;
+                    'parents: loop {
+                        let Some((_, parent)) = self.temporaries.flattened_views.get(&it) else {
+                            break 'parents;
+                        };
+                        parents.insert(*parent);
+                        it = *parent;
+                    }
+                }
+                all_containing_views
+                    .into_iter()
+                    .filter(|e| !parents.contains(e))
+                    .map(|e| {
+                        let m = *self.temporaries.flattened_views.get(&e).unwrap().0.model_uuid();
+                        (e, m)
+                    })
+                    .next()
+                    .unwrap_or((*self.uuid, *self.adapter.model_uuid()))
+            };
+            self.temporaries.context_menu_target = Some((local_pos, v, m));
+        }
+
         macro_rules! button {
             ($ui:expr, $msg_name:expr, $simple_project_command:expr) => {
                 {
@@ -3111,7 +3166,30 @@ impl<
 
         button!(ui, "nh-edit-cut", SimpleProjectCommand::from(DiagramCommand::CutSelectedElements));
         button!(ui, "nh-edit-copy", SimpleProjectCommand::from(DiagramCommand::CopySelectedElements));
-        button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements(None)));
+        match &self.temporaries.context_menu_target {
+            None => button!(ui, "nh-edit-paste", SimpleProjectCommand::from(DiagramCommand::PasteClipboardElements(None, None))),
+            Some(t) => {
+                let name = gdc.model_labels.get(&t.2);
+                let b = &gdc.fluent_bundle;
+                let mut args = fluent_bundle::FluentArgs::new();
+                args.set("name", &*name);
+                let text = b.format_pattern(
+                    b.get_message("nh-edit-pasteinto").unwrap().value().unwrap(),
+                    Some(&args),
+                    &mut vec![],
+                );
+                let button = egui::Button::new(text);
+                if ui.add(button).clicked() {
+                    commands.push(SimpleProjectCommand::from(
+                        DiagramCommand::PasteClipboardElements(
+                            Some(t.2),
+                            Some((t.0.x as i64, t.0.y as i64)),
+                        )
+                    ).into());
+                    ui.close();
+                }
+            }
+        }
         ui.separator();
 
         ui.menu_button(gdc.translate_0("nh-edit-delete"), |ui| {
@@ -3132,6 +3210,9 @@ impl<
             button!(ui, "nh-edit-arrange-backwardone", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::BackwardOne)));
             button!(ui, "nh-edit-arrange-sendtoback", SimpleProjectCommand::from(DiagramCommand::ArrangeSelected(Arrangement::SendToBack)));
         });
+    }
+    fn unset_context_menu(&mut self) {
+        self.temporaries.context_menu_target = None;
     }
 
     fn show_toolbar(
@@ -3580,7 +3661,7 @@ impl<
             }
             DiagramCommand::DeleteSelectedElements(_)
             | DiagramCommand::CutSelectedElements
-            | DiagramCommand::PasteClipboardElements(_)
+            | DiagramCommand::PasteClipboardElements(..)
             | DiagramCommand::ArrangeSelected(_) => {
                 if matches!(command, DiagramCommand::CutSelectedElements) {
                     self.set_clipboard_from_selected(clipboard);
@@ -3601,7 +3682,7 @@ impl<
                                 )
                             ]
                         },
-                        DiagramCommand::PasteClipboardElements(target) => {
+                        DiagramCommand::PasteClipboardElements(target, pos) => {
                             let target = target.and_then(|e| self.get_view_for(&e)).unwrap_or(*self.uuid);
 
                             let mut cmds = Vec::new();
@@ -3621,12 +3702,15 @@ impl<
                             for (_k, v) in elements.iter() {
                                 new_elements_area = new_elements_area.union(v.bounding_box());
                             }
-                            let offset = if target == *self.uuid {
-                                -self.temporaries.camera_offset.to_vec2() / self.temporaries.camera_scale
-                            } else {
-                                self.temporaries.flattened_views
-                                    .get(&target).map(|e| e.0.bounding_box().min.to_vec2())
-                                    .unwrap_or_default()
+                            let new_position = match pos {
+                                Some((x, y)) => egui::Vec2::new(x as f32, y as f32),
+                                None => (if target == *self.uuid {
+                                    -self.temporaries.camera_offset.to_vec2() / self.temporaries.camera_scale
+                                } else {
+                                    self.temporaries.flattened_views
+                                        .get(&target).map(|e| e.0.bounding_box().min.to_vec2())
+                                        .unwrap_or_default()
+                                }) + egui::Vec2::splat(10.0),
                             };
                             let (mut u, mut m) = Default::default();
                             let (mut a, mut b, mut frm) = Default::default();
@@ -3634,8 +3718,7 @@ impl<
                                 v.apply_command(
                                     &InsensitiveCommand::MovePositionalAll(
                                         -new_elements_area.min.to_vec2()
-                                        + offset
-                                        + egui::Vec2::splat(10.0)
+                                        + new_position
                                     ),
                                     &mut u,
                                     &mut m,

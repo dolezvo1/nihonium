@@ -34,6 +34,7 @@ nh-edit-cut = Cut
 nh-edit-copy = Copy
 nh-edit-paste = Paste
 nh-edit-pastehere = Paste here
+nh-edit-pasteinto = Paste into '{ $name }'
 nh-edit-delete = Delete
 nh-edit-clearhighlight = Clear highlight
 nh-edit-arrange = Arrange
