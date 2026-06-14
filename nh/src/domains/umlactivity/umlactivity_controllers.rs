@@ -679,6 +679,7 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
 pub struct UmlActivitySettings {
     palette: RwLock<ToolPalette<UmlActivityToolStage, UmlActivityDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<UmlActivityToolStage, UmlActivityElementView>>,
+    nonfinal_buttons: Vec<(usize, usize, &'static str, &'static dyn Fn(UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool))>,
 }
 
 impl DiagramSettings for UmlActivitySettings {}
@@ -690,6 +691,7 @@ impl DiagramSettings2<UmlActivityDomain> for UmlActivitySettings {
     }
 }
 
+type NonFinalNodeButtonF = dyn Fn(UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool);
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let (_, basic_action_view) = new_umlactivity_actionnode("basic action", "", UmlActivityActionKind::Basic, egui::Pos2::ZERO);
     basic_action_view.write().refresh_buffers();
@@ -746,26 +748,31 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 stereotype: "".to_owned(),
                 name: "basic action".to_owned(),
                 kind: UmlActivityActionKind::Basic,
+                with_edge_from: None,
             }, "Basic Action Node", basic_action_view.into()),
             (UmlActivityToolStage::ActionNode {
                 stereotype: "".to_owned(),
                 name: "call action".to_owned(),
                 kind: UmlActivityActionKind::CallAction,
+                with_edge_from: None,
             }, "Call Action Node", call_action_view.into()),
             (UmlActivityToolStage::ActionNode {
                 stereotype: "".to_owned(),
                 name: "send signal".to_owned(),
                 kind: UmlActivityActionKind::SendSignalAction,
+                with_edge_from: None,
             }, "Send Signal Node", send_signal_view.into()),
             (UmlActivityToolStage::ActionNode {
                 stereotype: "".to_owned(),
                 name: "accept signal".to_owned(),
                 kind: UmlActivityActionKind::AcceptSignalAction,
+                with_edge_from: None,
             }, "Accept Signal Node", accept_signal_view.into()),
             (UmlActivityToolStage::ActionNode {
                 stereotype: "".to_owned(),
                 name: "wait time".to_owned(),
                 kind: UmlActivityActionKind::WaitTimeAction,
+                with_edge_from: None,
             }, "Wait Time Node", wait_time_view.into()),
         ]),
         ("Other Nodes", vec![
@@ -773,18 +780,22 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             }, "Initial Node", initial_view.into()),
             (UmlActivityToolStage::FinalNode {
                 kind: UmlActivityFinalNodeKind::FlowFinal,
+                with_edge_from: None,
             }, "Flow Final Node", flowfinal_view.into()),
             (UmlActivityToolStage::FinalNode {
                 kind: UmlActivityFinalNodeKind::ActivityFinal,
+                with_edge_from: None,
             }, "Activity Final Node", activityfinal_view.into()),
             (UmlActivityToolStage::DecisionNode {
                 name: "".to_owned(),
+                with_edge_from: None,
             }, "Decision/Merge Node", decision_view.into()),
             (UmlActivityToolStage::ForkNodeStart {
             }, "Fork/Join Node", fork_view.into()),
             (UmlActivityToolStage::ObjectNode {
                 stereotype: "".to_owned(),
                 name: "object node".to_owned(),
+                with_edge_from: None,
             }, "Object Node", object_view.into()),
         ]),
         ("Relationships", vec![
@@ -827,9 +838,127 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ]),
     ];
 
+    fn nonfinal_edge(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let link_type = LinkType::Edge {
+            name: "".to_owned(),
+            kind: UmlActivityEdgeKind::Regular,
+        };
+        (
+            UmlActivityToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
+            UmlActivityToolStage::LinkEnd,
+            PartialUmlActivityElement::Link {
+                link_type,
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    fn nonfinal_action(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::ActionNode {
+            stereotype: "".to_owned(),
+            name: "Action".to_owned(),
+            kind: UmlActivityActionKind::Basic,
+            with_edge_from: Some(m),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_call(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::ActionNode {
+            stereotype: "".to_owned(),
+            name: "Call Action".to_owned(),
+            kind: UmlActivityActionKind::CallAction,
+            with_edge_from: Some(m),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_waittime(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::ActionNode {
+            stereotype: "".to_owned(),
+            name: "Wait Time Action".to_owned(),
+            kind: UmlActivityActionKind::WaitTimeAction,
+            with_edge_from: Some(m),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_decision(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::DecisionNode {
+            name: "".to_owned(),
+            with_edge_from: Some(m),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_object(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::ObjectNode {
+            stereotype: "".to_owned(),
+            name: "Object".to_owned(),
+            with_edge_from: Some(m),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_flowfinal(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::FinalNode {
+            kind: UmlActivityFinalNodeKind::FlowFinal,
+            with_edge_from: Some(m),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_activityfinal(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::FinalNode {
+            kind: UmlActivityFinalNodeKind::ActivityFinal,
+            with_edge_from: Some(m),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    let nonfinal_buttons = vec![
+        (
+            0, 0,
+            "↘",
+            &nonfinal_edge as &NonFinalNodeButtonF,
+        ),
+        (
+            1, 0,
+            "A",
+            &nonfinal_action as &NonFinalNodeButtonF,
+        ),
+        (
+            1, 1,
+            "C",
+            &nonfinal_call as &NonFinalNodeButtonF,
+        ),
+        (
+            1, 2,
+            "W",
+            &nonfinal_waittime as &NonFinalNodeButtonF,
+        ),
+        (
+            2, 0,
+            "◊",
+            &nonfinal_decision as &NonFinalNodeButtonF,
+        ),
+        (
+            2, 1,
+            "O",
+            &nonfinal_object as &NonFinalNodeButtonF,
+        ),
+        (
+            3, 0,
+            "⊗",
+            &nonfinal_flowfinal as &NonFinalNodeButtonF,
+        ),
+        (
+            3, 1,
+            "◎", // Does not work: ⊙⊚⨀⨁⨂◉⯄
+            &nonfinal_activityfinal as &NonFinalNodeButtonF,
+        ),
+    ];
+
     Box::new(UmlActivitySettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
+        nonfinal_buttons,
     })
 }
 
@@ -904,7 +1033,7 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                         }
                     }
                     (
-                        UmlActivityToolStage::ActionNode { stereotype, name, kind },
+                        UmlActivityToolStage::ActionNode { stereotype, name, kind, with_edge_from: _ },
                         UmlActivityElement::ActionNode(inner),
                     ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
@@ -926,7 +1055,7 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                         }
                     }
                     (
-                        UmlActivityToolStage::ObjectNode { stereotype, name },
+                        UmlActivityToolStage::ObjectNode { stereotype, name, with_edge_from: _ },
                         UmlActivityElement::ObjectNode(inner),
                     ) => {
                         modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
@@ -1021,25 +1150,29 @@ pub enum LinkType {
     },
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub enum UmlActivityToolStage {
     ActionNode {
         stereotype: String,
         name: String,
         kind: UmlActivityActionKind,
+        with_edge_from: Option<UmlActivityNonFinalNode>,
     },
     InitialNode {},
     FinalNode {
         kind: UmlActivityFinalNodeKind,
+        with_edge_from: Option<UmlActivityNonFinalNode>,
     },
     DecisionNode {
         name: String,
+        with_edge_from: Option<UmlActivityNonFinalNode>,
     },
     ForkNodeStart,
     ForkNodeEnd,
     ObjectNode {
         stereotype: String,
         name: String,
+        with_edge_from: Option<UmlActivityNonFinalNode>,
     },
     LinkStart {
         link_type: LinkType,
@@ -1194,8 +1327,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
         }
     }
     fn draw_status_hint(&self, q: &<UmlActivityDomain as Domain>::QueryableT<'_>,  canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
-        match &self.result {
-            PartialUmlActivityElement::ForkNode { a, .. } => {
+        match (&self.current_stage, &self.result) {
+            (_, PartialUmlActivityElement::ForkNode { a, .. }) => {
                 let vertical = (pos.y - a.y).abs() > (pos.x - a.x).abs();
                 canvas.draw_line(
                     [
@@ -1210,7 +1343,11 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     canvas::Highlight::NONE,
                 );
             }
-            PartialUmlActivityElement::Link { source, .. } => {
+            (_, PartialUmlActivityElement::Link { source, .. })
+            | (UmlActivityToolStage::ActionNode { with_edge_from: Some(source), .. }
+                | UmlActivityToolStage::DecisionNode { with_edge_from: Some(source), .. }
+                | UmlActivityToolStage::ObjectNode { with_edge_from: Some(source), .. }
+                | UmlActivityToolStage::FinalNode { with_edge_from: Some(source), .. }, _) => {
                 if let Some(source_view) = q.get_view_for(&source.uuid()) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1219,9 +1356,9 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     );
                 }
             }
-            PartialUmlActivityElement::Activity { a, .. }
-            | PartialUmlActivityElement::InterruptibleRegion { a, .. }
-            | PartialUmlActivityElement::Partition { a, .. } => {
+            (_, PartialUmlActivityElement::Activity { a, .. }
+                | PartialUmlActivityElement::InterruptibleRegion { a, .. }
+                | PartialUmlActivityElement::Partition { a, .. }) => {
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(*a, pos),
                     egui::CornerRadius::ZERO,
@@ -1230,7 +1367,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     canvas::Highlight::NONE,
                 );
             }
-            PartialUmlActivityElement::CommentLink { source, .. } => {
+            (_, PartialUmlActivityElement::CommentLink { source, .. }) => {
                 if let Some(source_view) = q.get_view_for(&source.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1249,7 +1386,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
         }
 
         match (&self.current_stage, &mut self.result) {
-            (UmlActivityToolStage::ActionNode { stereotype, name, kind }, _) => {
+            (UmlActivityToolStage::ActionNode { stereotype, name, kind, with_edge_from: _ }, _) => {
                 let (_model, view) = new_umlactivity_actionnode(name, stereotype, *kind, pos);
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
@@ -1259,12 +1396,12 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::FinalNode { kind }, _) => {
+            (UmlActivityToolStage::FinalNode { kind, with_edge_from: _ }, _) => {
                 let (_model, view) = new_umlactivity_finalnode(*kind, pos);
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::DecisionNode { name }, _) => {
+            (UmlActivityToolStage::DecisionNode { name, with_edge_from: _ }, _) => {
                 let (_model, view) = new_umlactivity_decisionnode(name, pos);
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
@@ -1281,7 +1418,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::ObjectNode { name, stereotype }, _) => {
+            (UmlActivityToolStage::ObjectNode { name, stereotype, with_edge_from: _ }, _) => {
                 let (_model, view) = new_umlactivity_objectnode(name, stereotype, pos);
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
@@ -1406,7 +1543,29 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
         match &self.result {
             PartialUmlActivityElement::Some(element) => {
                 let element = element.clone();
+                let additional_edge = match &self.initial_stage {
+                    UmlActivityToolStage::ActionNode { with_edge_from: Some(source), .. }
+                    | UmlActivityToolStage::FinalNode { with_edge_from: Some(source), .. }
+                    | UmlActivityToolStage::DecisionNode { with_edge_from: Some(source), .. }
+                    | UmlActivityToolStage::ObjectNode { with_edge_from: Some(source), .. }
+                        if let Some(source) = q.get_view_for(&source.uuid())
+                            && let Some(parent) = q.find_parent(
+                                    &source.uuid(),
+                                    |uuid, e| (uuid == preferred_container || q.is_contained(preferred_container, uuid))
+                                        && !matches!(e, UmlActivityElementView::Partition(_)),
+                                ) =>
+                    {
+                        let edge_view = new_umlactivity_edge("", UmlActivityEdgeKind::Regular, None,
+                            (source.model().as_nonfinal().unwrap(), source),
+                            (element.model().as_noninitial().unwrap(), element.clone()),
+                        ).1;
+                        Some((parent.0, edge_view))
+                    },
+                    _ => None,
+                };
+
                 self.try_spend();
+
                 commands.push(InsensitiveCommand::AddDependency {
                     target: *preferred_container,
                     bucket: preferred_bucket,
@@ -1414,6 +1573,15 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     element: UmlActivityElementView::from(element).into(),
                     into_model: true,
                 });
+                if let Some((parent, e)) = additional_edge {
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: parent,
+                        bucket: 0,
+                        position: None,
+                        element: UmlActivityElementView::from(e).into(),
+                        into_model: true,
+                    });
+                }
                 Ok(None)
             }
             PartialUmlActivityElement::ForkNode { a, b: Some(b) } => {
@@ -3491,6 +3659,57 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
 }
 
 
+fn nonfinal_node_button_rect(
+    origin: egui::Pos2,
+    ui_scale: f32,
+    row_index: usize,
+    column_index: usize,
+) -> egui::Rect {
+    const BUTTON_RADIUS: f32 = 8.0;
+    let b_center = origin
+        + egui::Vec2::new(
+            (1.0 + 2.0 * column_index as f32) * BUTTON_RADIUS / ui_scale,
+            (1.0 + 2.0 * row_index as f32) * BUTTON_RADIUS / ui_scale,
+        );
+    egui::Rect::from_center_size(
+        b_center,
+        egui::Vec2::splat(2.0 * BUTTON_RADIUS / ui_scale),
+    )
+}
+fn draw_nonfinal_node_button_rects(
+    settings: &<UmlActivityDomain as Domain>::SettingsT,
+    canvas: &mut dyn NHCanvas,
+    origin: egui::Pos2,
+    ui_scale: f32,
+) {
+    for (row_idx, col_idx, l, _f) in settings.nonfinal_buttons.iter() {
+        let r = nonfinal_node_button_rect(origin, ui_scale, *row_idx, *col_idx);
+        canvas.draw_rectangle(
+            r,
+            egui::CornerRadius::ZERO,
+            egui::Color32::WHITE,
+            canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+            canvas::Highlight::NONE,
+        );
+        canvas.draw_text(r.center(), egui::Align2::CENTER_CENTER, l, 14.0 / ui_scale, egui::Color32::BLACK);
+    }
+}
+fn handle_nonfinal_node_button_click(
+    settings: &<UmlActivityDomain as Domain>::SettingsT,
+    origin: egui::Pos2,
+    ui_scale: f32,
+    click_pos: egui::Pos2,
+) -> Option<&NonFinalNodeButtonF> {
+    for (row_idx, col_idx, _l, f) in settings.nonfinal_buttons.iter() {
+        let r = nonfinal_node_button_rect(origin, ui_scale, *row_idx, *col_idx);
+        if r.contains(click_pos) {
+            return Some(f);
+        }
+    }
+    None
+}
+
+
 fn new_umlactivity_actionnode(
     name: &str,
     stereotype: &str,
@@ -3656,7 +3875,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
         &mut self,
         _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
-        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlActivityTool)>,
     ) -> TargettingStatus {
@@ -3838,6 +4057,11 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
             );
         }
 
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            draw_nonfinal_node_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
+        }
+
         if canvas.ui_scale().is_some() {
             // Draw targetting rectangle
             if let Some(t) = tool
@@ -3865,7 +4089,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlActivityTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -3886,6 +4110,19 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos) if self.highlight.selected
+                && let Some(f) = handle_nonfinal_node_button_click(settings, self.bounds_rect.right_top(), ehc.ui_scale, pos) => {
+                let (initial_stage, current_stage, result, event_lock) = f(self.model.clone().into());
+                *tool = Some(NaiveUmlActivityTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
+                EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -4114,6 +4351,9 @@ pub struct UmlActivityInitialNodeView {
 
 impl UmlActivityInitialNodeView {
     const CIRCLE_RADIUS: f32 = 15.0;
+    fn buttons_origin(&self) -> egui::Pos2 {
+        self.position + egui::Vec2::new(Self::CIRCLE_RADIUS, -Self::CIRCLE_RADIUS)
+    }
 }
 
 impl Entity for UmlActivityInitialNodeView {
@@ -4182,7 +4422,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
         &mut self,
         _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         _context: &GlobalDrawingContext,
-        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &<UmlActivityDomain as Domain>::ToolT)>,
     ) -> TargettingStatus {
@@ -4193,6 +4433,11 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
             canvas::Stroke::new_solid(1.0, egui::Color32::TRANSPARENT),
             self.highlight,
         );
+
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            draw_nonfinal_node_button_rects(settings, canvas, self.buttons_origin(), ui_scale);
+        }
 
         if canvas.ui_scale().is_some()
             && let Some((pos, tool)) = tool && self.min_shape().contains(*pos) {
@@ -4213,7 +4458,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<<UmlActivityDomain as Domain>::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -4235,6 +4480,19 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos) if self.highlight.selected
+                && let Some(f) = handle_nonfinal_node_button_click(settings, self.buttons_origin(), ehc.ui_scale, pos) => {
+                let (initial_stage, current_stage, result, event_lock) = f(self.model.clone().into());
+                *tool = Some(NaiveUmlActivityTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
+                EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -4810,6 +5068,10 @@ pub struct UmlActivityDecisionNodeView {
 impl UmlActivityDecisionNodeView {
     const EMPTY_WIDTH: f32 = 45.0;
     const EMPTY_HEIGHT: f32 = 90.0;
+
+    fn buttons_origin(&self) -> egui::Pos2 {
+        self.position + egui::Vec2::new(self.bounds_radius.x, -self.bounds_radius.y)
+    }
 }
 
 impl Entity for UmlActivityDecisionNodeView {
@@ -4887,7 +5149,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
         &mut self,
         _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         _context: &GlobalDrawingContext,
-        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlActivityTool)>,
     ) -> TargettingStatus {
@@ -4927,6 +5189,11 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
             egui::Color32::BLACK,
         );
 
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            draw_nonfinal_node_button_rects(settings, canvas, self.buttons_origin(), ui_scale);
+        }
+
         // Draw targetting ellipse
         if canvas.ui_scale().is_some()
             && let Some(t) = tool
@@ -4955,7 +5222,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlActivityTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -4977,6 +5244,19 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos) if self.highlight.selected
+                && let Some(f) = handle_nonfinal_node_button_click(settings, self.buttons_origin(), ehc.ui_scale, pos) => {
+                let (initial_stage, current_stage, result, event_lock) = f(self.model.clone().into());
+                *tool = Some(NaiveUmlActivityTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
+                EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -5258,7 +5538,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
         &mut self,
         _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         _context: &GlobalDrawingContext,
-        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlActivityTool)>,
     ) -> TargettingStatus {
@@ -5278,6 +5558,11 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
+
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            draw_nonfinal_node_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
+        }
 
         // Draw targetting ellipse
         if canvas.ui_scale().is_some()
@@ -5303,7 +5588,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlActivityTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -5325,6 +5610,19 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos) if self.highlight.selected
+                && let Some(f) = handle_nonfinal_node_button_click(settings, self.bounds_rect.right_top(), ehc.ui_scale, pos) => {
+                let (initial_stage, current_stage, result, event_lock) = f(self.model.clone().into());
+                *tool = Some(NaiveUmlActivityTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
+                EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -5626,7 +5924,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
         &mut self,
         _q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         context: &GlobalDrawingContext,
-        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
         canvas: &mut dyn NHCanvas,
         tool: &Option<(egui::Pos2, &NaiveUmlActivityTool)>,
     ) -> TargettingStatus {
@@ -5673,6 +5971,11 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
             egui::Color32::BLACK,
         );
 
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            draw_nonfinal_node_button_rects(settings, canvas, self.bounds_rect.right_top(), ui_scale);
+        }
+
         // Draw targetting ellipse
         if canvas.ui_scale().is_some()
             && let Some(t) = tool
@@ -5697,7 +6000,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
         &mut self,
         event: InputEvent,
         ehc: &EventHandlingContext,
-        _settings: &<UmlActivityDomain as Domain>::SettingsT,
+        settings: &<UmlActivityDomain as Domain>::SettingsT,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveUmlActivityTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
@@ -5719,6 +6022,19 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos) if self.highlight.selected
+                && let Some(f) = handle_nonfinal_node_button_click(settings, self.bounds_rect.right_top(), ehc.ui_scale, pos) => {
+                let (initial_stage, current_stage, result, event_lock) = f(self.model.clone().into());
+                *tool = Some(NaiveUmlActivityTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage,
+                    current_stage,
+                    result,
+                    event_lock,
+                    is_spent: Some(false),
+                });
+                EventHandlingStatus::HandledByElement
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {

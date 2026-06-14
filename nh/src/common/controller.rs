@@ -1444,7 +1444,7 @@ impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, Domain
 }
 
 pub trait Tool<DomainT: Domain> {
-    type Stage: Clone + PartialEq + 'static;
+    type Stage: Clone + 'static;
 
     fn new(uuid: uuid::Uuid, initial_stage: Self::Stage, repeat: bool) -> Self;
     fn initial_stage_uuid(&self) -> &uuid::Uuid;
