@@ -759,7 +759,6 @@ pub trait NHCanvas {
 }
 
 pub struct UiCanvas {
-    is_interactive: bool,
     highlight_colors: [egui::Color32; 4],
 
     top_header_painter: egui::Painter,
@@ -769,6 +768,8 @@ pub struct UiCanvas {
     canvas: egui::Rect,
     camera_offset: egui::Pos2,
     camera_scale: f32,
+    /// ui_scale.is_some() <=> canvas is interactive
+    ui_scale: Option<f32>,
     cursor: Option<egui::Pos2>,
     highlight_filter: Highlight,
     header_horizontal: bool,
@@ -781,11 +782,11 @@ impl UiCanvas {
     const HEADER_BACKGROUND: egui::Color32 = egui::Color32::LIGHT_GRAY;
 
     pub fn new(
-        is_interactive: bool,
         main_area_painter: egui::Painter,
         canvas: egui::Rect,
         camera_offset: egui::Pos2,
         camera_scale: f32,
+        ui_scale: Option<f32>,
         cursor: Option<egui::Pos2>,
         highlight_filter: Highlight,
         enable_headers: (bool, bool),
@@ -827,7 +828,6 @@ impl UiCanvas {
         );
 
         Self {
-            is_interactive,
             highlight_colors: [
                 egui::Color32::BLUE,
                 egui::Color32::GREEN,
@@ -840,6 +840,7 @@ impl UiCanvas {
             canvas,
             camera_offset,
             camera_scale,
+            ui_scale,
             cursor,
             highlight_filter,
             header_horizontal: enable_headers.0,
@@ -912,7 +913,7 @@ impl UiCanvas {
 
 impl NHCanvas for UiCanvas {
     fn ui_scale(&self) -> Option<f32> {
-        Some(self.camera_scale).filter(|_| self.is_interactive)
+        self.ui_scale.map(|e| self.camera_scale / e)
     }
 
     fn draw_line(&mut self, points: [egui::Pos2; 2], stroke: Stroke, highlight: Highlight) {

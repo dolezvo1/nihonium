@@ -1094,6 +1094,14 @@ impl NHContext {
             self.style = Some(Style::from_egui(&ui.ctx().global_style()));
         }
 
+        egui::ComboBox::new("zoom_factor", "UI Scale")
+            .selected_text(self.zoom_factor.to_string())
+            .show_ui(ui, |ui| {
+                for e in [1.0, 1.25, 1.5, 1.75, 2.0, 4.0, 8.0] {
+                    ui.selectable_value(&mut self.zoom_factor, e, e.to_string());
+                }
+            });
+
         ui.collapsing("DockArea Options", |ui| {
             ui.checkbox(&mut self.show_close_buttons, "Show close buttons");
             ui.checkbox(&mut self.show_add_buttons, "Show add buttons");
@@ -1665,7 +1673,11 @@ impl NHContext {
         let Some(settings) = self.diagram_settings.get(ctype) else { return; };
 
         let input_probably_blocked = self.confirm_modal_reason.is_some() || self.custom_modal.is_some();
-        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(tab_uuid, &self.drawing_context, ui, !input_probably_blocked);
+        let ui_scale = match input_probably_blocked {
+            true => None,
+            false => Some(self.zoom_factor),
+        };
+        let (mut ui_canvas, response, pos) = diagram_controller.new_ui_canvas(tab_uuid, &self.drawing_context, ui, ui_scale);
 
         response.context_menu(|ui| {
             diagram_controller.show_context_menu(tab_uuid, &self.drawing_context, ui, &response, &mut self.unprocessed_commands, &mut self.affected_models);
@@ -2611,11 +2623,11 @@ impl eframe::App for NHApp {
                         }
                     }
                     let mut ui_canvas = UiCanvas::new(
-                        false,
                         painter,
                         canvas_rect,
                         diagram_bounds.min * -camera_scale + egui::Vec2::new(*padding_x, *padding_y) * camera_scale,
                         camera_scale,
+                        None,
                         None,
                         *highlight,
                         (false, false),

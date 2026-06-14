@@ -475,7 +475,7 @@ pub trait DiagramView2<DomainT: Domain>: DiagramView {
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        interactive: bool,
+        ui_scale: Option<f32>,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
 
     fn draw_in(
@@ -600,7 +600,7 @@ pub trait DiagramController: Any + NHContextSerialize {
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        interactive: bool,
+        ui_scale: Option<f32>,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>);
 
     fn draw_in(
@@ -2086,10 +2086,10 @@ where DiagramViewT: DiagramView2<DomainT> + NHContextSerialize + NHContextDeseri
         uuid: &ViewUuid,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        interactive: bool,
+        ui_scale: Option<f32>,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
         let view = self.views.get(uuid).unwrap();
-        view.write().new_ui_canvas(context, ui, interactive)
+        view.write().new_ui_canvas(context, ui, ui_scale)
     }
 
     fn draw_in(
@@ -2963,7 +2963,7 @@ impl<
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        interactive: bool,
+        ui_scale: Option<f32>,
     ) -> (Box<dyn NHCanvas>, egui::Response, Option<egui::Pos2>) {
         let canvas_pos = ui.next_widget_position();
         let canvas_size = ui.available_size();
@@ -2972,11 +2972,11 @@ impl<
         let (painter_response, painter) =
             ui.allocate_painter(ui.available_size(), egui::Sense::click_and_drag());
         let ui_canvas = UiCanvas::new(
-            interactive,
             painter,
             canvas_rect,
             self.temporaries.camera_offset,
             self.temporaries.camera_scale,
+            ui_scale,
             ui.ctx().pointer_interact_pos().map(|e| {
                 ((e - self.temporaries.camera_offset - painter_response.rect.min.to_vec2()) / self.temporaries.camera_scale)
                     .to_pos2()
@@ -3292,7 +3292,10 @@ impl<
                         let mut mc = canvas::MeasuringCanvas::new(&painter);
                         view.draw_in(&empty_q, gdc, settings, &mut mc, &None);
                         let (scale, offset) = mc.scale_offset_to_fit(egui::Vec2::splat(button_height));
-                        let mut c = canvas::UiCanvas::new(false, painter, icon_rect, offset, scale, None, Highlight::NONE, (false, false));
+                        let mut c = canvas::UiCanvas::new(
+                            painter, icon_rect, offset, scale, None,
+                            None, Highlight::NONE, (false, false),
+                        );
                         c.clear(egui::Color32::GRAY);
                         view.draw_in(&empty_q, gdc, settings, &mut c, &None);
                     }
@@ -3493,11 +3496,11 @@ impl<
             egui::StrokeKind::Middle,
         );
         let mut ui_canvas = UiCanvas::new(
-            false,
             painter.clone(),
             canvas_rect,
             diagram_bounds.min * -camera_scale,
             camera_scale,
+            None,
             None,
             crate::common::canvas::Highlight::NONE,
             (false, false),
