@@ -1390,20 +1390,31 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
-        None
-    }
-
-    fn try_construct_view(
+    fn try_flush(
         &mut self,
         q: &<UmlActivityDomain as Domain>::QueryableT<'_>,
-        into: &ViewUuid,
-    ) -> Option<(UmlActivityElementView, Option<Box<dyn CustomModal>>)> {
+        preferred_container: &ViewUuid,
+        preferred_bucket: BucketNoT,
+        preferred_position: Option<PositionNoT>,
+        commands: &mut Vec<InsensitiveCommand<
+            <UmlActivityDomain as Domain>::OrdinalMovementT,
+            <UmlActivityDomain as Domain>::AddCommandElementT,
+            <UmlActivityDomain as Domain>::PropChangeT,
+        >>,
+    ) -> Result<Option<Box<dyn CustomModal>>, ()>
+    {
         match &self.result {
-            PartialUmlActivityElement::Some(x) => {
-                let x = x.clone();
+            PartialUmlActivityElement::Some(element) => {
+                let element = element.clone();
                 self.try_spend();
-                Some((x, None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: UmlActivityElementView::from(element).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
             PartialUmlActivityElement::ForkNode { a, b: Some(b) } => {
                 self.current_stage = self.initial_stage.clone();
@@ -1419,10 +1430,17 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 } else {
                     b.x - a.x
                 }.abs();
-                let (_fork, fork_view) = new_umlactivity_forknode(center, vertical, length);
+                let fork_view = new_umlactivity_forknode(center, vertical, length).1;
 
                 self.try_spend();
-                Some((fork_view.into(), None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: UmlActivityElementView::from(fork_view).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
             PartialUmlActivityElement::Link {
                 link_type,
@@ -1434,14 +1452,14 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 if let (Some(source_view), Some(target_view)) = (
                     q.get_view_for(&source_uuid),
                     q.get_view_for(&target_uuid),
-                ) && q.is_contained(&source_view.uuid(), into)
-                  && q.is_contained(&target_view.uuid(), into)
+                ) && q.is_contained(&source_view.uuid(), preferred_container)
+                  && q.is_contained(&target_view.uuid(), preferred_container)
                   && q.find_parent(&source_view.uuid(), |_, e| matches!(e, UmlActivityElementView::Activity(_))).map(|e| e.0)
                      == q.find_parent(&target_view.uuid(), |_, e| matches!(e, UmlActivityElementView::Activity(_))).map(|e| e.0)
                 {
                     self.current_stage = self.initial_stage.clone();
 
-                    let link_view = match link_type {
+                    let link_view: UmlActivityElementView = match link_type {
                         LinkType::Edge { name, kind } => {
                             new_umlactivity_edge(
                                 name,
@@ -1454,39 +1472,66 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     };
 
                     self.try_spend();
-                    Some((link_view, None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: link_view.into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialUmlActivityElement::Activity { name, stereotype, parameters, a, b: Some(b) } => {
                 self.current_stage = self.initial_stage.clone();
 
-                let (_package_model, package_view) =
-                    new_umlactivity_activity(name, stereotype, parameters, egui::Rect::from_two_pos(*a, *b));
+                let activity_view =
+                    new_umlactivity_activity(name, stereotype, parameters, egui::Rect::from_two_pos(*a, *b)).1;
 
                 self.try_spend();
-                Some((package_view.into(), None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: UmlActivityElementView::from(activity_view).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
             PartialUmlActivityElement::InterruptibleRegion { name, stereotype, a, b: Some(b) } => {
                 self.current_stage = self.initial_stage.clone();
 
-                let (_package_model, package_view) =
-                    new_umlactivity_interruptibleregion(name, stereotype, egui::Rect::from_two_pos(*a, *b));
+                let interruptible_view =
+                    new_umlactivity_interruptibleregion(name, stereotype, egui::Rect::from_two_pos(*a, *b)).1;
 
                 self.try_spend();
-                Some((package_view.into(), None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: UmlActivityElementView::from(interruptible_view).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
             PartialUmlActivityElement::Partition { section_name, section_stereotype, a, b: Some(b) } => {
                 self.current_stage = self.initial_stage.clone();
 
                 let r = egui::Rect::from_two_pos(*a, *b);
                 let s = new_umlactivity_partitionsection(section_name, section_stereotype, r);
-                let (_package_model, package_view) =
-                    new_umlactivity_partition(vec![s]);
+                let partition_view = new_umlactivity_partition(vec![s]).1;
 
                 self.try_spend();
-                Some((package_view.into(), None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: UmlActivityElementView::from(partition_view).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
             PartialUmlActivityElement::CommentLink {
                 source,
@@ -1497,8 +1542,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 if let (Some(source_view), Some(target_view)) = (
                     q.get_view_for(&source_uuid),
                     q.get_view_for(&target_uuid),
-                ) && q.is_contained(&source_view.uuid(), into)
-                  && q.is_contained(&target_view.uuid(), into)
+                ) && q.is_contained(&source_view.uuid(), preferred_container)
+                  && q.is_contained(&target_view.uuid(), preferred_container)
                   && q.find_parent(&source_view.uuid(), |_, e| matches!(e, UmlActivityElementView::Activity(_))).map(|e| e.0)
                      == q.find_parent(&target_view.uuid(), |_, e| matches!(e, UmlActivityElementView::Activity(_))).map(|e| e.0)
                 {
@@ -1508,17 +1553,25 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                         None,
                         (source.clone(), source_view),
                         (dest.clone(), target_view),
-                    ).1.into();
+                    ).1;
 
                     self.try_spend();
-                    Some((link_view, None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: UmlActivityElementView::from(link_view).into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
-            _ => None,
+            _ => Err(()),
         }
     }
+
     fn reset_event_lock(&mut self) {
         self.event_lock = false;
     }
@@ -3070,14 +3123,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityPartitionSectionVie
                     tool.add_position(*event.mouse_position());
                     tool.add_section(self.model.clone().into());
 
-                    if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid) {
-                        commands.push(InsensitiveCommand::AddDependency {
-                            target: *self.uuid,
-                            bucket: 0,
-                            position: None,
-                            element: new_e.into(),
-                            into_model: true,
-                        }.into());
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands) {
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }

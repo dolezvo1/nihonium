@@ -940,7 +940,7 @@ enum PartialDemoOfdElement {
         dest: Option<ERef<DemoOfdEntityType>>,
     },
     AggregationEnding {
-        gen_model: ERef<DemoOfdAggregation>,
+        agg_model: ERef<DemoOfdAggregation>,
         new_model: Option<ModelUuid>,
     },
     EventLink {
@@ -1118,7 +1118,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     );
                 }
             }
-            PartialDemoOfdElement::AggregationEnding { gen_model, .. } => {
+            PartialDemoOfdElement::AggregationEnding { agg_model: gen_model, .. } => {
                 if let Some(source_view) = q.get_view_for(&*gen_model.read().uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
@@ -1247,7 +1247,7 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                         }
                         self.event_lock = true;
                     }
-                    (DemoOfdToolStage::LinkAddEnding { source }, &mut PartialDemoOfdElement::AggregationEnding { ref gen_model, ref mut new_model }) => {
+                    (DemoOfdToolStage::LinkAddEnding { source }, &mut PartialDemoOfdElement::AggregationEnding { agg_model: ref gen_model, ref mut new_model }) => {
                         let inner_uuid = *inner.read().uuid;
                         let gen_model = gen_model.read();
 
@@ -1319,39 +1319,55 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
-        match &mut self.result {
-            PartialDemoOfdElement::AggregationEnding { gen_model, new_model } if new_model.is_some() => {
-                let r = Some((0, *gen_model.read().uuid, new_model.unwrap()));
-                *new_model = None;
-                r
-            }
-            _ => {
-                None
-            }
-        }
-    }
-
-    fn try_construct_view(
+    fn try_flush(
         &mut self,
         q: &<DemoOfdDomain as Domain>::QueryableT<'_>,
-        into: &ViewUuid,
-    ) -> Option<(DemoOfdElementView, Option<Box<dyn CustomModal>>)> {
-        match &self.result {
-            PartialDemoOfdElement::Some(x) => {
-                let x = x.clone();
-                let esm: Option<Box<dyn CustomModal>> = match &x {
+        preferred_container: &ViewUuid,
+        preferred_bucket: BucketNoT,
+        preferred_position: Option<PositionNoT>,
+        commands: &mut Vec<InsensitiveCommand<
+            <DemoOfdDomain as Domain>::OrdinalMovementT,
+            <DemoOfdDomain as Domain>::AddCommandElementT,
+            <DemoOfdDomain as Domain>::PropChangeT,
+        >>,
+    ) -> Result<Option<Box<dyn CustomModal>>, ()>
+    {
+        match &mut self.result {
+            PartialDemoOfdElement::AggregationEnding { agg_model, new_model }
+                if new_model.is_some()
+                    && let Some(target) = q.get_viewuuid_for(&agg_model.read().uuid)
+                    && let Some(element) = q.get_view_for(&new_model.unwrap()) => {
+                commands.push(InsensitiveCommand::AddDependency {
+                    target,
+                    bucket: MULTICONNECTION_SOURCE_BUCKET,
+                    position: None,
+                    element: element.into(),
+                    into_model: true,
+                });
+                *new_model = None;
+                Ok(None)
+            }
+            PartialDemoOfdElement::Some(element) => {
+                let element = element.clone();
+                let esm: Option<Box<dyn CustomModal>> = match &element {
                     DemoOfdElementView::EntityType(inner) => Some(Box::new(DemoOfdEntityTypeSetupModal::from(&inner.read().model))),
                     _ => None,
                 };
 
                 self.try_spend();
-                Some((x, esm))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: DemoOfdElementView::from(element).into(),
+                    into_model: true,
+                });
+                Ok(esm)
             }
             PartialDemoOfdElement::Event { identifier, name, transaction_kind, specialization, source, pos: Some(p) } => {
                 let base_uuid = *source.read().uuid;
                 if let Some(base_view) = q.get_view_for(&base_uuid)
-                    && q.is_contained(&base_view.uuid(), into)
+                    && q.is_contained(&base_view.uuid(), preferred_container)
                 {
                     self.current_stage = DemoOfdToolStage::EventStart {
                         identifier: identifier.clone(),
@@ -1368,9 +1384,16 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     let esm: Option<Box<dyn CustomModal>> = Some(Box::new(DemoOfdEventTypeSetupModal::from(&event_model)));
 
                     self.try_spend();
-                    Some((event_view.into(), esm))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: DemoOfdElementView::from(event_view).into(),
+                        into_model: true,
+                    });
+                    Ok(esm)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialDemoOfdElement::EntityLink {
@@ -1383,12 +1406,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 if let (Some(source_view), Some(dest_view)) = (
                     q.get_view_for(&source_uuid),
                     q.get_view_for(&target_uuid),
-                ) && q.is_contained(&source_view.uuid(), into)
-                  && q.is_contained(&dest_view.uuid(), into)
+                ) && q.is_contained(&source_view.uuid(), preferred_container)
+                  && q.is_contained(&dest_view.uuid(), preferred_container)
                 {
                     self.current_stage = self.initial_stage.clone();
 
-                    let link_view = match link_type {
+                    let link_view: DemoOfdElementView = match link_type {
                         LinkType::PropertyType {
                             name,
                             domain_multiplicity,
@@ -1422,9 +1445,16 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     };
 
                     self.try_spend();
-                    Some((link_view, None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: link_view.into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialDemoOfdElement::EventLink {
@@ -1437,12 +1467,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 if let (Some(source_view), Some(dest_view)) = (
                     q.get_view_for(&source_uuid),
                     q.get_view_for(&target_uuid),
-                ) && q.is_contained(&source_view.uuid(), into)
-                  && q.is_contained(&dest_view.uuid(), into)
+                ) && q.is_contained(&source_view.uuid(), preferred_container)
+                  && q.is_contained(&dest_view.uuid(), preferred_container)
                 {
                     self.current_stage = self.initial_stage.clone();
 
-                    let link_view = match link_type {
+                    let link_view: DemoOfdElementView = match link_type {
                         LinkType::PropertyType { .. }
                         | LinkType::Specialization
                         | LinkType::Aggregation => unreachable!(),
@@ -1457,9 +1487,16 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     };
 
                     self.try_spend();
-                    Some((link_view, None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: link_view.into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialDemoOfdElement::TypeLink {
@@ -1472,12 +1509,12 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                 if let (Some(source_view), Some(dest_view)) = (
                     q.get_view_for(&source_uuid),
                     q.get_view_for(&target_uuid),
-                ) && q.is_contained(&source_view.uuid(), into)
-                  && q.is_contained(&dest_view.uuid(), into)
+                ) && q.is_contained(&source_view.uuid(), preferred_container)
+                  && q.is_contained(&dest_view.uuid(), preferred_container)
                 {
                     self.current_stage = self.initial_stage.clone();
 
-                    let link_view = match link_type {
+                    let link_view: DemoOfdElementView = match link_type {
                         LinkType::PropertyType { .. }
                         | LinkType::Specialization
                         | LinkType::Aggregation
@@ -1492,23 +1529,38 @@ impl Tool<DemoOfdDomain> for NaiveDemoOfdTool {
                     };
 
                     self.try_spend();
-                    Some((link_view, None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: link_view.into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialDemoOfdElement::Package { name, a, b: Some(b) } => {
                 self.current_stage = self.initial_stage.clone();
 
-                let (_package_model, package_view) =
-                    new_demoofd_package(name, egui::Rect::from_two_pos(*a, *b));
+                let package_view =
+                    new_demoofd_package(name, egui::Rect::from_two_pos(*a, *b)).1;
 
                 self.try_spend();
-                Some((package_view.into(), None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: DemoOfdElementView::from(package_view).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
-            _ => None,
+            _ => Err(()),
         }
     }
+
     fn reset_event_lock(&mut self) {
         self.event_lock = false;
     }
@@ -2720,15 +2772,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEventView {
                     tool.add_section(self.model());
 
                     if !self.specialization_view.is_some()
-                        && let Some((DemoOfdElementView::EntityType(new_e), esm)) = tool.try_construct_view(q, &self.uuid) {
-                        new_e.write().position = self.position;
-                        commands.push(InsensitiveCommand::AddDependency {
-                            target: *self.uuid,
-                            bucket: 0,
-                            position: None,
-                            element: DemoOfdElementView::from(new_e).into(),
-                            into_model: true,
-                        });
+                        && let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands) {
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }
@@ -3698,7 +3742,7 @@ impl MulticonnectionAdapter<DemoOfdDomain> for DemoOfdAggregationAdapter {
                     initial_stage: DemoOfdToolStage::LinkAddEnding { source: true },
                     current_stage: DemoOfdToolStage::LinkAddEnding { source: true },
                     result: PartialDemoOfdElement::AggregationEnding {
-                        gen_model: self.model.clone(),
+                        agg_model: self.model.clone(),
                         new_model: None,
                     },
                     event_lock: false,

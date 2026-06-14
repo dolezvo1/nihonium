@@ -1154,20 +1154,31 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(u8, ModelUuid, ModelUuid)> {
-        None
-    }
-
-    fn try_construct_view(
+    fn try_flush(
         &mut self,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
-        _into: &ViewUuid,
-    ) -> Option<(UmlSequenceElementView, Option<Box<dyn CustomModal>>)> {
+        preferred_container: &ViewUuid,
+        preferred_bucket: BucketNoT,
+        preferred_position: Option<PositionNoT>,
+        commands: &mut Vec<InsensitiveCommand<
+            <UmlSequenceDomain as Domain>::OrdinalMovementT,
+            <UmlSequenceDomain as Domain>::AddCommandElementT,
+            <UmlSequenceDomain as Domain>::PropChangeT,
+        >>,
+    ) -> Result<Option<Box<dyn CustomModal>>, ()>
+    {
         match &self.result {
-            PartialUmlSequenceElement::Some(x) => {
-                let x = x.clone();
+            PartialUmlSequenceElement::Some(element) => {
+                let element = element.clone();
                 self.try_spend();
-                Some((x, None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: UmlSequenceElementView::from(element).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
             PartialUmlSequenceElement::Diagram { a, b: Some(b), .. } => {
                 self.current_stage = UmlSequenceToolStage::DiagramStart;
@@ -1176,7 +1187,14 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     new_umlsequence_diagram("Diagram", Vec::new(), Vec::new(), egui::Rect::from_two_pos(*a, *b));
 
                 self.try_spend();
-                Some((diagram_view.into(), None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: UmlSequenceElementView::from(diagram_view).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
             PartialUmlSequenceElement::CombinedFragment {
                 kind,
@@ -1193,17 +1211,24 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     self.current_stage = self.initial_stage.clone();
 
                     let section = new_umlsequence_combinedfragmentsection("", Vec::new()).into();
-                    let link_view = new_umlsequence_combinedfragment(
+                    let cf_view = new_umlsequence_combinedfragment(
                         *kind,
                         "",
                         [source_uuid, target_uuid].into_iter().collect(),
                         vec![section],
-                    ).1.into();
+                    ).1;
 
                     self.try_spend();
-                    Some((link_view, None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: UmlSequenceElementView::from(cf_view).into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialUmlSequenceElement::Link {
@@ -1220,7 +1245,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     == q.find_parent(&target_view.uuid(), |_, e| matches!(e, UmlSequenceElementView::Diagram(_))).map(|e| e.0) {
                     self.current_stage = self.initial_stage.clone();
 
-                    let link_view = match link_type {
+                    let link_view: UmlSequenceElementView = match link_type {
                         LinkType::Message { synchronicity_kind, is_return, name } => {
                             new_umlsequence_message(
                                 name,
@@ -1235,9 +1260,16 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     };
 
                     self.try_spend();
-                    Some((link_view, None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: link_view.into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialUmlSequenceElement::Ref { text, source, dest: Some(dest) } => {
@@ -1252,12 +1284,19 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     let ref_view = new_umlsequence_ref(
                         text,
                         [source_uuid, target_uuid].into_iter().collect(),
-                    ).1.into();
+                    ).1;
 
                     self.try_spend();
-                    Some((ref_view, None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: UmlSequenceElementView::from(ref_view).into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialUmlSequenceElement::CommentLink { source, dest: Some(dest) } => {
@@ -1275,14 +1314,22 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     );
 
                     self.try_spend();
-                    Some((link_view.into(), None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: UmlSequenceElementView::from(link_view).into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
-            _ => None,
+            _ => Err(()),
         }
     }
+
     fn reset_event_lock(&mut self) {
         self.event_lock = false;
     }
@@ -1812,32 +1859,14 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         tool.add_section(h.1.clone().into());
                     }
 
-                    if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid) {
-                        if let UmlSequenceElementView::Lifeline(_) = &new_e {
-                            let pos = self.lifeline_insertion_place(pos).0;
-
-                            commands.push(InsensitiveCommand::AddDependency {
-                                target: *self.uuid,
-                                bucket: VERTICALS_BUCKET,
-                                position: Some(pos),
-                                element: new_e.into(),
-                                into_model: true,
-                            }.into());
-                            if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                                *element_setup_modal = esm;
-                            }
-                        } else if let Some(_) = new_e.clone().as_horizontal()
-                                && let Some(h) = horizontal_place {
-                            commands.push(InsensitiveCommand::AddDependency {
-                                target: *self.uuid,
-                                bucket: HORIZONTALS_BUCKET,
-                                position: h.0,
-                                element: new_e.into(),
-                                into_model: true,
-                            }.into());
-                            if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                                *element_setup_modal = esm;
-                            }
+                    let pos = if matches!(tool.initial_stage, UmlSequenceToolStage::Lifeline { .. }) {
+                        Some(self.lifeline_insertion_place(pos).0)
+                    } else {
+                        horizontal_place.and_then(|e| e.0)
+                    };
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, pos, commands) {
+                        if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                            *element_setup_modal = esm;
                         }
                     }
 
@@ -3290,18 +3319,8 @@ impl UmlSequenceCombinedFragmentSectionView {
                     tool.add_section(self.model.clone().into());
                     if let Some(h) = &horizontal_place {
                         tool.add_section(h.1.clone().into());
-                    }
 
-                    if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid) {
-                        if let Some(_) = new_e.clone().as_horizontal()
-                                && let Some(h) = horizontal_place {
-                            commands.push(InsensitiveCommand::AddDependency {
-                                target: *self.uuid,
-                                bucket: HORIZONTALS_BUCKET,
-                                position: h.0,
-                                element: new_e.into(),
-                                into_model: true,
-                            }.into());
+                        if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, h.0, commands) {
                             if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                 *element_setup_modal = esm;
                             }

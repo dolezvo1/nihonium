@@ -2006,32 +2006,37 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
-        match &mut self.result {
-            PartialUmlClassElement::LinkEnding { source, gen_model, new_model } if new_model.is_some() => {
-                let r = Some((
-                    if *source { MULTICONNECTION_SOURCE_BUCKET } else { MULTICONNECTION_TARGET_BUCKET },
-                    *gen_model.uuid(),
-                    new_model.unwrap(),
-                ));
-                *new_model = None;
-                r
-            }
-            _ => {
-                None
-            }
-        }
-    }
-
-    fn try_construct_view(
+    fn try_flush(
         &mut self,
         q: &<UmlClassDomain<P> as Domain>::QueryableT<'_>,
-        into: &ViewUuid,
-    ) -> Option<(UmlClassElementView<P>, Option<Box<dyn CustomModal>>)> {
-        match &self.result {
-            PartialUmlClassElement::Some(x) => {
-                let x = x.clone();
-                let esm: Option<Box<dyn CustomModal>> = match &x {
+        preferred_container: &ViewUuid,
+        preferred_bucket: BucketNoT,
+        preferred_position: Option<PositionNoT>,
+        commands: &mut Vec<InsensitiveCommand<
+            <UmlClassDomain<P> as Domain>::OrdinalMovementT,
+            <UmlClassDomain<P> as Domain>::AddCommandElementT,
+            <UmlClassDomain<P> as Domain>::PropChangeT,
+        >>,
+    ) -> Result<Option<Box<dyn CustomModal>>, ()>
+    {
+        match &mut self.result {
+            PartialUmlClassElement::LinkEnding { source, gen_model, new_model }
+                if new_model.is_some()
+                    && let Some(target) = q.get_viewuuid_for(&gen_model.uuid())
+                    && let Some(element) = q.get_view_for(&new_model.unwrap()) => {
+                commands.push(InsensitiveCommand::AddDependency {
+                    target,
+                    bucket: if *source { MULTICONNECTION_SOURCE_BUCKET } else { MULTICONNECTION_TARGET_BUCKET },
+                    position: None,
+                    element: element.into(),
+                    into_model: true,
+                });
+                *new_model = None;
+                Ok(None)
+            }
+            PartialUmlClassElement::Some(element) => {
+                let element = element.clone();
+                let esm: Option<Box<dyn CustomModal>> = match &element {
                     UmlClassElementView::Instance(inner) => Some(Box::new(UmlClassInstanceSetupModal::<P::InstanceStereotypeController>::from(&inner.read().model))),
                     UmlClassElementView::Class(inner) => Some(Box::new(UmlClassSetupModal::<P::ClassStereotypeController>::from(&inner.read().model))),
                     UmlClassElementView::ClassProperty(inner) => Some(Box::new(UmlClassPropertySetupModal::<P::ClassPropertyStereotypeController>::from(&inner.read().model))),
@@ -2039,7 +2044,14 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     _ => None,
                 };
                 self.try_spend();
-                Some((x, esm))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: UmlClassElementView::from(element).into(),
+                    into_model: true,
+                });
+                Ok(esm)
             }
             PartialUmlClassElement::Link {
                 link_type,
@@ -2051,30 +2063,30 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 if let (Some(source_view), Some(target_view)) = (
                     q.get_view_for(&source_uuid),
                     q.get_view_for(&target_uuid),
-                ) && q.is_contained(&source_view.uuid(), into)
-                  && q.is_contained(&target_view.uuid(), into)
+                ) && q.is_contained(&source_view.uuid(), preferred_container)
+                  && q.is_contained(&target_view.uuid(), preferred_container)
                 {
                     self.current_stage = UmlClassToolStage::LinkStart {
                         link_type: link_type.clone(),
                     };
 
-                    let link_view = match link_type {
+                    let link_view: UmlClassElementView<_> = match link_type {
                         LinkType::Generalization { set_name } => {
-                            if let (UmlClassAssociable::Class(source), UmlClassAssociable::Class(dest)) = (source, dest) {
+                            if let (UmlClassAssociable::Class(source), UmlClassAssociable::Class(dest)) = (&source, &dest) {
                                 new_umlclass_generalization(
                                     set_name,
                                     None,
                                     (source.clone(), source_view),
                                     (dest.clone(), target_view),
                                 ).1.into()
-                            } else if let (UmlClassAssociable::UseCase(source), UmlClassAssociable::UseCase(dest)) = (source, dest) {
+                            } else if let (UmlClassAssociable::UseCase(source), UmlClassAssociable::UseCase(dest)) = (&source, &dest) {
                                 new_uml_usecasegeneralization(
                                     None,
                                     (source.clone(), source_view),
                                     (dest.clone(), target_view),
                                 ).1.into()
                             } else {
-                                return None;
+                                return Err(());
                             }
                         },
                         LinkType::Dependency { target_arrow_open, stereotype, name } => {
@@ -2101,9 +2113,16 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     };
 
                     self.try_spend();
-                    Some((link_view, None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: link_view.into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialUmlClassElement::CommentLink { source, dest: Some(dest) } => {
@@ -2111,21 +2130,28 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 if let (Some(source_view), Some(target_view)) = (
                     q.get_view_for(&source_uuid),
                     q.get_view_for(&dest.uuid()),
-                ) && q.is_contained(&source_view.uuid(), into)
-                  && q.is_contained(&target_view.uuid(), into)
+                ) && q.is_contained(&source_view.uuid(), preferred_container)
+                  && q.is_contained(&target_view.uuid(), preferred_container)
                 {
                     self.current_stage = UmlClassToolStage::CommentLinkStart;
 
-                    let (_link_model, link_view) = new_umlclass_commentlink(
+                    let link_view = new_umlclass_commentlink(
                         None,
                         (source.clone(), source_view),
                         (dest.clone(), target_view),
-                    );
+                    ).1;
 
                     self.try_spend();
-                    Some((link_view.into(), None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: UmlClassElementView::from(link_view).into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialUmlClassElement::Package { name, stereotype, kind, a, b: Some(b) } => {
@@ -2135,11 +2161,19 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                     new_umlclass_package(name, stereotype, *kind, egui::Rect::from_two_pos(*a, *b));
 
                 self.try_spend();
-                Some((package_view.into(), None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: UmlClassElementView::from(package_view).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
-            _ => None,
+            _ => Err(()),
         }
     }
+
     fn reset_event_lock(&mut self) {
         self.event_lock = false;
     }
@@ -5178,33 +5212,9 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
-                    if let Some((view, esm)) = tool.try_construct_view(q, &self.uuid) {
-                        match view {
-                            UmlClassElementView::ClassProperty(_) => {
-                                commands.push(InsensitiveCommand::AddDependency {
-                                    target: *self.uuid,
-                                    bucket: UmlClass::PROPERTIES_BUCKET,
-                                    position: None,
-                                    element: view.into(),
-                                    into_model: true,
-                                }.into());
-                                if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                                    *element_setup_modal = esm;
-                                }
-                            }
-                            UmlClassElementView::ClassOperation(_) => {
-                                commands.push(InsensitiveCommand::AddDependency {
-                                    target: *self.uuid,
-                                    bucket: UmlClass::OPERATIONS_BUCKET,
-                                    position: None,
-                                    element: view.into(),
-                                    into_model: true,
-                                }.into());
-                                if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                                    *element_setup_modal = esm;
-                                }
-                            }
-                            _ => unreachable!(),
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands) {
+                        if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                            *element_setup_modal = esm;
                         }
                     }
                 }
@@ -5256,20 +5266,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
 
-                    if let Some((view, esm)) = tool.try_construct_view(q, &self.uuid)
-                        && matches!(view, UmlClassElementView::ClassProperty(_) | UmlClassElementView::ClassOperation(_)) {
-                        let b = match view {
-                            UmlClassElementView::ClassProperty(_) => UmlClass::PROPERTIES_BUCKET,
-                            UmlClassElementView::ClassOperation(_) => UmlClass::OPERATIONS_BUCKET,
-                            _ => unreachable!()
-                        };
-                        commands.push(InsensitiveCommand::AddDependency {
-                            target: *self.uuid,
-                            bucket: b,
-                            position: None,
-                            element: view.into(),
-                            into_model: true,
-                        });
+                    if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands) {
                         if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                             *element_setup_modal = esm;
                         }

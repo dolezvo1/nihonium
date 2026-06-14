@@ -1030,20 +1030,24 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
-        None
-    }
-
-    fn try_construct_view(
+    fn try_flush(
         &mut self,
         q: &<DemoCsdDomain as Domain>::QueryableT<'_>,
-        into: &ViewUuid,
-    ) -> Option<(DemoCsdElementView, Option<Box<dyn CustomModal>>)> {
+        preferred_container: &ViewUuid,
+        preferred_bucket: BucketNoT,
+        preferred_position: Option<PositionNoT>,
+        commands: &mut Vec<InsensitiveCommand<
+            <DemoCsdDomain as Domain>::OrdinalMovementT,
+            <DemoCsdDomain as Domain>::AddCommandElementT,
+            <DemoCsdDomain as Domain>::PropChangeT,
+        >>,
+    ) -> Result<Option<Box<dyn CustomModal>>, ()>
+    {
         match &self.result {
-            PartialDemoCsdElement::Some(x) => {
-                let x = x.clone();
+            PartialDemoCsdElement::Some(element) => {
+                let element = element.clone();
                 self.try_spend();
-                let esm: Option<Box<dyn CustomModal>> = match &x {
+                let esm: Option<Box<dyn CustomModal>> = match &element {
                     DemoCsdElementView::Transactor(eref) => {
                         Some(Box::new(DemoCsdTransactorSetupModal::from(&eref.read().model)))
                     },
@@ -1053,7 +1057,14 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                     DemoCsdElementView::Package(..)
                     | DemoCsdElementView::Link(..) => unreachable!(),
                 };
-                Some((x, esm))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: element.into(),
+                    into_model: true,
+                });
+                Ok(esm)
             }
             PartialDemoCsdElement::Link {
                 source,
@@ -1066,34 +1077,48 @@ impl Tool<DemoCsdDomain> for NaiveDemoCsdTool {
                 if let (Some(source_view), Some(target_view)) = (
                     q.get_view_for(&source_uuid),
                     q.get_view_for(&target_uuid),
-                ) && q.is_contained(&source_view.uuid(), into)
-                  && q.is_contained(&target_view.uuid(), into)
+                ) && q.is_contained(&source_view.uuid(), preferred_container)
+                  && q.is_contained(&target_view.uuid(), preferred_container)
                 {
                     self.current_stage = self.initial_stage.clone();
 
-                    let (_link_model, link_view) = new_democsd_link(
+                    let link_view = new_democsd_link(
                         *link_type,
                         multiplicity,
                         (source.clone(), source_view),
                         (target.clone(), target_view),
-                    );
+                    ).1;
 
                     self.try_spend();
-                    Some((link_view.into(), None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: DemoCsdElementView::from(link_view).into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialDemoCsdElement::Package { name, a, b: Some(b) } => {
                 self.current_stage = self.initial_stage.clone();
 
-                let (_package_model, package_view) =
-                    new_democsd_package(name, egui::Rect::from_two_pos(*a, *b));
+                let package_view =
+                    new_democsd_package(name, egui::Rect::from_two_pos(*a, *b)).1;
 
                 self.try_spend();
-                Some((package_view.into(), None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: DemoCsdElementView::from(package_view).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
-            _ => None,
+            _ => Err(()),
         }
     }
 
@@ -1792,15 +1817,8 @@ impl ElementControllerGen2<DemoCsdDomain> for DemoCsdTransactorView {
 
                     if self.transaction_view.as_ref().is_none() {
                         tool.add_position(*event.mouse_position());
-                        if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid)
-                            && let DemoCsdElementView::Transaction(_) = new_e {
-                            commands.push(InsensitiveCommand::AddDependency {
-                                target: *self.uuid,
-                                bucket: 0,
-                                position: None,
-                                element: new_e.into(),
-                                into_model: true,
-                            });
+
+                        if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands) {
                             if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                                 *element_setup_modal = esm;
                             }

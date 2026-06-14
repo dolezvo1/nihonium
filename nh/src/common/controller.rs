@@ -1378,6 +1378,7 @@ pub trait Queryable<'a, DomainT: Domain> {
     fn find_parent<P>(&self, child: &ViewUuid, predicate: P) -> Option<(ViewUuid, DomainT::CommonElementViewT)>
         where P: FnMut(&ViewUuid, &DomainT::CommonElementViewT) -> bool;
 
+    fn get_viewuuid_for(&self, m: &ModelUuid) -> Option<ViewUuid>;
     fn get_view_for(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT>;
     fn selected_views(&self) -> HashSet<ViewUuid>;
 }
@@ -1427,6 +1428,9 @@ impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, Domain
         }
     }
 
+    fn get_viewuuid_for(&self, m: &ModelUuid) -> Option<ViewUuid> {
+        self.models_to_views.get(m).cloned()
+    }
     fn get_view_for(&self, m: &ModelUuid) -> Option<DomainT::CommonElementViewT> {
         self.models_to_views.get(m).and_then(|e| self.flattened_views.get(e)).map(|e| e.0.clone())
     }
@@ -1453,12 +1457,18 @@ pub trait Tool<DomainT: Domain> {
     fn add_position(&mut self, pos: egui::Pos2);
     fn add_section(&mut self, element: DomainT::ViewTargettingSectionT);
 
-    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)>;
-    fn try_construct_view(
+    fn try_flush(
         &mut self,
         q: &DomainT::QueryableT<'_>,
-        into: &ViewUuid,
-    ) -> Option<(DomainT::CommonElementViewT, Option<Box<dyn CustomModal>>)>;
+        preferred_container: &ViewUuid,
+        preferred_bucket: BucketNoT,
+        preferred_position: Option<PositionNoT>,
+        commands: &mut Vec<InsensitiveCommand<
+            DomainT::OrdinalMovementT,
+            DomainT::AddCommandElementT,
+            DomainT::PropChangeT,
+        >>,
+    ) -> Result<Option<Box<dyn CustomModal>>, ()>;
 
     fn reset_event_lock(&mut self);
 }
@@ -2604,29 +2614,14 @@ impl<
                 }
 
                 let mut tool = self.temporaries.current_tool.take();
-                if let Some((bucket, target_id, dependency_id)) = tool.as_mut().and_then(|e| e.try_additional_dependency()) {
-                    if let (Some(target_view_id), Some((dependency_view, _)))
-                        = (self.temporaries.flattened_represented_models.get(&target_id),
-                            self.temporaries.flattened_represented_models.get(&dependency_id)
-                            .and_then(|e| self.temporaries.flattened_views.get(e))) {
-                        commands.push(InsensitiveCommand::AddDependency {
-                            target: *target_view_id,
-                            bucket,
-                            position: None,
-                            element: dependency_view.clone().into(),
-                            into_model: true,
-                        }.into());
-                        handled = true;
-                    };
-                }
-                if let Some((new_e, esm)) = tool.as_mut().and_then(|e| e.try_construct_view(&q, &self.uuid)) {
-                    commands.push(InsensitiveCommand::AddDependency {
-                        target: *self.uuid(),
-                        bucket: 0,
-                        position: None,
-                        element: DomainT::AddCommandElementT::from(new_e),
-                        into_model: true,
-                     }.into());
+                if let Some(esm) = tool.as_mut()
+                    .and_then(|e| e.try_flush(
+                        &q,
+                        &self.uuid,
+                        0,
+                        None,
+                        &mut commands,
+                    ).ok()) {
                     if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
                         *element_setup_modal = esm;
                     }

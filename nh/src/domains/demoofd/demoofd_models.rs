@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{common::{
-    controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement}, entity::{Entity, EntityUuid}, eref::ERef, search::FullTextSearchable, ufoption::UFOption, uuid::ModelUuid
+    controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement}, entity::{Entity, EntityUuid}, eref::ERef, search::FullTextSearchable, ufoption::UFOption, uuid::ModelUuid, views::multiconnection_view::MULTICONNECTION_SOURCE_BUCKET
 }, domains::demo::DemoTransactionKind};
 
 
@@ -966,7 +966,7 @@ impl ContainerModel for DemoOfdAggregation {
         None
     }
     fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoOfdElement) -> Result<PositionNoT, DemoOfdElement> {
-        if bucket != 0 {
+        if bucket != MULTICONNECTION_SOURCE_BUCKET {
             return Err(element);
         }
 
@@ -985,7 +985,7 @@ impl ContainerModel for DemoOfdAggregation {
         for (idx, e) in self.domain_elements.iter().enumerate() {
             if *e.read().uuid == *uuid {
                 self.domain_elements.remove(idx);
-                return Some((0, idx.try_into().unwrap()));
+                return Some((MULTICONNECTION_SOURCE_BUCKET, idx.try_into().unwrap()));
             }
         }
         None

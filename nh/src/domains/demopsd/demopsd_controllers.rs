@@ -1168,20 +1168,24 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
-        None
-    }
-
-    fn try_construct_view(
+    fn try_flush(
         &mut self,
         q: &<DemoPsdDomain as Domain>::QueryableT<'_>,
-        into: &ViewUuid,
-    ) -> Option<(DemoPsdElementView, Option<Box<dyn CustomModal>>)> {
+        preferred_container: &ViewUuid,
+        preferred_bucket: BucketNoT,
+        preferred_position: Option<PositionNoT>,
+        commands: &mut Vec<InsensitiveCommand<
+            <DemoPsdDomain as Domain>::OrdinalMovementT,
+            <DemoPsdDomain as Domain>::AddCommandElementT,
+            <DemoPsdDomain as Domain>::PropChangeT,
+        >>,
+    ) -> Result<Option<Box<dyn CustomModal>>, ()>
+    {
         match &self.result {
-            PartialDemoPsdElement::Some(x) => {
-                let x = x.clone();
+            PartialDemoPsdElement::Some(element) => {
+                let element = element.clone();
                 self.try_spend();
-                let esm: Option<Box<dyn CustomModal>> = match &x {
+                let esm: Option<Box<dyn CustomModal>> = match &element {
                     DemoPsdElementView::Transaction(inner) => {
                         Some(Box::new(DemoPsdTransactionSetupModal::from(&inner.read().model)))
                     },
@@ -1190,7 +1194,14 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                     DemoPsdElementView::Package(..)
                     | DemoPsdElementView::Link(..) => unreachable!(),
                 };
-                Some((x, esm))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: element.into(),
+                    into_model: true,
+                });
+                Ok(esm)
             }
             PartialDemoPsdElement::Link {
                 source,
@@ -1203,35 +1214,49 @@ impl Tool<DemoPsdDomain> for NaiveDemoPsdTool {
                 if let (Some(source_view), Some(target_view)) = (
                     q.get_view_for(&source_uuid),
                     q.get_view_for(&target_uuid),
-                ) && q.is_contained(&source_view.uuid(), into)
-                  && q.is_contained(&target_view.uuid(), into)
+                ) && q.is_contained(&source_view.uuid(), preferred_container)
+                  && q.is_contained(&target_view.uuid(), preferred_container)
                 {
                     self.current_stage = self.initial_stage.clone();
 
-                    let (_link_model, link_view) = new_demopsd_link(
+                    let link_view = new_demopsd_link(
                         *link_type,
                         multiplicity,
                         (source.clone(), source_view),
                         (target.clone(), target_view),
                         None,
-                    );
+                    ).1;
 
                     self.try_spend();
-                    Some((link_view.into(), None))
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: DemoPsdElementView::from(link_view).into(),
+                        into_model: true,
+                    });
+                    Ok(None)
                 } else {
-                    None
+                    Err(())
                 }
             }
             PartialDemoPsdElement::Package { a, b: Some(b) } => {
                 self.current_stage = DemoPsdToolStage::PackageStart;
 
-                let (_package_model, package_view) =
-                    new_demopsd_package("A package", egui::Rect::from_two_pos(*a, *b));
+                let package_view =
+                    new_demopsd_package("A package", egui::Rect::from_two_pos(*a, *b)).1;
 
                 self.try_spend();
-                Some((package_view.into(), None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: DemoPsdElementView::from(package_view).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
-            _ => None,
+            _ => Err(()),
         }
     }
 
@@ -1595,6 +1620,9 @@ impl DemoPsdTransactionView {
     }
 
     fn state_insertion_place(&self, quadrant: egui::Align2, pos: egui::Pos2) -> (PositionNoT, egui::Rect) {
+        if quadrant == egui::Align2::CENTER_CENTER {
+            return (0, egui::Rect::NOTHING);
+        }
         let tx_mark_center = egui::Pos2::new(
             self.tx_outer_rectangle.min.x + self.tx_outer_rectangle.width() * self.tx_mark_percentage,
             self.tx_outer_rectangle.center().y,
@@ -2039,34 +2067,23 @@ impl ElementControllerGen2<DemoPsdDomain> for DemoPsdTransactionView {
                     let quadrant = section.1;
                     tool.add_section(section.into());
 
-                    if self.p_act_view.as_ref().is_none() || quadrant != egui::Align2::CENTER_CENTER {
+                    if (self.p_act_view.as_ref().is_none()
+                        && !matches!(tool.initial_stage, DemoPsdToolStage::Fact { .. }))
+                        || quadrant != egui::Align2::CENTER_CENTER {
                         tool.add_position(pos);
-                        if let Some((new_e, esm)) = tool.try_construct_view(q, &self.uuid) {
-                            if (quadrant == egui::Align2::CENTER_CENTER
-                                && !self.model.read().p_act.is_some()
-                                && matches!(new_e, DemoPsdElementView::Act(_)))
-                               || (quadrant != egui::Align2::CENTER_CENTER
-                                   && matches!(new_e, DemoPsdElementView::Act(_) | DemoPsdElementView::Fact(_))) {
-                                let quadrant_no = match quadrant {
-                                    egui::Align2::CENTER_CENTER => DemoPsdTransaction::CENTER_BUCKET,
-                                    egui::Align2::LEFT_TOP => DemoPsdTransaction::BEFORE_INITIATOR_BUCKET,
-                                    egui::Align2::LEFT_BOTTOM => DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET,
-                                    egui::Align2::RIGHT_BOTTOM => DemoPsdTransaction::AFTER_EXECUTOR_BUCKET,
-                                    egui::Align2::RIGHT_TOP => DemoPsdTransaction::AFTER_INITIATOR_BUCKET,
-                                    _ => unreachable!(),
-                                };
-                                let pos = self.state_insertion_place(quadrant, pos).0;
+                        let quadrant_no = match quadrant {
+                            egui::Align2::CENTER_CENTER => DemoPsdTransaction::CENTER_BUCKET,
+                            egui::Align2::LEFT_TOP => DemoPsdTransaction::BEFORE_INITIATOR_BUCKET,
+                            egui::Align2::LEFT_BOTTOM => DemoPsdTransaction::BEFORE_EXECUTOR_BUCKET,
+                            egui::Align2::RIGHT_BOTTOM => DemoPsdTransaction::AFTER_EXECUTOR_BUCKET,
+                            egui::Align2::RIGHT_TOP => DemoPsdTransaction::AFTER_INITIATOR_BUCKET,
+                            _ => unreachable!(),
+                        };
+                        let pos = self.state_insertion_place(quadrant, pos).0;
 
-                                commands.push(InsensitiveCommand::AddDependency {
-                                    target: *self.uuid,
-                                    bucket: quadrant_no,
-                                    position: Some(pos),
-                                    element: new_e.into(),
-                                    into_model: true,
-                                }.into());
-                                if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                                    *element_setup_modal = esm;
-                                }
+                        if let Ok(esm) = tool.try_flush(q, &self.uuid, quadrant_no, Some(pos), commands) {
+                            if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                                *element_setup_modal = esm;
                             }
                         }
                     }

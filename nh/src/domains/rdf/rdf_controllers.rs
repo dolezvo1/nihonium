@@ -872,19 +872,23 @@ impl Tool<RdfDomain> for NaiveRdfTool {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
-        None
-    }
-
-    fn try_construct_view(
+    fn try_flush(
         &mut self,
         q: &<RdfDomain as Domain>::QueryableT<'_>,
-        into: &ViewUuid,
-    ) -> Option<(RdfElementView, Option<Box<dyn CustomModal>>)> {
+        preferred_container: &ViewUuid,
+        preferred_bucket: BucketNoT,
+        preferred_position: Option<PositionNoT>,
+        commands: &mut Vec<InsensitiveCommand<
+            <RdfDomain as Domain>::OrdinalMovementT,
+            <RdfDomain as Domain>::AddCommandElementT,
+            <RdfDomain as Domain>::PropChangeT,
+        >>,
+    ) -> Result<Option<Box<dyn CustomModal>>, ()>
+    {
         match &self.result {
-            PartialRdfElement::Some(x) => {
-                let x = x.clone();
-                let esm: Option<Box<dyn CustomModal>> = match &x {
+            PartialRdfElement::Some(element) => {
+                let element = element.clone();
+                let esm: Option<Box<dyn CustomModal>> = match &element {
                     RdfElementView::Literal(inner) => {
                         Some(Box::new(RdfLiteralSetupModal::from(&inner.read().model)))
                     },
@@ -895,7 +899,14 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     | RdfElementView::Graph(..) => unreachable!(),
                 };
                 self.try_spend();
-                Some((x, esm))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: RdfElementView::from(element).into(),
+                    into_model: true,
+                });
+                Ok(esm)
             }
             PartialRdfElement::Predicate {
                 iri,
@@ -903,30 +914,34 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                 dest: Some(dest),
                 ..
             } => {
-                self.current_stage = self.initial_stage.clone();
-
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.uuid());
-                let predicate_view: Option<(_, Option<Box<dyn CustomModal>>)> =
-                    if let (Some(source_controller), Some(dest_controller)) = (
-                        q.get_view_for(&source_uuid),
-                        q.get_view_for(&target_uuid),
-                    ) && q.is_contained(&source_controller.uuid(), into)
-                      && q.is_contained(&dest_controller.uuid(), into)
-                      && q.are_siblings(&source_controller.uuid(), &dest_controller.uuid())
-                    {
-                        let (predicate_model, predicate_view) = new_rdf_predicate(
-                            iri,
-                            (source.clone(), source_controller),
-                            (dest.clone(), dest_controller),
-                        );
+                if let (Some(source_controller), Some(dest_controller)) = (
+                    q.get_view_for(&source_uuid),
+                    q.get_view_for(&target_uuid),
+                ) && q.is_contained(&source_controller.uuid(), preferred_container)
+                    && q.is_contained(&dest_controller.uuid(), preferred_container)
+                    && q.are_siblings(&source_controller.uuid(), &dest_controller.uuid())
+                {
+                    self.current_stage = self.initial_stage.clone();
 
-                        Some((predicate_view.into(), Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(predicate_model))))))
-                    } else {
-                        None
-                    };
+                    let (predicate_model, predicate_view) = new_rdf_predicate(
+                        iri,
+                        (source.clone(), source_controller),
+                        (dest.clone(), dest_controller),
+                    );
 
-                self.try_spend();
-                predicate_view
+                    self.try_spend();
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: RdfElementView::from(predicate_view).into(),
+                        into_model: true,
+                    });
+                    Ok(Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(predicate_model)))))
+                } else {
+                    Err(())
+                }
             }
             PartialRdfElement::Graph { iri, a, b: Some(b) } => {
                 self.current_stage = self.initial_stage.clone();
@@ -935,9 +950,16 @@ impl Tool<RdfDomain> for NaiveRdfTool {
                     new_rdf_graph(iri, egui::Rect::from_two_pos(*a, *b));
 
                 self.try_spend();
-                Some((graph_view.into(), Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(graph_model))))))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: RdfElementView::from(graph_view).into(),
+                    into_model: true,
+                });
+                Ok(Some(Box::new(RdfIriBasedSetupModal::from(RdfElement::from(graph_model)))))
             }
-            _ => None,
+            _ => Err(()),
         }
     }
 

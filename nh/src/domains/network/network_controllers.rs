@@ -996,20 +996,31 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         }
     }
 
-    fn try_additional_dependency(&mut self) -> Option<(BucketNoT, ModelUuid, ModelUuid)> {
-        None
-    }
-
-    fn try_construct_view(
+    fn try_flush(
         &mut self,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
-        into: &ViewUuid,
-    ) -> Option<(NetworkElementView, Option<Box<dyn CustomModal>>)> {
+        preferred_container: &ViewUuid,
+        preferred_bucket: BucketNoT,
+        preferred_position: Option<PositionNoT>,
+        commands: &mut Vec<InsensitiveCommand<
+            <NetworkDomain as Domain>::OrdinalMovementT,
+            <NetworkDomain as Domain>::AddCommandElementT,
+            <NetworkDomain as Domain>::PropChangeT,
+        >>,
+    ) -> Result<Option<Box<dyn CustomModal>>, ()>
+    {
         match &self.result {
-            PartialNetworkElement::Some(x) => {
-                let x = x.clone();
+            PartialNetworkElement::Some(element) => {
+                let element = element.clone();
                 self.try_spend();
-                Some((x, None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: NetworkElementView::from(element).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
             PartialNetworkElement::Association {
                 line_type,
@@ -1019,41 +1030,52 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 dest: Some(dest),
                 ..
             } => {
-                self.current_stage = self.initial_stage.clone();
-
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
-                let association_view: Option<(_, Option<Box<dyn CustomModal>>)> =
-                    if let (Some(source_controller), Some(dest_controller)) = (
-                        q.get_view_for(&source_uuid),
-                        q.get_view_for(&target_uuid),
-                    ) && q.is_contained(&source_controller.uuid(), into)
-                      && q.is_contained(&dest_controller.uuid(), into)
-                    {
-                        let (_, association_view) = new_network_association(
-                            *line_type,
-                            (source.clone(), source_controller), *source_arrowhead,
-                            (dest.clone(), dest_controller), *target_arrowhead,
-                        );
+                if let (Some(source_controller), Some(dest_controller)) = (
+                    q.get_view_for(&source_uuid),
+                    q.get_view_for(&target_uuid),
+                ) && q.is_contained(&source_controller.uuid(), preferred_container)
+                    && q.is_contained(&dest_controller.uuid(), preferred_container)
+                {
+                    self.current_stage = self.initial_stage.clone();
 
-                        Some((association_view.into(), None))
-                    } else {
-                        None
-                    };
+                    let association_view = new_network_association(
+                        *line_type,
+                        (source.clone(), source_controller), *source_arrowhead,
+                        (dest.clone(), dest_controller), *target_arrowhead,
+                    ).1;
 
-                self.try_spend();
-                association_view
+                    self.try_spend();
+                    commands.push(InsensitiveCommand::AddDependency {
+                        target: *preferred_container,
+                        bucket: preferred_bucket,
+                        position: preferred_position,
+                        element: NetworkElementView::from(association_view).into(),
+                        into_model: true,
+                    });
+                    Ok(None)
+                } else {
+                    Err(())
+                }
             }
             PartialNetworkElement::Container { name, a, b: Some(b) } => {
                 self.current_stage = self.initial_stage.clone();
 
-                let (_, container_view) = new_network_container(
+                let container_view = new_network_container(
                     name, NetworkContainerShapeKind::Rectangle, egui::Rect::from_two_pos(*a, *b),
-                );
+                ).1;
 
                 self.try_spend();
-                Some((container_view.into(), None))
+                commands.push(InsensitiveCommand::AddDependency {
+                    target: *preferred_container,
+                    bucket: preferred_bucket,
+                    position: preferred_position,
+                    element: NetworkElementView::from(container_view).into(),
+                    into_model: true,
+                });
+                Ok(None)
             }
-            _ => None,
+            _ => Err(()),
         }
     }
 
