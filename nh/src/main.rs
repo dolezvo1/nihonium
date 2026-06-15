@@ -938,11 +938,14 @@ impl NHContext {
         }
 
         egui_ltreeview::TreeView::new(egui::Id::new("search results")).show(ui, |builder| {
+            // TODO: find a better way to do this
+            fn unique_id(m: ModelUuid) -> (u32, ModelUuid) { (0, m) }
+
             for (component, sr, diagrams) in &self.search_results {
-                builder.dir(*component, &*self.drawing_context.model_labels.get(component));
+                builder.dir(unique_id(*component), &*self.drawing_context.model_labels.get(component));
                 for e in sr {
                     builder.node(
-                        egui_ltreeview::NodeBuilder::leaf(*e)
+                        egui_ltreeview::NodeBuilder::leaf(unique_id(*e))
                             .label(&*self.drawing_context.model_labels.get(e))
                             .context_menu(|ui| {
                                 ui.set_min_width(MIN_MENU_WIDTH);
