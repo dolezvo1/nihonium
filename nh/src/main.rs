@@ -1639,6 +1639,10 @@ impl NHContext {
                                 ("Arrange - Forward One:", DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into()),
                                 ("Arrange - Backward One:", DiagramCommand::ArrangeSelected(Arrangement::BackwardOne).into()),
                                 ("Arrange - Send to Back:", DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into()),
+                                ("Reset Diagram Position:", DiagramCommand::ResetPosition.into()),
+                                ("Reset Diagram Scale:", DiagramCommand::ResetScale.into()),
+                                ("Zoom Diagram To Fit:", DiagramCommand::ZoomToFit { selected_only: false }.into()),
+                                ("Zoom Diagram To Fit Selected:", DiagramCommand::ZoomToFit { selected_only: true }.into()),
                                ] {
                     ui.label(*l);
                     let sc = self.drawing_context.shortcuts.get(c);
@@ -1994,6 +1998,8 @@ impl Default for NHApp {
         context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Plus));
         context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BackwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Minus));
         context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Minus));
+        context.drawing_context.shortcuts.insert(DiagramCommand::ZoomToFit { selected_only: false }.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::J));
+
         context.sort_shortcuts();
 
         Self {

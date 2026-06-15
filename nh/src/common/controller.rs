@@ -164,6 +164,9 @@ pub enum DiagramCommand {
     HighlightAllElements(/*set: */bool, Highlight),
     HighlightElement(EntityUuid, /*set: */bool, Highlight),
     PanToElement(EntityUuid, /*force:*/bool),
+    ResetPosition,
+    ResetScale,
+    ZoomToFit { selected_only: bool },
     CreateViewFor(ModelUuid),
     DeleteViewFor(ModelUuid, /*including_model:*/ bool),
 }
@@ -3567,52 +3570,29 @@ impl<
     fn show_menubar_view_options(
         &mut self,
         context: &GlobalDrawingContext,
-        settings: &Box<dyn DiagramSettings>,
+        _settings: &Box<dyn DiagramSettings>,
         ui: &mut egui::Ui,
-        _commands: &mut Vec<ProjectCommand>,
+        commands: &mut Vec<ProjectCommand>,
     ) {
-        macro_rules! translate {
-            ($msg_name:expr) => {
-                context.fluent_bundle.format_pattern(
-                    context.fluent_bundle.get_message($msg_name).unwrap().value().unwrap(),
-                    None,
-                    &mut vec![],
-                )
+        macro_rules! button {
+            ($ui:expr, $msg_name:expr, $simple_project_command:expr) => {
+                {
+                    let mut button = egui::Button::new(context.translate_0($msg_name));
+                    if let Some(shortcut_text) = context.shortcut_text($ui, $simple_project_command) {
+                        button = button.shortcut_text(shortcut_text);
+                    }
+                    if $ui.add(button).clicked() {
+                        commands.push($simple_project_command.into());
+                        $ui.close();
+                    }
+                }
             };
         }
 
-        const PADDING: egui::Vec2 = egui::Vec2::splat(10.0);
-        if ui.button(translate!("nh-view-resetposition")).clicked() {
-            self.temporaries.camera_offset = egui::Pos2::ZERO;
-        }
-        if ui.button(translate!("nh-view-resetscale")).clicked() {
-            self.temporaries.camera_offset = self.temporaries.camera_offset / self.temporaries.camera_scale;
-            self.temporaries.camera_scale = 1.0;
-        }
-        if ui.button(translate!("nh-view-zoomtofit")).clicked() {
-            let mut mc = canvas::MeasuringCanvas::new(ui.painter());
-            self.draw_in(context, settings, &mut mc, None);
-
-            let rect = mc.bounds();
-            let ratio = self.temporaries.last_interactive_canvas_rect.size() * self.temporaries.camera_scale / (rect.size() + PADDING);
-            self.temporaries.camera_scale = ratio.x.min(ratio.y);
-            self.temporaries.camera_offset = rect.min * -self.temporaries.camera_scale + PADDING / 2.0;
-        }
-        if ui.button(translate!("nh-view-zoomtofitselected")).clicked() {
-            let mut area = egui::Rect::NOTHING;
-            for e in self.temporaries.flattened_views_status.iter()
-                .filter(|e| *e.1 != SelectionStatus::NotSelected)
-                .flat_map(|e| self.temporaries.flattened_views.get(e.0))
-            {
-                area = area.union(e.0.bounding_box());
-            }
-
-            if area.is_positive() {
-                let ratio = self.temporaries.last_interactive_canvas_rect.size() * self.temporaries.camera_scale / (area.size() + PADDING);
-                self.temporaries.camera_scale = ratio.x.min(ratio.y);
-                self.temporaries.camera_offset = area.min * -self.temporaries.camera_scale + PADDING / 2.0;
-            }
-        }
+        button!(ui, "nh-view-resetposition", SimpleProjectCommand::from(DiagramCommand::ResetPosition));
+        button!(ui, "nh-view-resetscale", SimpleProjectCommand::from(DiagramCommand::ResetScale));
+        button!(ui, "nh-view-zoomtofit", SimpleProjectCommand::from(DiagramCommand::ZoomToFit { selected_only: false }));
+        button!(ui, "nh-view-zoomtofitselected", SimpleProjectCommand::from(DiagramCommand::ZoomToFit { selected_only: true }));
     }
     fn show_menubar_diagram_options(
         &mut self,
@@ -3781,6 +3761,29 @@ impl<
                         let lir = egui::Pos2::new(lir.x.max(10.0), lir.y.max(10.0));
                         self.temporaries.camera_offset = lir - bb.center().to_vec2();
                     }
+                }
+            }
+            DiagramCommand::ResetPosition => {
+                self.temporaries.camera_offset = egui::Pos2::ZERO;
+            }
+            DiagramCommand::ResetScale => {
+                self.temporaries.camera_offset = self.temporaries.camera_offset / self.temporaries.camera_scale;
+                self.temporaries.camera_scale = 1.0;
+            }
+            DiagramCommand::ZoomToFit { selected_only } => {
+                const PADDING: egui::Vec2 = egui::Vec2::splat(10.0);
+                let mut area = egui::Rect::NOTHING;
+                for e in self.temporaries.flattened_views_status.iter()
+                    .filter(|e| !selected_only || *e.1 != SelectionStatus::NotSelected)
+                    .flat_map(|e| self.temporaries.flattened_views.get(e.0))
+                {
+                    area = area.union(e.0.bounding_box());
+                }
+
+                if area.is_positive() {
+                    let ratio = self.temporaries.last_interactive_canvas_rect.size() * self.temporaries.camera_scale / (area.size() + PADDING);
+                    self.temporaries.camera_scale = ratio.x.min(ratio.y);
+                    self.temporaries.camera_offset = area.min * -self.temporaries.camera_scale + PADDING / 2.0;
                 }
             }
             DiagramCommand::CreateViewFor(model_uuid) => {
