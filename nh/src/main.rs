@@ -1087,423 +1087,429 @@ impl NHContext {
     fn show_settings_tab(&mut self, ui: &mut egui::Ui) {
         ui.heading("Settings");
 
-        if ui.button("Switch light/dark theme").clicked() {
-            let (new_theme, new_visuals) = match ui.ctx().theme() {
-                egui::Theme::Light => (egui::Theme::Dark, egui::Visuals::dark()),
-                egui::Theme::Dark => (egui::Theme::Light, egui::Visuals::light()),
-            };
-            ui.ctx().set_theme(new_theme);
-            ui.ctx().set_visuals(new_visuals);
-            self.style = Some(Style::from_egui(&ui.ctx().global_style()));
-        }
-
-        egui::ComboBox::new("zoom_factor", "UI Scale")
-            .selected_text(self.zoom_factor.to_string())
-            .show_ui(ui, |ui| {
-                for e in [1.0, 1.25, 1.5, 1.75, 2.0, 4.0, 8.0] {
-                    ui.selectable_value(&mut self.zoom_factor, e, e.to_string());
+        egui::CollapsingHeader::new("Visuals")
+            .default_open(true)
+            .show(ui, |ui| {
+                if ui.button("Switch light/dark theme").clicked() {
+                    let (new_theme, new_visuals) = match ui.ctx().theme() {
+                        egui::Theme::Light => (egui::Theme::Dark, egui::Visuals::dark()),
+                        egui::Theme::Dark => (egui::Theme::Light, egui::Visuals::light()),
+                    };
+                    ui.ctx().set_theme(new_theme);
+                    ui.ctx().set_visuals(new_visuals);
+                    self.style = Some(Style::from_egui(&ui.ctx().global_style()));
                 }
-            });
 
-        ui.collapsing("DockArea Options", |ui| {
-            ui.checkbox(&mut self.show_close_buttons, "Show close buttons");
-            ui.checkbox(&mut self.show_add_buttons, "Show add buttons");
-            ui.checkbox(&mut self.draggable_tabs, "Draggable tabs");
-            ui.checkbox(&mut self.show_tab_name_on_hover, "Show tab name on hover");
-            ui.checkbox(&mut self.show_window_close, "Show close button on windows");
-            ui.checkbox(
-                &mut self.show_window_collapse,
-                "Show collaspse button on windows",
-            );
-            egui::ComboBox::new("cbox:allowed_splits", "Split direction(s)")
-                .selected_text(format!("{:?}", self.allowed_splits))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.allowed_splits, AllowedSplits::All, "All");
-                    ui.selectable_value(
-                        &mut self.allowed_splits,
-                        AllowedSplits::LeftRightOnly,
-                        "LeftRightOnly",
-                    );
-                    ui.selectable_value(
-                        &mut self.allowed_splits,
-                        AllowedSplits::TopBottomOnly,
-                        "TopBottomOnly",
-                    );
-                    ui.selectable_value(&mut self.allowed_splits, AllowedSplits::None, "None");
-                });
-        });
+                egui::ComboBox::new("zoom_factor", "UI Scale")
+                    .selected_text(self.zoom_factor.to_string())
+                    .show_ui(ui, |ui| {
+                        for e in [1.0, 1.25, 1.5, 1.75, 2.0, 4.0, 8.0] {
+                            ui.selectable_value(&mut self.zoom_factor, e, e.to_string());
+                        }
+                    });
 
-        let style = self.style.as_mut().unwrap();
-
-        ui.collapsing("Border", |ui| {
-            egui::Grid::new("border").show(ui, |ui| {
-                ui.label("Width:");
-                ui.add(Slider::new(
-                    &mut style.main_surface_border_stroke.width,
-                    1.0..=50.0,
-                ));
-                ui.end_row();
-
-                ui.label("Color:");
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut style.main_surface_border_stroke.color,
-                    egui::color_picker::Alpha::OnlyBlend,
-                );
-                ui.end_row();
-
-                ui.label("Rounding:");
-                corner_radius_ui(ui, &mut style.main_surface_border_rounding);
-                ui.end_row();
-            });
-        });
-
-        ui.collapsing("Separator", |ui| {
-            egui::Grid::new("separator").show(ui, |ui| {
-                ui.label("Width:");
-                ui.add(Slider::new(&mut style.separator.width, 1.0..=50.0));
-                ui.end_row();
-
-                ui.label("Extra Interact Width:");
-                ui.add(Slider::new(
-                    &mut style.separator.extra_interact_width,
-                    0.0..=50.0,
-                ));
-                ui.end_row();
-
-                ui.label("Offset limit:");
-                ui.add(Slider::new(&mut style.separator.extra, 1.0..=300.0));
-                ui.end_row();
-
-                ui.label("Idle color:");
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut style.separator.color_idle,
-                    egui::color_picker::Alpha::OnlyBlend,
-                );
-                ui.end_row();
-
-                ui.label("Hovered color:");
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut style.separator.color_hovered,
-                    egui::color_picker::Alpha::OnlyBlend,
-                );
-                ui.end_row();
-
-                ui.label("Dragged color:");
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut style.separator.color_dragged,
-                    egui::color_picker::Alpha::OnlyBlend,
-                );
-                ui.end_row();
-            });
-        });
-
-        ui.collapsing("Tabs", |ui| {
-            ui.separator();
-
-            ui.checkbox(&mut style.tab_bar.fill_tab_bar, "Expand tabs");
-            ui.checkbox(
-                &mut style.tab_bar.show_scroll_bar_on_overflow,
-                "Show scroll bar on tab overflow",
-            );
-            ui.checkbox(
-                &mut style.tab.hline_below_active_tab_name,
-                "Show a line below the active tab name",
-            );
-            ui.horizontal(|ui| {
-                ui.add(Slider::new(&mut style.tab_bar.height, 20.0..=50.0));
-                ui.label("Tab bar height");
-            });
-
-            egui::ComboBox::new("add_button_align", "Add button align")
-                .selected_text(format!("{:?}", style.buttons.add_tab_align))
-                .show_ui(ui, |ui| {
-                    for align in [egui_dock::TabAddAlign::Left, egui_dock::TabAddAlign::Right] {
-                        ui.selectable_value(
-                            &mut style.buttons.add_tab_align,
-                            align,
-                            format!("{:?}", align),
+                ui.collapsing("Advanced", |ui| {
+                    ui.collapsing("DockArea Options", |ui| {
+                        ui.checkbox(&mut self.show_close_buttons, "Show close buttons");
+                        ui.checkbox(&mut self.show_add_buttons, "Show add buttons");
+                        ui.checkbox(&mut self.draggable_tabs, "Draggable tabs");
+                        ui.checkbox(&mut self.show_tab_name_on_hover, "Show tab name on hover");
+                        ui.checkbox(&mut self.show_window_close, "Show close button on windows");
+                        ui.checkbox(
+                            &mut self.show_window_collapse,
+                            "Show collaspse button on windows",
                         );
-                    }
+                        egui::ComboBox::new("cbox:allowed_splits", "Split direction(s)")
+                            .selected_text(format!("{:?}", self.allowed_splits))
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut self.allowed_splits, AllowedSplits::All, "All");
+                                ui.selectable_value(
+                                    &mut self.allowed_splits,
+                                    AllowedSplits::LeftRightOnly,
+                                    "LeftRightOnly",
+                                );
+                                ui.selectable_value(
+                                    &mut self.allowed_splits,
+                                    AllowedSplits::TopBottomOnly,
+                                    "TopBottomOnly",
+                                );
+                                ui.selectable_value(&mut self.allowed_splits, AllowedSplits::None, "None");
+                            });
+                    });
+
+                    let style = self.style.as_mut().unwrap();
+
+                    ui.collapsing("Border", |ui| {
+                        egui::Grid::new("border").show(ui, |ui| {
+                            ui.label("Width:");
+                            ui.add(Slider::new(
+                                &mut style.main_surface_border_stroke.width,
+                                1.0..=50.0,
+                            ));
+                            ui.end_row();
+
+                            ui.label("Color:");
+                            egui::color_picker::color_edit_button_srgba(
+                                ui,
+                                &mut style.main_surface_border_stroke.color,
+                                egui::color_picker::Alpha::OnlyBlend,
+                            );
+                            ui.end_row();
+
+                            ui.label("Rounding:");
+                            corner_radius_ui(ui, &mut style.main_surface_border_rounding);
+                            ui.end_row();
+                        });
+                    });
+
+                    ui.collapsing("Separator", |ui| {
+                        egui::Grid::new("separator").show(ui, |ui| {
+                            ui.label("Width:");
+                            ui.add(Slider::new(&mut style.separator.width, 1.0..=50.0));
+                            ui.end_row();
+
+                            ui.label("Extra Interact Width:");
+                            ui.add(Slider::new(
+                                &mut style.separator.extra_interact_width,
+                                0.0..=50.0,
+                            ));
+                            ui.end_row();
+
+                            ui.label("Offset limit:");
+                            ui.add(Slider::new(&mut style.separator.extra, 1.0..=300.0));
+                            ui.end_row();
+
+                            ui.label("Idle color:");
+                            egui::color_picker::color_edit_button_srgba(
+                                ui,
+                                &mut style.separator.color_idle,
+                                egui::color_picker::Alpha::OnlyBlend,
+                            );
+                            ui.end_row();
+
+                            ui.label("Hovered color:");
+                            egui::color_picker::color_edit_button_srgba(
+                                ui,
+                                &mut style.separator.color_hovered,
+                                egui::color_picker::Alpha::OnlyBlend,
+                            );
+                            ui.end_row();
+
+                            ui.label("Dragged color:");
+                            egui::color_picker::color_edit_button_srgba(
+                                ui,
+                                &mut style.separator.color_dragged,
+                                egui::color_picker::Alpha::OnlyBlend,
+                            );
+                            ui.end_row();
+                        });
+                    });
+
+                    ui.collapsing("Tabs", |ui| {
+                        ui.separator();
+
+                        ui.checkbox(&mut style.tab_bar.fill_tab_bar, "Expand tabs");
+                        ui.checkbox(
+                            &mut style.tab_bar.show_scroll_bar_on_overflow,
+                            "Show scroll bar on tab overflow",
+                        );
+                        ui.checkbox(
+                            &mut style.tab.hline_below_active_tab_name,
+                            "Show a line below the active tab name",
+                        );
+                        ui.horizontal(|ui| {
+                            ui.add(Slider::new(&mut style.tab_bar.height, 20.0..=50.0));
+                            ui.label("Tab bar height");
+                        });
+
+                        egui::ComboBox::new("add_button_align", "Add button align")
+                            .selected_text(format!("{:?}", style.buttons.add_tab_align))
+                            .show_ui(ui, |ui| {
+                                for align in [egui_dock::TabAddAlign::Left, egui_dock::TabAddAlign::Right] {
+                                    ui.selectable_value(
+                                        &mut style.buttons.add_tab_align,
+                                        align,
+                                        format!("{:?}", align),
+                                    );
+                                }
+                            });
+
+                        ui.separator();
+
+                        fn tab_style_editor_ui(ui: &mut egui::Ui, tab_style: &mut egui_dock::TabInteractionStyle) {
+                            ui.separator();
+
+                            ui.label("Rounding");
+                            labeled_widget!(
+                                ui,
+                                Slider::new(&mut tab_style.corner_radius.nw, 0..=15),
+                                "North-West"
+                            );
+                            labeled_widget!(
+                                ui,
+                                Slider::new(&mut tab_style.corner_radius.ne, 0..=15),
+                                "North-East"
+                            );
+                            labeled_widget!(
+                                ui,
+                                Slider::new(&mut tab_style.corner_radius.sw, 0..=15),
+                                "South-West"
+                            );
+                            labeled_widget!(
+                                ui,
+                                Slider::new(&mut tab_style.corner_radius.se, 0..=15),
+                                "South-East"
+                            );
+
+                            ui.separator();
+
+                            egui::Grid::new("tabs_colors").show(ui, |ui| {
+                                ui.label("Title text color:");
+                                egui::color_picker::color_edit_button_srgba(
+                                    ui,
+                                    &mut tab_style.text_color,
+                                    egui::color_picker::Alpha::OnlyBlend,
+                                );
+                                ui.end_row();
+
+                                ui.label("Outline color:")
+                                    .on_hover_text("The outline around the active tab name.");
+                                egui::color_picker::color_edit_button_srgba(
+                                    ui,
+                                    &mut tab_style.outline_color,
+                                    egui::color_picker::Alpha::OnlyBlend,
+                                );
+                                ui.end_row();
+
+                                ui.label("Background color:");
+                                egui::color_picker::color_edit_button_srgba(
+                                    ui,
+                                    &mut tab_style.bg_fill,
+                                    egui::color_picker::Alpha::OnlyBlend,
+                                );
+                                ui.end_row();
+                            });
+                        }
+
+                        ui.collapsing("Active", |ui| {
+                            tab_style_editor_ui(ui, &mut style.tab.active);
+                        });
+
+                        ui.collapsing("Inactive", |ui| {
+                            tab_style_editor_ui(ui, &mut style.tab.inactive);
+                        });
+
+                        ui.collapsing("Focused", |ui| {
+                            tab_style_editor_ui(ui, &mut style.tab.focused);
+                        });
+
+                        ui.collapsing("Hovered", |ui| {
+                            tab_style_editor_ui(ui, &mut style.tab.hovered);
+                        });
+
+                        ui.separator();
+
+                        egui::Grid::new("tabs_colors").show(ui, |ui| {
+                            ui.label("Close button color unfocused:");
+                            egui::color_picker::color_edit_button_srgba(
+                                ui,
+                                &mut style.buttons.close_tab_color,
+                                egui::color_picker::Alpha::OnlyBlend,
+                            );
+                            ui.end_row();
+
+                            ui.label("Close button color focused:");
+                            egui::color_picker::color_edit_button_srgba(
+                                ui,
+                                &mut style.buttons.close_tab_active_color,
+                                egui::color_picker::Alpha::OnlyBlend,
+                            );
+                            ui.end_row();
+
+                            ui.label("Close button background color:");
+                            egui::color_picker::color_edit_button_srgba(
+                                ui,
+                                &mut style.buttons.close_tab_bg_fill,
+                                egui::color_picker::Alpha::OnlyBlend,
+                            );
+                            ui.end_row();
+
+                            ui.label("Bar background color:");
+                            egui::color_picker::color_edit_button_srgba(
+                                ui,
+                                &mut style.tab_bar.bg_fill,
+                                egui::color_picker::Alpha::OnlyBlend,
+                            );
+                            ui.end_row();
+
+                            ui.label("Horizontal line color:").on_hover_text(
+                                "The line separating the tab name area from the tab content area",
+                            );
+                            egui::color_picker::color_edit_button_srgba(
+                                ui,
+                                &mut style.tab_bar.hline_color,
+                                egui::color_picker::Alpha::OnlyBlend,
+                            );
+                            ui.end_row();
+                        });
+                    });
+
+                    ui.collapsing("Tab body", |ui| {
+                        ui.separator();
+
+                        ui.label("Rounding");
+                        corner_radius_ui(ui, &mut style.tab.tab_body.corner_radius);
+
+                        ui.label("Stroke width:");
+                        ui.add(Slider::new(
+                            &mut style.tab.tab_body.stroke.width,
+                            0.0..=10.0,
+                        ));
+                        ui.end_row();
+
+                        egui::Grid::new("tab_body_colors").show(ui, |ui| {
+                            ui.label("Stroke color:");
+                            egui::color_picker::color_edit_button_srgba(
+                                ui,
+                                &mut style.tab.tab_body.stroke.color,
+                                egui::color_picker::Alpha::OnlyBlend,
+                            );
+                            ui.end_row();
+
+                            ui.label("Background color:");
+                            egui::color_picker::color_edit_button_srgba(
+                                ui,
+                                &mut style.tab.tab_body.bg_fill,
+                                egui::color_picker::Alpha::OnlyBlend,
+                            );
+                            ui.end_row();
+                        });
+                    });
+                    ui.collapsing("Overlay", |ui| {
+                        let selected_text = match style.overlay.overlay_type {
+                            egui_dock::OverlayType::HighlightedAreas => "Highlighted Areas",
+                            egui_dock::OverlayType::Widgets => "Widgets",
+                        };
+                        ui.label("Overlay Style:");
+                        egui::ComboBox::new("overlay styles", "")
+                            .selected_text(selected_text)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut style.overlay.overlay_type,
+                                    egui_dock::OverlayType::HighlightedAreas,
+                                    "Highlighted Areas",
+                                );
+                                ui.selectable_value(
+                                    &mut style.overlay.overlay_type,
+                                    egui_dock::OverlayType::Widgets,
+                                    "Widgets",
+                                );
+                            });
+                        ui.collapsing("Feel", |ui| {
+                            labeled_widget!(
+                                ui,
+                                unit_slider!(&mut style.overlay.feel.center_drop_coverage, 0.0..=1.0, "%", 100.0),
+                                "Center drop coverage",
+                                "how big the area where dropping a tab into the center of another should be."
+                            );
+                            labeled_widget!(
+                                ui,
+                                unit_slider!(&mut style.overlay.feel.fade_hold_time, 0.0..=4.0, "s"),
+                                "Fade hold time",
+                                "How long faded windows should hold their fade before unfading, in seconds."
+                            );
+                            labeled_widget!(
+                                ui,
+                                unit_slider!(&mut style.overlay.feel.max_preference_time, 0.0..=4.0, "s"),
+                                "Max preference time",
+                                "How long the overlay may prefer to stick to a surface despite hovering over another, in seconds."
+                            );
+                            labeled_widget!(
+                                ui,
+                                unit_slider!(&mut style.overlay.feel.window_drop_coverage, 0.0..=1.0, "%", 100.0),
+                                "Window drop coverage",
+                                "How big the area for undocking a window should be. [is overshadowed by center drop coverage]"
+                            );
+                            labeled_widget!(
+                                ui,
+                                unit_slider!(&mut style.overlay.feel.interact_expansion, 1.0..=100.0, "ps"),
+                                "Interact expansion",
+                                "How much extra interaction area should be allocated for buttons on the overlay"
+                            );
+                        });
+
+                        ui.collapsing("Visuals", |ui| {
+                            labeled_widget!(
+                                ui,
+                                unit_slider!(&mut style.overlay.max_button_size, 10.0..=500.0, "ps"),
+                                "Max button size",
+                                "The max length of a side on a overlay button in egui points"
+                            );
+                            labeled_widget!(
+                                ui,
+                                unit_slider!(&mut style.overlay.button_spacing, 0.0..=50.0, "ps"),
+                                "Button spacing",
+                                "Spacing between buttons on the overlay, in egui units."
+                            );
+                            labeled_widget!(
+                                ui,
+                                unit_slider!(&mut style.overlay.surface_fade_opacity, 0.0..=1.0, "%", 100.0),
+                                "Window fade opacity",
+                                "how visible windows are when dragging a tab behind them."
+                            );
+                            labeled_widget!(
+                                ui,
+                                egui::Slider::new(&mut style.overlay.selection_stroke_width, 0.0..=50.0),
+                                "Selection stroke width",
+                                "width of a selection which uses a outline stroke instead of filled rect."
+                            );
+                            egui::Grid::new("overlay style preferences").show(ui, |ui| {
+                                ui.label("Button color:");
+                                egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.button_color, egui::color_picker::Alpha::OnlyBlend);
+                                ui.end_row();
+
+                                ui.label("Button border color:");
+                                egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.button_border_stroke.color, egui::color_picker::Alpha::OnlyBlend);
+                                ui.end_row();
+
+                                ui.label("Selection color:");
+                                egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.selection_color, egui::color_picker::Alpha::OnlyBlend);
+                                ui.end_row();
+
+                                ui.label("Button stroke color:");
+                                egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.button_border_stroke.color, egui::color_picker::Alpha::OnlyBlend);
+                                ui.end_row();
+
+                                ui.label("Button stroke width:");
+                                ui.add(Slider::new(&mut style.overlay.button_border_stroke.width, 0.0..=50.0));
+                                ui.end_row();
+                            });
+                        });
+
+                        ui.collapsing("Hover highlight", |ui| {
+                            egui::Grid::new("leaf highlighting prefs").show(ui, |ui|{
+                                ui.label("Fill color:");
+                                egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.hovered_leaf_highlight.color, egui::color_picker::Alpha::OnlyBlend);
+                                ui.end_row();
+
+                                ui.label("Stroke color:");
+                                egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.hovered_leaf_highlight.stroke.color, egui::color_picker::Alpha::OnlyBlend);
+                                ui.end_row();
+
+                                ui.label("Stroke width:");
+                                ui.add(Slider::new(&mut style.overlay.hovered_leaf_highlight.stroke.width, 0.0..=50.0));
+                                ui.end_row();
+
+                                ui.label("Expansion:");
+                                ui.add(Slider::new(&mut style.overlay.hovered_leaf_highlight.expansion, -50.0..=50.0));
+                                ui.end_row();
+                            });
+                            ui.label("Rounding:");
+                            corner_radius_ui(ui, &mut style.overlay.hovered_leaf_highlight.corner_radius);
+                        });
+                    });
                 });
-
-            ui.separator();
-
-            fn tab_style_editor_ui(ui: &mut egui::Ui, tab_style: &mut egui_dock::TabInteractionStyle) {
-                ui.separator();
-
-                ui.label("Rounding");
-                labeled_widget!(
-                    ui,
-                    Slider::new(&mut tab_style.corner_radius.nw, 0..=15),
-                    "North-West"
-                );
-                labeled_widget!(
-                    ui,
-                    Slider::new(&mut tab_style.corner_radius.ne, 0..=15),
-                    "North-East"
-                );
-                labeled_widget!(
-                    ui,
-                    Slider::new(&mut tab_style.corner_radius.sw, 0..=15),
-                    "South-West"
-                );
-                labeled_widget!(
-                    ui,
-                    Slider::new(&mut tab_style.corner_radius.se, 0..=15),
-                    "South-East"
-                );
-
-                ui.separator();
-
-                egui::Grid::new("tabs_colors").show(ui, |ui| {
-                    ui.label("Title text color:");
-                    egui::color_picker::color_edit_button_srgba(
-                        ui,
-                        &mut tab_style.text_color,
-                        egui::color_picker::Alpha::OnlyBlend,
-                    );
-                    ui.end_row();
-
-                    ui.label("Outline color:")
-                        .on_hover_text("The outline around the active tab name.");
-                    egui::color_picker::color_edit_button_srgba(
-                        ui,
-                        &mut tab_style.outline_color,
-                        egui::color_picker::Alpha::OnlyBlend,
-                    );
-                    ui.end_row();
-
-                    ui.label("Background color:");
-                    egui::color_picker::color_edit_button_srgba(
-                        ui,
-                        &mut tab_style.bg_fill,
-                        egui::color_picker::Alpha::OnlyBlend,
-                    );
-                    ui.end_row();
-                });
-            }
-
-            ui.collapsing("Active", |ui| {
-                tab_style_editor_ui(ui, &mut style.tab.active);
             });
-
-            ui.collapsing("Inactive", |ui| {
-                tab_style_editor_ui(ui, &mut style.tab.inactive);
-            });
-
-            ui.collapsing("Focused", |ui| {
-                tab_style_editor_ui(ui, &mut style.tab.focused);
-            });
-
-            ui.collapsing("Hovered", |ui| {
-                tab_style_editor_ui(ui, &mut style.tab.hovered);
-            });
-
-            ui.separator();
-
-            egui::Grid::new("tabs_colors").show(ui, |ui| {
-                ui.label("Close button color unfocused:");
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut style.buttons.close_tab_color,
-                    egui::color_picker::Alpha::OnlyBlend,
-                );
-                ui.end_row();
-
-                ui.label("Close button color focused:");
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut style.buttons.close_tab_active_color,
-                    egui::color_picker::Alpha::OnlyBlend,
-                );
-                ui.end_row();
-
-                ui.label("Close button background color:");
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut style.buttons.close_tab_bg_fill,
-                    egui::color_picker::Alpha::OnlyBlend,
-                );
-                ui.end_row();
-
-                ui.label("Bar background color:");
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut style.tab_bar.bg_fill,
-                    egui::color_picker::Alpha::OnlyBlend,
-                );
-                ui.end_row();
-
-                ui.label("Horizontal line color:").on_hover_text(
-                    "The line separating the tab name area from the tab content area",
-                );
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut style.tab_bar.hline_color,
-                    egui::color_picker::Alpha::OnlyBlend,
-                );
-                ui.end_row();
-            });
-        });
-
-        ui.collapsing("Tab body", |ui| {
-            ui.separator();
-
-            ui.label("Rounding");
-            corner_radius_ui(ui, &mut style.tab.tab_body.corner_radius);
-
-            ui.label("Stroke width:");
-            ui.add(Slider::new(
-                &mut style.tab.tab_body.stroke.width,
-                0.0..=10.0,
-            ));
-            ui.end_row();
-
-            egui::Grid::new("tab_body_colors").show(ui, |ui| {
-                ui.label("Stroke color:");
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut style.tab.tab_body.stroke.color,
-                    egui::color_picker::Alpha::OnlyBlend,
-                );
-                ui.end_row();
-
-                ui.label("Background color:");
-                egui::color_picker::color_edit_button_srgba(
-                    ui,
-                    &mut style.tab.tab_body.bg_fill,
-                    egui::color_picker::Alpha::OnlyBlend,
-                );
-                ui.end_row();
-            });
-        });
-        ui.collapsing("Overlay", |ui| {
-            let selected_text = match style.overlay.overlay_type {
-                egui_dock::OverlayType::HighlightedAreas => "Highlighted Areas",
-                egui_dock::OverlayType::Widgets => "Widgets",
-            };
-            ui.label("Overlay Style:");
-            egui::ComboBox::new("overlay styles", "")
-                .selected_text(selected_text)
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut style.overlay.overlay_type,
-                        egui_dock::OverlayType::HighlightedAreas,
-                        "Highlighted Areas",
-                    );
-                    ui.selectable_value(
-                        &mut style.overlay.overlay_type,
-                        egui_dock::OverlayType::Widgets,
-                        "Widgets",
-                    );
-                });
-            ui.collapsing("Feel", |ui| {
-                labeled_widget!(
-                    ui,
-                    unit_slider!(&mut style.overlay.feel.center_drop_coverage, 0.0..=1.0, "%", 100.0),
-                    "Center drop coverage",
-                    "how big the area where dropping a tab into the center of another should be."
-                );
-                labeled_widget!(
-                    ui,
-                    unit_slider!(&mut style.overlay.feel.fade_hold_time, 0.0..=4.0, "s"),
-                    "Fade hold time",
-                    "How long faded windows should hold their fade before unfading, in seconds."
-                );
-                labeled_widget!(
-                    ui,
-                    unit_slider!(&mut style.overlay.feel.max_preference_time, 0.0..=4.0, "s"),
-                    "Max preference time",
-                    "How long the overlay may prefer to stick to a surface despite hovering over another, in seconds."
-                );
-                labeled_widget!(
-                    ui,
-                    unit_slider!(&mut style.overlay.feel.window_drop_coverage, 0.0..=1.0, "%", 100.0),
-                    "Window drop coverage",
-                    "How big the area for undocking a window should be. [is overshadowed by center drop coverage]"
-                );
-                labeled_widget!(
-                    ui,
-                    unit_slider!(&mut style.overlay.feel.interact_expansion, 1.0..=100.0, "ps"),
-                    "Interact expansion",
-                    "How much extra interaction area should be allocated for buttons on the overlay"
-                );
-            });
-
-            ui.collapsing("Visuals", |ui| {
-                labeled_widget!(
-                    ui,
-                    unit_slider!(&mut style.overlay.max_button_size, 10.0..=500.0, "ps"),
-                    "Max button size",
-                    "The max length of a side on a overlay button in egui points"
-                );
-                labeled_widget!(
-                    ui,
-                    unit_slider!(&mut style.overlay.button_spacing, 0.0..=50.0, "ps"),
-                    "Button spacing",
-                    "Spacing between buttons on the overlay, in egui units."
-                );
-                labeled_widget!(
-                    ui,
-                    unit_slider!(&mut style.overlay.surface_fade_opacity, 0.0..=1.0, "%", 100.0),
-                    "Window fade opacity",
-                    "how visible windows are when dragging a tab behind them."
-                );
-                labeled_widget!(
-                    ui,
-                    egui::Slider::new(&mut style.overlay.selection_stroke_width, 0.0..=50.0),
-                    "Selection stroke width",
-                    "width of a selection which uses a outline stroke instead of filled rect."
-                );
-                egui::Grid::new("overlay style preferences").show(ui, |ui| {
-                    ui.label("Button color:");
-                    egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.button_color, egui::color_picker::Alpha::OnlyBlend);
-                    ui.end_row();
-
-                    ui.label("Button border color:");
-                    egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.button_border_stroke.color, egui::color_picker::Alpha::OnlyBlend);
-                    ui.end_row();
-
-                    ui.label("Selection color:");
-                    egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.selection_color, egui::color_picker::Alpha::OnlyBlend);
-                    ui.end_row();
-
-                    ui.label("Button stroke color:");
-                    egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.button_border_stroke.color, egui::color_picker::Alpha::OnlyBlend);
-                    ui.end_row();
-
-                    ui.label("Button stroke width:");
-                    ui.add(Slider::new(&mut style.overlay.button_border_stroke.width, 0.0..=50.0));
-                    ui.end_row();
-                });
-            });
-
-            ui.collapsing("Hover highlight", |ui| {
-                egui::Grid::new("leaf highlighting prefs").show(ui, |ui|{
-                    ui.label("Fill color:");
-                    egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.hovered_leaf_highlight.color, egui::color_picker::Alpha::OnlyBlend);
-                    ui.end_row();
-
-                    ui.label("Stroke color:");
-                    egui::color_picker::color_edit_button_srgba(ui, &mut style.overlay.hovered_leaf_highlight.stroke.color, egui::color_picker::Alpha::OnlyBlend);
-                    ui.end_row();
-
-                    ui.label("Stroke width:");
-                    ui.add(Slider::new(&mut style.overlay.hovered_leaf_highlight.stroke.width, 0.0..=50.0));
-                    ui.end_row();
-
-                    ui.label("Expansion:");
-                    ui.add(Slider::new(&mut style.overlay.hovered_leaf_highlight.expansion, -50.0..=50.0));
-                    ui.end_row();
-                });
-                ui.label("Rounding:");
-                corner_radius_ui(ui, &mut style.overlay.hovered_leaf_highlight.corner_radius);
-            });
-        });
         
         ui.collapsing("Diagram shades profiles", |ui| {
             for (idx, e) in self.shades_profiles.iter_mut().enumerate() {
