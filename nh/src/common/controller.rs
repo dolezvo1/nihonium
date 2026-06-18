@@ -1056,9 +1056,6 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                         b.dir(TreeElement::Root, "Toolbar root");
                         for (group_id, group_label, elements) in &self.elements {
                             let add_options = |ui: &mut egui::Ui| {
-                                ui.menu_button("Add element", |_ui| {
-                                    // TODO: show possible element types
-                                });
                                 if ui.button("Add group").clicked() {
                                     return Some(TreeCommand::AddGroup(group_label.to_owned()));
                                 }
@@ -1067,10 +1064,6 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                             let group_node = egui_ltreeview::NodeBuilder::dir(TreeElement::Group(*group_id))
                                 .label(group_label)
                                 .context_menu(|ui| {
-                                    if ui.button("Edit").clicked() {
-
-                                    }
-
                                     command = command.take().or(add_options(ui));
 
                                     if ui.add_enabled(elements.is_empty(), egui::Button::new("Delete")).clicked() {
@@ -1083,10 +1076,6 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
                                 let tool_node = egui_ltreeview::NodeBuilder::leaf(TreeElement::Tool(*tool_id))
                                     .label(tool_label)
                                     .context_menu(|ui| {
-                                        if ui.button("Edit").clicked() {
-
-                                        }
-
                                         command = command.take().or(add_options(ui));
 
                                         if ui.button("Duplicate").clicked() {
