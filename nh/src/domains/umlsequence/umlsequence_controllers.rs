@@ -361,7 +361,11 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 new_umlsequence_combinedfragmentsection_view(inner.clone(), horizontal_element_views?).into()
             },
             UmlSequenceElement::Lifeline(inner) => {
-                new_umlsequence_lifeline_view(inner.clone(), UmlSequenceLifelineRenderStyle::Object).into()
+                new_umlsequence_lifeline_view(
+                    inner.clone(),
+                    UmlSequenceLifelineRenderStyle::Object,
+                    MGlobalColor::None,
+                ).into()
             },
             UmlSequenceElement::Message(inner) => {
                 let r = inner.read();
@@ -593,9 +597,24 @@ pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let (user_model, user_view) = new_umlsequence_lifeline("User", "", UmlSequenceLifelineRenderStyle::StickFigure);
-    let (service1_model, service1_view) = new_umlsequence_lifeline("Auth server", "", UmlSequenceLifelineRenderStyle::Object);
-    let (service2_model, service2_view) = new_umlsequence_lifeline("Database", "", UmlSequenceLifelineRenderStyle::Database);
+    let (user_model, user_view) = new_umlsequence_lifeline(
+        "User",
+        "",
+        UmlSequenceLifelineRenderStyle::StickFigure,
+        MGlobalColor::None,
+    );
+    let (service1_model, service1_view) = new_umlsequence_lifeline(
+        "Auth server",
+        "",
+        UmlSequenceLifelineRenderStyle::Object,
+        MGlobalColor::None,
+    );
+    let (service2_model, service2_view) = new_umlsequence_lifeline(
+        "Database",
+        "",
+        UmlSequenceLifelineRenderStyle::Database,
+        MGlobalColor::None,
+    );
 
     let (message1_model, message1_view) = new_umlsequence_message("request", "", UmlSequenceMessageSynchronicityKind::Synchronous, UmlSequenceMessageLifecycleKind::None, false, (user_model.clone(), user_view.clone().into()), (service1_model.clone(), service1_view.clone().into()));
     let (message2_model, message2_view) = new_umlsequence_message("database query", "", UmlSequenceMessageSynchronicityKind::Synchronous, UmlSequenceMessageLifecycleKind::None, false, (service1_model.clone(), service1_view.clone().into()), (service2_model.clone(), service2_view.clone().into()));
@@ -671,11 +690,13 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 name: "User".to_owned(),
                 stereotype: "".to_owned(),
                 render_style: UmlSequenceLifelineRenderStyle::StickFigure,
+                background_color: MGlobalColor::None,
             }, "Actor Lifeline"),
             (UmlSequenceToolStage::Lifeline {
                 name: "s: Service".to_owned(),
                 stereotype: "".to_owned(),
                 render_style: UmlSequenceLifelineRenderStyle::Object,
+                background_color: MGlobalColor::None,
             }, "Object Lifeline"),
         ]),
         ("Messages", vec![
@@ -737,13 +758,13 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
             combined_fragment_view.write().refresh_buffers();
             combined_fragment_view.into()
         },
-        UmlSequenceToolStage::Lifeline { name, stereotype, render_style } => {
-            let lifeline_view = new_umlsequence_lifeline(name, stereotype, *render_style).1;
+        UmlSequenceToolStage::Lifeline { name, stereotype, render_style, background_color } => {
+            let lifeline_view = new_umlsequence_lifeline(name, stereotype, *render_style, *background_color).1;
             lifeline_view.into()
         },
         UmlSequenceToolStage::LinkStart { link_type } => {
-            let d1 = new_umlsequence_lifeline("dummy", "", UmlSequenceLifelineRenderStyle::StickFigure);
-            let d2 = new_umlsequence_lifeline("dummy", "", UmlSequenceLifelineRenderStyle::Object);
+            let d1 = new_umlsequence_lifeline("dummy", "", UmlSequenceLifelineRenderStyle::StickFigure, MGlobalColor::None);
+            let d2 = new_umlsequence_lifeline("dummy", "", UmlSequenceLifelineRenderStyle::Object, MGlobalColor::None);
             d2.1.write().bounds_rect = egui::Rect::from_x_y_ranges(150.0..=150.0, 0.0..=0.0);
 
             match link_type {
@@ -812,7 +833,7 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                 }
                             });
                     }
-                    UmlSequenceToolStage::Lifeline { name, stereotype, render_style } => {
+                    UmlSequenceToolStage::Lifeline { name, stereotype, render_style, background_color } => {
                         modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
@@ -824,6 +845,14 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(render_style, e, e.as_str()).clicked();
                                 }
                             });
+                        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
+                            gdc,
+                            &mut columns[1],
+                            background_color,
+                        ) {
+                            *background_color = new_color;
+                            modified = true;
+                        }
                     }
                     UmlSequenceToolStage::RefStart { text } => {
                         modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
@@ -896,6 +925,7 @@ pub enum UmlSequenceToolStage {
         name: String,
         stereotype: String,
         render_style: UmlSequenceLifelineRenderStyle,
+        background_color: MGlobalColor,
     },
     LinkStart { link_type: LinkType },
     LinkEnd,
@@ -1074,9 +1104,13 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
         }
 
         match (&self.current_stage, &mut self.result) {
-            (UmlSequenceToolStage::Lifeline { name, stereotype, render_style }, _) => {
-                let (_class_model, class_view) =
-                    new_umlsequence_lifeline(name, stereotype, *render_style);
+            (UmlSequenceToolStage::Lifeline { name, stereotype, render_style, background_color }, _) => {
+                let (_class_model, class_view) = new_umlsequence_lifeline(
+                    name,
+                    stereotype,
+                    *render_style,
+                    *background_color,
+                );
                 self.result = PartialUmlSequenceElement::Some(class_view.into());
                 self.event_lock = true;
             }
@@ -3810,6 +3844,7 @@ pub fn new_umlsequence_lifeline(
     name: &str,
     stereotype: &str,
     render_style: UmlSequenceLifelineRenderStyle,
+    background_color: MGlobalColor,
 ) -> (ERef<UmlSequenceLifeline>, ERef<UmlSequenceLifelineView>) {
     let class_model = ERef::new(UmlSequenceLifeline::new(
         ModelUuid::now_v7(),
@@ -3819,6 +3854,7 @@ pub fn new_umlsequence_lifeline(
     let class_view = new_umlsequence_lifeline_view(
         class_model.clone(),
         render_style,
+        background_color,
     );
 
     (class_model, class_view)
@@ -3826,6 +3862,7 @@ pub fn new_umlsequence_lifeline(
 pub fn new_umlsequence_lifeline_view(
     model: ERef<UmlSequenceLifeline>,
     render_style: UmlSequenceLifelineRenderStyle,
+    background_color: MGlobalColor,
 ) -> ERef<UmlSequenceLifelineView> {
     let m = model.read();
     ERef::new(UmlSequenceLifelineView {
@@ -3839,7 +3876,7 @@ pub fn new_umlsequence_lifeline_view(
 
         highlight: canvas::Highlight::NONE,
         bounds_rect: egui::Rect::ZERO,
-        background_color: MGlobalColor::None,
+        background_color,
         render_style,
     })
 }

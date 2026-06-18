@@ -398,7 +398,11 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             },
             UmlClassElement::Instance(inner) => {
                 UmlClassElementView::from(
-                    new_umlclass_instance_view(inner, egui::Pos2::ZERO)
+                    new_umlclass_instance_view(
+                        inner,
+                        egui::Pos2::ZERO,
+                        MGlobalColor::None,
+                    )
                 )
             }
             UmlClassElement::Class(inner) => {
@@ -411,7 +415,14 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
                 };
 
                 UmlClassElementView::from(
-                    new_umlclass_class_view(inner, properties_views, operations_views, egui::Pos2::ZERO, UmlClassRenderStyle::Class)
+                    new_umlclass_class_view(
+                        inner,
+                        properties_views,
+                        operations_views,
+                        egui::Pos2::ZERO,
+                        UmlClassRenderStyle::Class,
+                        MGlobalColor::None,
+                    )
                 )
             },
             UmlClassElement::Property(..)
@@ -420,7 +431,11 @@ impl<P: UmlClassProfile> DiagramAdapter<UmlClassDomain<P>> for UmlClassDiagramAd
             },
             UmlClassElement::UseCase(inner) => {
                 UmlClassElementView::from(
-                    new_uml_usecase_view(inner, egui::Pos2::ZERO)
+                    new_uml_usecase_view(
+                        inner,
+                        egui::Pos2::ZERO,
+                        MGlobalColor::None,
+                    )
                 )
             }
             UmlClassElement::Generalization(inner) => {
@@ -793,6 +808,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         af_operations(true),
         egui::Pos2::new(200.0, 150.0),
         UmlClassRenderStyle::Class,
+        MGlobalColor::None,
     );
 
     let (class_cfx, class_cfx_view) = new_umlclass_class(
@@ -803,6 +819,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         af_operations(false),
         egui::Pos2::new(100.0, 250.0),
         UmlClassRenderStyle::Class,
+        MGlobalColor::None,
     );
 
     let (class_cfy, class_cfy_view) = new_umlclass_class(
@@ -813,6 +830,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         af_operations(false),
         egui::Pos2::new(300.0, 250.0),
         UmlClassRenderStyle::Class,
+        MGlobalColor::None,
     );
 
     let (realization_cfx, realization_cfx_view) = new_umlclass_dependency(
@@ -839,6 +857,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         egui::Pos2::new(300.0, 50.0),
         UmlClassRenderStyle::Class,
+        MGlobalColor::None,
     );
 
     let (usage_client_af, usage_client_af_view) = new_umlclass_dependency(
@@ -857,6 +876,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         egui::Pos2::new(450.0, 150.0),
         UmlClassRenderStyle::Class,
+        MGlobalColor::None,
     );
 
     let (usage_client_producta, usage_client_producta_view) =
@@ -876,6 +896,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         Vec::new(),
         egui::Pos2::new(650.0, 150.0),
         UmlClassRenderStyle::Class,
+        MGlobalColor::None,
     );
 
     let (usage_client_productb, usage_client_productb_view) =
@@ -910,14 +931,41 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         let m = new_umlclass_operation(UFOption::Some(UmlClassVisibilityKind::Public), "move", "", "", "");
         vec![d, m]
     };
-    let (shape_model, shape_view) = new_umlclass_class("Shape", "entity", true, Vec::new(), shape_operations, egui::Pos2::new(200.0, 400.0), UmlClassRenderStyle::Class);
-    let (polygon_model, polygon_view) = new_umlclass_class("Polygon", "entity", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 550.0), UmlClassRenderStyle::Class);
+    let (shape_model, shape_view) = new_umlclass_class(
+        "Shape",
+        "entity",
+        true,
+        Vec::new(),
+        shape_operations,
+        egui::Pos2::new(200.0, 400.0),
+        UmlClassRenderStyle::Class,
+        MGlobalColor::None,
+    );
+    let (polygon_model, polygon_view) = new_umlclass_class(
+        "Polygon",
+        "entity",
+        false,
+        Vec::new(),
+        Vec::new(),
+        egui::Pos2::new(100.0, 550.0),
+        UmlClassRenderStyle::Class,
+        MGlobalColor::None,
+    );
     let circle_properties = {
         let r = new_umlclass_property(UFOption::Some(UmlClassVisibilityKind::Private), "radius", "float", "", "", "");
         let c = new_umlclass_property(UFOption::Some(UmlClassVisibilityKind::Private), "center", "Point", "", "", "");
         vec![r, c]
     };
-    let (circle_model, circle_view) = new_umlclass_class("Circle", "entity", false, circle_properties, Vec::new(), egui::Pos2::new(300.0, 550.0), UmlClassRenderStyle::Class);
+    let (circle_model, circle_view) = new_umlclass_class(
+        "Circle",
+        "entity",
+        false,
+        circle_properties,
+        Vec::new(),
+        egui::Pos2::new(300.0, 550.0),
+        UmlClassRenderStyle::Class,
+        MGlobalColor::None,
+    );
     let (gen_model, gen_view) = new_umlclass_generalization(
         "",
         Some((ViewUuid::now_v7(), egui::Pos2::new(200.0, 490.0))),
@@ -943,7 +991,16 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         let y = new_umlclass_property(UFOption::Some(UmlClassVisibilityKind::Private), "y", "float", "", "", "");
         vec![x, y]
     };
-    let (point_model, point_view) = new_umlclass_class("Point", "struct", false, point_properties, Vec::new(), egui::Pos2::new(100.0, 700.0), UmlClassRenderStyle::Class);
+    let (point_model, point_view) = new_umlclass_class(
+        "Point",
+        "struct",
+        false,
+        point_properties,
+        Vec::new(),
+        egui::Pos2::new(100.0, 700.0),
+        UmlClassRenderStyle::Class,
+        MGlobalColor::None,
+    );
     let (point_assoc_model, point_assoc_view) = new_umlclass_association(
         "", "", "", "", None,
         (polygon_model.clone().into(), polygon_view.clone().into()),
@@ -969,6 +1026,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         "d", "Human", "person",
         "firstName = \"Vojtěch\"\nlastName = \"Doležal\"",
         egui::Pos2::new(650.0, 400.0),
+        MGlobalColor::None,
     );
 
     let name = format!("Demo UML class diagram {}", no);
@@ -1093,13 +1151,13 @@ pub fn default_settings_helper<P: UmlClassProfile>(
 
 fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementView<P> {
     match s {
-        UmlClassToolStage::Instance { instance_name, instance_type, stereotype } => {
-            let instance_view = new_umlclass_instance(instance_name, instance_type, stereotype, "", egui::Pos2::ZERO).1;
+        UmlClassToolStage::Instance { instance_name, instance_type, stereotype, background_color: color } => {
+            let instance_view = new_umlclass_instance(instance_name, instance_type, stereotype, "", egui::Pos2::ZERO, *color).1;
             instance_view.write().refresh_buffers();
             instance_view.into()
         },
-        UmlClassToolStage::Class { name, stereotype, is_abstract, render_style } => {
-            let class_view = new_umlclass_class(name, stereotype, *is_abstract, Vec::new(), Vec::new(), egui::Pos2::ZERO, *render_style).1;
+        UmlClassToolStage::Class { name, stereotype, is_abstract, render_style, background_color: color } => {
+            let class_view = new_umlclass_class(name, stereotype, *is_abstract, Vec::new(), Vec::new(), egui::Pos2::ZERO, *render_style, *color).1;
             class_view.write().refresh_buffers();
             class_view.into()
         },
@@ -1113,14 +1171,14 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
             operation_view.write().refresh_buffers();
             operation_view.into()
         },
-        UmlClassToolStage::UseCase { name, stereotype, is_abstract } => {
-            let uc_view = new_uml_usecase(name, stereotype, *is_abstract, egui::Pos2::ZERO).1;
+        UmlClassToolStage::UseCase { name, stereotype, is_abstract, background_color: color } => {
+            let uc_view = new_uml_usecase(name, stereotype, *is_abstract, egui::Pos2::ZERO, *color).1;
             uc_view.write().refresh_buffers();
             uc_view.into()
         },
         UmlClassToolStage::LinkStart { link_type } => {
-            let d1 = new_umlclass_class("dummy", "", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class);
-            let d2 = new_umlclass_class("dummy", "", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 50.0), UmlClassRenderStyle::Class);
+            let d1 = new_umlclass_class("dummy", "", false, Vec::new(), Vec::new(), egui::Pos2::ZERO, UmlClassRenderStyle::Class, MGlobalColor::None,);
+            let d2 = new_umlclass_class("dummy", "", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 50.0), UmlClassRenderStyle::Class, MGlobalColor::None,);
 
             match link_type {
                 LinkType::Generalization { set_name } => {
@@ -1154,7 +1212,7 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
         },
         UmlClassToolStage::CommentLinkStart => {
             let d1 = new_umlclass_comment("", "", egui::Pos2::ZERO, egui::Align2::CENTER_CENTER);
-            let d2 = new_umlclass_class("dummy", "", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 50.0), UmlClassRenderStyle::Class);
+            let d2 = new_umlclass_class("dummy", "", false, Vec::new(), Vec::new(), egui::Pos2::new(100.0, 50.0), UmlClassRenderStyle::Class, MGlobalColor::None);
             let commentlink = new_umlclass_commentlink(None, (d1.0, d1.1.into()), (d2.0.into(), d2.1.into())).1;
             commentlink.into()
         },
@@ -1172,12 +1230,14 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 instance_name: "o".to_owned(),
                 instance_type: "Type".to_owned(),
                 stereotype: "".to_owned(),
+                background_color: MGlobalColor::None,
             }, "Instance"),
             (UmlClassToolStage::Class {
                 name: "ClassName".to_owned(),
                 stereotype: "class".to_owned(),
                 is_abstract: false,
                 render_style: UmlClassRenderStyle::Class,
+                background_color: MGlobalColor::None,
             }, "Class"),
             (UmlClassToolStage::ClassProperty {
                 name: "property".to_owned(),
@@ -1342,7 +1402,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
 
                 // TODO: make the stereotypes more efficient
                 match tool {
-                    UmlClassToolStage::Instance { instance_name, instance_type, stereotype } => {
+                    UmlClassToolStage::Instance { instance_name, instance_type, stereotype, background_color } => {
                         let mut sc = P::InstanceStereotypeController::default();
                         sc.refresh(&stereotype);
                         if sc.show(&mut columns[1]) {
@@ -1351,8 +1411,17 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                         }
                         modified |= columns[1].labeled_text_edit_singleline("Instance name", instance_name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Instance type", instance_type).changed();
+
+                        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
+                            gdc,
+                            &mut columns[1],
+                            background_color,
+                        ) {
+                            *background_color = new_color;
+                            modified = true;
+                        }
                     },
-                    UmlClassToolStage::Class { name, stereotype, is_abstract, render_style: _ } => {
+                    UmlClassToolStage::Class { name, stereotype, is_abstract, render_style: _, background_color } => {
                         let mut sc = P::ClassStereotypeController::default();
                         sc.refresh(&stereotype);
                         if sc.show(&mut columns[1]) {
@@ -1361,6 +1430,15 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                         }
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].checkbox(is_abstract, "isAbstract").changed();
+
+                        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
+                            gdc,
+                            &mut columns[1],
+                            background_color,
+                        ) {
+                            *background_color = new_color;
+                            modified = true;
+                        }
                     },
                     UmlClassToolStage::ClassProperty { name, property_type, stereotype } => {
                         let mut sc = P::ClassPropertyStereotypeController::default();
@@ -1382,7 +1460,7 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Return type", return_type).changed();
                     },
-                    UmlClassToolStage::UseCase { name, stereotype, is_abstract } => {
+                    UmlClassToolStage::UseCase { name, stereotype, is_abstract, background_color } => {
                         let mut sc = P::UseCaseStereotypeController::default();
                         sc.refresh(&stereotype);
                         if sc.show(&mut columns[1]) {
@@ -1391,6 +1469,15 @@ pub fn settings_function_helper<P: UmlClassProfile>(gdc: &mut GlobalDrawingConte
                         }
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].checkbox(is_abstract, "isAbstract").changed();
+
+                        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
+                            gdc,
+                            &mut columns[1],
+                            background_color,
+                        ) {
+                            *background_color = new_color;
+                            modified = true;
+                        }
                     },
                     UmlClassToolStage::LinkStart { link_type } => match link_type {
                         LinkType::Generalization { set_name } => {
@@ -1528,12 +1615,14 @@ pub enum UmlClassToolStage {
         instance_name: String,
         instance_type: String,
         stereotype: String,
+        background_color: MGlobalColor,
     },
     Class {
         name: String,
         stereotype: String,
         is_abstract: bool,
         render_style: UmlClassRenderStyle,
+        background_color: MGlobalColor,
     },
     ClassProperty {
         name: String,
@@ -1549,6 +1638,7 @@ pub enum UmlClassToolStage {
         name: String,
         stereotype: String,
         is_abstract: bool,
+        background_color: MGlobalColor,
     },
     LinkStart {
         link_type: LinkType,
@@ -1801,20 +1891,20 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
         }
 
         match (&self.current_stage, &mut self.result) {
-            (UmlClassToolStage::Instance { instance_name, instance_type, stereotype }, _) => {
+            (UmlClassToolStage::Instance { instance_name, instance_type, stereotype, background_color }, _) => {
                 let (_object_model, object_view) =
-                    new_umlclass_instance(instance_name, instance_type, stereotype, "", pos);
+                    new_umlclass_instance(instance_name, instance_type, stereotype, "", pos, *background_color);
                 self.result = PartialUmlClassElement::Some(object_view.into());
                 self.event_lock = true;
             }
-            (UmlClassToolStage::Class { name, stereotype, is_abstract, render_style }, _) => {
+            (UmlClassToolStage::Class { name, stereotype, is_abstract, render_style, background_color }, _) => {
                 let (_class_model, class_view) =
-                    new_umlclass_class(&name, &stereotype, *is_abstract, Vec::new(), Vec::new(), pos, *render_style);
+                    new_umlclass_class(&name, &stereotype, *is_abstract, Vec::new(), Vec::new(), pos, *render_style, *background_color);
                 self.result = PartialUmlClassElement::Some(class_view.into());
                 self.event_lock = true;
             }
-            (UmlClassToolStage::UseCase { name, stereotype, is_abstract }, _) => {
-                let (_usecase_model, usecase_view) = new_uml_usecase(&name, &stereotype, *is_abstract, pos);
+            (UmlClassToolStage::UseCase { name, stereotype, is_abstract, background_color }, _) => {
+                let (_usecase_model, usecase_view) = new_uml_usecase(&name, &stereotype, *is_abstract, pos, *background_color);
                 self.result = PartialUmlClassElement::Some(usecase_view.into());
                 self.event_lock = true;
             }
@@ -2476,6 +2566,7 @@ fn new_umlclass_instance<P: UmlClassProfile>(
     stereotype: &str,
     instance_slots: &str,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> (ERef<UmlClassInstance>, ERef<UmlClassInstanceView<P>>) {
     let instance_model = ERef::new(UmlClassInstance::new(
         ModelUuid::now_v7(),
@@ -2484,13 +2575,14 @@ fn new_umlclass_instance<P: UmlClassProfile>(
         stereotype.to_owned(),
         instance_slots.to_owned(),
     ));
-    let instance_view = new_umlclass_instance_view(instance_model.clone(), position);
+    let instance_view = new_umlclass_instance_view(instance_model.clone(), position, background_color);
 
     (instance_model, instance_view)
 }
 fn new_umlclass_instance_view<P: UmlClassProfile>(
     model: ERef<UmlClassInstance>,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> ERef<UmlClassInstanceView<P>> {
     let m = model.read();
     ERef::new(UmlClassInstanceView {
@@ -2507,7 +2599,7 @@ fn new_umlclass_instance_view<P: UmlClassProfile>(
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
-        background_color: MGlobalColor::None,
+        background_color,
         _profile: PhantomData,
     })
 }
@@ -4519,6 +4611,7 @@ pub fn new_umlclass_class<P: UmlClassProfile>(
     operations: Vec<(ERef<UmlClassOperation>, ERef<UmlClassOperationView<P>>)>,
     position: egui::Pos2,
     render_style: UmlClassRenderStyle,
+    background_color: MGlobalColor,
 ) -> (ERef<UmlClass>, ERef<UmlClassView<P>>) {
     let class_model = ERef::new(UmlClass::new(
         ModelUuid::now_v7(),
@@ -4535,6 +4628,7 @@ pub fn new_umlclass_class<P: UmlClassProfile>(
         operations.iter().map(|e| e.1.clone()).collect(),
         position,
         render_style,
+        background_color,
     );
 
     (class_model, class_view)
@@ -4545,6 +4639,7 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
     operations_views: Vec<ERef<UmlClassOperationView<P>>>,
     position: egui::Pos2,
     render_style: UmlClassRenderStyle,
+    background_color: MGlobalColor,
 ) -> ERef<UmlClassView<P>> {
     let m = model.read();
     ERef::new(UmlClassView {
@@ -4564,7 +4659,7 @@ pub fn new_umlclass_class_view<P: UmlClassProfile>(
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
-        background_color: MGlobalColor::None,
+        background_color,
 
         render_style,
         suppress_template_parameters: false,
@@ -5789,6 +5884,7 @@ pub fn new_uml_usecase<P: UmlClassProfile>(
     stereotype: &str,
     is_abstract: bool,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> (ERef<UmlUseCase>, ERef<UmlUseCaseView<P>>) {
     let usecase_model = ERef::new(UmlUseCase::new(
         ModelUuid::now_v7(),
@@ -5799,6 +5895,7 @@ pub fn new_uml_usecase<P: UmlClassProfile>(
     let usecase_view = new_uml_usecase_view(
         usecase_model.clone(),
         position,
+        background_color,
     );
 
     (usecase_model, usecase_view)
@@ -5806,6 +5903,7 @@ pub fn new_uml_usecase<P: UmlClassProfile>(
 pub fn new_uml_usecase_view<P: UmlClassProfile>(
     model: ERef<UmlUseCase>,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> ERef<UmlUseCaseView<P>> {
     let m = model.read();
     ERef::new(UmlUseCaseView {
@@ -5822,7 +5920,7 @@ pub fn new_uml_usecase_view<P: UmlClassProfile>(
         highlight: canvas::Highlight::NONE,
         position,
         bounds_radius: egui::Vec2::ZERO,
-        background_color: MGlobalColor::None,
+        background_color,
 
         _profile: PhantomData,
     })

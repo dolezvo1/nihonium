@@ -4,7 +4,7 @@ use super::super::umlclass::{
 };
 use crate::{DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF, common::{
     controller::{
-        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MultiDiagramController, PositionNoT, ProjectCommand, View
+        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MGlobalColor, MultiDiagramController, PositionNoT, ProjectCommand, View
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
@@ -252,6 +252,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 stereotype: stereotype.to_owned(),
                 is_abstract,
                 render_style: UmlClassRenderStyle::Class,
+                background_color: MGlobalColor::None,
             }, label),
         );
     }
@@ -446,7 +447,7 @@ pub fn new_ontouml_class(
     is_abstract: bool,
     position: egui::Pos2,
 ) -> (ERef<UmlClass>, ERef<UmlClassView<OntoUmlProfile>>) {
-    new_umlclass_class(name, stereotype, is_abstract, Vec::new(), Vec::new(), position, UmlClassRenderStyle::Class)
+    new_umlclass_class(name, stereotype, is_abstract, Vec::new(), Vec::new(), position, UmlClassRenderStyle::Class, MGlobalColor::None)
 }
 
 

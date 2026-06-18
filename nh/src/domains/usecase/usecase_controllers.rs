@@ -5,7 +5,7 @@ use super::super::umlclass::{
 };
 use crate::{DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF, common::{
     controller::{
-        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MultiDiagramController, PositionNoT, View
+        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MGlobalColor, MultiDiagramController, PositionNoT, View
     },
     eref::ERef,
     project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
@@ -105,9 +105,33 @@ pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let (customer_model, customer_view) = new_umlclass_class("Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::new(300.0, 200.0), UmlClassRenderStyle::StickFigure);
-    let (bank_model, bank_view) = new_umlclass_class("Bank Customer", usecase_models::ACTOR, false, Vec::new(), Vec::new(), egui::Pos2::new(300.0, 400.0), UmlClassRenderStyle::Class);
-    let (usecase_model, usecase_view) = new_uml_usecase("Registration", usecase_models::NONE, false, egui::Pos2::new(550.0, 200.0));
+    let (customer_model, customer_view) = new_umlclass_class(
+        "Customer",
+        usecase_models::ACTOR,
+        false,
+        Vec::new(),
+        Vec::new(),
+        egui::Pos2::new(300.0, 200.0),
+        UmlClassRenderStyle::StickFigure,
+        MGlobalColor::None,
+    );
+    let (bank_model, bank_view) = new_umlclass_class(
+        "Bank Customer",
+        usecase_models::ACTOR,
+        false,
+        Vec::new(),
+        Vec::new(),
+        egui::Pos2::new(300.0, 400.0),
+        UmlClassRenderStyle::Class,
+        MGlobalColor::None,
+    );
+    let (usecase_model, usecase_view) = new_uml_usecase(
+        "Registration",
+        usecase_models::NONE,
+        false,
+        egui::Pos2::new(550.0, 200.0),
+        MGlobalColor::None,
+    );
 
     let (gen_model, gen_view) = new_umlclass_generalization("", None, (bank_model.clone(), bank_view.clone().into()), (customer_model.clone(), customer_view.clone().into()));
     let (assoc_model, assoc_view) = new_umlclass_association("", "", "0..*", "1..1", None, (customer_model.clone().into(), customer_view.clone().into()), (usecase_model.into(), usecase_view.clone().into()));
@@ -169,17 +193,20 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             stereotype: usecase_models::ACTOR.to_owned(),
             is_abstract: false,
             render_style: UmlClassRenderStyle::StickFigure,
+            background_color: MGlobalColor::None,
         }, "Actor"),
         (UmlClassToolStage::Class {
             name: "Customer".to_owned(),
             stereotype: usecase_models::ACTOR.to_owned(),
             is_abstract: false,
             render_style: UmlClassRenderStyle::Class,
+            background_color: MGlobalColor::None,
         }, "Class Actor"),
         (UmlClassToolStage::UseCase {
             name: "Registration".to_owned(),
             stereotype: usecase_models::NONE.to_owned(),
             is_abstract: false,
+            background_color: MGlobalColor::None,
         }, "Use case"),
     ];
 

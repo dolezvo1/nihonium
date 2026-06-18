@@ -260,10 +260,18 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
                 new_network_node_view(inner, egui::Pos2::ZERO).into()
             },
             NetworkElement::User(inner) => {
-                new_network_user_view(inner, egui::Pos2::ZERO).into()
+                new_network_user_view(
+                    inner,
+                    egui::Pos2::ZERO,
+                    MGlobalColor::None,
+                ).into()
             },
             NetworkElement::File(inner) => {
-                new_network_file_view(inner, egui::Pos2::ZERO).into()
+                new_network_file_view(
+                    inner,
+                    egui::Pos2::ZERO,
+                    MGlobalColor::None,
+                ).into()
             }
             NetworkElement::Association(inner) => {
                 let m = inner.read();
@@ -472,8 +480,18 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (router, router_view) = new_network_node("Router", NetworkNodeKind::Router, egui::Pos2::new(300.0, 400.0));
     let (swtch, swtch_view) = new_network_node("Switch", NetworkNodeKind::Switch, egui::Pos2::new(400.0, 200.0));
     let (workstation, workstation_view) = new_network_node("Workstation", NetworkNodeKind::Workstation, egui::Pos2::new(500.0, 400.0));
-    let (user, user_view) = new_network_user("User", NetworkUserKind::Normal, egui::Pos2::new(600.0, 200.0));
-    let (file, file_view) = new_network_file("File", NetworkFileKind::Certificate, egui::Pos2::new(700.0, 400.0));
+    let (user, user_view) = new_network_user(
+        "User",
+        NetworkUserKind::Normal,
+        egui::Pos2::new(600.0, 200.0),
+        MGlobalColor::None,
+    );
+    let (file, file_view) = new_network_file(
+        "File",
+        NetworkFileKind::Certificate,
+        egui::Pos2::new(700.0, 400.0),
+        MGlobalColor::None,
+    );
 
     let (e1, e1_view) = new_network_association(NetworkAssociationLineType::Solid, (internet.clone().into(), internet_view.clone().into()), NetworkAssociationArrowheadType::None, (router.clone().into(), router_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
     let (e2, e2_view) = new_network_association(NetworkAssociationLineType::Solid, (router.clone().into(), router_view.clone().into()), NetworkAssociationArrowheadType::None, (swtch.clone().into(), swtch_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
@@ -556,24 +574,29 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             (NetworkToolStage::User {
                 name: "User".to_owned(),
                 kind: NetworkUserKind::Normal,
+                background_color: MGlobalColor::None,
             }, "User"),
             (NetworkToolStage::User {
                 name: "Developer".to_owned(),
                 kind: NetworkUserKind::Developer,
+                background_color: MGlobalColor::None,
             }, "Developer"),
             (NetworkToolStage::User {
                 name: "Audit".to_owned(),
                 kind: NetworkUserKind::Audit,
+                background_color: MGlobalColor::None,
             }, "Audit"),
             (NetworkToolStage::User {
                 name: "Black Hat".to_owned(),
                 kind: NetworkUserKind::BlackHat,
+                background_color: MGlobalColor::None,
             }, "Black Hat"),
         ]),
         ("Files", vec![
             (NetworkToolStage::File {
                 name: "File".to_owned(),
                 kind: NetworkFileKind::Unspecified,
+                background_color: MGlobalColor::None,
             }, "File"),
         ]),
         ("Relationships", vec![
@@ -617,16 +640,16 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
             let node_view = new_network_node(name, *kind, egui::Pos2::ZERO).1;
             node_view.into()
         },
-        NetworkToolStage::User { name, kind } => {
-            let user_view = new_network_user(name, *kind, egui::Pos2::ZERO).1;
+        NetworkToolStage::User { name, kind, background_color } => {
+            let user_view = new_network_user(name, *kind, egui::Pos2::ZERO, *background_color).1;
             user_view.into()
         },
-        NetworkToolStage::File { name, kind } => {
-            let file_view = new_network_file(name, *kind, egui::Pos2::ZERO).1;
+        NetworkToolStage::File { name, kind, background_color } => {
+            let file_view = new_network_file(name, *kind, egui::Pos2::ZERO, *background_color).1;
             file_view.into()
         },
         NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead } => {
-            let d1 = new_network_user("dummy", NetworkUserKind::Normal, egui::Pos2::ZERO);
+            let d1 = new_network_user("dummy", NetworkUserKind::Normal, egui::Pos2::ZERO, MGlobalColor::None);
             let d2 = new_network_node("dummy", NetworkNodeKind::Workstation, egui::Pos2::new(100.0, 75.0));
 
             let association_view = new_network_association(
@@ -689,7 +712,7 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                 }
                             });
                     },
-                    NetworkToolStage::User { name, kind } => {
+                    NetworkToolStage::User { name, kind, background_color } => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                         columns[1].label("Kind");
@@ -700,8 +723,17 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
                                 }
                             });
+
+                        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
+                            gdc,
+                            &mut columns[1],
+                            background_color,
+                        ) {
+                            *background_color = new_color;
+                            modified = true;
+                        }
                     },
-                    NetworkToolStage::File { name, kind } => {
+                    NetworkToolStage::File { name, kind, background_color } => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                         columns[1].label("Kind");
@@ -712,6 +744,15 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
                                 }
                             });
+
+                        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
+                            gdc,
+                            &mut columns[1],
+                            background_color,
+                        ) {
+                            *background_color = new_color;
+                            modified = true;
+                        }
                     },
                     NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead } => {
                         columns[1].label("Line type");
@@ -794,9 +835,20 @@ inventory::submit! {DiagramInfo {
 
 #[derive(Clone, PartialEq)]
 pub enum NetworkToolStage {
-    Node { name: String, kind: NetworkNodeKind },
-    User { name: String, kind: NetworkUserKind },
-    File { name: String, kind: NetworkFileKind },
+    Node {
+        name: String,
+        kind: NetworkNodeKind,
+    },
+    User {
+        name: String,
+        kind: NetworkUserKind,
+        background_color: MGlobalColor,
+    },
+    File {
+        name: String,
+        kind: NetworkFileKind,
+        background_color: MGlobalColor,
+    },
     AssociationStart {
         line_type: NetworkAssociationLineType,
         source_arrowhead: NetworkAssociationArrowheadType,
@@ -943,13 +995,13 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.result = PartialNetworkElement::Some(node_view.into());
                 self.event_lock = true;
             }
-            (NetworkToolStage::User { name, kind }, _) => {
-                let (_, user_view) = new_network_user(name, *kind, pos);
+            (NetworkToolStage::User { name, kind, background_color }, _) => {
+                let (_, user_view) = new_network_user(name, *kind, pos, *background_color);
                 self.result = PartialNetworkElement::Some(user_view.into());
                 self.event_lock = true;
             }
-            (NetworkToolStage::File { name, kind }, _) => {
-                let (_, file_view) = new_network_file(name, *kind, pos);
+            (NetworkToolStage::File { name, kind, background_color }, _) => {
+                let (_, file_view) = new_network_file(name, *kind, pos, *background_color);
                 self.result = PartialNetworkElement::Some(file_view.into());
                 self.event_lock = true;
             }
@@ -1277,7 +1329,10 @@ fn new_network_node(
         name.to_owned(),
         kind,
     ));
-    let node_view = new_network_node_view(node_model.clone(), position);
+    let node_view = new_network_node_view(
+        node_model.clone(),
+        position,
+    );
     (node_model, node_view)
 }
 fn new_network_node_view(
@@ -1971,18 +2026,24 @@ fn new_network_user(
     name: &str,
     kind: NetworkUserKind,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> (ERef<NetworkUser>, ERef<NetworkUserView>) {
     let user_model = ERef::new(NetworkUser::new(
         ModelUuid::now_v7(),
         name.to_owned(),
         kind,
     ));
-    let user_view = new_network_user_view(user_model.clone(), position);
+    let user_view = new_network_user_view(
+        user_model.clone(),
+        position,
+        background_color,
+    );
     (user_model, user_view)
 }
 fn new_network_user_view(
     model: ERef<NetworkUser>,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> ERef<NetworkUserView> {
     let m = model.read();
     ERef::new(NetworkUserView {
@@ -1997,7 +2058,7 @@ fn new_network_user_view(
         highlight: canvas::Highlight::NONE,
         position: position,
         bounds_rect: egui::Rect::from_pos(position),
-        background_color: MGlobalColor::None,
+        background_color,
     })
 }
 
@@ -2550,18 +2611,24 @@ fn new_network_file(
     name: &str,
     kind: NetworkFileKind,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> (ERef<NetworkFile>, ERef<NetworkFileView>) {
     let user_model = ERef::new(NetworkFile::new(
         ModelUuid::now_v7(),
         name.to_owned(),
         kind,
     ));
-    let user_view = new_network_file_view(user_model.clone(), position);
+    let user_view = new_network_file_view(
+        user_model.clone(),
+        position,
+        background_color,
+    );
     (user_model, user_view)
 }
 fn new_network_file_view(
     model: ERef<NetworkFile>,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> ERef<NetworkFileView> {
     let m = model.read();
     ERef::new(NetworkFileView {
@@ -2576,7 +2643,7 @@ fn new_network_file_view(
         highlight: canvas::Highlight::NONE,
         position: position,
         bounds_rect: egui::Rect::ZERO,
-        background_color: MGlobalColor::None,
+        background_color,
     })
 }
 

@@ -305,7 +305,11 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 ).into()
             },
             UmlActivityElement::ActionNode(inner) => {
-                new_umlactivity_actionnode_view(inner, egui::Pos2::ZERO).into()
+                new_umlactivity_actionnode_view(
+                    inner,
+                    egui::Pos2::ZERO,
+                    MGlobalColor::None,
+                ).into()
             },
             UmlActivityElement::InitialNode(inner) => {
                 new_umlactivity_initialnode_view(inner, egui::Pos2::ZERO).into()
@@ -320,7 +324,11 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
                 new_umlactivity_forknode_view(inner, egui::Pos2::ZERO, true, 100.0).into()
             }
             UmlActivityElement::ObjectNode(inner) => {
-                new_umlactivity_objectnode_view(inner, egui::Pos2::ZERO).into()
+                new_umlactivity_objectnode_view(
+                    inner,
+                    egui::Pos2::ZERO,
+                    MGlobalColor::None,
+                ).into()
             },
             UmlActivityElement::Edge(inner) => {
                 let m = inner.read();
@@ -617,16 +625,39 @@ pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 
 pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (initial, initial_view) = new_umlactivity_initialnode(egui::Pos2::new(200.0, 200.0));
-    let (object, object_view) = new_umlactivity_objectnode("Order data", "", egui::Pos2::new(350.0, 200.0));
+    let (object, object_view) = new_umlactivity_objectnode(
+        "Order data",
+        "",
+        egui::Pos2::new(350.0, 200.0),
+        MGlobalColor::None,
+    );
     let (decision1, decision1_view) = new_umlactivity_decisionnode("", egui::Pos2::new(500.0, 200.0));
-    let (ship, ship_view) = new_umlactivity_actionnode("Ship items", "", UmlActivityActionKind::CallAction, egui::Pos2::new(750.0, 200.0));
+    let (ship, ship_view) = new_umlactivity_actionnode(
+        "Ship items",
+        "",
+        UmlActivityActionKind::CallAction,
+        egui::Pos2::new(750.0, 200.0),
+        MGlobalColor::None,
+    );
 
     let (comment, comment_view) = new_umlactivity_comment("all items available", "decisionInput", egui::Pos2::new(300.0, 350.0), egui::Align2::CENTER_CENTER);
-    let (procure, procure_view) = new_umlactivity_actionnode("Procure items", "", UmlActivityActionKind::CallAction, egui::Pos2::new(500.0, 350.0));
+    let (procure, procure_view) = new_umlactivity_actionnode(
+        "Procure items",
+        "",
+        UmlActivityActionKind::CallAction,
+        egui::Pos2::new(500.0, 350.0),
+        MGlobalColor::None,
+    );
     let (r#final, final_view) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::ActivityFinal, egui::Pos2::new(750.0, 350.0));
 
     let (decision2, decision2_view) = new_umlactivity_decisionnode("", egui::Pos2::new(500.0, 500.0));
-    let (signal, signal_view) = new_umlactivity_actionnode("Notify user", "", UmlActivityActionKind::SendSignalAction, egui::Pos2::new(750.0, 500.0));
+    let (signal, signal_view) = new_umlactivity_actionnode(
+        "Notify user",
+        "",
+        UmlActivityActionKind::SendSignalAction,
+        egui::Pos2::new(750.0, 500.0),
+        MGlobalColor::None,
+    );
 
     let (_e1, e1_view) = new_umlactivity_edge("", UmlActivityEdgeKind::Regular, None, (initial.into(), initial_view.clone().into()), (object.clone().into(), object_view.clone().into()));
     let (_e2, e2_view) = new_umlactivity_edge("", UmlActivityEdgeKind::Regular, None, (object.into(), object_view.clone().into()), (decision1.clone().into(), decision1_view.clone().into()));
@@ -697,110 +728,67 @@ impl DiagramSettings2<UmlActivityDomain> for UmlActivitySettings {
 
 type NonFinalNodeButtonF = dyn Fn(UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool);
 pub fn default_settings() -> Box<dyn DiagramSettings> {
-    let (_, basic_action_view) = new_umlactivity_actionnode("basic action", "", UmlActivityActionKind::Basic, egui::Pos2::ZERO);
-    basic_action_view.write().refresh_buffers();
-    let (_, call_action_view) = new_umlactivity_actionnode("call action", "", UmlActivityActionKind::CallAction, egui::Pos2::ZERO);
-    call_action_view.write().refresh_buffers();
-    let (_, send_signal_view) = new_umlactivity_actionnode("send signal", "", UmlActivityActionKind::SendSignalAction, egui::Pos2::ZERO);
-    send_signal_view.write().refresh_buffers();
-    let (_, accept_signal_view) = new_umlactivity_actionnode("accept signal", "", UmlActivityActionKind::AcceptSignalAction, egui::Pos2::ZERO);
-    accept_signal_view.write().refresh_buffers();
-    let (_, wait_time_view) = new_umlactivity_actionnode("wait time", "", UmlActivityActionKind::WaitTimeAction, egui::Pos2::ZERO);
-    wait_time_view.write().refresh_buffers();
-    let (_initial, initial_view) = new_umlactivity_initialnode(egui::Pos2::ZERO);
-    initial_view.write().refresh_buffers();
-    let (_flowfinal, flowfinal_view) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::FlowFinal, egui::Pos2::ZERO);
-    flowfinal_view.write().refresh_buffers();
-    let (_activityfinal, activityfinal_view) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::ActivityFinal, egui::Pos2::ZERO);
-    activityfinal_view.write().refresh_buffers();
-    let (_decision, decision_view) = new_umlactivity_decisionnode("", egui::Pos2::ZERO);
-    decision_view.write().refresh_buffers();
-    let (_fork, fork_view) = new_umlactivity_forknode(egui::Pos2::ZERO, true, 100.0);
-    fork_view.write().refresh_buffers();
-    let (_object, object_view) = new_umlactivity_objectnode("object node", "", egui::Pos2::ZERO);
-    object_view.write().refresh_buffers();
-
-    let (d, dv) = new_umlactivity_initialnode(egui::Pos2::ZERO);
-    let dummy_1_nonfinal = (d.into(), dv.into());
-    let (d, dv) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::FlowFinal, egui::Pos2::new(200.0, 150.0));
-    let dummy_2_noninitial = (d.clone().into(), dv.clone().into());
-    let dummy_2_element = (d.into(), dv.into());
-
-    let (_flowedge, flowedge_view) = new_umlactivity_edge("", UmlActivityEdgeKind::Regular, None, dummy_1_nonfinal.clone(), dummy_2_noninitial.clone());
-    let (_interruptedge, interruptedge_view) = new_umlactivity_edge("", UmlActivityEdgeKind::Interrupting, None, dummy_1_nonfinal.clone(), dummy_2_noninitial.clone());
-
-    let (_activity, activity_view) = new_umlactivity_activity("activity", "", "", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) });
-    activity_view.write().refresh_buffers();
-    let (_interruptible, interruptible_view) = new_umlactivity_interruptibleregion("InterruptibleRegion", "", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(175.0, 75.0) });
-    interruptible_view.write().refresh_buffers();
-    let ps = new_umlactivity_partitionsection("Partition Section", "", egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(175.0, 75.0) });
-    ps.1.write().refresh_buffers();
-    let (_partition, partition_view) = new_umlactivity_partition(vec![ps]);
-    partition_view.write().refresh_buffers();
-
-    let (comment, comment_view) = new_umlactivity_comment(
-        "a comment", "",
-        egui::Pos2::ZERO,
-        egui::Align2::CENTER_CENTER,
-    );
-    comment_view.write().refresh_buffers();
-    let commentlink = new_umlactivity_commentlink(None, (comment.clone(), comment_view.clone().into()), dummy_2_element.clone());
-
     let palette_items = vec![
         ("Action Nodes", vec![
             (UmlActivityToolStage::ActionNode {
                 stereotype: "".to_owned(),
                 name: "basic action".to_owned(),
                 kind: UmlActivityActionKind::Basic,
+                background_color: MGlobalColor::None,
                 with_edge_from: None,
-            }, "Basic Action Node", basic_action_view.into()),
+            }, "Basic Action Node"),
             (UmlActivityToolStage::ActionNode {
                 stereotype: "".to_owned(),
                 name: "call action".to_owned(),
                 kind: UmlActivityActionKind::CallAction,
+                background_color: MGlobalColor::None,
                 with_edge_from: None,
-            }, "Call Action Node", call_action_view.into()),
+            }, "Call Action Node"),
             (UmlActivityToolStage::ActionNode {
                 stereotype: "".to_owned(),
                 name: "send signal".to_owned(),
                 kind: UmlActivityActionKind::SendSignalAction,
+                background_color: MGlobalColor::None,
                 with_edge_from: None,
-            }, "Send Signal Node", send_signal_view.into()),
+            }, "Send Signal Node"),
             (UmlActivityToolStage::ActionNode {
                 stereotype: "".to_owned(),
                 name: "accept signal".to_owned(),
                 kind: UmlActivityActionKind::AcceptSignalAction,
+                background_color: MGlobalColor::None,
                 with_edge_from: None,
-            }, "Accept Signal Node", accept_signal_view.into()),
+            }, "Accept Signal Node"),
             (UmlActivityToolStage::ActionNode {
                 stereotype: "".to_owned(),
                 name: "wait time".to_owned(),
                 kind: UmlActivityActionKind::WaitTimeAction,
+                background_color: MGlobalColor::None,
                 with_edge_from: None,
-            }, "Wait Time Node", wait_time_view.into()),
+            }, "Wait Time Node"),
         ]),
         ("Other Nodes", vec![
             (UmlActivityToolStage::InitialNode {
-            }, "Initial Node", initial_view.into()),
+            }, "Initial Node"),
             (UmlActivityToolStage::FinalNode {
                 kind: UmlActivityFinalNodeKind::FlowFinal,
                 with_edge_from: None,
-            }, "Flow Final Node", flowfinal_view.into()),
+            }, "Flow Final Node"),
             (UmlActivityToolStage::FinalNode {
                 kind: UmlActivityFinalNodeKind::ActivityFinal,
                 with_edge_from: None,
-            }, "Activity Final Node", activityfinal_view.into()),
+            }, "Activity Final Node"),
             (UmlActivityToolStage::DecisionNode {
                 name: "".to_owned(),
                 with_edge_from: None,
-            }, "Decision/Merge Node", decision_view.into()),
+            }, "Decision/Merge Node"),
             (UmlActivityToolStage::ForkNodeStart {
-            }, "Fork/Join Node", fork_view.into()),
+            }, "Fork/Join Node"),
             (UmlActivityToolStage::ObjectNode {
                 stereotype: "".to_owned(),
                 name: "object node".to_owned(),
+                background_color: MGlobalColor::None,
                 with_edge_from: None,
-            }, "Object Node", object_view.into()),
+            }, "Object Node"),
         ]),
         ("Relationships", vec![
             (UmlActivityToolStage::LinkStart {
@@ -808,39 +796,42 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                     name: "".to_owned(),
                     kind: UmlActivityEdgeKind::Regular,
                 },
-            }, "Regular Edge", flowedge_view.into()),
+            }, "Regular Edge"),
             (UmlActivityToolStage::LinkStart {
                 link_type: LinkType::Edge {
                     name: "".to_owned(),
                     kind: UmlActivityEdgeKind::Interrupting,
                 },
-            }, "Interrupting Edge", interruptedge_view.into()),
+            }, "Interrupting Edge"),
         ]),
         ("Containers", vec![
             (UmlActivityToolStage::ActivityStart {
                 name: "activity".to_owned(),
                 stereotype: "".to_owned(),
                 parameters: "".to_owned(),
-            }, "Activity", activity_view.into()),
+            }, "Activity"),
             (UmlActivityToolStage::InterruptibleRegionStart {
                 stereotype: "".to_owned(),
                 name: "InterruptibleRegion".to_owned(),
-            }, "InterruptibleRegion", interruptible_view.into()),
+            }, "InterruptibleRegion"),
             (UmlActivityToolStage::PartitionStart {
                 section_stereotype: "".to_owned(),
                 section_name: "Partition Section".to_owned(),
-            }, "Partition", partition_view.into()),
+            }, "Partition"),
         ]),
         ("Other", vec![
             (UmlActivityToolStage::Comment {
                 stereotype: "".to_owned(),
                 text: "a comment".to_owned(),
                 align: egui::Align2::CENTER_CENTER,
-            }, "Comment", comment_view.into()),
+            }, "Comment"),
             (UmlActivityToolStage::CommentLinkStart {
-            }, "Comment Link", commentlink.1.into()),
+            }, "Comment Link"),
         ]),
-    ];
+    ].into_iter().map(|e| (e.0, e.1.into_iter().map(|e| {
+        let v = view_for_stage(&e.0);
+        (e.0, e.1, v)
+    }).collect())).collect();
 
     fn nonfinal_edge(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
         let link_type = LinkType::Edge {
@@ -865,6 +856,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             stereotype: "".to_owned(),
             name: "Action".to_owned(),
             kind: UmlActivityActionKind::Basic,
+            background_color: MGlobalColor::None,
             with_edge_from: Some(m),
         };
         (stage.clone(), stage, PartialUmlActivityElement::None, true)
@@ -874,6 +866,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             stereotype: "".to_owned(),
             name: "Call Action".to_owned(),
             kind: UmlActivityActionKind::CallAction,
+            background_color: MGlobalColor::None,
             with_edge_from: Some(m),
         };
         (stage.clone(), stage, PartialUmlActivityElement::None, true)
@@ -883,6 +876,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             stereotype: "".to_owned(),
             name: "Wait Time Action".to_owned(),
             kind: UmlActivityActionKind::WaitTimeAction,
+            background_color: MGlobalColor::None,
             with_edge_from: Some(m),
         };
         (stage.clone(), stage, PartialUmlActivityElement::None, true)
@@ -898,6 +892,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         let stage = UmlActivityToolStage::ObjectNode {
             stereotype: "".to_owned(),
             name: "Object".to_owned(),
+            background_color: MGlobalColor::None,
             with_edge_from: Some(m),
         };
         (stage.clone(), stage, PartialUmlActivityElement::None, true)
@@ -966,6 +961,90 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
     })
 }
 
+fn view_for_stage(s: &UmlActivityToolStage) -> UmlActivityElementView {
+    match s {
+        UmlActivityToolStage::ActionNode { stereotype, name, kind, background_color, with_edge_from: _ } => {
+            let view = new_umlactivity_actionnode(name, stereotype, *kind, egui::Pos2::ZERO, *background_color).1;
+            view.write().refresh_buffers();
+            view.into()
+        },
+        UmlActivityToolStage::InitialNode {  } => {
+            let view = new_umlactivity_initialnode(egui::Pos2::ZERO).1;
+            view.write().refresh_buffers();
+            view.into()
+        },
+        UmlActivityToolStage::FinalNode { kind, with_edge_from: _ } => {
+            let view = new_umlactivity_finalnode(*kind, egui::Pos2::ZERO).1;
+            view.write().refresh_buffers();
+            view.into()
+        },
+        UmlActivityToolStage::DecisionNode { name, with_edge_from: _ } => {
+            let view = new_umlactivity_decisionnode(name, egui::Pos2::ZERO).1;
+            view.write().refresh_buffers();
+            view.into()
+        },
+        UmlActivityToolStage::ForkNodeStart => {
+            let view = new_umlactivity_forknode(egui::Pos2::ZERO, true, 100.0).1;
+            view.write().refresh_buffers();
+            view.into()
+        },
+        UmlActivityToolStage::ObjectNode { stereotype, name, background_color, with_edge_from: _ } => {
+            let view = new_umlactivity_objectnode(name, stereotype, egui::Pos2::ZERO, *background_color).1;
+            view.write().refresh_buffers();
+            view.into()
+        },
+        UmlActivityToolStage::LinkStart { link_type } => {
+            let (d, dv) = new_umlactivity_initialnode(egui::Pos2::ZERO);
+            let dummy_1_nonfinal = (d.into(), dv.into());
+            let (d, dv) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::FlowFinal, egui::Pos2::new(200.0, 150.0));
+            let dummy_2_noninitial = (d.clone().into(), dv.clone().into());
+
+            match link_type {
+                LinkType::Edge { name, kind } => {
+                    let view = new_umlactivity_edge(name, *kind, None, dummy_1_nonfinal.clone(), dummy_2_noninitial.clone()).1;
+                    view.into()
+                },
+            }
+        },
+        UmlActivityToolStage::ActivityStart { stereotype, name, parameters } => {
+            let view = new_umlactivity_activity(name, stereotype, parameters, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) }).1;
+            view.write().refresh_buffers();
+            view.into()
+        },
+        UmlActivityToolStage::InterruptibleRegionStart { stereotype, name } => {
+            let view = new_umlactivity_interruptibleregion(name, stereotype, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(175.0, 75.0) }).1;
+            view.write().refresh_buffers();
+            view.into()
+        },
+        UmlActivityToolStage::PartitionStart { section_stereotype, section_name } => {
+            let ps = new_umlactivity_partitionsection(section_name, section_stereotype, egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(175.0, 75.0) });
+            ps.1.write().refresh_buffers();
+            let view = new_umlactivity_partition(vec![ps]).1;
+            view.write().refresh_buffers();
+            view.into()
+        },
+        UmlActivityToolStage::Comment { stereotype, text, align } => {
+            let view = new_umlactivity_comment(text, stereotype, egui::Pos2::ZERO, *align).1;
+            view.write().refresh_buffers();
+            view.into()
+        },
+        UmlActivityToolStage::CommentLinkStart => {
+            let (comment, comment_view) = new_umlactivity_comment("dummy", "", egui::Pos2::ZERO, egui::Align2::CENTER_CENTER);
+            let (d, dv) = new_umlactivity_finalnode(UmlActivityFinalNodeKind::FlowFinal, egui::Pos2::new(200.0, 150.0));
+            let dummy_2_element = (d.into(), dv.into());
+
+            let view = new_umlactivity_commentlink(None, (comment.clone(), comment_view.clone().into()), dummy_2_element.clone()).1;
+            view.into()
+        },
+        UmlActivityToolStage::ForkNodeEnd
+        | UmlActivityToolStage::LinkEnd
+        | UmlActivityToolStage::ActivityEnd
+        | UmlActivityToolStage::InterruptibleRegionEnd
+        | UmlActivityToolStage::PartitionEnd
+        | UmlActivityToolStage::CommentLinkEnd => unreachable!(),
+    }
+}
+
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<UmlActivitySettings>() else { return; };
 
@@ -990,56 +1069,21 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                 let mut modified = false;
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
-                match (tool, view.model()) {
-                    (
-                        UmlActivityToolStage::ActivityStart { stereotype, name, parameters },
-                        UmlActivityElement::Activity(inner),
-                    ) => {
+                match tool {
+                    UmlActivityToolStage::ActivityStart { stereotype, name, parameters } => {
                         modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Parameters", parameters).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.stereotype = stereotype.clone().into();
-                            mw.name = name.clone().into();
-                            mw.parameters = parameters.clone().into();
-                        }
                     }
-                    (
-                        UmlActivityToolStage::InterruptibleRegionStart { stereotype, name },
-                        UmlActivityElement::InterruptibleRegion(inner),
-                    ) => {
+                    UmlActivityToolStage::InterruptibleRegionStart { stereotype, name } => {
                         modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
-
-                        if modified && let mut mw = inner.write() {
-                            mw.stereotype = stereotype.clone().into();
-                            mw.name = name.clone().into();
-                        }
                     }
-                    (
-                        UmlActivityToolStage::PartitionStart { section_stereotype, section_name },
-                        UmlActivityElement::Partition(inner),
-                    ) => {
+                    UmlActivityToolStage::PartitionStart { section_stereotype, section_name } => {
                         modified |= columns[1].labeled_text_edit_singleline("Section stereotype", section_stereotype).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Section name", section_name).changed();
-
-                        if modified {
-                            {
-                                let mr = inner.read();
-                                let mut sw = mr.sections[0].write();
-                                sw.stereotype = section_stereotype.clone().into();
-                                sw.name = section_name.clone().into();
-                            }
-                            if let UmlActivityElementView::Partition(view) = view {
-                                view.read().section_views[0].write().refresh_buffers();
-                            }
-                        }
                     }
-                    (
-                        UmlActivityToolStage::ActionNode { stereotype, name, kind, with_edge_from: _ },
-                        UmlActivityElement::ActionNode(inner),
-                    ) => {
+                    UmlActivityToolStage::ActionNode { stereotype, name, kind, background_color, with_edge_from: _ } => {
                         modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
@@ -1052,28 +1096,29 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                 }
                             });
 
-                        if modified && let mut mw = inner.write() {
-                            mw.stereotype = stereotype.clone().into();
-                            mw.name = name.clone().into();
-                            mw.kind = *kind;
+                        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
+                            gdc,
+                            &mut columns[1],
+                            background_color,
+                        ) {
+                            *background_color = new_color;
+                            modified = true;
                         }
                     }
-                    (
-                        UmlActivityToolStage::ObjectNode { stereotype, name, with_edge_from: _ },
-                        UmlActivityElement::ObjectNode(inner),
-                    ) => {
+                    UmlActivityToolStage::ObjectNode { stereotype, name, background_color, with_edge_from: _ } => {
                         modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
-                        if modified && let mut mw = inner.write() {
-                            mw.stereotype = name.clone().into();
-                            mw.name = name.clone().into();
+                        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
+                            gdc,
+                            &mut columns[1],
+                            background_color,
+                        ) {
+                            *background_color = new_color;
+                            modified = true;
                         }
                     }
-                    (
-                            UmlActivityToolStage::LinkStart { link_type: LinkType::Edge { name, kind } },
-                            UmlActivityElement::Edge(inner),
-                    ) => {
+                    UmlActivityToolStage::LinkStart { link_type: LinkType::Edge { name, kind } } => {
                         modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                         columns[1].label("Kind:");
@@ -1084,16 +1129,8 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(kind, e, e.as_str()).changed();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            mw.name = name.clone().into();
-                            mw.kind = *kind;
-                        }
                     }
-                    (
-                        UmlActivityToolStage::Comment { stereotype, text, align },
-                        UmlActivityElement::Comment(inner),
-                    ) => {
+                    UmlActivityToolStage::Comment { stereotype, text, align } => {
                         modified |= columns[1].labeled_text_edit_singleline("Stereotype", stereotype).changed();
                         modified |= columns[1].labeled_text_edit_singleline("Text", text).changed();
 
@@ -1111,17 +1148,12 @@ pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &
                                     modified |= ui.selectable_value(&mut align.0[1], e, format!("{:?}", e)).changed();
                                 }
                             });
-
-                        if modified && let mut mw = inner.write() {
-                            mw.stereotype = stereotype.clone().into();
-                            mw.text = text.clone().into();
-                        }
                     }
                     _ => {},
                 }
 
                 if modified {
-                    view.refresh_buffers();
+                    *view = view_for_stage(tool);
                     w.set_from_buffer(buffer.clone());
                 }
             },
@@ -1160,6 +1192,7 @@ pub enum UmlActivityToolStage {
         stereotype: String,
         name: String,
         kind: UmlActivityActionKind,
+        background_color: MGlobalColor,
         with_edge_from: Option<UmlActivityNonFinalNode>,
     },
     InitialNode {},
@@ -1176,6 +1209,7 @@ pub enum UmlActivityToolStage {
     ObjectNode {
         stereotype: String,
         name: String,
+        background_color: MGlobalColor,
         with_edge_from: Option<UmlActivityNonFinalNode>,
     },
     LinkStart {
@@ -1390,8 +1424,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
         }
 
         match (&self.current_stage, &mut self.result) {
-            (UmlActivityToolStage::ActionNode { stereotype, name, kind, with_edge_from: _ }, _) => {
-                let (_model, view) = new_umlactivity_actionnode(name, stereotype, *kind, pos);
+            (UmlActivityToolStage::ActionNode { stereotype, name, kind, background_color, with_edge_from: _ }, _) => {
+                let (_model, view) = new_umlactivity_actionnode(name, stereotype, *kind, pos, *background_color);
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -1422,8 +1456,8 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                 *b = Some(pos);
                 self.event_lock = true;
             }
-            (UmlActivityToolStage::ObjectNode { name, stereotype, with_edge_from: _ }, _) => {
-                let (_model, view) = new_umlactivity_objectnode(name, stereotype, pos);
+            (UmlActivityToolStage::ObjectNode { name, stereotype, background_color, with_edge_from: _ }, _) => {
+                let (_model, view) = new_umlactivity_objectnode(name, stereotype, pos, *background_color);
                 self.result = PartialUmlActivityElement::Some(view.into());
                 self.event_lock = true;
             }
@@ -3711,6 +3745,7 @@ fn new_umlactivity_actionnode(
     stereotype: &str,
     kind: UmlActivityActionKind,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> (ERef<UmlActivityActionNode>, ERef<UmlActivityActionNodeView>) {
     let instance_model = ERef::new(UmlActivityActionNode::new(
         ModelUuid::now_v7(),
@@ -3718,13 +3753,18 @@ fn new_umlactivity_actionnode(
         name.to_owned(),
         kind,
     ));
-    let instance_view = new_umlactivity_actionnode_view(instance_model.clone(), position);
+    let instance_view = new_umlactivity_actionnode_view(
+        instance_model.clone(),
+        position,
+        background_color,
+    );
 
     (instance_model, instance_view)
 }
 fn new_umlactivity_actionnode_view(
     model: ERef<UmlActivityActionNode>,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> ERef<UmlActivityActionNodeView> {
     let m = model.read();
     ERef::new(UmlActivityActionNodeView {
@@ -3738,7 +3778,7 @@ fn new_umlactivity_actionnode_view(
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::from_min_max(position, position),
-        background_color: MGlobalColor::None,
+        background_color,
     })
 }
 
@@ -5778,6 +5818,7 @@ pub fn new_umlactivity_objectnode(
     name: &str,
     stereotype: &str,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> (ERef<UmlActivityObjectNode>, ERef<UmlActivityObjectNodeView>) {
     let node_model = ERef::new(UmlActivityObjectNode::new(
         ModelUuid::now_v7(),
@@ -5787,6 +5828,7 @@ pub fn new_umlactivity_objectnode(
     let node_view = new_umlactivity_objectnode_view(
         node_model.clone(),
         position,
+        background_color,
     );
 
     (node_model, node_view)
@@ -5794,6 +5836,7 @@ pub fn new_umlactivity_objectnode(
 pub fn new_umlactivity_objectnode_view(
     model: ERef<UmlActivityObjectNode>,
     position: egui::Pos2,
+    background_color: MGlobalColor,
 ) -> ERef<UmlActivityObjectNodeView> {
     let m = model.read();
     ERef::new(UmlActivityObjectNodeView {
@@ -5808,7 +5851,7 @@ pub fn new_umlactivity_objectnode_view(
         highlight: canvas::Highlight::NONE,
         position,
         bounds_rect: egui::Rect::ZERO,
-        background_color: MGlobalColor::None,
+        background_color,
     })
 }
 
