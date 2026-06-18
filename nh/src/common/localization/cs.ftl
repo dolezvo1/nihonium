@@ -105,13 +105,14 @@ nh-tab-document = Dokument
 nh-tab-customtab = Zvláštní karta
 nh-tab-outline = Obrys
 
-nh-modal-colorpicker = Výběr barvy
+nh-tab-globalcolors = Globální barvy
+nh-tab-globalcolors-addnew = Přidat novou
+
 nh-modal-colorpicker-nooveridebrackets = [beze změn]
 nh-modal-colorpicker-notfoundbrackets = [nenalezeno]
 nh-modal-colorpicker-nooverride = Beze změn
 nh-modal-colorpicker-localcolor = Lokální barva
 nh-modal-colorpicker-globalcolor = Globální barva
-nh-modal-colorpicker-addnewglobal = Přidat novou
 
 nh-window-svgexport = Možnosti SVG Exportu
 nh-window-svgexport-solidbackground = Pevné pozadí

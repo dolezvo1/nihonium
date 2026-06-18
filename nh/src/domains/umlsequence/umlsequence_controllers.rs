@@ -4,7 +4,7 @@ use super::umlsequence_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
 use crate::common::views::package_view::PackageDragType;
@@ -444,23 +444,27 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
     }
     fn show_view_props_fun(
         &mut self,
+        view_uuid: &ViewUuid,
         drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-    ) -> PropertiesStatus<UmlSequenceDomain> {
+        commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
+    ) {
         ui.label("Background color:");
-        if crate::common::controller::mglobalcolor_edit_button(
+        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
             drawing_context,
             ui,
-            &mut self.background_color,
+            &self.background_color,
         ) {
-            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+            commands.push(InsensitiveCommand::PropertyChange(
+                std::iter::once(*view_uuid).collect(),
+                UmlSequencePropChange::ColorChange((0, new_color).into()),
+            ));
         }
-
-        PropertiesStatus::Shown
     }
     fn show_model_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
+        _drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlSequenceOrdinalMovement, UmlSequenceElementOrVertex, UmlSequencePropChange>>,
     ) {
@@ -4219,12 +4223,15 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceLifelineView {
         ui.label("View properties");
 
         ui.label("Background color:");
-        if crate::common::controller::mglobalcolor_edit_button(
+        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
             drawing_context,
             ui,
-            &mut self.background_color,
+            &self.background_color,
         ) {
-            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlSequencePropChange::ColorChange((0, new_color).into()),
+            ));
         }
 
         ui.label("Render style");
@@ -5470,12 +5477,15 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCommentView {
             });
 
         ui.label("Background color:");
-        if crate::common::controller::mglobalcolor_edit_button(
+        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
             drawing_context,
             ui,
-            &mut self.background_color,
+            &self.background_color,
         ) {
-            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlSequencePropChange::ColorChange((0, new_color).into()),
+            ));
         }
 
         PropertiesStatus::Shown

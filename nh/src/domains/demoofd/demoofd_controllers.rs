@@ -3,7 +3,7 @@ use super::demoofd_models::{
 };
 use crate::common::canvas::{self, Highlight, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ufoption::UFOption;
 use crate::common::ui_ext::UiExt;
@@ -436,23 +436,27 @@ impl DiagramAdapter<DemoOfdDomain> for DemoOfdDiagramAdapter {
     }
     fn show_view_props_fun(
         &mut self,
+        view_uuid: &ViewUuid,
         drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-    ) -> PropertiesStatus<DemoOfdDomain> {
+        commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
+    ) {
         ui.label("Background color:");
-        if crate::common::controller::mglobalcolor_edit_button(
+        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
             drawing_context,
             ui,
-            &mut self.background_color,
+            &self.background_color,
         ) {
-            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+            commands.push(InsensitiveCommand::PropertyChange(
+                std::iter::once(*view_uuid).collect(),
+                DemoOfdPropChange::ColorChange((0, new_color).into()),
+            ));
         }
-
-        PropertiesStatus::Shown
     }
     fn show_model_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
+        _drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DemoOfdOrdinalMovement, DemoOfdElementOrVertex, DemoOfdPropChange>>,
     ) {
@@ -1617,13 +1621,6 @@ impl PackageAdapter<DemoOfdDomain> for DemoOfdPackageAdapter {
                 DemoOfdPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
             ));
         }
-    }
-    fn show_color_property(
-        &mut self,
-        _context: &GlobalDrawingContext,
-        _ui: &mut egui::Ui,
-    ) -> PropertiesStatus<DemoOfdDomain> {
-        PropertiesStatus::Shown
     }
     fn apply_change(
         &mut self,

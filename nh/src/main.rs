@@ -142,6 +142,7 @@ pub enum NHTab {
     Search,
     Toolbar,
     Properties,
+    GlobalColors,
     Outline,
 
     Diagram { uuid: ViewUuid },
@@ -162,6 +163,7 @@ impl NHTab {
             NHTab::Search => gdc.translate_0("nh-tab-search"),
             NHTab::Toolbar => gdc.translate_0("nh-tab-toolbar"),
             NHTab::Properties => gdc.translate_0("nh-tab-properties"),
+            NHTab::GlobalColors => gdc.translate_0("nh-tab-globalcolors"),
             NHTab::Outline => gdc.translate_0("nh-tab-outline"),
 
             NHTab::Diagram { .. } => gdc.translate_0("nh-tab-diagram"),
@@ -302,6 +304,7 @@ struct NHContext {
     svg_export_menu: Option<(ViewUuid, ERef<dyn DiagramController>, Option<FileHandle>, bool, bool, Highlight, f32, f32)>,
     confirm_modal_reason: Option<SimpleProjectCommand>,
     shortcut_being_set: Option<SimpleProjectCommand>,
+    new_global_color_name: String,
 
     search_query: String,
     search_error: String,
@@ -356,6 +359,7 @@ impl TabViewer for NHContext {
             NHTab::Search => self.show_search(ui),
             NHTab::Toolbar => self.show_toolbar(ui),
             NHTab::Properties => self.show_properties(ui),
+            NHTab::GlobalColors => self.show_global_colors(ui),
             NHTab::Outline => self.show_outline(ui),
 
             NHTab::Diagram { uuid } => self.show_diagram_tab(uuid, ui),
@@ -998,6 +1002,38 @@ impl NHContext {
         if let Some(m) = c.write().show_properties(last_focused_diagram, &self.drawing_context, ui, &mut self.affected_models) {
             self.custom_modal = Some(m);
         }
+    }
+
+    fn show_global_colors(&mut self, ui: &mut egui::Ui) {
+        macro_rules! gc {
+            () => {
+                self.drawing_context.global_colors
+            };
+        }
+        for id in gc!().colors_order.iter() {
+            ui.horizontal(|ui| {
+                if let Some(c) = gc!().colors.get_mut(id) {
+                    egui::widgets::color_picker::color_edit_button_srgba(
+                        ui,
+                        &mut c.1,
+                        egui::widgets::color_picker::Alpha::OnlyBlend
+                    );
+
+                    ui.label(&c.0);
+                }
+            });
+        }
+
+        ui.horizontal(|ui| {
+            let r = ui.text_edit_singleline(&mut self.new_global_color_name);
+
+            if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                || ui.button(self.drawing_context.translate_0("nh-tab-globalcolors-addnew")).clicked() {
+                let new_uuid = uuid::Uuid::now_v7();
+                gc!().colors_order.push(new_uuid);
+                gc!().colors.insert(new_uuid, (std::mem::take(&mut self.new_global_color_name), egui::Color32::WHITE));
+            }
+        });
     }
 
     fn show_outline(&mut self, ui: &mut egui::Ui) {
@@ -1864,8 +1900,9 @@ impl Default for NHApp {
         open_unique_tabs.insert(NHTab::Search);
         let [_, c] = dock_state
             .main_surface_mut()
-            .split_right(a, 0.7, vec![NHTab::Properties]);
+            .split_right(a, 0.7, vec![NHTab::Properties, NHTab::GlobalColors]);
         open_unique_tabs.insert(NHTab::Properties);
+        open_unique_tabs.insert(NHTab::GlobalColors);
         let [_, _] = dock_state
             .main_surface_mut()
             .split_below(b, 0.7, vec![NHTab::Toolbar]);
@@ -1962,6 +1999,7 @@ impl Default for NHApp {
             svg_export_menu: None,
             confirm_modal_reason: None,
             shortcut_being_set: None,
+            new_global_color_name: String::new(),
 
             search_query: "".to_owned(),
             search_error: "".to_owned(),
@@ -2524,6 +2562,7 @@ impl eframe::App for NHApp {
                         NHTab::Search,
                         NHTab::Toolbar,
                         NHTab::Properties,
+                        NHTab::GlobalColors,
                         NHTab::Outline,
                     ] {
                         if ui

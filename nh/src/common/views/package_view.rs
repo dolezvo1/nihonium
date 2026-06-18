@@ -2,7 +2,7 @@ use std::{collections::{HashMap, HashSet}, sync::Arc};
 
 use eframe::{egui, epaint};
 
-use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{BucketNoT, ColorBundle, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
+use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{BucketNoT, ColorBundle, ColorChangeData, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
 
 
 pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
@@ -44,9 +44,11 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     );
     fn show_color_property(
         &mut self,
-        context: &GlobalDrawingContext,
-        ui: &mut egui::Ui,
-    ) -> PropertiesStatus<DomainT>;
+        _context: &GlobalDrawingContext,
+        _ui: &mut egui::Ui,
+    ) -> Option<ColorChangeData> {
+        None
+    }
     fn apply_change(
         &mut self,
         view_uuid: &ViewUuid,
@@ -224,7 +226,14 @@ where
                 }
             });
 
-            self.adapter.show_color_property(gdc, ui)
+            if let Some(new_color) = self.adapter.show_color_property(gdc, ui) {
+                commands.push(InsensitiveCommand::PropertyChange(
+                    q.selected_views(),
+                    new_color.into(),
+                ));
+            }
+
+            PropertiesStatus::Shown
         } else {
             PropertiesStatus::NotShown
         }

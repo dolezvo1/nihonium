@@ -1,6 +1,6 @@
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, RequestType, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DeleteKind, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
 };
 use crate::common::ui_ext::UiExt;
 use crate::common::views::ordered_views::OrderedViews;
@@ -469,23 +469,27 @@ impl DiagramAdapter<UmlActivityDomain> for UmlActivityDiagramAdapter {
     }
     fn show_view_props_fun(
         &mut self,
+        view_uuid: &ViewUuid,
         drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-    ) -> PropertiesStatus<UmlActivityDomain> {
+        commands: &mut Vec<InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>>,
+    ) {
         ui.label("Background color:");
-        if crate::common::controller::mglobalcolor_edit_button(
+        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
             drawing_context,
             ui,
-            &mut self.background_color,
+            &self.background_color,
         ) {
-            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+            commands.push(InsensitiveCommand::PropertyChange(
+                std::iter::once(*view_uuid).collect(),
+                UmlActivityPropChange::ColorChange((0, new_color).into()),
+            ));
         }
-
-        PropertiesStatus::Shown
     }
     fn show_model_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
+        _drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<UmlActivityOrdinalMovement, UmlActivityElementOrVertex, UmlActivityPropChange>>,
     ) {
@@ -1889,17 +1893,13 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityAdapter {
         &mut self,
         context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-    ) -> PropertiesStatus<UmlActivityDomain> {
+    ) -> Option<ColorChangeData> {
         ui.label("Background color:");
-        if crate::common::controller::mglobalcolor_edit_button(
+        crate::common::controller::mglobalcolor_edit_button(
             context,
             ui,
-            &mut self.background_color,
-        ) {
-            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
-        }
-
-        PropertiesStatus::Shown
+            &self.background_color,
+        ).map(|e| (0, e).into())
     }
     fn apply_change(
         &mut self,
@@ -2120,13 +2120,6 @@ impl PackageAdapter<UmlActivityDomain> for UmlActivityInterruptibleRegionAdapter
                 UmlActivityPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
-    }
-    fn show_color_property(
-        &mut self,
-        _context: &GlobalDrawingContext,
-        _ui: &mut egui::Ui,
-    ) -> PropertiesStatus<UmlActivityDomain> {
-        PropertiesStatus::Shown
     }
     fn apply_change(
         &mut self,
@@ -3004,12 +2997,15 @@ impl UmlActivityPartitionSectionView {
         });
 
         ui.label("Background color:");
-        if crate::common::controller::mglobalcolor_edit_button(
+        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
             drawing_context,
             ui,
-            &mut self.background_color,
+            &self.background_color,
         ) {
-            return (PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color)), add_sibling);
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlActivityPropChange::ColorChange((0, new_color).into()),
+            ));
         }
 
         ui.horizontal(|ui| {
@@ -3860,12 +3856,15 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
         });
 
         ui.label("Background color:");
-        if crate::common::controller::mglobalcolor_edit_button(
+        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
             gdc,
             ui,
-            &mut self.background_color,
+            &self.background_color,
         ) {
-            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlActivityPropChange::ColorChange((0, new_color).into()),
+            ));
         }
 
         PropertiesStatus::Shown
@@ -5909,12 +5908,15 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
         });
 
         ui.label("Background color:");
-        if crate::common::controller::mglobalcolor_edit_button(
+        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
             gdc,
             ui,
-            &mut self.background_color,
+            &self.background_color,
         ) {
-            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlActivityPropChange::ColorChange((0, new_color).into()),
+            ));
         }
 
         PropertiesStatus::Shown
@@ -6630,12 +6632,15 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
             });
 
         ui.label("Background color:");
-        if crate::common::controller::mglobalcolor_edit_button(
+        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
             gdc,
             ui,
-            &mut self.background_color,
+            &self.background_color,
         ) {
-            return PropertiesStatus::PromptRequest(RequestType::ChangeColor(0, self.background_color))
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlActivityPropChange::ColorChange((0, new_color).into()),
+            ));
         }
 
         PropertiesStatus::Shown

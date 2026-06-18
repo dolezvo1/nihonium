@@ -3,7 +3,7 @@ use crate::common::search::FullTextSearchable;
 use crate::common::ui_ext::UiExt;
 use crate::common::uuid::ControllerUuid;
 use crate::common::views::ordered_views::OrderedViewRefs;
-use crate::{CustomModal, CustomModalResult, CustomTab, NHTab};
+use crate::{CustomModal, CustomTab, NHTab};
 use eframe::egui;
 use egui_ltreeview::DirPosition;
 use fluent_bundle::FluentMessage;
@@ -288,10 +288,11 @@ pub enum MGlobalColor {
 pub fn mglobalcolor_edit_button(
     gdc: &GlobalDrawingContext,
     ui: &mut egui::Ui,
-    color: &mut MGlobalColor,
-) -> bool {
+    color: &MGlobalColor,
+) -> Option<MGlobalColor> {
     ui.horizontal(|ui| {
-        let (response, painter) = ui.allocate_painter(egui::Vec2::new(30.0, 20.0), egui::Sense::click());
+        const COLOR_RECT_SIZE: egui::Vec2 = egui::Vec2::new(30.0, 20.0);
+        let (response, painter) = ui.allocate_painter(COLOR_RECT_SIZE, egui::Sense::click());
 
         match color {
             MGlobalColor::None => {
@@ -341,11 +342,104 @@ pub fn mglobalcolor_edit_button(
             },
         }
 
-        if response.clicked() {
-            true
-        } else {
-            false
+        let mut result = None;
+
+        #[derive(Clone, Copy, PartialEq, Default)]
+        enum MGlobalColorType {
+            #[default]
+            None,
+            Local,
+            Global,
         }
+        #[derive(Clone, Copy, Default)]
+        struct ColorChangePopupState {
+            selected_color_type: MGlobalColorType,
+            local_color: egui::Color32,
+            global_color: uuid::Uuid,
+        }
+
+        egui::Popup::menu(&response)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .show(|ui| {
+                let mut state = ui.data_mut(|e| {
+                    e.get_temp_mut_or_insert_with(response.id, || {
+                        ColorChangePopupState {
+                            selected_color_type: match color {
+                                MGlobalColor::None => MGlobalColorType::None,
+                                MGlobalColor::Local(_color32) => MGlobalColorType::Local,
+                                MGlobalColor::Global(_uuid) => MGlobalColorType::Global,
+                            },
+                            local_color: if let MGlobalColor::Local(color) = color { *color } else { egui::Color32::WHITE },
+                            global_color: if let MGlobalColor::Global(uuid) = color { *uuid } else { uuid::Uuid::nil() },
+                        }
+                    }).clone()
+                });
+
+                ui.style_mut().spacing.indent += 20.0;
+                ui.radio_value(&mut state.selected_color_type, MGlobalColorType::None, gdc.translate_0("nh-modal-colorpicker-nooverride"));
+
+                ui.radio_value(&mut state.selected_color_type, MGlobalColorType::Local, gdc.translate_0("nh-modal-colorpicker-localcolor"));
+                ui.add_enabled_ui(state.selected_color_type == MGlobalColorType::Local, |ui| {
+                    ui.indent("local color", |ui| {
+                        egui::widgets::color_picker::color_picker_color32(
+                            ui,
+                            &mut state.local_color,
+                            egui::widgets::color_picker::Alpha::OnlyBlend
+                        );
+                    });
+                });
+
+                ui.radio_value(&mut state.selected_color_type, MGlobalColorType::Global, gdc.translate_0("nh-modal-colorpicker-globalcolor"));
+                ui.add_enabled_ui(state.selected_color_type == MGlobalColorType::Global, |ui| {
+                    ui.indent("global color", |ui| {
+                        {
+                            let gc = &gdc.global_colors;
+                            for id in gc.colors_order.iter() {
+                                ui.horizontal(|ui| {
+                                    if let Some(c) = gc.colors.get(id) {
+                                        egui::widgets::color_picker::show_color(ui, c.1, COLOR_RECT_SIZE);
+
+                                        let text = if *id == state.global_color {
+                                            &format!("[{}]", c.0)
+                                        } else {
+                                            &c.0
+                                        };
+                                        if ui.label(text).clicked() {
+                                            state.global_color = *id;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    });
+                });
+
+                ui.separator();
+
+                ui.data_mut(|e| {
+                    *e.get_temp_mut_or_default(response.id) = state;
+                });
+
+                ui.horizontal(|ui| {
+                    let is_valid = match state.selected_color_type {
+                        MGlobalColorType::Global => !state.global_color.is_nil(),
+                        _ => true,
+                    };
+                    if ui.add_enabled(is_valid, egui::Button::new(gdc.translate_0("nh-generic-ok"))).clicked() {
+                        let c = match state.selected_color_type {
+                            MGlobalColorType::None => MGlobalColor::None,
+                            MGlobalColorType::Local => MGlobalColor::Local(state.local_color),
+                            MGlobalColorType::Global => MGlobalColor::Global(state.global_color),
+                        };
+                        result = Some(c);
+
+                        ui.data_mut(|e| e.remove::<ColorChangePopupState>(response.id));
+                        ui.close();
+                    }
+                });
+            });
+
+        result
     }).inner
 }
 
@@ -1315,6 +1409,15 @@ pub struct ColorChangeData {
     pub color: MGlobalColor,
 }
 
+impl From<(u8, MGlobalColor)> for ColorChangeData {
+    fn from(value: (u8, MGlobalColor)) -> Self {
+        Self {
+            slot: value.0,
+            color: value.1,
+        }
+    }
+}
+
 pub trait Domain: Sized + 'static {
     type SettingsT: DiagramSettings2<Self>;
     type CommonElementT: Model + VisitableElement + Clone;
@@ -1511,14 +1614,9 @@ pub struct EventHandlingContext<'a> {
     pub snap_manager: &'a SnapManager,
 }
 
-pub enum RequestType {
-    ChangeColor(u8, MGlobalColor),
-}
-
 pub enum PropertiesStatus<DomainT: Domain> {
     NotShown,
     Shown,
-    PromptRequest(RequestType),
     ToolRequest(Option<DomainT::ToolT>),
 }
 
@@ -2402,12 +2500,15 @@ pub trait DiagramAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     }
     fn show_view_props_fun(
         &mut self,
+        view_uuid: &ViewUuid,
         drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-    ) -> PropertiesStatus<DomainT>;
+        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+    );
     fn show_model_props_fun(
         &mut self,
         view_uuid: &ViewUuid,
+        drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     );
@@ -3311,7 +3412,7 @@ impl<
         ui: &mut egui::Ui,
         commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
     ) -> Option<Box<dyn CustomModal>> {
-        let req = 'req: {
+        let req = {
             let queryable = DomainT::QueryableT::new(
                 &self.temporaries.flattened_represented_models,
                 &self.temporaries.flattened_views,
@@ -3328,15 +3429,12 @@ impl<
                 if ui.labeled_text_edit_singleline("Name:", &mut self.temporaries.name_buffer).changed() {
                     self.name = Arc::new(self.temporaries.name_buffer.clone());
                 }
-                match self.adapter.show_view_props_fun(context, ui) {
-                    PropertiesStatus::NotShown | PropertiesStatus::Shown => {},
-                    a => break 'req a,
-                }
+                self.adapter.show_view_props_fun(&self.uuid, context, ui, commands);
 
                 ui.add_space(super::views::VIEW_MODEL_PROPERTIES_BLOCK_SPACING);
 
                 ui.label("Model properties:");
-                self.adapter.show_model_props_fun(&self.uuid, ui, commands);
+                self.adapter.show_model_props_fun(&self.uuid, context, ui, commands);
 
                 PropertiesStatus::Shown
             }
@@ -3348,126 +3446,6 @@ impl<
                 self.temporaries.current_tool = t;
                 None
             }
-            PropertiesStatus::PromptRequest(RequestType::ChangeColor(t, c)) => {
-                #[derive(PartialEq)]
-                enum MGlobalColorType {
-                    None,
-                    Local,
-                    Global,
-                }
-                struct ColorChangeModal {
-                    diagram_uuid: ViewUuid,
-                    diagram_color_slot: u8,
-                    selected_color_type: MGlobalColorType,
-                    local_color: egui::Color32,
-                    global_color: uuid::Uuid,
-                    new_global_color_name: String,
-                }
-                impl CustomModal for ColorChangeModal {
-                    fn show(
-                        &mut self,
-                        gdc: &mut GlobalDrawingContext,
-                        ui: &mut egui::Ui,
-                        commands: &mut Vec<ProjectCommand>,
-                    ) -> CustomModalResult {
-                        ui.style_mut().spacing.indent += 20.0;
-                        ui.heading(gdc.translate_0("nh-modal-colorpicker"));
-
-                        ui.radio_value(&mut self.selected_color_type, MGlobalColorType::None, gdc.translate_0("nh-modal-colorpicker-nooverride"));
-
-                        ui.radio_value(&mut self.selected_color_type, MGlobalColorType::Local, gdc.translate_0("nh-modal-colorpicker-localcolor"));
-                        ui.add_enabled_ui(self.selected_color_type == MGlobalColorType::Local, |ui| {
-                            ui.indent("local color", |ui| {
-                                egui::widgets::color_picker::color_picker_color32(
-                                    ui,
-                                    &mut self.local_color,
-                                    egui::widgets::color_picker::Alpha::OnlyBlend
-                                );
-                            });
-                        });
-
-                        ui.radio_value(&mut self.selected_color_type, MGlobalColorType::Global, gdc.translate_0("nh-modal-colorpicker-globalcolor"));
-                        ui.add_enabled_ui(self.selected_color_type == MGlobalColorType::Global, |ui| {
-                            ui.indent("global color", |ui| {
-                                {
-                                    let gc = &mut gdc.global_colors;
-                                    for id in gc.colors_order.iter() {
-                                        ui.horizontal(|ui| {
-                                            if let Some(c) = gc.colors.get_mut(id) {
-                                                egui::widgets::color_picker::color_edit_button_srgba(
-                                                    ui,
-                                                    &mut c.1,
-                                                    egui::widgets::color_picker::Alpha::OnlyBlend
-                                                );
-
-                                                let text = if *id == self.global_color {
-                                                    &format!("[{}]", c.0)
-                                                } else {
-                                                    &c.0
-                                                };
-                                                if ui.label(text).clicked() {
-                                                    self.global_color = *id;
-                                                }
-                                            }
-                                        });
-                                    }
-                                }
-
-                                ui.horizontal(|ui| {
-                                    let r = ui.text_edit_singleline(&mut self.new_global_color_name);
-
-                                    if (r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) || ui.button(gdc.translate_0("nh-modal-colorpicker-addnewglobal")).clicked() {
-                                        let new_uuid = uuid::Uuid::now_v7();
-                                        gdc.global_colors.colors_order.push(new_uuid);
-                                        gdc.global_colors.colors.insert(new_uuid, (std::mem::take(&mut self.new_global_color_name), egui::Color32::WHITE));
-                                    }
-                                });
-                            });
-                        });
-
-                        ui.separator();
-
-                        let mut result = CustomModalResult::KeepOpen;
-                        ui.horizontal(|ui| {
-                            let is_valid = match self.selected_color_type {
-                                MGlobalColorType::Global => !self.global_color.is_nil(),
-                                _ => true,
-                            };
-                            if ui.add_enabled(is_valid, egui::Button::new(gdc.translate_0("nh-generic-ok"))).clicked() {
-                                let c = match self.selected_color_type {
-                                    MGlobalColorType::None => MGlobalColor::None,
-                                    MGlobalColorType::Local => MGlobalColor::Local(self.local_color),
-                                    MGlobalColorType::Global => MGlobalColor::Global(self.global_color),
-                                };
-                                commands.push(ProjectCommand::SimpleProjectCommand(
-                                    SimpleProjectCommand::SpecificDiagramCommand(
-                                        self.diagram_uuid,
-                                        DiagramCommand::ColorSelected(self.diagram_color_slot, c),
-                                    )
-                                ));
-                                result = CustomModalResult::CloseUnmodified;
-                            }
-                            if ui.button(gdc.translate_0("nh-generic-cancel")).clicked() {
-                                result = CustomModalResult::CloseUnmodified;
-                            }
-                        });
-
-                        result
-                    }
-                }
-                Some(Box::new(ColorChangeModal {
-                    diagram_uuid: *self.uuid,
-                    diagram_color_slot: t,
-                    selected_color_type: match c {
-                        MGlobalColor::None => MGlobalColorType::None,
-                        MGlobalColor::Local(_color32) => MGlobalColorType::Local,
-                        MGlobalColor::Global(_uuid) => MGlobalColorType::Global,
-                    },
-                    local_color: if let MGlobalColor::Local(color) = c { color } else { egui::Color32::WHITE },
-                    global_color: if let MGlobalColor::Global(uuid) = c { uuid } else { uuid::Uuid::nil() },
-                    new_global_color_name: String::new(),
-                }))
-            },
         }
     }
     fn show_outline(

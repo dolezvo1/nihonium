@@ -105,13 +105,14 @@ nh-tab-document = Document
 nh-tab-customtab = Custom Tab
 nh-tab-outline = Outline
 
-nh-modal-colorpicker = Color Picker
+nh-tab-globalcolors = Global Colors
+nh-tab-globalcolors-addnew = Add new
+
 nh-modal-colorpicker-nooveridebrackets = [no override]
 nh-modal-colorpicker-notfoundbrackets = [not found]
 nh-modal-colorpicker-nooverride = No override
 nh-modal-colorpicker-localcolor = Local color
 nh-modal-colorpicker-globalcolor = Global color
-nh-modal-colorpicker-addnewglobal = Add new
 
 nh-window-svgexport = SVG Export Options
 nh-window-svgexport-solidbackground = Solid background
