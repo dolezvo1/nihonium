@@ -1454,7 +1454,7 @@ impl ElementControllerGen2<RdfDomain> for RdfNodeView {
                     is_spent: Some(false),
                 });
 
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {

@@ -2637,7 +2637,7 @@ impl UmlSequenceCombinedFragmentView {
             InputEvent::Click(pos) if self.temporaries.highlight.selected && self.new_section_button_rect(ehc.ui_scale).contains(pos) => {
                 commands.push(self.new_section_command());
 
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.left_top_pentagon_rect.contains(pos) => {
                 EventHandlingStatus::HandledByElement

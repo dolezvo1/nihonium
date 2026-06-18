@@ -2895,7 +2895,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                     is_spent: Some(false),
                 });
 
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -5219,7 +5219,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     }
                 }
 
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 let child = self.properties_views.iter()

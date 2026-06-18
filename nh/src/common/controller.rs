@@ -2583,14 +2583,14 @@ impl<
         });
 
         let handled = match event {
-            InputEvent::MouseDown(_) | InputEvent::MouseUp(_) | InputEvent::Drag { .. }
+            InputEvent::MouseUp(_) => {
+                self.temporaries.select_by_drag = None;
+                true
+            }
+            InputEvent::MouseDown(_) | InputEvent::Drag { .. }
                 if child.is_some() || self.temporaries.current_tool.is_some() => child.is_some(),
             InputEvent::MouseDown(pos) => {
                 self.temporaries.select_by_drag = Some((pos, pos));
-                true
-            }
-            InputEvent::MouseUp(_) => {
-                self.temporaries.select_by_drag = None;
                 true
             }
             InputEvent::Drag{ delta, ..} => {

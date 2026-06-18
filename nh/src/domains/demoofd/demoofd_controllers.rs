@@ -2154,7 +2154,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                     is_spent: Some(false),
                 });
 
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.highlight.selected && self.event_spec_button_rect(ehc.ui_scale).contains(pos) => {
                 let esd = EntityStageData {
@@ -2183,7 +2183,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                     is_spent: Some(false),
                 });
 
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.highlight.selected && self.property_button_rect(ehc.ui_scale).contains(pos) => {
                 let link_type = LinkType::PropertyType {
@@ -2206,7 +2206,7 @@ impl ElementControllerGen2<DemoOfdDomain> for DemoOfdEntityView {
                     is_spent: Some(false),
                 });
 
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {

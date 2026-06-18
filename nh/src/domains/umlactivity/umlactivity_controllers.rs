@@ -4122,7 +4122,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityActionNodeView {
                     event_lock,
                     is_spent: Some(false),
                 });
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -4492,7 +4492,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityInitialNodeView {
                     event_lock,
                     is_spent: Some(false),
                 });
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -5256,7 +5256,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityDecisionNodeView {
                     event_lock,
                     is_spent: Some(false),
                 });
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -5622,7 +5622,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityForkNodeView {
                     event_lock,
                     is_spent: Some(false),
                 });
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
@@ -6034,7 +6034,7 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityObjectNodeView {
                     event_lock,
                     is_spent: Some(false),
                 });
-                EventHandlingStatus::HandledByElement
+                EventHandlingStatus::HandledByContainer
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
