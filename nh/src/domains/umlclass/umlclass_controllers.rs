@@ -2634,11 +2634,11 @@ impl<SC: StereotypeController> CustomModal for UmlClassInstanceSetupModal<SC> {
         ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
     ) -> CustomModalResult {
+        self.stereotype_controller.show(ui);
         ui.label("Name:");
         let r = ui.text_edit_singleline(&mut self.name_buffer);
         ui.label("Type:");
         ui.text_edit_singleline(&mut self.type_buffer);
-        self.stereotype_controller.show(ui);
         ui.separator();
 
         if self.first_frame {
@@ -2755,6 +2755,13 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
         ui.label("Model properties");
 
+        if self.stereotype_controller.show(ui) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
+            ));
+        }
+
         if ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer).changed() {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
@@ -2766,13 +2773,6 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlClassPropChange::InstanceType(Arc::new(self.type_buffer.clone())),
-            ));
-        }
-
-        if self.stereotype_controller.show(ui) {
-            commands.push(InsensitiveCommand::PropertyChange(
-                q.selected_views(),
-                UmlClassPropChange::StereotypeChange(self.stereotype_controller.get_arc()),
             ));
         }
 
