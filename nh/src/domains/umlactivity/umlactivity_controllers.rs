@@ -11,7 +11,7 @@ use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::domains::umlactivity::umlactivity_models::{UmlActivity, UmlActivityActionKind, UmlActivityActionNode, UmlActivityComment, UmlActivityCommentLink, UmlActivityDecisionNode, UmlActivityDiagram, UmlActivityEdgeKind, UmlActivityElement, UmlActivityFinalNode, UmlActivityFinalNodeKind, UmlActivityFlowEdge, UmlActivityForkNode, UmlActivityInitialNode, UmlActivityInterruptibleRegion, UmlActivityNonFinalNode, UmlActivityNonInitialNode, UmlActivityObjectNode, UmlActivityPartition, UmlActivityPartitionSection};
-use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
+use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
 use std::collections::HashSet;
@@ -717,7 +717,13 @@ pub struct UmlActivitySettings {
     nonfinal_buttons: Vec<(usize, usize, &'static str, &'static dyn Fn(UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool))>,
 }
 
-impl DiagramSettings for UmlActivitySettings {}
+impl DiagramSettings for UmlActivitySettings {
+    fn serialize(&self) -> Result<toml::Value, ()> {
+        let mut table = toml::Table::new();
+        table.insert("palette".to_owned(), self.palette.read().unwrap().serialize()?.into());
+        Ok(table.into())
+    }
+}
 impl DiagramSettings2<UmlActivityDomain> for UmlActivitySettings {
     fn palette_for_each_mut<F>(&self, f: F)
         where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, UmlActivityToolStage, String, UmlActivityElementView)>))
@@ -726,7 +732,134 @@ impl DiagramSettings2<UmlActivityDomain> for UmlActivitySettings {
     }
 }
 
+
 type NonFinalNodeButtonF = dyn Fn(UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool);
+mod buttons {
+    use super::*;
+    use std::sync::LazyLock;
+
+    fn nonfinal_edge(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let link_type = LinkType::Edge {
+            name: "".to_owned(),
+            kind: UmlActivityEdgeKind::Regular,
+        };
+        (
+            UmlActivityToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
+            UmlActivityToolStage::LinkEnd,
+            PartialUmlActivityElement::Link {
+                link_type,
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    fn nonfinal_action(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::ActionNode {
+            stereotype: "".to_owned(),
+            name: "Action".to_owned(),
+            kind: UmlActivityActionKind::Basic,
+            background_color: MGlobalColor::None,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_call(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::ActionNode {
+            stereotype: "".to_owned(),
+            name: "Call Action".to_owned(),
+            kind: UmlActivityActionKind::CallAction,
+            background_color: MGlobalColor::None,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_waittime(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::ActionNode {
+            stereotype: "".to_owned(),
+            name: "Wait Time Action".to_owned(),
+            kind: UmlActivityActionKind::WaitTimeAction,
+            background_color: MGlobalColor::None,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_decision(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::DecisionNode {
+            name: "".to_owned(),
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_object(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::ObjectNode {
+            stereotype: "".to_owned(),
+            name: "Object".to_owned(),
+            background_color: MGlobalColor::None,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_flowfinal(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::FinalNode {
+            kind: UmlActivityFinalNodeKind::FlowFinal,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    fn nonfinal_activityfinal(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
+        let stage = UmlActivityToolStage::FinalNode {
+            kind: UmlActivityFinalNodeKind::ActivityFinal,
+            with_edge_from: Some(*m.uuid()),
+        };
+        (stage.clone(), stage, PartialUmlActivityElement::None, true)
+    }
+    pub const NONFINAL_BUTTONS: LazyLock<Vec<(usize, usize, &'static str, &'static NonFinalNodeButtonF)>> = LazyLock::new(|| vec![
+        (
+            0, 0,
+            "↘",
+            &nonfinal_edge as &NonFinalNodeButtonF,
+        ),
+        (
+            1, 0,
+            "A",
+            &nonfinal_action as &NonFinalNodeButtonF,
+        ),
+        (
+            1, 1,
+            "C",
+            &nonfinal_call as &NonFinalNodeButtonF,
+        ),
+        (
+            1, 2,
+            "W",
+            &nonfinal_waittime as &NonFinalNodeButtonF,
+        ),
+        (
+            2, 0,
+            "◊",
+            &nonfinal_decision as &NonFinalNodeButtonF,
+        ),
+        (
+            2, 1,
+            "O",
+            &nonfinal_object as &NonFinalNodeButtonF,
+        ),
+        (
+            3, 0,
+            "⊗",
+            &nonfinal_flowfinal as &NonFinalNodeButtonF,
+        ),
+        (
+            3, 1,
+            "◎", // Does not work: ⊙⊚⨀⨁⨂◉⯄
+            &nonfinal_activityfinal as &NonFinalNodeButtonF,
+        ),
+    ]);
+}
+
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let palette_items = vec![
         ("Action Nodes", vec![
@@ -833,131 +966,10 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         (e.0, e.1, v)
     }).collect())).collect();
 
-    fn nonfinal_edge(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
-        let link_type = LinkType::Edge {
-            name: "".to_owned(),
-            kind: UmlActivityEdgeKind::Regular,
-        };
-        (
-            UmlActivityToolStage::LinkStart {
-                link_type: link_type.clone(),
-            },
-            UmlActivityToolStage::LinkEnd,
-            PartialUmlActivityElement::Link {
-                link_type,
-                source: m.into(),
-                dest: None,
-            },
-            true,
-        )
-    }
-    fn nonfinal_action(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
-        let stage = UmlActivityToolStage::ActionNode {
-            stereotype: "".to_owned(),
-            name: "Action".to_owned(),
-            kind: UmlActivityActionKind::Basic,
-            background_color: MGlobalColor::None,
-            with_edge_from: Some(m),
-        };
-        (stage.clone(), stage, PartialUmlActivityElement::None, true)
-    }
-    fn nonfinal_call(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
-        let stage = UmlActivityToolStage::ActionNode {
-            stereotype: "".to_owned(),
-            name: "Call Action".to_owned(),
-            kind: UmlActivityActionKind::CallAction,
-            background_color: MGlobalColor::None,
-            with_edge_from: Some(m),
-        };
-        (stage.clone(), stage, PartialUmlActivityElement::None, true)
-    }
-    fn nonfinal_waittime(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
-        let stage = UmlActivityToolStage::ActionNode {
-            stereotype: "".to_owned(),
-            name: "Wait Time Action".to_owned(),
-            kind: UmlActivityActionKind::WaitTimeAction,
-            background_color: MGlobalColor::None,
-            with_edge_from: Some(m),
-        };
-        (stage.clone(), stage, PartialUmlActivityElement::None, true)
-    }
-    fn nonfinal_decision(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
-        let stage = UmlActivityToolStage::DecisionNode {
-            name: "".to_owned(),
-            with_edge_from: Some(m),
-        };
-        (stage.clone(), stage, PartialUmlActivityElement::None, true)
-    }
-    fn nonfinal_object(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
-        let stage = UmlActivityToolStage::ObjectNode {
-            stereotype: "".to_owned(),
-            name: "Object".to_owned(),
-            background_color: MGlobalColor::None,
-            with_edge_from: Some(m),
-        };
-        (stage.clone(), stage, PartialUmlActivityElement::None, true)
-    }
-    fn nonfinal_flowfinal(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
-        let stage = UmlActivityToolStage::FinalNode {
-            kind: UmlActivityFinalNodeKind::FlowFinal,
-            with_edge_from: Some(m),
-        };
-        (stage.clone(), stage, PartialUmlActivityElement::None, true)
-    }
-    fn nonfinal_activityfinal(m: UmlActivityNonFinalNode) -> (UmlActivityToolStage, UmlActivityToolStage, PartialUmlActivityElement, bool) {
-        let stage = UmlActivityToolStage::FinalNode {
-            kind: UmlActivityFinalNodeKind::ActivityFinal,
-            with_edge_from: Some(m),
-        };
-        (stage.clone(), stage, PartialUmlActivityElement::None, true)
-    }
-    let nonfinal_buttons = vec![
-        (
-            0, 0,
-            "↘",
-            &nonfinal_edge as &NonFinalNodeButtonF,
-        ),
-        (
-            1, 0,
-            "A",
-            &nonfinal_action as &NonFinalNodeButtonF,
-        ),
-        (
-            1, 1,
-            "C",
-            &nonfinal_call as &NonFinalNodeButtonF,
-        ),
-        (
-            1, 2,
-            "W",
-            &nonfinal_waittime as &NonFinalNodeButtonF,
-        ),
-        (
-            2, 0,
-            "◊",
-            &nonfinal_decision as &NonFinalNodeButtonF,
-        ),
-        (
-            2, 1,
-            "O",
-            &nonfinal_object as &NonFinalNodeButtonF,
-        ),
-        (
-            3, 0,
-            "⊗",
-            &nonfinal_flowfinal as &NonFinalNodeButtonF,
-        ),
-        (
-            3, 1,
-            "◎", // Does not work: ⊙⊚⨀⨁⨂◉⯄
-            &nonfinal_activityfinal as &NonFinalNodeButtonF,
-        ),
-    ];
-
     Box::new(UmlActivitySettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
         palette_edit_buffer: RwLock::new(PaletteEditBuffer::None),
-        nonfinal_buttons,
+        nonfinal_buttons: buttons::NONFINAL_BUTTONS.clone(),
     })
 }
 
@@ -1043,6 +1055,15 @@ fn view_for_stage(s: &UmlActivityToolStage) -> UmlActivityElementView {
         | UmlActivityToolStage::PartitionEnd
         | UmlActivityToolStage::CommentLinkEnd => unreachable!(),
     }
+}
+
+pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
+    let toml::Value::Table(value) = value else { return Err(()); };
+    Ok(Box::new(UmlActivitySettings {
+        palette: ToolPalette::deserialize(value.get("palette").unwrap().clone(), view_for_stage)?.into(),
+        palette_edit_buffer: PaletteEditBuffer::None.into(),
+        nonfinal_buttons: buttons::NONFINAL_BUTTONS.clone(),
+    }))
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
@@ -1165,6 +1186,7 @@ inventory::submit! {DiagramInfo {
     type_indentifier: "umlactivity",
     pretty_name: "UML Activity diagram",
     default_settings: &(default_settings as DefaultSettingsF),
+    settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
     show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "/Unified Modeling Language",
@@ -1178,7 +1200,7 @@ inventory::submit! {DiagramInfo {
 }}
 
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum LinkType {
     Edge {
         name: String,
@@ -1186,23 +1208,23 @@ pub enum LinkType {
     },
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub enum UmlActivityToolStage {
     ActionNode {
         stereotype: String,
         name: String,
         kind: UmlActivityActionKind,
         background_color: MGlobalColor,
-        with_edge_from: Option<UmlActivityNonFinalNode>,
+        with_edge_from: Option<ModelUuid>,
     },
     InitialNode {},
     FinalNode {
         kind: UmlActivityFinalNodeKind,
-        with_edge_from: Option<UmlActivityNonFinalNode>,
+        with_edge_from: Option<ModelUuid>,
     },
     DecisionNode {
         name: String,
-        with_edge_from: Option<UmlActivityNonFinalNode>,
+        with_edge_from: Option<ModelUuid>,
     },
     ForkNodeStart,
     ForkNodeEnd,
@@ -1210,7 +1232,7 @@ pub enum UmlActivityToolStage {
         stereotype: String,
         name: String,
         background_color: MGlobalColor,
-        with_edge_from: Option<UmlActivityNonFinalNode>,
+        with_edge_from: Option<ModelUuid>,
     },
     LinkStart {
         link_type: LinkType,
@@ -1381,12 +1403,20 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     canvas::Highlight::NONE,
                 );
             }
-            (_, PartialUmlActivityElement::Link { source, .. })
-            | (UmlActivityToolStage::ActionNode { with_edge_from: Some(source), .. }
-                | UmlActivityToolStage::DecisionNode { with_edge_from: Some(source), .. }
-                | UmlActivityToolStage::ObjectNode { with_edge_from: Some(source), .. }
-                | UmlActivityToolStage::FinalNode { with_edge_from: Some(source), .. }, _) => {
+            (_, PartialUmlActivityElement::Link { source, .. }) => {
                 if let Some(source_view) = q.get_view_for(&source.uuid()) {
+                    canvas.draw_line(
+                        [source_view.position(), pos],
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+            (UmlActivityToolStage::ActionNode { with_edge_from: Some(source_uuid), .. }
+                | UmlActivityToolStage::DecisionNode { with_edge_from: Some(source_uuid), .. }
+                | UmlActivityToolStage::ObjectNode { with_edge_from: Some(source_uuid), .. }
+                | UmlActivityToolStage::FinalNode { with_edge_from: Some(source_uuid), .. }, _) => {
+                if let Some(source_view) = q.get_view_for(&source_uuid) {
                     canvas.draw_line(
                         [source_view.position(), pos],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -1582,11 +1612,11 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
             PartialUmlActivityElement::Some(element) => {
                 let element = element.clone();
                 let additional_edge = match &self.initial_stage {
-                    UmlActivityToolStage::ActionNode { with_edge_from: Some(source), .. }
-                    | UmlActivityToolStage::FinalNode { with_edge_from: Some(source), .. }
-                    | UmlActivityToolStage::DecisionNode { with_edge_from: Some(source), .. }
-                    | UmlActivityToolStage::ObjectNode { with_edge_from: Some(source), .. }
-                        if let Some(source) = q.get_view_for(&source.uuid())
+                    UmlActivityToolStage::ActionNode { with_edge_from: Some(source_uuid), .. }
+                    | UmlActivityToolStage::FinalNode { with_edge_from: Some(source_uuid), .. }
+                    | UmlActivityToolStage::DecisionNode { with_edge_from: Some(source_uuid), .. }
+                    | UmlActivityToolStage::ObjectNode { with_edge_from: Some(source_uuid), .. }
+                        if let Some(source) = q.get_view_for(&source_uuid)
                             && let Some(parent) = q.find_parent(
                                     &source.uuid(),
                                     |uuid, e| (uuid == preferred_container || q.is_contained(preferred_container, uuid))

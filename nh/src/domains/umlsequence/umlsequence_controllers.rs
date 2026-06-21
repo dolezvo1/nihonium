@@ -14,7 +14,7 @@ use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::domains::umlsequence::umlsequence_models::{HORIZONTALS_BUCKET, UmlSequenceCombinedFragmentKind, UmlSequenceCombinedFragmentSection, UmlSequenceDiagramBoard, UmlSequenceMessageLifecycleKind, UmlSequenceMessageSynchronicityKind, UmlSequenceRef, VERTICALS_BUCKET};
-use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
+use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::{egui, epaint};
 use std::any::Any;
 use std::collections::HashSet;
@@ -668,7 +668,13 @@ pub struct UmlSequenceSettings {
     palette_edit_buffer: RwLock<PaletteEditBuffer<UmlSequenceToolStage, UmlSequenceElementView>>,
 }
 
-impl DiagramSettings for UmlSequenceSettings {}
+impl DiagramSettings for UmlSequenceSettings {
+    fn serialize(&self) -> Result<toml::Value, ()> {
+        let mut table = toml::Table::new();
+        table.insert("palette".to_owned(), self.palette.read().unwrap().serialize()?.into());
+        Ok(table.into())
+    }
+}
 impl DiagramSettings2<UmlSequenceDomain> for UmlSequenceSettings {
     fn palette_for_each_mut<F>(&self, f: F)
         where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, UmlSequenceToolStage, String, UmlSequenceElementView)>))
@@ -703,22 +709,22 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
             (UmlSequenceToolStage::LinkStart { link_type: LinkType::Message {
                 synchronicity_kind: UmlSequenceMessageSynchronicityKind::Synchronous,
                 is_return: false,
-                name: "",
+                name: "".to_owned(),
             } }, "Synchronous Message"),
             (UmlSequenceToolStage::LinkStart { link_type: LinkType::Message {
                 synchronicity_kind: UmlSequenceMessageSynchronicityKind::Synchronous,
                 is_return: true,
-                name: "",
+                name: "".to_owned(),
             } }, "Synchronous Return"),
             (UmlSequenceToolStage::LinkStart { link_type: LinkType::Message {
                 synchronicity_kind: UmlSequenceMessageSynchronicityKind::AsynchronousCall,
                 is_return: false,
-                name: "",
+                name: "".to_owned(),
             } }, "Asynchronous Call"),
             (UmlSequenceToolStage::LinkStart { link_type: LinkType::Message {
                 synchronicity_kind: UmlSequenceMessageSynchronicityKind::AsynchronousSignal,
                 is_return: false,
-                name: "",
+                name: "".to_owned(),
             } }, "Asynchronous Signal"),
         ]),
         ("Other", vec![
@@ -796,6 +802,14 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
         | UmlSequenceToolStage::RefEnd
         | UmlSequenceToolStage::CommentLinkEnd => unreachable!(),
     }
+}
+
+pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
+    let toml::Value::Table(value) = value else { return Err(()); };
+    Ok(Box::new(UmlSequenceSettings {
+        palette: ToolPalette::deserialize(value.get("palette").unwrap().clone(), view_for_stage)?.into(),
+        palette_edit_buffer: PaletteEditBuffer::None.into(),
+    }))
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
@@ -891,6 +905,7 @@ inventory::submit! {DiagramInfo {
     type_indentifier: "umlsequence",
     pretty_name: "UML Sequence diagram",
     default_settings: &(default_settings as DefaultSettingsF),
+    settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
     show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "/Unified Modeling Language",
@@ -904,16 +919,16 @@ inventory::submit! {DiagramInfo {
 }}
 
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum LinkType {
     Message {
         synchronicity_kind: UmlSequenceMessageSynchronicityKind,
         is_return: bool,
-        name: &'static str,
+        name: String,
     },
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UmlSequenceToolStage {
     DiagramStart,
     DiagramEnd,
@@ -1145,7 +1160,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 match (&self.current_stage, &mut self.result) {
                     (UmlSequenceToolStage::LinkStart { link_type }, PartialUmlSequenceElement::None) => {
                         self.result = PartialUmlSequenceElement::Link {
-                            link_type: *link_type,
+                            link_type: link_type.clone(),
                             source: inner,
                             dest: None,
                         };

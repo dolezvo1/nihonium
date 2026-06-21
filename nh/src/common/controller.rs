@@ -1252,9 +1252,45 @@ impl<S: Clone, DomainT: Domain> ToolPalette<S, DomainT> {
         self.elements.retain(|e| e.0 != target);
         self.elements.iter_mut().for_each(|e| e.2.retain(|e| e.0 != target));
     }
+
+    pub fn serialize(&self) -> Result<toml::Value, ()>
+        where S: serde::Serialize
+    {
+        #[derive(serde::Serialize)]
+        pub struct ToolPaletteHelper<S: Clone> {
+            elements: Vec<(uuid::Uuid, String, Vec<(uuid::Uuid, S, String)>)>,
+        }
+
+        toml::Value::try_from(ToolPaletteHelper {
+            elements: self.elements.iter()
+                .map(|e| (e.0, e.1.clone(), e.2.iter().map(|e| (e.0, e.1.clone(), e.2.clone())).collect()))
+                .collect(),
+        }).map_err(|_| ())
+    }
+
+    pub fn deserialize<'a, F>(value: toml::Value, view_for_stage: F) -> Result<Self, ()>
+        where S: serde::Deserialize<'a>,
+            F: Fn(&S) -> DomainT::CommonElementViewT
+    {
+        #[derive(serde::Deserialize)]
+        pub struct ToolPaletteHelper<S: Clone> {
+            elements: Vec<(uuid::Uuid, String, Vec<(uuid::Uuid, S, String)>)>,
+        }
+
+        let e: ToolPaletteHelper<S> = value.try_into().map_err(|_| ())?;
+        Ok(Self {
+            elements: e.elements.into_iter().map(|e| (e.0, e.1, e.2.into_iter().map(|e| {
+                let v = view_for_stage(&e.1);
+                (e.0, e.1, e.2, v)
+            }).collect())).collect(),
+            selection: PaletteEditingSelection::None,
+        })
+    }
 }
 
-pub trait DiagramSettings: Any {}
+pub trait DiagramSettings: Any {
+    fn serialize(&self) -> Result<toml::Value, ()>;
+}
 pub trait DiagramSettings2<DomainT: Domain>: DiagramSettings {
     fn palette_for_each_mut<'a, F>(&'a self, f: F)
         where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, <<DomainT as Domain>::ToolT as Tool<DomainT>>::Stage, String, DomainT::CommonElementViewT)>));

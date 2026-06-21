@@ -244,6 +244,7 @@ enum FileIOOperation {
 }
 
 type DefaultSettingsF = fn() -> Box<dyn DiagramSettings>;
+type DeserializeSettingsF = fn(toml::Value) -> Result<Box<dyn DiagramSettings>, ()>;
 type ShowSettingsF = fn(&mut GlobalDrawingContext, &mut egui::Ui, &mut Box<dyn DiagramSettings>);
 type DiagramConstructorF = fn(u32) -> (ViewUuid, ERef<dyn DiagramController + 'static>);
 type DeserializeControllerF = fn(ControllerUuid, &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError>;
@@ -1784,6 +1785,7 @@ struct DiagramInfo {
     type_indentifier: &'static str,
     pretty_name: &'static str,
     default_settings: &'static DefaultSettingsF,
+    settings_deserializer: &'static DeserializeSettingsF,
     show_settings_function: &'static ShowSettingsF,
     diagram_creation_data: DiagramCreationData,
     deserializer: &'static DeserializeControllerF,
@@ -1866,7 +1868,7 @@ struct NHStoredApp {
     selected_shades_profile: usize,
     shades_profiles: Vec<ShadesProfile>,
 
-    // TODO: store diagram specific settings
+    diagram_specific_settings: HashMap<String, toml::Value>,
 
     tree: DockState<NHTab>,
 }
@@ -1880,6 +1882,7 @@ impl NHApp {
                 value.shortcuts,
                 value.selected_shades_profile,
                 value.shades_profiles,
+                value.diagram_specific_settings,
                 value.tree,
             );
         }
@@ -1942,6 +1945,7 @@ impl NHApp {
             shortcuts,
             0,
             shades_profiles,
+            HashMap::new(),
             tree,
         )
     }
@@ -1951,6 +1955,7 @@ impl NHApp {
         shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
         selected_shades_profile: usize,
         shades_profiles: Vec<ShadesProfile>,
+        diagram_specific_settings: HashMap<String, toml::Value>,
         tree: DockState<NHTab>,
     ) -> Self {
         let mut diagram_infos: Vec<_> = inventory::iter::<DiagramInfo>.into_iter().collect();
@@ -1979,7 +1984,15 @@ impl NHApp {
             (diagram_type_hierarchy, diagram_type_creation_data)
         };
 
-        let diagram_settings = diagram_infos.iter().map(|e| (e.type_indentifier, (e.default_settings)())).collect();
+        let diagram_settings = diagram_infos.iter()
+            .map(|e| (
+                e.type_indentifier,
+                diagram_specific_settings
+                    .get(e.type_indentifier)
+                    .and_then(|s| (e.settings_deserializer)(s.clone()).ok())
+                    .unwrap_or_else(|| (e.default_settings)())
+            )).collect();
+
         let diagram_settings_functions = diagram_infos.iter().map(|e| (e.type_indentifier, (e.show_settings_function, e.default_settings))).collect();
         let diagram_deserializers = diagram_infos.iter().map(|e| (e.type_indentifier.to_owned(), e.deserializer)).collect();
 
@@ -2170,6 +2183,12 @@ impl eframe::App for NHApp {
         let shortcuts = self.context.drawing_context.shortcuts.clone();
         let selected_shades_profile = self.context.selected_shades_profile;
         let shades_profiles = self.context.shades_profiles.clone();
+
+        let mut diagram_specific_settings = HashMap::new();
+        for (k, v) in self.context.diagram_settings.iter() {
+            diagram_specific_settings.insert((*k).to_owned(), v.serialize().unwrap());
+        }
+
         let tree = self.tree.filter_tabs(|e| e.is_persistable());
 
         let storable = NHStoredApp {
@@ -2177,6 +2196,7 @@ impl eframe::App for NHApp {
             shortcuts,
             selected_shades_profile,
             shades_profiles,
+            diagram_specific_settings,
             tree,
         };
 

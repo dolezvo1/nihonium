@@ -14,7 +14,7 @@ use super::demopsd_models::{
     DemoPsdDiagram, DemoPsdElement, DemoPsdLink, DemoPsdLinkType, DemoPsdPackage, DemoPsdTransaction, DemoPsdAct, DemoPsdFact,
 };
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::{CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
+use crate::{CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::{egui, epaint};
 use std::any::Any;
 use std::collections::HashSet;
@@ -729,7 +729,13 @@ pub struct DemoPsdSettings {
     palette: RwLock<ToolPalette<DemoPsdToolStage, DemoPsdDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<DemoPsdToolStage, DemoPsdElementView>>,
 }
-impl DiagramSettings for DemoPsdSettings {}
+impl DiagramSettings for DemoPsdSettings {
+    fn serialize(&self) -> Result<toml::Value, ()> {
+        let mut table = toml::Table::new();
+        table.insert("palette".to_owned(), self.palette.read().unwrap().serialize()?.into());
+        Ok(table.into())
+    }
+}
 impl DiagramSettings2<DemoPsdDomain> for DemoPsdSettings {
     fn palette_for_each_mut<F>(&self, f: F)
         where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, DemoPsdToolStage, String, DemoPsdElementView)>))
@@ -813,6 +819,14 @@ fn view_for_stage(s: &DemoPsdToolStage) -> DemoPsdElementView {
     }
 }
 
+pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
+    let toml::Value::Table(value) = value else { return Err(()); };
+    Ok(Box::new(DemoPsdSettings {
+        palette: ToolPalette::deserialize(value.get("palette").unwrap().clone(), view_for_stage)?.into(),
+        palette_edit_buffer: PaletteEditBuffer::None.into(),
+    }))
+}
+
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<DemoPsdSettings>() else { return; };
 
@@ -890,6 +904,7 @@ inventory::submit! {DiagramInfo {
     type_indentifier: "demopsd",
     pretty_name: "Process Structure Diagram",
     default_settings: &(default_settings as DefaultSettingsF),
+    settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
     show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "/Design & Engineering Methodology for Organizations",
@@ -903,7 +918,7 @@ inventory::submit! {DiagramInfo {
 }}
 
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DemoPsdToolStage {
     TransactionStart {
         identifier: String,

@@ -14,7 +14,7 @@ use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::domains::umlclass::umlclass_models::{UmlClassOperation, UmlClassPackageKind, UmlClassProperty, UmlClassVisibilityKind, UmlGeneralization, UmlUseCase, UmlUseCaseGeneralization};
-use crate::{CustomModal, CustomModalResult, CustomTab, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
+use crate::{CustomModal, CustomModalResult, CustomTab, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
 use std::collections::HashSet;
@@ -1114,14 +1114,21 @@ impl CommentIndication {
 }
 
 pub struct UmlClassSettings<P: UmlClassProfile> {
-    comment_indication: CommentIndication,
     palette: RwLock<ToolPalette<UmlClassToolStage, UmlClassDomain<P>>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<UmlClassToolStage, UmlClassElementView<P>>>,
+    comment_indication: CommentIndication,
     instance_buttons: Vec<(&'static str, &'static dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<P>, bool))>,
     class_buttons: Vec<(&'static str, &'static dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<P>, bool))>,
 }
 
-impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {}
+impl<P: UmlClassProfile> DiagramSettings for UmlClassSettings<P> {
+    fn serialize(&self) -> Result<toml::Value, ()> {
+        let mut table = toml::Table::new();
+        table.insert("palette".to_owned(), self.palette.read().unwrap().serialize()?.into());
+        table.insert("comment_indication".to_owned(), toml::Value::try_from(self.comment_indication).map_err(|_| ())?);
+        Ok(table.into())
+    }
+}
 impl<P: UmlClassProfile> DiagramSettings2<UmlClassDomain<P>> for UmlClassSettings<P> {
     fn palette_for_each_mut<F>(&self, f: F)
         where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, UmlClassToolStage, String, UmlClassElementView<P>)>))
@@ -1223,6 +1230,88 @@ fn view_for_stage<P: UmlClassProfile>(s: &UmlClassToolStage) -> UmlClassElementV
     }
 }
 
+
+mod buttons {
+    use super::*;
+    use std::sync::LazyLock;
+    fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
+        let link_type = LinkType::Association {
+            stereotype: "".to_owned(),
+            source_multiplicity: "0..*".to_owned(),
+            target_multiplicity: "1..1".to_owned(),
+        };
+        (
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type,
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    type InstanceButtonF = dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool);
+    pub const INSTANCE_BUTTONS: LazyLock<Vec<(&'static str, &'static InstanceButtonF)>> = LazyLock::new(|| vec![
+        (
+            "↘",
+            &instance_association as &InstanceButtonF,
+        ),
+    ]);
+    fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
+        let link_type = LinkType::Association {
+            stereotype: "".to_owned(),
+            source_multiplicity: "0..*".to_owned(),
+            target_multiplicity: "1..1".to_owned(),
+        };
+        (
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type,
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    fn class_property(_m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
+        let stage = UmlClassToolStage::ClassProperty {
+            name: "property".to_owned(),
+            property_type: "PropertyType".to_owned(),
+            stereotype: "".to_owned(),
+        };
+        (stage.clone(), stage, PartialUmlClassElement::None, false)
+    }
+    fn class_operation(_m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
+        let stage = UmlClassToolStage::ClassOperation {
+            name: "operation".to_owned(),
+            return_type: "ReturnType".to_owned(),
+            stereotype: "".to_owned(),
+        };
+        (stage.clone(), stage, PartialUmlClassElement::None, false)
+    }
+    type ClassButtonF = dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool);
+    pub const CLASS_BUTTONS: LazyLock<Vec<(&'static str, &'static ClassButtonF)>> = LazyLock::new(|| vec![
+        (
+            "↘",
+            &class_association as &ClassButtonF,
+        ),
+        (
+            "P",
+            &class_property as &ClassButtonF,
+        ),
+        (
+            "O",
+            &class_operation as &ClassButtonF,
+        ),
+    ]);
+}
+
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let palette_items = vec![
         ("Elements", vec![
@@ -1293,86 +1382,33 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ]),
     ];
 
-
-    fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
-        let link_type = LinkType::Association {
-            stereotype: "".to_owned(),
-            source_multiplicity: "0..*".to_owned(),
-            target_multiplicity: "1..1".to_owned(),
-        };
-        (
-            UmlClassToolStage::LinkStart {
-                link_type: link_type.clone(),
-            },
-            UmlClassToolStage::LinkEnd,
-            PartialUmlClassElement::Link {
-                link_type,
-                source: m.into(),
-                dest: None,
-            },
-            true,
-        )
-    }
-    let instance_buttons = vec![
-        (
-            "↘",
-            &instance_association as &dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool),
-        ),
-    ];
-    fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
-        let link_type = LinkType::Association {
-            stereotype: "".to_owned(),
-            source_multiplicity: "0..*".to_owned(),
-            target_multiplicity: "1..1".to_owned(),
-        };
-        (
-            UmlClassToolStage::LinkStart {
-                link_type: link_type.clone(),
-            },
-            UmlClassToolStage::LinkEnd,
-            PartialUmlClassElement::Link {
-                link_type,
-                source: m.into(),
-                dest: None,
-            },
-            true,
-        )
-    }
-    fn class_property(_m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
-        let stage = UmlClassToolStage::ClassProperty {
-            name: "property".to_owned(),
-            property_type: "PropertyType".to_owned(),
-            stereotype: "".to_owned(),
-        };
-        (stage.clone(), stage, PartialUmlClassElement::None, false)
-    }
-    fn class_operation(_m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool) {
-        let stage = UmlClassToolStage::ClassOperation {
-            name: "operation".to_owned(),
-            return_type: "ReturnType".to_owned(),
-            stereotype: "".to_owned(),
-        };
-        (stage.clone(), stage, PartialUmlClassElement::None, false)
-    }
-    let class_buttons = vec![
-        (
-            "↘",
-            &class_association as &dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool),
-        ),
-        (
-            "P",
-            &class_property as &dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool),
-        ),
-        (
-            "O",
-            &class_operation as &dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UmlClassNullProfile>, bool),
-        ),
-    ];
-
     default_settings_helper::<UmlClassNullProfile>(
         palette_items,
+        buttons::INSTANCE_BUTTONS.clone(),
+        buttons::CLASS_BUTTONS.clone(),
+    )
+}
+
+pub fn settings_deserializer_helper<P: UmlClassProfile>(
+    value: toml::Value,
+    instance_buttons: Vec<(&'static str, &'static dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<P>, bool))>,
+    class_buttons: Vec<(&'static str, &'static dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<P>, bool))>,
+) -> Result<Box<dyn DiagramSettings>, ()> {
+    let toml::Value::Table(value) = value else { return Err(()); };
+    Ok(Box::new(UmlClassSettings::<P> {
+        palette: ToolPalette::deserialize(value.get("palette").unwrap().clone(), view_for_stage)?.into(),
+        palette_edit_buffer: PaletteEditBuffer::None.into(),
+        comment_indication: value.get("comment_indication").unwrap().clone().try_into().unwrap(),
         instance_buttons,
         class_buttons,
+    }))
+}
+
+pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
+    settings_deserializer_helper(
+        value,
+        buttons::INSTANCE_BUTTONS.clone(),
+        buttons::CLASS_BUTTONS.clone(),
     )
 }
 
@@ -1579,6 +1615,7 @@ inventory::submit! {DiagramInfo {
     type_indentifier: "umlclass",
     pretty_name: "UML Class diagram",
     default_settings: &(default_settings as DefaultSettingsF),
+    settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
     show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "/Unified Modeling Language",
@@ -1592,7 +1629,7 @@ inventory::submit! {DiagramInfo {
 }}
 
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum LinkType {
     Generalization {
         set_name: String,
@@ -1609,7 +1646,7 @@ pub enum LinkType {
     },
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UmlClassToolStage {
     Instance {
         instance_name: String,

@@ -11,7 +11,7 @@ use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
 use crate::domains::network::network_models::{NetworkAssociation, NetworkAssociationArrowheadType, NetworkAssociationLineType, NetworkComment, NetworkContainer, NetworkContainerShapeKind, NetworkDiagram, NetworkElement, NetworkFile, NetworkFileKind, NetworkNode, NetworkNodeKind, NetworkUser, NetworkUserKind};
-use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
+use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
 use std::collections::HashSet;
@@ -541,7 +541,13 @@ pub struct NetworkSettings {
     palette: RwLock<ToolPalette<NetworkToolStage, NetworkDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<NetworkToolStage, NetworkElementView>>,
 }
-impl DiagramSettings for NetworkSettings {}
+impl DiagramSettings for NetworkSettings {
+    fn serialize(&self) -> Result<toml::Value, ()> {
+        let mut table = toml::Table::new();
+        table.insert("palette".to_owned(), self.palette.read().unwrap().serialize()?.into());
+        Ok(table.into())
+    }
+}
 impl DiagramSettings2<NetworkDomain> for NetworkSettings {
     fn palette_for_each_mut<F>(&self, f: F)
         where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, NetworkToolStage, String, NetworkElementView)>))
@@ -673,6 +679,14 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
         NetworkToolStage::AssociationEnd
         | NetworkToolStage::ContainerEnd => unreachable!(),
     }
+}
+
+pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
+    let toml::Value::Table(value) = value else { return Err(()); };
+    Ok(Box::new(NetworkSettings {
+        palette: ToolPalette::deserialize(value.get("palette").unwrap().clone(), view_for_stage)?.into(),
+        palette_edit_buffer: PaletteEditBuffer::None.into(),
+    }))
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
@@ -820,6 +834,7 @@ inventory::submit! {DiagramInfo {
     type_indentifier: "network",
     pretty_name: "Network diagram",
     default_settings: &(default_settings as DefaultSettingsF),
+    settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
     show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "",
@@ -833,7 +848,7 @@ inventory::submit! {DiagramInfo {
 }}
 
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NetworkToolStage {
     Node {
         name: String,

@@ -13,7 +13,7 @@ use super::democsd_models::{
     DemoCsdDiagram, DemoCsdElement, DemoCsdLink, DemoCsdLinkType, DemoCsdPackage, DemoCsdTransaction, DemoCsdTransactor
 };
 use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
-use crate::{CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
+use crate::{CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
 use std::collections::HashSet;
@@ -591,7 +591,13 @@ pub struct DemoCsdSettings {
     palette: RwLock<ToolPalette<DemoCsdToolStage, DemoCsdDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<DemoCsdToolStage, DemoCsdElementView>>,
 }
-impl DiagramSettings for DemoCsdSettings {}
+impl DiagramSettings for DemoCsdSettings {
+    fn serialize(&self) -> Result<toml::Value, ()> {
+        let mut table = toml::Table::new();
+        table.insert("palette".to_owned(), self.palette.read().unwrap().serialize()?.into());
+        Ok(table.into())
+    }
+}
 impl DiagramSettings2<DemoCsdDomain> for DemoCsdSettings {
     fn palette_for_each_mut<F>(&self, f: F)
         where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, DemoCsdToolStage, String, DemoCsdElementView)>)),
@@ -681,6 +687,14 @@ fn view_for_stage(s: &DemoCsdToolStage) -> DemoCsdElementView {
         DemoCsdToolStage::LinkEnd
         | DemoCsdToolStage::PackageEnd => unreachable!(),
     }
+}
+
+pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
+    let toml::Value::Table(value) = value else { return Err(()); };
+    Ok(Box::new(DemoCsdSettings {
+        palette: ToolPalette::deserialize(value.get("palette").unwrap().clone(), view_for_stage)?.into(),
+        palette_edit_buffer: PaletteEditBuffer::None.into(),
+    }))
 }
 
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
@@ -775,6 +789,7 @@ inventory::submit! {DiagramInfo {
     type_indentifier: "democsd",
     pretty_name: "Coordination Structure Diagram",
     default_settings: &(default_settings as DefaultSettingsF),
+    settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
     show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "/Design & Engineering Methodology for Organizations",
@@ -788,14 +803,14 @@ inventory::submit! {DiagramInfo {
 }}
 
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TransactionStageData {
     identifier: String,
     name: String,
     kind: DemoTransactionKind,
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DemoCsdToolStage {
     Transactor {
         identifier: String,

@@ -3,7 +3,7 @@ use super::super::umlclass::{
         umlclass_models::UmlClassDiagram,
         umlclass_controllers::{LinkType, UmlClassDiagramAdapter, UmlClassDomain, UmlClassElementView, UmlClassProfile, UmlClassToolStage, new_umlclass_association, new_umlclass_class, new_umlclass_generalization, new_umlclass_package},
 };
-use crate::{DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF, common::{
+use crate::{DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF, common::{
     controller::{
         BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MGlobalColor, MultiDiagramController, PositionNoT, View
     },
@@ -186,6 +186,64 @@ pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef
     Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<UseCaseProfile>, OntoUmlControllerAdapter, DiagramControllerGen2<UmlClassDomain<UseCaseProfile>, UmlClassDiagramAdapter<UseCaseProfile>>>>(&uuid)?)
 }
 
+mod buttons {
+    use super::*;
+    use std::sync::LazyLock;
+
+    fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool) {
+        let link_type = LinkType::Association {
+            stereotype: "".to_owned(),
+            source_multiplicity: "0..*".to_owned(),
+            target_multiplicity: "1..1".to_owned(),
+        };
+        (
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type,
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    type InstanceButtonF = dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool);
+    pub const INSTANCE_BUTTONS: LazyLock<Vec<(&'static str, &'static InstanceButtonF)>> = LazyLock::new(|| vec![
+        (
+            "↘",
+            &instance_association as &InstanceButtonF,
+        ),
+    ]);
+    fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool) {
+        let link_type = LinkType::Association {
+            stereotype: "".to_owned(),
+            source_multiplicity: "0..*".to_owned(),
+            target_multiplicity: "1..1".to_owned(),
+        };
+        (
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type,
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    type ClassButtonF = dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool);
+    pub const CLASS_BUTTONS: LazyLock<Vec<(&'static str, &'static ClassButtonF)>> = LazyLock::new(|| vec![
+        (
+            "↘",
+            &class_association as &ClassButtonF,
+        ),
+    ]);
+}
+
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let classes = vec![
         (UmlClassToolStage::Class {
@@ -257,62 +315,18 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         ]),
     ];
 
-
-    fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool) {
-        let link_type = LinkType::Association {
-            stereotype: "".to_owned(),
-            source_multiplicity: "0..*".to_owned(),
-            target_multiplicity: "1..1".to_owned(),
-        };
-        (
-            UmlClassToolStage::LinkStart {
-                link_type: link_type.clone(),
-            },
-            UmlClassToolStage::LinkEnd,
-            PartialUmlClassElement::Link {
-                link_type,
-                source: m.into(),
-                dest: None,
-            },
-            true,
-        )
-    }
-    let instance_buttons = vec![
-        (
-            "↘",
-            &instance_association as &dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool),
-        ),
-    ];
-    fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool) {
-        let link_type = LinkType::Association {
-            stereotype: "".to_owned(),
-            source_multiplicity: "0..*".to_owned(),
-            target_multiplicity: "1..1".to_owned(),
-        };
-        (
-            UmlClassToolStage::LinkStart {
-                link_type: link_type.clone(),
-            },
-            UmlClassToolStage::LinkEnd,
-            PartialUmlClassElement::Link {
-                link_type,
-                source: m.into(),
-                dest: None,
-            },
-            true,
-        )
-    }
-    let class_buttons = vec![
-        (
-            "↘",
-            &class_association as &dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool),
-        ),
-    ];
-
     super::super::umlclass::umlclass_controllers::default_settings_helper::<UseCaseProfile>(
         palette_items,
-        instance_buttons,
-        class_buttons,
+        buttons::INSTANCE_BUTTONS.clone(),
+        buttons::CLASS_BUTTONS.clone(),
+    )
+}
+
+pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
+    super::super::umlclass::umlclass_controllers::settings_deserializer_helper::<UseCaseProfile>(
+        value,
+        buttons::INSTANCE_BUTTONS.clone(),
+        buttons::CLASS_BUTTONS.clone(),
     )
 }
 
@@ -324,6 +338,7 @@ inventory::submit! {DiagramInfo {
     type_indentifier: "umlclass-usecase",
     pretty_name: "Use Case diagram",
     default_settings: &(default_settings as DefaultSettingsF),
+    settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
     show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "/Unified Modeling Language",

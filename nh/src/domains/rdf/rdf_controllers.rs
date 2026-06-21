@@ -10,7 +10,7 @@ use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeseria
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
-use crate::{CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
+use crate::{CustomModal, CustomModalResult, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
 use eframe::egui;
 use std::any::Any;
 use std::collections::HashSet;
@@ -532,7 +532,13 @@ pub struct RdfSettings {
     palette: RwLock<ToolPalette<RdfToolStage, RdfDomain>>,
     palette_edit_buffer: RwLock<PaletteEditBuffer<RdfToolStage, RdfElementView>>,
 }
-impl DiagramSettings for RdfSettings {}
+impl DiagramSettings for RdfSettings {
+    fn serialize(&self) -> Result<toml::Value, ()> {
+        let mut table = toml::Table::new();
+        table.insert("palette".to_owned(), self.palette.read().unwrap().serialize()?.into());
+        Ok(table.into())
+    }
+}
 impl DiagramSettings2<RdfDomain> for RdfSettings {
     fn palette_for_each_mut<F>(&self, f: F)
         where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, RdfToolStage, String, RdfElementView)>))
@@ -599,6 +605,14 @@ fn view_for_stage(s: &RdfToolStage) -> RdfElementView {
     }
 }
 
+pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
+    let toml::Value::Table(value) = value else { return Err(()); };
+    Ok(Box::new(RdfSettings {
+        palette: ToolPalette::deserialize(value.get("palette").unwrap().clone(), view_for_stage)?.into(),
+        palette_edit_buffer: PaletteEditBuffer::None.into(),
+    }))
+}
+
 pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
     let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<RdfSettings>() else { return; };
 
@@ -655,6 +669,7 @@ inventory::submit! {DiagramInfo {
     type_indentifier: "rdf",
     pretty_name: "Resource Description Framework",
     default_settings: &(default_settings as DefaultSettingsF),
+    settings_deserializer: &(settings_deserializer as DeserializeSettingsF),
     show_settings_function: &(settings_function as ShowSettingsF),
     diagram_creation_data: DiagramCreationData {
         directory: "",
@@ -671,7 +686,7 @@ inventory::submit! {DiagramInfo {
 }}
 
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum RdfToolStage {
     Literal {
         content: String,
