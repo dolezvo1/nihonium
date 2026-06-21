@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Run from the repo root (handles commits from subdirs)
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+echo "Running cargo fmt --check..."
+if cargo fmt --check; then
+  echo "cargo fmt check passed."
+  exit 0
+else
+  echo "cargo fmt check failed. Commit cancelled."
+  exit 1
+fi
