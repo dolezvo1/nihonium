@@ -1,5 +1,8 @@
 use crate::common::canvas;
-use crate::common::controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement};
+use crate::common::controller::{
+    BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
+    VisitableDiagram, VisitableElement,
+};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::search::FullTextSearchable;
@@ -7,12 +10,16 @@ use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
 use crate::domains::demo::DemoTransactionKind;
 use std::collections::HashSet;
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
+#[derive(
+    Clone,
+    derive_more::From,
+    nh_derive::Model,
+    nh_derive::ContainerModel,
+    nh_derive::FullTextSearchable,
+    nh_derive::NHContextSerDeTag,
+)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = DemoCsdElement, default_passthrough = "none")]
 #[full_text_searchable(default_passthrough = "eref")]
@@ -27,7 +34,10 @@ pub enum DemoCsdElement {
 }
 
 impl VisitableElement for DemoCsdElement {
-    fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
+    fn accept(&self, v: &mut dyn ElementVisitor<Self>)
+    where
+        Self: Sized,
+    {
         match self {
             DemoCsdElement::DemoCsdPackage(inner) => {
                 v.open_complex(self);
@@ -35,7 +45,7 @@ impl VisitableElement for DemoCsdElement {
                     e.accept(v);
                 }
                 v.close_complex(self);
-            },
+            }
             DemoCsdElement::DemoCsdTransactor(inner) => {
                 if let UFOption::Some(t) = &inner.read().transaction {
                     v.open_complex(self);
@@ -50,8 +60,9 @@ impl VisitableElement for DemoCsdElement {
     }
 }
 
-
-pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<ModelUuid, DemoCsdElement>) {
+pub fn deep_copy_diagram(
+    d: &DemoCsdDiagram,
+) -> (ERef<DemoCsdDiagram>, HashMap<ModelUuid, DemoCsdElement>) {
     fn walk(e: &DemoCsdElement, into: &mut HashMap<ModelUuid, DemoCsdElement>) -> DemoCsdElement {
         let new_uuid = ModelUuid::now_v7().into();
         match e {
@@ -61,15 +72,19 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<M
                 let new_model = DemoCsdPackage {
                     uuid: new_uuid,
                     name: model.name.clone(),
-                    contained_elements: model.contained_elements.iter().map(|e| {
-                        let new_model = walk(e, into);
-                        into.insert(*e.uuid(), new_model.clone());
-                        new_model
-                    }).collect(),
-                    comment: model.comment.clone()
+                    contained_elements: model
+                        .contained_elements
+                        .iter()
+                        .map(|e| {
+                            let new_model = walk(e, into);
+                            into.insert(*e.uuid(), new_model.clone());
+                            new_model
+                        })
+                        .collect(),
+                    comment: model.comment.clone(),
                 };
                 DemoCsdElement::DemoCsdPackage(ERef::new(new_model))
-            },
+            }
             DemoCsdElement::DemoCsdTransactor(inner) => {
                 let model = inner.read();
 
@@ -81,17 +96,19 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<M
                     } else {
                         None
                     }
-                } else { None };
+                } else {
+                    None
+                };
                 let new_model = model.clone_with(*new_uuid);
                 new_model.write().transaction = new_tx.into();
                 DemoCsdElement::DemoCsdTransactor(new_model)
-            },
+            }
             DemoCsdElement::DemoCsdTransaction(inner) => {
                 DemoCsdElement::DemoCsdTransaction(inner.read().clone_with(*new_uuid))
-            },
+            }
             DemoCsdElement::DemoCsdLink(inner) => {
                 DemoCsdElement::DemoCsdLink(inner.read().clone_with(*new_uuid))
-            },
+            }
         }
     }
 
@@ -102,14 +119,17 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<M
                 for e in model.contained_elements.iter_mut() {
                     relink(e, all_models);
                 }
-            },
+            }
             DemoCsdElement::DemoCsdTransactor(inner) => {
                 let mut model = inner.write();
                 if let UFOption::Some(ta) = &mut model.transaction {
-                    relink(&mut DemoCsdElement::DemoCsdTransaction(ta.clone()), all_models);
+                    relink(
+                        &mut DemoCsdElement::DemoCsdTransaction(ta.clone()),
+                        all_models,
+                    );
                 }
-            },
-            DemoCsdElement::DemoCsdTransaction(_inner) => {},
+            }
+            DemoCsdElement::DemoCsdTransaction(_inner) => {}
             DemoCsdElement::DemoCsdLink(inner) => {
                 let mut model = inner.write();
 
@@ -121,7 +141,7 @@ pub fn deep_copy_diagram(d: &DemoCsdDiagram) -> (ERef<DemoCsdDiagram>, HashMap<M
                 if let Some(DemoCsdElement::DemoCsdTransaction(tx)) = all_models.get(&target_uuid) {
                     model.target = tx.clone();
                 }
-            },
+            }
         }
     }
 
@@ -160,18 +180,20 @@ fn enumerate_elements(e: &DemoCsdElement, into: &mut HashMap<ModelUuid, DemoCsdE
             for e in &inner.read().contained_elements {
                 enumerate_elements(e, into);
             }
-        },
+        }
         DemoCsdElement::DemoCsdTransactor(inner) => {
             if let UFOption::Some(e) = &inner.read().transaction {
                 enumerate_elements(&e.clone().into(), into);
             }
-        },
-        DemoCsdElement::DemoCsdTransaction(..)
-        | DemoCsdElement::DemoCsdLink(..) => {},
+        }
+        DemoCsdElement::DemoCsdTransaction(..) | DemoCsdElement::DemoCsdLink(..) => {}
     }
 }
 
-pub fn transitive_closure(d: &DemoCsdDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+pub fn transitive_closure(
+    d: &DemoCsdDiagram,
+    mut when_deleting: HashSet<ModelUuid>,
+) -> HashSet<ModelUuid> {
     for e in &d.contained_elements {
         fn walk(e: &DemoCsdElement, when_deleting: &mut HashSet<ModelUuid>) {
             match e {
@@ -186,7 +208,7 @@ pub fn transitive_closure(d: &DemoCsdDiagram, mut when_deleting: HashSet<ModelUu
                             walk(e, when_deleting);
                         }
                     }
-                },
+                }
                 DemoCsdElement::DemoCsdTransactor(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
@@ -198,9 +220,8 @@ pub fn transitive_closure(d: &DemoCsdDiagram, mut when_deleting: HashSet<ModelUu
                             walk(&e.clone().into(), when_deleting);
                         }
                     }
-                },
-                DemoCsdElement::DemoCsdTransaction(..)
-                | DemoCsdElement::DemoCsdLink(..) => {},
+                }
+                DemoCsdElement::DemoCsdTransaction(..) | DemoCsdElement::DemoCsdLink(..) => {}
             }
         }
         walk(e, &mut when_deleting);
@@ -208,23 +229,27 @@ pub fn transitive_closure(d: &DemoCsdDiagram, mut when_deleting: HashSet<ModelUu
 
     let mut also_delete = HashSet::new();
     loop {
-        fn walk(e: &DemoCsdElement, when_deleting: &HashSet<ModelUuid>, also_delete: &mut HashSet<ModelUuid>) {
+        fn walk(
+            e: &DemoCsdElement,
+            when_deleting: &HashSet<ModelUuid>,
+            also_delete: &mut HashSet<ModelUuid>,
+        ) {
             match e {
                 DemoCsdElement::DemoCsdPackage(inner) => {
                     for e in &inner.read().contained_elements {
                         walk(e, when_deleting, also_delete);
                     }
-                },
-                DemoCsdElement::DemoCsdTransactor(..)
-                | DemoCsdElement::DemoCsdTransaction(..) => {},
+                }
+                DemoCsdElement::DemoCsdTransactor(..) | DemoCsdElement::DemoCsdTransaction(..) => {}
                 DemoCsdElement::DemoCsdLink(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.read().uuid)
-                            || when_deleting.contains(&r.target.read().uuid)) {
+                            || when_deleting.contains(&r.target.read().uuid))
+                    {
                         also_delete.insert(*r.uuid);
                     }
-                },
+                }
             }
         }
         for e in &d.contained_elements {
@@ -253,11 +278,7 @@ pub struct DemoCsdDiagram {
 }
 
 impl DemoCsdDiagram {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        contained_elements: Vec<DemoCsdElement>,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<DemoCsdElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
@@ -266,11 +287,16 @@ impl DemoCsdDiagram {
         }
     }
 
-    pub fn get_element_pos_in(&self, parent: &ModelUuid, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+    pub fn get_element_pos_in(
+        &self,
+        parent: &ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
         if *parent == *self.uuid {
             self.get_element_pos(uuid)
         } else {
-            self.find_element(parent).and_then(|e| e.0.get_element_pos(uuid))
+            self.find_element(parent)
+                .and_then(|e| e.0.get_element_pos(uuid))
         }
     }
 }
@@ -319,12 +345,19 @@ impl ContainerModel for DemoCsdDiagram {
         }
         return None;
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoCsdElement) -> Result<PositionNoT, DemoCsdElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoCsdElement,
+    ) -> Result<PositionNoT, DemoCsdElement> {
         if bucket != 0 {
             return Err(element);
         }
 
-        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos.into(), element);
         Ok(pos.try_into().unwrap())
     }
@@ -343,11 +376,7 @@ impl FullTextSearchable for DemoCsdDiagram {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.comment,
-            ],
+            &[&self.uuid.to_string(), &self.name, &self.comment],
         );
 
         for e in &self.contained_elements {
@@ -370,11 +399,7 @@ pub struct DemoCsdPackage {
 }
 
 impl DemoCsdPackage {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        contained_elements: Vec<DemoCsdElement>,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<DemoCsdElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
@@ -426,12 +451,19 @@ impl ContainerModel for DemoCsdPackage {
         }
         return None;
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoCsdElement) -> Result<PositionNoT, DemoCsdElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoCsdElement,
+    ) -> Result<PositionNoT, DemoCsdElement> {
         if bucket != 0 {
             return Err(element);
         }
 
-        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
         Ok(pos.try_into().unwrap())
     }
@@ -450,11 +482,7 @@ impl FullTextSearchable for DemoCsdPackage {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.comment,
-            ],
+            &[&self.uuid.to_string(), &self.name, &self.comment],
         );
 
         for e in &self.contained_elements {
@@ -534,20 +562,29 @@ impl ContainerModel for DemoCsdTransactor {
     type ElementT = DemoCsdElement;
 
     fn find_element(&self, uuid: &ModelUuid) -> Option<(DemoCsdElement, ModelUuid)> {
-        if let UFOption::Some(e) = &self.transaction && *e.read().uuid() == *uuid {
+        if let UFOption::Some(e) = &self.transaction
+            && *e.read().uuid() == *uuid
+        {
             Some((e.clone().into(), *self.uuid))
         } else {
             None
         }
     }
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        if let UFOption::Some(e) = &self.transaction && *e.read().uuid == *uuid {
+        if let UFOption::Some(e) = &self.transaction
+            && *e.read().uuid == *uuid
+        {
             Some((0, 0))
         } else {
             None
         }
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoCsdElement) -> Result<PositionNoT, DemoCsdElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoCsdElement,
+    ) -> Result<PositionNoT, DemoCsdElement> {
         if bucket != 0 || position.unwrap_or(0) != 0 || self.transaction.is_some() {
             return Err(element);
         }
@@ -558,7 +595,9 @@ impl ContainerModel for DemoCsdTransactor {
         Ok(0)
     }
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
-        if let UFOption::Some(tx) = &self.transaction && *tx.read().uuid == *uuid {
+        if let UFOption::Some(tx) = &self.transaction
+            && *tx.read().uuid == *uuid
+        {
             self.transaction = UFOption::None;
             Some((0, 0))
         } else {
@@ -587,7 +626,9 @@ impl FullTextSearchable for DemoCsdTransactor {
 
 // ---
 
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct DemoCsdTransaction {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -604,7 +645,13 @@ pub struct DemoCsdTransaction {
 }
 
 impl DemoCsdTransaction {
-    pub fn new(uuid: ModelUuid, kind: DemoTransactionKind, identifier: String, name: String, multiple: bool) -> Self {
+    pub fn new(
+        uuid: ModelUuid,
+        kind: DemoTransactionKind,
+        identifier: String,
+        name: String,
+        multiple: bool,
+    ) -> Self {
         Self {
             uuid: Arc::new(uuid),
 
@@ -737,11 +784,7 @@ impl FullTextSearchable for DemoCsdLink {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.multiplicity,
-                &self.comment,
-            ],
+            &[&self.uuid.to_string(), &self.multiplicity, &self.comment],
         );
     }
 }

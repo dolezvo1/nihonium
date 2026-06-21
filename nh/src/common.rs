@@ -1,11 +1,11 @@
 pub mod canvas;
 pub mod controller;
-pub mod fluent;
-pub mod project_serde;
-pub mod uuid;
-pub mod views;
-pub mod ufoption;
 pub mod entity;
 pub mod eref;
+pub mod fluent;
+pub mod project_serde;
 pub mod search;
+pub mod ufoption;
 pub mod ui_ext;
+pub mod uuid;
+pub mod views;

@@ -1,17 +1,32 @@
-
 use crate::common::canvas::{self, NHCanvas, NHShape};
 use crate::common::controller::{
-    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette, TryMerge, View
+    BucketNoT, ColorBundle, ColorChangeData, ContainerModel, ControllerAdapter, DiagramAdapter,
+    DiagramController, DiagramControllerGen2, DiagramSettings, DiagramSettings2, Domain,
+    ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus,
+    GenericQueryable, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider,
+    MGlobalColor, Model, MultiDiagramController, PaletteEditBuffer, PositionNoT, ProjectCommand,
+    PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, ToolPalette,
+    TryMerge, View,
 };
-use crate::common::ui_ext::UiExt;
-use crate::common::views::package_view::{PackageAdapter, PackageView};
-use crate::common::views::multiconnection_view::{self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView, VertexInformation};
-use crate::common::project_serde::{NHDeserializer, NHDeserializeError, NHDeserializeInstantiator};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
+use crate::common::project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer};
+use crate::common::ui_ext::UiExt;
 use crate::common::uuid::{ControllerUuid, ModelUuid, ViewUuid};
-use crate::domains::network::network_models::{NetworkAssociation, NetworkAssociationArrowheadType, NetworkAssociationLineType, NetworkComment, NetworkContainer, NetworkContainerShapeKind, NetworkDiagram, NetworkElement, NetworkFile, NetworkFileKind, NetworkNode, NetworkNodeKind, NetworkUser, NetworkUserKind};
-use crate::{CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF};
+use crate::common::views::multiconnection_view::{
+    self, ArrowData, Ending, FlipMulticonnection, MulticonnectionAdapter, MulticonnectionView,
+    VertexInformation,
+};
+use crate::common::views::package_view::{PackageAdapter, PackageView};
+use crate::domains::network::network_models::{
+    NetworkAssociation, NetworkAssociationArrowheadType, NetworkAssociationLineType,
+    NetworkComment, NetworkContainer, NetworkContainerShapeKind, NetworkDiagram, NetworkElement,
+    NetworkFile, NetworkFileKind, NetworkNode, NetworkNodeKind, NetworkUser, NetworkUserKind,
+};
+use crate::{
+    CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
+    DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF,
+};
 use eframe::egui;
 use std::any::Any;
 use std::collections::HashSet;
@@ -73,8 +88,10 @@ impl Debug for NetworkPropChange {
                 Self::FileKindChange(_kind) => format!("FileKindChange(..)"),
 
                 Self::AssociationLineTypeChange(_) => format!("AssociationLineTypeChange(..)"),
-                Self::AssociationArrowheadTypeChange(..) => format!("AssociationArrowheadTypeChange(..)"),
-                Self::AssociationMultiplicityChange(..) => format!("AssociationMultiplicityChange(..)"),
+                Self::AssociationArrowheadTypeChange(..) =>
+                    format!("AssociationArrowheadTypeChange(..)"),
+                Self::AssociationMultiplicityChange(..) =>
+                    format!("AssociationMultiplicityChange(..)"),
                 Self::AssociationRoleChange(..) => format!("AssociationRoleChange(..)"),
                 Self::AssociationReadingChange(..) => format!("AssociationReadingChange(..)"),
                 Self::FlipMulticonnection(_) => format!("FlipMulticonnection"),
@@ -115,16 +132,23 @@ impl TryFrom<NetworkPropChange> for ColorChangeData {
 }
 
 impl TryMerge for NetworkPropChange {
-    fn try_merge(&self, newer: &Self) -> Option<Self> where Self: Sized {
+    fn try_merge(&self, newer: &Self) -> Option<Self>
+    where
+        Self: Sized,
+    {
         match (self, newer) {
             (Self::NameChange(_), newer @ Self::NameChange(_))
-            | (Self::CommentChange(_), newer @ Self::CommentChange(_))
-                => Some(newer.clone()),
-            (Self::AssociationMultiplicityChange(b1, _), newer @ Self::AssociationMultiplicityChange(b2, _))
+            | (Self::CommentChange(_), newer @ Self::CommentChange(_)) => Some(newer.clone()),
+            (
+                Self::AssociationMultiplicityChange(b1, _),
+                newer @ Self::AssociationMultiplicityChange(b2, _),
+            )
             | (Self::AssociationRoleChange(b1, _), newer @ Self::AssociationRoleChange(b2, _))
-            | (Self::AssociationReadingChange(b1, _), newer @ Self::AssociationReadingChange(b2, _))
-                if b1 == b2 => Some(newer.clone()),
-            _ => None
+            | (
+                Self::AssociationReadingChange(b1, _),
+                newer @ Self::AssociationReadingChange(b2, _),
+            ) if b1 == b2 => Some(newer.clone()),
+            _ => None,
         }
     }
 }
@@ -153,7 +177,6 @@ pub enum NetworkElementView {
     Comment(ERef<NetworkCommentView>),
 }
 
-
 #[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 pub struct NetworkControllerAdapter {
     #[nh_context_serde(entity)]
@@ -177,15 +200,31 @@ impl ControllerAdapter<NetworkDomain> for NetworkControllerAdapter {
         super::network_models::transitive_closure(&self.model.read(), when_deleting)
     }
 
-    fn insert_element(&mut self, parent: ModelUuid, element: NetworkElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
-        self.model.write().insert_element_into(parent, element, b, p)
+    fn insert_element(
+        &mut self,
+        parent: ModelUuid,
+        element: NetworkElement,
+        b: BucketNoT,
+        p: Option<PositionNoT>,
+    ) -> Result<(), ()> {
+        self.model
+            .write()
+            .insert_element_into(parent, element, b, p)
     }
 
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, NetworkElement, BucketNoT, PositionNoT)>) {
+    fn delete_elements(
+        &mut self,
+        uuids: &HashSet<ModelUuid>,
+        undo: &mut Vec<(ModelUuid, NetworkElement, BucketNoT, PositionNoT)>,
+    ) {
         self.model.write().delete_elements(uuids, undo)
     }
 
-    fn show_add_shared_diagram_menu(&self, _gdc: &GlobalDrawingContext, ui: &mut egui::Ui) -> Option<ERef<Self::DiagramViewT>> {
+    fn show_add_shared_diagram_menu(
+        &self,
+        _gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) -> Option<ERef<Self::DiagramViewT>> {
         if ui.button("Network Diagram").clicked() {
             return Some(Self::DiagramViewT::new(
                 ViewUuid::now_v7().into(),
@@ -198,8 +237,9 @@ impl ControllerAdapter<NetworkDomain> for NetworkControllerAdapter {
     }
 }
 
-
-#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 pub struct NetworkDiagramAdapter {
     #[nh_context_serde(entity)]
     model: ERef<NetworkDiagram>,
@@ -218,7 +258,7 @@ struct NetworkDiagramBuffer {
 impl NetworkDiagramAdapter {
     fn new(model: ERef<NetworkDiagram>) -> Self {
         let m = model.read();
-         Self {
+        Self {
             model: model.clone(),
             background_color: MGlobalColor::None,
             buffer: NetworkDiagramBuffer {
@@ -240,7 +280,11 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
         self.model.read().name.clone()
     }
 
-    fn get_element_pos_in(&self, parent: &ModelUuid, model_uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+    fn get_element_pos_in(
+        &self,
+        parent: &ModelUuid,
+        model_uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
         self.model.read().get_element_pos_in(parent, model_uuid)
     }
 
@@ -250,66 +294,62 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
         element: NetworkElement,
     ) -> Result<NetworkElementView, HashSet<ModelUuid>> {
         let v = match element {
-            NetworkElement::Container(inner) => {
-                new_network_container_view(
-                    inner,
-                    egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 100.0) },
-                ).into()
-            },
-            NetworkElement::Node(inner) => {
-                new_network_node_view(inner, egui::Pos2::ZERO).into()
-            },
+            NetworkElement::Container(inner) => new_network_container_view(
+                inner,
+                egui::Rect {
+                    min: egui::Pos2::ZERO,
+                    max: egui::Pos2::new(100.0, 100.0),
+                },
+            )
+            .into(),
+            NetworkElement::Node(inner) => new_network_node_view(inner, egui::Pos2::ZERO).into(),
             NetworkElement::User(inner) => {
-                new_network_user_view(
-                    inner,
-                    egui::Pos2::ZERO,
-                    MGlobalColor::None,
-                ).into()
-            },
+                new_network_user_view(inner, egui::Pos2::ZERO, MGlobalColor::None).into()
+            }
             NetworkElement::File(inner) => {
-                new_network_file_view(
-                    inner,
-                    egui::Pos2::ZERO,
-                    MGlobalColor::None,
-                ).into()
+                new_network_file_view(inner, egui::Pos2::ZERO, MGlobalColor::None).into()
             }
             NetworkElement::Association(inner) => {
                 let m = inner.read();
                 let (sid, tid) = (*m.source.uuid(), *m.target.uuid());
-                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid)) {
+                let (source_view, target_view) = match (q.get_view_for(&sid), q.get_view_for(&tid))
+                {
                     (Some(sv), Some(tv)) => (sv, tv),
                     _ => return Err(HashSet::from([sid, tid])),
                 };
-                new_network_association_view(
-                    inner.clone(),
-                    source_view,
-                    target_view,
-                ).into()
-            },
+                new_network_association_view(inner.clone(), source_view, target_view).into()
+            }
             NetworkElement::Comment(inner) => {
-                new_network_comment_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER).into()
-            },
+                new_network_comment_view(inner, egui::Pos2::ZERO, egui::Align2::CENTER_CENTER)
+                    .into()
+            }
         };
 
         Ok(v)
     }
     fn label_for(&self, e: &NetworkElement) -> Arc<String> {
         match e {
-            NetworkElement::Container(inner) => {
-                format!("Container ({})", LabelProvider::filter_and_elipsis(&inner.read().name)).into()
-            },
-            NetworkElement::Node(inner) => {
-                format!("Node ({})", LabelProvider::filter_and_elipsis(&inner.read().name)).into()
-            },
-            NetworkElement::User(inner) => {
-                format!("User ({})", LabelProvider::filter_and_elipsis(&inner.read().name)).into()
-            },
-            NetworkElement::File(inner) => {
-                format!("File ({})", LabelProvider::filter_and_elipsis(&inner.read().name)).into()
-            },
-            NetworkElement::Association(_inner) => {
-                "Association".to_owned().into()
-            },
+            NetworkElement::Container(inner) => format!(
+                "Container ({})",
+                LabelProvider::filter_and_elipsis(&inner.read().name)
+            )
+            .into(),
+            NetworkElement::Node(inner) => format!(
+                "Node ({})",
+                LabelProvider::filter_and_elipsis(&inner.read().name)
+            )
+            .into(),
+            NetworkElement::User(inner) => format!(
+                "User ({})",
+                LabelProvider::filter_and_elipsis(&inner.read().name)
+            )
+            .into(),
+            NetworkElement::File(inner) => format!(
+                "File ({})",
+                LabelProvider::filter_and_elipsis(&inner.read().name)
+            )
+            .into(),
+            NetworkElement::Association(_inner) => "Association".to_owned().into(),
             NetworkElement::Comment(inner) => {
                 let r = inner.read();
                 let s = if r.text.is_empty() {
@@ -318,12 +358,14 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
                     format!("Comment ({})", LabelProvider::filter_and_elipsis(&r.text))
                 };
                 Arc::new(s)
-            },
+            }
         }
     }
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
-        global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE)
+        global_colors
+            .get(&self.background_color)
+            .unwrap_or(egui::Color32::WHITE)
     }
     fn gridlines_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
         egui::Color32::from_rgb(220, 220, 220)
@@ -333,7 +375,9 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
         view_uuid: &ViewUuid,
         drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) {
         ui.label("Background color:");
         if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
@@ -352,34 +396,42 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
         view_uuid: &ViewUuid,
         _drawing_context: &GlobalDrawingContext,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) {
-        if ui.labeled_text_edit_singleline("Name:", &mut self.buffer.name).changed() {
-            commands.push(
-                InsensitiveCommand::PropertyChange(
-                    std::iter::once(*view_uuid).collect(),
-                    NetworkPropChange::NameChange(Arc::new(self.buffer.name.clone())),
-                ),
-            );
+        if ui
+            .labeled_text_edit_singleline("Name:", &mut self.buffer.name)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                std::iter::once(*view_uuid).collect(),
+                NetworkPropChange::NameChange(Arc::new(self.buffer.name.clone())),
+            ));
         };
 
-        if ui.labeled_text_edit_multiline("Comment:", &mut self.buffer.comment).changed() {
-            commands.push(
-                InsensitiveCommand::PropertyChange(
-                    std::iter::once(*view_uuid).collect(),
-                    NetworkPropChange::CommentChange(Arc::new(
-                        self.buffer.comment.clone(),
-                    )),
-                ),
-            );
+        if ui
+            .labeled_text_edit_multiline("Comment:", &mut self.buffer.comment)
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                std::iter::once(*view_uuid).collect(),
+                NetworkPropChange::CommentChange(Arc::new(self.buffer.comment.clone())),
+            ));
         }
     }
 
     fn apply_property_change_fun(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<
+            NetworkOrdinalMovement,
+            NetworkElementOrVertex,
+            NetworkPropChange,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -394,7 +446,10 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
                 NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
-                        NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                        NetworkPropChange::ColorChange(ColorChangeData {
+                            slot: 0,
+                            color: self.background_color,
+                        }),
                     ));
                     self.background_color = *color;
                 }
@@ -420,7 +475,8 @@ impl DiagramAdapter<NetworkDomain> for NetworkDiagramAdapter {
         _view_uuid: &ViewUuid,
         _ui: &mut egui::Ui,
         _commands: &mut Vec<ProjectCommand>,
-    ) {}
+    ) {
+    }
 
     fn deep_copy(&self) -> (Self, HashMap<ModelUuid, NetworkElement>) {
         let (new_model, models) = super::network_models::deep_copy_diagram(&self.model.read());
@@ -447,20 +503,18 @@ fn new_controlller(
     let uuid = ViewUuid::now_v7();
     (
         uuid,
-        ERef::new(
-            MultiDiagramController::new(
-                ControllerUuid::now_v7(),
-                NetworkControllerAdapter { model: model.clone() },
-                vec![
-                    DiagramControllerGen2::new(
-                        uuid.into(),
-                        name.into(),
-                        NetworkDiagramAdapter::new(model),
-                        elements,
-                    )
-                ]
-            )
-        )
+        ERef::new(MultiDiagramController::new(
+            ControllerUuid::now_v7(),
+            NetworkControllerAdapter {
+                model: model.clone(),
+            },
+            vec![DiagramControllerGen2::new(
+                uuid.into(),
+                name.into(),
+                NetworkDiagramAdapter::new(model),
+                elements,
+            )],
+        )),
     )
 }
 
@@ -476,10 +530,26 @@ pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let (internet, internet_view) = new_network_node("Cloud", NetworkNodeKind::Cloud, egui::Pos2::new(200.0, 200.0));
-    let (router, router_view) = new_network_node("Router", NetworkNodeKind::Router, egui::Pos2::new(300.0, 400.0));
-    let (swtch, swtch_view) = new_network_node("Switch", NetworkNodeKind::Switch, egui::Pos2::new(400.0, 200.0));
-    let (workstation, workstation_view) = new_network_node("Workstation", NetworkNodeKind::Workstation, egui::Pos2::new(500.0, 400.0));
+    let (internet, internet_view) = new_network_node(
+        "Cloud",
+        NetworkNodeKind::Cloud,
+        egui::Pos2::new(200.0, 200.0),
+    );
+    let (router, router_view) = new_network_node(
+        "Router",
+        NetworkNodeKind::Router,
+        egui::Pos2::new(300.0, 400.0),
+    );
+    let (swtch, swtch_view) = new_network_node(
+        "Switch",
+        NetworkNodeKind::Switch,
+        egui::Pos2::new(400.0, 200.0),
+    );
+    let (workstation, workstation_view) = new_network_node(
+        "Workstation",
+        NetworkNodeKind::Workstation,
+        egui::Pos2::new(500.0, 400.0),
+    );
     let (user, user_view) = new_network_user(
         "User",
         NetworkUserKind::Normal,
@@ -493,11 +563,41 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         MGlobalColor::None,
     );
 
-    let (e1, e1_view) = new_network_association(NetworkAssociationLineType::Solid, (internet.clone().into(), internet_view.clone().into()), NetworkAssociationArrowheadType::None, (router.clone().into(), router_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
-    let (e2, e2_view) = new_network_association(NetworkAssociationLineType::Solid, (router.clone().into(), router_view.clone().into()), NetworkAssociationArrowheadType::None, (swtch.clone().into(), swtch_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
-    let (e3, e3_view) = new_network_association(NetworkAssociationLineType::Solid, (swtch.clone().into(), swtch_view.clone().into()), NetworkAssociationArrowheadType::None, (workstation.clone().into(), workstation_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
-    let (e4, e4_view) = new_network_association(NetworkAssociationLineType::Solid, (workstation.clone().into(), workstation_view.clone().into()), NetworkAssociationArrowheadType::None, (file.clone().into(), file_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
-    let (e5, e5_view) = new_network_association(NetworkAssociationLineType::Dashed, (user.clone().into(), user_view.clone().into()), NetworkAssociationArrowheadType::None, (file.clone().into(), file_view.clone().into()), NetworkAssociationArrowheadType::OpenTriangle);
+    let (e1, e1_view) = new_network_association(
+        NetworkAssociationLineType::Solid,
+        (internet.clone().into(), internet_view.clone().into()),
+        NetworkAssociationArrowheadType::None,
+        (router.clone().into(), router_view.clone().into()),
+        NetworkAssociationArrowheadType::OpenTriangle,
+    );
+    let (e2, e2_view) = new_network_association(
+        NetworkAssociationLineType::Solid,
+        (router.clone().into(), router_view.clone().into()),
+        NetworkAssociationArrowheadType::None,
+        (swtch.clone().into(), swtch_view.clone().into()),
+        NetworkAssociationArrowheadType::OpenTriangle,
+    );
+    let (e3, e3_view) = new_network_association(
+        NetworkAssociationLineType::Solid,
+        (swtch.clone().into(), swtch_view.clone().into()),
+        NetworkAssociationArrowheadType::None,
+        (workstation.clone().into(), workstation_view.clone().into()),
+        NetworkAssociationArrowheadType::OpenTriangle,
+    );
+    let (e4, e4_view) = new_network_association(
+        NetworkAssociationLineType::Solid,
+        (workstation.clone().into(), workstation_view.clone().into()),
+        NetworkAssociationArrowheadType::None,
+        (file.clone().into(), file_view.clone().into()),
+        NetworkAssociationArrowheadType::OpenTriangle,
+    );
+    let (e5, e5_view) = new_network_association(
+        NetworkAssociationLineType::Dashed,
+        (user.clone().into(), user_view.clone().into()),
+        NetworkAssociationArrowheadType::None,
+        (file.clone().into(), file_view.clone().into()),
+        NetworkAssociationArrowheadType::OpenTriangle,
+    );
 
     let name = format!("Demo Network diagram {}", no);
     let diagram = ERef::new(NetworkDiagram::new(
@@ -517,25 +617,35 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             e5.into(),
         ],
     ));
-    new_controlller(diagram, name, vec![
-        internet_view.into(),
-        router_view.into(),
-        swtch_view.into(),
-        workstation_view.into(),
-        user_view.into(),
-        file_view.into(),
-        e1_view.into(),
-        e2_view.into(),
-        e3_view.into(),
-        e4_view.into(),
-        e5_view.into(),
-    ])
+    new_controlller(
+        diagram,
+        name,
+        vec![
+            internet_view.into(),
+            router_view.into(),
+            swtch_view.into(),
+            workstation_view.into(),
+            user_view.into(),
+            file_view.into(),
+            e1_view.into(),
+            e2_view.into(),
+            e3_view.into(),
+            e4_view.into(),
+            e5_view.into(),
+        ],
+    )
 }
 
-pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<MultiDiagramController<NetworkDomain, NetworkControllerAdapter, DiagramControllerGen2<NetworkDomain, NetworkDiagramAdapter>>>(&uuid)?)
+pub fn deserializer(
+    uuid: ControllerUuid,
+    d: &mut NHDeserializer,
+) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
+    Ok(d.get_entity::<MultiDiagramController<
+        NetworkDomain,
+        NetworkControllerAdapter,
+        DiagramControllerGen2<NetworkDomain, NetworkDiagramAdapter>,
+    >>(&uuid)?)
 }
-
 
 pub struct NetworkSettings {
     palette: RwLock<ToolPalette<NetworkToolStage, NetworkDomain>>,
@@ -544,13 +654,23 @@ pub struct NetworkSettings {
 impl DiagramSettings for NetworkSettings {
     fn serialize(&self) -> Result<toml::Value, ()> {
         let mut table = toml::Table::new();
-        table.insert("palette".to_owned(), self.palette.read().unwrap().serialize()?.into());
+        table.insert(
+            "palette".to_owned(),
+            self.palette.read().unwrap().serialize()?.into(),
+        );
         Ok(table.into())
     }
 }
 impl DiagramSettings2<NetworkDomain> for NetworkSettings {
     fn palette_for_each_mut<F>(&self, f: F)
-        where F: FnMut(&mut (uuid::Uuid, String, Vec<(uuid::Uuid, NetworkToolStage, String, NetworkElementView)>))
+    where
+        F: FnMut(
+            &mut (
+                uuid::Uuid,
+                String,
+                Vec<(uuid::Uuid, NetworkToolStage, String, NetworkElementView)>,
+            ),
+        ),
     {
         self.palette.write().unwrap().for_each_mut(f);
     }
@@ -558,81 +678,148 @@ impl DiagramSettings2<NetworkDomain> for NetworkSettings {
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let palette_items = vec![
-        ("Nodes", vec![
-            (NetworkToolStage::Node {
-                name: "Workstation".to_owned(),
-                kind: NetworkNodeKind::Workstation,
-            }, "Workstation"),
-            (NetworkToolStage::Node {
-                name: "Laptop".to_owned(),
-                kind: NetworkNodeKind::Laptop,
-            }, "Laptop"),
-            (NetworkToolStage::Node {
-                name: "Router".to_owned(),
-                kind: NetworkNodeKind::Router,
-            }, "Router"),
-            (NetworkToolStage::Node {
-                name: "Switch".to_owned(),
-                kind: NetworkNodeKind::Switch,
-            }, "Switch"),
-        ]),
-        ("Users", vec![
-            (NetworkToolStage::User {
-                name: "User".to_owned(),
-                kind: NetworkUserKind::Normal,
-                background_color: MGlobalColor::None,
-            }, "User"),
-            (NetworkToolStage::User {
-                name: "Developer".to_owned(),
-                kind: NetworkUserKind::Developer,
-                background_color: MGlobalColor::None,
-            }, "Developer"),
-            (NetworkToolStage::User {
-                name: "Audit".to_owned(),
-                kind: NetworkUserKind::Audit,
-                background_color: MGlobalColor::None,
-            }, "Audit"),
-            (NetworkToolStage::User {
-                name: "Black Hat".to_owned(),
-                kind: NetworkUserKind::BlackHat,
-                background_color: MGlobalColor::None,
-            }, "Black Hat"),
-        ]),
-        ("Files", vec![
-            (NetworkToolStage::File {
-                name: "File".to_owned(),
-                kind: NetworkFileKind::Unspecified,
-                background_color: MGlobalColor::None,
-            }, "File"),
-        ]),
-        ("Relationships", vec![
-            (NetworkToolStage::AssociationStart {
-                line_type: NetworkAssociationLineType::Solid,
-                source_arrowhead: NetworkAssociationArrowheadType::None,
-                target_arrowhead: NetworkAssociationArrowheadType::None,
-            }, "Association (solid)"),
-            (NetworkToolStage::AssociationStart {
-                line_type: NetworkAssociationLineType::Solid,
-                source_arrowhead: NetworkAssociationArrowheadType::None,
-                target_arrowhead: NetworkAssociationArrowheadType::OpenTriangle,
-            }, "Association (solid, arrow)"),
-            (NetworkToolStage::AssociationStart {
-                line_type: NetworkAssociationLineType::Dashed,
-                source_arrowhead: NetworkAssociationArrowheadType::None,
-                target_arrowhead: NetworkAssociationArrowheadType::None,
-            }, "Association (dashed)"),
-        ]),
-        ("Other", vec![
-            (NetworkToolStage::ContainerStart { name: "Subnet".to_owned() }, "Container"),
-            (NetworkToolStage::Comment {
-                text: "a comment".to_owned(),
-                align: egui::Align2::CENTER_CENTER,
-            }, "Comment"),
-        ]),
-    ].into_iter().map(|e| (e.0, e.1.into_iter().map(|e| {
-        let v = view_for_stage(&e.0);
-        (e.0, e.1, v)
-    }).collect())).collect();
+        (
+            "Nodes",
+            vec![
+                (
+                    NetworkToolStage::Node {
+                        name: "Workstation".to_owned(),
+                        kind: NetworkNodeKind::Workstation,
+                    },
+                    "Workstation",
+                ),
+                (
+                    NetworkToolStage::Node {
+                        name: "Laptop".to_owned(),
+                        kind: NetworkNodeKind::Laptop,
+                    },
+                    "Laptop",
+                ),
+                (
+                    NetworkToolStage::Node {
+                        name: "Router".to_owned(),
+                        kind: NetworkNodeKind::Router,
+                    },
+                    "Router",
+                ),
+                (
+                    NetworkToolStage::Node {
+                        name: "Switch".to_owned(),
+                        kind: NetworkNodeKind::Switch,
+                    },
+                    "Switch",
+                ),
+            ],
+        ),
+        (
+            "Users",
+            vec![
+                (
+                    NetworkToolStage::User {
+                        name: "User".to_owned(),
+                        kind: NetworkUserKind::Normal,
+                        background_color: MGlobalColor::None,
+                    },
+                    "User",
+                ),
+                (
+                    NetworkToolStage::User {
+                        name: "Developer".to_owned(),
+                        kind: NetworkUserKind::Developer,
+                        background_color: MGlobalColor::None,
+                    },
+                    "Developer",
+                ),
+                (
+                    NetworkToolStage::User {
+                        name: "Audit".to_owned(),
+                        kind: NetworkUserKind::Audit,
+                        background_color: MGlobalColor::None,
+                    },
+                    "Audit",
+                ),
+                (
+                    NetworkToolStage::User {
+                        name: "Black Hat".to_owned(),
+                        kind: NetworkUserKind::BlackHat,
+                        background_color: MGlobalColor::None,
+                    },
+                    "Black Hat",
+                ),
+            ],
+        ),
+        (
+            "Files",
+            vec![(
+                NetworkToolStage::File {
+                    name: "File".to_owned(),
+                    kind: NetworkFileKind::Unspecified,
+                    background_color: MGlobalColor::None,
+                },
+                "File",
+            )],
+        ),
+        (
+            "Relationships",
+            vec![
+                (
+                    NetworkToolStage::AssociationStart {
+                        line_type: NetworkAssociationLineType::Solid,
+                        source_arrowhead: NetworkAssociationArrowheadType::None,
+                        target_arrowhead: NetworkAssociationArrowheadType::None,
+                    },
+                    "Association (solid)",
+                ),
+                (
+                    NetworkToolStage::AssociationStart {
+                        line_type: NetworkAssociationLineType::Solid,
+                        source_arrowhead: NetworkAssociationArrowheadType::None,
+                        target_arrowhead: NetworkAssociationArrowheadType::OpenTriangle,
+                    },
+                    "Association (solid, arrow)",
+                ),
+                (
+                    NetworkToolStage::AssociationStart {
+                        line_type: NetworkAssociationLineType::Dashed,
+                        source_arrowhead: NetworkAssociationArrowheadType::None,
+                        target_arrowhead: NetworkAssociationArrowheadType::None,
+                    },
+                    "Association (dashed)",
+                ),
+            ],
+        ),
+        (
+            "Other",
+            vec![
+                (
+                    NetworkToolStage::ContainerStart {
+                        name: "Subnet".to_owned(),
+                    },
+                    "Container",
+                ),
+                (
+                    NetworkToolStage::Comment {
+                        text: "a comment".to_owned(),
+                        align: egui::Align2::CENTER_CENTER,
+                    },
+                    "Comment",
+                ),
+            ],
+        ),
+    ]
+    .into_iter()
+    .map(|e| {
+        (
+            e.0,
+            e.1.into_iter()
+                .map(|e| {
+                    let v = view_for_stage(&e.0);
+                    (e.0, e.1, v)
+                })
+                .collect(),
+        )
+    })
+    .collect();
 
     Box::new(NetworkSettings {
         palette: RwLock::new(ToolPalette::new(palette_items)),
@@ -645,52 +832,89 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
         NetworkToolStage::Node { name, kind } => {
             let node_view = new_network_node(name, *kind, egui::Pos2::ZERO).1;
             node_view.into()
-        },
-        NetworkToolStage::User { name, kind, background_color } => {
+        }
+        NetworkToolStage::User {
+            name,
+            kind,
+            background_color,
+        } => {
             let user_view = new_network_user(name, *kind, egui::Pos2::ZERO, *background_color).1;
             user_view.into()
-        },
-        NetworkToolStage::File { name, kind, background_color } => {
+        }
+        NetworkToolStage::File {
+            name,
+            kind,
+            background_color,
+        } => {
             let file_view = new_network_file(name, *kind, egui::Pos2::ZERO, *background_color).1;
             file_view.into()
-        },
-        NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead } => {
-            let d1 = new_network_user("dummy", NetworkUserKind::Normal, egui::Pos2::ZERO, MGlobalColor::None);
-            let d2 = new_network_node("dummy", NetworkNodeKind::Workstation, egui::Pos2::new(100.0, 75.0));
+        }
+        NetworkToolStage::AssociationStart {
+            line_type,
+            source_arrowhead,
+            target_arrowhead,
+        } => {
+            let d1 = new_network_user(
+                "dummy",
+                NetworkUserKind::Normal,
+                egui::Pos2::ZERO,
+                MGlobalColor::None,
+            );
+            let d2 = new_network_node(
+                "dummy",
+                NetworkNodeKind::Workstation,
+                egui::Pos2::new(100.0, 75.0),
+            );
 
             let association_view = new_network_association(
                 *line_type,
-                (d1.0.into(), d1.1.into()), *source_arrowhead,
-                (d2.0.into(), d2.1.into()), *target_arrowhead,
-            ).1;
+                (d1.0.into(), d1.1.into()),
+                *source_arrowhead,
+                (d2.0.into(), d2.1.into()),
+                *target_arrowhead,
+            )
+            .1;
             association_view.into()
-        },
+        }
         NetworkToolStage::ContainerStart { name } => {
             let container_view = new_network_container(
-                name, NetworkContainerShapeKind::Rectangle,
-                egui::Rect { min: egui::Pos2::ZERO, max: egui::Pos2::new(100.0, 50.0) },
-            ).1;
+                name,
+                NetworkContainerShapeKind::Rectangle,
+                egui::Rect {
+                    min: egui::Pos2::ZERO,
+                    max: egui::Pos2::new(100.0, 50.0),
+                },
+            )
+            .1;
             container_view.into()
-        },
+        }
         NetworkToolStage::Comment { text, align } => {
             let comment_view = new_network_comment(text, egui::Pos2::ZERO, *align).1;
             comment_view.into()
-        },
-        NetworkToolStage::AssociationEnd
-        | NetworkToolStage::ContainerEnd => unreachable!(),
+        }
+        NetworkToolStage::AssociationEnd | NetworkToolStage::ContainerEnd => unreachable!(),
     }
 }
 
 pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettings>, ()> {
-    let toml::Value::Table(value) = value else { return Err(()); };
+    let toml::Value::Table(value) = value else {
+        return Err(());
+    };
     Ok(Box::new(NetworkSettings {
-        palette: ToolPalette::deserialize(value.get("palette").unwrap().clone(), view_for_stage)?.into(),
+        palette: ToolPalette::deserialize(value.get("palette").unwrap().clone(), view_for_stage)?
+            .into(),
         palette_edit_buffer: PaletteEditBuffer::None.into(),
     }))
 }
 
-pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
-    let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<NetworkSettings>() else { return; };
+pub fn settings_function(
+    gdc: &mut GlobalDrawingContext,
+    ui: &mut egui::Ui,
+    s: &mut Box<dyn DiagramSettings>,
+) {
+    let Some(s) = (s.as_mut() as &mut dyn Any).downcast_mut::<NetworkSettings>() else {
+        return;
+    };
 
     let mut w = s.palette.write().unwrap();
     let mut buffer = s.palette_edit_buffer.write().unwrap();
@@ -847,7 +1071,6 @@ inventory::submit! {DiagramInfo {
     deserializer: &(deserializer as DeserializeControllerF),
 }}
 
-
 #[derive(Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum NetworkToolStage {
     Node {
@@ -870,7 +1093,9 @@ pub enum NetworkToolStage {
         target_arrowhead: NetworkAssociationArrowheadType,
     },
     AssociationEnd,
-    ContainerStart { name: String },
+    ContainerStart {
+        name: String,
+    },
     ContainerEnd,
     Comment {
         text: String,
@@ -946,8 +1171,9 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd
                 | NetworkToolStage::Comment { .. } => TARGETTABLE_COLOR,
-                NetworkToolStage::AssociationStart { .. }
-                | NetworkToolStage::AssociationEnd => NON_TARGETTABLE_COLOR,
+                NetworkToolStage::AssociationStart { .. } | NetworkToolStage::AssociationEnd => {
+                    NON_TARGETTABLE_COLOR
+                }
             },
             Some(NetworkElement::Container(_)) => match self.current_stage {
                 NetworkToolStage::Node { .. }
@@ -959,12 +1185,15 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 | NetworkToolStage::ContainerStart { .. }
                 | NetworkToolStage::ContainerEnd => NON_TARGETTABLE_COLOR,
             },
-            Some(NetworkElement::Node(_)
+            Some(
+                NetworkElement::Node(_)
                 | NetworkElement::User(_)
                 | NetworkElement::File(_)
-                | NetworkElement::Comment(_)) => match self.current_stage {
-                NetworkToolStage::AssociationStart { .. }
-                | NetworkToolStage::AssociationEnd => TARGETTABLE_COLOR,
+                | NetworkElement::Comment(_),
+            ) => match self.current_stage {
+                NetworkToolStage::AssociationStart { .. } | NetworkToolStage::AssociationEnd => {
+                    TARGETTABLE_COLOR
+                }
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
                 | NetworkToolStage::File { .. }
@@ -975,7 +1204,12 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             Some(NetworkElement::Association(_)) => todo!(),
         }
     }
-    fn draw_status_hint(&self, q: &<NetworkDomain as Domain>::QueryableT<'_>, canvas: &mut dyn NHCanvas, pos: egui::Pos2) {
+    fn draw_status_hint(
+        &self,
+        q: &<NetworkDomain as Domain>::QueryableT<'_>,
+        canvas: &mut dyn NHCanvas,
+        pos: egui::Pos2,
+    ) {
         match &self.result {
             PartialNetworkElement::Association { source, .. } => {
                 if let Some(source_view) = q.get_view_for(&source.uuid()) {
@@ -1010,22 +1244,42 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 self.result = PartialNetworkElement::Some(node_view.into());
                 self.event_lock = true;
             }
-            (NetworkToolStage::User { name, kind, background_color }, _) => {
+            (
+                NetworkToolStage::User {
+                    name,
+                    kind,
+                    background_color,
+                },
+                _,
+            ) => {
                 let (_, user_view) = new_network_user(name, *kind, pos, *background_color);
                 self.result = PartialNetworkElement::Some(user_view.into());
                 self.event_lock = true;
             }
-            (NetworkToolStage::File { name, kind, background_color }, _) => {
+            (
+                NetworkToolStage::File {
+                    name,
+                    kind,
+                    background_color,
+                },
+                _,
+            ) => {
                 let (_, file_view) = new_network_file(name, *kind, pos, *background_color);
                 self.result = PartialNetworkElement::Some(file_view.into());
                 self.event_lock = true;
             }
             (NetworkToolStage::ContainerStart { name }, _) => {
-                self.result = PartialNetworkElement::Container { name: name.clone(), a: pos, b: None };
+                self.result = PartialNetworkElement::Container {
+                    name: name.clone(),
+                    a: pos,
+                    b: None,
+                };
                 self.current_stage = NetworkToolStage::ContainerEnd;
                 self.event_lock = true;
             }
-            (NetworkToolStage::ContainerEnd, PartialNetworkElement::Container { b, .. }) => *b = Some(pos),
+            (NetworkToolStage::ContainerEnd, PartialNetworkElement::Container { b, .. }) => {
+                *b = Some(pos)
+            }
             (NetworkToolStage::Comment { text, align }, _) => {
                 let (_, comment_view) = new_network_comment(text, pos, *align);
 
@@ -1046,7 +1300,14 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             | NetworkElement::User(_)
             | NetworkElement::File(_)
             | NetworkElement::Comment(_) => match (&self.current_stage, &mut self.result) {
-                (NetworkToolStage::AssociationStart { line_type, source_arrowhead, target_arrowhead }, PartialNetworkElement::None) => {
+                (
+                    NetworkToolStage::AssociationStart {
+                        line_type,
+                        source_arrowhead,
+                        target_arrowhead,
+                    },
+                    PartialNetworkElement::None,
+                ) => {
                     self.result = PartialNetworkElement::Association {
                         line_type: *line_type,
                         source_arrowhead: *source_arrowhead,
@@ -1057,13 +1318,16 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     self.current_stage = NetworkToolStage::AssociationEnd;
                     self.event_lock = true;
                 }
-                (NetworkToolStage::AssociationEnd, PartialNetworkElement::Association { dest, .. }) => {
+                (
+                    NetworkToolStage::AssociationEnd,
+                    PartialNetworkElement::Association { dest, .. },
+                ) => {
                     *dest = Some(section);
                     self.event_lock = true;
                 }
                 _ => {}
             },
-            NetworkElement::Association(..) => {},
+            NetworkElement::Association(..) => {}
         }
     }
 
@@ -1073,13 +1337,14 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         preferred_container: &ViewUuid,
         preferred_bucket: BucketNoT,
         preferred_position: Option<PositionNoT>,
-        commands: &mut Vec<InsensitiveCommand<
-            <NetworkDomain as Domain>::OrdinalMovementT,
-            <NetworkDomain as Domain>::AddCommandElementT,
-            <NetworkDomain as Domain>::PropChangeT,
-        >>,
-    ) -> Result<Option<Box<dyn CustomModal>>, ()>
-    {
+        commands: &mut Vec<
+            InsensitiveCommand<
+                <NetworkDomain as Domain>::OrdinalMovementT,
+                <NetworkDomain as Domain>::AddCommandElementT,
+                <NetworkDomain as Domain>::PropChangeT,
+            >,
+        >,
+    ) -> Result<Option<Box<dyn CustomModal>>, ()> {
         match &self.result {
             PartialNetworkElement::Some(element) => {
                 let element = element.clone();
@@ -1102,19 +1367,21 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 ..
             } => {
                 let (source_uuid, target_uuid) = (*source.uuid(), *dest.uuid());
-                if let (Some(source_controller), Some(dest_controller)) = (
-                    q.get_view_for(&source_uuid),
-                    q.get_view_for(&target_uuid),
-                ) && q.is_contained(&source_controller.uuid(), preferred_container)
+                if let (Some(source_controller), Some(dest_controller)) =
+                    (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
+                    && q.is_contained(&source_controller.uuid(), preferred_container)
                     && q.is_contained(&dest_controller.uuid(), preferred_container)
                 {
                     self.current_stage = self.initial_stage.clone();
 
                     let association_view = new_network_association(
                         *line_type,
-                        (source.clone(), source_controller), *source_arrowhead,
-                        (dest.clone(), dest_controller), *target_arrowhead,
-                    ).1;
+                        (source.clone(), source_controller),
+                        *source_arrowhead,
+                        (dest.clone(), dest_controller),
+                        *target_arrowhead,
+                    )
+                    .1;
 
                     self.try_spend();
                     commands.push(InsensitiveCommand::AddDependency {
@@ -1129,12 +1396,19 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                     Err(())
                 }
             }
-            PartialNetworkElement::Container { name, a, b: Some(b) } => {
+            PartialNetworkElement::Container {
+                name,
+                a,
+                b: Some(b),
+            } => {
                 self.current_stage = self.initial_stage.clone();
 
                 let container_view = new_network_container(
-                    name, NetworkContainerShapeKind::Rectangle, egui::Rect::from_two_pos(*a, *b),
-                ).1;
+                    name,
+                    NetworkContainerShapeKind::Rectangle,
+                    egui::Rect::from_two_pos(*a, *b),
+                )
+                .1;
 
                 self.try_spend();
                 commands.push(InsensitiveCommand::AddDependency {
@@ -1154,7 +1428,6 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
         self.event_lock = false;
     }
 }
-
 
 fn new_network_container(
     name: &str,
@@ -1189,7 +1462,9 @@ fn new_network_container_view(
     )
 }
 
-#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 pub struct NetworkContainerAdapter {
     #[nh_context_serde(entity)]
     model: ERef<NetworkContainer>,
@@ -1215,31 +1490,48 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
         self.model.read().get_element_pos(uuid)
     }
-    fn insert_element(&mut self, position: Option<PositionNoT>, element: NetworkElement) -> Result<PositionNoT, ()> {
-        self.model.write().insert_element(0, position, element).map_err(|_| ())
+    fn insert_element(
+        &mut self,
+        position: Option<PositionNoT>,
+        element: NetworkElement,
+    ) -> Result<PositionNoT, ()> {
+        self.model
+            .write()
+            .insert_element(0, position, element)
+            .map_err(|_| ())
     }
     fn delete_element(&mut self, uuid: &ModelUuid) -> Option<PositionNoT> {
         self.model.write().remove_element(uuid).map(|e| e.1)
     }
 
     fn background_color(&self, global_colors: &ColorBundle) -> egui::Color32 {
-        global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE)
+        global_colors
+            .get(&self.background_color)
+            .unwrap_or(egui::Color32::WHITE)
     }
 
     fn show_model_properties(
         &mut self,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) {
-        if ui.labeled_text_edit_singleline("Name:", &mut self.name_buffer).changed() {
+        if ui
+            .labeled_text_edit_singleline("Name:", &mut self.name_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
             ));
         }
 
-        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
+        if ui
+            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -1252,17 +1544,20 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         ui: &mut egui::Ui,
     ) -> Option<ColorChangeData> {
         ui.label("Background color:");
-        crate::common::controller::mglobalcolor_edit_button(
-            context,
-            ui,
-            &self.background_color,
-        ).map(|e| (0, e).into())
+        crate::common::controller::mglobalcolor_edit_button(context, ui, &self.background_color)
+            .map(|e| (0, e).into())
     }
     fn apply_change(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<
+            NetworkOrdinalMovement,
+            NetworkElementOrVertex,
+            NetworkPropChange,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -1284,7 +1579,10 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
                 NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
                     undo_accumulator.push(InsensitiveCommand::PropertyChange(
                         std::iter::once(*view_uuid).collect(),
-                        NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                        NetworkPropChange::ColorChange(ColorChangeData {
+                            slot: 0,
+                            color: self.background_color,
+                        }),
                     ));
                     self.background_color = *color;
                 }
@@ -1302,7 +1600,10 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         &self,
         new_uuid: ModelUuid,
         m: &mut HashMap<ModelUuid, NetworkElement>,
-    ) -> Self where Self: Sized {
+    ) -> Self
+    where
+        Self: Sized,
+    {
         let old_model = self.model.read();
 
         let model = if let Some(NetworkElement::Container(m)) = m.get(&old_model.uuid) {
@@ -1320,10 +1621,7 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
         }
     }
 
-    fn deep_copy_finish(
-        &mut self,
-        m: &HashMap<ModelUuid, NetworkElement>,
-    ) {
+    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, NetworkElement>) {
         let mut w = self.model.write();
         for e in w.contained_elements.iter_mut() {
             if let Some(new_model) = m.get(&*e.uuid()) {
@@ -1333,27 +1631,16 @@ impl PackageAdapter<NetworkDomain> for NetworkContainerAdapter {
     }
 }
 
-
 fn new_network_node(
     name: &str,
     kind: NetworkNodeKind,
     position: egui::Pos2,
 ) -> (ERef<NetworkNode>, ERef<NetworkNodeView>) {
-    let node_model = ERef::new(NetworkNode::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        kind,
-    ));
-    let node_view = new_network_node_view(
-        node_model.clone(),
-        position,
-    );
+    let node_model = ERef::new(NetworkNode::new(ModelUuid::now_v7(), name.to_owned(), kind));
+    let node_view = new_network_node_view(node_model.clone(), position);
     (node_model, node_view)
 }
-fn new_network_node_view(
-    model: ERef<NetworkNode>,
-    position: egui::Pos2,
-) -> ERef<NetworkNodeView> {
+fn new_network_node_view(model: ERef<NetworkNode>, position: egui::Pos2) -> ERef<NetworkNodeView> {
     let m = model.read();
     ERef::new(NetworkNodeView {
         uuid: ViewUuid::now_v7().into(),
@@ -1429,7 +1716,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         _gdc: &GlobalDrawingContext,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) -> PropertiesStatus<NetworkDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -1437,7 +1726,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
 
         ui.label("Model properties");
 
-        if ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer).changed() {
+        if ui
+            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
@@ -1449,7 +1741,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkNodeKind::VARIANTS {
-                    if ui.selectable_value(&mut self.kind_buffer, e, e.as_str()).changed() {
+                    if ui
+                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .changed()
+                    {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             NetworkPropChange::NodeKindChange(self.kind_buffer),
@@ -1458,7 +1753,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 }
             });
 
-        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
+        if ui
+            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -1472,11 +1770,17 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(x - self.position.x, 0.0),
+                ));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(0.0, y - self.position.y),
+                ));
             }
         });
 
@@ -1522,7 +1826,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     egui::CornerRadius::ZERO,
                     egui::Color32::WHITE.gamma_multiply(0.5),
                     stroke,
-                    canvas::Highlight::NONE
+                    canvas::Highlight::NONE,
                 );
                 canvas.draw_ellipse(
                     self.position + egui::Vec2::new(-5.0, -5.0),
@@ -1552,7 +1856,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     stroke,
                     canvas::Highlight::NONE,
                 );
-            },
+            }
             NetworkNodeKind::Firewall => {
                 for e in 0..7 {
                     let r = egui::Rect::from_center_size(
@@ -1564,16 +1868,20 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         egui::CornerRadius::ZERO,
                         egui::Color32::RED,
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        canvas::Highlight::NONE
+                        canvas::Highlight::NONE,
                     );
-                    let modifier = if e % 2 == 0 { egui::Vec2::new(-5.0, 0.0) } else { egui::Vec2::new(5.0, 0.0) };
+                    let modifier = if e % 2 == 0 {
+                        egui::Vec2::new(-5.0, 0.0)
+                    } else {
+                        egui::Vec2::new(5.0, 0.0)
+                    };
                     canvas.draw_line(
                         [r.center_top() + modifier, r.center_bottom() + modifier],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
-                        canvas::Highlight::NONE
+                        canvas::Highlight::NONE,
                     );
                 }
-            },
+            }
             NetworkNodeKind::Router => {
                 const COLOR: egui::Color32 = egui::Color32::from_rgb(0x08, 0xb8, 0xdb);
                 canvas.draw_ellipse(
@@ -1597,7 +1905,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     canvas::CLASS_MIDDLE_FONT_SIZE,
                     egui::Color32::WHITE,
                 );
-            },
+            }
             NetworkNodeKind::Switch => {
                 const COLOR: egui::Color32 = egui::Color32::from_rgb(0x08, 0xb8, 0xdb);
                 canvas.draw_rectangle(
@@ -1621,7 +1929,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     canvas::CLASS_MIDDLE_FONT_SIZE,
                     egui::Color32::WHITE,
                 );
-            },
+            }
             NetworkNodeKind::Server => {
                 canvas.draw_polygon(
                     [
@@ -1629,7 +1937,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         self.position + egui::Vec2::new(10.0, -18.0),
                         self.position + egui::Vec2::new(18.0, -8.0),
                         self.position + egui::Vec2::new(-10.0, -8.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     egui::Color32::LIGHT_GRAY,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
@@ -1640,7 +1949,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         self.position + egui::Vec2::new(18.0, -8.0),
                         self.position + egui::Vec2::new(18.0, 18.0),
                         self.position + egui::Vec2::new(-10.0, 18.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     egui::Color32::WHITE,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
@@ -1651,17 +1961,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         self.position + egui::Vec2::new(-10.0, 18.0),
                         self.position + egui::Vec2::new(-18.0, 8.0),
                         self.position + egui::Vec2::new(-18.0, -18.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     egui::Color32::GRAY,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-            },
+            }
             NetworkNodeKind::Workstation => {
-                let screen_rect = egui::Rect::from_center_size(
-                    self.position,
-                    egui::Vec2::new(32.0, 18.0),
-                );
+                let screen_rect =
+                    egui::Rect::from_center_size(self.position, egui::Vec2::new(32.0, 18.0));
                 canvas.draw_rectangle(
                     screen_rect.expand(2.0),
                     egui::CornerRadius::ZERO,
@@ -1682,12 +1991,13 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         screen_rect.center_bottom() + egui::Vec2::new(-4.0, 2.0),
                         screen_rect.center_bottom() + egui::Vec2::new(4.0, 2.0),
                         screen_rect.center_bottom() + egui::Vec2::new(8.0, 10.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     egui::Color32::LIGHT_GRAY,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-            },
+            }
             NetworkNodeKind::Laptop => {
                 let screen_rect = egui::Rect::from_two_pos(
                     self.position + egui::Vec2::new(-13.0, -13.0),
@@ -1713,17 +2023,16 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                         screen_rect.left_bottom() + egui::Vec2::new(-2.0, 2.0),
                         screen_rect.right_bottom() + egui::Vec2::new(2.0, 2.0),
                         inner_rect.right_bottom() + egui::Vec2::new(-2.0, -2.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     egui::Color32::LIGHT_GRAY,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-            },
+            }
             NetworkNodeKind::Tablet => {
-                let screen_rect = egui::Rect::from_center_size(
-                    self.position,
-                    egui::Vec2::new(32.0, 18.0),
-                );
+                let screen_rect =
+                    egui::Rect::from_center_size(self.position, egui::Vec2::new(32.0, 18.0));
                 canvas.draw_rectangle(
                     screen_rect.expand(2.0),
                     egui::CornerRadius::ZERO,
@@ -1738,12 +2047,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-            },
+            }
             NetworkNodeKind::CellularPhone => {
-                let screen_rect = egui::Rect::from_center_size(
-                    self.position,
-                    egui::Vec2::new(18.0, 32.0),
-                );
+                let screen_rect =
+                    egui::Rect::from_center_size(self.position, egui::Vec2::new(18.0, 32.0));
                 canvas.draw_rectangle(
                     screen_rect.expand(2.0),
                     egui::CornerRadius::ZERO,
@@ -1758,7 +2065,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-            },
+            }
             NetworkNodeKind::UsbDrive => {
                 canvas.draw_rectangle(
                     egui::Rect::from_two_pos(
@@ -1800,7 +2107,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-            },
+            }
             NetworkNodeKind::OpticalMedia => {
                 canvas.draw_ellipse(
                     self.position,
@@ -1823,15 +2130,15 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-            },
+            }
         }
 
         // Draw targetting rectangle
         if canvas.ui_scale().is_some()
             && let Some(t) = tool
-            .as_ref()
-            .filter(|e| self.min_shape().contains(e.0))
-            .map(|e| e.1)
+                .as_ref()
+                .filter(|e| self.min_shape().contains(e.0))
+                .map(|e| e.1)
         {
             canvas.draw_rectangle(
                 egui::Rect::from_center_size(self.position, INNER_SIZE),
@@ -1854,7 +2161,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
@@ -1895,14 +2204,15 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(
+                        q.selected_views(),
+                        coerced_delta,
+                    ));
                 } else {
-                    commands.push(
-                        InsensitiveCommand::MovePositional(
-                            std::iter::once(*self.uuid).collect(),
-                            coerced_delta,
-                        ),
-                    );
+                    commands.push(InsensitiveCommand::MovePositional(
+                        std::iter::once(*self.uuid).collect(),
+                        coerced_delta,
+                    ));
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -1913,8 +2223,14 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<
+            NetworkOrdinalMovement,
+            NetworkElementOrVertex,
+            NetworkPropChange,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -1927,11 +2243,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected =
-                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
+                self.highlight.selected = (self.highlight.selected && *retain)
+                    || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MovePositional(uuids, _)
-                if !uuids.contains(&*self.uuid) => {}
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
             | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
@@ -1959,7 +2274,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
                             ));
                             model.name = name.clone();
                         }
-                        NetworkPropChange::NodeKindChange(kind)  => {
+                        NetworkPropChange::NodeKindChange(kind) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
                                 NetworkPropChange::NodeKindChange(model.kind.clone()),
@@ -2036,23 +2351,14 @@ impl ElementControllerGen2<NetworkDomain> for NetworkNodeView {
     }
 }
 
-
 fn new_network_user(
     name: &str,
     kind: NetworkUserKind,
     position: egui::Pos2,
     background_color: MGlobalColor,
 ) -> (ERef<NetworkUser>, ERef<NetworkUserView>) {
-    let user_model = ERef::new(NetworkUser::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        kind,
-    ));
-    let user_view = new_network_user_view(
-        user_model.clone(),
-        position,
-        background_color,
-    );
+    let user_model = ERef::new(NetworkUser::new(ModelUuid::now_v7(), name.to_owned(), kind));
+    let user_view = new_network_user_view(user_model.clone(), position, background_color);
     (user_model, user_view)
 }
 fn new_network_user_view(
@@ -2122,7 +2428,7 @@ impl ElementController<NetworkElement> for NetworkUserView {
 
     fn min_shape(&self) -> NHShape {
         NHShape::Rect {
-            inner: self.bounds_rect
+            inner: self.bounds_rect,
         }
     }
 
@@ -2137,7 +2443,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         gdc: &GlobalDrawingContext,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) -> PropertiesStatus<NetworkDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -2145,7 +2453,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
 
         ui.label("Model properties");
 
-        if ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer).changed() {
+        if ui
+            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
@@ -2157,7 +2468,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkUserKind::VARIANTS {
-                    if ui.selectable_value(&mut self.kind_buffer, e, e.as_str()).changed() {
+                    if ui
+                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .changed()
+                    {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             NetworkPropChange::UserKindChange(self.kind_buffer),
@@ -2166,7 +2480,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                 }
             });
 
-        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
+        if ui
+            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -2180,20 +2497,24 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(x - self.position.x, 0.0),
+                ));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(0.0, y - self.position.y),
+                ));
             }
         });
 
         ui.label("Background color:");
-        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
-            gdc,
-            ui,
-            &self.background_color,
-        ) {
+        if let Some(new_color) =
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.background_color)
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::ColorChange((0, new_color).into()),
@@ -2214,7 +2535,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         const OUTER_SIZE: egui::Vec2 = egui::Vec2::new(50.0, 50.0);
         // Draw shape and text
         let inner_rect = egui::Rect::from_center_size(self.position, INNER_SIZE);
-        let background_color = gdc.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE);
+        let background_color = gdc
+            .global_colors
+            .get(&self.background_color)
+            .unwrap_or(egui::Color32::WHITE);
         canvas.draw_rectangle(
             inner_rect,
             egui::CornerRadius::ZERO,
@@ -2237,14 +2561,15 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                 inner_rect.center() + egui::Vec2::new(5.0, 7.0),
                 inner_rect.right_center() + egui::Vec2::new(-7.0, 5.0),
                 inner_rect.right_bottom(),
-            ].to_vec(),
+            ]
+            .to_vec(),
             background_color,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             canvas::Highlight::NONE,
         );
 
         match self.kind_buffer {
-            NetworkUserKind::Normal => {},
+            NetworkUserKind::Normal => {}
             NetworkUserKind::Sysadmin => {
                 let screen_rect = egui::Rect::from_two_pos(
                     inner_rect.left_bottom() + egui::Vec2::new(4.0, -10.0),
@@ -2270,12 +2595,13 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                         screen_rect.center_bottom() + egui::Vec2::new(-2.0, 2.0),
                         screen_rect.center_bottom() + egui::Vec2::new(2.0, 2.0),
                         screen_rect.center_bottom() + egui::Vec2::new(4.0, 5.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     egui::Color32::LIGHT_GRAY,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-            },
+            }
             NetworkUserKind::Tie => {
                 canvas.draw_polygon(
                     [
@@ -2284,7 +2610,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                         self.position + egui::Vec2::new(0.0, 18.0),
                         self.position + egui::Vec2::new(-3.0, 16.0),
                         self.position + egui::Vec2::new(-1.0, 7.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     egui::Color32::BLACK,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
@@ -2315,7 +2642,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                         paper_rect.center_top() + egui::Vec2::new(-2.0, -2.0),
                         paper_rect.center_top() + egui::Vec2::new(2.0, -2.0),
                         paper_rect.center_top() + egui::Vec2::new(4.0, 2.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     egui::Color32::LIGHT_GRAY,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
@@ -2331,7 +2659,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                         self.position + egui::Vec2::new(2.0, -18.0),
                         self.position + egui::Vec2::new(7.0, -15.0),
                         self.position + egui::Vec2::new(10.0, -10.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     HARD_HAT_COLOR,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
@@ -2342,18 +2671,19 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                         self.position + egui::Vec2::new(-5.0, -9.0),
                         self.position + egui::Vec2::new(5.0, -9.0),
                         self.position + egui::Vec2::new(10.0, -10.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     HARD_HAT_COLOR,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-            },
-            NetworkUserKind::BlackHat
-            | NetworkUserKind::GrayHat
-            | NetworkUserKind::WhiteHat => {
+            }
+            NetworkUserKind::BlackHat | NetworkUserKind::GrayHat | NetworkUserKind::WhiteHat => {
                 let (hat_main, hat_detail) = match self.kind_buffer {
                     NetworkUserKind::BlackHat => (egui::Color32::BLACK, egui::Color32::WHITE),
-                    NetworkUserKind::GrayHat => (egui::Color32::LIGHT_GRAY, egui::Color32::DARK_GRAY),
+                    NetworkUserKind::GrayHat => {
+                        (egui::Color32::LIGHT_GRAY, egui::Color32::DARK_GRAY)
+                    }
                     NetworkUserKind::WhiteHat => (egui::Color32::WHITE, egui::Color32::BLACK),
                     _ => unreachable!(),
                 };
@@ -2363,7 +2693,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                         self.position + egui::Vec2::new(-7.0, -12.0),
                         self.position + egui::Vec2::new(7.0, -12.0),
                         self.position + egui::Vec2::new(15.0, -8.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     hat_main,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
@@ -2376,7 +2707,8 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                         self.position + egui::Vec2::new(2.0, -18.0),
                         self.position + egui::Vec2::new(5.0, -15.0),
                         self.position + egui::Vec2::new(7.0, -12.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     hat_main,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
@@ -2387,12 +2719,13 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                         self.position + egui::Vec2::new(-7.0, -13.0),
                         self.position + egui::Vec2::new(7.0, -13.0),
                         self.position + egui::Vec2::new(9.0, -11.0),
-                    ].to_vec(),
+                    ]
+                    .to_vec(),
                     hat_detail,
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
                 );
-            },
+            }
         }
 
         canvas.draw_text(
@@ -2407,9 +2740,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         // Draw targetting rectangle
         if canvas.ui_scale().is_some()
             && let Some(t) = tool
-            .as_ref()
-            .filter(|e| self.min_shape().contains(e.0))
-            .map(|e| e.1)
+                .as_ref()
+                .filter(|e| self.min_shape().contains(e.0))
+                .map(|e| e.1)
         {
             canvas.draw_rectangle(
                 inner_rect,
@@ -2432,12 +2765,14 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
                 if !self.min_shape().contains(pos) {
-                    return EventHandlingStatus::NotHandled
+                    return EventHandlingStatus::NotHandled;
                 }
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
@@ -2473,14 +2808,15 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(
+                        q.selected_views(),
+                        coerced_delta,
+                    ));
                 } else {
-                    commands.push(
-                        InsensitiveCommand::MovePositional(
-                            std::iter::once(*self.uuid).collect(),
-                            coerced_delta,
-                        ),
-                    );
+                    commands.push(InsensitiveCommand::MovePositional(
+                        std::iter::once(*self.uuid).collect(),
+                        coerced_delta,
+                    ));
                 }
                 EventHandlingStatus::HandledByElement
             }
@@ -2490,8 +2826,14 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<
+            NetworkOrdinalMovement,
+            NetworkElementOrVertex,
+            NetworkPropChange,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -2504,11 +2846,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected =
-                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
+                self.highlight.selected = (self.highlight.selected && *retain)
+                    || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MovePositional(uuids, _)
-                if !uuids.contains(&*self.uuid) => {}
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
             | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
@@ -2536,7 +2877,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                             ));
                             model.name = name.clone();
                         }
-                        NetworkPropChange::UserKindChange(kind)  => {
+                        NetworkPropChange::UserKindChange(kind) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
                                 NetworkPropChange::UserKindChange(model.kind.clone()),
@@ -2553,7 +2894,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
                         NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                                NetworkPropChange::ColorChange(ColorChangeData {
+                                    slot: 0,
+                                    color: self.background_color,
+                                }),
                             ));
                             self.background_color = *color;
                         }
@@ -2621,23 +2965,14 @@ impl ElementControllerGen2<NetworkDomain> for NetworkUserView {
     }
 }
 
-
 fn new_network_file(
     name: &str,
     kind: NetworkFileKind,
     position: egui::Pos2,
     background_color: MGlobalColor,
 ) -> (ERef<NetworkFile>, ERef<NetworkFileView>) {
-    let user_model = ERef::new(NetworkFile::new(
-        ModelUuid::now_v7(),
-        name.to_owned(),
-        kind,
-    ));
-    let user_view = new_network_file_view(
-        user_model.clone(),
-        position,
-        background_color,
-    );
+    let user_model = ERef::new(NetworkFile::new(ModelUuid::now_v7(), name.to_owned(), kind));
+    let user_view = new_network_file_view(user_model.clone(), position, background_color);
     (user_model, user_view)
 }
 fn new_network_file_view(
@@ -2707,7 +3042,7 @@ impl ElementController<NetworkElement> for NetworkFileView {
 
     fn min_shape(&self) -> NHShape {
         NHShape::Rect {
-            inner: self.bounds_rect
+            inner: self.bounds_rect,
         }
     }
 
@@ -2722,7 +3057,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         gdc: &GlobalDrawingContext,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) -> PropertiesStatus<NetworkDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -2730,7 +3067,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
 
         ui.label("Model properties");
 
-        if ui.labeled_text_edit_multiline("Name:", &mut self.name_buffer).changed() {
+        if ui
+            .labeled_text_edit_multiline("Name:", &mut self.name_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.name_buffer.clone())),
@@ -2742,7 +3082,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
             .selected_text(self.kind_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkFileKind::VARIANTS {
-                    if ui.selectable_value(&mut self.kind_buffer, e, e.as_str()).changed() {
+                    if ui
+                        .selectable_value(&mut self.kind_buffer, e, e.as_str())
+                        .changed()
+                    {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
                             NetworkPropChange::FileKindChange(self.kind_buffer),
@@ -2751,7 +3094,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                 }
             });
 
-        if ui.labeled_text_edit_multiline("Comment:", &mut self.comment_buffer).changed() {
+        if ui
+            .labeled_text_edit_multiline("Comment:", &mut self.comment_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::CommentChange(Arc::new(self.comment_buffer.clone())),
@@ -2765,20 +3111,24 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(x - self.position.x, 0.0),
+                ));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(0.0, y - self.position.y),
+                ));
             }
         });
 
         ui.label("Background color:");
-        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
-            gdc,
-            ui,
-            &self.background_color,
-        ) {
+        if let Some(new_color) =
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.background_color)
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::ColorChange((0, new_color).into()),
@@ -2799,7 +3149,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         const OUTER_SIZE: egui::Vec2 = egui::Vec2::new(50.0, 50.0);
         // Draw shape and text
         let inner_rect = egui::Rect::from_center_size(self.position, INNER_SIZE);
-        let background_color = gdc.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE);
+        let background_color = gdc
+            .global_colors
+            .get(&self.background_color)
+            .unwrap_or(egui::Color32::WHITE);
         canvas.draw_rectangle(
             inner_rect,
             egui::CornerRadius::ZERO,
@@ -2817,21 +3170,28 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                 file_rect.right_top() + egui::Vec2::new(0.0, CORNER_BEVEL),
                 file_rect.right_bottom(),
                 file_rect.left_bottom(),
-            ].to_vec(),
+            ]
+            .to_vec(),
             background_color,
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             canvas::Highlight::NONE,
         );
 
         match self.kind_buffer {
-            NetworkFileKind::Unspecified => {},
+            NetworkFileKind::Unspecified => {}
             NetworkFileKind::Document => {
                 const MARGIN: f32 = 3.0;
                 for k in 1..6 {
                     canvas.draw_line(
                         [
-                            egui::Pos2::new(file_rect.left() + MARGIN, file_rect.top() + k as f32 * 5.0),
-                            egui::Pos2::new(file_rect.right() - MARGIN, file_rect.top() + k as f32 * 5.0),
+                            egui::Pos2::new(
+                                file_rect.left() + MARGIN,
+                                file_rect.top() + k as f32 * 5.0,
+                            ),
+                            egui::Pos2::new(
+                                file_rect.right() - MARGIN,
+                                file_rect.top() + k as f32 * 5.0,
+                            ),
                         ],
                         canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                         canvas::Highlight::NONE,
@@ -2886,9 +3246,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         // Draw targetting rectangle
         if canvas.ui_scale().is_some()
             && let Some(t) = tool
-            .as_ref()
-            .filter(|e| self.min_shape().contains(e.0))
-            .map(|e| e.1)
+                .as_ref()
+                .filter(|e| self.min_shape().contains(e.0))
+                .map(|e| e.1)
         {
             canvas.draw_rectangle(
                 inner_rect,
@@ -2911,12 +3271,14 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
                 if !self.min_shape().contains(pos) {
-                    return EventHandlingStatus::NotHandled
+                    return EventHandlingStatus::NotHandled;
                 }
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
@@ -2952,14 +3314,15 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                 let coerced_delta = coerced_pos - self.position;
 
                 if self.highlight.selected {
-                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(
+                        q.selected_views(),
+                        coerced_delta,
+                    ));
                 } else {
-                    commands.push(
-                        InsensitiveCommand::MovePositional(
-                            std::iter::once(*self.uuid).collect(),
-                            coerced_delta,
-                        ),
-                    );
+                    commands.push(InsensitiveCommand::MovePositional(
+                        std::iter::once(*self.uuid).collect(),
+                        coerced_delta,
+                    ));
                 }
                 EventHandlingStatus::HandledByElement
             }
@@ -2969,8 +3332,14 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<
+            NetworkOrdinalMovement,
+            NetworkElementOrVertex,
+            NetworkPropChange,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -2983,11 +3352,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected =
-                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
+                self.highlight.selected = (self.highlight.selected && *retain)
+                    || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MovePositional(uuids, _)
-                if !uuids.contains(&*self.uuid) => {}
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
             | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
@@ -3015,7 +3383,7 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                             ));
                             model.name = name.clone();
                         }
-                        NetworkPropChange::FileKindChange(kind)  => {
+                        NetworkPropChange::FileKindChange(kind) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
                                 NetworkPropChange::FileKindChange(model.kind.clone()),
@@ -3032,7 +3400,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
                         NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                                NetworkPropChange::ColorChange(ColorChangeData {
+                                    slot: 0,
+                                    color: self.background_color,
+                                }),
                             ));
                             self.background_color = *color;
                         }
@@ -3100,7 +3471,6 @@ impl ElementControllerGen2<NetworkDomain> for NetworkFileView {
     }
 }
 
-
 fn new_network_association(
     line_type: NetworkAssociationLineType,
     source: (NetworkElement, NetworkElementView),
@@ -3116,11 +3486,7 @@ fn new_network_association(
         target.0,
         target_arrowhead,
     ));
-    let predicate_view = new_network_association_view(
-        predicate_model.clone(),
-        source.1,
-        target.1
-    );
+    let predicate_view = new_network_association_view(predicate_model.clone(), source.1, target.1);
 
     (predicate_model, predicate_view)
 }
@@ -3131,7 +3497,12 @@ fn new_network_association_view(
 ) -> ERef<LinkViewT> {
     let m = model.read();
 
-    let (sp, mp, tp) = multiconnection_view::init_points(std::iter::once(*m.source.uuid()), *m.target.uuid(), target.min_shape(), None);
+    let (sp, mp, tp) = multiconnection_view::init_points(
+        std::iter::once(*m.source.uuid()),
+        *m.target.uuid(),
+        target.min_shape(),
+        None,
+    );
 
     MulticonnectionView::new(
         ViewUuid::now_v7().into(),
@@ -3145,7 +3516,9 @@ fn new_network_association_view(
     )
 }
 
-#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 pub struct NetworkAssociationAdapter {
     #[nh_context_serde(entity)]
     model: ERef<NetworkAssociation>,
@@ -3215,17 +3588,24 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         &mut self,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>
-    ) ->PropertiesStatus<NetworkDomain> {
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
+    ) -> PropertiesStatus<NetworkDomain> {
         ui.label("Line type:");
         egui::ComboBox::from_id_salt("line type")
             .selected_text(self.temporaries.line_type_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkAssociationLineType::VARIANTS {
-                    if ui.selectable_value(&mut self.temporaries.line_type_buffer, e, e.as_str()).changed() {
+                    if ui
+                        .selectable_value(&mut self.temporaries.line_type_buffer, e, e.as_str())
+                        .changed()
+                    {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            NetworkPropChange::AssociationLineTypeChange(self.temporaries.line_type_buffer),
+                            NetworkPropChange::AssociationLineTypeChange(
+                                self.temporaries.line_type_buffer,
+                            ),
                         ));
                     }
                 }
@@ -3236,37 +3616,65 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
             .selected_text(self.temporaries.source_arrowhead_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkAssociationArrowheadType::VARIANTS {
-                    if ui.selectable_value(&mut self.temporaries.source_arrowhead_buffer, e, e.as_str()).changed() {
+                    if ui
+                        .selectable_value(
+                            &mut self.temporaries.source_arrowhead_buffer,
+                            e,
+                            e.as_str(),
+                        )
+                        .changed()
+                    {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            NetworkPropChange::AssociationArrowheadTypeChange(false, self.temporaries.source_arrowhead_buffer),
+                            NetworkPropChange::AssociationArrowheadTypeChange(
+                                false,
+                                self.temporaries.source_arrowhead_buffer,
+                            ),
                         ));
                     }
                 }
             });
 
-        if ui.labeled_text_edit_singleline("Source multiplicity:", &mut self.temporaries.source_multiplicity_buffer).changed() {
+        if ui
+            .labeled_text_edit_singleline(
+                "Source multiplicity:",
+                &mut self.temporaries.source_multiplicity_buffer,
+            )
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::AssociationMultiplicityChange(false, Arc::new(
-                    self.temporaries.source_multiplicity_buffer.clone(),
-                )),
+                NetworkPropChange::AssociationMultiplicityChange(
+                    false,
+                    Arc::new(self.temporaries.source_multiplicity_buffer.clone()),
+                ),
             ));
         }
-        if ui.labeled_text_edit_singleline("Source role:", &mut self.temporaries.source_role_buffer).changed() {
+        if ui
+            .labeled_text_edit_singleline("Source role:", &mut self.temporaries.source_role_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::AssociationRoleChange(false, Arc::new(
-                    self.temporaries.source_role_buffer.clone(),
-                )),
+                NetworkPropChange::AssociationRoleChange(
+                    false,
+                    Arc::new(self.temporaries.source_role_buffer.clone()),
+                ),
             ));
         }
-        if ui.labeled_text_edit_singleline("Source reading:", &mut self.temporaries.source_reading_buffer).changed() {
+        if ui
+            .labeled_text_edit_singleline(
+                "Source reading:",
+                &mut self.temporaries.source_reading_buffer,
+            )
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::AssociationReadingChange(false, Arc::new(
-                    self.temporaries.source_reading_buffer.clone(),
-                )),
+                NetworkPropChange::AssociationReadingChange(
+                    false,
+                    Arc::new(self.temporaries.source_reading_buffer.clone()),
+                ),
             ));
         }
 
@@ -3275,41 +3683,72 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
             .selected_text(self.temporaries.target_arrowhead_buffer.as_str())
             .show_ui(ui, |ui| {
                 for e in NetworkAssociationArrowheadType::VARIANTS {
-                    if ui.selectable_value(&mut self.temporaries.target_arrowhead_buffer, e, e.as_str()).changed() {
+                    if ui
+                        .selectable_value(
+                            &mut self.temporaries.target_arrowhead_buffer,
+                            e,
+                            e.as_str(),
+                        )
+                        .changed()
+                    {
                         commands.push(InsensitiveCommand::PropertyChange(
                             q.selected_views(),
-                            NetworkPropChange::AssociationArrowheadTypeChange(true, self.temporaries.target_arrowhead_buffer),
+                            NetworkPropChange::AssociationArrowheadTypeChange(
+                                true,
+                                self.temporaries.target_arrowhead_buffer,
+                            ),
                         ));
                     }
                 }
             });
 
-        if ui.labeled_text_edit_singleline("Target multiplicity:", &mut self.temporaries.target_multiplicity_buffer).changed() {
+        if ui
+            .labeled_text_edit_singleline(
+                "Target multiplicity:",
+                &mut self.temporaries.target_multiplicity_buffer,
+            )
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::AssociationMultiplicityChange(true, Arc::new(
-                    self.temporaries.target_multiplicity_buffer.clone(),
-                )),
+                NetworkPropChange::AssociationMultiplicityChange(
+                    true,
+                    Arc::new(self.temporaries.target_multiplicity_buffer.clone()),
+                ),
             ));
         }
-        if ui.labeled_text_edit_singleline("Target role:", &mut self.temporaries.target_role_buffer).changed() {
+        if ui
+            .labeled_text_edit_singleline("Target role:", &mut self.temporaries.target_role_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::AssociationRoleChange(true, Arc::new(
-                    self.temporaries.target_role_buffer.clone(),
-                )),
+                NetworkPropChange::AssociationRoleChange(
+                    true,
+                    Arc::new(self.temporaries.target_role_buffer.clone()),
+                ),
             ));
         }
-        if ui.labeled_text_edit_singleline("Target reading:", &mut self.temporaries.target_reading_buffer).changed() {
+        if ui
+            .labeled_text_edit_singleline(
+                "Target reading:",
+                &mut self.temporaries.target_reading_buffer,
+            )
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
-                NetworkPropChange::AssociationReadingChange(true, Arc::new(
-                    self.temporaries.target_reading_buffer.clone(),
-                )),
+                NetworkPropChange::AssociationReadingChange(
+                    true,
+                    Arc::new(self.temporaries.target_reading_buffer.clone()),
+                ),
             ));
         }
 
-        if ui.labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer).changed() {
+        if ui
+            .labeled_text_edit_multiline("Comment:", &mut self.temporaries.comment_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::CommentChange(Arc::new(self.temporaries.comment_buffer.clone())),
@@ -3328,8 +3767,14 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<
+            NetworkOrdinalMovement,
+            NetworkElementOrVertex,
+            NetworkPropChange,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) {
         if let InsensitiveCommand::PropertyChange(_, property) = command {
             let mut model = self.model.write();
@@ -3350,7 +3795,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                                 model.source_arrowhead.clone()
                             } else {
                                 model.target_arrowhead.clone()
-                            }
+                            },
                         ),
                     ));
                     if !t {
@@ -3368,7 +3813,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                                 model.source_label_multiplicity.clone()
                             } else {
                                 model.target_label_multiplicity.clone()
-                            }
+                            },
                         ),
                     ));
                     if !t {
@@ -3386,7 +3831,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                                 model.source_label_role.clone()
                             } else {
                                 model.target_label_role.clone()
-                            }
+                            },
                         ),
                     ));
                     if !t {
@@ -3404,7 +3849,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
                                 model.source_label_reading.clone()
                             } else {
                                 model.target_label_reading.clone()
-                            }
+                            },
                         ),
                     ));
                     if !t {
@@ -3440,23 +3885,57 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
             };
             let arrowhead_type = match arrowhead_type {
                 NetworkAssociationArrowheadType::None => canvas::ArrowheadType::None,
-                NetworkAssociationArrowheadType::OpenTriangle => canvas::ArrowheadType::OpenTriangle,
-                NetworkAssociationArrowheadType::EmptyTriangle => canvas::ArrowheadType::EmptyTriangle,
+                NetworkAssociationArrowheadType::OpenTriangle => {
+                    canvas::ArrowheadType::OpenTriangle
+                }
+                NetworkAssociationArrowheadType::EmptyTriangle => {
+                    canvas::ArrowheadType::EmptyTriangle
+                }
             };
-            let multiplicity = if multiplicity.is_empty() { None } else { Some(multiplicity.clone()) };
-            let role = if role.is_empty() { None } else { Some(role.clone()) };
-            let reading = if reading.is_empty() { None } else { Some(reading.clone()) };
-            ArrowData { line_type, arrowhead_type, multiplicity, role, reading }
+            let multiplicity = if multiplicity.is_empty() {
+                None
+            } else {
+                Some(multiplicity.clone())
+            };
+            let role = if role.is_empty() {
+                None
+            } else {
+                Some(role.clone())
+            };
+            let reading = if reading.is_empty() {
+                None
+            } else {
+                Some(reading.clone())
+            };
+            ArrowData {
+                line_type,
+                arrowhead_type,
+                multiplicity,
+                role,
+                reading,
+            }
         }
 
         self.temporaries.arrow_data.clear();
         self.temporaries.arrow_data.insert(
             (false, *model.source.uuid()),
-            ah(model.line_type, model.source_arrowhead, &model.source_label_multiplicity, &model.source_label_role, &model.source_label_reading),
+            ah(
+                model.line_type,
+                model.source_arrowhead,
+                &model.source_label_multiplicity,
+                &model.source_label_role,
+                &model.source_label_reading,
+            ),
         );
         self.temporaries.arrow_data.insert(
             (true, *model.target.uuid()),
-            ah(model.line_type, model.target_arrowhead, &model.target_label_multiplicity, &model.target_label_role, &model.target_label_reading),
+            ah(
+                model.line_type,
+                model.target_arrowhead,
+                &model.target_label_multiplicity,
+                &model.target_label_role,
+                &model.target_label_reading,
+            ),
         );
 
         self.temporaries.source_uuids.clear();
@@ -3471,7 +3950,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         self.temporaries.source_reading_buffer = (*model.source_label_reading).clone();
         self.temporaries.target_arrowhead_buffer = model.target_arrowhead.clone();
         self.temporaries.target_multiplicity_buffer = (*model.target_label_multiplicity).clone();
-        self.temporaries.target_role_buffer  = (*model.target_label_role).clone();
+        self.temporaries.target_role_buffer = (*model.target_label_role).clone();
         self.temporaries.target_reading_buffer = (*model.target_label_reading).clone();
         self.temporaries.comment_buffer = (*model.comment).clone();
     }
@@ -3479,8 +3958,11 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
     fn deep_copy_init(
         &self,
         new_uuid: ModelUuid,
-        m: &mut HashMap<ModelUuid, NetworkElement>
-    ) -> Self where Self: Sized {
+        m: &mut HashMap<ModelUuid, NetworkElement>,
+    ) -> Self
+    where
+        Self: Sized,
+    {
         let old_model = self.model.read();
 
         let model = if let Some(NetworkElement::Association(m)) = m.get(&old_model.uuid) {
@@ -3497,10 +3979,7 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
         }
     }
 
-    fn deep_copy_finish(
-        &mut self,
-        m: &HashMap<ModelUuid, NetworkElement>,
-    ) {
+    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, NetworkElement>) {
         let mut model = self.model.write();
 
         let source_uuid = *model.source.uuid();
@@ -3515,16 +3994,12 @@ impl MulticonnectionAdapter<NetworkDomain> for NetworkAssociationAdapter {
     }
 }
 
-
 pub fn new_network_comment(
     text: &str,
     position: egui::Pos2,
     align: egui::Align2,
 ) -> (ERef<NetworkComment>, ERef<NetworkCommentView>) {
-    let comment_model = ERef::new(NetworkComment::new(
-        ModelUuid::now_v7(),
-        text.to_owned(),
-    ));
+    let comment_model = ERef::new(NetworkComment::new(ModelUuid::now_v7(), text.to_owned()));
     let comment_view = new_network_comment_view(comment_model.clone(), position, align);
 
     (comment_model, comment_view)
@@ -3611,7 +4086,9 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
         gdc: &GlobalDrawingContext,
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) -> PropertiesStatus<NetworkDomain> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -3619,7 +4096,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
 
         ui.label("Model properties");
 
-        if ui.labeled_text_edit_multiline("Text:", &mut self.text_buffer).changed() {
+        if ui
+            .labeled_text_edit_multiline("Text:", &mut self.text_buffer)
+            .changed()
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::NameChange(Arc::new(self.text_buffer.clone())),
@@ -3633,11 +4113,17 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
 
             ui.label("x");
             if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.position.x, 0.0)));
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(x - self.position.x, 0.0),
+                ));
             }
             ui.label("y");
             if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.position.y)));
+                commands.push(InsensitiveCommand::MovePositional(
+                    q.selected_views(),
+                    egui::Vec2::new(0.0, y - self.position.y),
+                ));
             }
         });
 
@@ -3646,13 +4132,14 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
             .show_ui(ui, |ui| {
                 let mut tmp_x = self.align.x();
                 for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
-                    if ui.selectable_value(&mut tmp_x, e, format!("{:?}", e)).changed() {
-                        commands.push(
-                            InsensitiveCommand::PropertyChange(
-                                q.selected_views(),
-                                NetworkPropChange::CommentAlignChange(Some(tmp_x), None),
-                            )
-                        );
+                    if ui
+                        .selectable_value(&mut tmp_x, e, format!("{:?}", e))
+                        .changed()
+                    {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            NetworkPropChange::CommentAlignChange(Some(tmp_x), None),
+                        ));
                     }
                 }
             });
@@ -3661,23 +4148,22 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
             .show_ui(ui, |ui| {
                 let mut tmp_y = self.align.y();
                 for e in [egui::Align::Min, egui::Align::Center, egui::Align::Max] {
-                    if ui.selectable_value(&mut tmp_y, e, format!("{:?}", e)).changed() {
-                        commands.push(
-                            InsensitiveCommand::PropertyChange(
-                                q.selected_views(),
-                                NetworkPropChange::CommentAlignChange(None, Some(tmp_y)),
-                            )
-                        );
+                    if ui
+                        .selectable_value(&mut tmp_y, e, format!("{:?}", e))
+                        .changed()
+                    {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            NetworkPropChange::CommentAlignChange(None, Some(tmp_y)),
+                        ));
                     }
                 }
             });
 
         ui.label("Background color:");
-        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
-            gdc,
-            ui,
-            &self.background_color,
-        ) {
+        if let Some(new_color) =
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.background_color)
+        {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 NetworkPropChange::ColorChange((0, new_color).into()),
@@ -3697,42 +4183,75 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
     ) -> TargettingStatus {
         let read = self.model.read();
 
-        let align_offset = egui::Vec2 { x: match self.align.x() {
-            egui::Align::Min => -Self::CORNER_SIZE,
-            egui::Align::Center => 0.0,
-            egui::Align::Max => Self::CORNER_SIZE,
-        }, y: match self.align.y() {
-            egui::Align::Min => Self::CORNER_SIZE,
-            egui::Align::Center => 0.0,
-            egui::Align::Max => -Self::CORNER_SIZE,
-        }};
-        self.bounds_rect = canvas.measure_text(
-            self.position,
-            self.align,
-            &read.text,
-            canvas::CLASS_MIDDLE_FONT_SIZE,
-        ).expand2(egui::Vec2 { x: Self::CORNER_SIZE, y: Self::CORNER_SIZE })
-        .translate(align_offset);
+        let align_offset = egui::Vec2 {
+            x: match self.align.x() {
+                egui::Align::Min => -Self::CORNER_SIZE,
+                egui::Align::Center => 0.0,
+                egui::Align::Max => Self::CORNER_SIZE,
+            },
+            y: match self.align.y() {
+                egui::Align::Min => Self::CORNER_SIZE,
+                egui::Align::Center => 0.0,
+                egui::Align::Max => -Self::CORNER_SIZE,
+            },
+        };
+        self.bounds_rect = canvas
+            .measure_text(
+                self.position,
+                self.align,
+                &read.text,
+                canvas::CLASS_MIDDLE_FONT_SIZE,
+            )
+            .expand2(egui::Vec2 {
+                x: Self::CORNER_SIZE,
+                y: Self::CORNER_SIZE,
+            })
+            .translate(align_offset);
 
         canvas.draw_polygon(
             [
                 self.bounds_rect.min,
                 egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.max.y),
                 self.bounds_rect.max,
-                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
-                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
-            ].into_iter().collect(),
-            context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
+                egui::Pos2::new(
+                    self.bounds_rect.max.x,
+                    self.bounds_rect.min.y + Self::CORNER_SIZE,
+                ),
+                egui::Pos2::new(
+                    self.bounds_rect.max.x - Self::CORNER_SIZE,
+                    self.bounds_rect.min.y,
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            context
+                .global_colors
+                .get(&self.background_color)
+                .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
         canvas.draw_polygon(
             [
-                egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
-                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y + Self::CORNER_SIZE),
-                egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
-            ].into_iter().collect(),
-            context.global_colors.get(&self.background_color).unwrap_or(egui::Color32::WHITE),
+                egui::Pos2::new(
+                    self.bounds_rect.max.x,
+                    self.bounds_rect.min.y + Self::CORNER_SIZE,
+                ),
+                egui::Pos2::new(
+                    self.bounds_rect.max.x - Self::CORNER_SIZE,
+                    self.bounds_rect.min.y + Self::CORNER_SIZE,
+                ),
+                egui::Pos2::new(
+                    self.bounds_rect.max.x - Self::CORNER_SIZE,
+                    self.bounds_rect.min.y,
+                ),
+            ]
+            .into_iter()
+            .collect(),
+            context
+                .global_colors
+                .get(&self.background_color)
+                .unwrap_or(egui::Color32::WHITE),
             canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
             self.highlight,
         );
@@ -3775,9 +4294,17 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                         self.bounds_rect.min,
                         egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.max.y),
                         self.bounds_rect.max,
-                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.min.y + Self::CORNER_SIZE),
-                        egui::Pos2::new(self.bounds_rect.max.x - Self::CORNER_SIZE, self.bounds_rect.min.y),
-                    ].into_iter().collect(),
+                        egui::Pos2::new(
+                            self.bounds_rect.max.x,
+                            self.bounds_rect.min.y + Self::CORNER_SIZE,
+                        ),
+                        egui::Pos2::new(
+                            self.bounds_rect.max.x - Self::CORNER_SIZE,
+                            self.bounds_rect.min.y,
+                        ),
+                    ]
+                    .into_iter()
+                    .collect(),
                     t.targetting_for_section(Some(self.model())),
                     canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
                     canvas::Highlight::NONE,
@@ -3799,12 +4326,14 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
         q: &<NetworkDomain as Domain>::QueryableT<'_>,
         tool: &mut Option<NaiveNetworkTool>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        commands: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
     ) -> EventHandlingStatus {
         match event {
             InputEvent::MouseDown(pos) => {
                 if !self.min_shape().contains(pos) {
-                    return EventHandlingStatus::NotHandled
+                    return EventHandlingStatus::NotHandled;
                 }
                 self.dragged_shape = Some(self.min_shape());
                 EventHandlingStatus::HandledByElement
@@ -3821,7 +4350,11 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                 if let Some(tool) = tool {
                     tool.add_section(self.model());
                 } else {
-                    if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                    if ehc
+                        .modifier_settings
+                        .hold_selection
+                        .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
+                    {
                         self.highlight.selected = true;
                     } else {
                         self.highlight.selected = !self.highlight.selected;
@@ -3846,14 +4379,15 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                 let coerced_delta = coerced_pos - self.bounds_rect.center();
 
                 if self.highlight.selected {
-                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
+                    commands.push(InsensitiveCommand::MovePositional(
+                        q.selected_views(),
+                        coerced_delta,
+                    ));
                 } else {
-                    commands.push(
-                        InsensitiveCommand::MovePositional(
-                            std::iter::once(*self.uuid).collect(),
-                            coerced_delta,
-                        ),
-                    );
+                    commands.push(InsensitiveCommand::MovePositional(
+                        std::iter::once(*self.uuid).collect(),
+                        coerced_delta,
+                    ));
                 }
 
                 EventHandlingStatus::HandledByElement
@@ -3864,8 +4398,14 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>>,
+        command: &InsensitiveCommand<
+            NetworkOrdinalMovement,
+            NetworkElementOrVertex,
+            NetworkPropChange,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<NetworkOrdinalMovement, NetworkElementOrVertex, NetworkPropChange>,
+        >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         match command {
@@ -3878,11 +4418,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected =
-                    (self.highlight.selected && *retain) || self.min_shape().contained_within(*rect);
+                self.highlight.selected = (self.highlight.selected && *retain)
+                    || self.min_shape().contained_within(*rect);
             }
-            InsensitiveCommand::MovePositional(uuids, _)
-                if !uuids.contains(&*self.uuid) => {}
+            InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {}
             InsensitiveCommand::MovePositional(_, delta)
             | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.position += *delta;
@@ -3913,7 +4452,10 @@ impl ElementControllerGen2<NetworkDomain> for NetworkCommentView {
                         NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
-                                NetworkPropChange::ColorChange(ColorChangeData { slot: 0, color: self.background_color }),
+                                NetworkPropChange::ColorChange(ColorChangeData {
+                                    slot: 0,
+                                    color: self.background_color,
+                                }),
                             ));
                             self.background_color = *color;
                         }

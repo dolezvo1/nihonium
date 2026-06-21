@@ -6,13 +6,15 @@ use std::ops::{BitAnd, BitOr, RangeInclusive};
 // find unique intersection between segments (s1a, s1b) and (s2a, s2b)
 // based on https://stackoverflow.com/a/1968345
 fn unique_segments_intersection(
-    s1a: egui::Pos2, s1b: egui::Pos2,
-    s2a: egui::Pos2, s2b: egui::Pos2,
+    s1a: egui::Pos2,
+    s1b: egui::Pos2,
+    s2a: egui::Pos2,
+    s2b: egui::Pos2,
 ) -> Option<egui::Pos2> {
     let (s1, s2) = (s1b - s1a, s2b - s2a);
 
     let s = (-s1.y * (s1a.x - s2a.x) + s1.x * (s1a.y - s2a.y)) / (-s2.x * s1.y + s1.x * s2.y);
-    let t = ( s2.x * (s1a.y - s2a.y) - s2.y * (s1a.x - s2a.x)) / (-s2.x * s1.y + s1.x * s2.y);
+    let t = (s2.x * (s1a.y - s2a.y) - s2.y * (s1a.x - s2a.x)) / (-s2.x * s1.y + s1.x * s2.y);
 
     if s >= 0.0 && s <= 1.0 && t >= 0.0 && t <= 1.0 {
         Some(s1a + t * egui::Vec2::new(s1.x, s1.y))
@@ -76,10 +78,7 @@ fn segment_rect_point(p: egui::Pos2, rect: egui::Rect) -> Option<egui::Pos2> {
 }
 
 // based on https://stackoverflow.com/a/25704033 by Danial Esmaeili
-fn segment_ellipse_point(
-    p: egui::Pos2,
-    (center, radius): (egui::Pos2, egui::Vec2),
-) -> egui::Pos2 {
+fn segment_ellipse_point(p: egui::Pos2, (center, radius): (egui::Pos2, egui::Vec2)) -> egui::Pos2 {
     if radius.x == 0.0 || radius.y == 0.0 {
         return center;
     }
@@ -88,10 +87,7 @@ fn segment_ellipse_point(
     let r = ((center.y - p.y).powf(2.0) + (center.x - p.x).powf(2.0)).sqrt()
         - ((radius.x * radius.y)
             / ((radius.y * theta.cos()).powf(2.0) + (radius.x * theta.sin()).powf(2.0)).sqrt());
-    return egui::Pos2::new(
-        p.x + r * theta.cos(),
-        p.y + r * theta.sin(),
-    );
+    return egui::Pos2::new(p.x + r * theta.cos(), p.y + r * theta.sin());
 }
 
 fn segment_rhombus_point(
@@ -186,8 +182,7 @@ impl NHShape {
     pub fn center(&self) -> egui::Pos2 {
         match &self {
             NHShape::Rect { inner } => inner.center(),
-            NHShape::Ellipse { position, .. }
-            | NHShape::Rhombus { position, .. } => *position,
+            NHShape::Ellipse { position, .. } | NHShape::Rhombus { position, .. } => *position,
         }
     }
 
@@ -238,26 +233,31 @@ impl NHShape {
                             x,
                             y: y.clamp(top + change_y, bottom - change_y),
                         })
-                    },
+                    }
                     egui::Pos2 { x, y } if top < y && y < bottom => {
                         let change_x = (position.y - y).abs() / bounds_radius.y * bounds_radius.x;
                         Some(egui::Pos2 {
                             x: x.clamp(left + change_x, right - change_x),
                             y,
                         })
-                    },
+                    }
                     _ => None,
                 }
-            },
+            }
         }
     }
     /// Returns smallest rectangle that contains given shape
     pub fn bounding_box(&self) -> egui::Rect {
         match self {
             NHShape::Rect { inner } => *inner,
-            NHShape::Ellipse { position, bounds_radius }
-            | NHShape::Rhombus { position, bounds_radius }
-                => egui::Rect::from_center_size(*position, 2.0 * *bounds_radius),
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
+            }
+            | NHShape::Rhombus {
+                position,
+                bounds_radius,
+            } => egui::Rect::from_center_size(*position, 2.0 * *bounds_radius),
         }
     }
     pub fn nice_midpoint(&self, other: &NHShape) -> egui::Pos2 {
@@ -330,9 +330,14 @@ impl NHShape {
     pub fn contained_within(&self, rect: egui::Rect) -> bool {
         match &self {
             NHShape::Rect { inner } => rect.contains_rect(*inner),
-            NHShape::Ellipse { position, bounds_radius }
-            | NHShape::Rhombus { position, bounds_radius } =>
-            rect.contains_rect(egui::Rect::from_center_size(
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
+            }
+            | NHShape::Rhombus {
+                position,
+                bounds_radius,
+            } => rect.contains_rect(egui::Rect::from_center_size(
                 *position,
                 2.0 * *bounds_radius,
             )),
@@ -346,8 +351,14 @@ impl NHShape {
                 (inner.center(), egui::Align::Center),
                 (inner.max, egui::Align::Max),
             ],
-            NHShape::Ellipse { position, bounds_radius }
-            | NHShape::Rhombus { position, bounds_radius } => vec![
+            NHShape::Ellipse {
+                position,
+                bounds_radius,
+            }
+            | NHShape::Rhombus {
+                position,
+                bounds_radius,
+            } => vec![
                 (*position - *bounds_radius, egui::Align::Min),
                 (*position, egui::Align::Center),
                 (*position + *bounds_radius, egui::Align::Max),
@@ -355,7 +366,12 @@ impl NHShape {
         }
     }
 
-    pub fn place_labels(&self, around: egui::Pos2, sizes: [egui::Vec2; 2], padding: f32) -> [egui::Pos2; 2] {
+    pub fn place_labels(
+        &self,
+        around: egui::Pos2,
+        sizes: [egui::Vec2; 2],
+        padding: f32,
+    ) -> [egui::Pos2; 2] {
         let [x0, x1, y0, y1] = match self {
             NHShape::Rect { inner } => {
                 let [x0, x1] = if around.x <= inner.left() {
@@ -391,9 +407,8 @@ impl NHShape {
                     ]
                 };
                 [x0, x1, y0, y1]
-            },
-            NHShape::Ellipse { position, .. }
-            | NHShape::Rhombus { position, .. } => {
+            }
+            NHShape::Ellipse { position, .. } | NHShape::Rhombus { position, .. } => {
                 // TODO: doesn't actually generate two unique positions, but close enough
                 let [x0, x1] = if around.x < position.x {
                     [
@@ -418,7 +433,7 @@ impl NHShape {
                     ]
                 };
                 [x0, x1, y0, y1]
-            },
+            }
         };
 
         [egui::Pos2::new(x0, y0), egui::Pos2::new(x1, y1)]
@@ -505,8 +520,9 @@ impl ArrowheadType {
                 canvas.draw_polygon(
                     vec![focal_point, p1, p2],
                     match self {
-                        ArrowheadType::EmptyTriangle
-                        | ArrowheadType::EmptyTriangleWith(..) => secondary_color,
+                        ArrowheadType::EmptyTriangle | ArrowheadType::EmptyTriangleWith(..) => {
+                            secondary_color
+                        }
                         ArrowheadType::FullTriangle => primary_color,
                         _ => unreachable!(),
                     },
@@ -514,7 +530,10 @@ impl ArrowheadType {
                     highlight,
                 );
                 if let ArrowheadType::EmptyTriangleWith(c) = self {
-                    let char_pos = focal_point + egui::Vec2::new(outward_angle.cos(), outward_angle.sin()) * ARROWHEAD_SIDE_LENGTH / 2.0;
+                    let char_pos = focal_point
+                        + egui::Vec2::new(outward_angle.cos(), outward_angle.sin())
+                            * ARROWHEAD_SIDE_LENGTH
+                            / 2.0;
                     canvas.draw_text(
                         char_pos,
                         egui::Align2::CENTER_CENTER,
@@ -598,7 +617,18 @@ impl From<Stroke> for egui::Stroke {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Debug, derive_more::Not, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    Debug,
+    derive_more::Not,
+    serde::Serialize,
+    serde::Deserialize,
+)]
 pub struct Highlight {
     pub selected: bool, // "blue"
     pub valid: bool,    // "green"
@@ -634,16 +664,12 @@ impl Highlight {
 
     pub fn count(&self) -> u8 {
         (if self.selected { 1 } else { 0 })
-        + (if self.valid { 1 } else { 0 })
-        + (if self.invalid { 1 } else { 0 })
-        + (if self.warning { 1 } else { 0 })
+            + (if self.valid { 1 } else { 0 })
+            + (if self.invalid { 1 } else { 0 })
+            + (if self.warning { 1 } else { 0 })
     }
     pub fn combine(&self, set: bool, other: Self) -> Self {
-        if set {
-            self | other
-        } else {
-            self & !other
-        }
+        if set { self | other } else { self & !other }
     }
 }
 
@@ -673,7 +699,6 @@ impl<'a> BitAnd<Highlight> for &'a Highlight {
     }
 }
 
-
 pub const COMMENT_INDICATOR: &[egui::Pos2] = &[
     egui::Pos2::new(0.0, 0.0),
     egui::Pos2::new(8.0, 0.0),
@@ -683,7 +708,6 @@ pub const COMMENT_INDICATOR: &[egui::Pos2] = &[
     egui::Pos2::new(3.0, 4.0),
     egui::Pos2::new(0.0, 4.0),
 ];
-
 
 pub const CLASS_TOP_FONT_SIZE: f32 = 12.0;
 pub const CLASS_MIDDLE_FONT_SIZE: f32 = 15.0;
@@ -726,7 +750,8 @@ pub trait NHCanvas {
         _stroke: Stroke,
         _max_distance: f32,
         _highlight: Highlight,
-    ) {}
+    ) {
+    }
     fn draw_polygon(
         &mut self,
         vertices: Vec<egui::Pos2>,
@@ -751,11 +776,7 @@ pub trait NHCanvas {
         text_color: egui::Color32,
     );
 
-    fn draw_header_text(
-        &mut self,
-        _pos: HeaderLocation,
-        _text: &str,
-    ) {}
+    fn draw_header_text(&mut self, _pos: HeaderLocation, _text: &str) {}
 }
 
 pub struct UiCanvas {
@@ -794,14 +815,20 @@ impl UiCanvas {
         let (top_clip_rect, left_clip_rect, remainder) = {
             let mut remainder = canvas;
             let top_clip = if enable_headers.0 {
-                let r = egui::Rect::from_min_size(remainder.min, egui::Vec2::new(remainder.width(), Self::HEADER_SIZE));
+                let r = egui::Rect::from_min_size(
+                    remainder.min,
+                    egui::Vec2::new(remainder.width(), Self::HEADER_SIZE),
+                );
                 remainder.min.y += Self::HEADER_SIZE;
                 r
             } else {
                 egui::Rect::NOTHING
             };
             let left_clip = if enable_headers.1 {
-                let r = egui::Rect::from_min_size(remainder.min, egui::Vec2::new(Self::HEADER_SIZE, remainder.height()));
+                let r = egui::Rect::from_min_size(
+                    remainder.min,
+                    egui::Vec2::new(Self::HEADER_SIZE, remainder.height()),
+                );
                 remainder.min.x += Self::HEADER_SIZE;
                 r
             } else {
@@ -849,8 +876,13 @@ impl UiCanvas {
     }
 
     pub fn clear(&self, color: egui::Color32) {
-        self.main_area_painter
-            .rect(self.canvas, egui::CornerRadius::ZERO, color, egui::Stroke::NONE, egui::StrokeKind::Middle);
+        self.main_area_painter.rect(
+            self.canvas,
+            egui::CornerRadius::ZERO,
+            color,
+            egui::Stroke::NONE,
+            egui::StrokeKind::Middle,
+        );
     }
 
     pub fn draw_gridlines(
@@ -931,20 +963,22 @@ impl NHCanvas for UiCanvas {
                     .line_segment([p1, p2], egui::Stroke::from(stroke));
             }
             LineType::Dashed => {
-                self.main_area_painter.add(eframe::epaint::Shape::dashed_line(
-                    &[p1, p2],
-                    egui::Stroke::from(stroke),
-                    10.0,
-                    10.0,
-                ));
+                self.main_area_painter
+                    .add(eframe::epaint::Shape::dashed_line(
+                        &[p1, p2],
+                        egui::Stroke::from(stroke),
+                        10.0,
+                        10.0,
+                    ));
             }
             LineType::Dotted => {
-                self.main_area_painter.add(eframe::epaint::Shape::dotted_line(
-                    &[p1, p2],
-                    stroke.color,
-                    4.0,
-                    1.0,
-                ));
+                self.main_area_painter
+                    .add(eframe::epaint::Shape::dotted_line(
+                        &[p1, p2],
+                        stroke.color,
+                        4.0,
+                        1.0,
+                    ));
             }
         }
     }
@@ -1084,22 +1118,21 @@ impl NHCanvas for UiCanvas {
             let total_lines = text.lines().count();
             let max_line_len = text.lines().map(|e| e.len()).max().unwrap_or(0);
             let mut left_top_pos = egui::Pos2::new(
-                position.x - match anchor.x() {
-                    egui::Align::Min => 0.0,
-                    egui::Align::Center => to_width!(max_line_len as f32) / 2.0,
-                    egui::Align::Max => to_width!(max_line_len as f32),
-                },
-                position.y - match anchor.y() {
-                    egui::Align::Min => 0.0,
-                    egui::Align::Center => total_lines as f32 * font_size / 2.0,
-                    egui::Align::Max => total_lines as f32 * font_size,
-                },
+                position.x
+                    - match anchor.x() {
+                        egui::Align::Min => 0.0,
+                        egui::Align::Center => to_width!(max_line_len as f32) / 2.0,
+                        egui::Align::Max => to_width!(max_line_len as f32),
+                    },
+                position.y
+                    - match anchor.y() {
+                        egui::Align::Min => 0.0,
+                        egui::Align::Center => total_lines as f32 * font_size / 2.0,
+                        egui::Align::Max => total_lines as f32 * font_size,
+                    },
             );
             for l in text.lines() {
-                let line_size = egui::Vec2::new(
-                    font_size * l.len() as f32 / 2.2,
-                    font_size,
-                );
+                let line_size = egui::Vec2::new(font_size * l.len() as f32 / 2.2, font_size);
                 self.draw_rectangle(
                     egui::Rect::from_min_size(left_top_pos, line_size),
                     egui::CornerRadius::ZERO,
@@ -1112,14 +1145,13 @@ impl NHCanvas for UiCanvas {
         }
     }
 
-    fn draw_header_text(
-        &mut self,
-        pos: HeaderLocation,
-        text: &str,
-    ) {
+    fn draw_header_text(&mut self, pos: HeaderLocation, text: &str) {
         match pos {
             HeaderLocation::Horizontal(pos) if self.header_horizontal => {
-                let p = egui::Pos2::new((pos.start() + pos.end()) / 2.0, self.camera_offset.y / -self.camera_scale);
+                let p = egui::Pos2::new(
+                    (pos.start() + pos.end()) / 2.0,
+                    self.camera_offset.y / -self.camera_scale,
+                );
                 self.top_header_painter.text(
                     self.sc_tr(p),
                     egui::Align2::CENTER_TOP,
@@ -1127,9 +1159,12 @@ impl NHCanvas for UiCanvas {
                     egui::FontId::proportional(Self::HEADER_TEXT_SIZE),
                     egui::Color32::BLACK,
                 );
-            },
+            }
             HeaderLocation::Vertical(pos) if self.header_vertical => {
-                let p = egui::Pos2::new(self.camera_offset.x / -self.camera_scale, (pos.start() + pos.end()) / 2.0);
+                let p = egui::Pos2::new(
+                    self.camera_offset.x / -self.camera_scale,
+                    (pos.start() + pos.end()) / 2.0,
+                );
                 self.left_header_painter.text(
                     self.sc_tr(p),
                     egui::Align2::LEFT_CENTER,
@@ -1137,7 +1172,7 @@ impl NHCanvas for UiCanvas {
                     egui::FontId::proportional(Self::HEADER_TEXT_SIZE),
                     egui::Color32::BLACK,
                 );
-            },
+            }
             _ => {}
         }
     }
@@ -1164,8 +1199,10 @@ impl<'a> MeasuringCanvas<'a> {
         let scale_x = rect.x / self.bounds.width();
         let scale_y = rect.y / self.bounds.height();
         let scale_min = scale_x.min(scale_y);
-        let offset_x = (rect.x - self.bounds().width() * scale_min) / 2.0 - self.bounds.min.x * scale_min;
-        let offset_y = (rect.y - self.bounds().height() * scale_min) / 2.0 - self.bounds.min.y * scale_min;
+        let offset_x =
+            (rect.x - self.bounds().width() * scale_min) / 2.0 - self.bounds.min.x * scale_min;
+        let offset_y =
+            (rect.y - self.bounds().height() * scale_min) / 2.0 - self.bounds.min.y * scale_min;
         (scale_min, egui::Pos2::new(offset_x, offset_y))
     }
 }
@@ -1175,12 +1212,7 @@ impl<'a> NHCanvas for MeasuringCanvas<'a> {
         None
     }
 
-    fn draw_line(
-        &mut self,
-        points: [egui::Pos2; 2],
-        _stroke: Stroke,
-        _highlight: Highlight,
-    ) {
+    fn draw_line(&mut self, points: [egui::Pos2; 2], _stroke: Stroke, _highlight: Highlight) {
         self.bounds.extend_with(points[0]);
         self.bounds.extend_with(points[1]);
     }

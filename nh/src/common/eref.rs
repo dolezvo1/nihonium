@@ -1,6 +1,5 @@
-
-use std::sync::{Arc, RwLock};
 use crate::common::entity::Entity;
+use std::sync::{Arc, RwLock};
 
 /// Entity Reference - newtype to express entity boundaries
 pub struct ERef<T: ?Sized>(Arc<RwLock<T>>);
@@ -15,7 +14,10 @@ impl<T: ?Sized> Clone for ERef<T> {
 }
 
 impl<T: ?Sized> ERef<T> {
-    pub fn new(element: T) -> Self where T: Sized {
+    pub fn new(element: T) -> Self
+    where
+        T: Sized,
+    {
         Self(Arc::new(RwLock::new(element)))
     }
 
@@ -32,11 +34,17 @@ impl<T, U> std::ops::CoerceUnsized<ERef<U>> for ERef<T>
 where
     T: std::marker::Unsize<U> + ?Sized,
     U: ?Sized,
-{}
+{
+}
 
-impl<T> serde::Serialize for ERef<T> where T: Entity {
+impl<T> serde::Serialize for ERef<T>
+where
+    T: Entity,
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
-       self.0.read().unwrap().tagged_uuid().serialize(serializer)
+    where
+        S: serde::Serializer,
+    {
+        self.0.read().unwrap().tagged_uuid().serialize(serializer)
     }
 }

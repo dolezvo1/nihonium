@@ -1,17 +1,41 @@
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use eframe::{egui, epaint};
 
-use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{BucketNoT, ColorBundle, ColorChangeData, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, Tool, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, uuid::{ModelUuid, ViewUuid}, views::ordered_views::OrderedViews}};
+use crate::{
+    CustomModal,
+    common::{
+        canvas::{self, Highlight},
+        controller::{
+            BucketNoT, ColorBundle, ColorChangeData, DeleteKind, Domain, ElementController,
+            ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext,
+            InputEvent, InsensitiveCommand, PositionNoT, PropertiesStatus, Queryable,
+            SelectionStatus, SnapManager, TargettingStatus, Tool, View,
+        },
+        entity::{Entity, EntityUuid},
+        eref::ERef,
+        project_serde::{NHContextDeserialize, NHContextSerialize},
+        uuid::{ModelUuid, ViewUuid},
+        views::ordered_views::OrderedViews,
+    },
+};
 
-
-pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static {
+pub trait PackageAdapter<DomainT: Domain>:
+    serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync + 'static
+{
     fn model_section(&self) -> DomainT::ViewTargettingSectionT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
     fn model_name(&self) -> Arc<String>;
 
     fn get_element_pos(&self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)>;
-    fn insert_element(&mut self, position: Option<PositionNoT>, element: DomainT::CommonElementT) -> Result<PositionNoT, ()>;
+    fn insert_element(
+        &mut self,
+        position: Option<PositionNoT>,
+        element: DomainT::CommonElementT,
+    ) -> Result<PositionNoT, ()>;
     fn delete_element(&mut self, uuids: &ModelUuid) -> Option<PositionNoT>;
 
     fn background_color(&self, _global_colors: &ColorBundle) -> egui::Color32 {
@@ -40,7 +64,13 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         &mut self,
         q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<
+            InsensitiveCommand<
+                DomainT::OrdinalMovementT,
+                DomainT::AddCommandElementT,
+                DomainT::PropChangeT,
+            >,
+        >,
     );
     fn show_color_property(
         &mut self,
@@ -52,8 +82,18 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
     fn apply_change(
         &mut self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<
+            DomainT::OrdinalMovementT,
+            DomainT::AddCommandElementT,
+            DomainT::PropChangeT,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<
+                DomainT::OrdinalMovementT,
+                DomainT::AddCommandElementT,
+                DomainT::PropChangeT,
+            >,
+        >,
     );
     fn refresh_buffers(&mut self);
 
@@ -61,11 +101,10 @@ pub trait PackageAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize
         &self,
         new_uuid: ModelUuid,
         m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
-    ) -> Self where Self: Sized;
-    fn deep_copy_finish(
-        &mut self,
-        m: &HashMap<ModelUuid, DomainT::CommonElementT>
-    );
+    ) -> Self
+    where
+        Self: Sized;
+    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DomainT::CommonElementT>);
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -102,20 +141,18 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
         owned_views: Vec<DomainT::CommonElementViewT>,
         bounds_rect: egui::Rect,
     ) -> ERef<Self> {
-        ERef::new(
-            Self {
-                uuid,
-                adapter,
-                owned_views: OrderedViews::new(owned_views),
-                all_elements: HashMap::new(),
-                selected_direct_elements: HashSet::new(),
+        ERef::new(Self {
+            uuid,
+            adapter,
+            owned_views: OrderedViews::new(owned_views),
+            all_elements: HashMap::new(),
+            selected_direct_elements: HashSet::new(),
 
-                dragged_type_and_shape: None,
-                highlight: canvas::Highlight::NONE,
-                label_rect: egui::Rect::NOTHING,
-                bounds_rect,
-            }
-        )
+            dragged_type_and_shape: None,
+            highlight: canvas::Highlight::NONE,
+            label_rect: egui::Rect::NOTHING,
+            bounds_rect,
+        })
     }
 
     fn handle_size(&self, ui_scale: f32) -> f32 {
@@ -127,7 +164,7 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
         egui::Pos2::new(
             (self.bounds_rect.right() - 2.0 * self.handle_size(ui_scale) / ui_scale)
                 .max((self.bounds_rect.center().x + self.bounds_rect.right()) / 2.0),
-            self.bounds_rect.top()
+            self.bounds_rect.top(),
         )
     }
 
@@ -136,7 +173,7 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> PackageView<DomainT, Ad
     }
     fn contained_within(&self, rect: &egui::Rect) -> bool {
         rect.contains_rect(self.bounds_rect)
-        && (self.label_rect == egui::Rect::NOTHING || rect.contains_rect(self.label_rect))
+            && (self.label_rect == egui::Rect::NOTHING || rect.contains_rect(self.label_rect))
     }
 }
 
@@ -155,7 +192,9 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> View for PackageView<Do
     }
 }
 
-impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementController<DomainT::CommonElementT> for PackageView<DomainT, AdapterT> {
+impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementController<DomainT::CommonElementT>
+    for PackageView<DomainT, AdapterT>
+{
     fn model(&self) -> DomainT::CommonElementT {
         self.adapter.model_section().into()
     }
@@ -171,7 +210,8 @@ impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementController<Domai
     }
 }
 
-impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementControllerGen2<DomainT> for PackageView<DomainT, AdapterT>
+impl<DomainT: Domain, AdapterT: PackageAdapter<DomainT>> ElementControllerGen2<DomainT>
+    for PackageView<DomainT, AdapterT>
 where
     DomainT::CommonElementViewT: From<ERef<PackageView<DomainT, AdapterT>>>,
 {
@@ -180,7 +220,13 @@ where
         gdc: &GlobalDrawingContext,
         q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<
+            InsensitiveCommand<
+                DomainT::OrdinalMovementT,
+                DomainT::AddCommandElementT,
+                DomainT::PropChangeT,
+            >,
+        >,
     ) -> PropertiesStatus<DomainT> {
         let child = self
             .owned_views
@@ -202,11 +248,17 @@ where
 
                     ui.label("x");
                     if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(x - self.bounds_rect.left(), 0.0)));
+                        commands.push(InsensitiveCommand::MovePositional(
+                            q.selected_views(),
+                            egui::Vec2::new(x - self.bounds_rect.left(), 0.0),
+                        ));
                     }
                     ui.label("y");
                     if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::MovePositional(q.selected_views(), egui::Vec2::new(0.0, y - self.bounds_rect.top())));
+                        commands.push(InsensitiveCommand::MovePositional(
+                            q.selected_views(),
+                            egui::Vec2::new(0.0, y - self.bounds_rect.top()),
+                        ));
                     }
                     ui.end_row();
                 }
@@ -216,11 +268,19 @@ where
 
                     ui.label("width");
                     if ui.add(egui::DragValue::new(&mut x).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::ResizeElementsBy(q.selected_views(), egui::Align2::LEFT_CENTER, egui::Vec2::new(x - self.bounds_rect.width(), 0.0)));
+                        commands.push(InsensitiveCommand::ResizeElementsBy(
+                            q.selected_views(),
+                            egui::Align2::LEFT_CENTER,
+                            egui::Vec2::new(x - self.bounds_rect.width(), 0.0),
+                        ));
                     }
                     ui.label("height");
                     if ui.add(egui::DragValue::new(&mut y).speed(1.0)).changed() {
-                        commands.push(InsensitiveCommand::ResizeElementsBy(q.selected_views(), egui::Align2::CENTER_TOP, egui::Vec2::new(0.0, y - self.bounds_rect.height())));
+                        commands.push(InsensitiveCommand::ResizeElementsBy(
+                            q.selected_views(),
+                            egui::Align2::CENTER_TOP,
+                            egui::Vec2::new(0.0, y - self.bounds_rect.height()),
+                        ));
                     }
                     ui.end_row();
                 }
@@ -255,7 +315,15 @@ where
             self.highlight,
         );
 
-        match self.adapter.draw_label_or_get_text(self.bounds_rect, self.highlight, q, context, settings, canvas, tool) {
+        match self.adapter.draw_label_or_get_text(
+            self.bounds_rect,
+            self.highlight,
+            q,
+            context,
+            settings,
+            canvas,
+            tool,
+        ) {
             Ok(r) => self.label_rect = r,
             Err(label) => {
                 self.label_rect = egui::Rect::NOTHING;
@@ -266,7 +334,7 @@ where
                     canvas::CLASS_MIDDLE_FONT_SIZE,
                     self.adapter.text_color(&context.global_colors),
                 );
-            },
+            }
         }
 
         // Draw resize/drag handles
@@ -301,10 +369,7 @@ where
 
             let dc = self.drag_handle_position(ui_scale);
             canvas.draw_rectangle(
-                egui::Rect::from_center_size(
-                    dc,
-                    egui::Vec2::splat(handle_size / ui_scale),
-                ),
+                egui::Rect::from_center_size(dc, egui::Vec2::splat(handle_size / ui_scale)),
                 egui::CornerRadius::ZERO,
                 egui::Color32::WHITE,
                 canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
@@ -332,22 +397,30 @@ where
 
         let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
-        self.owned_views.draw_order_foreach_mut(|v|
+        self.owned_views.draw_order_foreach_mut(|v| {
             if v.draw_in(q, context, settings, canvas, &tool) == TargettingStatus::Drawn {
                 drawn_child_targetting = TargettingStatus::Drawn;
             }
-        );
+        });
 
         if canvas.ui_scale().is_some() {
             if self.dragged_type_and_shape.is_some() {
-                canvas.draw_line([
-                    egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
-                    egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.center().y),
-                ], canvas::Stroke::new_solid(1.0, egui::Color32::BLUE), canvas::Highlight::NONE);
-                canvas.draw_line([
-                    egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.min.y),
-                    egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.max.y),
-                ], canvas::Stroke::new_solid(1.0, egui::Color32::BLUE), canvas::Highlight::NONE);
+                canvas.draw_line(
+                    [
+                        egui::Pos2::new(self.bounds_rect.min.x, self.bounds_rect.center().y),
+                        egui::Pos2::new(self.bounds_rect.max.x, self.bounds_rect.center().y),
+                    ],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
+                    canvas::Highlight::NONE,
+                );
+                canvas.draw_line(
+                    [
+                        egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.min.y),
+                        egui::Pos2::new(self.bounds_rect.center().x, self.bounds_rect.max.y),
+                    ],
+                    canvas::Stroke::new_solid(1.0, egui::Color32::BLUE),
+                    canvas::Highlight::NONE,
+                );
             }
 
             match (drawn_child_targetting, tool) {
@@ -376,9 +449,8 @@ where
     fn collect_allignment(&mut self, am: &mut SnapManager) {
         am.add_shape(*self.uuid, self.min_shape());
 
-        self.owned_views.event_order_foreach_mut(|v|
-            v.collect_allignment(am)
-        );
+        self.owned_views
+            .event_order_foreach_mut(|v| v.collect_allignment(am));
     }
     fn handle_event(
         &mut self,
@@ -388,7 +460,13 @@ where
         q: &DomainT::QueryableT<'_>,
         tool: &mut Option<DomainT::ToolT>,
         element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<
+            InsensitiveCommand<
+                DomainT::OrdinalMovementT,
+                DomainT::AddCommandElementT,
+                DomainT::PropChangeT,
+            >,
+        >,
     ) -> EventHandlingStatus {
         let k_status = self.owned_views.event_order_find_mut(|v| {
             let s = v.handle_event(event, ehc, settings, q, tool, element_setup_modal, commands);
@@ -406,17 +484,24 @@ where
             InputEvent::MouseDown(pos) => {
                 let handle_size = self.handle_size(1.0);
                 if self.highlight.selected {
-                    for (a,h) in [(egui::Align2::RIGHT_BOTTOM, self.bounds_rect.left_top()),
-                                (egui::Align2::CENTER_BOTTOM, self.bounds_rect.center_top()),
-                                (egui::Align2::LEFT_BOTTOM, self.bounds_rect.right_top()),
-                                (egui::Align2::RIGHT_CENTER, self.bounds_rect.left_center()),
-                                (egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),
-                                (egui::Align2::RIGHT_TOP, self.bounds_rect.left_bottom()),
-                                (egui::Align2::CENTER_TOP, self.bounds_rect.center_bottom()),
-                                (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom())]
-                    {
-                        if egui::Rect::from_center_size(h, egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
-                            self.dragged_type_and_shape = Some((PackageDragType::Resize(a), self.bounds_rect));
+                    for (a, h) in [
+                        (egui::Align2::RIGHT_BOTTOM, self.bounds_rect.left_top()),
+                        (egui::Align2::CENTER_BOTTOM, self.bounds_rect.center_top()),
+                        (egui::Align2::LEFT_BOTTOM, self.bounds_rect.right_top()),
+                        (egui::Align2::RIGHT_CENTER, self.bounds_rect.left_center()),
+                        (egui::Align2::LEFT_CENTER, self.bounds_rect.right_center()),
+                        (egui::Align2::RIGHT_TOP, self.bounds_rect.left_bottom()),
+                        (egui::Align2::CENTER_TOP, self.bounds_rect.center_bottom()),
+                        (egui::Align2::LEFT_TOP, self.bounds_rect.right_bottom()),
+                    ] {
+                        if egui::Rect::from_center_size(
+                            h,
+                            egui::Vec2::splat(handle_size) / ehc.ui_scale,
+                        )
+                        .contains(pos)
+                        {
+                            self.dragged_type_and_shape =
+                                Some((PackageDragType::Resize(a), self.bounds_rect));
                             return EventHandlingStatus::HandledByElement;
                         }
                     }
@@ -425,13 +510,16 @@ where
                 if self.min_shape().border_distance(pos) <= 2.0 / ehc.ui_scale
                     || egui::Rect::from_center_size(
                         self.drag_handle_position(ehc.ui_scale),
-                        egui::Vec2::splat(handle_size) / ehc.ui_scale).contains(pos) {
+                        egui::Vec2::splat(handle_size) / ehc.ui_scale,
+                    )
+                    .contains(pos)
+                {
                     self.dragged_type_and_shape = Some((PackageDragType::Move, self.bounds_rect));
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
-            },
+            }
             InputEvent::MouseUp(_pos) => {
                 if self.dragged_type_and_shape.is_some() {
                     self.dragged_type_and_shape = None;
@@ -442,7 +530,9 @@ where
             }
             InputEvent::Click(pos) => {
                 if !self.contains_pos(pos) {
-                    return k_status.map(|e| e.1).unwrap_or(EventHandlingStatus::NotHandled);
+                    return k_status
+                        .map(|e| e.1)
+                        .unwrap_or(EventHandlingStatus::NotHandled);
                 }
 
                 if let Some(tool) = tool {
@@ -450,7 +540,11 @@ where
                     tool.add_section(self.adapter.model_section());
 
                     if let Ok(esm) = tool.try_flush(q, &self.uuid, 0, None, commands) {
-                        if ehc.modifier_settings.alternative_tool_mode.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
+                        if ehc
+                            .modifier_settings
+                            .alternative_tool_mode
+                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
+                        {
                             *element_setup_modal = esm;
                         }
                     }
@@ -458,38 +552,62 @@ where
                     EventHandlingStatus::HandledByContainer
                 } else if let Some((k, status)) = k_status {
                     if status == EventHandlingStatus::HandledByElement {
-                        if ehc.modifier_settings.hold_selection.is_none_or(|e| !ehc.modifiers.is_superset_of(e)) {
-                            commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
-                            commands.push(InsensitiveCommand::HighlightSpecific(
-                                std::iter::once(k).collect(),
-                                true,
-                                Highlight::SELECTED,
-                            ).into());
+                        if ehc
+                            .modifier_settings
+                            .hold_selection
+                            .is_none_or(|e| !ehc.modifiers.is_superset_of(e))
+                        {
+                            commands.push(
+                                InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into(),
+                            );
+                            commands.push(
+                                InsensitiveCommand::HighlightSpecific(
+                                    std::iter::once(k).collect(),
+                                    true,
+                                    Highlight::SELECTED,
+                                )
+                                .into(),
+                            );
                         } else {
-                            commands.push(InsensitiveCommand::HighlightSpecific(
-                                std::iter::once(k).collect(),
-                                !self.selected_direct_elements.contains(&k),
-                                Highlight::SELECTED,
-                            ).into());
+                            commands.push(
+                                InsensitiveCommand::HighlightSpecific(
+                                    std::iter::once(k).collect(),
+                                    !self.selected_direct_elements.contains(&k),
+                                    Highlight::SELECTED,
+                                )
+                                .into(),
+                            );
                         }
                     }
                     EventHandlingStatus::HandledByContainer
                 } else {
                     EventHandlingStatus::HandledByElement
                 }
-            },
+            }
             InputEvent::Drag { delta, .. } => match self.dragged_type_and_shape {
                 Some((PackageDragType::Move, real_bounds)) => {
                     let translated_bounds = real_bounds.translate(delta);
                     self.dragged_type_and_shape = Some((PackageDragType::Move, translated_bounds));
-                    let translated_real_shape = canvas::NHShape::Rect { inner: translated_bounds };
-                    let coerced_pos = ehc.snap_manager.coerce(translated_real_shape,
-                        |e| !self.all_elements.get(e).is_some() && !if self.highlight.selected { ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected) } else {*e == *self.uuid}
-                    );
+                    let translated_real_shape = canvas::NHShape::Rect {
+                        inner: translated_bounds,
+                    };
+                    let coerced_pos = ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        !self.all_elements.get(e).is_some()
+                            && !if self.highlight.selected {
+                                ehc.all_elements
+                                    .get(e)
+                                    .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                            } else {
+                                *e == *self.uuid
+                            }
+                    });
                     let coerced_delta = coerced_pos - self.position();
 
                     if self.highlight.selected {
-                        commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
+                        commands.push(InsensitiveCommand::MovePositional(
+                            q.selected_views(),
+                            coerced_delta,
+                        ));
                     } else {
                         commands.push(InsensitiveCommand::MovePositional(
                             std::iter::once(*self.uuid).collect(),
@@ -497,7 +615,7 @@ where
                         ));
                     }
                     EventHandlingStatus::HandledByElement
-                },
+                }
                 Some((PackageDragType::Resize(align), real_bounds)) => {
                     let (left, right) = match align.x() {
                         egui::Align::Min => (0.0, delta.x),
@@ -509,27 +627,53 @@ where
                         egui::Align::Center => (0.0, 0.0),
                         egui::Align::Max => (-delta.y, 0.0),
                     };
-                    let new_real_bounds = real_bounds + epaint::MarginF32 { left, right, top, bottom };
-                    self.dragged_type_and_shape = Some((PackageDragType::Resize(align), new_real_bounds));
+                    let new_real_bounds = real_bounds
+                        + epaint::MarginF32 {
+                            left,
+                            right,
+                            top,
+                            bottom,
+                        };
+                    self.dragged_type_and_shape =
+                        Some((PackageDragType::Resize(align), new_real_bounds));
                     let handle_x = match align.x() {
                         egui::Align::Min => (new_real_bounds.right(), self.bounds_rect.right()),
-                        egui::Align::Center => (new_real_bounds.center().x, self.bounds_rect.center().x),
+                        egui::Align::Center => {
+                            (new_real_bounds.center().x, self.bounds_rect.center().x)
+                        }
                         egui::Align::Max => (new_real_bounds.left(), self.bounds_rect.left()),
                     };
                     let handle_y = match align.y() {
                         egui::Align::Min => (new_real_bounds.bottom(), self.bounds_rect.bottom()),
-                        egui::Align::Center => (new_real_bounds.center().y, self.bounds_rect.center().y),
+                        egui::Align::Center => {
+                            (new_real_bounds.center().y, self.bounds_rect.center().y)
+                        }
                         egui::Align::Max => (new_real_bounds.top(), self.bounds_rect.top()),
                     };
                     let coerced_point = ehc.snap_manager.coerce(
-                        canvas::NHShape::Rect { inner: egui::Rect::from_min_size(egui::Pos2::new(handle_x.0, handle_y.0), egui::Vec2::ZERO) },
-                        |e| !self.all_elements.get(e).is_some() && !ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected)
+                        canvas::NHShape::Rect {
+                            inner: egui::Rect::from_min_size(
+                                egui::Pos2::new(handle_x.0, handle_y.0),
+                                egui::Vec2::ZERO,
+                            ),
+                        },
+                        |e| {
+                            !self.all_elements.get(e).is_some()
+                                && !ehc
+                                    .all_elements
+                                    .get(e)
+                                    .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                        },
                     );
                     let coerced_delta = coerced_point - egui::Pos2::new(handle_x.1, handle_y.1);
 
-                    commands.push(InsensitiveCommand::ResizeElementsBy(q.selected_views(), align, coerced_delta));
+                    commands.push(InsensitiveCommand::ResizeElementsBy(
+                        q.selected_views(),
+                        align,
+                        coerced_delta,
+                    ));
                     EventHandlingStatus::HandledByElement
-                },
+                }
                 None => EventHandlingStatus::NotHandled,
             },
         }
@@ -537,15 +681,25 @@ where
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<
+            DomainT::OrdinalMovementT,
+            DomainT::AddCommandElementT,
+            DomainT::PropChangeT,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<
+                DomainT::OrdinalMovementT,
+                DomainT::AddCommandElementT,
+                DomainT::PropChangeT,
+            >,
+        >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! recurse {
             () => {
-                self.owned_views.event_order_foreach_mut(|v|
+                self.owned_views.event_order_foreach_mut(|v| {
                     v.apply_command(command, undo_accumulator, affected_models)
-                );
+                });
             };
         }
         macro_rules! resize_to {
@@ -578,7 +732,11 @@ where
                 }
 
                 if h.selected {
-                    for k in self.owned_views.iter_event_order_keys().filter(|k| uuids.contains(k)) {
+                    for k in self
+                        .owned_views
+                        .iter_event_order_keys()
+                        .filter(|k| uuids.contains(k))
+                    {
                         match set {
                             true => self.selected_direct_elements.insert(k),
                             false => self.selected_direct_elements.remove(&k),
@@ -597,7 +755,8 @@ where
             InsensitiveCommand::MovePositional(uuids, _) if !uuids.contains(&*self.uuid) => {
                 recurse!();
             }
-            InsensitiveCommand::MovePositional(_, delta) | InsensitiveCommand::MovePositionalAll(delta) => {
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
                 self.bounds_rect.set_center(self.position() + *delta);
                 undo_accumulator.push(InsensitiveCommand::MovePositional(
                     std::iter::once(*self.uuid).collect(),
@@ -605,12 +764,16 @@ where
                 ));
                 let mut void = vec![];
                 self.owned_views.event_order_foreach_mut(|v| {
-                    v.apply_command(&InsensitiveCommand::MovePositionalAll(*delta), &mut void, affected_models);
+                    v.apply_command(
+                        &InsensitiveCommand::MovePositionalAll(*delta),
+                        &mut void,
+                        affected_models,
+                    );
                 });
             }
             InsensitiveCommand::MoveOrdinal(..) => {
                 recurse!();
-            },
+            }
             InsensitiveCommand::ResizeElementsBy(uuids, align, delta) => {
                 if uuids.contains(&self.uuid) {
                     let min_delta_x = 40.0 - self.bounds_rect.width();
@@ -626,7 +789,13 @@ where
                         egui::Align::Max => ((-delta.y).max(min_delta_y), 0.0),
                     };
 
-                    let r = self.bounds_rect + epaint::MarginF32{left, right, top, bottom};
+                    let r = self.bounds_rect
+                        + epaint::MarginF32 {
+                            left,
+                            right,
+                            top,
+                            bottom,
+                        };
                     resize_to!(r);
                 }
 
@@ -647,7 +816,9 @@ where
                 {
                     let (b, pos) = if *delete_kind == DeleteKind::DeleteView {
                         (0, None)
-                    } else if let Some((b, pos)) = self.adapter.get_element_pos(&element.model_uuid()) {
+                    } else if let Some((b, pos)) =
+                        self.adapter.get_element_pos(&element.model_uuid())
+                    {
                         (b, Some(pos))
                     } else {
                         continue;
@@ -659,30 +830,42 @@ where
                         position: pos,
                         element: element.clone().into(),
                         into_model: false,
-                     });
+                    });
                 }
 
                 self.owned_views.retain(|k, _v| !uuids.contains(k));
 
                 recurse!();
             }
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+            InsensitiveCommand::AddDependency {
+                target,
+                bucket,
+                position,
+                element,
+                into_model,
+            } => {
                 if *target == *self.uuid && *bucket == 0 {
                     if let Ok(mut view) = element.clone().try_into()
-                        && (!*into_model || self.adapter.insert_element(*position, view.model()).is_ok()){
+                        && (!*into_model
+                            || self.adapter.insert_element(*position, view.model()).is_ok())
+                    {
                         let uuid = *view.uuid();
                         undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                             target: *self.uuid,
                             bucket: *bucket,
                             element: uuid,
                             including_model: *into_model,
-                         });
+                        });
 
                         if *into_model {
                             affected_models.insert(*self.adapter.model_uuid());
                         }
                         let mut model_transitives = HashMap::new();
-                        view.head_count(&mut HashMap::new(), &mut HashMap::new(), &mut model_transitives);
+                        view.head_count(
+                            &mut HashMap::new(),
+                            &mut HashMap::new(),
+                            &mut model_transitives,
+                        );
                         affected_models.extend(model_transitives.into_keys());
 
                         self.owned_views.push(uuid, view);
@@ -691,17 +874,23 @@ where
 
                 recurse!();
             }
-            InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
+            InsensitiveCommand::RemoveDependency {
+                target,
+                bucket,
+                element,
+                including_model,
+            } => {
                 if *target == *self.uuid && *bucket == 0 {
                     if let Some(view) = self.owned_views.get(element)
-                        && let Some(pos) = self.adapter.delete_element(&view.model_uuid()) {
+                        && let Some(pos) = self.adapter.delete_element(&view.model_uuid())
+                    {
                         undo_accumulator.push(InsensitiveCommand::AddDependency {
                             target: *self.uuid,
                             bucket: *bucket,
                             position: Some(pos),
                             element: view.clone().into(),
                             into_model: *including_model,
-                         });
+                        });
 
                         if *including_model {
                             affected_models.insert(*self.adapter.model_uuid());
@@ -714,14 +903,11 @@ where
             }
             InsensitiveCommand::ArrangeSpecificElements(uuids, arr) => {
                 self.owned_views.apply_arrangement(uuids, *arr);
-            },
+            }
             InsensitiveCommand::PropertyChange(uuids, _property) => {
                 if uuids.contains(&*self.uuid) {
-                    self.adapter.apply_change(
-                        &self.uuid,
-                        command,
-                        undo_accumulator,
-                    );
+                    self.adapter
+                        .apply_change(&self.uuid, command, undo_accumulator);
                     affected_models.insert(*self.adapter.model_uuid());
                 }
 
@@ -744,14 +930,23 @@ where
         flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
 
         self.all_elements.clear();
-        self.owned_views.event_order_foreach_mut(|v|
-            v.head_count(flattened_views, &mut self.all_elements, flattened_represented_models)
-        );
+        self.owned_views.event_order_foreach_mut(|v| {
+            v.head_count(
+                flattened_views,
+                &mut self.all_elements,
+                flattened_represented_models,
+            )
+        });
         for e in &self.all_elements {
-            flattened_views_status.insert(*e.0, match *e.1 {
-                SelectionStatus::NotSelected if self.highlight.selected => SelectionStatus::TransitivelySelected,
-                e => e,
-            });
+            flattened_views_status.insert(
+                *e.0,
+                match *e.1 {
+                    SelectionStatus::NotSelected if self.highlight.selected => {
+                        SelectionStatus::TransitivelySelected
+                    }
+                    e => e,
+                },
+            );
         }
 
         self.owned_views.event_order_foreach_mut(|v| {
@@ -770,9 +965,8 @@ where
         if requested.is_none_or(|e| e.contains(&self.uuid)) {
             self.deep_copy_clone(uuid_present, tlc, c, m);
         } else {
-            self.owned_views.event_order_foreach(|v|
-                v.deep_copy_walk(requested, uuid_present, tlc, c, m)
-            );
+            self.owned_views
+                .event_order_foreach(|v| v.deep_copy_walk(requested, uuid_present, tlc, c, m));
         }
     }
     fn deep_copy_clone(
@@ -789,9 +983,8 @@ where
         };
 
         let mut inner = HashMap::new();
-        self.owned_views.event_order_foreach(|v|
-            v.deep_copy_clone(uuid_present, &mut inner, c, m)
-        );
+        self.owned_views
+            .event_order_foreach(|v| v.deep_copy_clone(uuid_present, &mut inner, c, m));
 
         let cloneish = ERef::new(Self {
             uuid: view_uuid.into(),
@@ -812,9 +1005,8 @@ where
         c: &HashMap<ViewUuid, DomainT::CommonElementViewT>,
         m: &HashMap<ModelUuid, DomainT::CommonElementT>,
     ) {
-        self.owned_views.event_order_foreach_mut(|v|
-            v.deep_copy_relink(c, m)
-        );
+        self.owned_views
+            .event_order_foreach_mut(|v| v.deep_copy_relink(c, m));
         self.adapter.deep_copy_finish(m);
     }
 }

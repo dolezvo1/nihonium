@@ -1,15 +1,33 @@
 use super::super::umlclass::{
-        umlclass_models::UmlClassDiagram,
-        umlclass_controllers::{LinkType, PlantUmlTab, UmlClassDiagramAdapter, UmlClassDomain, UmlClassElementView, UmlClassProfile, UmlClassToolStage, StereotypeController, UmlClassElementOrVertex, new_umlclass_association, new_umlclass_class, new_umlclass_generalization},
-};
-use crate::{DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF, common::{
-    controller::{
-        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MGlobalColor, MultiDiagramController, PositionNoT, ProjectCommand, View
+    umlclass_controllers::{
+        LinkType, PlantUmlTab, StereotypeController, UmlClassDiagramAdapter, UmlClassDomain,
+        UmlClassElementOrVertex, UmlClassElementView, UmlClassProfile, UmlClassToolStage,
+        new_umlclass_association, new_umlclass_class, new_umlclass_generalization,
     },
-    eref::ERef,
-    project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
-    uuid::{ControllerUuid, ModelUuid, ViewUuid}, views::multiconnection_view::MULTICONNECTION_SOURCE_BUCKET,
-}, domains::{ontouml::ontouml_models, umlclass::{umlclass_controllers::{PartialUmlClassElement, UmlClassRenderStyle, UmlClassView}, umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind}}}};
+    umlclass_models::UmlClassDiagram,
+};
+use crate::{
+    DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF,
+    DiagramCreationData, DiagramInfo, ShowSettingsF,
+    common::{
+        controller::{
+            BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2,
+            DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand,
+            MGlobalColor, MultiDiagramController, PositionNoT, ProjectCommand, View,
+        },
+        eref::ERef,
+        project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
+        uuid::{ControllerUuid, ModelUuid, ViewUuid},
+        views::multiconnection_view::MULTICONNECTION_SOURCE_BUCKET,
+    },
+    domains::{
+        ontouml::ontouml_models,
+        umlclass::{
+            umlclass_controllers::{PartialUmlClassElement, UmlClassRenderStyle, UmlClassView},
+            umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind},
+        },
+    },
+};
 use eframe::egui;
 use std::{
     collections::HashSet,
@@ -39,13 +57,17 @@ impl UmlClassProfile for OntoUmlProfile {
             let uuid = uuid::Uuid::now_v7();
             commands.push(ProjectCommand::AddCustomTab(
                 uuid,
-                Arc::new(RwLock::new(super::ontouml_validations::OntoUMLValidationTab::new(model.clone(), *view_uuid))),
+                Arc::new(RwLock::new(
+                    super::ontouml_validations::OntoUMLValidationTab::new(
+                        model.clone(),
+                        *view_uuid,
+                    ),
+                )),
             ));
         }
         ui.separator();
     }
 }
-
 
 #[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 pub struct OntoUmlControllerAdapter {
@@ -54,7 +76,10 @@ pub struct OntoUmlControllerAdapter {
 }
 
 impl ControllerAdapter<UmlClassDomain<OntoUmlProfile>> for OntoUmlControllerAdapter {
-    type DiagramViewT = DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>;
+    type DiagramViewT = DiagramControllerGen2<
+        UmlClassDomain<OntoUmlProfile>,
+        UmlClassDiagramAdapter<OntoUmlProfile>,
+    >;
 
     fn model(&self) -> ERef<UmlClassDiagram> {
         self.model.clone()
@@ -67,18 +92,37 @@ impl ControllerAdapter<UmlClassDomain<OntoUmlProfile>> for OntoUmlControllerAdap
     }
 
     fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
-        super::super::umlclass::umlclass_models::transitive_closure(&self.model.read(), when_deleting)
+        super::super::umlclass::umlclass_models::transitive_closure(
+            &self.model.read(),
+            when_deleting,
+        )
     }
 
-    fn insert_element(&mut self, parent: ModelUuid, element: UmlClassElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
-        self.model.write().insert_element_into(parent, element, b, p)
+    fn insert_element(
+        &mut self,
+        parent: ModelUuid,
+        element: UmlClassElement,
+        b: BucketNoT,
+        p: Option<PositionNoT>,
+    ) -> Result<(), ()> {
+        self.model
+            .write()
+            .insert_element_into(parent, element, b, p)
     }
 
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
+    fn delete_elements(
+        &mut self,
+        uuids: &HashSet<ModelUuid>,
+        undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>,
+    ) {
         self.model.write().delete_elements(uuids, undo)
     }
 
-    fn show_add_shared_diagram_menu(&self, _gdc: &GlobalDrawingContext, ui: &mut egui::Ui) -> Option<ERef<Self::DiagramViewT>> {
+    fn show_add_shared_diagram_menu(
+        &self,
+        _gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) -> Option<ERef<Self::DiagramViewT>> {
         if ui.button("OntoUML Diagram").clicked() {
             return Some(Self::DiagramViewT::new(
                 ViewUuid::now_v7().into(),
@@ -91,7 +135,6 @@ impl ControllerAdapter<UmlClassDomain<OntoUmlProfile>> for OntoUmlControllerAdap
     }
 }
 
-
 fn new_controlller(
     model: ERef<UmlClassDiagram>,
     name: String,
@@ -100,20 +143,18 @@ fn new_controlller(
     let uuid = ViewUuid::now_v7();
     (
         uuid,
-        ERef::new(
-            MultiDiagramController::new(
-                ControllerUuid::now_v7(),
-                OntoUmlControllerAdapter { model: model.clone() },
-                vec![
-                    DiagramControllerGen2::new(
-                        uuid.into(),
-                        name.into(),
-                        UmlClassDiagramAdapter::<OntoUmlProfile>::new(model),
-                        elements,
-                    )
-                ]
-            )
-        )
+        ERef::new(MultiDiagramController::new(
+            ControllerUuid::now_v7(),
+            OntoUmlControllerAdapter {
+                model: model.clone(),
+            },
+            vec![DiagramControllerGen2::new(
+                uuid.into(),
+                name.into(),
+                UmlClassDiagramAdapter::<OntoUmlProfile>::new(model),
+                elements,
+            )],
+        )),
     )
 }
 
@@ -128,13 +169,48 @@ pub fn new(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
 }
 
 pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
-    let (animal_model, animal_view) = new_ontouml_class("Animal", ontouml_models::KIND, false, egui::Pos2::new(350.0, 200.0));
-    let (temp_model, temp_view) = new_ontouml_class("Body Temperature", ontouml_models::QUALITY, false, egui::Pos2::new(100.0, 200.0));
-    let (human_model, human_view) = new_ontouml_class("Human", ontouml_models::SUBKIND, false, egui::Pos2::new(350.0, 350.0));
-    let (alive_model, alive_view) = new_ontouml_class("Alive", ontouml_models::PHASE, false, egui::Pos2::new(550.0, 160.0));
-    let (dead_model, dead_view) = new_ontouml_class("Dead", ontouml_models::PHASE, false, egui::Pos2::new(550.0, 250.0));
-    let (spouse_model, spouse_view) = new_ontouml_class("Spouse", ontouml_models::ROLE, false, egui::Pos2::new(350.0, 500.0));
-    let (marriage_model, marriage_view) = new_ontouml_class("Marriage", ontouml_models::RELATOR, false, egui::Pos2::new(550.0, 500.0));
+    let (animal_model, animal_view) = new_ontouml_class(
+        "Animal",
+        ontouml_models::KIND,
+        false,
+        egui::Pos2::new(350.0, 200.0),
+    );
+    let (temp_model, temp_view) = new_ontouml_class(
+        "Body Temperature",
+        ontouml_models::QUALITY,
+        false,
+        egui::Pos2::new(100.0, 200.0),
+    );
+    let (human_model, human_view) = new_ontouml_class(
+        "Human",
+        ontouml_models::SUBKIND,
+        false,
+        egui::Pos2::new(350.0, 350.0),
+    );
+    let (alive_model, alive_view) = new_ontouml_class(
+        "Alive",
+        ontouml_models::PHASE,
+        false,
+        egui::Pos2::new(550.0, 160.0),
+    );
+    let (dead_model, dead_view) = new_ontouml_class(
+        "Dead",
+        ontouml_models::PHASE,
+        false,
+        egui::Pos2::new(550.0, 250.0),
+    );
+    let (spouse_model, spouse_view) = new_ontouml_class(
+        "Spouse",
+        ontouml_models::ROLE,
+        false,
+        egui::Pos2::new(350.0, 500.0),
+    );
+    let (marriage_model, marriage_view) = new_ontouml_class(
+        "Marriage",
+        ontouml_models::RELATOR,
+        false,
+        egui::Pos2::new(550.0, 500.0),
+    );
 
     let (gen_phase_model, gen_phase_view) = new_umlclass_generalization(
         "",
@@ -172,13 +248,21 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     );
 
     let (char_model, char_view) = new_umlclass_association(
-        ontouml_models::CHARACTERIZATION, "", "1", "1", None,
+        ontouml_models::CHARACTERIZATION,
+        "",
+        "1",
+        "1",
+        None,
         (animal_model.clone().into(), animal_view.clone().into()),
         (temp_model.clone().into(), temp_view.clone().into()),
     );
 
     let (mediation_model, mediation_view) = new_umlclass_association(
-        ontouml_models::MEDIATION, "", "2..2", "1..1", None,
+        ontouml_models::MEDIATION,
+        "",
+        "2..2",
+        "1..1",
+        None,
         (spouse_model.clone().into(), spouse_view.clone().into()),
         (marriage_model.clone().into(), marriage_view.clone().into()),
     );
@@ -222,42 +306,32 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     )
 }
 
-pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<OntoUmlProfile>, OntoUmlControllerAdapter, DiagramControllerGen2<UmlClassDomain<OntoUmlProfile>, UmlClassDiagramAdapter<OntoUmlProfile>>>>(&uuid)?)
+pub fn deserializer(
+    uuid: ControllerUuid,
+    d: &mut NHDeserializer,
+) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
+    Ok(d.get_entity::<MultiDiagramController<
+        UmlClassDomain<OntoUmlProfile>,
+        OntoUmlControllerAdapter,
+        DiagramControllerGen2<
+            UmlClassDomain<OntoUmlProfile>,
+            UmlClassDiagramAdapter<OntoUmlProfile>,
+        >,
+    >>(&uuid)?)
 }
 
 mod buttons {
     use super::*;
     use std::sync::LazyLock;
 
-    fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<OntoUmlProfile>, bool) {
-        let link_type = LinkType::Association {
-            stereotype: "".to_owned(),
-            source_multiplicity: "0..*".to_owned(),
-            target_multiplicity: "1..1".to_owned(),
-        };
-        (
-
-            UmlClassToolStage::LinkStart {
-                link_type: link_type.clone(),
-            },
-            UmlClassToolStage::LinkEnd,
-            PartialUmlClassElement::Link {
-                link_type,
-                source: m.into(),
-                dest: None,
-            },
-            true,
-        )
-    }
-    type InstanceButtonF = dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<OntoUmlProfile>, bool);
-    pub const INSTANCE_BUTTONS: LazyLock<Vec<(&'static str, &InstanceButtonF)>> = LazyLock::new(|| vec![
-        (
-            "↘",
-            &instance_association as &InstanceButtonF,
-        ),
-    ]);
-    fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<OntoUmlProfile>, bool) {
+    fn instance_association(
+        m: ERef<UmlClassInstance>,
+    ) -> (
+        UmlClassToolStage,
+        UmlClassToolStage,
+        PartialUmlClassElement<OntoUmlProfile>,
+        bool,
+    ) {
         let link_type = LinkType::Association {
             stereotype: "".to_owned(),
             source_multiplicity: "0..*".to_owned(),
@@ -276,13 +350,52 @@ mod buttons {
             true,
         )
     }
-    type ClassButtonF = dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<OntoUmlProfile>, bool);
-    pub const CLASS_BUTTONS: LazyLock<Vec<(&'static str, &'static ClassButtonF)>> = LazyLock::new(|| vec![
+    type InstanceButtonF = dyn Fn(
+        ERef<UmlClassInstance>,
+    ) -> (
+        UmlClassToolStage,
+        UmlClassToolStage,
+        PartialUmlClassElement<OntoUmlProfile>,
+        bool,
+    );
+    pub const INSTANCE_BUTTONS: LazyLock<Vec<(&'static str, &InstanceButtonF)>> =
+        LazyLock::new(|| vec![("↘", &instance_association as &InstanceButtonF)]);
+    fn class_association(
+        m: ERef<UmlClass>,
+    ) -> (
+        UmlClassToolStage,
+        UmlClassToolStage,
+        PartialUmlClassElement<OntoUmlProfile>,
+        bool,
+    ) {
+        let link_type = LinkType::Association {
+            stereotype: "".to_owned(),
+            source_multiplicity: "0..*".to_owned(),
+            target_multiplicity: "1..1".to_owned(),
+        };
         (
-            "↘",
-            &class_association as &ClassButtonF,
-        ),
-    ]);
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type,
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    type ClassButtonF = dyn Fn(
+        ERef<UmlClass>,
+    ) -> (
+        UmlClassToolStage,
+        UmlClassToolStage,
+        PartialUmlClassElement<OntoUmlProfile>,
+        bool,
+    );
+    pub const CLASS_BUTTONS: LazyLock<Vec<(&'static str, &'static ClassButtonF)>> =
+        LazyLock::new(|| vec![("↘", &class_association as &ClassButtonF)]);
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
@@ -305,23 +418,27 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         (ontouml_models::MODE, "Mode", "Intention", false),
         (ontouml_models::QUALITY, "Quality", "Height", false),
     ] {
-        classes.push(
-            (UmlClassToolStage::Class {
+        classes.push((
+            UmlClassToolStage::Class {
                 name: name.to_owned(),
                 stereotype: stereotype.to_owned(),
                 is_abstract,
                 render_style: UmlClassRenderStyle::Class,
                 background_color: MGlobalColor::None,
-            }, label),
-        );
+            },
+            label,
+        ));
     }
 
     let mut relationships = Vec::new();
-    relationships.push(
-        (UmlClassToolStage::LinkStart {
-            link_type: LinkType::Generalization { set_name: "".to_owned() },
-        }, "Generalization (Set)"),
-    );
+    relationships.push((
+        UmlClassToolStage::LinkStart {
+            link_type: LinkType::Generalization {
+                set_name: "".to_owned(),
+            },
+        },
+        "Generalization (Set)",
+    ));
     for (stereotype, label) in [
         (ontouml_models::FORMAL, "Formal"),
         (ontouml_models::MEDIATION, "Mediation"),
@@ -333,33 +450,43 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
         (ontouml_models::SUBCOLLECTION_OF, "SubcollectionOf"),
         (ontouml_models::SUBQUANTITY_OF, "SubquantityOf"),
     ] {
-        relationships.push(
-            (UmlClassToolStage::LinkStart {
+        relationships.push((
+            UmlClassToolStage::LinkStart {
                 link_type: LinkType::Association {
                     stereotype: stereotype.to_owned(),
                     source_multiplicity: "0..*".to_owned(),
                     target_multiplicity: "1..1".to_owned(),
-                }
-            }, label),
-        );
+                },
+            },
+            label,
+        ));
     }
 
     let palette_items = vec![
         ("Classes", classes),
         ("Relationships", relationships),
-        ("Other", vec![
-            (UmlClassToolStage::PackageStart {
-                name: "a package".to_owned(),
-                stereotype: "".to_owned(),
-                kind: UmlClassPackageKind::Package,
-            }, "Package"),
-            (UmlClassToolStage::Comment {
-                stereotype: "".to_owned(),
-                text: "a comment".to_owned(),
-                align: egui::Align2::CENTER_CENTER,
-            }, "Comment"),
-            (UmlClassToolStage::CommentLinkStart, "Comment Link"),
-        ]),
+        (
+            "Other",
+            vec![
+                (
+                    UmlClassToolStage::PackageStart {
+                        name: "a package".to_owned(),
+                        stereotype: "".to_owned(),
+                        kind: UmlClassPackageKind::Package,
+                    },
+                    "Package",
+                ),
+                (
+                    UmlClassToolStage::Comment {
+                        stereotype: "".to_owned(),
+                        text: "a comment".to_owned(),
+                        align: egui::Align2::CENTER_CENTER,
+                    },
+                    "Comment",
+                ),
+                (UmlClassToolStage::CommentLinkStart, "Comment Link"),
+            ],
+        ),
     ];
 
     super::super::umlclass::umlclass_controllers::default_settings_helper::<OntoUmlProfile>(
@@ -377,8 +504,14 @@ pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettin
     )
 }
 
-pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
-    super::super::umlclass::umlclass_controllers::settings_function_helper::<OntoUmlProfile>(gdc, ui, s);
+pub fn settings_function(
+    gdc: &mut GlobalDrawingContext,
+    ui: &mut egui::Ui,
+    s: &mut Box<dyn DiagramSettings>,
+) {
+    super::super::umlclass::umlclass_controllers::settings_function_helper::<OntoUmlProfile>(
+        gdc, ui, s,
+    );
 }
 
 inventory::submit! {DiagramInfo {
@@ -397,7 +530,6 @@ inventory::submit! {DiagramInfo {
     },
     deserializer: &(deserializer as DeserializeControllerF),
 }}
-
 
 #[derive(Clone, Default)]
 pub struct OntoUmlClassStereotypeController {
@@ -463,9 +595,17 @@ pub fn new_ontouml_class(
     is_abstract: bool,
     position: egui::Pos2,
 ) -> (ERef<UmlClass>, ERef<UmlClassView<OntoUmlProfile>>) {
-    new_umlclass_class(name, stereotype, is_abstract, Vec::new(), Vec::new(), position, UmlClassRenderStyle::Class, MGlobalColor::None)
+    new_umlclass_class(
+        name,
+        stereotype,
+        is_abstract,
+        Vec::new(),
+        Vec::new(),
+        position,
+        UmlClassRenderStyle::Class,
+        MGlobalColor::None,
+    )
 }
-
 
 #[derive(Clone, Default)]
 pub struct OntoUmlAssociationStereotypeController {
@@ -492,10 +632,7 @@ impl StereotypeController for OntoUmlAssociationStereotypeController {
                     (ontouml_models::SUBCOLLECTION_OF, "SubcollectionOf"),
                     (ontouml_models::SUBQUANTITY_OF, "SubquantityOf"),
                 ] {
-                    if ui
-                        .selectable_value(&mut self.buffer, sv.0, sv.1)
-                        .changed()
-                    {
+                    if ui.selectable_value(&mut self.buffer, sv.0, sv.1).changed() {
                         changed = true;
                         self.refresh(sv.0);
                     }

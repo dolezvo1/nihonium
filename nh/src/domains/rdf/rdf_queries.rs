@@ -1,11 +1,16 @@
-
 use eframe::egui;
 
 use sophia::api::{prelude::SparqlDataset, sparql::Query};
 use sophia_sparql::{ResultTerm, SparqlQuery, SparqlWrapper};
 
-use crate::{CustomTab, common::{controller::{GlobalDrawingContext, ProjectCommand}, eref::ERef}};
 use super::rdf_models::RdfDiagram;
+use crate::{
+    CustomTab,
+    common::{
+        controller::{GlobalDrawingContext, ProjectCommand},
+        eref::ERef,
+    },
+};
 
 pub struct SparqlQueriesTab {
     model: ERef<RdfDiagram>,
@@ -18,7 +23,7 @@ pub struct SparqlQueriesTab {
 
 impl SparqlQueriesTab {
     pub fn new(model: ERef<RdfDiagram>) -> Self {
-         Self {
+        Self {
             model,
             selected_query: None,
             query_name_buffer: "".to_owned(),

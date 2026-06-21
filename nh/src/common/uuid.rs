@@ -1,4 +1,3 @@
-
 macro_rules! impl_uuid {
     ($struct_name:ty) => {
         impl $struct_name {
@@ -36,7 +35,9 @@ macro_rules! impl_uuid {
     };
 }
 
-#[derive(Clone, Copy, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
 #[serde(transparent)]
 pub struct ModelUuid {
     inner: uuid::Uuid,
@@ -44,7 +45,9 @@ pub struct ModelUuid {
 
 impl_uuid!(ModelUuid);
 
-#[derive(Clone, Copy, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
 #[serde(transparent)]
 pub struct ViewUuid {
     inner: uuid::Uuid,
@@ -52,7 +55,9 @@ pub struct ViewUuid {
 
 impl_uuid!(ViewUuid);
 
-#[derive(Clone, Copy, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
 #[serde(transparent)]
 pub struct ControllerUuid {
     inner: uuid::Uuid,

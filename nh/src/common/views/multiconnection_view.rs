@@ -1,8 +1,26 @@
-
-use std::{collections::{HashMap, HashSet}, sync::Arc};
 use eframe::egui;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
-use crate::{CustomModal, common::{canvas::{self, Highlight}, controller::{BucketNoT, DeleteKind, Domain, ElementController, ElementControllerGen2, EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent, InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable, SelectionStatus, SnapManager, TargettingStatus, View}, entity::{Entity, EntityUuid}, eref::ERef, project_serde::{NHContextDeserialize, NHContextSerialize}, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}}};
+use crate::{
+    CustomModal,
+    common::{
+        canvas::{self, Highlight},
+        controller::{
+            BucketNoT, DeleteKind, Domain, ElementController, ElementControllerGen2,
+            EventHandlingContext, EventHandlingStatus, GlobalDrawingContext, InputEvent,
+            InsensitiveCommand, LabelProvider, PositionNoT, PropertiesStatus, Queryable,
+            SelectionStatus, SnapManager, TargettingStatus, View,
+        },
+        entity::{Entity, EntityUuid},
+        eref::ERef,
+        project_serde::{NHContextDeserialize, NHContextSerialize},
+        ufoption::UFOption,
+        uuid::{ModelUuid, ViewUuid},
+    },
+};
 
 #[derive(Clone)]
 pub struct ArrowData {
@@ -18,7 +36,13 @@ impl ArrowData {
         line_type: canvas::LineType,
         arrowhead_type: canvas::ArrowheadType,
     ) -> Self {
-        Self { line_type, arrowhead_type, multiplicity: None, role: None, reading: None }
+        Self {
+            line_type,
+            arrowhead_type,
+            multiplicity: None,
+            role: None,
+            reading: None,
+        }
     }
 }
 
@@ -27,24 +51,39 @@ pub fn init_points(
     target_uuid: ModelUuid,
     target_shape: canvas::NHShape,
     center_point: Option<(ViewUuid, egui::Pos2)>,
-) -> (Vec<Vec<(ViewUuid, egui::Pos2)>>, Option<(ViewUuid, egui::Pos2)>, Vec<Vec<(ViewUuid, egui::Pos2)>>) {
+) -> (
+    Vec<Vec<(ViewUuid, egui::Pos2)>>,
+    Option<(ViewUuid, egui::Pos2)>,
+    Vec<Vec<(ViewUuid, egui::Pos2)>>,
+) {
     if source_uuid.any(|e| e == target_uuid) {
         let (min, quarter_size) = match target_shape {
             canvas::NHShape::Rect { inner } => (inner.min, inner.size() / 4.0),
-            canvas::NHShape::Ellipse { position, bounds_radius }
-            | canvas::NHShape::Rhombus { position, bounds_radius }
-                => (position - bounds_radius, bounds_radius / 2.0),
+            canvas::NHShape::Ellipse {
+                position,
+                bounds_radius,
+            }
+            | canvas::NHShape::Rhombus {
+                position,
+                bounds_radius,
+            } => (position - bounds_radius, bounds_radius / 2.0),
         };
 
         (
             vec![vec![
                 (ViewUuid::now_v7(), egui::Pos2::ZERO),
-                (ViewUuid::now_v7(), min + egui::Vec2::new(quarter_size.x, -quarter_size.y)),
+                (
+                    ViewUuid::now_v7(),
+                    min + egui::Vec2::new(quarter_size.x, -quarter_size.y),
+                ),
             ]],
             Some((ViewUuid::now_v7(), min - quarter_size)),
             vec![vec![
                 (ViewUuid::now_v7(), egui::Pos2::ZERO),
-                (ViewUuid::now_v7(), min + egui::Vec2::new(-quarter_size.x, quarter_size.y)),
+                (
+                    ViewUuid::now_v7(),
+                    min + egui::Vec2::new(-quarter_size.x, quarter_size.y),
+                ),
             ]],
         )
     } else {
@@ -56,7 +95,9 @@ pub fn init_points(
     }
 }
 
-pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync {
+pub trait MulticonnectionAdapter<DomainT: Domain>:
+    serde::Serialize + NHContextSerialize + NHContextDeserialize + Send + Sync
+{
     fn model(&self) -> DomainT::CommonElementT;
     fn model_uuid(&self) -> Arc<ModelUuid>;
 
@@ -84,13 +125,21 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
     fn flip_multiconnection(&mut self) -> Result<(), ()> {
         Err(())
     }
-    fn insert_source(&mut self, _position: Option<PositionNoT>, _e: DomainT::CommonElementT) -> Result<PositionNoT, ()> {
+    fn insert_source(
+        &mut self,
+        _position: Option<PositionNoT>,
+        _e: DomainT::CommonElementT,
+    ) -> Result<PositionNoT, ()> {
         Err(())
     }
     fn remove_source(&mut self, _uuid: &ModelUuid) -> Option<PositionNoT> {
         None
     }
-    fn insert_target(&mut self, _position: Option<PositionNoT>, _e: DomainT::CommonElementT) -> Result<PositionNoT, ()> {
+    fn insert_target(
+        &mut self,
+        _position: Option<PositionNoT>,
+        _e: DomainT::CommonElementT,
+    ) -> Result<PositionNoT, ()> {
         Err(())
     }
     fn remove_target(&mut self, _uuid: &ModelUuid) -> Option<PositionNoT> {
@@ -101,13 +150,29 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
         &mut self,
         q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>
+        commands: &mut Vec<
+            InsensitiveCommand<
+                DomainT::OrdinalMovementT,
+                DomainT::AddCommandElementT,
+                DomainT::PropChangeT,
+            >,
+        >,
     ) -> PropertiesStatus<DomainT>;
     fn apply_change(
         &self,
         view_uuid: &ViewUuid,
-        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<
+            DomainT::OrdinalMovementT,
+            DomainT::AddCommandElementT,
+            DomainT::PropChangeT,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<
+                DomainT::OrdinalMovementT,
+                DomainT::AddCommandElementT,
+                DomainT::PropChangeT,
+            >,
+        >,
     );
     fn refresh_buffers(&mut self);
 
@@ -115,11 +180,10 @@ pub trait MulticonnectionAdapter<DomainT: Domain>: serde::Serialize + NHContextS
         &self,
         new_uuid: ModelUuid,
         m: &mut HashMap<ModelUuid, DomainT::CommonElementT>,
-    ) -> Self where Self: Sized;
-    fn deep_copy_finish(
-        &mut self,
-        m: &HashMap<ModelUuid, DomainT::CommonElementT>,
-    );
+    ) -> Self
+    where
+        Self: Sized;
+    fn deep_copy_finish(&mut self, m: &HashMap<ModelUuid, DomainT::CommonElementT>);
 }
 
 pub const MULTICONNECTION_SOURCE_BUCKET: BucketNoT = 1;
@@ -135,21 +199,31 @@ pub struct VertexInformation {
 #[derive(Clone, Copy, Debug)]
 pub struct FlipMulticonnection {}
 
-
-#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
-pub struct Ending<T> where T: serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone {
+#[derive(
+    Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
+pub struct Ending<T>
+where
+    T: serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone,
+{
     #[nh_context_serde(entity)]
     element: T,
     points: Vec<(ViewUuid, egui::Pos2)>,
 }
 
-impl<T> Ending<T> where T: serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone {
+impl<T> Ending<T>
+where
+    T: serde::Serialize + NHContextSerialize + NHContextDeserialize + Clone,
+{
     pub fn new(e: T) -> Self {
         Self::new_p(e, vec![(ViewUuid::now_v7(), egui::Pos2::ZERO)])
     }
 
-    pub fn new_p(e: T, p: Vec<(ViewUuid, egui::Pos2)>,) -> Self {
-        Self { element: e, points: p, }
+    pub fn new_p(e: T, p: Vec<(ViewUuid, egui::Pos2)>) -> Self {
+        Self {
+            element: e,
+            points: p,
+        }
     }
 }
 
@@ -176,7 +250,8 @@ pub struct MulticonnectionView<DomainT: Domain, AdapterT: MulticonnectionAdapter
     point_to_origin: HashMap<ViewUuid, (bool, usize)>,
 }
 
-impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> MulticonnectionView<DomainT, AdapterT>
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>>
+    MulticonnectionView<DomainT, AdapterT>
 where
     DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a DomainT::PropChangeT: TryInto<FlipMulticonnection>,
@@ -201,25 +276,25 @@ where
         }
         adapter.refresh_buffers();
 
-        ERef::new(
-            Self {
-                uuid,
-                adapter,
-                sources,
-                targets,
-                dragged_node: None,
-                highlight: canvas::Highlight::NONE,
-                selected_vertices: HashSet::new(),
+        ERef::new(Self {
+            uuid,
+            adapter,
+            sources,
+            targets,
+            dragged_node: None,
+            highlight: canvas::Highlight::NONE,
+            selected_vertices: HashSet::new(),
 
-                center_point: center_point.into(),
-                point_to_origin,
-            }
-        )
+            center_point: center_point.into(),
+            point_to_origin,
+        })
     }
 
     const VERTEX_RADIUS: f32 = 5.0;
     fn all_vertices(&self) -> impl Iterator<Item = &(ViewUuid, egui::Pos2)> {
-        self.center_point.as_ref().into_iter()
+        self.center_point
+            .as_ref()
+            .into_iter()
             .chain(self.sources.iter().flat_map(|e| e.points.iter()))
             .chain(self.targets.iter().flat_map(|e| e.points.iter()))
     }
@@ -239,7 +314,6 @@ where
             (e, ad)
         });
 
-
         fn a<'a>(
             color: egui::Color32,
             central_point: (ViewUuid, egui::Pos2),
@@ -254,7 +328,8 @@ where
             let focal_point = points.first().unwrap();
             let path = std::iter::once((
                 ViewUuid::nil(),
-                ad.arrowhead_type.get_intersect(focal_point.1, points.get(1).unwrap_or(&central_point).1),
+                ad.arrowhead_type
+                    .get_intersect(focal_point.1, points.get(1).unwrap_or(&central_point).1),
             ))
             .chain(points.iter().skip(1).map(|e| *e))
             .chain(std::iter::once(central_point));
@@ -331,13 +406,16 @@ where
     }
 }
 
-impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> Entity for MulticonnectionView<DomainT, AdapterT> {
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> Entity
+    for MulticonnectionView<DomainT, AdapterT>
+{
     fn tagged_uuid(&self) -> EntityUuid {
         (*self.uuid).into()
     }
 }
 
-impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> View for MulticonnectionView<DomainT, AdapterT>
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> View
+    for MulticonnectionView<DomainT, AdapterT>
 where
     DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a DomainT::PropChangeT: TryInto<FlipMulticonnection>,
@@ -350,7 +428,8 @@ where
     }
 }
 
-impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> ElementController<DomainT::CommonElementT> for MulticonnectionView<DomainT, AdapterT>
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>>
+    ElementController<DomainT::CommonElementT> for MulticonnectionView<DomainT, AdapterT>
 where
     DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
     for<'a> &'a DomainT::PropChangeT: TryInto<FlipMulticonnection>,
@@ -392,12 +471,15 @@ where
     fn position(&self) -> egui::Pos2 {
         match &self.center_point {
             UFOption::Some(point) => point.1,
-            UFOption::None => (self.sources[0].points[0].1 + self.targets[0].points[0].1.to_vec2()) / 2.0,
+            UFOption::None => {
+                (self.sources[0].points[0].1 + self.targets[0].points[0].1.to_vec2()) / 2.0
+            }
         }
     }
 }
 
-impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> ElementControllerGen2<DomainT> for MulticonnectionView<DomainT, AdapterT>
+impl<DomainT: Domain, AdapterT: MulticonnectionAdapter<DomainT>> ElementControllerGen2<DomainT>
+    for MulticonnectionView<DomainT, AdapterT>
 where
     DomainT::CommonElementViewT: From<ERef<MulticonnectionView<DomainT, AdapterT>>>,
     DomainT::AddCommandElementT: From<VertexInformation> + TryInto<VertexInformation>,
@@ -408,7 +490,13 @@ where
         gdc: &GlobalDrawingContext,
         q: &DomainT::QueryableT<'_>,
         ui: &mut egui::Ui,
-        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<
+            InsensitiveCommand<
+                DomainT::OrdinalMovementT,
+                DomainT::AddCommandElementT,
+                DomainT::PropChangeT,
+            >,
+        >,
     ) -> PropertiesStatus<DomainT> {
         if !self.highlight.selected {
             return PropertiesStatus::NotShown;
@@ -418,58 +506,99 @@ where
             q: &'a DomainT::QueryableT<'_>,
             lp: &'a LabelProvider,
             ui: &mut egui::Ui,
-            commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+            commands: &mut Vec<
+                InsensitiveCommand<
+                    DomainT::OrdinalMovementT,
+                    DomainT::AddCommandElementT,
+                    DomainT::PropChangeT,
+                >,
+            >,
             models: &'a [ModelUuid],
             views: &'a [Ending<DomainT::CommonElementViewT>],
             self_uuid: ViewUuid,
             b: BucketNoT,
         ) {
-
             for model_uuid in models {
-                let e = views.iter().find(|e| *e.element.model_uuid() == *model_uuid);
+                let e = views
+                    .iter()
+                    .find(|e| *e.element.model_uuid() == *model_uuid);
 
                 ui.horizontal(|ui| {
                     ui.label(&*lp.get(model_uuid));
                     if let Some(e) = e {
-                        if ui.add_enabled(views.len() > 1, egui::Button::new("Remove from view")).clicked() {
-                            commands.push(InsensitiveCommand::RemoveDependency {
-                                target: self_uuid,
-                                bucket: b,
-                                element: *e.element.uuid(),
-                                including_model: false,
-                            }.into());
+                        if ui
+                            .add_enabled(views.len() > 1, egui::Button::new("Remove from view"))
+                            .clicked()
+                        {
+                            commands.push(
+                                InsensitiveCommand::RemoveDependency {
+                                    target: self_uuid,
+                                    bucket: b,
+                                    element: *e.element.uuid(),
+                                    including_model: false,
+                                }
+                                .into(),
+                            );
                         }
-                        if ui.add_enabled(models.len() > 1, egui::Button::new("Remove from model")).clicked() {
-                            commands.push(InsensitiveCommand::RemoveDependency {
-                                target: self_uuid,
-                                bucket: b,
-                                element: *e.element.uuid(),
-                                including_model: true,
-                            }.into());
+                        if ui
+                            .add_enabled(models.len() > 1, egui::Button::new("Remove from model"))
+                            .clicked()
+                        {
+                            commands.push(
+                                InsensitiveCommand::RemoveDependency {
+                                    target: self_uuid,
+                                    bucket: b,
+                                    element: *e.element.uuid(),
+                                    including_model: true,
+                                }
+                                .into(),
+                            );
                         }
                     } else {
                         if ui.button("Add to view").clicked() {
                             if let Some(v) = q.get_view_for(model_uuid) {
-                                commands.push(InsensitiveCommand::AddDependency {
-                                    target: self_uuid,
-                                    bucket: b,
-                                    position: None,
-                                    element: v.into(),
-                                    into_model: false,
-                                }.into());
+                                commands.push(
+                                    InsensitiveCommand::AddDependency {
+                                        target: self_uuid,
+                                        bucket: b,
+                                        position: None,
+                                        element: v.into(),
+                                        into_model: false,
+                                    }
+                                    .into(),
+                                );
                             }
                         }
-                        if ui.add_enabled(models.len() > 1, egui::Button::new("Remove from model")).clicked() {
-
-                        }
+                        if ui
+                            .add_enabled(models.len() > 1, egui::Button::new("Remove from model"))
+                            .clicked()
+                        {}
                     }
                 });
             }
         }
         ui.label("Sources:");
-        display_endings_info::<DomainT>(q, &gdc.model_labels, ui, commands, self.adapter.source_uuids(), &self.sources, *self.uuid, 0);
+        display_endings_info::<DomainT>(
+            q,
+            &gdc.model_labels,
+            ui,
+            commands,
+            self.adapter.source_uuids(),
+            &self.sources,
+            *self.uuid,
+            0,
+        );
         ui.label("Targets:");
-        display_endings_info::<DomainT>(q, &gdc.model_labels, ui, commands, self.adapter.target_uuids(), &self.targets, *self.uuid, 1);
+        display_endings_info::<DomainT>(
+            q,
+            &gdc.model_labels,
+            ui,
+            commands,
+            self.adapter.target_uuids(),
+            &self.targets,
+            *self.uuid,
+            1,
+        );
 
         return self.adapter.show_properties(q, ui, commands);
     }
@@ -485,14 +614,24 @@ where
         let center_point = if let UFOption::Some(center_point) = &self.center_point {
             center_point.1
         } else {
-            self.sources[0].element.min_shape().nice_midpoint(&self.targets[0].element.min_shape())
+            self.sources[0]
+                .element
+                .min_shape()
+                .nice_midpoint(&self.targets[0].element.min_shape())
         };
 
         for e in self.sources.iter_mut().chain(self.targets.iter_mut()) {
             let shape = e.element.min_shape();
-            let next_point = e.points.iter().skip(1).next().map(|p| p.1).unwrap_or(center_point);
-            let intersect = shape.orthogonal_intersect(next_point)
-                    .unwrap_or_else(|| shape.center_intersect(next_point));
+            let next_point = e
+                .points
+                .iter()
+                .skip(1)
+                .next()
+                .map(|p| p.1)
+                .unwrap_or(center_point);
+            let intersect = shape
+                .orthogonal_intersect(next_point)
+                .unwrap_or_else(|| shape.center_intersect(next_point));
             e.points[0].1 = intersect;
         }
 
@@ -504,11 +643,7 @@ where
                 (self.sources[0].points[0].1 + self.targets[0].points[0].1.to_vec2()) / 2.0,
             ),
         };
-        self.draw_multiconnection(
-            canvas,
-            central_point,
-            ad,
-        );
+        self.draw_multiconnection(canvas, central_point, ad);
 
         match self.adapter.draw_center_or_get_label(
             central_point.1,
@@ -519,7 +654,7 @@ where
             canvas,
             tool,
         ) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(label) => {
                 // TODO: Blur the line around center to make the mid label more readable?
                 //       Alternatively labels could have an angle to fit it better.
@@ -530,17 +665,41 @@ where
                     canvas::CLASS_MIDDLE_FONT_SIZE,
                     egui::Color32::BLACK,
                 );
-            },
+            }
         }
 
-        fn draw_arrow_data(canvas: &mut dyn canvas::NHCanvas, shape: canvas::NHShape, shape_intersect: egui::Pos2, next_point: egui::Pos2, data: &ArrowData) {
-            fn draw_small_labels(canvas: &mut dyn canvas::NHCanvas, bounds: canvas::NHShape, pos: egui::Pos2, labels: [Option<&str>; 2]) {
-                let mut m = |e| canvas.measure_text(pos, egui::Align2::CENTER_CENTER, e, canvas::CLASS_TOP_FONT_SIZE).size();
+        fn draw_arrow_data(
+            canvas: &mut dyn canvas::NHCanvas,
+            shape: canvas::NHShape,
+            shape_intersect: egui::Pos2,
+            next_point: egui::Pos2,
+            data: &ArrowData,
+        ) {
+            fn draw_small_labels(
+                canvas: &mut dyn canvas::NHCanvas,
+                bounds: canvas::NHShape,
+                pos: egui::Pos2,
+                labels: [Option<&str>; 2],
+            ) {
+                let mut m = |e| {
+                    canvas
+                        .measure_text(
+                            pos,
+                            egui::Align2::CENTER_CENTER,
+                            e,
+                            canvas::CLASS_TOP_FONT_SIZE,
+                        )
+                        .size()
+                };
                 let sizes = [
                     labels[0].map(&mut m).unwrap_or(egui::Vec2::ZERO),
                     labels[1].map(&mut m).unwrap_or(egui::Vec2::ZERO),
                 ];
-                for p in bounds.place_labels(pos, sizes, 10.0).iter().zip(labels.iter()) {
+                for p in bounds
+                    .place_labels(pos, sizes, 10.0)
+                    .iter()
+                    .zip(labels.iter())
+                {
                     if let Some(l) = p.1 {
                         canvas.draw_text(
                             *p.0,
@@ -552,20 +711,41 @@ where
                     }
                 }
             }
-            draw_small_labels(canvas, shape, shape_intersect, [data.multiplicity.as_ref().map(|e| e.as_str()), data.role.as_ref().map(|e| e.as_str())]);
+            draw_small_labels(
+                canvas,
+                shape,
+                shape_intersect,
+                [
+                    data.multiplicity.as_ref().map(|e| e.as_str()),
+                    data.role.as_ref().map(|e| e.as_str()),
+                ],
+            );
 
-            fn draw_reading(canvas: &mut dyn canvas::NHCanvas, intersect: egui::Pos2, next: egui::Pos2, reading_text: &str) {
+            fn draw_reading(
+                canvas: &mut dyn canvas::NHCanvas,
+                intersect: egui::Pos2,
+                next: egui::Pos2,
+                reading_text: &str,
+            ) {
                 const PADDING: f32 = 10.0;
                 const TRIANGLE_LONGEST_SIDE: f32 = 10.0;
                 const TRIANGLE_PERPENDICULAR: f32 = 7.0;
-                let size = canvas.measure_text(intersect, egui::Align2::CENTER_CENTER, reading_text, canvas::CLASS_TOP_FONT_SIZE).size();
+                let size = canvas
+                    .measure_text(
+                        intersect,
+                        egui::Align2::CENTER_CENTER,
+                        reading_text,
+                        canvas::CLASS_TOP_FONT_SIZE,
+                    )
+                    .size();
                 let mid = (intersect + next.to_vec2()) / 2.0;
                 let (dx, dy) = (next.x - intersect.x, next.y - intersect.y);
                 let angle = f32::atan2(dx, dy);
-                let pos = mid + egui::Vec2::new(
-                    f32::cos(angle) * (size.x / 2.0 + PADDING),
-                    -f32::sin(angle) * (size.y / 2.0 + PADDING),
-                );
+                let pos = mid
+                    + egui::Vec2::new(
+                        f32::cos(angle) * (size.x / 2.0 + PADDING),
+                        -f32::sin(angle) * (size.y / 2.0 + PADDING),
+                    );
                 canvas.draw_text(
                     pos,
                     egui::Align2::CENTER_CENTER,
@@ -581,9 +761,18 @@ where
                         1.0 // "▶"
                     };
                     vec![
-                        egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * 2.0, pos.y - TRIANGLE_LONGEST_SIDE / 2.0),
-                        egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * (TRIANGLE_PERPENDICULAR + 2.0), pos.y),
-                        egui::Pos2::new(pos.x + sign * size.x / 2.0 + sign * 2.0, pos.y + TRIANGLE_LONGEST_SIDE / 2.0),
+                        egui::Pos2::new(
+                            pos.x + sign * size.x / 2.0 + sign * 2.0,
+                            pos.y - TRIANGLE_LONGEST_SIDE / 2.0,
+                        ),
+                        egui::Pos2::new(
+                            pos.x + sign * size.x / 2.0 + sign * (TRIANGLE_PERPENDICULAR + 2.0),
+                            pos.y,
+                        ),
+                        egui::Pos2::new(
+                            pos.x + sign * size.x / 2.0 + sign * 2.0,
+                            pos.y + TRIANGLE_LONGEST_SIDE / 2.0,
+                        ),
                     ]
                 } else {
                     let sign = if intersect.y < next.y {
@@ -592,9 +781,18 @@ where
                         1.0 // "⏷"
                     };
                     vec![
-                        egui::Pos2::new(pos.x - TRIANGLE_LONGEST_SIDE / 2.0, pos.y + sign * size.y / 2.0),
-                        egui::Pos2::new(pos.x, pos.y + sign * size.y / 2.0 + sign * TRIANGLE_PERPENDICULAR),
-                        egui::Pos2::new(pos.x + TRIANGLE_LONGEST_SIDE / 2.0, pos.y + sign * size.y / 2.0),
+                        egui::Pos2::new(
+                            pos.x - TRIANGLE_LONGEST_SIDE / 2.0,
+                            pos.y + sign * size.y / 2.0,
+                        ),
+                        egui::Pos2::new(
+                            pos.x,
+                            pos.y + sign * size.y / 2.0 + sign * TRIANGLE_PERPENDICULAR,
+                        ),
+                        egui::Pos2::new(
+                            pos.x + TRIANGLE_LONGEST_SIDE / 2.0,
+                            pos.y + sign * size.y / 2.0,
+                        ),
                     ]
                 };
                 canvas.draw_polygon(
@@ -608,22 +806,44 @@ where
                 draw_reading(canvas, shape_intersect, next_point, &reading);
             }
         }
-        for (target, e) in self.sources.iter().map(|e| (false, e)).chain(self.targets.iter().map(|e| (true, e))) {
+        for (target, e) in self
+            .sources
+            .iter()
+            .map(|e| (false, e))
+            .chain(self.targets.iter().map(|e| (true, e)))
+        {
             let Some(data) = ad.get(&(target, *e.element.model_uuid())) else {
                 continue;
             };
-            draw_arrow_data(canvas, e.element.min_shape(), e.points[0].1, e.points.get(1).map(|e| e.1).unwrap_or_else(|| self.position()), data);
+            draw_arrow_data(
+                canvas,
+                e.element.min_shape(),
+                e.points[0].1,
+                e.points
+                    .get(1)
+                    .map(|e| e.1)
+                    .unwrap_or_else(|| self.position()),
+                data,
+            );
         }
 
         TargettingStatus::NotDrawn
     }
 
     fn collect_allignment(&mut self, am: &mut SnapManager) {
-        for p in self.center_point.as_ref().into_iter()
+        for p in self
+            .center_point
+            .as_ref()
+            .into_iter()
             .chain(self.sources.iter().flat_map(|e| e.points.iter().skip(1)))
             .chain(self.targets.iter().flat_map(|e| e.points.iter().skip(1)))
         {
-            am.add_shape(*self.uuid, canvas::NHShape::Rect { inner: egui::Rect::from_min_size(p.1, egui::Vec2::ZERO) });
+            am.add_shape(
+                *self.uuid,
+                canvas::NHShape::Rect {
+                    inner: egui::Rect::from_min_size(p.1, egui::Vec2::ZERO),
+                },
+            );
         }
     }
     fn handle_event(
@@ -634,7 +854,13 @@ where
         q: &DomainT::QueryableT<'_>,
         _tool: &mut Option<DomainT::ToolT>,
         _element_setup_modal: &mut Option<Box<dyn CustomModal>>,
-        commands: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        commands: &mut Vec<
+            InsensitiveCommand<
+                DomainT::OrdinalMovementT,
+                DomainT::AddCommandElementT,
+                DomainT::PropChangeT,
+            >,
+        >,
     ) -> EventHandlingStatus {
         let segment_distance_threshold = 3.0 / ehc.ui_scale;
         let is_over = |a: egui::Pos2, b: egui::Pos2| -> bool {
@@ -650,7 +876,7 @@ where
                 dist2(p, a)
             } else {
                 let t =
-                (((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2).clamp(0.0, 1.0);
+                    (((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2).clamp(0.0, 1.0);
                 dist2(
                     p,
                     egui::Pos2::new(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y)),
@@ -671,18 +897,21 @@ where
                     }
                     UFOption::None if is_over(pos, self.position()) => {
                         self.dragged_node = Some((ViewUuid::now_v7(), pos));
-                        commands.push(InsensitiveCommand::AddDependency {
-                            target: *self.uuid,
-                            bucket: MULTICONNECTION_VERTEX_BUCKET,
-                            position: None,
-                            element: VertexInformation {
-                                after: ViewUuid::nil(),
-                                id: self.dragged_node.unwrap().0,
-                                position: self.position(),
+                        commands.push(
+                            InsensitiveCommand::AddDependency {
+                                target: *self.uuid,
+                                bucket: MULTICONNECTION_VERTEX_BUCKET,
+                                position: None,
+                                element: VertexInformation {
+                                    after: ViewUuid::nil(),
+                                    id: self.dragged_node.unwrap().0,
+                                    position: self.position(),
+                                }
+                                .into(),
+                                into_model: false,
                             }
                             .into(),
-                            into_model: false,
-                         }.into());
+                        );
 
                         return EventHandlingStatus::HandledByContainer;
                     }
@@ -695,11 +924,11 @@ where
                         for e in &mut self.$v {
                             // Iterates over 2-windows
                             let mut iter = e
-                            .points
-                            .iter()
-                            .map(|e| *e)
-                            .chain(self.center_point.as_ref().cloned())
-                            .peekable();
+                                .points
+                                .iter()
+                                .map(|e| *e)
+                                .chain(self.center_point.as_ref().cloned())
+                                .peekable();
                             while let Some(u) = iter.next() {
                                 let v = if let Some(v) = iter.peek() {
                                     *v
@@ -710,18 +939,21 @@ where
                                 let midpoint = (u.1 + v.1.to_vec2()) / 2.0;
                                 if is_over(pos, midpoint) {
                                     self.dragged_node = Some((ViewUuid::now_v7(), pos));
-                                    commands.push(InsensitiveCommand::AddDependency {
-                                        target: *self.uuid,
-                                        bucket: MULTICONNECTION_VERTEX_BUCKET,
-                                        position: None,
-                                        element: VertexInformation {
-                                            after: u.0,
-                                            id: self.dragged_node.unwrap().0,
-                                            position: pos,
+                                    commands.push(
+                                        InsensitiveCommand::AddDependency {
+                                            target: *self.uuid,
+                                            bucket: MULTICONNECTION_VERTEX_BUCKET,
+                                            position: None,
+                                            element: VertexInformation {
+                                                after: u.0,
+                                                id: self.dragged_node.unwrap().0,
+                                                position: pos,
+                                            }
+                                            .into(),
+                                            into_model: false,
                                         }
                                         .into(),
-                                        into_model: false,
-                                    }.into());
+                                    );
 
                                     return EventHandlingStatus::HandledByContainer;
                                 }
@@ -751,30 +983,38 @@ where
                 check_joints!(targets);
 
                 EventHandlingStatus::NotHandled
-            },
+            }
             InputEvent::MouseUp(_) => {
                 if self.dragged_node.take().is_some() {
                     EventHandlingStatus::HandledByElement
                 } else {
                     EventHandlingStatus::NotHandled
                 }
-            },
+            }
             InputEvent::Click(pos) => {
                 macro_rules! handle_vertex_click {
                     ($uuid:expr) => {
                         if !ehc.modifiers.command {
-                            commands.push(InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into());
-                            commands.push(InsensitiveCommand::HighlightSpecific(
-                                std::iter::once(*$uuid).collect(),
-                                true,
-                                Highlight::SELECTED,
-                            ).into());
+                            commands.push(
+                                InsensitiveCommand::HighlightAll(false, Highlight::SELECTED).into(),
+                            );
+                            commands.push(
+                                InsensitiveCommand::HighlightSpecific(
+                                    std::iter::once(*$uuid).collect(),
+                                    true,
+                                    Highlight::SELECTED,
+                                )
+                                .into(),
+                            );
                         } else {
-                            commands.push(InsensitiveCommand::HighlightSpecific(
-                                std::iter::once(*$uuid).collect(),
-                                !self.selected_vertices.contains($uuid),
-                                Highlight::SELECTED,
-                            ).into());
+                            commands.push(
+                                InsensitiveCommand::HighlightSpecific(
+                                    std::iter::once(*$uuid).collect(),
+                                    !self.selected_vertices.contains($uuid),
+                                    Highlight::SELECTED,
+                                )
+                                .into(),
+                            );
                         }
                         return EventHandlingStatus::HandledByContainer;
                     };
@@ -806,7 +1046,12 @@ where
                         let p = self.position();
                         for e in &self.$v {
                             // Iterates over 2-windows
-                            let mut iter = e.points.iter().map(|e| e.1).chain(std::iter::once(p)).peekable();
+                            let mut iter = e
+                                .points
+                                .iter()
+                                .map(|e| e.1)
+                                .chain(std::iter::once(p))
+                                .peekable();
                             while let Some(u) = iter.next() {
                                 let v = if let Some(v) = iter.peek() {
                                     *v
@@ -825,7 +1070,7 @@ where
                 check_path_segments!(targets);
 
                 EventHandlingStatus::NotHandled
-            },
+            }
             InputEvent::Drag { delta, .. } => {
                 let Some(dragged_node) = self.dragged_node else {
                     return EventHandlingStatus::NotHandled;
@@ -833,43 +1078,79 @@ where
 
                 let translated_real_pos = dragged_node.1 + delta;
                 self.dragged_node = Some((dragged_node.0, translated_real_pos));
-                let translated_real_shape = canvas::NHShape::Rect { inner: egui::Rect::from_min_size(translated_real_pos, egui::Vec2::ZERO) };
-                let coerced_pos = if self.highlight.selected {
-                    ehc.snap_manager.coerce(translated_real_shape, |e| !ehc.all_elements.get(e).is_some_and(|e| *e != SelectionStatus::NotSelected))
-                } else {
-                    ehc.snap_manager.coerce(translated_real_shape, |e| *e != *self.uuid)
+                let translated_real_shape = canvas::NHShape::Rect {
+                    inner: egui::Rect::from_min_size(translated_real_pos, egui::Vec2::ZERO),
                 };
-                let coerced_delta = coerced_pos - self.all_vertices()
-                    .find(|e| e.0 == dragged_node.0).unwrap().1;
+                let coerced_pos = if self.highlight.selected {
+                    ehc.snap_manager.coerce(translated_real_shape, |e| {
+                        !ehc.all_elements
+                            .get(e)
+                            .is_some_and(|e| *e != SelectionStatus::NotSelected)
+                    })
+                } else {
+                    ehc.snap_manager
+                        .coerce(translated_real_shape, |e| *e != *self.uuid)
+                };
+                let coerced_delta = coerced_pos
+                    - self
+                        .all_vertices()
+                        .find(|e| e.0 == dragged_node.0)
+                        .unwrap()
+                        .1;
 
                 if self.selected_vertices.contains(&dragged_node.0) {
-                    commands.push(InsensitiveCommand::MovePositional(q.selected_views(), coerced_delta));
-                } else {
                     commands.push(InsensitiveCommand::MovePositional(
-                        std::iter::once(dragged_node.0).collect(),
+                        q.selected_views(),
                         coerced_delta,
-                    ).into());
+                    ));
+                } else {
+                    commands.push(
+                        InsensitiveCommand::MovePositional(
+                            std::iter::once(dragged_node.0).collect(),
+                            coerced_delta,
+                        )
+                        .into(),
+                    );
                 }
 
                 EventHandlingStatus::HandledByContainer
-            },
+            }
         }
     }
 
     fn apply_command(
         &mut self,
-        command: &InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>,
-        undo_accumulator: &mut Vec<InsensitiveCommand<DomainT::OrdinalMovementT, DomainT::AddCommandElementT, DomainT::PropChangeT>>,
+        command: &InsensitiveCommand<
+            DomainT::OrdinalMovementT,
+            DomainT::AddCommandElementT,
+            DomainT::PropChangeT,
+        >,
+        undo_accumulator: &mut Vec<
+            InsensitiveCommand<
+                DomainT::OrdinalMovementT,
+                DomainT::AddCommandElementT,
+                DomainT::PropChangeT,
+            >,
+        >,
         affected_models: &mut HashSet<ModelUuid>,
     ) {
         macro_rules! all_pts_mut {
             () => {
-                self
-                    .center_point
+                self.center_point
                     .as_mut()
                     .into_iter()
-                    .chain(self.sources.iter_mut().map(|e| e.points.iter_mut()).flatten())
-                    .chain(self.targets.iter_mut().map(|e| e.points.iter_mut()).flatten())
+                    .chain(
+                        self.sources
+                            .iter_mut()
+                            .map(|e| e.points.iter_mut())
+                            .flatten(),
+                    )
+                    .chain(
+                        self.targets
+                            .iter_mut()
+                            .map(|e| e.points.iter_mut())
+                            .flatten(),
+                    )
             };
         }
         match command {
@@ -902,8 +1183,8 @@ where
                 }
             }
             InsensitiveCommand::SelectByDrag(rect, retain) => {
-                self.highlight.selected =
-                    (self.highlight.selected && *retain) || all_pts_mut!().find(|p| !rect.contains(p.1)).is_none();
+                self.highlight.selected = (self.highlight.selected && *retain)
+                    || all_pts_mut!().find(|p| !rect.contains(p.1)).is_none();
             }
             InsensitiveCommand::MovePositional(uuids, delta) if !uuids.contains(&*self.uuid) => {
                 for p in all_pts_mut!().filter(|e| uuids.contains(&e.0)) {
@@ -914,7 +1195,8 @@ where
                     ));
                 }
             }
-            InsensitiveCommand::MovePositional(_, delta) | InsensitiveCommand::MovePositionalAll(delta) => {
+            InsensitiveCommand::MovePositional(_, delta)
+            | InsensitiveCommand::MovePositionalAll(delta) => {
                 for p in all_pts_mut!() {
                     p.1 += *delta;
                     undo_accumulator.push(InsensitiveCommand::MovePositional(
@@ -942,14 +1224,24 @@ where
                             position: center_point.1,
                         }),
                         into_model: false,
-                     });
+                    });
 
                     // Move any last point to the center
                     self.center_point = 'a: {
-                        if let Some(e) = self.sources.iter_mut().filter(|p| p.points.len() > 1).next() {
+                        if let Some(e) = self
+                            .sources
+                            .iter_mut()
+                            .filter(|p| p.points.len() > 1)
+                            .next()
+                        {
                             break 'a e.points.pop().into();
                         }
-                        if let Some(e) = self.targets.iter_mut().filter(|p| p.points.len() > 1).next() {
+                        if let Some(e) = self
+                            .targets
+                            .iter_mut()
+                            .filter(|p| p.points.len() > 1)
+                            .next()
+                        {
                             break 'a e.points.pop().into();
                         }
                         None.into()
@@ -970,11 +1262,13 @@ where
                                         target: self_uuid,
                                         bucket: MULTICONNECTION_VERTEX_BUCKET,
                                         position: None,
-                                        element: DomainT::AddCommandElementT::from(VertexInformation {
-                                            after: a.0,
-                                            id: b.0,
-                                            position: b.1,
-                                        }),
+                                        element: DomainT::AddCommandElementT::from(
+                                            VertexInformation {
+                                                after: a.0,
+                                                id: b.0,
+                                                position: b.1,
+                                            },
+                                        ),
                                         into_model: false,
                                     });
                                 }
@@ -988,25 +1282,40 @@ where
                 delete_vertices!(targets);
 
                 // Handle dependencies being deleted
-                let mut retain = |b: BucketNoT, e: &Ending<DomainT::CommonElementViewT>| if uuids.contains(&e.element.uuid()) {
-                    undo_accumulator.push(InsensitiveCommand::AddDependency {
-                        target: self_uuid,
-                        bucket: b,
-                        position: None,
-                        element: e.element.clone().into(),
-                        into_model: false,
-                    });
-                    false
-                } else { true };
-                self.sources.retain(|e| retain(MULTICONNECTION_SOURCE_BUCKET, e));
-                self.targets.retain(|e| retain(MULTICONNECTION_TARGET_BUCKET, e));
+                let mut retain = |b: BucketNoT, e: &Ending<DomainT::CommonElementViewT>| {
+                    if uuids.contains(&e.element.uuid()) {
+                        undo_accumulator.push(InsensitiveCommand::AddDependency {
+                            target: self_uuid,
+                            bucket: b,
+                            position: None,
+                            element: e.element.clone().into(),
+                            into_model: false,
+                        });
+                        false
+                    } else {
+                        true
+                    }
+                };
+                self.sources
+                    .retain(|e| retain(MULTICONNECTION_SOURCE_BUCKET, e));
+                self.targets
+                    .retain(|e| retain(MULTICONNECTION_TARGET_BUCKET, e));
             }
-            InsensitiveCommand::AddDependency { target, bucket, position, element, into_model } => {
+            InsensitiveCommand::AddDependency {
+                target,
+                bucket,
+                position,
+                element,
+                into_model,
+            } => {
                 if *target == *self.uuid {
                     // source/target
-                    if let Ok(e) = TryInto::<DomainT::CommonElementViewT>::try_into(element.clone()) {
+                    if let Ok(e) = TryInto::<DomainT::CommonElementViewT>::try_into(element.clone())
+                    {
                         if *bucket == MULTICONNECTION_SOURCE_BUCKET
-                            && (!into_model || self.adapter.insert_source(*position, e.model()).is_ok()) {
+                            && (!into_model
+                                || self.adapter.insert_source(*position, e.model()).is_ok())
+                        {
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                                 target: *self.uuid,
                                 bucket: *bucket,
@@ -1021,7 +1330,9 @@ where
 
                             affected_models.insert(*self.adapter.model_uuid());
                         } else if *bucket == MULTICONNECTION_TARGET_BUCKET
-                            && (!into_model || self.adapter.insert_target(*position, e.model()).is_ok()) {
+                            && (!into_model
+                                || self.adapter.insert_target(*position, e.model()).is_ok())
+                        {
                             undo_accumulator.push(InsensitiveCommand::RemoveDependency {
                                 target: *self.uuid,
                                 bucket: *bucket,
@@ -1047,7 +1358,11 @@ where
                     {
                         if after.is_nil() {
                             // Push popped center point point back to its original path
-                            if let Some(o) = self.center_point.as_ref().and_then(|e| self.point_to_origin.get(&e.0)) {
+                            if let Some(o) = self
+                                .center_point
+                                .as_ref()
+                                .and_then(|e| self.point_to_origin.get(&e.0))
+                            {
                                 if !o.0 {
                                     self.sources[o.1].points.push(self.center_point.unwrap());
                                 } else {
@@ -1087,48 +1402,65 @@ where
                     }
                 }
             }
-            InsensitiveCommand::RemoveDependency { target, bucket, element, including_model } => {
+            InsensitiveCommand::RemoveDependency {
+                target,
+                bucket,
+                element,
+                including_model,
+            } => {
                 if *target == *self.uuid {
                     if *bucket == MULTICONNECTION_SOURCE_BUCKET && self.sources.len() > 1 {
-                        self.sources.retain(|e| if *element == *e.element.uuid() {
-                            let pos = if !including_model {
-                                None
-                            } else if let Some(pos) = self.adapter.remove_source(&*e.element.model_uuid()) {
-                                Some(pos)
-                            } else {
-                                return true;
-                            };
+                        self.sources.retain(|e| {
+                            if *element == *e.element.uuid() {
+                                let pos = if !including_model {
+                                    None
+                                } else if let Some(pos) =
+                                    self.adapter.remove_source(&*e.element.model_uuid())
+                                {
+                                    Some(pos)
+                                } else {
+                                    return true;
+                                };
 
-                            undo_accumulator.push(InsensitiveCommand::AddDependency {
-                                target: *self.uuid,
-                                bucket: *bucket,
-                                position: pos,
-                                element: e.element.clone().into(),
-                                into_model: *including_model,
-                            });
-                            false
-                        } else { true });
+                                undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                    target: *self.uuid,
+                                    bucket: *bucket,
+                                    position: pos,
+                                    element: e.element.clone().into(),
+                                    into_model: *including_model,
+                                });
+                                false
+                            } else {
+                                true
+                            }
+                        });
 
                         affected_models.insert(*self.adapter.model_uuid());
                     } else if *bucket == MULTICONNECTION_TARGET_BUCKET && self.targets.len() > 1 {
-                        self.targets.retain(|e| if *element == *e.element.uuid() {
-                            let pos = if !including_model {
-                                None
-                            } else if let Some(pos) = self.adapter.remove_target(&*e.element.model_uuid()) {
-                                Some(pos)
-                            } else {
-                                return true;
-                            };
+                        self.targets.retain(|e| {
+                            if *element == *e.element.uuid() {
+                                let pos = if !including_model {
+                                    None
+                                } else if let Some(pos) =
+                                    self.adapter.remove_target(&*e.element.model_uuid())
+                                {
+                                    Some(pos)
+                                } else {
+                                    return true;
+                                };
 
-                            undo_accumulator.push(InsensitiveCommand::AddDependency {
-                                target: *self.uuid,
-                                bucket: *bucket,
-                                position: pos,
-                                element: e.element.clone().into(),
-                                into_model: *including_model,
-                            });
-                            false
-                        } else { true });
+                                undo_accumulator.push(InsensitiveCommand::AddDependency {
+                                    target: *self.uuid,
+                                    bucket: *bucket,
+                                    position: pos,
+                                    element: e.element.clone().into(),
+                                    into_model: *including_model,
+                                });
+                                false
+                            } else {
+                                true
+                            }
+                        });
 
                         affected_models.insert(*self.adapter.model_uuid());
                     }
@@ -1137,7 +1469,8 @@ where
             InsensitiveCommand::PropertyChange(uuids, property) => {
                 if uuids.contains(&*self.uuid) {
                     if let Ok(FlipMulticonnection {}) = property.try_into()
-                        && self.adapter.flip_multiconnection().is_ok() {
+                        && self.adapter.flip_multiconnection().is_ok()
+                    {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*self.uuid).collect(),
                             property.clone(),
@@ -1145,7 +1478,8 @@ where
                         std::mem::swap(&mut self.sources, &mut self.targets);
                         self.adapter.refresh_buffers();
                     }
-                    self.adapter.apply_change(&self.uuid, command, undo_accumulator);
+                    self.adapter
+                        .apply_change(&self.uuid, command, undo_accumulator);
                     affected_models.insert(*self.adapter.model_uuid());
                 }
             }
@@ -1166,16 +1500,24 @@ where
         flattened_represented_models.insert(*self.adapter.model_uuid(), *self.uuid);
 
         for e in self.all_vertices() {
-            flattened_views_status.insert(e.0, match self.selected_vertices.contains(&e.0) {
-                true => SelectionStatus::Selected,
-                false if self.highlight.selected => SelectionStatus::TransitivelySelected,
-                false => SelectionStatus::NotSelected,
-            });
+            flattened_views_status.insert(
+                e.0,
+                match self.selected_vertices.contains(&e.0) {
+                    true => SelectionStatus::Selected,
+                    false if self.highlight.selected => SelectionStatus::TransitivelySelected,
+                    false => SelectionStatus::NotSelected,
+                },
+            );
         }
     }
     fn delete_when(&self, deleting: &HashSet<ViewUuid>) -> bool {
-        self.sources.iter().all(|e| deleting.contains(&*e.element.uuid()))
-        || self.targets.iter().all(|e| deleting.contains(&*e.element.uuid()))
+        self.sources
+            .iter()
+            .all(|e| deleting.contains(&*e.element.uuid()))
+            || self
+                .targets
+                .iter()
+                .all(|e| deleting.contains(&*e.element.uuid()))
     }
 
     fn deep_copy_clone(

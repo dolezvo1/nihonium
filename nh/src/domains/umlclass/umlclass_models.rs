@@ -1,16 +1,18 @@
-use crate::common::controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement};
+use crate::common::controller::{
+    BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
+    VisitableDiagram, VisitableElement,
+};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::search::FullTextSearchable;
 use crate::common::ufoption::UFOption;
 use crate::common::uuid::ModelUuid;
-use crate::common::views::multiconnection_view::{MULTICONNECTION_SOURCE_BUCKET, MULTICONNECTION_TARGET_BUCKET};
+use crate::common::views::multiconnection_view::{
+    MULTICONNECTION_SOURCE_BUCKET, MULTICONNECTION_TARGET_BUCKET,
+};
 use crate::domains::umlclass::umlclass_plantuml::UmlClassPlantUmlCollector;
 use std::collections::HashSet;
-use std::{
-    collections::HashMap,
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 
 pub trait UmlClassVisitor {
     fn visit_package(&mut self, package: &UmlClassPackage);
@@ -25,7 +27,14 @@ pub trait UmlClassVisitor {
     fn visit_commentlink(&mut self, commentlink: &UmlClassCommentLink);
 }
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
+#[derive(
+    Clone,
+    derive_more::From,
+    nh_derive::Model,
+    nh_derive::ContainerModel,
+    nh_derive::FullTextSearchable,
+    nh_derive::NHContextSerDeTag,
+)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = UmlClassElement, default_passthrough = "none")]
 #[full_text_searchable(default_passthrough = "eref")]
@@ -87,13 +96,14 @@ impl UmlClassElement {
             UmlClassElement::Package(inner) => visitor.visit_package(&inner.read()),
             UmlClassElement::Instance(inner) => visitor.visit_instance(&inner.read()),
             UmlClassElement::Class(inner) => visitor.visit_class(&inner.read()),
-            UmlClassElement::Property(..)
-            | UmlClassElement::Operation(..) => unreachable!(),
+            UmlClassElement::Property(..) | UmlClassElement::Operation(..) => unreachable!(),
             UmlClassElement::UseCase(inner) => visitor.visit_usecase(&inner.read()),
             UmlClassElement::Generalization(inner) => visitor.visit_generalization(&inner.read()),
             UmlClassElement::Dependency(inner) => visitor.visit_dependency(&inner.read()),
             UmlClassElement::Association(inner) => visitor.visit_association(&inner.read()),
-            UmlClassElement::UseCaseGeneralization(inner) => visitor.visit_usecasegeneralization(&inner.read()),
+            UmlClassElement::UseCaseGeneralization(inner) => {
+                visitor.visit_usecasegeneralization(&inner.read())
+            }
             UmlClassElement::Comment(inner) => visitor.visit_comment(&inner.read()),
             UmlClassElement::CommentLink(inner) => visitor.visit_commentlink(&inner.read()),
         }
@@ -101,7 +111,10 @@ impl UmlClassElement {
 }
 
 impl VisitableElement for UmlClassElement {
-    fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
+    fn accept(&self, v: &mut dyn ElementVisitor<Self>)
+    where
+        Self: Sized,
+    {
         match self {
             UmlClassElement::Package(inner) => {
                 v.open_complex(self);
@@ -109,7 +122,7 @@ impl VisitableElement for UmlClassElement {
                     e.accept(v);
                 }
                 v.close_complex(self);
-            },
+            }
             UmlClassElement::Class(inner) => {
                 v.open_complex(self);
                 let r = inner.read();
@@ -126,9 +139,13 @@ impl VisitableElement for UmlClassElement {
     }
 }
 
-
-pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap<ModelUuid, UmlClassElement>) {
-    fn walk(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClassElement>) -> UmlClassElement {
+pub fn deep_copy_diagram(
+    d: &UmlClassDiagram,
+) -> (ERef<UmlClassDiagram>, HashMap<ModelUuid, UmlClassElement>) {
+    fn walk(
+        e: &UmlClassElement,
+        into: &mut HashMap<ModelUuid, UmlClassElement>,
+    ) -> UmlClassElement {
         let new_uuid = ModelUuid::now_v7().into();
         match e {
             UmlClassElement::Package(inner) => {
@@ -139,15 +156,19 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                     name: model.name.clone(),
                     stereotype: model.stereotype.clone(),
                     kind: model.kind.clone(),
-                    contained_elements: model.contained_elements.iter().map(|e| {
-                        let new_model = walk(e, into);
-                        into.insert(*e.uuid(), new_model.clone());
-                        new_model
-                    }).collect(),
-                    comment: model.comment.clone()
+                    contained_elements: model
+                        .contained_elements
+                        .iter()
+                        .map(|e| {
+                            let new_model = walk(e, into);
+                            into.insert(*e.uuid(), new_model.clone());
+                            new_model
+                        })
+                        .collect(),
+                    comment: model.comment.clone(),
                 };
                 UmlClassElement::Package(ERef::new(new_model))
-            },
+            }
             UmlClassElement::Instance(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlClassElement::Class(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlClassElement::Property(inner) => inner.read().clone_with(*new_uuid).into(),
@@ -156,7 +177,9 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
             UmlClassElement::Generalization(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlClassElement::Dependency(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlClassElement::Association(inner) => inner.read().clone_with(*new_uuid).into(),
-            UmlClassElement::UseCaseGeneralization(inner) => inner.read().clone_with(*new_uuid).into(),
+            UmlClassElement::UseCaseGeneralization(inner) => {
+                inner.read().clone_with(*new_uuid).into()
+            }
             UmlClassElement::Comment(inner) => inner.read().clone_with(*new_uuid).into(),
             UmlClassElement::CommentLink(inner) => inner.read().clone_with(*new_uuid).into(),
         }
@@ -169,12 +192,12 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 for e in model.contained_elements.iter_mut() {
                     relink(e, all_models);
                 }
-            },
+            }
             UmlClassElement::Instance(..)
             | UmlClassElement::Class(..)
             | UmlClassElement::Property(..)
             | UmlClassElement::Operation(..)
-            | UmlClassElement::UseCase(..) => {},
+            | UmlClassElement::UseCase(..) => {}
             UmlClassElement::Generalization(inner) => {
                 let mut model = inner.write();
 
@@ -190,7 +213,7 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                         *e = t.clone();
                     }
                 }
-            },
+            }
             UmlClassElement::Dependency(inner) => {
                 let mut model = inner.write();
 
@@ -214,7 +237,7 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_associable()) {
                     model.target = t;
                 }
-            },
+            }
             UmlClassElement::UseCaseGeneralization(inner) => {
                 let mut model = inner.write();
 
@@ -230,8 +253,8 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                         *e = t.clone();
                     }
                 }
-            },
-            UmlClassElement::Comment(..) => {},
+            }
+            UmlClassElement::Comment(..) => {}
             UmlClassElement::CommentLink(inner) => {
                 let mut model = inner.write();
 
@@ -243,7 +266,7 @@ pub fn deep_copy_diagram(d: &UmlClassDiagram) -> (ERef<UmlClassDiagram>, HashMap
                 if let Some(t) = all_models.get(&target_uuid) {
                     model.target = t.clone();
                 }
-            },
+            }
         }
     }
 
@@ -283,7 +306,7 @@ fn enumerate_elements(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClas
             for e in &model.contained_elements {
                 enumerate_elements(e, into);
             }
-        },
+        }
         UmlClassElement::Class(inner) => {
             let model = inner.read();
 
@@ -294,11 +317,14 @@ fn enumerate_elements(e: &UmlClassElement, into: &mut HashMap<ModelUuid, UmlClas
                 enumerate_elements(&e.clone().into(), into);
             }
         }
-        _ => {},
+        _ => {}
     }
 }
 
-pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+pub fn transitive_closure(
+    d: &UmlClassDiagram,
+    mut when_deleting: HashSet<ModelUuid>,
+) -> HashSet<ModelUuid> {
     for e in &d.contained_elements {
         fn walk(e: &UmlClassElement, when_deleting: &mut HashSet<ModelUuid>) {
             match e {
@@ -313,11 +339,11 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                             walk(e, when_deleting);
                         }
                     }
-                },
+                }
                 UmlClassElement::Instance(..)
                 | UmlClassElement::Property(..)
                 | UmlClassElement::Operation(..)
-                | UmlClassElement::UseCase(..) => {},
+                | UmlClassElement::UseCase(..) => {}
                 UmlClassElement::Class(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
@@ -339,13 +365,13 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
                             walk(&e.clone().into(), when_deleting);
                         }
                     }
-                },
+                }
                 UmlClassElement::Generalization(..)
                 | UmlClassElement::Dependency(..)
                 | UmlClassElement::Association(..)
                 | UmlClassElement::UseCaseGeneralization(..)
                 | UmlClassElement::Comment(..)
-                | UmlClassElement::CommentLink(..) => {},
+                | UmlClassElement::CommentLink(..) => {}
             }
         }
         walk(e, &mut when_deleting);
@@ -353,59 +379,78 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
 
     let mut also_delete = HashSet::new();
     loop {
-        fn walk(e: &UmlClassElement, when_deleting: &HashSet<ModelUuid>, also_delete: &mut HashSet<ModelUuid>) {
+        fn walk(
+            e: &UmlClassElement,
+            when_deleting: &HashSet<ModelUuid>,
+            also_delete: &mut HashSet<ModelUuid>,
+        ) {
             match e {
                 UmlClassElement::Package(inner) => {
                     for e in &inner.read().contained_elements {
                         walk(e, when_deleting, also_delete);
                     }
-                },
+                }
                 UmlClassElement::Instance(..)
                 | UmlClassElement::Class(..)
                 | UmlClassElement::Property(..)
                 | UmlClassElement::Operation(..)
-                | UmlClassElement::UseCase(..) => {},
+                | UmlClassElement::UseCase(..) => {}
                 UmlClassElement::Generalization(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
-                        && (r.sources.iter().all(|e| when_deleting.contains(&e.read().uuid))
-                            || r.targets.iter().all(|e| when_deleting.contains(&e.read().uuid))) {
+                        && (r
+                            .sources
+                            .iter()
+                            .all(|e| when_deleting.contains(&e.read().uuid))
+                            || r.targets
+                                .iter()
+                                .all(|e| when_deleting.contains(&e.read().uuid)))
+                    {
                         also_delete.insert(*r.uuid);
                     }
-                },
+                }
                 UmlClassElement::Dependency(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.uuid())
-                            || when_deleting.contains(&r.target.uuid())) {
+                            || when_deleting.contains(&r.target.uuid()))
+                    {
                         also_delete.insert(*r.uuid);
                     }
-                },
+                }
                 UmlClassElement::Association(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.uuid())
-                            || when_deleting.contains(&r.target.uuid())) {
+                            || when_deleting.contains(&r.target.uuid()))
+                    {
                         also_delete.insert(*r.uuid);
                     }
-                },
+                }
                 UmlClassElement::UseCaseGeneralization(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
-                        && (r.sources.iter().all(|e| when_deleting.contains(&e.read().uuid))
-                            || r.targets.iter().all(|e| when_deleting.contains(&e.read().uuid))) {
+                        && (r
+                            .sources
+                            .iter()
+                            .all(|e| when_deleting.contains(&e.read().uuid))
+                            || r.targets
+                                .iter()
+                                .all(|e| when_deleting.contains(&e.read().uuid)))
+                    {
                         also_delete.insert(*r.uuid);
                     }
-                },
-                UmlClassElement::Comment(..) => {},
+                }
+                UmlClassElement::Comment(..) => {}
                 UmlClassElement::CommentLink(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.read().uuid)
-                            || when_deleting.contains(&r.target.uuid())) {
+                            || when_deleting.contains(&r.target.uuid()))
+                    {
                         also_delete.insert(*r.uuid);
                     }
-                },
+                }
             }
         }
         for e in &d.contained_elements {
@@ -420,8 +465,6 @@ pub fn transitive_closure(d: &UmlClassDiagram, mut when_deleting: HashSet<ModelU
     when_deleting
 }
 
-
-
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct UmlClassDiagram {
@@ -434,11 +477,7 @@ pub struct UmlClassDiagram {
 }
 
 impl UmlClassDiagram {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        contained_elements: Vec<UmlClassElement>,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<UmlClassElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
@@ -457,32 +496,49 @@ impl UmlClassDiagram {
         collector.finish()
     }
 
-    pub fn get_element_pos_in(&self, parent: &ModelUuid, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+    pub fn get_element_pos_in(
+        &self,
+        parent: &ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
         if *parent == *self.uuid {
             self.get_element_pos(uuid)
         } else {
-            self.find_element(parent).and_then(|e| e.0.get_element_pos(uuid))
+            self.find_element(parent)
+                .and_then(|e| e.0.get_element_pos(uuid))
         }
     }
 
-    pub fn insert_element_into(&mut self, parent: ModelUuid, element: UmlClassElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
+    pub fn insert_element_into(
+        &mut self,
+        parent: ModelUuid,
+        element: UmlClassElement,
+        b: BucketNoT,
+        p: Option<PositionNoT>,
+    ) -> Result<(), ()> {
         if *self.uuid == parent {
             self.insert_element(b, p, element)
                 .map(|_| ())
                 .map_err(|_| ())
         } else {
-            self.find_element(&parent)
-                .ok_or(())
-                .and_then(|mut e| e.0
-                    .insert_element(b, p, element)
+            self.find_element(&parent).ok_or(()).and_then(|mut e| {
+                e.0.insert_element(b, p, element)
                     .map(|_| ())
                     .map_err(|_| ())
-                )
+            })
         }
     }
 
-    pub fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
-        fn r(e: &UmlClassElement, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
+    pub fn delete_elements(
+        &mut self,
+        uuids: &HashSet<ModelUuid>,
+        undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>,
+    ) {
+        fn r(
+            e: &UmlClassElement,
+            uuids: &HashSet<ModelUuid>,
+            undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>,
+        ) {
             match e {
                 UmlClassElement::Package(inner) => {
                     let mut w = inner.write();
@@ -494,15 +550,20 @@ impl UmlClassDiagram {
                         }
                     }
                     w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-                },
+                }
                 UmlClassElement::Instance(_)
                 | UmlClassElement::Property(_)
-                | UmlClassElement::Operation(_) => {},
+                | UmlClassElement::Operation(_) => {}
                 UmlClassElement::Class(inner) => {
                     let mut w = inner.write();
                     for (idx, e) in w.properties.iter().enumerate() {
                         if uuids.contains(&e.read().uuid) {
-                            undo.push((*w.uuid, e.clone().into(), UmlClass::PROPERTIES_BUCKET, idx.try_into().unwrap()));
+                            undo.push((
+                                *w.uuid,
+                                e.clone().into(),
+                                UmlClass::PROPERTIES_BUCKET,
+                                idx.try_into().unwrap(),
+                            ));
                         } else {
                             r(&e.clone().into(), uuids, undo);
                         }
@@ -510,7 +571,12 @@ impl UmlClassDiagram {
                     w.properties.retain(|e| !uuids.contains(&e.read().uuid));
                     for (idx, e) in w.operations.iter().enumerate() {
                         if uuids.contains(&e.read().uuid) {
-                            undo.push((*w.uuid, e.clone().into(), UmlClass::OPERATIONS_BUCKET, idx.try_into().unwrap()));
+                            undo.push((
+                                *w.uuid,
+                                e.clone().into(),
+                                UmlClass::OPERATIONS_BUCKET,
+                                idx.try_into().unwrap(),
+                            ));
                         } else {
                             r(&e.clone().into(), uuids, undo);
                         }
@@ -523,7 +589,7 @@ impl UmlClassDiagram {
                 | UmlClassElement::Association(_)
                 | UmlClassElement::UseCaseGeneralization(_)
                 | UmlClassElement::Comment(_)
-                | UmlClassElement::CommentLink(_) => {},
+                | UmlClassElement::CommentLink(_) => {}
             }
         }
 
@@ -534,7 +600,8 @@ impl UmlClassDiagram {
                 r(e, uuids, undo);
             }
         }
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        self.contained_elements
+            .retain(|e| !uuids.contains(&e.uuid()));
     }
 }
 
@@ -582,12 +649,19 @@ impl ContainerModel for UmlClassDiagram {
         }
         return None;
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlClassElement,
+    ) -> Result<PositionNoT, UmlClassElement> {
         if bucket != 0 {
             return Err(element);
         }
 
-        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
         Ok(pos.try_into().unwrap())
     }
@@ -606,11 +680,7 @@ impl FullTextSearchable for UmlClassDiagram {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.comment,
-            ],
+            &[&self.uuid.to_string(), &self.name, &self.comment],
         );
 
         for e in &self.contained_elements {
@@ -618,7 +688,6 @@ impl FullTextSearchable for UmlClassDiagram {
         }
     }
 }
-
 
 #[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum UmlClassPackageKind {
@@ -714,12 +783,19 @@ impl ContainerModel for UmlClassPackage {
         }
         return None;
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlClassElement,
+    ) -> Result<PositionNoT, UmlClassElement> {
         if bucket != 0 {
             return Err(element);
         }
 
-        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
         Ok(pos.try_into().unwrap())
     }
@@ -753,8 +829,9 @@ impl FullTextSearchable for UmlClassPackage {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassInstance {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -808,7 +885,6 @@ impl Model for UmlClassInstance {
     }
 }
 
-
 #[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UmlClassVisibilityKind {
     Public,
@@ -844,7 +920,9 @@ pub enum UmlClassMemberInheritanceKind {
     Redefines(String),
 }
 
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassProperty {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -934,8 +1012,9 @@ impl Model for UmlClassProperty {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassOperation {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -1017,7 +1096,6 @@ impl Model for UmlClassOperation {
     }
 }
 
-
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClass {
@@ -1070,14 +1148,29 @@ impl UmlClass {
             comment: self.comment.clone(),
         })
     }
-    pub fn move_element(&mut self, element: &ModelUuid, within: BucketNoT, target_pos: PositionNoT) {
+    pub fn move_element(
+        &mut self,
+        element: &ModelUuid,
+        within: BucketNoT,
+        target_pos: PositionNoT,
+    ) {
         if within == Self::PROPERTIES_BUCKET {
-            if let Some((idx, _e)) = self.properties.iter().enumerate().find(|e| *e.1.read().uuid() == *element) {
+            if let Some((idx, _e)) = self
+                .properties
+                .iter()
+                .enumerate()
+                .find(|e| *e.1.read().uuid() == *element)
+            {
                 let e = self.properties.remove(idx);
                 self.properties.insert(target_pos.try_into().unwrap(), e);
             }
         } else if within == Self::OPERATIONS_BUCKET {
-            if let Some((idx, _e)) = self.operations.iter().enumerate().find(|e| *e.1.read().uuid() == *element) {
+            if let Some((idx, _e)) = self
+                .operations
+                .iter()
+                .enumerate()
+                .find(|e| *e.1.read().uuid() == *element)
+            {
                 let e = self.operations.remove(idx);
                 self.operations.insert(target_pos.try_into().unwrap(), e);
             }
@@ -1126,15 +1219,26 @@ impl ContainerModel for UmlClass {
         }
         None
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlClassElement,
+    ) -> Result<PositionNoT, UmlClassElement> {
         if (bucket == 0 || bucket == Self::PROPERTIES_BUCKET)
-            && let UmlClassElement::Property(p) = element {
-            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.properties.len());
+            && let UmlClassElement::Property(p) = element
+        {
+            let pos = position
+                .map(|e| e.try_into().unwrap())
+                .unwrap_or(self.properties.len());
             self.properties.insert(pos, p);
             Ok(pos.try_into().unwrap())
         } else if (bucket == 0 || bucket == Self::OPERATIONS_BUCKET)
-            && let UmlClassElement::Operation(o) = element {
-            let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.operations.len());
+            && let UmlClassElement::Operation(o) = element
+        {
+            let pos = position
+                .map(|e| e.try_into().unwrap())
+                .unwrap_or(self.operations.len());
             self.operations.insert(pos, o);
             Ok(pos.try_into().unwrap())
         } else {
@@ -1180,8 +1284,9 @@ impl FullTextSearchable for UmlClass {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct UmlUseCase {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -1195,12 +1300,7 @@ pub struct UmlUseCase {
 }
 
 impl UmlUseCase {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        stereotype: String,
-        is_abstract: bool,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, stereotype: String, is_abstract: bool) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
@@ -1232,8 +1332,9 @@ impl Model for UmlUseCase {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassGeneralization {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -1309,21 +1410,28 @@ impl ContainerModel for UmlClassGeneralization {
     fn find_element(&self, _uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
         None
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlClassElement,
+    ) -> Result<PositionNoT, UmlClassElement> {
         match bucket {
             MULTICONNECTION_SOURCE_BUCKET if let UmlClassElement::Class(c) = element => {
-                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.sources.len());
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.sources.len());
                 self.sources.insert(pos, c);
                 Ok(pos.try_into().unwrap())
             }
             MULTICONNECTION_TARGET_BUCKET if let UmlClassElement::Class(c) = element => {
-                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.targets.len());
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.targets.len());
                 self.targets.insert(pos, c);
                 Ok(pos.try_into().unwrap())
             }
-            _ => {
-                Err(element)
-            }
+            _ => Err(element),
         }
     }
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -1347,8 +1455,9 @@ impl ContainerModel for UmlClassGeneralization {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassDependency {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -1414,7 +1523,6 @@ impl Model for UmlClassDependency {
     }
 }
 
-
 #[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum UmlClassAssociationNavigability {
     #[default]
@@ -1451,7 +1559,9 @@ impl UmlClassAssociationAggregation {
     }
 }
 
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassAssociation {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -1548,8 +1658,9 @@ impl Model for UmlClassAssociation {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct UmlUseCaseGeneralization {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -1624,21 +1735,28 @@ impl ContainerModel for UmlUseCaseGeneralization {
     fn find_element(&self, _uuid: &ModelUuid) -> Option<(UmlClassElement, ModelUuid)> {
         None
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: UmlClassElement) -> Result<PositionNoT, UmlClassElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: UmlClassElement,
+    ) -> Result<PositionNoT, UmlClassElement> {
         match bucket {
             MULTICONNECTION_SOURCE_BUCKET if let UmlClassElement::UseCase(c) = element => {
-                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.sources.len());
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.sources.len());
                 self.sources.insert(pos, c);
                 Ok(pos.try_into().unwrap())
             }
             MULTICONNECTION_TARGET_BUCKET if let UmlClassElement::UseCase(c) = element => {
-                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.targets.len());
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.targets.len());
                 self.targets.insert(pos, c);
                 Ok(pos.try_into().unwrap())
             }
-            _ => {
-                Err(element)
-            }
+            _ => Err(element),
         }
     }
     fn remove_element(&mut self, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
@@ -1662,8 +1780,9 @@ impl ContainerModel for UmlUseCaseGeneralization {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassComment {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -1673,11 +1792,7 @@ pub struct UmlClassComment {
 }
 
 impl UmlClassComment {
-    pub fn new(
-        uuid: ModelUuid,
-        stereotype: String,
-        text: String,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, stereotype: String, text: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
             stereotype: Arc::new(stereotype),
@@ -1705,8 +1820,9 @@ impl Model for UmlClassComment {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct UmlClassCommentLink {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -1720,11 +1836,7 @@ pub struct UmlClassCommentLink {
 }
 
 impl UmlClassCommentLink {
-    pub fn new(
-        uuid: ModelUuid,
-        source: ERef<UmlClassComment>,
-        target: UmlClassElement,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, source: ERef<UmlClassComment>, target: UmlClassElement) -> Self {
         Self {
             uuid: Arc::new(uuid),
             source,

@@ -1,5 +1,4 @@
-
-use darling::{FromVariant, FromDeriveInput};
+use darling::{FromDeriveInput, FromVariant};
 use proc_macro::{self, TokenStream};
 use quote::quote;
 
@@ -30,27 +29,46 @@ pub fn derive_model(input: TokenStream) -> TokenStream {
         .into();
     };
 
-    let arms = data_enum.variants.iter()
-        .flat_map(|v| DeriveModelVariantOpts::from_variant(v).map(|e| (v, e))).collect::<Vec<_>>();
-    let arms2 = arms.iter()
-            .map(|e| (e.0, match &e.1.passthrough {
-                Some(darling::util::Override::Explicit(p)) => &p,
-                _ => &opts.default_passthrough,
-            }))
-            .map(|e| {
-                let variant_ident = &e.0.ident;
-                (quote! { Self::#variant_ident(inner) }, e.1)
-            }).collect::<Vec<_>>();
-    let arms_immutable = arms2.iter().map(|e| {
-        let arm_matcher = &e.0;
-        match e.1.as_str() {
-            "eref" => quote! { #arm_matcher => inner.read() },
-            "bare" | _ => quote! { #arm_matcher => inner },
-        }
-    }).collect::<Vec<_>>();
+    let arms = data_enum
+        .variants
+        .iter()
+        .flat_map(|v| DeriveModelVariantOpts::from_variant(v).map(|e| (v, e)))
+        .collect::<Vec<_>>();
+    let arms2 = arms
+        .iter()
+        .map(|e| {
+            (
+                e.0,
+                match &e.1.passthrough {
+                    Some(darling::util::Override::Explicit(p)) => &p,
+                    _ => &opts.default_passthrough,
+                },
+            )
+        })
+        .map(|e| {
+            let variant_ident = &e.0.ident;
+            (quote! { Self::#variant_ident(inner) }, e.1)
+        })
+        .collect::<Vec<_>>();
+    let arms_immutable = arms2
+        .iter()
+        .map(|e| {
+            let arm_matcher = &e.0;
+            match e.1.as_str() {
+                "eref" => quote! { #arm_matcher => inner.read() },
+                "bare" | _ => quote! { #arm_matcher => inner },
+            }
+        })
+        .collect::<Vec<_>>();
 
-    let arms_tagged_uuid = arms_immutable.iter().map(|e| quote! { #e.tagged_uuid() }).collect::<Vec<_>>();
-    let arms_uuid = arms_immutable.iter().map(|e| quote! { #e.uuid() }).collect::<Vec<_>>();
+    let arms_tagged_uuid = arms_immutable
+        .iter()
+        .map(|e| quote! { #e.tagged_uuid() })
+        .collect::<Vec<_>>();
+    let arms_uuid = arms_immutable
+        .iter()
+        .map(|e| quote! { #e.uuid() })
+        .collect::<Vec<_>>();
 
     let ident = input_ast.ident;
 

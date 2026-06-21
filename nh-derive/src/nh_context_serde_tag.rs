@@ -1,4 +1,3 @@
-
 use proc_macro::{self, TokenStream};
 use quote::quote;
 
@@ -29,7 +28,6 @@ pub fn derive_nh_context_serde_tag(input: TokenStream) -> TokenStream {
             quote! { Self :: #variant (e) => Ok( super :: #ident :: #variant ( < #inner_type as NHContextDeserialize > :: deserialize (e, deserializer)? ) ), }
         )))
     }).collect::<(Vec<_>, (Vec<_>, (Vec<_>, Vec<_>)))>();
-
 
     let mut phantom_elements = Vec::new();
     for lifetime in input_ast.generics.lifetimes() {

@@ -1,4 +1,3 @@
-
 pub const NONE: &str = "";
 
 pub const ACTOR: &str = "actor";

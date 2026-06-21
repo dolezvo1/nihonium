@@ -1,10 +1,9 @@
-
 /// Unflattening Option - works exactly like the standard option, but the variants are serialized without flattening
 /// That allows for saner TOML serialization (citation needed)
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum UFOption<T> {
     None,
-    Some(T)
+    Some(T),
 }
 
 impl<T> UFOption<T> {
@@ -61,13 +60,18 @@ impl<T> From<Option<T>> for UFOption<T> {
     }
 }
 
-impl<T> serde::Serialize for UFOption<T> where T: serde::Serialize {
+impl<T> serde::Serialize for UFOption<T>
+where
+    T: serde::Serialize,
+{
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         #[derive(serde::Serialize)]
         enum Helper<T> {
             None,
-            Some(T)
+            Some(T),
         }
         let h = match self {
             Self::None => Helper::None,
@@ -77,18 +81,22 @@ impl<T> serde::Serialize for UFOption<T> where T: serde::Serialize {
     }
 }
 
-impl<'a, T> serde::Deserialize<'a> for UFOption<T> where T: serde::Deserialize<'a> {
+impl<'a, T> serde::Deserialize<'a> for UFOption<T>
+where
+    T: serde::Deserialize<'a>,
+{
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'a> {
+    where
+        D: serde::Deserializer<'a>,
+    {
         #[derive(serde::Deserialize)]
         enum Helper<T> {
             None,
-            Some(T)
+            Some(T),
         }
-        Helper::<T>::deserialize(deserializer)
-            .map(|e| match e {
-                Helper::None => Self::None,
-                Helper::Some(e) => Self::Some(e),
-            })
+        Helper::<T>::deserialize(deserializer).map(|e| match e {
+            Helper::None => Self::None,
+            Helper::Some(e) => Self::Some(e),
+        })
     }
 }

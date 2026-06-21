@@ -1,18 +1,18 @@
-use crate::common::controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement};
+use crate::common::controller::{
+    BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
+    VisitableDiagram, VisitableElement,
+};
 use crate::common::entity::{Entity, EntityUuid};
 use crate::common::eref::ERef;
 use crate::common::search::FullTextSearchable;
 use crate::common::uuid::ModelUuid;
 use std::collections::HashSet;
-use std::{
-    collections::HashMap,
-    sync::{Arc},
-};
+use std::{collections::HashMap, sync::Arc};
 
 #[cfg(not(target_arch = "wasm32"))]
 use sophia::api::{
-    term::{GraphName, IriRef, LanguageTag, SimpleTerm},
     MownStr,
+    term::{GraphName, IriRef, LanguageTag, SimpleTerm},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -28,7 +28,14 @@ impl<'a> RdfCollector<'a> {
     }
 }
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
+#[derive(
+    Clone,
+    derive_more::From,
+    nh_derive::Model,
+    nh_derive::ContainerModel,
+    nh_derive::FullTextSearchable,
+    nh_derive::NHContextSerDeTag,
+)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = RdfElement, default_passthrough = "none")]
 #[full_text_searchable(default_passthrough = "eref")]
@@ -72,7 +79,7 @@ impl RdfElement {
                 }
 
                 collector.current_graph = old_graph;
-            },
+            }
             RdfElement::RdfLiteral(_) | RdfElement::RdfNode(_) => {}
             RdfElement::RdfPredicate(inner) => {
                 let model = inner.read();
@@ -84,7 +91,7 @@ impl RdfElement {
                     SimpleTerm::Iri(IriRef::new(MownStr::from((*model.iri).clone())).unwrap()),
                     object,
                 ]);
-            },
+            }
         }
     }
 }
@@ -100,7 +107,10 @@ impl RdfTargettableElement {
 }
 
 impl VisitableElement for RdfElement {
-    fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
+    fn accept(&self, v: &mut dyn ElementVisitor<Self>)
+    where
+        Self: Sized,
+    {
         match self {
             RdfElement::RdfGraph(inner) => {
                 v.open_complex(self);
@@ -108,12 +118,11 @@ impl VisitableElement for RdfElement {
                     e.accept(v);
                 }
                 v.close_complex(self);
-            },
+            }
             e => v.visit_simple(e),
         }
     }
 }
-
 
 pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid, RdfElement>) {
     fn walk(e: &RdfElement, into: &mut HashMap<ModelUuid, RdfElement>) -> RdfElement {
@@ -125,15 +134,19 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid
                 let new_model = RdfGraph {
                     uuid: new_uuid,
                     iri: model.iri.clone(),
-                    contained_elements: model.contained_elements.iter().map(|e| {
-                        let new_model = walk(e, into);
-                        into.insert(*e.uuid(), new_model.clone());
-                        new_model
-                    }).collect(),
-                    comment: model.comment.clone()
+                    contained_elements: model
+                        .contained_elements
+                        .iter()
+                        .map(|e| {
+                            let new_model = walk(e, into);
+                            into.insert(*e.uuid(), new_model.clone());
+                            new_model
+                        })
+                        .collect(),
+                    comment: model.comment.clone(),
                 };
                 RdfElement::RdfGraph(ERef::new(new_model))
-            },
+            }
             RdfElement::RdfLiteral(inner) => {
                 let model = inner.read();
 
@@ -145,7 +158,7 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid
                     comment: model.comment.clone(),
                 };
                 RdfElement::RdfLiteral(ERef::new(new_model))
-            },
+            }
             RdfElement::RdfNode(inner) => {
                 let model = inner.read();
 
@@ -155,7 +168,7 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid
                     comment: model.comment.clone(),
                 };
                 RdfElement::RdfNode(ERef::new(new_model))
-            },
+            }
             RdfElement::RdfPredicate(inner) => {
                 let model = inner.read();
 
@@ -167,7 +180,7 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid
                     comment: model.comment.clone(),
                 };
                 RdfElement::RdfPredicate(ERef::new(new_model))
-            },
+            }
         }
     }
 
@@ -179,7 +192,7 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid
                     relink(e, all_models);
                 }
             }
-            RdfElement::RdfLiteral(_) | RdfElement::RdfNode(_) => {},
+            RdfElement::RdfLiteral(_) | RdfElement::RdfNode(_) => {}
             RdfElement::RdfPredicate(inner) => {
                 let mut model = inner.write();
 
@@ -188,10 +201,13 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid
                     model.source = n.clone().into();
                 }
                 let target_uuid = *model.target.uuid();
-                if let Some(t) = all_models.get(&target_uuid).and_then(|e| e.as_targettable_element()) {
+                if let Some(t) = all_models
+                    .get(&target_uuid)
+                    .and_then(|e| e.as_targettable_element())
+                {
                     model.target = t;
                 }
-            },
+            }
         }
     }
 
@@ -211,7 +227,11 @@ pub fn deep_copy_diagram(d: &RdfDiagram) -> (ERef<RdfDiagram>, HashMap<ModelUuid
         name: d.name.clone(),
         contained_elements: new_contained_elements,
         comment: d.comment.clone(),
-        stored_queries: d.stored_queries.iter().map(|e| (uuid::Uuid::now_v7(), e.1.clone())).collect(),
+        stored_queries: d
+            .stored_queries
+            .iter()
+            .map(|e| (uuid::Uuid::now_v7(), e.1.clone()))
+            .collect(),
     };
     (ERef::new(new_diagram), all_models)
 }
@@ -230,14 +250,15 @@ fn enumerate_elements(e: &RdfElement, into: &mut HashMap<ModelUuid, RdfElement>)
             for e in &inner.read().contained_elements {
                 enumerate_elements(e, into);
             }
-        },
-        RdfElement::RdfLiteral(..)
-        | RdfElement::RdfNode(..)
-        | RdfElement::RdfPredicate(..) => {},
+        }
+        RdfElement::RdfLiteral(..) | RdfElement::RdfNode(..) | RdfElement::RdfPredicate(..) => {}
     }
 }
 
-pub fn transitive_closure(d: &RdfDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+pub fn transitive_closure(
+    d: &RdfDiagram,
+    mut when_deleting: HashSet<ModelUuid>,
+) -> HashSet<ModelUuid> {
     for e in &d.contained_elements {
         fn walk(e: &RdfElement, when_deleting: &mut HashSet<ModelUuid>) {
             match e {
@@ -252,10 +273,10 @@ pub fn transitive_closure(d: &RdfDiagram, mut when_deleting: HashSet<ModelUuid>)
                             walk(e, when_deleting);
                         }
                     }
-                },
+                }
                 RdfElement::RdfLiteral(..)
                 | RdfElement::RdfNode(..)
-                | RdfElement::RdfPredicate(..) => {},
+                | RdfElement::RdfPredicate(..) => {}
             }
         }
         walk(e, &mut when_deleting);
@@ -263,23 +284,27 @@ pub fn transitive_closure(d: &RdfDiagram, mut when_deleting: HashSet<ModelUuid>)
 
     let mut also_delete = HashSet::new();
     loop {
-        fn walk(e: &RdfElement, when_deleting: &HashSet<ModelUuid>, also_delete: &mut HashSet<ModelUuid>) {
+        fn walk(
+            e: &RdfElement,
+            when_deleting: &HashSet<ModelUuid>,
+            also_delete: &mut HashSet<ModelUuid>,
+        ) {
             match e {
                 RdfElement::RdfGraph(inner) => {
                     for e in &inner.read().contained_elements {
                         walk(e, when_deleting, also_delete);
                     }
-                },
-                RdfElement::RdfLiteral(..)
-                | RdfElement::RdfNode(..) => {},
+                }
+                RdfElement::RdfLiteral(..) | RdfElement::RdfNode(..) => {}
                 RdfElement::RdfPredicate(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.read().uuid)
-                            || when_deleting.contains(&r.target.uuid())) {
+                            || when_deleting.contains(&r.target.uuid()))
+                    {
                         also_delete.insert(*r.uuid);
                     }
-                },
+                }
             }
         }
         for e in &d.contained_elements {
@@ -294,8 +319,6 @@ pub fn transitive_closure(d: &RdfDiagram, mut when_deleting: HashSet<ModelUuid>)
     when_deleting
 }
 
-
-
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct RdfDiagram {
@@ -309,11 +332,7 @@ pub struct RdfDiagram {
 }
 
 impl RdfDiagram {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        contained_elements: Vec<RdfElement>,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<RdfElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
@@ -322,7 +341,10 @@ impl RdfDiagram {
                 let mut hm = HashMap::new();
                 hm.insert(
                     uuid::Uuid::now_v7(),
-                    ("all".to_owned(), "SELECT ?s ?p ?o WHERE { ?s ?p ?o }".to_owned()),
+                    (
+                        "all".to_owned(),
+                        "SELECT ?s ?p ?o WHERE { ?s ?p ?o }".to_owned(),
+                    ),
                 );
                 hm
             },
@@ -344,32 +366,49 @@ impl RdfDiagram {
         collector.data
     }
 
-    pub fn get_element_pos_in(&self, parent: &ModelUuid, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+    pub fn get_element_pos_in(
+        &self,
+        parent: &ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
         if *parent == *self.uuid {
             self.get_element_pos(uuid)
         } else {
-            self.find_element(parent).and_then(|e| e.0.get_element_pos(uuid))
+            self.find_element(parent)
+                .and_then(|e| e.0.get_element_pos(uuid))
         }
     }
 
-    pub fn insert_element_into(&mut self, parent: ModelUuid, element: RdfElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
+    pub fn insert_element_into(
+        &mut self,
+        parent: ModelUuid,
+        element: RdfElement,
+        b: BucketNoT,
+        p: Option<PositionNoT>,
+    ) -> Result<(), ()> {
         if *self.uuid == parent {
             self.insert_element(b, p, element)
                 .map(|_| ())
                 .map_err(|_| ())
         } else {
-            self.find_element(&parent)
-                .ok_or(())
-                .and_then(|mut e| e.0
-                    .insert_element(b, p, element)
+            self.find_element(&parent).ok_or(()).and_then(|mut e| {
+                e.0.insert_element(b, p, element)
                     .map(|_| ())
                     .map_err(|_| ())
-                )
+            })
         }
     }
 
-    pub fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, RdfElement, BucketNoT, PositionNoT)>) {
-        fn r(e: &RdfElement, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, RdfElement, BucketNoT, PositionNoT)>) {
+    pub fn delete_elements(
+        &mut self,
+        uuids: &HashSet<ModelUuid>,
+        undo: &mut Vec<(ModelUuid, RdfElement, BucketNoT, PositionNoT)>,
+    ) {
+        fn r(
+            e: &RdfElement,
+            uuids: &HashSet<ModelUuid>,
+            undo: &mut Vec<(ModelUuid, RdfElement, BucketNoT, PositionNoT)>,
+        ) {
             match e {
                 RdfElement::RdfGraph(inner) => {
                     let mut w = inner.write();
@@ -381,10 +420,10 @@ impl RdfDiagram {
                         }
                     }
                     w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-                },
+                }
                 RdfElement::RdfLiteral(_)
                 | RdfElement::RdfNode(_)
-                | RdfElement::RdfPredicate(_) => {},
+                | RdfElement::RdfPredicate(_) => {}
             }
         }
 
@@ -395,7 +434,8 @@ impl RdfDiagram {
                 r(e, uuids, undo);
             }
         }
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        self.contained_elements
+            .retain(|e| !uuids.contains(&e.uuid()));
     }
 }
 
@@ -443,12 +483,19 @@ impl ContainerModel for RdfDiagram {
         }
         return None;
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: RdfElement) -> Result<PositionNoT, RdfElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: RdfElement,
+    ) -> Result<PositionNoT, RdfElement> {
         if bucket != 0 {
             return Err(element);
         }
 
-        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
         Ok(pos.try_into().unwrap())
     }
@@ -467,11 +514,7 @@ impl FullTextSearchable for RdfDiagram {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.comment,
-            ],
+            &[&self.uuid.to_string(), &self.name, &self.comment],
         );
 
         for e in &self.contained_elements {
@@ -479,7 +522,6 @@ impl FullTextSearchable for RdfDiagram {
         }
     }
 }
-
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -493,11 +535,7 @@ pub struct RdfGraph {
 }
 
 impl RdfGraph {
-    pub fn new(
-        uuid: ModelUuid,
-        iri: String,
-        contained_elements: Vec<RdfElement>,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, iri: String, contained_elements: Vec<RdfElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
             iri: Arc::new(iri),
@@ -549,12 +587,19 @@ impl ContainerModel for RdfGraph {
         }
         return None;
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: RdfElement) -> Result<PositionNoT, RdfElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: RdfElement,
+    ) -> Result<PositionNoT, RdfElement> {
         if bucket != 0 {
             return Err(element);
         }
 
-        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
         Ok(pos.try_into().unwrap())
     }
@@ -573,11 +618,7 @@ impl FullTextSearchable for RdfGraph {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.iri,
-                &self.comment,
-            ],
+            &[&self.uuid.to_string(), &self.iri, &self.comment],
         );
 
         for e in &self.contained_elements {
@@ -586,8 +627,9 @@ impl FullTextSearchable for RdfGraph {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct RdfLiteral {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -653,8 +695,9 @@ impl Model for RdfLiteral {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct RdfNode {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -698,8 +741,9 @@ impl Model for RdfNode {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct RdfPredicate {
     #[full_text_searchable(search_kind = "to_string_ref")]

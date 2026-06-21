@@ -1,4 +1,3 @@
-
 use crate::common::search::ast::Expr;
 use lalrpop_util::lalrpop_mod;
 
@@ -9,7 +8,6 @@ pub fn parse(input: &str) -> Result<Expr, String> {
         .parse(input)
         .map_err(|e| e.to_string())
 }
-
 
 #[cfg(test)]
 mod test {
@@ -55,11 +53,8 @@ mod test {
                     Box::new(Expr::Literal("foo".to_owned())),
                     Box::new(Expr::Literal("bar".to_owned())),
                 )),
-                Box::new(Expr::Not(
-                    Box::new(Expr::Literal("baz".to_owned())),
-                )),
+                Box::new(Expr::Not(Box::new(Expr::Literal("baz".to_owned())),)),
             )
         )
     }
 }
-

@@ -1,4 +1,3 @@
-
 use crate::egui;
 
 pub const EXTERNAL_ROLE_BACKGROUND: egui::Color32 = egui::Color32::LIGHT_GRAY;
@@ -12,7 +11,7 @@ pub const FORMA_DETAIL: egui::Color32 = egui::Color32::BLUE;
 pub enum DemoTransactionKind {
     Performa,
     Informa,
-    Forma
+    Forma,
 }
 
 impl DemoTransactionKind {

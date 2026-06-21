@@ -1,6 +1,12 @@
-
-use crate::{common::{controller::Model, uuid::ModelUuid}, domains::umlclass::umlclass_models::{UmlClass, UmlClassAssociation, UmlClassAssociationAggregation, UmlClassAssociationNavigability, UmlClassComment, UmlClassCommentLink, UmlClassDependency, UmlClassGeneralization, UmlClassInstance, UmlClassPackage, UmlClassVisitor, UmlUseCase, UmlUseCaseGeneralization}};
-
+use crate::{
+    common::{controller::Model, uuid::ModelUuid},
+    domains::umlclass::umlclass_models::{
+        UmlClass, UmlClassAssociation, UmlClassAssociationAggregation,
+        UmlClassAssociationNavigability, UmlClassComment, UmlClassCommentLink, UmlClassDependency,
+        UmlClassGeneralization, UmlClassInstance, UmlClassPackage, UmlClassVisitor, UmlUseCase,
+        UmlUseCaseGeneralization,
+    },
+};
 
 pub struct UmlClassPlantUmlCollector {
     plantuml_structures: String,
@@ -20,20 +26,25 @@ impl UmlClassPlantUmlCollector {
     }
 
     fn stringify_uuid(uuid: &ModelUuid) -> String {
-        "m".chars().chain(uuid.to_string().chars().filter(|e| *e != '-')).collect()
+        "m".chars()
+            .chain(uuid.to_string().chars().filter(|e| *e != '-'))
+            .collect()
     }
     fn replace_special_chars(s: &str) -> String {
-        s.replace("\n", "\\n")
-            .replace("\t", "\\t")
+        s.replace("\n", "\\n").replace("\t", "\\t")
     }
 }
 
 impl UmlClassVisitor for UmlClassPlantUmlCollector {
     fn visit_package(&mut self, package: &UmlClassPackage) {
-        self.plantuml_structures
-            .push_str(&format!("package {} as {:?} ", Self::stringify_uuid(&package.uuid), package.name));
+        self.plantuml_structures.push_str(&format!(
+            "package {} as {:?} ",
+            Self::stringify_uuid(&package.uuid),
+            package.name
+        ));
         if !package.stereotype.is_empty() {
-            self.plantuml_structures.push_str(&format!("<<{}>> ", package.stereotype));
+            self.plantuml_structures
+                .push_str(&format!("<<{}>> ", package.stereotype));
         }
         self.plantuml_structures.push_str("{\n");
 
@@ -55,13 +66,13 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
             },
         ));
         if !instance.stereotype.is_empty() {
-            self.plantuml_structures.push_str(&format!(" <<{}>>", instance.stereotype));
+            self.plantuml_structures
+                .push_str(&format!(" <<{}>>", instance.stereotype));
         }
         self.plantuml_structures.push_str("\n");
         for e in instance.instance_slots.lines().filter(|e| !e.is_empty()) {
-            self.plantuml_structures.push_str(&format!(
-                "{} : {}\n", id, e,
-            ));
+            self.plantuml_structures
+                .push_str(&format!("{} : {}\n", id, e,));
         }
     }
     fn visit_class(&mut self, class: &UmlClass) {
@@ -78,7 +89,8 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
         }
 
         if !class.stereotype.is_empty() {
-            self.plantuml_structures.push_str(&format!("<<{}>> ", class.stereotype));
+            self.plantuml_structures
+                .push_str(&format!("<<{}>> ", class.stereotype));
         }
         self.plantuml_structures.push_str("{\n");
         for e in &class.properties {
@@ -89,7 +101,8 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
             } else {
                 "".to_owned()
             };
-            self.plantuml_structures.push_str(&format!("  {}{}{}\n", visibility, r.name, value_type));
+            self.plantuml_structures
+                .push_str(&format!("  {}{}{}\n", visibility, r.name, value_type));
         }
         for e in &class.operations {
             let r = e.read();
@@ -99,13 +112,24 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
             } else {
                 "".to_owned()
             };
-            self.plantuml_structures.push_str(&format!("  {}{}({}){}\n", visibility, r.name, r.parameters, return_type));
+            self.plantuml_structures.push_str(&format!(
+                "  {}{}({}){}\n",
+                visibility, r.name, r.parameters, return_type
+            ));
         }
         self.plantuml_structures.push_str("}\n");
     }
     fn visit_generalization(&mut self, link: &UmlClassGeneralization) {
-        for source in link.sources.iter().map(|e| Self::stringify_uuid(&e.read().uuid)) {
-            for target in link.targets.iter().map(|e| Self::stringify_uuid(&e.read().uuid)) {
+        for source in link
+            .sources
+            .iter()
+            .map(|e| Self::stringify_uuid(&e.read().uuid))
+        {
+            for target in link
+                .targets
+                .iter()
+                .map(|e| Self::stringify_uuid(&e.read().uuid))
+            {
                 self.plantuml_links.push_str(&source);
                 self.plantuml_links.push_str(" --|> ");
                 self.plantuml_links.push_str(&target);
@@ -125,7 +149,8 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
         }
         self.plantuml_links.push_str(&target);
         if !link.stereotype.is_empty() {
-            self.plantuml_links.push_str(&format!(": <<{}>>", link.stereotype));
+            self.plantuml_links
+                .push_str(&format!(": <<{}>>", link.stereotype));
         }
         self.plantuml_links.push_str("\n");
     }
@@ -147,26 +172,31 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
                 UmlClassAssociationAggregation::None => match n {
                     UmlClassAssociationNavigability::Unspecified => "",
                     UmlClassAssociationNavigability::NonNavigable => "x",
-                    UmlClassAssociationNavigability::Navigable => if !target { "<" } else { ">" },
-                }
+                    UmlClassAssociationNavigability::Navigable => {
+                        if !target {
+                            "<"
+                        } else {
+                            ">"
+                        }
+                    }
+                },
                 UmlClassAssociationAggregation::Shared => "o",
                 UmlClassAssociationAggregation::Composite => "*",
             }
         }
-        self.plantuml_links.push_str(
-            &format!(
-                " {}-{} ",
-                ah(false, link.source_navigability, link.source_aggregation),
-                ah(true, link.target_navigability, link.target_aggregation),
-            )
-        );
+        self.plantuml_links.push_str(&format!(
+            " {}-{} ",
+            ah(false, link.source_navigability, link.source_aggregation),
+            ah(true, link.target_navigability, link.target_aggregation),
+        ));
         if !link.target_label_multiplicity.is_empty() {
             self.plantuml_links
                 .push_str(&format!("{:?} ", link.target_label_multiplicity));
         }
         self.plantuml_links.push_str(&target);
         if !link.stereotype.is_empty() {
-            self.plantuml_links.push_str(&format!(": <<{}>>", link.stereotype));
+            self.plantuml_links
+                .push_str(&format!(": <<{}>>", link.stereotype));
         }
         self.plantuml_links.push_str("\n");
     }
@@ -181,7 +211,11 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
             s.push_str(&comment.text);
             s
         };
-        self.plantuml_structures.push_str(&format!("note {:?} as {}\n", s, Self::stringify_uuid(&comment.uuid)));
+        self.plantuml_structures.push_str(&format!(
+            "note {:?} as {}\n",
+            s,
+            Self::stringify_uuid(&comment.uuid)
+        ));
     }
     fn visit_commentlink(&mut self, comment_link: &UmlClassCommentLink) {
         self.plantuml_links.push_str(&format!(
@@ -199,14 +233,23 @@ impl UmlClassVisitor for UmlClassPlantUmlCollector {
         ));
 
         if !usecase.stereotype.is_empty() {
-            self.plantuml_structures.push_str(&format!("<<{}>> ", usecase.stereotype));
+            self.plantuml_structures
+                .push_str(&format!("<<{}>> ", usecase.stereotype));
         }
 
         self.plantuml_structures.push_str("{}\n");
     }
     fn visit_usecasegeneralization(&mut self, g: &UmlUseCaseGeneralization) {
-        for source in g.sources.iter().map(|e| Self::stringify_uuid(&e.read().uuid)) {
-            for target in g.targets.iter().map(|e| Self::stringify_uuid(&e.read().uuid)) {
+        for source in g
+            .sources
+            .iter()
+            .map(|e| Self::stringify_uuid(&e.read().uuid))
+        {
+            for target in g
+                .targets
+                .iter()
+                .map(|e| Self::stringify_uuid(&e.read().uuid))
+            {
                 self.plantuml_links.push_str(&source);
                 self.plantuml_links.push_str(" --|> ");
                 self.plantuml_links.push_str(&target);

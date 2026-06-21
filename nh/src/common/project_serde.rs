@@ -1,4 +1,3 @@
-
 use std::collections::{HashSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
@@ -10,12 +9,16 @@ use crate::common::uuid::ControllerUuid;
 use crate::egui;
 use serde::{Deserialize, Serialize};
 
-use crate::common::controller::{ColorBundle, HierarchyNode};
 use crate::DeserializeControllerF;
+use crate::common::controller::{ColorBundle, HierarchyNode};
 
 use super::entity::EntityUuid;
 use super::eref::ERef;
-use super::{controller::DiagramController, ufoption::UFOption, uuid::{ModelUuid, ViewUuid}};
+use super::{
+    controller::DiagramController,
+    ufoption::UFOption,
+    uuid::{ModelUuid, ViewUuid},
+};
 
 pub fn no_dependencies<T>(_t: &T) -> Vec<EntityUuid> {
     vec![]
@@ -38,10 +41,18 @@ impl<'a> FSRawWriter<'a> {
         project_file_name: &'a OsStr,
         sources_folder: &'a OsStr,
     ) -> Result<Self, std::io::Error> {
-        std::fs::DirBuilder::new().recursive(true).create(root.join(sources_folder).join("documents"))?;
-        std::fs::DirBuilder::new().recursive(true).create(root.join(sources_folder).join("models"))?;
-        std::fs::DirBuilder::new().recursive(true).create(root.join(sources_folder).join("views"))?;
-        std::fs::DirBuilder::new().recursive(true).create(root.join(sources_folder).join("controllers"))?;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .create(root.join(sources_folder).join("documents"))?;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .create(root.join(sources_folder).join("models"))?;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .create(root.join(sources_folder).join("views"))?;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .create(root.join(sources_folder).join("controllers"))?;
 
         Ok(Self {
             root,
@@ -79,10 +90,7 @@ pub struct ZipFSWriter<'a> {
 }
 
 impl<'a> ZipFSWriter<'a> {
-    pub fn new(
-        project_file_name: &'a str,
-        sources_folder: &'a str,
-    ) -> Self {
+    pub fn new(project_file_name: &'a str, sources_folder: &'a str) -> Self {
         Self {
             zip: zip::ZipWriter::new(std::io::Cursor::new(Vec::new())),
             project_file_name,
@@ -97,23 +105,25 @@ impl<'a> ZipFSWriter<'a> {
 
 impl FSWriteAbstraction for ZipFSWriter<'_> {
     fn write_manifest_file(&mut self, bytes: &[u8]) -> Result<(), std::io::Error> {
-        self.zip.start_file(self.project_file_name, zip::write::SimpleFileOptions::default())?;
+        self.zip.start_file(
+            self.project_file_name,
+            zip::write::SimpleFileOptions::default(),
+        )?;
         self.zip.write_all(bytes)
     }
     fn write_source_file(&mut self, path: &str, bytes: &[u8]) -> Result<(), std::io::Error> {
         let path = format!("{}/{}", self.sources_folder, path);
-        self.zip.start_file(path, zip::write::SimpleFileOptions::default())?;
+        self.zip
+            .start_file(path, zip::write::SimpleFileOptions::default())?;
         self.zip.write_all(bytes)
     }
 }
-
 
 pub trait FSReadAbstraction {
     fn read_manifest_file(&mut self) -> Result<Vec<u8>, std::io::Error>;
     fn set_source_folder(&mut self, sources_folder: &str);
     fn read_source_file(&mut self, path: &str) -> Result<Vec<u8>, std::io::Error>;
 }
-
 
 pub struct FSRawReader {
     root: PathBuf,
@@ -122,10 +132,7 @@ pub struct FSRawReader {
 }
 
 impl<'a> FSRawReader {
-    pub fn new(
-        root: PathBuf,
-        project_file_name: OsString,
-    ) -> Result<Self, std::io::Error> {
+    pub fn new(root: PathBuf, project_file_name: OsString) -> Result<Self, std::io::Error> {
         Ok(Self {
             root,
             project_file_name,
@@ -187,13 +194,21 @@ impl FSReadAbstraction for ZipFSReader<'_> {
     }
 }
 
-
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
 enum NHProjectHierarchyNodeSerialization {
-    Folder { uuid: ViewUuid, name: String, hierarchy: Vec<NHProjectHierarchyNodeSerialization> },
-    Diagram { uuid: ViewUuid },
-    Document { uuid: ViewUuid, name: String, },
+    Folder {
+        uuid: ViewUuid,
+        name: String,
+        hierarchy: Vec<NHProjectHierarchyNodeSerialization>,
+    },
+    Diagram {
+        uuid: ViewUuid,
+    },
+    Document {
+        uuid: ViewUuid,
+        name: String,
+    },
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -238,18 +253,25 @@ impl NHProjectSerialization {
         diagram_controllers: &HashMap<ViewUuid, ERef<dyn DiagramController>>,
         documents: &HashMap<ViewUuid, (String, String)>,
     ) -> Result<(), NHSerializeError> {
-        fn h(e: &HierarchyNode, d: &HashMap<ViewUuid, (String, String)>) -> NHProjectHierarchyNodeSerialization {
+        fn h(
+            e: &HierarchyNode,
+            d: &HashMap<ViewUuid, (String, String)>,
+        ) -> NHProjectHierarchyNodeSerialization {
             match e {
-                HierarchyNode::Folder(uuid, name, children)
-                    => NHProjectHierarchyNodeSerialization::Folder {
+                HierarchyNode::Folder(uuid, name, children) => {
+                    NHProjectHierarchyNodeSerialization::Folder {
                         uuid: *uuid,
                         name: (**name).clone(),
                         hierarchy: children.iter().map(|e| h(e, d)).collect(),
-                    },
-                HierarchyNode::Diagram(uuid, _c) => NHProjectHierarchyNodeSerialization::Diagram { uuid: *uuid },
-                HierarchyNode::Document(uuid) => {
-                    NHProjectHierarchyNodeSerialization::Document { uuid: *uuid, name: d.get(uuid).unwrap().0.clone() }
+                    }
                 }
+                HierarchyNode::Diagram(uuid, _c) => {
+                    NHProjectHierarchyNodeSerialization::Diagram { uuid: *uuid }
+                }
+                HierarchyNode::Document(uuid) => NHProjectHierarchyNodeSerialization::Document {
+                    uuid: *uuid,
+                    name: d.get(uuid).unwrap().0.clone(),
+                },
             }
         }
 
@@ -263,13 +285,23 @@ impl NHProjectSerialization {
         NHSerializer::write_all(serializer, wa)?;
 
         for (key, (_, content)) in documents.iter() {
-            wa.write_source_file(&format!("documents/{}.nhd", key.to_string()), content.as_bytes())?;
+            wa.write_source_file(
+                &format!("documents/{}.nhd", key.to_string()),
+                content.as_bytes(),
+            )?;
         }
 
-        let global_colors = global_colors.colors_order.iter()
-            .flat_map(|k| global_colors.colors.get(k).map(|e| GlobalColorDTO {
-                uuid: *k, name: e.0.clone(), color: e.1,
-            })).collect();
+        let global_colors = global_colors
+            .colors_order
+            .iter()
+            .flat_map(|k| {
+                global_colors.colors.get(k).map(|e| GlobalColorDTO {
+                    uuid: *k,
+                    name: e.0.clone(),
+                    color: e.1,
+                })
+            })
+            .collect();
 
         let project_serialization = Self {
             format_version: env!("COMMIT_IDENTIFIER").to_owned(),
@@ -280,7 +312,10 @@ impl NHProjectSerialization {
             controllers: {
                 let mut controllers: Vec<_> = unique_diagram_controllers
                     .into_iter()
-                    .map(|e| NHControllerInfo { uuid: e.0, controller_type: e.1 })
+                    .map(|e| NHControllerInfo {
+                        uuid: e.0,
+                        controller_type: e.1,
+                    })
                     .collect();
                 controllers.sort_by_key(|e| e.uuid);
                 controllers
@@ -300,39 +335,48 @@ impl NHProjectSerialization {
     }
     pub fn global_colors(&self) -> ColorBundle {
         let o = self.global_colors.iter().map(|e| e.uuid).collect();
-        let c = self.global_colors.iter().map(|e| (e.uuid, (e.name.clone(), e.color))).collect();
-        ColorBundle { colors_order: o, colors: c }
+        let c = self
+            .global_colors
+            .iter()
+            .map(|e| (e.uuid, (e.name.clone(), e.color)))
+            .collect();
+        ColorBundle {
+            colors_order: o,
+            colors: c,
+        }
     }
 
     pub fn deserialize_all(
         &self,
         ra: &mut dyn FSReadAbstraction,
         diagram_deserializers: &HashMap<String, &'static DeserializeControllerF>,
-    ) -> Result<(
+    ) -> Result<
+        (
             Vec<HierarchyNode>,
             HashMap<ViewUuid, ERef<dyn DiagramController>>,
             HashMap<ViewUuid, (String, String)>,
         ),
-        NHDeserializeError
+        NHDeserializeError,
     > {
         ra.set_source_folder(&self.sources_root);
         let mut deserializer = NHDeserializer::new(ra);
 
         // Load all necessary sources
-        fn l(e: &NHProjectHierarchyNodeSerialization, d: &mut NHDeserializer) -> Result<(), NHDeserializeError> {
+        fn l(
+            e: &NHProjectHierarchyNodeSerialization,
+            d: &mut NHDeserializer,
+        ) -> Result<(), NHDeserializeError> {
             match e {
                 NHProjectHierarchyNodeSerialization::Folder { hierarchy, .. } => {
                     for e in hierarchy {
                         l(e, d)?;
                     }
                     Ok(())
-                },
+                }
                 NHProjectHierarchyNodeSerialization::Diagram { uuid, .. } => {
                     Ok(d.load_sources(EntityUuid::View(*uuid))?)
-                },
-                NHProjectHierarchyNodeSerialization::Document { .. } => {
-                    Ok(())
                 }
+                NHProjectHierarchyNodeSerialization::Document { .. } => Ok(()),
             }
         }
 
@@ -346,8 +390,11 @@ impl NHProjectSerialization {
         // Instantiate all entities
         let mut top_level_controllers = HashMap::new();
         for e in &self.controllers {
-            let dd = diagram_deserializers.get(&e.controller_type)
-                .ok_or_else(|| format!("deserializer for type '{}' not found", e.controller_type))?;
+            let dd = diagram_deserializers
+                .get(&e.controller_type)
+                .ok_or_else(|| {
+                    format!("deserializer for type '{}' not found", e.controller_type)
+                })?;
             let controller = dd(e.uuid, &mut deserializer)?;
             let r = controller.read();
             for e in r.view_uuids() {
@@ -363,18 +410,25 @@ impl NHProjectSerialization {
             cds: &HashMap<String, &'static DeserializeControllerF>,
         ) -> Result<HierarchyNode, NHDeserializeError> {
             match e {
-                NHProjectHierarchyNodeSerialization::Folder { uuid, name, hierarchy }
-                => Ok(HierarchyNode::Folder(
-                        *uuid, Arc::new((*name).clone()),
-                        hierarchy.iter().map(|e| h(e, d, tlc, docs, cds)).collect::<Result<Vec<_>, NHDeserializeError>>()?,
-                    )),
-                NHProjectHierarchyNodeSerialization::Diagram { uuid }
-                => {
-                    let c = tlc.get(uuid).ok_or_else(|| format!("controller for '{:?}' not found", uuid))?;
+                NHProjectHierarchyNodeSerialization::Folder {
+                    uuid,
+                    name,
+                    hierarchy,
+                } => Ok(HierarchyNode::Folder(
+                    *uuid,
+                    Arc::new((*name).clone()),
+                    hierarchy
+                        .iter()
+                        .map(|e| h(e, d, tlc, docs, cds))
+                        .collect::<Result<Vec<_>, NHDeserializeError>>()?,
+                )),
+                NHProjectHierarchyNodeSerialization::Diagram { uuid } => {
+                    let c = tlc
+                        .get(uuid)
+                        .ok_or_else(|| format!("controller for '{:?}' not found", uuid))?;
                     Ok(HierarchyNode::Diagram(*uuid, c.clone()))
                 }
-                NHProjectHierarchyNodeSerialization::Document { uuid, name }
-                => {
+                NHProjectHierarchyNodeSerialization::Document { uuid, name } => {
                     let path = format!("documents/{}.nhd", uuid.to_string());
                     let bytes = d.ra.read_source_file(&path)?;
                     let content = str::from_utf8(&bytes)?.to_owned();
@@ -388,7 +442,13 @@ impl NHProjectSerialization {
         let mut documents = HashMap::new();
 
         for e in &self.hierarchy {
-            hierarchy.push(h(e, &mut deserializer, &top_level_controllers, &mut documents, diagram_deserializers)?);
+            hierarchy.push(h(
+                e,
+                &mut deserializer,
+                &top_level_controllers,
+                &mut documents,
+                diagram_deserializers,
+            )?);
         }
 
         Ok((hierarchy, top_level_controllers, documents))
@@ -396,7 +456,11 @@ impl NHProjectSerialization {
 }
 
 pub struct NHSerializer {
-    stack: Vec<(EntityUuid, Vec<EntityUuid>, HashMap<EntityUuid, toml::Table>)>,
+    stack: Vec<(
+        EntityUuid,
+        Vec<EntityUuid>,
+        HashMap<EntityUuid, toml::Table>,
+    )>,
     all_contained: HashSet<EntityUuid>,
     closed_subsets: HashMap<EntityUuid, (Vec<EntityUuid>, HashMap<EntityUuid, toml::Table>)>,
 }
@@ -420,13 +484,16 @@ impl NHSerializer {
                     let subset = NHEntitySerialization {
                         depends_on,
                         main,
-                        other: models.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
+                        other: models
+                            .into_iter()
+                            .map(|e| toml::Value::Table(e.1))
+                            .collect(),
                     };
                     (
                         format!("models/{}.nhe", model_uuid.to_string()),
                         toml::to_string(&subset)?,
                     )
-                },
+                }
                 (u @ EntityUuid::View(view_uuid), (depends_on, mut e)) => {
                     let main = toml::Value::Table(e.remove(&u).unwrap());
                     let mut views: Vec<_> = e.into_iter().collect();
@@ -440,7 +507,7 @@ impl NHSerializer {
                         format!("views/{}.nhe", view_uuid.to_string()),
                         toml::to_string(&subset)?,
                     )
-                },
+                }
                 (u @ EntityUuid::Controller(controller_uuid), (depends_on, mut e)) => {
                     let main = toml::Value::Table(e.remove(&u).unwrap());
                     let mut controllers: Vec<_> = e.into_iter().collect();
@@ -448,13 +515,16 @@ impl NHSerializer {
                     let subset = NHEntitySerialization {
                         depends_on,
                         main,
-                        other: controllers.into_iter().map(|e| toml::Value::Table(e.1)).collect(),
+                        other: controllers
+                            .into_iter()
+                            .map(|e| toml::Value::Table(e.1))
+                            .collect(),
                     };
                     (
                         format!("controllers/{}.nhe", controller_uuid.to_string()),
                         toml::to_string(&subset)?,
                     )
-                },
+                }
             };
 
             wa.write_source_file(&filename, subset.as_bytes())?;
@@ -496,7 +566,10 @@ pub trait NHContextSerialize {
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError>;
 }
 
-impl<T> NHContextSerialize for UFOption<T> where T: NHContextSerialize {
+impl<T> NHContextSerialize for UFOption<T>
+where
+    T: NHContextSerialize,
+{
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         match self {
             UFOption::None => Ok(()),
@@ -505,7 +578,10 @@ impl<T> NHContextSerialize for UFOption<T> where T: NHContextSerialize {
     }
 }
 
-impl<T> NHContextSerialize for Vec<T> where T: NHContextSerialize {
+impl<T> NHContextSerialize for Vec<T>
+where
+    T: NHContextSerialize,
+{
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         for e in self.iter() {
             e.serialize_into(into)?;
@@ -514,7 +590,10 @@ impl<T> NHContextSerialize for Vec<T> where T: NHContextSerialize {
     }
 }
 
-impl<T> NHContextSerialize for ERef<T> where T: NHContextSerialize {
+impl<T> NHContextSerialize for ERef<T>
+where
+    T: NHContextSerialize,
+{
     fn serialize_into(&self, into: &mut NHSerializer) -> Result<(), NHSerializeError> {
         self.read().serialize_into(into)
     }
@@ -552,56 +631,71 @@ impl<'a> NHDeserializer<'a> {
                     let path = format!("models/{}.nhe", model_uuid.to_string());
                     let bytes = self.ra.read_source_file(&path)?;
                     let content = str::from_utf8(&bytes)?;
-                    let NHEntitySerialization { depends_on, main, other } = toml::from_str(&content)?;
+                    let NHEntitySerialization {
+                        depends_on,
+                        main,
+                        other,
+                    } = toml::from_str(&content)?;
 
                     queue.extend(depends_on);
                     let toml::Value::Table(main_model) = main else {
                         return Err(format!("expected table, found {:?}", main).into());
                     };
-                    self.source_models.insert(get_model_uuid(&main_model)?, main_model);
+                    self.source_models
+                        .insert(get_model_uuid(&main_model)?, main_model);
                     for v in other {
                         let toml::Value::Table(t) = v else {
                             return Err(format!("expected table, found {:?}", v).into());
                         };
                         self.source_models.insert(get_model_uuid(&t)?, t);
                     }
-                },
+                }
                 EntityUuid::View(view_uuid) => {
                     let path = format!("views/{}.nhe", view_uuid.to_string());
                     let bytes = self.ra.read_source_file(&path)?;
                     let content = str::from_utf8(&bytes)?;
-                    let NHEntitySerialization { depends_on, main, other } = toml::from_str(&content)?;
+                    let NHEntitySerialization {
+                        depends_on,
+                        main,
+                        other,
+                    } = toml::from_str(&content)?;
 
                     queue.extend(depends_on);
                     let toml::Value::Table(main_view) = main else {
                         return Err(format!("expected table, found {:?}", main).into());
                     };
-                    self.source_views.insert(get_view_uuid(&main_view)?, main_view);
+                    self.source_views
+                        .insert(get_view_uuid(&main_view)?, main_view);
                     for v in other {
                         let toml::Value::Table(t) = v else {
                             return Err(format!("expected table, found {:?}", v).into());
                         };
                         self.source_views.insert(get_view_uuid(&t)?, t);
                     }
-                },
+                }
                 EntityUuid::Controller(controller_uuid) => {
                     let path = format!("controllers/{}.nhe", controller_uuid.to_string());
                     let bytes = self.ra.read_source_file(&path)?;
                     let content = str::from_utf8(&bytes)?;
-                    let NHEntitySerialization { depends_on, main, other } = toml::from_str(&content)?;
+                    let NHEntitySerialization {
+                        depends_on,
+                        main,
+                        other,
+                    } = toml::from_str(&content)?;
 
                     queue.extend(depends_on);
                     let toml::Value::Table(main_controller) = main else {
                         return Err(format!("expected table, found {:?}", main).into());
                     };
-                    self.source_controllers.insert(get_controller_uuid(&main_controller)?, main_controller);
+                    self.source_controllers
+                        .insert(get_controller_uuid(&main_controller)?, main_controller);
                     for v in other {
                         let toml::Value::Table(t) = v else {
                             return Err(format!("expected table, found {:?}", v).into());
                         };
                         self.source_controllers.insert(get_controller_uuid(&t)?, t);
                     }
-                },
+                }
             }
         }
         Ok(())
@@ -610,23 +704,37 @@ impl<'a> NHDeserializer<'a> {
 
 pub trait NHDeserializeInstantiator<K> {
     fn get_entity<T>(&mut self, uuid: &K) -> Result<ERef<T>, NHDeserializeError>
-    where T: NHContextDeserialize + 'static;
+    where
+        T: NHContextDeserialize + 'static;
 }
 
 macro_rules! deserialize_instantiator {
     ($uuid_type:ty, $instantiated:ident, $source:ident) => {
         impl NHDeserializeInstantiator<$uuid_type> for NHDeserializer<'_> {
             fn get_entity<T>(&mut self, uuid: &$uuid_type) -> Result<ERef<T>, NHDeserializeError>
-            where T: NHContextDeserialize + 'static,
+            where
+                T: NHContextDeserialize + 'static,
             {
                 if let Some(e) = self.$instantiated.get(uuid) {
-                    return Ok(e.downcast_ref::<ERef<T>>()
-                        .ok_or(NHDeserializeError::StructureError(format!("element has unexpected type: {:?}", uuid)))?
+                    return Ok(e
+                        .downcast_ref::<ERef<T>>()
+                        .ok_or(NHDeserializeError::StructureError(format!(
+                            "element has unexpected type: {:?}",
+                            uuid
+                        )))?
                         .clone());
                 }
 
-                let Some(e) = self.$source.get(uuid).cloned().map(|e| toml::Value::Table(e)) else {
-                    return Err(NHDeserializeError::StructureError(format!("element not found in source: {:?}", uuid)));
+                let Some(e) = self
+                    .$source
+                    .get(uuid)
+                    .cloned()
+                    .map(|e| toml::Value::Table(e))
+                else {
+                    return Err(NHDeserializeError::StructureError(format!(
+                        "element not found in source: {:?}",
+                        uuid
+                    )));
                 };
 
                 let e = ERef::new(T::deserialize(&e, self)?);
@@ -658,8 +766,14 @@ pub trait NHContextDeserialize: Sized {
     ) -> Result<Self, NHDeserializeError>;
 }
 
-impl<T> NHContextDeserialize for UFOption<T> where T: NHContextDeserialize {
-    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
+impl<T> NHContextDeserialize for UFOption<T>
+where
+    T: NHContextDeserialize,
+{
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
         #[derive(serde::Deserialize)]
         enum Helper {
             None,
@@ -671,14 +785,30 @@ impl<T> NHContextDeserialize for UFOption<T> where T: NHContextDeserialize {
         }
     }
 }
-impl<T> NHContextDeserialize for Vec<T> where T: NHContextDeserialize {
-    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
-        source.as_array().ok_or_else(|| NHDeserializeError::StructureError("expected array".into()))?
-            .iter().map(|e| T::deserialize(e, deserializer)).collect()
+impl<T> NHContextDeserialize for Vec<T>
+where
+    T: NHContextDeserialize,
+{
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
+        source
+            .as_array()
+            .ok_or_else(|| NHDeserializeError::StructureError("expected array".into()))?
+            .iter()
+            .map(|e| T::deserialize(e, deserializer))
+            .collect()
     }
 }
-impl<T> NHContextDeserialize for ERef<T> where T: NHContextDeserialize + 'static {
-    fn deserialize(source: &toml::Value, deserializer: &mut NHDeserializer) -> Result<Self, NHDeserializeError> {
+impl<T> NHContextDeserialize for ERef<T>
+where
+    T: NHContextDeserialize + 'static,
+{
+    fn deserialize(
+        source: &toml::Value,
+        deserializer: &mut NHDeserializer,
+    ) -> Result<Self, NHDeserializeError> {
         let uuid = toml::Value::try_into(source.clone())?;
         match uuid {
             EntityUuid::Model(uuid) => deserializer.get_entity(&uuid),
@@ -689,26 +819,40 @@ impl<T> NHContextDeserialize for ERef<T> where T: NHContextDeserialize + 'static
 }
 
 pub fn get_model_uuid(table: &toml::Table) -> Result<ModelUuid, NHDeserializeError> {
-    let v = table.get("uuid").ok_or_else(|| NHDeserializeError::StructureError(format!("missing model uuid: {:?}", table)))?;
+    let v = table.get("uuid").ok_or_else(|| {
+        NHDeserializeError::StructureError(format!("missing model uuid: {:?}", table))
+    })?;
     let toml::Value::String(s) = v else {
-        return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
+        return Err(NHDeserializeError::StructureError(format!(
+            "expected string, found {:?}",
+            v
+        )));
     };
     Ok(uuid::Uuid::parse_str(s)?.into())
 }
 
 pub fn get_view_uuid(table: &toml::Table) -> Result<ViewUuid, NHDeserializeError> {
-    let v = table.get("uuid").ok_or_else(|| NHDeserializeError::StructureError(format!("missing view uuid {:?}", table)))?;
+    let v = table.get("uuid").ok_or_else(|| {
+        NHDeserializeError::StructureError(format!("missing view uuid {:?}", table))
+    })?;
     let toml::Value::String(s) = v else {
-        return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
+        return Err(NHDeserializeError::StructureError(format!(
+            "expected string, found {:?}",
+            v
+        )));
     };
     Ok(uuid::Uuid::parse_str(s)?.into())
 }
 
 pub fn get_controller_uuid(table: &toml::Table) -> Result<ControllerUuid, NHDeserializeError> {
-    let v = table.get("uuid").ok_or_else(|| NHDeserializeError::StructureError(format!("missing controller uuid {:?}", table)))?;
+    let v = table.get("uuid").ok_or_else(|| {
+        NHDeserializeError::StructureError(format!("missing controller uuid {:?}", table))
+    })?;
     let toml::Value::String(s) = v else {
-        return Err(NHDeserializeError::StructureError(format!("expected string, found {:?}", v)));
+        return Err(NHDeserializeError::StructureError(format!(
+            "expected string, found {:?}",
+            v
+        )));
     };
     Ok(uuid::Uuid::parse_str(s)?.into())
 }
-

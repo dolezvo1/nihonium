@@ -1,4 +1,3 @@
-
 // "NONE"
 pub const NONE: &str = "";
 

@@ -1,15 +1,14 @@
-
 use fluent_bundle::{FluentBundle, FluentResource};
-use unic_langid::{langid, LanguageIdentifier};
+use unic_langid::{LanguageIdentifier, langid};
 
 pub const AVAILABLE_LANGUAGES: &[(LanguageIdentifier, &str)] = &[
     (langid!("en-US"), include_str!("localization/en.ftl")),
     (langid!("cs-CZ"), include_str!("localization/cs.ftl")),
 ];
 
-
-pub fn create_fluent_bundle(desired_languages: &Vec<LanguageIdentifier>) -> Result<FluentBundle<FluentResource>, String> {
-
+pub fn create_fluent_bundle(
+    desired_languages: &Vec<LanguageIdentifier>,
+) -> Result<FluentBundle<FluentResource>, String> {
     let mut bundle = FluentBundle::new(desired_languages.clone());
 
     for l in desired_languages.iter().rev() {

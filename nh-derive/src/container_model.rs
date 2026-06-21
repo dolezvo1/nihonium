@@ -1,5 +1,4 @@
-
-use darling::{FromVariant, FromDeriveInput};
+use darling::{FromDeriveInput, FromVariant};
 use proc_macro::{self, TokenStream};
 use quote::quote;
 
@@ -31,50 +30,78 @@ pub fn derive_container_model(input: TokenStream) -> TokenStream {
         .into();
     };
 
-    let arms = data_enum.variants.iter()
-        .flat_map(|v| DeriveContainerModelVariantOpts::from_variant(v).map(|e| (v, e))).collect::<Vec<_>>();
-    let arms2 = arms.iter()
-            .map(|e| (e.0, match &e.1.passthrough {
-                Some(darling::util::Override::Explicit(p)) => &p,
-                _ => &opts.default_passthrough,
-            }))
-            .map(|e| {
-                let variant_ident = &e.0.ident;
-                (quote! { Self::#variant_ident(inner) }, e.1)
-            }).collect::<Vec<_>>();
-    let arms_immutable = arms2.iter().map(|e| {
-        let arm_matcher = &e.0;
-        match e.1.as_str() {
-            "none" => Err(quote! { #arm_matcher }),
-            "eref" => Ok(quote! { #arm_matcher => inner.read() }),
-            "bare" | _ => Ok(quote! { #arm_matcher => inner }),
-        }
-    }).collect::<Vec<_>>();
-    let arms_mutable = arms2.iter().map(|e| {
-        let arm_matcher = &e.0;
-        match e.1.as_str() {
-            "none" => Err(quote! { #arm_matcher }),
-            "eref" => Ok(quote! { #arm_matcher => inner.write() }),
-            "bare" | _ => Ok(quote! { #arm_matcher => inner }),
-        }
-    }).collect::<Vec<_>>();
+    let arms = data_enum
+        .variants
+        .iter()
+        .flat_map(|v| DeriveContainerModelVariantOpts::from_variant(v).map(|e| (v, e)))
+        .collect::<Vec<_>>();
+    let arms2 = arms
+        .iter()
+        .map(|e| {
+            (
+                e.0,
+                match &e.1.passthrough {
+                    Some(darling::util::Override::Explicit(p)) => &p,
+                    _ => &opts.default_passthrough,
+                },
+            )
+        })
+        .map(|e| {
+            let variant_ident = &e.0.ident;
+            (quote! { Self::#variant_ident(inner) }, e.1)
+        })
+        .collect::<Vec<_>>();
+    let arms_immutable = arms2
+        .iter()
+        .map(|e| {
+            let arm_matcher = &e.0;
+            match e.1.as_str() {
+                "none" => Err(quote! { #arm_matcher }),
+                "eref" => Ok(quote! { #arm_matcher => inner.read() }),
+                "bare" | _ => Ok(quote! { #arm_matcher => inner }),
+            }
+        })
+        .collect::<Vec<_>>();
+    let arms_mutable = arms2
+        .iter()
+        .map(|e| {
+            let arm_matcher = &e.0;
+            match e.1.as_str() {
+                "none" => Err(quote! { #arm_matcher }),
+                "eref" => Ok(quote! { #arm_matcher => inner.write() }),
+                "bare" | _ => Ok(quote! { #arm_matcher => inner }),
+            }
+        })
+        .collect::<Vec<_>>();
 
-    let arms_find_element = arms_immutable.iter().map(|e| match e {
-        Ok(e) => quote! { #e.find_element(uuid) },
-        Err(e) => quote! { #e => None },
-    }).collect::<Vec<_>>();
-    let arms_get_element_pos = arms_immutable.iter().map(|e| match e {
-        Ok(e) => quote! { #e.get_element_pos(uuid) },
-        Err(e) => quote! { #e => None },
-    }).collect::<Vec<_>>();
-    let arms_insert_element = arms_mutable.iter().map(|e| match e {
-        Ok(e) => quote! { #e.insert_element(bucket, position, element) },
-        Err(e) => quote! { #e => Err(element) },
-    }).collect::<Vec<_>>();
-    let arms_remove_element = arms_mutable.iter().map(|e| match e {
-        Ok(e) => quote! { #e.remove_element(uuid) },
-        Err(e) => quote! { #e => None },
-    }).collect::<Vec<_>>();
+    let arms_find_element = arms_immutable
+        .iter()
+        .map(|e| match e {
+            Ok(e) => quote! { #e.find_element(uuid) },
+            Err(e) => quote! { #e => None },
+        })
+        .collect::<Vec<_>>();
+    let arms_get_element_pos = arms_immutable
+        .iter()
+        .map(|e| match e {
+            Ok(e) => quote! { #e.get_element_pos(uuid) },
+            Err(e) => quote! { #e => None },
+        })
+        .collect::<Vec<_>>();
+    let arms_insert_element = arms_mutable
+        .iter()
+        .map(|e| match e {
+            Ok(e) => quote! { #e.insert_element(bucket, position, element) },
+            Err(e) => quote! { #e => Err(element) },
+        })
+        .collect::<Vec<_>>();
+    let arms_remove_element = arms_mutable
+        .iter()
+        .map(|e| match e {
+            Ok(e) => quote! { #e.remove_element(uuid) },
+            Err(e) => quote! { #e => None },
+        })
+        .collect::<Vec<_>>();
 
     let ident = input_ast.ident;
     let element_type = opts.element_type;

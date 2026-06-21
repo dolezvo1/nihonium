@@ -1,12 +1,32 @@
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use crate::{
+    common::{
+        canvas,
+        controller::{
+            BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
+            VisitableDiagram, VisitableElement,
+        },
+        entity::{Entity, EntityUuid},
+        eref::ERef,
+        search::FullTextSearchable,
+        ufoption::UFOption,
+        uuid::ModelUuid,
+    },
+    domains::demo::DemoTransactionKind,
+};
 
-use crate::{common::{
-    canvas, controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement}, entity::{Entity, EntityUuid}, eref::ERef, search::FullTextSearchable, ufoption::UFOption, uuid::ModelUuid
-}, domains::demo::DemoTransactionKind};
-
-
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
+#[derive(
+    Clone,
+    derive_more::From,
+    nh_derive::Model,
+    nh_derive::ContainerModel,
+    nh_derive::FullTextSearchable,
+    nh_derive::NHContextSerDeTag,
+)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = DemoPsdElement, default_passthrough = "none")]
 #[full_text_searchable(default_passthrough = "eref")]
@@ -21,7 +41,14 @@ pub enum DemoPsdElement {
     DemoPsdLink(ERef<DemoPsdLink>),
 }
 
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
+#[derive(
+    Clone,
+    derive_more::From,
+    nh_derive::Model,
+    nh_derive::ContainerModel,
+    nh_derive::FullTextSearchable,
+    nh_derive::NHContextSerDeTag,
+)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = DemoPsdElement, default_passthrough = "none")]
 #[full_text_searchable(default_passthrough = "eref")]
@@ -36,9 +63,7 @@ impl DemoPsdElement {
         match self {
             Self::DemoPsdFact(inner) => Some(DemoPsdState::Fact(inner)),
             Self::DemoPsdAct(inner) => Some(DemoPsdState::Act(inner)),
-            Self::DemoPsdPackage(..)
-            | Self::DemoPsdTransaction(..)
-            | Self::DemoPsdLink(..) => None,
+            Self::DemoPsdPackage(..) | Self::DemoPsdTransaction(..) | Self::DemoPsdLink(..) => None,
         }
     }
 }
@@ -53,7 +78,10 @@ impl DemoPsdState {
 }
 
 impl VisitableElement for DemoPsdElement {
-    fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
+    fn accept(&self, v: &mut dyn ElementVisitor<Self>)
+    where
+        Self: Sized,
+    {
         match self {
             DemoPsdElement::DemoPsdPackage(inner) => {
                 v.open_complex(self);
@@ -61,7 +89,7 @@ impl VisitableElement for DemoPsdElement {
                     e.accept(v);
                 }
                 v.close_complex(self);
-            },
+            }
             DemoPsdElement::DemoPsdTransaction(inner) => {
                 v.open_complex(self);
                 let r = inner.read();
@@ -81,8 +109,9 @@ impl VisitableElement for DemoPsdElement {
     }
 }
 
-
-pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<ModelUuid, DemoPsdElement>) {
+pub fn deep_copy_diagram(
+    d: &DemoPsdDiagram,
+) -> (ERef<DemoPsdDiagram>, HashMap<ModelUuid, DemoPsdElement>) {
     fn walk(e: &DemoPsdElement, into: &mut HashMap<ModelUuid, DemoPsdElement>) -> DemoPsdElement {
         let new_uuid = ModelUuid::now_v7().into();
         match e {
@@ -92,15 +121,19 @@ pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<M
                 let new_model = DemoPsdPackage {
                     uuid: new_uuid,
                     name: model.name.clone(),
-                    contained_elements: model.contained_elements.iter().map(|e| {
-                        let new_model = walk(e, into);
-                        into.insert(*e.uuid(), new_model.clone());
-                        new_model
-                    }).collect(),
-                    comment: model.comment.clone()
+                    contained_elements: model
+                        .contained_elements
+                        .iter()
+                        .map(|e| {
+                            let new_model = walk(e, into);
+                            into.insert(*e.uuid(), new_model.clone());
+                            new_model
+                        })
+                        .collect(),
+                    comment: model.comment.clone(),
                 };
                 DemoPsdElement::DemoPsdPackage(ERef::new(new_model))
-            },
+            }
             DemoPsdElement::DemoPsdTransaction(inner) => {
                 let model = inner.read();
 
@@ -109,14 +142,18 @@ pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<M
                     kind: model.kind,
                     identifier: model.identifier.clone(),
                     name: model.name.clone(),
-                    before: model.before.iter().map(|e| {
-                        let new_model = walk(&e.state.clone().to_element(), into);
-                        into.insert(*e.state.uuid(), new_model.clone());
-                        DemoPsdStateInfo {
-                            state: new_model.to_state().unwrap(),
-                            executor: e.executor,
-                        }
-                    }).collect(),
+                    before: model
+                        .before
+                        .iter()
+                        .map(|e| {
+                            let new_model = walk(&e.state.clone().to_element(), into);
+                            into.insert(*e.state.uuid(), new_model.clone());
+                            DemoPsdStateInfo {
+                                state: new_model.to_state().unwrap(),
+                                executor: e.executor,
+                            }
+                        })
+                        .collect(),
                     p_act: match &model.p_act {
                         UFOption::None => UFOption::None,
                         UFOption::Some(inner) => {
@@ -128,28 +165,32 @@ pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<M
                             }
                         }
                     },
-                    after: model.after.iter().map(|e| {
-                        let new_model = walk(&e.state.clone().to_element(), into);
-                        into.insert(*e.state.uuid(), new_model.clone());
-                        DemoPsdStateInfo {
-                            state: new_model.to_state().unwrap(),
-                            executor: e.executor,
-                        }
-                    }).collect(),
+                    after: model
+                        .after
+                        .iter()
+                        .map(|e| {
+                            let new_model = walk(&e.state.clone().to_element(), into);
+                            into.insert(*e.state.uuid(), new_model.clone());
+                            DemoPsdStateInfo {
+                                state: new_model.to_state().unwrap(),
+                                executor: e.executor,
+                            }
+                        })
+                        .collect(),
                     comment: model.comment.clone(),
                 };
 
                 DemoPsdElement::DemoPsdTransaction(ERef::new(new_model))
-            },
+            }
             DemoPsdElement::DemoPsdFact(inner) => {
                 DemoPsdElement::DemoPsdFact(inner.read().clone_with(*new_uuid))
-            },
+            }
             DemoPsdElement::DemoPsdAct(inner) => {
                 DemoPsdElement::DemoPsdAct(inner.read().clone_with(*new_uuid))
-            },
+            }
             DemoPsdElement::DemoPsdLink(inner) => {
                 DemoPsdElement::DemoPsdLink(inner.read().clone_with(*new_uuid))
-            },
+            }
         }
     }
 
@@ -160,7 +201,7 @@ pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<M
                 for e in model.contained_elements.iter_mut() {
                     relink(e, all_models);
                 }
-            },
+            }
             DemoPsdElement::DemoPsdTransaction(..)
             | DemoPsdElement::DemoPsdFact(..)
             | DemoPsdElement::DemoPsdAct(..) => {}
@@ -175,7 +216,7 @@ pub fn deep_copy_diagram(d: &DemoPsdDiagram) -> (ERef<DemoPsdDiagram>, HashMap<M
                 if let Some(DemoPsdElement::DemoPsdAct(tx)) = all_models.get(&target_uuid) {
                     model.target = tx.clone();
                 }
-            },
+            }
         }
     }
 
@@ -213,7 +254,7 @@ fn enumerate_elements(e: &DemoPsdElement, into: &mut HashMap<ModelUuid, DemoPsdE
             for e in &inner.read().contained_elements {
                 enumerate_elements(e, into);
             }
-        },
+        }
         DemoPsdElement::DemoPsdTransaction(inner) => {
             let r = inner.read();
             for e in &r.before {
@@ -225,14 +266,17 @@ fn enumerate_elements(e: &DemoPsdElement, into: &mut HashMap<ModelUuid, DemoPsdE
             for e in &r.after {
                 enumerate_elements(&e.state.clone().to_element(), into);
             }
-        },
+        }
         DemoPsdElement::DemoPsdFact(..)
         | DemoPsdElement::DemoPsdAct(..)
-        | DemoPsdElement::DemoPsdLink(..) => {},
+        | DemoPsdElement::DemoPsdLink(..) => {}
     }
 }
 
-pub fn transitive_closure(d: &DemoPsdDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+pub fn transitive_closure(
+    d: &DemoPsdDiagram,
+    mut when_deleting: HashSet<ModelUuid>,
+) -> HashSet<ModelUuid> {
     for e in &d.contained_elements {
         fn walk(e: &DemoPsdElement, when_deleting: &mut HashSet<ModelUuid>) {
             match e {
@@ -247,7 +291,7 @@ pub fn transitive_closure(d: &DemoPsdDiagram, mut when_deleting: HashSet<ModelUu
                             walk(e, when_deleting);
                         }
                     }
-                },
+                }
                 DemoPsdElement::DemoPsdTransaction(inner) => {
                     let r = inner.read();
                     if when_deleting.contains(&r.uuid) {
@@ -265,10 +309,10 @@ pub fn transitive_closure(d: &DemoPsdDiagram, mut when_deleting: HashSet<ModelUu
                             walk(&e.state.clone().to_element(), when_deleting);
                         }
                     }
-                },
+                }
                 DemoPsdElement::DemoPsdFact(..)
                 | DemoPsdElement::DemoPsdAct(..)
-                | DemoPsdElement::DemoPsdLink(..) => {},
+                | DemoPsdElement::DemoPsdLink(..) => {}
             }
         }
         walk(e, &mut when_deleting);
@@ -276,24 +320,29 @@ pub fn transitive_closure(d: &DemoPsdDiagram, mut when_deleting: HashSet<ModelUu
 
     let mut also_delete = HashSet::new();
     loop {
-        fn walk(e: &DemoPsdElement, when_deleting: &HashSet<ModelUuid>, also_delete: &mut HashSet<ModelUuid>) {
+        fn walk(
+            e: &DemoPsdElement,
+            when_deleting: &HashSet<ModelUuid>,
+            also_delete: &mut HashSet<ModelUuid>,
+        ) {
             match e {
                 DemoPsdElement::DemoPsdPackage(inner) => {
                     for e in &inner.read().contained_elements {
                         walk(e, when_deleting, also_delete);
                     }
-                },
+                }
                 DemoPsdElement::DemoPsdTransaction(..)
                 | DemoPsdElement::DemoPsdFact(..)
-                | DemoPsdElement::DemoPsdAct(..) => {},
+                | DemoPsdElement::DemoPsdAct(..) => {}
                 DemoPsdElement::DemoPsdLink(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.read().uuid)
-                            || when_deleting.contains(&r.target.read().uuid)) {
+                            || when_deleting.contains(&r.target.read().uuid))
+                    {
                         also_delete.insert(*r.uuid);
                     }
-                },
+                }
             }
         }
         for e in &d.contained_elements {
@@ -308,7 +357,6 @@ pub fn transitive_closure(d: &DemoPsdDiagram, mut when_deleting: HashSet<ModelUu
     when_deleting
 }
 
-
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
 pub struct DemoPsdDiagram {
@@ -321,11 +369,7 @@ pub struct DemoPsdDiagram {
 }
 
 impl DemoPsdDiagram {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        contained_elements: Vec<DemoPsdElement>,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<DemoPsdElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
@@ -334,11 +378,16 @@ impl DemoPsdDiagram {
         }
     }
 
-    pub fn get_element_pos_in(&self, parent: &ModelUuid, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+    pub fn get_element_pos_in(
+        &self,
+        parent: &ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
         if *parent == *self.uuid {
             self.get_element_pos(uuid)
         } else {
-            self.find_element(parent).and_then(|e| e.0.get_element_pos(uuid))
+            self.find_element(parent)
+                .and_then(|e| e.0.get_element_pos(uuid))
         }
     }
 }
@@ -387,12 +436,19 @@ impl ContainerModel for DemoPsdDiagram {
         }
         return None;
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoPsdElement) -> Result<PositionNoT, DemoPsdElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoPsdElement,
+    ) -> Result<PositionNoT, DemoPsdElement> {
         if bucket != 0 {
             return Err(element);
         }
 
-        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
         Ok(pos.try_into().unwrap())
     }
@@ -411,11 +467,7 @@ impl FullTextSearchable for DemoPsdDiagram {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.comment,
-            ],
+            &[&self.uuid.to_string(), &self.name, &self.comment],
         );
 
         for e in &self.contained_elements {
@@ -423,7 +475,6 @@ impl FullTextSearchable for DemoPsdDiagram {
         }
     }
 }
-
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
@@ -437,11 +488,7 @@ pub struct DemoPsdPackage {
 }
 
 impl DemoPsdPackage {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        contained_elements: Vec<DemoPsdElement>,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<DemoPsdElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
@@ -493,12 +540,19 @@ impl ContainerModel for DemoPsdPackage {
         }
         return None;
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoPsdElement) -> Result<PositionNoT, DemoPsdElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoPsdElement,
+    ) -> Result<PositionNoT, DemoPsdElement> {
         if bucket != 0 {
             return Err(element);
         }
 
-        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
         Ok(pos.try_into().unwrap())
     }
@@ -517,11 +571,7 @@ impl FullTextSearchable for DemoPsdPackage {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.comment,
-            ],
+            &[&self.uuid.to_string(), &self.name, &self.comment],
         );
 
         for e in &self.contained_elements {
@@ -530,8 +580,9 @@ impl FullTextSearchable for DemoPsdPackage {
     }
 }
 
-
-#[derive(Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    Clone, serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 pub struct DemoPsdStateInfo {
     #[nh_context_serde(entity)]
     pub state: DemoPsdState,
@@ -596,11 +647,21 @@ impl DemoPsdTransaction {
         })
     }
     pub fn move_element(&mut self, element: &ModelUuid, pos: PositionNoT) {
-        if let Some((idx, _e)) = self.before.iter().enumerate().find(|e| *e.1.state.uuid() == *element) {
+        if let Some((idx, _e)) = self
+            .before
+            .iter()
+            .enumerate()
+            .find(|e| *e.1.state.uuid() == *element)
+        {
             let e = self.before.remove(idx);
             self.before.insert(pos.try_into().unwrap(), e);
         }
-        if let Some((idx, _e)) = self.after.iter().enumerate().find(|e| *e.1.state.uuid() == *element) {
+        if let Some((idx, _e)) = self
+            .after
+            .iter()
+            .enumerate()
+            .find(|e| *e.1.state.uuid() == *element)
+        {
             let e = self.after.remove(idx);
             self.after.insert(pos.try_into().unwrap(), e);
         }
@@ -651,28 +712,44 @@ impl ContainerModel for DemoPsdTransaction {
         for (idx, e) in self.before.iter().enumerate() {
             if *e.state.uuid() == *uuid {
                 return Some((
-                    if !e.executor {Self::BEFORE_INITIATOR_BUCKET} else {Self::BEFORE_EXECUTOR_BUCKET},
+                    if !e.executor {
+                        Self::BEFORE_INITIATOR_BUCKET
+                    } else {
+                        Self::BEFORE_EXECUTOR_BUCKET
+                    },
                     idx.try_into().unwrap(),
                 ));
             }
         }
-        if let UFOption::Some(e) = &self.p_act && *e.read().uuid == *uuid {
+        if let UFOption::Some(e) = &self.p_act
+            && *e.read().uuid == *uuid
+        {
             return Some((Self::CENTER_BUCKET, 0));
         }
         for (idx, e) in self.after.iter().enumerate() {
             if *e.state.uuid() == *uuid {
                 return Some((
-                    if !e.executor {Self::AFTER_INITIATOR_BUCKET} else {Self::AFTER_EXECUTOR_BUCKET},
+                    if !e.executor {
+                        Self::AFTER_INITIATOR_BUCKET
+                    } else {
+                        Self::AFTER_EXECUTOR_BUCKET
+                    },
                     idx.try_into().unwrap(),
                 ));
             }
         }
         None
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: DemoPsdElement) -> Result<PositionNoT, DemoPsdElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: DemoPsdElement,
+    ) -> Result<PositionNoT, DemoPsdElement> {
         if bucket == Self::CENTER_BUCKET {
             if !self.p_act.is_some()
-                && let DemoPsdElement::DemoPsdAct(act) = element {
+                && let DemoPsdElement::DemoPsdAct(act) = element
+            {
                 self.p_act = UFOption::Some(act.clone());
                 Ok(0)
             } else {
@@ -690,11 +767,16 @@ impl ContainerModel for DemoPsdTransaction {
                 _ => unreachable!(),
             };
             if !after {
-                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.before.len());
-                self.before.insert(pos, DemoPsdStateInfo { state, executor });
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.before.len());
+                self.before
+                    .insert(pos, DemoPsdStateInfo { state, executor });
                 Ok(pos.try_into().unwrap())
             } else {
-                let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.after.len());
+                let pos = position
+                    .map(|e| e.try_into().unwrap())
+                    .unwrap_or(self.after.len());
                 self.after.insert(pos, DemoPsdStateInfo { state, executor });
                 Ok(pos.try_into().unwrap())
             }
@@ -708,21 +790,31 @@ impl ContainerModel for DemoPsdTransaction {
                 let is_executor = e.executor;
                 self.before.remove(idx);
                 return Some((
-                    if !is_executor {Self::BEFORE_INITIATOR_BUCKET} else {Self::BEFORE_EXECUTOR_BUCKET},
+                    if !is_executor {
+                        Self::BEFORE_INITIATOR_BUCKET
+                    } else {
+                        Self::BEFORE_EXECUTOR_BUCKET
+                    },
                     idx.try_into().unwrap(),
                 ));
             }
         }
-        if let UFOption::Some(e) = &self.p_act && *e.read().uuid == *uuid {
+        if let UFOption::Some(e) = &self.p_act
+            && *e.read().uuid == *uuid
+        {
             self.p_act = UFOption::None;
-            return Some((Self::CENTER_BUCKET, 0))
+            return Some((Self::CENTER_BUCKET, 0));
         }
         for (idx, e) in self.after.iter().enumerate() {
             if *e.state.uuid() == *uuid {
                 let is_executor = e.executor;
                 self.after.remove(idx);
                 return Some((
-                    if !is_executor {Self::AFTER_INITIATOR_BUCKET} else {Self::AFTER_EXECUTOR_BUCKET},
+                    if !is_executor {
+                        Self::AFTER_INITIATOR_BUCKET
+                    } else {
+                        Self::AFTER_EXECUTOR_BUCKET
+                    },
                     idx.try_into().unwrap(),
                 ));
             }
@@ -735,11 +827,7 @@ impl FullTextSearchable for DemoPsdTransaction {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.comment,
-            ],
+            &[&self.uuid.to_string(), &self.name, &self.comment],
         );
 
         for e in &self.before {
@@ -754,9 +842,10 @@ impl FullTextSearchable for DemoPsdTransaction {
     }
 }
 
-
 // "Disc"
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct DemoPsdFact {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -768,11 +857,7 @@ pub struct DemoPsdFact {
 }
 
 impl DemoPsdFact {
-    pub fn new(
-        uuid: ModelUuid,
-        identifier: String,
-        internal: bool,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, identifier: String, internal: bool) -> Self {
         Self {
             uuid: Arc::new(uuid),
             identifier: Arc::new(identifier),
@@ -782,14 +867,12 @@ impl DemoPsdFact {
     }
 
     pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(
-            Self {
-                uuid: Arc::new(uuid),
-                identifier: self.identifier.clone(),
-                internal: self.internal,
-                comment: self.comment.clone(),
-            }
-        )
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            identifier: self.identifier.clone(),
+            internal: self.internal,
+            comment: self.comment.clone(),
+        })
     }
 }
 
@@ -805,9 +888,10 @@ impl Model for DemoPsdFact {
     }
 }
 
-
 // "Box"
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct DemoPsdAct {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -819,11 +903,7 @@ pub struct DemoPsdAct {
 }
 
 impl DemoPsdAct {
-    pub fn new(
-        uuid: ModelUuid,
-        identifier: String,
-        internal: bool,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, identifier: String, internal: bool) -> Self {
         Self {
             uuid: Arc::new(uuid),
             identifier: Arc::new(identifier),
@@ -833,14 +913,12 @@ impl DemoPsdAct {
     }
 
     pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(
-            Self {
-                uuid: Arc::new(uuid),
-                identifier: self.identifier.clone(),
-                internal: self.internal,
-                comment: self.comment.clone(),
-            }
-        )
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            identifier: self.identifier.clone(),
+            internal: self.internal,
+            comment: self.comment.clone(),
+        })
     }
 }
 
@@ -855,7 +933,6 @@ impl Model for DemoPsdAct {
         self.uuid.clone()
     }
 }
-
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum DemoPsdLinkType {
@@ -882,7 +959,9 @@ impl DemoPsdLinkType {
     }
 }
 
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct DemoPsdLink {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -919,16 +998,14 @@ impl DemoPsdLink {
         }
     }
     pub fn clone_with(&self, uuid: ModelUuid) -> ERef<Self> {
-        ERef::new(
-            Self {
-                uuid: Arc::new(uuid),
-                link_type: self.link_type,
-                source: self.source.clone(),
-                target: self.target.clone(),
-                multiplicity: self.multiplicity.clone(),
-                comment: self.comment.clone(),
-            }
-        )
+        ERef::new(Self {
+            uuid: Arc::new(uuid),
+            link_type: self.link_type,
+            source: self.source.clone(),
+            target: self.target.clone(),
+            multiplicity: self.multiplicity.clone(),
+            comment: self.comment.clone(),
+        })
     }
 }
 

@@ -1,10 +1,22 @@
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
-use std::{collections::{HashMap, HashSet}, sync::Arc};
+use crate::common::{
+    controller::{
+        BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT,
+        VisitableDiagram, VisitableElement,
+    },
+    entity::{Entity, EntityUuid},
+    eref::ERef,
+    search::FullTextSearchable,
+    uuid::ModelUuid,
+};
 
-use crate::common::{controller::{BucketNoT, ContainerModel, DiagramVisitor, ElementVisitor, Model, PositionNoT, VisitableDiagram, VisitableElement}, entity::{Entity, EntityUuid}, eref::ERef, search::FullTextSearchable, uuid::ModelUuid};
-
-
-pub fn deep_copy_diagram(d: &NetworkDiagram) -> (ERef<NetworkDiagram>, HashMap<ModelUuid, NetworkElement>) {
+pub fn deep_copy_diagram(
+    d: &NetworkDiagram,
+) -> (ERef<NetworkDiagram>, HashMap<ModelUuid, NetworkElement>) {
     fn walk(e: &NetworkElement, into: &mut HashMap<ModelUuid, NetworkElement>) -> NetworkElement {
         let new_uuid = ModelUuid::now_v7().into();
         match e {
@@ -15,15 +27,19 @@ pub fn deep_copy_diagram(d: &NetworkDiagram) -> (ERef<NetworkDiagram>, HashMap<M
                     uuid: new_uuid,
                     name: model.name.clone(),
                     kind: model.kind.clone(),
-                    contained_elements: model.contained_elements.iter().map(|e| {
-                        let new_model = walk(e, into);
-                        into.insert(*e.uuid(), new_model.clone());
-                        new_model
-                    }).collect(),
-                    comment: model.comment.clone()
+                    contained_elements: model
+                        .contained_elements
+                        .iter()
+                        .map(|e| {
+                            let new_model = walk(e, into);
+                            into.insert(*e.uuid(), new_model.clone());
+                            new_model
+                        })
+                        .collect(),
+                    comment: model.comment.clone(),
                 };
                 ERef::new(new_model).into()
-            },
+            }
             NetworkElement::Node(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::User(inner) => inner.read().clone_with(*new_uuid).into(),
             NetworkElement::File(inner) => inner.read().clone_with(*new_uuid).into(),
@@ -40,9 +56,7 @@ pub fn deep_copy_diagram(d: &NetworkDiagram) -> (ERef<NetworkDiagram>, HashMap<M
                     relink(e, all_models);
                 }
             }
-            NetworkElement::Node(_)
-            | NetworkElement::User(_)
-            | NetworkElement::File(_) => {},
+            NetworkElement::Node(_) | NetworkElement::User(_) | NetworkElement::File(_) => {}
             NetworkElement::Association(inner) => {
                 let mut model = inner.write();
 
@@ -54,8 +68,8 @@ pub fn deep_copy_diagram(d: &NetworkDiagram) -> (ERef<NetworkDiagram>, HashMap<M
                 if let Some(t) = all_models.get(&target_uuid) {
                     model.target = t.clone();
                 }
-            },
-            NetworkElement::Comment(_) => {},
+            }
+            NetworkElement::Comment(_) => {}
         }
     }
 
@@ -93,16 +107,19 @@ fn enumerate_elements(e: &NetworkElement, into: &mut HashMap<ModelUuid, NetworkE
             for e in &inner.read().contained_elements {
                 enumerate_elements(e, into);
             }
-        },
+        }
         NetworkElement::Node(_)
         | NetworkElement::User(_)
         | NetworkElement::File(_)
         | NetworkElement::Association(_)
-        | NetworkElement::Comment(_) => {},
+        | NetworkElement::Comment(_) => {}
     }
 }
 
-pub fn transitive_closure(d: &NetworkDiagram, mut when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
+pub fn transitive_closure(
+    d: &NetworkDiagram,
+    mut when_deleting: HashSet<ModelUuid>,
+) -> HashSet<ModelUuid> {
     for e in &d.contained_elements {
         fn walk(e: &NetworkElement, when_deleting: &mut HashSet<ModelUuid>) {
             match e {
@@ -117,12 +134,12 @@ pub fn transitive_closure(d: &NetworkDiagram, mut when_deleting: HashSet<ModelUu
                             walk(e, when_deleting);
                         }
                     }
-                },
+                }
                 NetworkElement::Node(_)
                 | NetworkElement::User(_)
                 | NetworkElement::File(_)
                 | NetworkElement::Association(_)
-                | NetworkElement::Comment(_) => {},
+                | NetworkElement::Comment(_) => {}
             }
         }
         walk(e, &mut when_deleting);
@@ -130,24 +147,27 @@ pub fn transitive_closure(d: &NetworkDiagram, mut when_deleting: HashSet<ModelUu
 
     let mut also_delete = HashSet::new();
     loop {
-        fn walk(e: &NetworkElement, when_deleting: &HashSet<ModelUuid>, also_delete: &mut HashSet<ModelUuid>) {
+        fn walk(
+            e: &NetworkElement,
+            when_deleting: &HashSet<ModelUuid>,
+            also_delete: &mut HashSet<ModelUuid>,
+        ) {
             match e {
                 NetworkElement::Container(inner) => {
                     for e in &inner.read().contained_elements {
                         walk(e, when_deleting, also_delete);
                     }
-                },
-                NetworkElement::Node(_)
-                | NetworkElement::User(_)
-                | NetworkElement::File(_) => {},
+                }
+                NetworkElement::Node(_) | NetworkElement::User(_) | NetworkElement::File(_) => {}
                 NetworkElement::Association(inner) => {
                     let r = inner.read();
                     if !when_deleting.contains(&r.uuid)
                         && (when_deleting.contains(&r.source.uuid())
-                            || when_deleting.contains(&r.target.uuid())) {
+                            || when_deleting.contains(&r.target.uuid()))
+                    {
                         also_delete.insert(*r.uuid);
                     }
-                },
+                }
                 NetworkElement::Comment(_) => {}
             }
         }
@@ -163,8 +183,14 @@ pub fn transitive_closure(d: &NetworkDiagram, mut when_deleting: HashSet<ModelUu
     when_deleting
 }
 
-
-#[derive(Clone, derive_more::From, nh_derive::Model, nh_derive::ContainerModel, nh_derive::FullTextSearchable, nh_derive::NHContextSerDeTag)]
+#[derive(
+    Clone,
+    derive_more::From,
+    nh_derive::Model,
+    nh_derive::ContainerModel,
+    nh_derive::FullTextSearchable,
+    nh_derive::NHContextSerDeTag,
+)]
 #[model(default_passthrough = "eref")]
 #[container_model(element_type = NetworkElement, default_passthrough = "none")]
 #[full_text_searchable(default_passthrough = "eref")]
@@ -182,7 +208,10 @@ pub enum NetworkElement {
 }
 
 impl VisitableElement for NetworkElement {
-    fn accept(&self, v: &mut dyn ElementVisitor<Self>) where Self: Sized {
+    fn accept(&self, v: &mut dyn ElementVisitor<Self>)
+    where
+        Self: Sized,
+    {
         match self {
             NetworkElement::Container(inner) => {
                 v.open_complex(self);
@@ -190,12 +219,11 @@ impl VisitableElement for NetworkElement {
                     e.accept(v);
                 }
                 v.close_complex(self);
-            },
+            }
             e => v.visit_simple(e),
         }
     }
 }
-
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity, is_subset_with = crate::common::project_serde::no_dependencies)]
@@ -209,11 +237,7 @@ pub struct NetworkDiagram {
 }
 
 impl NetworkDiagram {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        contained_elements: Vec<NetworkElement>,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<NetworkElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
@@ -222,32 +246,49 @@ impl NetworkDiagram {
         }
     }
 
-    pub fn get_element_pos_in(&self, parent: &ModelUuid, uuid: &ModelUuid) -> Option<(BucketNoT, PositionNoT)> {
+    pub fn get_element_pos_in(
+        &self,
+        parent: &ModelUuid,
+        uuid: &ModelUuid,
+    ) -> Option<(BucketNoT, PositionNoT)> {
         if *parent == *self.uuid {
             self.get_element_pos(uuid)
         } else {
-            self.find_element(parent).and_then(|e| e.0.get_element_pos(uuid))
+            self.find_element(parent)
+                .and_then(|e| e.0.get_element_pos(uuid))
         }
     }
 
-    pub fn insert_element_into(&mut self, parent: ModelUuid, element: NetworkElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
+    pub fn insert_element_into(
+        &mut self,
+        parent: ModelUuid,
+        element: NetworkElement,
+        b: BucketNoT,
+        p: Option<PositionNoT>,
+    ) -> Result<(), ()> {
         if *self.uuid == parent {
             self.insert_element(b, p, element)
                 .map(|_| ())
                 .map_err(|_| ())
         } else {
-            self.find_element(&parent)
-                .ok_or(())
-                .and_then(|mut e| e.0
-                    .insert_element(b, p, element)
+            self.find_element(&parent).ok_or(()).and_then(|mut e| {
+                e.0.insert_element(b, p, element)
                     .map(|_| ())
                     .map_err(|_| ())
-                )
+            })
         }
     }
 
-    pub fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, NetworkElement, BucketNoT, PositionNoT)>) {
-        fn r(e: &NetworkElement, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, NetworkElement, BucketNoT, PositionNoT)>) {
+    pub fn delete_elements(
+        &mut self,
+        uuids: &HashSet<ModelUuid>,
+        undo: &mut Vec<(ModelUuid, NetworkElement, BucketNoT, PositionNoT)>,
+    ) {
+        fn r(
+            e: &NetworkElement,
+            uuids: &HashSet<ModelUuid>,
+            undo: &mut Vec<(ModelUuid, NetworkElement, BucketNoT, PositionNoT)>,
+        ) {
             match e {
                 NetworkElement::Container(inner) => {
                     let mut w = inner.write();
@@ -259,12 +300,12 @@ impl NetworkDiagram {
                         }
                     }
                     w.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
-                },
+                }
                 NetworkElement::Node(_)
                 | NetworkElement::User(_)
                 | NetworkElement::File(_)
                 | NetworkElement::Association(_)
-                | NetworkElement::Comment(_) => {},
+                | NetworkElement::Comment(_) => {}
             }
         }
 
@@ -275,7 +316,8 @@ impl NetworkDiagram {
                 r(e, uuids, undo);
             }
         }
-        self.contained_elements.retain(|e| !uuids.contains(&e.uuid()));
+        self.contained_elements
+            .retain(|e| !uuids.contains(&e.uuid()));
     }
 }
 
@@ -323,12 +365,19 @@ impl ContainerModel for NetworkDiagram {
         }
         return None;
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: NetworkElement) -> Result<PositionNoT, NetworkElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: NetworkElement,
+    ) -> Result<PositionNoT, NetworkElement> {
         if bucket != 0 {
             return Err(element);
         }
 
-        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
         Ok(pos.try_into().unwrap())
     }
@@ -347,11 +396,7 @@ impl FullTextSearchable for NetworkDiagram {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.comment,
-            ],
+            &[&self.uuid.to_string(), &self.name, &self.comment],
         );
 
         for e in &self.contained_elements {
@@ -359,7 +404,6 @@ impl FullTextSearchable for NetworkDiagram {
         }
     }
 }
-
 
 #[derive(Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum NetworkContainerShapeKind {
@@ -454,12 +498,19 @@ impl ContainerModel for NetworkContainer {
         }
         return None;
     }
-    fn insert_element(&mut self, bucket: BucketNoT, position: Option<PositionNoT>, element: NetworkElement) -> Result<PositionNoT, NetworkElement> {
+    fn insert_element(
+        &mut self,
+        bucket: BucketNoT,
+        position: Option<PositionNoT>,
+        element: NetworkElement,
+    ) -> Result<PositionNoT, NetworkElement> {
         if bucket != 0 {
             return Err(element);
         }
 
-        let pos = position.map(|e| e.try_into().unwrap()).unwrap_or(self.contained_elements.len());
+        let pos = position
+            .map(|e| e.try_into().unwrap())
+            .unwrap_or(self.contained_elements.len());
         self.contained_elements.insert(pos, element);
         Ok(pos.try_into().unwrap())
     }
@@ -491,7 +542,6 @@ impl FullTextSearchable for NetworkContainer {
         }
     }
 }
-
 
 #[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum NetworkNodeKind {
@@ -543,7 +593,9 @@ impl NetworkNodeKind {
     }
 }
 
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct NetworkNode {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -556,11 +608,7 @@ pub struct NetworkNode {
 }
 
 impl NetworkNode {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        kind: NetworkNodeKind,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, kind: NetworkNodeKind) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
@@ -589,7 +637,6 @@ impl Model for NetworkNode {
         self.uuid.clone()
     }
 }
-
 
 #[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum NetworkUserKind {
@@ -631,7 +678,9 @@ impl NetworkUserKind {
     }
 }
 
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct NetworkUser {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -644,11 +693,7 @@ pub struct NetworkUser {
 }
 
 impl NetworkUser {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        kind: NetworkUserKind,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, kind: NetworkUserKind) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
@@ -678,7 +723,6 @@ impl Model for NetworkUser {
     }
 }
 
-
 #[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum NetworkFileKind {
     #[default]
@@ -699,9 +743,14 @@ pub enum NetworkFileKind {
 impl NetworkFileKind {
     pub const VARIANTS: [Self; 9] = [
         Self::Unspecified,
-        Self::Document, Self::SourceCode, Self::Certificate,
-        Self::Audio, Self::Image, Self::Video,
-        Self::Binary, Self::Archive,
+        Self::Document,
+        Self::SourceCode,
+        Self::Certificate,
+        Self::Audio,
+        Self::Image,
+        Self::Video,
+        Self::Binary,
+        Self::Archive,
     ];
 
     pub fn as_str(&self) -> &'static str {
@@ -719,7 +768,9 @@ impl NetworkFileKind {
     }
 }
 
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct NetworkFile {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -732,11 +783,7 @@ pub struct NetworkFile {
 }
 
 impl NetworkFile {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        kind: NetworkFileKind,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, kind: NetworkFileKind) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
@@ -765,7 +812,6 @@ impl Model for NetworkFile {
         self.uuid.clone()
     }
 }
-
 
 #[derive(Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum NetworkAssociationLineType {
@@ -805,7 +851,9 @@ impl NetworkAssociationArrowheadType {
     }
 }
 
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct NetworkAssociation {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -896,8 +944,9 @@ impl Model for NetworkAssociation {
     }
 }
 
-
-#[derive(nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
+#[derive(
+    nh_derive::FullTextSearchable, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize,
+)]
 #[nh_context_serde(is_entity)]
 pub struct NetworkComment {
     #[full_text_searchable(search_kind = "to_string_ref")]
@@ -906,10 +955,7 @@ pub struct NetworkComment {
 }
 
 impl NetworkComment {
-    pub fn new(
-        uuid: ModelUuid,
-        text: String,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, text: String) -> Self {
         Self {
             uuid: Arc::new(uuid),
             text: Arc::new(text),

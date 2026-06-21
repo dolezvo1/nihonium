@@ -1,19 +1,37 @@
-
 use super::super::umlclass::{
-        umlclass_models::UmlClassDiagram,
-        umlclass_controllers::{LinkType, UmlClassDiagramAdapter, UmlClassDomain, UmlClassElementView, UmlClassProfile, UmlClassToolStage, new_umlclass_association, new_umlclass_class, new_umlclass_generalization, new_umlclass_package},
-};
-use crate::{DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF, DiagramCreationData, DiagramInfo, ShowSettingsF, common::{
-    controller::{
-        BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2, DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand, MGlobalColor, MultiDiagramController, PositionNoT, View
+    umlclass_controllers::{
+        LinkType, UmlClassDiagramAdapter, UmlClassDomain, UmlClassElementView, UmlClassProfile,
+        UmlClassToolStage, new_umlclass_association, new_umlclass_class,
+        new_umlclass_generalization, new_umlclass_package,
     },
-    eref::ERef,
-    project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
-    uuid::{ControllerUuid, ModelUuid, ViewUuid},
-}, domains::{umlclass::{umlclass_controllers::{PartialUmlClassElement, UmlClassElementOrVertex, UmlClassRenderStyle, new_uml_usecase}, umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind}}, usecase::usecase_models}};
+    umlclass_models::UmlClassDiagram,
+};
+use crate::{
+    DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF, DiagramConstructorF,
+    DiagramCreationData, DiagramInfo, ShowSettingsF,
+    common::{
+        controller::{
+            BucketNoT, ControllerAdapter, DiagramController, DiagramControllerGen2,
+            DiagramSettings, ElementControllerGen2, GlobalDrawingContext, InsensitiveCommand,
+            MGlobalColor, MultiDiagramController, PositionNoT, View,
+        },
+        eref::ERef,
+        project_serde::{NHDeserializeError, NHDeserializeInstantiator, NHDeserializer},
+        uuid::{ControllerUuid, ModelUuid, ViewUuid},
+    },
+    domains::{
+        umlclass::{
+            umlclass_controllers::{
+                PartialUmlClassElement, UmlClassElementOrVertex, UmlClassRenderStyle,
+                new_uml_usecase,
+            },
+            umlclass_models::{UmlClass, UmlClassElement, UmlClassInstance, UmlClassPackageKind},
+        },
+        usecase::usecase_models,
+    },
+};
 use eframe::egui;
 use std::collections::HashSet;
-
 
 #[derive(Clone, Default)]
 pub struct UseCaseProfile;
@@ -23,7 +41,6 @@ impl UmlClassProfile for UseCaseProfile {
     }
 }
 
-
 #[derive(serde::Serialize, nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 pub struct OntoUmlControllerAdapter {
     #[nh_context_serde(entity)]
@@ -31,7 +48,10 @@ pub struct OntoUmlControllerAdapter {
 }
 
 impl ControllerAdapter<UmlClassDomain<UseCaseProfile>> for OntoUmlControllerAdapter {
-    type DiagramViewT = DiagramControllerGen2<UmlClassDomain<UseCaseProfile>, UmlClassDiagramAdapter<UseCaseProfile>>;
+    type DiagramViewT = DiagramControllerGen2<
+        UmlClassDomain<UseCaseProfile>,
+        UmlClassDiagramAdapter<UseCaseProfile>,
+    >;
 
     fn model(&self) -> ERef<UmlClassDiagram> {
         self.model.clone()
@@ -44,18 +64,37 @@ impl ControllerAdapter<UmlClassDomain<UseCaseProfile>> for OntoUmlControllerAdap
     }
 
     fn model_transitive_closure(&self, when_deleting: HashSet<ModelUuid>) -> HashSet<ModelUuid> {
-        super::super::umlclass::umlclass_models::transitive_closure(&self.model.read(), when_deleting)
+        super::super::umlclass::umlclass_models::transitive_closure(
+            &self.model.read(),
+            when_deleting,
+        )
     }
 
-    fn insert_element(&mut self, parent: ModelUuid, element: UmlClassElement, b: BucketNoT, p: Option<PositionNoT>) -> Result<(), ()> {
-        self.model.write().insert_element_into(parent, element, b, p)
+    fn insert_element(
+        &mut self,
+        parent: ModelUuid,
+        element: UmlClassElement,
+        b: BucketNoT,
+        p: Option<PositionNoT>,
+    ) -> Result<(), ()> {
+        self.model
+            .write()
+            .insert_element_into(parent, element, b, p)
     }
 
-    fn delete_elements(&mut self, uuids: &HashSet<ModelUuid>, undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>) {
+    fn delete_elements(
+        &mut self,
+        uuids: &HashSet<ModelUuid>,
+        undo: &mut Vec<(ModelUuid, UmlClassElement, BucketNoT, PositionNoT)>,
+    ) {
         self.model.write().delete_elements(uuids, undo)
     }
 
-    fn show_add_shared_diagram_menu(&self, _gdc: &GlobalDrawingContext, ui: &mut egui::Ui) -> Option<ERef<Self::DiagramViewT>> {
+    fn show_add_shared_diagram_menu(
+        &self,
+        _gdc: &GlobalDrawingContext,
+        ui: &mut egui::Ui,
+    ) -> Option<ERef<Self::DiagramViewT>> {
         if ui.button("Use Case Diagram").clicked() {
             return Some(Self::DiagramViewT::new(
                 ViewUuid::now_v7().into(),
@@ -68,7 +107,6 @@ impl ControllerAdapter<UmlClassDomain<UseCaseProfile>> for OntoUmlControllerAdap
     }
 }
 
-
 fn new_controlller(
     model: ERef<UmlClassDiagram>,
     name: String,
@@ -77,20 +115,18 @@ fn new_controlller(
     let uuid = ViewUuid::now_v7();
     (
         uuid,
-        ERef::new(
-            MultiDiagramController::new(
-                ControllerUuid::now_v7(),
-                OntoUmlControllerAdapter { model: model.clone() },
-                vec![
-                    DiagramControllerGen2::new(
-                        uuid.into(),
-                        name.into(),
-                        UmlClassDiagramAdapter::<UseCaseProfile>::new(model),
-                        elements,
-                    )
-                ]
-            )
-        )
+        ERef::new(MultiDiagramController::new(
+            ControllerUuid::now_v7(),
+            OntoUmlControllerAdapter {
+                model: model.clone(),
+            },
+            vec![DiagramControllerGen2::new(
+                uuid.into(),
+                name.into(),
+                UmlClassDiagramAdapter::<UseCaseProfile>::new(model),
+                elements,
+            )],
+        )),
     )
 }
 
@@ -133,17 +169,33 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         MGlobalColor::None,
     );
 
-    let (gen_model, gen_view) = new_umlclass_generalization("", None, (bank_model.clone(), bank_view.clone().into()), (customer_model.clone(), customer_view.clone().into()));
-    let (assoc_model, assoc_view) = new_umlclass_association("", "", "0..*", "1..1", None, (customer_model.clone().into(), customer_view.clone().into()), (usecase_model.into(), usecase_view.clone().into()));
+    let (gen_model, gen_view) = new_umlclass_generalization(
+        "",
+        None,
+        (bank_model.clone(), bank_view.clone().into()),
+        (customer_model.clone(), customer_view.clone().into()),
+    );
+    let (assoc_model, assoc_view) = new_umlclass_association(
+        "",
+        "",
+        "0..*",
+        "1..1",
+        None,
+        (customer_model.clone().into(), customer_view.clone().into()),
+        (usecase_model.into(), usecase_view.clone().into()),
+    );
 
-    let (boundary, boundary_view) = new_umlclass_package("E-Shop", "business", UmlClassPackageKind::Boundary, egui::Rect::from_x_y_ranges(400.0..=750.0, 100.0..=500.0));
+    let (boundary, boundary_view) = new_umlclass_package(
+        "E-Shop",
+        "business",
+        UmlClassPackageKind::Boundary,
+        egui::Rect::from_x_y_ranges(400.0..=750.0, 100.0..=500.0),
+    );
     {
         let mut w = boundary_view.write();
         let boundary_uuid = *w.uuid();
         let (mut u, mut a) = Default::default();
-        for e in [
-            usecase_view.into()
-        ] {
+        for e in [usecase_view.into()] {
             w.apply_command(
                 &InsensitiveCommand::AddDependency {
                     target: boundary_uuid,
@@ -152,7 +204,8 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
                     element: UmlClassElementOrVertex::Element(e),
                     into_model: true,
                 },
-                &mut u, &mut a,
+                &mut u,
+                &mut a,
             );
         }
     }
@@ -182,15 +235,32 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     )
 }
 
-pub fn deserializer(uuid: ControllerUuid, d: &mut NHDeserializer) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
-    Ok(d.get_entity::<MultiDiagramController<UmlClassDomain<UseCaseProfile>, OntoUmlControllerAdapter, DiagramControllerGen2<UmlClassDomain<UseCaseProfile>, UmlClassDiagramAdapter<UseCaseProfile>>>>(&uuid)?)
+pub fn deserializer(
+    uuid: ControllerUuid,
+    d: &mut NHDeserializer,
+) -> Result<ERef<dyn DiagramController>, NHDeserializeError> {
+    Ok(d.get_entity::<MultiDiagramController<
+        UmlClassDomain<UseCaseProfile>,
+        OntoUmlControllerAdapter,
+        DiagramControllerGen2<
+            UmlClassDomain<UseCaseProfile>,
+            UmlClassDiagramAdapter<UseCaseProfile>,
+        >,
+    >>(&uuid)?)
 }
 
 mod buttons {
     use super::*;
     use std::sync::LazyLock;
 
-    fn instance_association(m: ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool) {
+    fn instance_association(
+        m: ERef<UmlClassInstance>,
+    ) -> (
+        UmlClassToolStage,
+        UmlClassToolStage,
+        PartialUmlClassElement<UseCaseProfile>,
+        bool,
+    ) {
         let link_type = LinkType::Association {
             stereotype: "".to_owned(),
             source_multiplicity: "0..*".to_owned(),
@@ -209,14 +279,24 @@ mod buttons {
             true,
         )
     }
-    type InstanceButtonF = dyn Fn(ERef<UmlClassInstance>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool);
-    pub const INSTANCE_BUTTONS: LazyLock<Vec<(&'static str, &'static InstanceButtonF)>> = LazyLock::new(|| vec![
-        (
-            "↘",
-            &instance_association as &InstanceButtonF,
-        ),
-    ]);
-    fn class_association(m: ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool) {
+    type InstanceButtonF = dyn Fn(
+        ERef<UmlClassInstance>,
+    ) -> (
+        UmlClassToolStage,
+        UmlClassToolStage,
+        PartialUmlClassElement<UseCaseProfile>,
+        bool,
+    );
+    pub const INSTANCE_BUTTONS: LazyLock<Vec<(&'static str, &'static InstanceButtonF)>> =
+        LazyLock::new(|| vec![("↘", &instance_association as &InstanceButtonF)]);
+    fn class_association(
+        m: ERef<UmlClass>,
+    ) -> (
+        UmlClassToolStage,
+        UmlClassToolStage,
+        PartialUmlClassElement<UseCaseProfile>,
+        bool,
+    ) {
         let link_type = LinkType::Association {
             stereotype: "".to_owned(),
             source_multiplicity: "0..*".to_owned(),
@@ -235,84 +315,111 @@ mod buttons {
             true,
         )
     }
-    type ClassButtonF = dyn Fn(ERef<UmlClass>) -> (UmlClassToolStage, UmlClassToolStage, PartialUmlClassElement<UseCaseProfile>, bool);
-    pub const CLASS_BUTTONS: LazyLock<Vec<(&'static str, &'static ClassButtonF)>> = LazyLock::new(|| vec![
-        (
-            "↘",
-            &class_association as &ClassButtonF,
-        ),
-    ]);
+    type ClassButtonF = dyn Fn(
+        ERef<UmlClass>,
+    ) -> (
+        UmlClassToolStage,
+        UmlClassToolStage,
+        PartialUmlClassElement<UseCaseProfile>,
+        bool,
+    );
+    pub const CLASS_BUTTONS: LazyLock<Vec<(&'static str, &'static ClassButtonF)>> =
+        LazyLock::new(|| vec![("↘", &class_association as &ClassButtonF)]);
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
     let classes = vec![
-        (UmlClassToolStage::Class {
-            name: "Customer".to_owned(),
-            stereotype: usecase_models::ACTOR.to_owned(),
-            is_abstract: false,
-            render_style: UmlClassRenderStyle::StickFigure,
-            background_color: MGlobalColor::None,
-        }, "Actor"),
-        (UmlClassToolStage::Class {
-            name: "Customer".to_owned(),
-            stereotype: usecase_models::ACTOR.to_owned(),
-            is_abstract: false,
-            render_style: UmlClassRenderStyle::Class,
-            background_color: MGlobalColor::None,
-        }, "Class Actor"),
-        (UmlClassToolStage::UseCase {
-            name: "Registration".to_owned(),
-            stereotype: usecase_models::NONE.to_owned(),
-            is_abstract: false,
-            background_color: MGlobalColor::None,
-        }, "Use case"),
+        (
+            UmlClassToolStage::Class {
+                name: "Customer".to_owned(),
+                stereotype: usecase_models::ACTOR.to_owned(),
+                is_abstract: false,
+                render_style: UmlClassRenderStyle::StickFigure,
+                background_color: MGlobalColor::None,
+            },
+            "Actor",
+        ),
+        (
+            UmlClassToolStage::Class {
+                name: "Customer".to_owned(),
+                stereotype: usecase_models::ACTOR.to_owned(),
+                is_abstract: false,
+                render_style: UmlClassRenderStyle::Class,
+                background_color: MGlobalColor::None,
+            },
+            "Class Actor",
+        ),
+        (
+            UmlClassToolStage::UseCase {
+                name: "Registration".to_owned(),
+                stereotype: usecase_models::NONE.to_owned(),
+                is_abstract: false,
+                background_color: MGlobalColor::None,
+            },
+            "Use case",
+        ),
     ];
 
     let mut relationships = Vec::new();
-    relationships.push(
-        (UmlClassToolStage::LinkStart {
+    relationships.push((
+        UmlClassToolStage::LinkStart {
             link_type: LinkType::Generalization {
                 set_name: "".to_owned(),
             },
-        }, "Generalization (Set)"),
-    );
-    relationships.push(
-        (UmlClassToolStage::LinkStart {
+        },
+        "Generalization (Set)",
+    ));
+    relationships.push((
+        UmlClassToolStage::LinkStart {
             link_type: LinkType::Association {
                 stereotype: "".to_owned(),
                 source_multiplicity: "0..*".to_owned(),
                 target_multiplicity: "1..1".to_owned(),
             },
-        }, "Association"),
-    );
-    for (stereotype, label) in [(usecase_models::EXTEND, "Extend"), (usecase_models::INCLUDE, "Include")] {
-        relationships.push(
-            (UmlClassToolStage::LinkStart {
+        },
+        "Association",
+    ));
+    for (stereotype, label) in [
+        (usecase_models::EXTEND, "Extend"),
+        (usecase_models::INCLUDE, "Include"),
+    ] {
+        relationships.push((
+            UmlClassToolStage::LinkStart {
                 link_type: LinkType::Dependency {
                     target_arrow_open: true,
                     stereotype: stereotype.to_owned(),
                     name: "".to_owned(),
                 },
-            }, label),
-        );
+            },
+            label,
+        ));
     }
 
     let palette_items = vec![
         ("Classes", classes),
         ("Relationships", relationships),
-        ("Other", vec![
-            (UmlClassToolStage::PackageStart {
-                name: "Boundary".to_owned(),
-                stereotype: "".to_owned(),
-                kind: UmlClassPackageKind::Boundary,
-            }, "Boundary"),
-            (UmlClassToolStage::Comment {
-                stereotype: "".to_owned(),
-                text: "a comment".to_owned(),
-                align: egui::Align2::CENTER_CENTER,
-            }, "Comment"),
-            (UmlClassToolStage::CommentLinkStart, "Comment Link"),
-        ]),
+        (
+            "Other",
+            vec![
+                (
+                    UmlClassToolStage::PackageStart {
+                        name: "Boundary".to_owned(),
+                        stereotype: "".to_owned(),
+                        kind: UmlClassPackageKind::Boundary,
+                    },
+                    "Boundary",
+                ),
+                (
+                    UmlClassToolStage::Comment {
+                        stereotype: "".to_owned(),
+                        text: "a comment".to_owned(),
+                        align: egui::Align2::CENTER_CENTER,
+                    },
+                    "Comment",
+                ),
+                (UmlClassToolStage::CommentLinkStart, "Comment Link"),
+            ],
+        ),
     ];
 
     super::super::umlclass::umlclass_controllers::default_settings_helper::<UseCaseProfile>(
@@ -330,8 +437,14 @@ pub fn settings_deserializer(value: toml::Value) -> Result<Box<dyn DiagramSettin
     )
 }
 
-pub fn settings_function(gdc: &mut GlobalDrawingContext, ui: &mut egui::Ui, s: &mut Box<dyn DiagramSettings>) {
-    super::super::umlclass::umlclass_controllers::settings_function_helper::<UseCaseProfile>(gdc, ui, s);
+pub fn settings_function(
+    gdc: &mut GlobalDrawingContext,
+    ui: &mut egui::Ui,
+    s: &mut Box<dyn DiagramSettings>,
+) {
+    super::super::umlclass::umlclass_controllers::settings_function_helper::<UseCaseProfile>(
+        gdc, ui, s,
+    );
 }
 
 inventory::submit! {DiagramInfo {
@@ -350,4 +463,3 @@ inventory::submit! {DiagramInfo {
     },
     deserializer: &(deserializer as DeserializeControllerF),
 }}
-
