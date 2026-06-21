@@ -129,7 +129,7 @@ impl From<SimpleProjectCommand> for ProjectCommand {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum SimpleProjectCommand {
     FocusedDiagramCommand(DiagramCommand),
     SpecificDiagramCommand(ViewUuid, DiagramCommand),
@@ -148,7 +148,7 @@ impl From<DiagramCommand> for SimpleProjectCommand {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum DiagramCommand {
     DropRedoStackAndLastChangeFlag,
     SetLastChangeFlag,
@@ -171,7 +171,7 @@ pub enum DiagramCommand {
     DeleteViewFor(ModelUuid, /*including_model:*/ bool),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum Arrangement {
     BringToFront,
     ForwardOne,
@@ -827,7 +827,7 @@ pub enum TargettingStatus {
     Drawn,
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Debug, serde::Serialize, serde::Deserialize)]
 pub enum DeleteKind {
     #[default]
     DeleteView,

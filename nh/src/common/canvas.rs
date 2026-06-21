@@ -598,7 +598,7 @@ impl From<Stroke> for egui::Stroke {
     }
 }
 
-#[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Debug, derive_more::Not)]
+#[derive(Clone, Copy, Default, PartialEq, Eq, Hash, Debug, derive_more::Not, serde::Serialize, serde::Deserialize)]
 pub struct Highlight {
     pub selected: bool, // "blue"
     pub valid: bool,    // "green"

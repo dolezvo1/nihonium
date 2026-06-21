@@ -82,8 +82,8 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
-    eframe::run_native("Nihonium", options, Box::new(|_cc| {
-        Ok(Box::<NHApp>::default())
+    eframe::run_native("Nihonium", options, Box::new(|cc| {
+        Ok(Box::new(NHApp::load_or_new(cc)))
     }))
 }
 
@@ -108,7 +108,7 @@ fn main() {
                 canvas,
                 Default::default(),
                 Box::new(|cc| {
-                    Ok(Box::<NHApp>::default())
+                    Ok(Box::new(NHApp::load_or_new(cc)))
                 }),
             )
             .await;
@@ -130,7 +130,7 @@ fn main() {
     });
 }
 
-#[derive(Debug, Hash, Eq, PartialEq, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Clone, serde::Serialize, serde::Deserialize)]
 pub enum NHTab {
     NewDiagram,
     RecentlyUsed,
@@ -169,6 +169,15 @@ impl NHTab {
             NHTab::Diagram { .. } => gdc.translate_0("nh-tab-diagram"),
             NHTab::Document { .. } => gdc.translate_0("nh-tab-document"),
             NHTab::CustomTab { .. } => gdc.translate_0("nh-tab-customtab"),
+        }
+    }
+
+    pub fn is_persistable(&self) -> bool {
+        match self {
+            Self::Diagram { .. }
+            | Self::Document { .. }
+            | Self::CustomTab { .. } => false,
+            _ => true,
         }
     }
 }
@@ -246,6 +255,7 @@ struct DiagramCreationData {
     constructors: &'static [(&'static str, &'static DiagramConstructorF)],
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct ShadesProfile {
     name: String,
     default_color: egui::Color32,
@@ -1849,69 +1859,100 @@ struct NHApp {
     tree: DockState<NHTab>,
 }
 
-impl Default for NHApp {
-    fn default() -> Self {
-        let mut new_diagram_no = 1;
-        let mut diagram_controllers = HashMap::new();
-        let mut hierarchy = vec![];
-        let mut tabs = vec![NHTab::NewDiagram, NHTab::Settings];
-        let mut model_labels = LabelProvider::new();
+#[derive(serde::Serialize, serde::Deserialize)]
+struct NHStoredApp {
+    zoom_factor: f32,
+    shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
+    selected_shades_profile: usize,
+    shades_profiles: Vec<ShadesProfile>,
 
-        let documents = {
-            let mut d = HashMap::<ViewUuid, (String, String)>::new();
-            let document_uuid = ViewUuid::now_v7();
-            hierarchy.push(HierarchyNode::Document(document_uuid));
-            tabs.push(NHTab::Document { uuid: document_uuid });
-            d.insert(
-                document_uuid,
-                (
-                    "Example Document".to_owned(),
-                    "Example Document\n\nDocuments may store additional text descriptions.\n\nDocuments may span many, many lines, with the first one serving as the name.".to_owned(),
-                )
+    // TODO: store diagram specific settings
+
+    tree: DockState<NHTab>,
+}
+
+impl NHApp {
+    fn load_or_new(cc: &eframe::CreationContext) -> Self {
+        if let Some(value) = cc.storage
+            .and_then(|e| eframe::get_value::<NHStoredApp>(e, eframe::APP_KEY)) {
+            return Self::new(
+                value.zoom_factor,
+                value.shortcuts,
+                value.selected_shades_profile,
+                value.shades_profiles,
+                value.tree,
             );
-            d
-        };
-
-        for (view_uuid, c) in [
-            crate::domains::umlclass::umlclass_controllers::demo(1),
-        ] {
-            c.write().refresh_all_buffers(&mut model_labels);
-            hierarchy.push(HierarchyNode::Diagram(view_uuid, c.clone()));
-
-            diagram_controllers.insert(view_uuid, c);
-            tabs.push(NHTab::Diagram { uuid: view_uuid });
-            new_diagram_no += 1;
         }
 
-        let mut dock_state = DockState::new(tabs);
-        "Undock".clone_into(&mut dock_state.translations.tab_context_menu.eject_button);
+        let mut shortcuts = HashMap::new();
+        shortcuts.insert(SimpleProjectCommand::SwapTopLanguages, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::L));
+        shortcuts.insert(SimpleProjectCommand::CycleShadesProfiles, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::K));
+        shortcuts.insert(SimpleProjectCommand::OpenProject(false), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O));
+        shortcuts.insert(SimpleProjectCommand::SaveProject, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S));
+        shortcuts.insert(SimpleProjectCommand::SaveProjectAs, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S));
+        shortcuts.insert(DiagramCommand::UndoImmediate.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z));
+        shortcuts.insert(DiagramCommand::RedoImmediate.into(), egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            egui::Key::Z,
+        ));
+        shortcuts.insert(DiagramCommand::HighlightAllElements(true, Highlight::SELECTED).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A));
+        shortcuts.insert(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED).into(), egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            egui::Key::A,
+        ));
+        shortcuts.insert(DiagramCommand::InvertSelection.into(), egui::KeyboardShortcut::new(
+            egui::Modifiers::COMMAND,
+            egui::Key::I,
+        ));
+        shortcuts.insert(DiagramCommand::CutSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X));
+        shortcuts.insert(DiagramCommand::CopySelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C));
+        shortcuts.insert(DiagramCommand::PasteClipboardElements(None, None).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
+        shortcuts.insert(DiagramCommand::DeleteSelectedElements(None).into(), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
+        shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Plus));
+        shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Plus));
+        shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BackwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Minus));
+        shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Minus));
+        shortcuts.insert(DiagramCommand::ZoomToFit { selected_only: false }.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::J));
 
-        let mut open_unique_tabs = HashSet::new();
-        open_unique_tabs.insert(NHTab::NewDiagram);
-        open_unique_tabs.insert(NHTab::Settings);
+        let shades_profiles = vec![
+            ShadesProfile::new("Light", egui::Color32::TRANSPARENT),
+            ShadesProfile::new("Medium", egui::Color32::BLACK.gamma_multiply(0.4)),
+            ShadesProfile::new("Dark", egui::Color32::BLACK.gamma_multiply(0.6)),
+        ];
 
-        let [a, b] = dock_state.main_surface_mut().split_left(
+        let mut tree = DockState::new(vec![NHTab::NewDiagram, NHTab::Settings]);
+        "Undock".clone_into(&mut tree.translations.tab_context_menu.eject_button);
+        let [a, b] = tree.main_surface_mut().split_left(
             NodeIndex::root(),
             0.2,
             vec![NHTab::ProjectHierarchy, NHTab::ModelHierarchy, NHTab::Search],
         );
-        open_unique_tabs.insert(NHTab::ProjectHierarchy);
-        open_unique_tabs.insert(NHTab::ModelHierarchy);
-        open_unique_tabs.insert(NHTab::Search);
-        let [_, c] = dock_state
+        let [_, c] = tree
             .main_surface_mut()
             .split_right(a, 0.7, vec![NHTab::Properties, NHTab::GlobalColors]);
-        open_unique_tabs.insert(NHTab::Properties);
-        open_unique_tabs.insert(NHTab::GlobalColors);
-        let [_, _] = dock_state
+        let [_, _] = tree
             .main_surface_mut()
             .split_below(b, 0.7, vec![NHTab::Toolbar]);
-        open_unique_tabs.insert(NHTab::Toolbar);
-        let [_, _] = dock_state
+        let [_, _] = tree
             .main_surface_mut()
             .split_below(c, 0.5, vec![NHTab::Outline]);
-        open_unique_tabs.insert(NHTab::Outline);
 
+        Self::new(
+            1.0,
+            shortcuts,
+            0,
+            shades_profiles,
+            tree,
+        )
+    }
+
+    fn new(
+        zoom_factor: f32,
+        shortcuts: HashMap<SimpleProjectCommand, egui::KeyboardShortcut>,
+        selected_shades_profile: usize,
+        shades_profiles: Vec<ShadesProfile>,
+        tree: DockState<NHTab>,
+    ) -> Self {
         let mut diagram_infos: Vec<_> = inventory::iter::<DiagramInfo>.into_iter().collect();
         diagram_infos.sort_by_cached_key(|e| format!("{}/{}", e.diagram_creation_data.directory, e.pretty_name));
 
@@ -1942,47 +1983,42 @@ impl Default for NHApp {
         let diagram_settings_functions = diagram_infos.iter().map(|e| (e.type_indentifier, (e.show_settings_function, e.default_settings))).collect();
         let diagram_deserializers = diagram_infos.iter().map(|e| (e.type_indentifier.to_owned(), e.deserializer)).collect();
 
-        let shades_profiles = vec![
-            ShadesProfile::new("Light", egui::Color32::TRANSPARENT),
-            ShadesProfile::new("Medium", egui::Color32::BLACK.gamma_multiply(0.4)),
-            ShadesProfile::new("Dark", egui::Color32::BLACK.gamma_multiply(0.6)),
-        ];
         let languages_order = common::fluent::AVAILABLE_LANGUAGES.iter().map(|e| e.0.clone()).collect();
         let fluent_bundle = common::fluent::create_fluent_bundle(&languages_order)
             .expect("Could not establish base FluentBundle");
-        
+
         let mut context = NHContext {
             file_io_channel: std::sync::mpsc::channel(),
             project_path: None,
-            diagram_controllers,
-            project_hierarchy: HierarchyNode::Folder(ViewUuid::nil(), Arc::new("New Project".to_owned()), hierarchy),
+            diagram_controllers: HashMap::new(),
+            project_hierarchy: HierarchyNode::Folder(ViewUuid::nil(), Arc::new("New Project".to_owned()), vec![]),
             tree_view_state: TreeViewState::default(),
             diagram_deserializers,
-            new_diagram_no,
-            documents,
+            new_diagram_no: 1,
+            documents: HashMap::new(),
             clipboard: Vec::new(),
             custom_tabs: HashMap::new(),
             custom_modal: None,
-            
+
             style: None,
-            zoom_factor: 1.0,
+            zoom_factor,
             zoom_with_keyboard: false,
             diagram_type_hierarchy,
             diagram_settings,
             diagram_settings_functions,
             shades_profiles,
-            selected_shades_profile: 0,
+            selected_shades_profile,
             selected_language: 0,
             languages_order,
             modifier_settings: Default::default(),
             drawing_context: GlobalDrawingContext {
                 global_colors: ColorBundle::new(),
                 fluent_bundle,
-                shortcuts: HashMap::new(),
+                shortcuts,
                 tool_palette_item_height: 60,
-                model_labels,
+                model_labels: LabelProvider::new(),
             },
-            
+
             new_diagram_data: diagram_type_creation_data,
             new_diagram_selected_kind: 0,
             new_diagram_selected_constructor: 0,
@@ -1991,10 +2027,10 @@ impl Default for NHApp {
             affected_models: HashSet::new(),
             should_change_title: true,
             has_unsaved_changes: true,
-            
+
             shortcut_top_order: vec![],
 
-            open_unique_tabs,
+            open_unique_tabs: tree.iter_all_tabs().map(|e| e.1.clone()).collect(),
             last_focused_diagram: None,
             svg_export_menu: None,
             confirm_modal_reason: None,
@@ -2013,42 +2049,11 @@ impl Default for NHApp {
             show_tab_name_on_hover: false,
             allowed_splits: AllowedSplits::default(),
         };
-        
-        context.drawing_context.shortcuts.insert(SimpleProjectCommand::SwapTopLanguages, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::L));
-        context.drawing_context.shortcuts.insert(SimpleProjectCommand::CycleShadesProfiles, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::K));
-        context.drawing_context.shortcuts.insert(SimpleProjectCommand::OpenProject(false), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::O));
-        context.drawing_context.shortcuts.insert(SimpleProjectCommand::SaveProject, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::S));
-        context.drawing_context.shortcuts.insert(SimpleProjectCommand::SaveProjectAs, egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::S));
-        context.drawing_context.shortcuts.insert(DiagramCommand::UndoImmediate.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Z));
-        context.drawing_context.shortcuts.insert(DiagramCommand::RedoImmediate.into(), egui::KeyboardShortcut::new(
-            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-            egui::Key::Z,
-        ));
-        context.drawing_context.shortcuts.insert(DiagramCommand::HighlightAllElements(true, Highlight::SELECTED).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::A));
-        context.drawing_context.shortcuts.insert(DiagramCommand::HighlightAllElements(false, Highlight::SELECTED).into(), egui::KeyboardShortcut::new(
-            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
-            egui::Key::A,
-        ));
-        context.drawing_context.shortcuts.insert(DiagramCommand::InvertSelection.into(), egui::KeyboardShortcut::new(
-            egui::Modifiers::COMMAND,
-            egui::Key::I,
-        ));
-        context.drawing_context.shortcuts.insert(DiagramCommand::CutSelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::X));
-        context.drawing_context.shortcuts.insert(DiagramCommand::CopySelectedElements.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::C));
-        context.drawing_context.shortcuts.insert(DiagramCommand::PasteClipboardElements(None, None).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::V));
-        context.drawing_context.shortcuts.insert(DiagramCommand::DeleteSelectedElements(None).into(), egui::KeyboardShortcut::new(egui::Modifiers::NONE, egui::Key::Delete));
-
-        context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BringToFront).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Plus));
-        context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::ForwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Plus));
-        context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::BackwardOne).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::Minus));
-        context.drawing_context.shortcuts.insert(DiagramCommand::ArrangeSelected(Arrangement::SendToBack).into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND | egui::Modifiers::SHIFT, egui::Key::Minus));
-        context.drawing_context.shortcuts.insert(DiagramCommand::ZoomToFit { selected_only: false }.into(), egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, egui::Key::J));
-
         context.sort_shortcuts();
 
         Self {
             context,
-            tree: dock_state,
+            tree,
         }
     }
 }
@@ -2160,6 +2165,24 @@ fn new_project() -> Result<(), &'static str> {
 pub const MIN_MENU_WIDTH: f32 = 250.0;
 
 impl eframe::App for NHApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        let zoom_factor = self.context.zoom_factor;
+        let shortcuts = self.context.drawing_context.shortcuts.clone();
+        let selected_shades_profile = self.context.selected_shades_profile;
+        let shades_profiles = self.context.shades_profiles.clone();
+        let tree = self.tree.filter_tabs(|e| e.is_persistable());
+
+        let storable = NHStoredApp {
+            zoom_factor,
+            shortcuts,
+            selected_shades_profile,
+            shades_profiles,
+            tree,
+        };
+
+        eframe::set_value(storage, eframe::APP_KEY, &storable);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         while let Ok(e) = self.context.file_io_channel.1.try_recv() {
             fn get_project_path(fh: &FileHandle) -> PathBuf {
@@ -2980,7 +3003,8 @@ impl eframe::App for NHApp {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::CloseProject(b));
                     }
                     SimpleProjectCommand::Exit(b) => if !self.context.has_unsaved_changes || b {
-                        std::process::exit(0);
+                        self.context.has_unsaved_changes = false;
+                        ui.send_viewport_cmd(egui::ViewportCommand::Close);
                     } else {
                         self.context.confirm_modal_reason = Some(SimpleProjectCommand::Exit(b));
                     }
