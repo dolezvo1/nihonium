@@ -16,7 +16,7 @@ derive_more = { version = "2.1", features = [ "from", "try_into", "not" ] }
 eframe = { version = "0.34", features = [ "persistence" ] }
 egui_extras = { version = "0.34", features = [ "serde" ] }
 egui_dock = { version = "0.19", features = [ "serde" ] }
-egui_ltreeview = "0.7"
+egui_ltreeview = "0.7.1"
 rfd = "0.17"
 serde = { version = "1.0", features = [ "derive", "rc" ] }
 toml = "1.1"
