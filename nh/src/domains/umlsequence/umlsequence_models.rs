@@ -1013,6 +1013,8 @@ pub struct UmlSequenceMessage {
     pub lifecycle: UmlSequenceMessageLifecycleKind,
     #[full_text_searchable(skip)]
     pub is_return: bool,
+    #[full_text_searchable(skip)]
+    pub duration: f32,
 
     #[full_text_searchable(skip)]
     #[nh_context_serde(entity)]
@@ -1032,6 +1034,7 @@ impl UmlSequenceMessage {
         synchronicity: UmlSequenceMessageSynchronicityKind,
         lifecycle: UmlSequenceMessageLifecycleKind,
         is_return: bool,
+        duration: f32,
         source: ERef<UmlSequenceLifeline>,
         target: ERef<UmlSequenceLifeline>,
     ) -> Self {
@@ -1042,6 +1045,7 @@ impl UmlSequenceMessage {
             synchronicity,
             lifecycle,
             is_return,
+            duration,
             source,
             target,
             comment: Arc::new("".to_owned()),
@@ -1055,6 +1059,7 @@ impl UmlSequenceMessage {
             synchronicity: self.synchronicity.clone(),
             lifecycle: self.lifecycle.clone(),
             is_return: self.is_return.clone(),
+            duration: self.duration,
             source: self.source.clone(),
             target: self.target.clone(),
             comment: self.comment.clone(),

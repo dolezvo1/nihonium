@@ -83,6 +83,7 @@ pub enum UmlSequencePropChange {
     SynchronicityKindChange(UmlSequenceMessageSynchronicityKind),
     LifecycleKindChange(UmlSequenceMessageLifecycleKind),
     IsReturnChange(bool),
+    DurationChange(f32),
     StateInvariantChange(Arc<String>),
     FlipMulticonnection(FlipMulticonnection),
 
@@ -136,6 +137,7 @@ impl TryMerge for UmlSequencePropChange {
         match (self, newer) {
             (Self::StereotypeChange(_), newer @ Self::StereotypeChange(_))
             | (Self::NameChange(_), newer @ Self::NameChange(_))
+            | (Self::DurationChange(_), newer @ Self::DurationChange(_))
             | (Self::StateInvariantChange(_), newer @ Self::StateInvariantChange(_))
             | (
                 Self::CombinedFragmentKindArgumentChange(_),
@@ -748,6 +750,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         UmlSequenceMessageSynchronicityKind::Synchronous,
         UmlSequenceMessageLifecycleKind::None,
         false,
+        0.0,
         (user_model.clone(), user_view.clone().into()),
         (service1_model.clone(), service1_view.clone().into()),
     );
@@ -757,6 +760,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         UmlSequenceMessageSynchronicityKind::Synchronous,
         UmlSequenceMessageLifecycleKind::None,
         false,
+        0.0,
         (service1_model.clone(), service1_view.clone().into()),
         (service2_model.clone(), service2_view.clone().into()),
     );
@@ -923,6 +927,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                             synchronicity_kind: UmlSequenceMessageSynchronicityKind::Synchronous,
                             is_return: false,
                             name: "".to_owned(),
+                            duration: 0.0,
                         },
                     },
                     "Synchronous Message",
@@ -933,6 +938,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                             synchronicity_kind: UmlSequenceMessageSynchronicityKind::Synchronous,
                             is_return: true,
                             name: "".to_owned(),
+                            duration: 0.0,
                         },
                     },
                     "Synchronous Return",
@@ -944,6 +950,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                                 UmlSequenceMessageSynchronicityKind::AsynchronousCall,
                             is_return: false,
                             name: "".to_owned(),
+                            duration: 0.0,
                         },
                     },
                     "Asynchronous Call",
@@ -955,6 +962,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                                 UmlSequenceMessageSynchronicityKind::AsynchronousSignal,
                             is_return: false,
                             name: "".to_owned(),
+                            duration: 0.0,
                         },
                     },
                     "Asynchronous Signal",
@@ -1053,6 +1061,7 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
                     synchronicity_kind,
                     is_return,
                     name,
+                    duration,
                 } => {
                     let message_view = new_umlsequence_message(
                         name,
@@ -1060,6 +1069,7 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
                         *synchronicity_kind,
                         UmlSequenceMessageLifecycleKind::None,
                         *is_return,
+                        *duration,
                         (d1.0, d1.1.into()),
                         (d2.0, d2.1.into()),
                     )
@@ -1217,6 +1227,7 @@ pub enum LinkType {
         synchronicity_kind: UmlSequenceMessageSynchronicityKind,
         is_return: bool,
         name: String,
+        duration: f32,
     },
 }
 
@@ -1616,12 +1627,14 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                             synchronicity_kind,
                             is_return,
                             name,
+                            duration,
                         } => new_umlsequence_message(
                             name,
                             "",
                             *synchronicity_kind,
                             UmlSequenceMessageLifecycleKind::None,
                             *is_return,
+                            *duration,
                             (source.clone(), source_view),
                             (dest.clone(), target_view),
                         )
@@ -5804,6 +5817,7 @@ pub fn new_umlsequence_message(
     synchronicity: UmlSequenceMessageSynchronicityKind,
     lifecycle: UmlSequenceMessageLifecycleKind,
     is_return: bool,
+    duration: f32,
     source: (ERef<UmlSequenceLifeline>, UmlSequenceElementView),
     target: (ERef<UmlSequenceLifeline>, UmlSequenceElementView),
 ) -> (ERef<UmlSequenceMessage>, ERef<UmlSequenceMessageView>) {
@@ -5814,6 +5828,7 @@ pub fn new_umlsequence_message(
         synchronicity,
         lifecycle,
         is_return,
+        duration,
         source.0,
         target.0,
     ));
@@ -5865,6 +5880,7 @@ struct UmlSequenceMessageTemporaries {
     synchronicity_kind_buffer: UmlSequenceMessageSynchronicityKind,
     lifecycle_kind_buffer: UmlSequenceMessageLifecycleKind,
     is_return_buffer: bool,
+    duration_buffer: f32,
     state_invariant_buffer: String,
     comment_buffer: String,
     highlight: canvas::Highlight,
@@ -5892,7 +5908,10 @@ impl UmlSequenceMessageView {
         let (start, second, penultimate, end) = if source_x == target_x {
             const WIDTH: f32 = 20.0;
             let start = egui::Pos2::new(source_x, pos_y + Self::MESSAGE_SPACING / 2.0 - WIDTH);
-            let end = egui::Pos2::new(target_x, pos_y + Self::MESSAGE_SPACING / 2.0 + WIDTH);
+            let end = egui::Pos2::new(
+                target_x,
+                pos_y + Self::MESSAGE_SPACING / 2.0 + WIDTH + self.temporaries.duration_buffer,
+            );
             let second = egui::Pos2::new(start.x + WIDTH, start.y);
             let penultimate = egui::Pos2::new(end.x + WIDTH, end.y);
 
@@ -5903,7 +5922,10 @@ impl UmlSequenceMessageView {
             (start, second, penultimate, end)
         } else {
             let start = egui::Pos2::new(source_x, pos_y + Self::MESSAGE_SPACING / 2.0);
-            let end = egui::Pos2::new(target_x, pos_y + Self::MESSAGE_SPACING / 2.0);
+            let end = egui::Pos2::new(
+                target_x,
+                pos_y + Self::MESSAGE_SPACING / 2.0 + self.temporaries.duration_buffer,
+            );
             self.bounds_rect = egui::Rect::from_two_pos(start, end);
             (start, end, start, end)
         };
@@ -6077,6 +6099,18 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
             ));
         }
 
+        ui.label("Duration:");
+        let mut duration = self.temporaries.duration_buffer;
+        if ui
+            .add(egui::DragValue::new(&mut duration).speed(1.0))
+            .changed()
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlSequencePropChange::DurationChange(duration),
+            ));
+        }
+
         if ui
             .labeled_text_edit_multiline(
                 "State invariant:",
@@ -6218,6 +6252,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
                         ));
                         model.is_return = *is_return;
                     }
+                    UmlSequencePropChange::DurationChange(duration) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            UmlSequencePropChange::DurationChange(model.duration.clone()),
+                        ));
+                        model.duration = *duration;
+                    }
                     UmlSequencePropChange::StateInvariantChange(invariant) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*self.uuid).collect(),
@@ -6302,6 +6343,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
         self.temporaries.synchronicity_kind_buffer = model.synchronicity;
         self.temporaries.lifecycle_kind_buffer = model.lifecycle;
         self.temporaries.is_return_buffer = model.is_return;
+        self.temporaries.duration_buffer = model.duration;
         self.temporaries.state_invariant_buffer = (*model.state_invariant).clone();
         self.temporaries.comment_buffer = (*model.comment).clone();
     }
