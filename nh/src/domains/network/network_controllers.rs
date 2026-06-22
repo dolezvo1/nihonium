@@ -20,8 +20,8 @@ use crate::common::views::multiconnection_view::{
 use crate::common::views::package_view::{PackageAdapter, PackageView};
 use crate::domains::network::network_models::{
     NetworkAssociation, NetworkAssociationArrowheadType, NetworkAssociationLineType,
-    NetworkComment, NetworkContainer, NetworkContainerShapeKind, NetworkDiagram, NetworkElement,
-    NetworkFile, NetworkFileKind, NetworkNode, NetworkNodeKind, NetworkUser, NetworkUserKind,
+    NetworkComment, NetworkContainer, NetworkDiagram, NetworkElement, NetworkFile, NetworkFileKind,
+    NetworkNode, NetworkNodeKind, NetworkUser, NetworkUserKind,
 };
 use crate::{
     CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
@@ -879,7 +879,6 @@ fn view_for_stage(s: &NetworkToolStage) -> NetworkElementView {
         NetworkToolStage::ContainerStart { name } => {
             let container_view = new_network_container(
                 name,
-                NetworkContainerShapeKind::Rectangle,
                 egui::Rect {
                     min: egui::Pos2::ZERO,
                     max: egui::Pos2::new(100.0, 50.0),
@@ -1164,7 +1163,7 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
 
     fn targetting_for_section(&self, element: Option<NetworkElement>) -> egui::Color32 {
         match element {
-            None => match self.current_stage {
+            None | Some(NetworkElement::Container(_)) => match self.current_stage {
                 NetworkToolStage::Node { .. }
                 | NetworkToolStage::User { .. }
                 | NetworkToolStage::File { .. }
@@ -1174,16 +1173,6 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
                 NetworkToolStage::AssociationStart { .. } | NetworkToolStage::AssociationEnd => {
                     NON_TARGETTABLE_COLOR
                 }
-            },
-            Some(NetworkElement::Container(_)) => match self.current_stage {
-                NetworkToolStage::Node { .. }
-                | NetworkToolStage::User { .. }
-                | NetworkToolStage::File { .. }
-                | NetworkToolStage::Comment { .. } => TARGETTABLE_COLOR,
-                NetworkToolStage::AssociationStart { .. }
-                | NetworkToolStage::AssociationEnd
-                | NetworkToolStage::ContainerStart { .. }
-                | NetworkToolStage::ContainerEnd => NON_TARGETTABLE_COLOR,
             },
             Some(
                 NetworkElement::Node(_)
@@ -1403,12 +1392,8 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
             } => {
                 self.current_stage = self.initial_stage.clone();
 
-                let container_view = new_network_container(
-                    name,
-                    NetworkContainerShapeKind::Rectangle,
-                    egui::Rect::from_two_pos(*a, *b),
-                )
-                .1;
+                let container_view =
+                    new_network_container(name, egui::Rect::from_two_pos(*a, *b)).1;
 
                 self.try_spend();
                 commands.push(InsensitiveCommand::AddDependency {
@@ -1431,13 +1416,11 @@ impl Tool<NetworkDomain> for NaiveNetworkTool {
 
 fn new_network_container(
     name: &str,
-    kind: NetworkContainerShapeKind,
     bounds_rect: egui::Rect,
 ) -> (ERef<NetworkContainer>, ERef<PackageViewT>) {
     let container_model = ERef::new(NetworkContainer::new(
         ModelUuid::now_v7(),
         name.to_owned(),
-        kind,
         Vec::new(),
     ));
     let container_view = new_network_container_view(container_model.clone(), bounds_rect);

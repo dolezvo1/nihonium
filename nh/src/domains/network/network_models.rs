@@ -26,7 +26,6 @@ pub fn deep_copy_diagram(
                 let new_model = NetworkContainer {
                     uuid: new_uuid,
                     name: model.name.clone(),
-                    kind: model.kind.clone(),
                     contained_elements: model
                         .contained_elements
                         .iter()
@@ -405,33 +404,12 @@ impl FullTextSearchable for NetworkDiagram {
     }
 }
 
-#[derive(Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
-pub enum NetworkContainerShapeKind {
-    #[default]
-    Rectangle,
-    Rhombus,
-    Ellipse,
-}
-
-impl NetworkContainerShapeKind {
-    pub const VARIANTS: [Self; 3] = [Self::Rectangle, Self::Rhombus, Self::Ellipse];
-
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            NetworkContainerShapeKind::Rectangle => "Rectangle",
-            NetworkContainerShapeKind::Rhombus => "Rhombus",
-            NetworkContainerShapeKind::Ellipse => "Ellipse",
-        }
-    }
-}
-
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct NetworkContainer {
     pub uuid: Arc<ModelUuid>,
     pub name: Arc<String>,
 
-    pub kind: NetworkContainerShapeKind,
     #[nh_context_serde(entity)]
     pub contained_elements: Vec<NetworkElement>,
 
@@ -439,16 +417,10 @@ pub struct NetworkContainer {
 }
 
 impl NetworkContainer {
-    pub fn new(
-        uuid: ModelUuid,
-        name: String,
-        kind: NetworkContainerShapeKind,
-        contained_elements: Vec<NetworkElement>,
-    ) -> Self {
+    pub fn new(uuid: ModelUuid, name: String, contained_elements: Vec<NetworkElement>) -> Self {
         Self {
             uuid: Arc::new(uuid),
             name: Arc::new(name),
-            kind,
             contained_elements,
             comment: Arc::new("".to_owned()),
         }
@@ -457,7 +429,6 @@ impl NetworkContainer {
         ERef::new(Self {
             uuid: Arc::new(new_uuid),
             name: self.name.clone(),
-            kind: self.kind.clone(),
             contained_elements: self.contained_elements.clone(),
             comment: self.comment.clone(),
         })
@@ -529,12 +500,7 @@ impl FullTextSearchable for NetworkContainer {
     fn full_text_search(&self, acc: &mut crate::common::search::Searcher) {
         acc.check_element(
             *self.uuid,
-            &[
-                &self.uuid.to_string(),
-                &self.name,
-                &self.kind.as_str(),
-                &self.comment,
-            ],
+            &[&self.uuid.to_string(), &self.name, &self.comment],
         );
 
         for e in &self.contained_elements {
