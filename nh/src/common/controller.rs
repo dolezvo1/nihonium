@@ -1751,14 +1751,24 @@ pub trait ContainerModel: Model {
 pub trait Queryable<'a, DomainT: Domain> {
     // TODO: This is actually not a very good idea. Constructor should only be required where instantiated.
     fn new(
+        root: ViewUuid,
         models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
         flattened_views: &'a HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
         flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
     ) -> Self;
 
+    fn get_root(&self) -> ViewUuid;
+    fn get_parent(&self, v: &ViewUuid) -> Option<ViewUuid>;
     fn is_contained(&self, v: &ViewUuid, within: &ViewUuid) -> bool;
     fn are_siblings(&self, a: &ViewUuid, b: &ViewUuid) -> bool;
-    fn find_parent<P>(
+    fn find_container<P>(
+        &self,
+        child: &ViewUuid,
+        predicate: P,
+    ) -> Option<(ViewUuid, DomainT::CommonElementViewT)>
+    where
+        P: FnMut(&ViewUuid, &DomainT::CommonElementViewT) -> bool;
+    fn find_container_inclusive<P>(
         &self,
         child: &ViewUuid,
         predicate: P,
@@ -1772,6 +1782,7 @@ pub trait Queryable<'a, DomainT: Domain> {
 }
 
 pub struct GenericQueryable<'a, DomainT: Domain> {
+    root: ViewUuid,
     models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
     flattened_views: &'a HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
     flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
@@ -1779,17 +1790,25 @@ pub struct GenericQueryable<'a, DomainT: Domain> {
 
 impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, DomainT> {
     fn new(
+        root: ViewUuid,
         models_to_views: &'a HashMap<ModelUuid, ViewUuid>,
         flattened_views: &'a HashMap<ViewUuid, (DomainT::CommonElementViewT, ViewUuid)>,
         flattened_views_status: &'a HashMap<ViewUuid, SelectionStatus>,
     ) -> Self {
         Self {
+            root,
             models_to_views,
             flattened_views,
             flattened_views_status,
         }
     }
 
+    fn get_root(&self) -> ViewUuid {
+        self.root
+    }
+    fn get_parent(&self, v: &ViewUuid) -> Option<ViewUuid> {
+        self.flattened_views.get(v).map(|e| e.1)
+    }
     fn is_contained(&self, v: &ViewUuid, within: &ViewUuid) -> bool {
         let mut v = *v;
         loop {
@@ -1803,12 +1822,9 @@ impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, Domain
         }
     }
     fn are_siblings(&self, a: &ViewUuid, b: &ViewUuid) -> bool {
-        self.flattened_views
-            .get(a)
-            .and_then(|(_, pa)| self.flattened_views.get(b).map(|(_, pb)| pa == pb))
-            .unwrap_or(false)
+        self.get_parent(a) == self.get_parent(b)
     }
-    fn find_parent<P>(
+    fn find_container<P>(
         &self,
         child: &ViewUuid,
         mut predicate: P,
@@ -1824,6 +1840,20 @@ impl<'a, DomainT: Domain> Queryable<'a, DomainT> for GenericQueryable<'a, Domain
             }
             v = *parent2;
         }
+    }
+    fn find_container_inclusive<P>(
+        &self,
+        child: &ViewUuid,
+        mut predicate: P,
+    ) -> Option<(ViewUuid, DomainT::CommonElementViewT)>
+    where
+        P: FnMut(&ViewUuid, &DomainT::CommonElementViewT) -> bool,
+    {
+        self.flattened_views
+            .get(child)
+            .filter(|e| predicate(child, &e.0))
+            .map(|e| (*child, e.0.clone()))
+            .or_else(|| self.find_container(child, predicate))
     }
 
     fn get_viewuuid_for(&self, m: &ModelUuid) -> Option<ViewUuid> {
@@ -3228,6 +3258,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>>
             snap_manager: &self.temporaries.snap_manager,
         };
         let q = DomainT::QueryableT::new(
+            *self.uuid,
             &self.temporaries.flattened_represented_models,
             &self.temporaries.flattened_views,
             &self.temporaries.flattened_views_status,
@@ -4171,7 +4202,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
         ui.separator();
 
         let (empty_a, empty_b, empty_c) = (HashMap::new(), HashMap::new(), HashMap::new());
-        let empty_q = DomainT::QueryableT::new(&empty_a, &empty_b, &empty_c);
+        let empty_q = DomainT::QueryableT::new(ViewUuid::nil(), &empty_a, &empty_b, &empty_c);
 
         settings.palette_for_each_mut(|(gid, label, items)| {
             egui::CollapsingHeader::new(&*label)
@@ -4258,6 +4289,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
     ) -> Option<Box<dyn CustomModal>> {
         let req = {
             let queryable = DomainT::QueryableT::new(
+                *self.uuid,
                 &self.temporaries.flattened_represented_models,
                 &self.temporaries.flattened_views,
                 &self.temporaries.flattened_views_status,
@@ -4724,8 +4756,12 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
                             };
 
                             let r = {
-                                let q =
-                                    DomainT::QueryableT::new(&pseudo_frm, &pseudo_fv, &pseudo_fvs);
+                                let q = DomainT::QueryableT::new(
+                                    *self.uuid,
+                                    &pseudo_frm,
+                                    &pseudo_fv,
+                                    &pseudo_fvs,
+                                );
                                 self.adapter.create_new_view_for(&q, model.clone())
                             };
 
@@ -4821,6 +4857,7 @@ impl<DomainT: Domain, DiagramAdapterT: DiagramAdapter<DomainT>> DiagramView2<Dom
             };
         let mut drawn_targetting = TargettingStatus::NotDrawn;
         let queryable = DomainT::QueryableT::new(
+            *self.uuid,
             &self.temporaries.flattened_represented_models,
             &self.temporaries.flattened_views,
             &self.temporaries.flattened_views_status,

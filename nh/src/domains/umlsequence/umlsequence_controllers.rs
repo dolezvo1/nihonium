@@ -1558,11 +1558,11 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.read().uuid());
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
-                    && q.find_parent(&source_view.uuid(), |_, e| {
+                    && q.find_container(&source_view.uuid(), |_, e| {
                         matches!(e, UmlSequenceElementView::Diagram(_))
                     })
                     .map(|e| e.0)
-                        == q.find_parent(&target_view.uuid(), |_, e| {
+                        == q.find_container(&target_view.uuid(), |_, e| {
                             matches!(e, UmlSequenceElementView::Diagram(_))
                         })
                         .map(|e| e.0)
@@ -1600,11 +1600,11 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.read().uuid());
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
-                    && q.find_parent(&source_view.uuid(), |_, e| {
+                    && q.find_container(&source_view.uuid(), |_, e| {
                         matches!(e, UmlSequenceElementView::Diagram(_))
                     })
                     .map(|e| e.0)
-                        == q.find_parent(&target_view.uuid(), |_, e| {
+                        == q.find_container(&target_view.uuid(), |_, e| {
                             matches!(e, UmlSequenceElementView::Diagram(_))
                         })
                         .map(|e| e.0)
@@ -1650,11 +1650,11 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                 let (source_uuid, target_uuid) = (*source.read().uuid(), *dest.read().uuid());
                 if let (Some(source_view), Some(target_view)) =
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
-                    && q.find_parent(&source_view.uuid(), |_, e| {
+                    && q.find_container(&source_view.uuid(), |_, e| {
                         matches!(e, UmlSequenceElementView::Diagram(_))
                     })
                     .map(|e| e.0)
-                        == q.find_parent(&target_view.uuid(), |_, e| {
+                        == q.find_container(&target_view.uuid(), |_, e| {
                             matches!(e, UmlSequenceElementView::Diagram(_))
                         })
                         .map(|e| e.0)

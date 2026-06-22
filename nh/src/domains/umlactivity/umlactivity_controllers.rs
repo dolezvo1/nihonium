@@ -2081,11 +2081,25 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                         with_edge_from: Some(source_uuid),
                         ..
                     } if let Some(source) = q.get_view_for(&source_uuid)
-                        && let Some(parent) = q.find_parent(&source.uuid(), |uuid, e| {
-                            (uuid == preferred_container
-                                || q.is_contained(preferred_container, uuid))
-                                && !matches!(e, UmlActivityElementView::Partition(_))
-                        }) =>
+                        && let nearest_common_container = q
+                            .find_container(&source.uuid(), |uuid, e| {
+                                (uuid == preferred_container
+                                    || q.is_contained(preferred_container, uuid))
+                                    && !matches!(e, UmlActivityElementView::Partition(_))
+                            })
+                            .map(|e| e.0)
+                            .unwrap_or_else(|| q.get_root())
+                        && let source_activity = q
+                            .find_container(&source.uuid(), |_, e| {
+                                matches!(e, UmlActivityElementView::Activity(_))
+                            })
+                            .map(|e| e.0)
+                        && let target_activity = q
+                            .find_container_inclusive(&preferred_container, |_, e| {
+                                matches!(e, UmlActivityElementView::Activity(_))
+                            })
+                            .map(|e| e.0)
+                        && source_activity == target_activity =>
                     {
                         let edge_view = new_umlactivity_edge(
                             "",
@@ -2095,7 +2109,7 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                             (element.model().as_noninitial().unwrap(), element.clone()),
                         )
                         .1;
-                        Some((parent.0, edge_view))
+                        Some((nearest_common_container, edge_view))
                     }
                     _ => None,
                 };
@@ -2153,11 +2167,11 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
                     && q.is_contained(&source_view.uuid(), preferred_container)
                     && q.is_contained(&target_view.uuid(), preferred_container)
-                    && q.find_parent(&source_view.uuid(), |_, e| {
+                    && q.find_container(&source_view.uuid(), |_, e| {
                         matches!(e, UmlActivityElementView::Activity(_))
                     })
                     .map(|e| e.0)
-                        == q.find_parent(&target_view.uuid(), |_, e| {
+                        == q.find_container(&target_view.uuid(), |_, e| {
                             matches!(e, UmlActivityElementView::Activity(_))
                         })
                         .map(|e| e.0)
@@ -2273,11 +2287,11 @@ impl Tool<UmlActivityDomain> for NaiveUmlActivityTool {
                     (q.get_view_for(&source_uuid), q.get_view_for(&target_uuid))
                     && q.is_contained(&source_view.uuid(), preferred_container)
                     && q.is_contained(&target_view.uuid(), preferred_container)
-                    && q.find_parent(&source_view.uuid(), |_, e| {
+                    && q.find_container(&source_view.uuid(), |_, e| {
                         matches!(e, UmlActivityElementView::Activity(_))
                     })
                     .map(|e| e.0)
-                        == q.find_parent(&target_view.uuid(), |_, e| {
+                        == q.find_container(&target_view.uuid(), |_, e| {
                             matches!(e, UmlActivityElementView::Activity(_))
                         })
                         .map(|e| e.0)
