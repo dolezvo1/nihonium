@@ -1192,6 +1192,25 @@ pub fn settings_function(
                                 }
                             });
                     }
+                    UmlSequenceToolStage::LinkStart { link_type } => {
+                        match link_type {
+                            LinkType::Message { synchronicity_kind, is_return, name, duration } => {
+                                modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
+
+                                columns[1].label("Synchronicity:");
+                                egui::ComboBox::from_id_salt("synchronicity")
+                                    .selected_text(synchronicity_kind.as_str())
+                                    .show_ui(&mut columns[1], |ui| {
+                                        for e in UmlSequenceMessageSynchronicityKind::VARIANTS {
+                                            modified |= ui.selectable_value(synchronicity_kind, e, e.as_str()).changed();
+                                        }
+                                    });
+
+                                modified |= columns[1].checkbox(is_return, "isReturn").changed();
+                                modified |= columns[1].add(egui::DragValue::new(duration).speed(1.0)).changed();
+                            },
+                        }
+                    }
                     _ => {}
                 }
 
