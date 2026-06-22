@@ -1126,22 +1126,6 @@ impl UmlSequenceCombinedFragmentKind {
             UmlSequenceCombinedFragmentKind::Neg => "neg",
         }
     }
-    pub fn max_allowed_sections_count(&self) -> Option<PositionNoT> {
-        match self {
-            UmlSequenceCombinedFragmentKind::Opt => Some(1),
-            UmlSequenceCombinedFragmentKind::Alt => None,
-            UmlSequenceCombinedFragmentKind::Loop => Some(1),
-            UmlSequenceCombinedFragmentKind::Break => Some(1),
-            UmlSequenceCombinedFragmentKind::Par => None,
-            UmlSequenceCombinedFragmentKind::Strict => None,
-            UmlSequenceCombinedFragmentKind::Seq => None,
-            UmlSequenceCombinedFragmentKind::Critical => Some(1),
-            UmlSequenceCombinedFragmentKind::Ignore => Some(1),
-            UmlSequenceCombinedFragmentKind::Consider => Some(1),
-            UmlSequenceCombinedFragmentKind::Assert => Some(1),
-            UmlSequenceCombinedFragmentKind::Neg => Some(1),
-        }
-    }
 }
 
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
