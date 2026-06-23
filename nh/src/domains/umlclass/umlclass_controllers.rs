@@ -1305,6 +1305,8 @@ pub struct UmlClassSettings<P: UmlClassProfile> {
     palette_edit_buffer: RwLock<PaletteEditBuffer<UmlClassToolStage, UmlClassElementView<P>>>,
     comment_indication: CommentIndication,
     instance_buttons: Vec<(
+        usize,
+        usize,
         &'static str,
         &'static dyn Fn(
             ERef<UmlClassInstance>,
@@ -1316,6 +1318,8 @@ pub struct UmlClassSettings<P: UmlClassProfile> {
         ),
     )>,
     class_buttons: Vec<(
+        usize,
+        usize,
         &'static str,
         &'static dyn Fn(
             ERef<UmlClass>,
@@ -1365,6 +1369,8 @@ impl<P: UmlClassProfile> DiagramSettings2<UmlClassDomain<P>> for UmlClassSetting
 pub fn default_settings_helper<P: UmlClassProfile>(
     palette_items: Vec<(&'static str, Vec<(UmlClassToolStage, &'static str)>)>,
     instance_buttons: Vec<(
+        usize,
+        usize,
         &'static str,
         &'static dyn Fn(
             ERef<UmlClassInstance>,
@@ -1376,6 +1382,8 @@ pub fn default_settings_helper<P: UmlClassProfile>(
         ),
     )>,
     class_buttons: Vec<(
+        usize,
+        usize,
         &'static str,
         &'static dyn Fn(
             ERef<UmlClass>,
@@ -1638,8 +1646,9 @@ mod buttons {
         PartialUmlClassElement<UmlClassNullProfile>,
         bool,
     );
-    pub const INSTANCE_BUTTONS: LazyLock<Vec<(&'static str, &'static InstanceButtonF)>> =
-        LazyLock::new(|| vec![("↘", &instance_association as &InstanceButtonF)]);
+    pub const INSTANCE_BUTTONS: LazyLock<
+        Vec<(usize, usize, &'static str, &'static InstanceButtonF)>,
+    > = LazyLock::new(|| vec![(0, 0, "\\", &instance_association as &InstanceButtonF)]);
     fn class_association(
         m: ERef<UmlClass>,
     ) -> (
@@ -1652,6 +1661,30 @@ mod buttons {
             stereotype: "".to_owned(),
             source_multiplicity: "0..*".to_owned(),
             target_multiplicity: "1..1".to_owned(),
+        };
+        (
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type,
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
+    fn class_generalization(
+        m: ERef<UmlClass>,
+    ) -> (
+        UmlClassToolStage,
+        UmlClassToolStage,
+        PartialUmlClassElement<UmlClassNullProfile>,
+        bool,
+    ) {
+        let link_type = LinkType::Generalization {
+            set_name: "".to_owned(),
         };
         (
             UmlClassToolStage::LinkStart {
@@ -1704,12 +1737,13 @@ mod buttons {
         PartialUmlClassElement<UmlClassNullProfile>,
         bool,
     );
-    pub const CLASS_BUTTONS: LazyLock<Vec<(&'static str, &'static ClassButtonF)>> =
+    pub const CLASS_BUTTONS: LazyLock<Vec<(usize, usize, &'static str, &'static ClassButtonF)>> =
         LazyLock::new(|| {
             vec![
-                ("↘", &class_association as &ClassButtonF),
-                ("P", &class_property as &ClassButtonF),
-                ("O", &class_operation as &ClassButtonF),
+                (0, 0, "\\", &class_association as &ClassButtonF),
+                (0, 1, "↘", &class_generalization as &ClassButtonF),
+                (1, 0, "P", &class_property as &ClassButtonF),
+                (1, 1, "O", &class_operation as &ClassButtonF),
             ]
         });
 }
@@ -1833,6 +1867,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
 pub fn settings_deserializer_helper<P: UmlClassProfile>(
     value: toml::Value,
     instance_buttons: Vec<(
+        usize,
+        usize,
         &'static str,
         &'static dyn Fn(
             ERef<UmlClassInstance>,
@@ -1844,6 +1880,8 @@ pub fn settings_deserializer_helper<P: UmlClassProfile>(
         ),
     )>,
     class_buttons: Vec<(
+        usize,
+        usize,
         &'static str,
         &'static dyn Fn(
             ERef<UmlClass>,
@@ -3428,11 +3466,11 @@ pub struct UmlClassInstanceView<P: UmlClassProfile> {
 
 impl<P: UmlClassProfile> UmlClassInstanceView<P> {
     const BUTTON_RADIUS: f32 = 8.0;
-    fn button_rect(&self, ui_scale: f32, index: usize) -> egui::Rect {
+    fn button_rect(&self, ui_scale: f32, row_index: usize, column_index: usize) -> egui::Rect {
         let b_center = self.bounds_rect.right_top()
             + egui::Vec2::new(
-                Self::BUTTON_RADIUS / ui_scale,
-                (1.0 + 2.0 * index as f32) * Self::BUTTON_RADIUS / ui_scale,
+                (1.0 + 2.0 * column_index as f32) * Self::BUTTON_RADIUS / ui_scale,
+                (1.0 + 2.0 * row_index as f32) * Self::BUTTON_RADIUS / ui_scale,
             );
         egui::Rect::from_center_size(
             b_center,
@@ -3653,8 +3691,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
 
         // Draw buttons
         if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-            for (idx, e) in settings.instance_buttons.iter().enumerate() {
-                let b_rect = self.button_rect(ui_scale, idx);
+            for (row_idx, col_idx, l, _f) in settings.instance_buttons.iter() {
+                let b_rect = self.button_rect(ui_scale, *row_idx, *col_idx);
                 canvas.draw_rectangle(
                     b_rect,
                     egui::CornerRadius::ZERO,
@@ -3665,7 +3703,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
                 canvas.draw_text(
                     b_rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    e.0,
+                    l,
                     14.0 / ui_scale,
                     egui::Color32::BLACK,
                 );
@@ -3748,13 +3786,16 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassIn
             }
             InputEvent::Click(pos)
                 if self.highlight.selected
-                    && let Some(e) = settings
-                        .instance_buttons
-                        .iter()
-                        .enumerate()
-                        .find(|(idx, _e)| self.button_rect(ehc.ui_scale, *idx).contains(pos)) =>
+                    && let Some(e) =
+                        settings
+                            .instance_buttons
+                            .iter()
+                            .find(|(row_idx, col_idx, ..)| {
+                                self.button_rect(ehc.ui_scale, *row_idx, *col_idx)
+                                    .contains(pos)
+                            }) =>
             {
-                let (initial_stage, current_stage, result, event_lock) = e.1.1(self.model.clone());
+                let (initial_stage, current_stage, result, event_lock) = e.3(self.model.clone());
                 *tool = Some(NaiveUmlClassTool {
                     uuid: uuid::Uuid::nil(),
                     initial_stage,
@@ -5762,11 +5803,11 @@ pub struct UmlClassView<P: UmlClassProfile> {
 
 impl<P: UmlClassProfile> UmlClassView<P> {
     const BUTTON_RADIUS: f32 = 8.0;
-    fn button_rect(&self, ui_scale: f32, index: usize) -> egui::Rect {
+    fn button_rect(&self, ui_scale: f32, row_index: usize, column_index: usize) -> egui::Rect {
         let b_center = self.bounds_rect.right_top()
             + egui::Vec2::new(
-                Self::BUTTON_RADIUS / ui_scale,
-                (1.0 + 2.0 * index as f32) * Self::BUTTON_RADIUS / ui_scale,
+                (1.0 + 2.0 * column_index as f32) * Self::BUTTON_RADIUS / ui_scale,
+                (1.0 + 2.0 * row_index as f32) * Self::BUTTON_RADIUS / ui_scale,
             );
         egui::Rect::from_center_size(
             b_center,
@@ -6306,8 +6347,8 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
 
             // Draw buttons
             if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
-                for (idx, e) in settings.class_buttons.iter().enumerate() {
-                    let b1 = self.button_rect(ui_scale, idx);
+                for (row_idx, col_idx, l, _f) in settings.class_buttons.iter() {
+                    let b1 = self.button_rect(ui_scale, *row_idx, *col_idx);
                     canvas.draw_rectangle(
                         b1,
                         egui::CornerRadius::ZERO,
@@ -6318,7 +6359,7 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
                     canvas.draw_text(
                         b1.center(),
                         egui::Align2::CENTER_CENTER,
-                        e.0,
+                        l,
                         14.0 / ui_scale,
                         egui::Color32::BLACK,
                     );
@@ -6428,11 +6469,15 @@ impl<P: UmlClassProfile> ElementControllerGen2<UmlClassDomain<P>> for UmlClassVi
             InputEvent::Click(pos)
                 if self.highlight.selected
                     && let Some(e) =
-                        settings.class_buttons.iter().enumerate().find(|(idx, _e)| {
-                            self.button_rect(ehc.ui_scale, *idx).contains(pos)
-                        }) =>
+                        settings
+                            .class_buttons
+                            .iter()
+                            .find(|(row_idx, col_idx, ..)| {
+                                self.button_rect(ehc.ui_scale, *row_idx, *col_idx)
+                                    .contains(pos)
+                            }) =>
             {
-                let (initial_stage, current_stage, result, event_lock) = e.1.1(self.model.clone());
+                let (initial_stage, current_stage, result, event_lock) = e.3(self.model.clone());
                 *tool = Some(NaiveUmlClassTool {
                     uuid: uuid::Uuid::nil(),
                     initial_stage,

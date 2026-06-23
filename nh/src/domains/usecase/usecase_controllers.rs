@@ -287,8 +287,9 @@ mod buttons {
         PartialUmlClassElement<UseCaseProfile>,
         bool,
     );
-    pub const INSTANCE_BUTTONS: LazyLock<Vec<(&'static str, &'static InstanceButtonF)>> =
-        LazyLock::new(|| vec![("↘", &instance_association as &InstanceButtonF)]);
+    pub const INSTANCE_BUTTONS: LazyLock<
+        Vec<(usize, usize, &'static str, &'static InstanceButtonF)>,
+    > = LazyLock::new(|| vec![(0, 0, "\\", &instance_association as &InstanceButtonF)]);
     fn class_association(
         m: ERef<UmlClass>,
     ) -> (
@@ -315,6 +316,30 @@ mod buttons {
             true,
         )
     }
+    fn class_generalization(
+        m: ERef<UmlClass>,
+    ) -> (
+        UmlClassToolStage,
+        UmlClassToolStage,
+        PartialUmlClassElement<UseCaseProfile>,
+        bool,
+    ) {
+        let link_type = LinkType::Generalization {
+            set_name: "".to_owned(),
+        };
+        (
+            UmlClassToolStage::LinkStart {
+                link_type: link_type.clone(),
+            },
+            UmlClassToolStage::LinkEnd,
+            PartialUmlClassElement::Link {
+                link_type,
+                source: m.into(),
+                dest: None,
+            },
+            true,
+        )
+    }
     type ClassButtonF = dyn Fn(
         ERef<UmlClass>,
     ) -> (
@@ -323,8 +348,13 @@ mod buttons {
         PartialUmlClassElement<UseCaseProfile>,
         bool,
     );
-    pub const CLASS_BUTTONS: LazyLock<Vec<(&'static str, &'static ClassButtonF)>> =
-        LazyLock::new(|| vec![("↘", &class_association as &ClassButtonF)]);
+    pub const CLASS_BUTTONS: LazyLock<Vec<(usize, usize, &'static str, &'static ClassButtonF)>> =
+        LazyLock::new(|| {
+            vec![
+                (0, 0, "\\", &class_association as &ClassButtonF),
+                (0, 1, "↘", &class_generalization as &ClassButtonF),
+            ]
+        });
 }
 
 pub fn default_settings() -> Box<dyn DiagramSettings> {
