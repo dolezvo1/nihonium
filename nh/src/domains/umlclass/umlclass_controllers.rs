@@ -2317,9 +2317,17 @@ impl<P: UmlClassProfile> Tool<UmlClassDomain<P>> for NaiveUmlClassTool<P> {
                 }
                 | UmlClassToolStage::LinkAddEnding { .. } => NON_TARGETTABLE_COLOR,
 
-                UmlClassToolStage::LinkStart { .. }
-                | UmlClassToolStage::LinkEnd
-                | UmlClassToolStage::CommentLinkEnd => TARGETTABLE_COLOR,
+                UmlClassToolStage::LinkStart { .. } | UmlClassToolStage::CommentLinkEnd => {
+                    TARGETTABLE_COLOR
+                }
+                UmlClassToolStage::LinkEnd => match &self.result {
+                    PartialUmlClassElement::Link { link_type, .. }
+                        if !matches!(link_type, LinkType::Generalization { .. }) =>
+                    {
+                        TARGETTABLE_COLOR
+                    }
+                    _ => NON_TARGETTABLE_COLOR,
+                },
             },
             Some(UmlClassElement::Class(..)) => match self.current_stage {
                 UmlClassToolStage::ClassProperty { .. }
