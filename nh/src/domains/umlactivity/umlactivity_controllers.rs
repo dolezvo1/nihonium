@@ -7833,6 +7833,12 @@ pub struct UmlActivityCommentView {
 
 impl UmlActivityCommentView {
     const CORNER_SIZE: f32 = 10.0;
+
+    fn comment_link_button_rect(&self, ui_scale: f32) -> egui::Rect {
+        let b_radius = 8.0;
+        let b_center = self.bounds_rect.right_top() + egui::Vec2::splat(b_radius / ui_scale);
+        egui::Rect::from_center_size(b_center, egui::Vec2::splat(2.0 * b_radius / ui_scale))
+    }
 }
 
 impl Entity for UmlActivityCommentView {
@@ -8060,6 +8066,25 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
             egui::Color32::BLACK,
         );
 
+        // Draw buttons
+        if let Some(ui_scale) = canvas.ui_scale().filter(|_| self.highlight.selected) {
+            let b_rect = self.comment_link_button_rect(ui_scale);
+            canvas.draw_rectangle(
+                b_rect,
+                egui::CornerRadius::ZERO,
+                egui::Color32::WHITE,
+                canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                canvas::Highlight::NONE,
+            );
+            canvas.draw_text(
+                b_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "\\",
+                14.0 / ui_scale,
+                egui::Color32::BLACK,
+            );
+        }
+
         if canvas.ui_scale().is_some() {
             if self.dragged_shape.is_some() {
                 canvas.draw_line(
@@ -8146,6 +8171,21 @@ impl ElementControllerGen2<UmlActivityDomain> for UmlActivityCommentView {
                 } else {
                     EventHandlingStatus::NotHandled
                 }
+            }
+            InputEvent::Click(pos) if self.comment_link_button_rect(ehc.ui_scale).contains(pos) => {
+                *tool = Some(NaiveUmlActivityTool {
+                    uuid: uuid::Uuid::nil(),
+                    initial_stage: UmlActivityToolStage::CommentLinkStart,
+                    current_stage: UmlActivityToolStage::CommentLinkEnd,
+                    result: PartialUmlActivityElement::CommentLink {
+                        source: self.model.clone(),
+                        dest: None,
+                    },
+                    event_lock: true,
+                    is_spent: Some(false),
+                });
+
+                return EventHandlingStatus::HandledByElement;
             }
             InputEvent::Click(pos) if self.min_shape().contains(pos) => {
                 if let Some(tool) = tool {
