@@ -80,6 +80,8 @@ pub enum UmlSequencePropChange {
     NameChange(Arc<String>),
     StereotypeChange(Arc<String>),
 
+    ShowActivationsChange(bool),
+
     SynchronicityKindChange(UmlSequenceMessageSynchronicityKind),
     LifecycleKindChange(UmlSequenceMessageLifecycleKind),
     IsReturnChange(bool),
@@ -98,7 +100,7 @@ pub enum UmlSequencePropChange {
 
 impl Debug for UmlSequencePropChange {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f, "UmlClassPropChange::???")
+        write!(f, "UmlSequencePropChange::???")
     }
 }
 
@@ -230,6 +232,18 @@ impl UmlSequenceHorizontalElementView {
         }
     }
 
+    fn count_activations(&self, ac: &mut ActivationsCounter) {
+        match self {
+            UmlSequenceHorizontalElementView::CombinedFragment(inner) => {
+                ac.add_combined_fragment(inner);
+            }
+            UmlSequenceHorizontalElementView::Message(inner) => {
+                ac.add_message(inner);
+            }
+            UmlSequenceHorizontalElementView::Ref(_inner) => {}
+        }
+    }
+
     fn draw_inner(
         &mut self,
         lifeline_views: &[ERef<UmlSequenceLifelineView>],
@@ -305,6 +319,78 @@ impl UmlSequenceHorizontalElementView {
                 commands,
             ),
         }
+    }
+}
+
+#[derive(Default)]
+struct ActivationsCounter {
+    current_counts: HashMap<ViewUuid, usize>,
+
+    last_message_y: f32,
+    open_activations: HashMap<ViewUuid, Vec<(usize, f32, MGlobalColor)>>,
+    closed_activations: Vec<(ViewUuid, usize, f32, f32, MGlobalColor)>,
+}
+
+impl ActivationsCounter {
+    fn add_combined_fragment(&mut self, combined_fragment: &ERef<UmlSequenceCombinedFragmentView>) {
+        let r = combined_fragment.read();
+        let old_state = self.current_counts.clone();
+        for e in r.sections.iter() {
+            let r2 = e.read();
+            for e in r2.horizontal_element_views.iter() {
+                e.count_activations(self);
+            }
+            self.current_counts = old_state.clone();
+        }
+    }
+
+    fn add_message(&mut self, message: &ERef<UmlSequenceMessageView>) {
+        let r = message.read();
+        let source_uuid = *r.source.uuid();
+        let target_uuid = *r.target.uuid();
+
+        if !r.temporaries.is_return_buffer {
+            if self
+                .current_counts
+                .get(&source_uuid)
+                .is_none_or(|e| *e == 0)
+            {
+                self.current_counts.entry(source_uuid).or_insert(1);
+                self.open_activations.entry(source_uuid).or_default().push((
+                    0,
+                    r.bounds_rect.min.y,
+                    r.activation_color,
+                ));
+            }
+            let t = self.current_counts.entry(target_uuid).or_default();
+            self.open_activations.entry(target_uuid).or_default().push((
+                *t,
+                r.bounds_rect.max.y,
+                r.activation_color,
+            ));
+            *t += 1;
+        } else {
+            *self.current_counts.entry(source_uuid).or_default() -= 1;
+            if let Some(a) = self.open_activations.entry(source_uuid).or_default().pop() {
+                self.closed_activations
+                    .push((source_uuid, a.0, a.1, r.bounds_rect.min.y, a.2));
+            }
+        }
+        self.last_message_y = r.bounds_rect.max.y;
+    }
+
+    fn finish(mut self) -> impl Iterator<Item = (ViewUuid, usize, f32, f32, MGlobalColor)> {
+        for open in self.open_activations.iter_mut() {
+            self.closed_activations.extend(
+                open.1
+                    .drain(..)
+                    .map(|e| (*open.0, e.0, e.1, self.last_message_y, e.2)),
+            );
+        }
+
+        self.closed_activations
+            .into_iter()
+            .map(|e| (e.0, e.1, e.2, e.3, e.4))
     }
 }
 
@@ -433,6 +519,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                     Vec::new(),
                     Vec::new(),
                     egui::Rect::from_x_y_ranges(0.0..=100.0, 0.0..=100.0),
+                    true,
                 )
                 .into()
             }
@@ -482,7 +569,7 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 else {
                     return Err([source_uuid, target_uuid].into_iter().collect());
                 };
-                new_umlsequence_message_view(inner.clone(), s, t).into()
+                new_umlsequence_message_view(inner.clone(), MGlobalColor::None, s, t).into()
             }
             UmlSequenceElement::Ref(inner) => new_umlsequence_ref_view(inner.clone()).into(),
             UmlSequenceElement::Comment(inner) => {
@@ -751,6 +838,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         UmlSequenceMessageLifecycleKind::None,
         false,
         0.0,
+        MGlobalColor::None,
         (user_model.clone(), user_view.clone().into()),
         (service1_model.clone(), service1_view.clone().into()),
     );
@@ -761,6 +849,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         UmlSequenceMessageLifecycleKind::None,
         false,
         0.0,
+        MGlobalColor::None,
         (service1_model.clone(), service1_view.clone().into()),
         (service2_model.clone(), service2_view.clone().into()),
     );
@@ -823,6 +912,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
             ),
         ],
         egui::Rect::from_min_size(egui::Pos2::new(100.0, 100.0), egui::Vec2::splat(500.0)),
+        true,
     );
 
     let model_uuid = ModelUuid::now_v7();
@@ -928,6 +1018,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                             is_return: false,
                             name: "".to_owned(),
                             duration: 0.0,
+                            activation_color: MGlobalColor::None,
+                            state_invariant: "".to_owned(),
                         },
                     },
                     "Synchronous Message",
@@ -939,6 +1031,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                             is_return: true,
                             name: "".to_owned(),
                             duration: 0.0,
+                            activation_color: MGlobalColor::None,
+                            state_invariant: "".to_owned(),
                         },
                     },
                     "Synchronous Return",
@@ -951,6 +1045,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                             is_return: false,
                             name: "".to_owned(),
                             duration: 0.0,
+                            activation_color: MGlobalColor::None,
+                            state_invariant: "".to_owned(),
                         },
                     },
                     "Asynchronous Call",
@@ -963,6 +1059,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                             is_return: false,
                             name: "".to_owned(),
                             duration: 0.0,
+                            activation_color: MGlobalColor::None,
+                            state_invariant: "".to_owned(),
                         },
                     },
                     "Asynchronous Signal",
@@ -1017,6 +1115,7 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
                 Vec::new(),
                 Vec::new(),
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(100.0, 75.0)),
+                true,
             )
             .1;
             diagram_view.write().refresh_buffers();
@@ -1062,14 +1161,17 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
                     is_return,
                     name,
                     duration,
+                    activation_color,
+                    state_invariant,
                 } => {
                     let message_view = new_umlsequence_message(
                         name,
-                        "",
+                        state_invariant,
                         *synchronicity_kind,
                         UmlSequenceMessageLifecycleKind::None,
                         *is_return,
                         *duration,
+                        *activation_color,
                         (d1.0, d1.1.into()),
                         (d2.0, d2.1.into()),
                     )
@@ -1194,7 +1296,7 @@ pub fn settings_function(
                     }
                     UmlSequenceToolStage::LinkStart { link_type } => {
                         match link_type {
-                            LinkType::Message { synchronicity_kind, is_return, name, duration } => {
+                            LinkType::Message { synchronicity_kind, is_return, name, duration, activation_color, state_invariant } => {
                                 modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                                 columns[1].label("Synchronicity:");
@@ -1208,6 +1310,18 @@ pub fn settings_function(
 
                                 modified |= columns[1].checkbox(is_return, "isReturn").changed();
                                 modified |= columns[1].add(egui::DragValue::new(duration).speed(1.0)).changed();
+
+                                columns[1].label("Activation color");
+                                if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    activation_color,
+                                ) {
+                                    *activation_color = new_color;
+                                    modified = true;
+                                }
+
+                                modified |= columns[1].labeled_text_edit_singleline("State invariant", state_invariant).changed();
                             },
                         }
                     }
@@ -1247,6 +1361,8 @@ pub enum LinkType {
         is_return: bool,
         name: String,
         duration: f32,
+        activation_color: MGlobalColor,
+        state_invariant: String,
     },
 }
 
@@ -1567,6 +1683,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     Vec::new(),
                     Vec::new(),
                     egui::Rect::from_two_pos(*a, *b),
+                    true,
                 );
 
                 self.try_spend();
@@ -1647,13 +1764,16 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                             is_return,
                             name,
                             duration,
+                            activation_color,
+                            state_invariant,
                         } => new_umlsequence_message(
                             name,
-                            "",
+                            state_invariant,
                             *synchronicity_kind,
                             UmlSequenceMessageLifecycleKind::None,
                             *is_return,
                             *duration,
+                            *activation_color,
                             (source.clone(), source_view),
                             (dest.clone(), target_view),
                         )
@@ -1756,6 +1876,7 @@ pub fn new_umlsequence_diagram(
         UmlSequenceHorizontalElementView,
     )>,
     bounds_rect: egui::Rect,
+    show_activations: bool,
 ) -> (ERef<UmlSequenceDiagram>, ERef<UmlSequenceDiagramView>) {
     let (lifeline_models, lifeline_views) = lifelines.into_iter().collect();
     let (horizontal_models, horizontal_views) = horizontals.into_iter().collect();
@@ -1770,6 +1891,7 @@ pub fn new_umlsequence_diagram(
         lifeline_views,
         horizontal_views,
         bounds_rect,
+        show_activations,
     );
 
     (diagram_model, package_view)
@@ -1779,6 +1901,7 @@ pub fn new_umlsequence_diagram_view(
     lifeline_views: Vec<ERef<UmlSequenceLifelineView>>,
     horizontal_element_views: Vec<UmlSequenceHorizontalElementView>,
     bounds_rect: egui::Rect,
+    show_activations: bool,
 ) -> ERef<UmlSequenceDiagramView> {
     ERef::new(UmlSequenceDiagramView {
         uuid: ViewUuid::now_v7().into(),
@@ -1787,6 +1910,7 @@ pub fn new_umlsequence_diagram_view(
         horizontal_element_views,
         temporaries: Default::default(),
         bounds_rect,
+        show_activations,
     })
 }
 
@@ -1805,6 +1929,7 @@ pub struct UmlSequenceDiagramView {
     #[nh_context_serde(skip_and_default)]
     temporaries: UmlSequenceDiagramViewTemporaries,
     bounds_rect: egui::Rect,
+    show_activations: bool,
 }
 
 #[derive(Clone, Default)]
@@ -2047,6 +2172,17 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                 }
             });
 
+            let mut show_activations = self.show_activations;
+            if ui
+                .checkbox(&mut show_activations, "show activations")
+                .changed()
+            {
+                commands.push(InsensitiveCommand::PropertyChange(
+                    q.selected_views(),
+                    UmlSequencePropChange::ShowActivationsChange(show_activations),
+                ));
+            }
+
             PropertiesStatus::Shown
         } else {
             PropertiesStatus::NotShown
@@ -2068,60 +2204,96 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
             self.temporaries.highlight,
         );
 
-        let mut drawn_child_targetting = TargettingStatus::NotDrawn;
+        fn draw_children(
+            s: &mut UmlSequenceDiagramView,
+            q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
+            context: &GlobalDrawingContext,
+            settings: &<UmlSequenceDomain as Domain>::SettingsT,
+            canvas: &mut dyn canvas::NHCanvas,
+            tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
+        ) -> TargettingStatus {
+            let mut drawn_child_targetting = TargettingStatus::NotDrawn;
 
-        macro_rules! draw_children {
-            () => {
-                let lifelines_no = self.lifeline_views.len();
-                let sliver_x = self.bounds_rect.width() / lifelines_no as f32 / 2.0;
-                let max_object_height = self
-                    .lifeline_views
-                    .iter()
-                    .map(|v| v.read().min_shape().bounding_box().height())
-                    .max_by(|l, r| l.partial_cmp(r).unwrap())
-                    .unwrap_or(0.0);
-                let lifelines_y =
-                    self.bounds_rect.top() + max_object_height + canvas::CLASS_MIDDLE_FONT_SIZE;
-                for (idx, v) in self.lifeline_views.iter().enumerate() {
-                    let x = self.bounds_rect.min.x + (2 * idx + 1) as f32 * sliver_x;
-                    let t = v.write().draw_inner(
-                        egui::Pos2::new(x, lifelines_y),
-                        self.bounds_rect.max.y,
-                        q,
-                        context,
-                        settings,
-                        canvas,
-                        tool,
-                    );
-                    #[allow(unused)]
-                    if t != TargettingStatus::NotDrawn {
-                        drawn_child_targetting = t;
-                    }
+            let lifelines_no = s.lifeline_views.len();
+            let sliver_x = s.bounds_rect.width() / lifelines_no as f32 / 2.0;
+            let max_object_height = s
+                .lifeline_views
+                .iter()
+                .map(|v| v.read().min_shape().bounding_box().height())
+                .max_by(|l, r| l.partial_cmp(r).unwrap())
+                .unwrap_or(0.0);
+            let lifelines_y =
+                s.bounds_rect.top() + max_object_height + canvas::CLASS_MIDDLE_FONT_SIZE;
+            for (idx, v) in s.lifeline_views.iter().enumerate() {
+                let x = s.bounds_rect.min.x + (2 * idx + 1) as f32 * sliver_x;
+                let t = v.write().draw_inner(
+                    egui::Pos2::new(x, lifelines_y),
+                    s.bounds_rect.max.y,
+                    q,
+                    context,
+                    settings,
+                    canvas,
+                    tool,
+                );
+                if t != TargettingStatus::NotDrawn {
+                    drawn_child_targetting = t;
                 }
+            }
 
-                const PADDING_Y: f32 = 2.0;
-                let mut counter_y = self.bounds_rect.min.y + 2.0 * max_object_height + PADDING_Y;
-                for v in self.horizontal_element_views.iter_mut() {
-                    let (t, r) = v.draw_inner(
-                        &self.lifeline_views,
-                        counter_y,
-                        q,
-                        context,
-                        settings,
-                        canvas,
-                        tool,
-                    );
-                    #[allow(unused)]
-                    if t != TargettingStatus::NotDrawn {
-                        drawn_child_targetting = t;
-                    }
-                    counter_y = r.max.y;
+            if s.show_activations {
+                let mut ac = ActivationsCounter::default();
+                for e in s.horizontal_element_views.iter() {
+                    e.count_activations(&mut ac);
                 }
-                self.bounds_rect
-                    .set_bottom(counter_y.max(self.bounds_rect.min.y + Self::MIN_SIZE.y));
-            };
+                const BAR_WIDTH: f32 = 10.0;
+                for (id, no, start_y, end_y, color) in ac.finish() {
+                    let shift = 7.0 * no as f32;
+                    let lifeline_center_x = s
+                        .lifeline_views
+                        .iter()
+                        .find(|e| *e.read().uuid == id)
+                        .map(|e| e.read().bounds_rect.center().x)
+                        .unwrap_or(0.0);
+                    canvas.draw_rectangle(
+                        egui::Rect::from_x_y_ranges(
+                            (lifeline_center_x - BAR_WIDTH / 2.0 + shift)
+                                ..=(lifeline_center_x + BAR_WIDTH / 2.0 + shift),
+                            start_y..=end_y,
+                        ),
+                        egui::CornerRadius::ZERO,
+                        context
+                            .global_colors
+                            .get(&color)
+                            .unwrap_or(egui::Color32::WHITE),
+                        canvas::Stroke::new_solid(1.0, egui::Color32::BLACK),
+                        canvas::Highlight::NONE,
+                    );
+                }
+            }
+
+            const PADDING_Y: f32 = 2.0;
+            let mut counter_y = s.bounds_rect.min.y + 2.0 * max_object_height + PADDING_Y;
+            for v in s.horizontal_element_views.iter_mut() {
+                let (t, r) = v.draw_inner(
+                    &s.lifeline_views,
+                    counter_y,
+                    q,
+                    context,
+                    settings,
+                    canvas,
+                    tool,
+                );
+                if t != TargettingStatus::NotDrawn {
+                    drawn_child_targetting = t;
+                }
+                counter_y = r.max.y;
+            }
+            s.bounds_rect.set_bottom(
+                counter_y.max(s.bounds_rect.min.y + UmlSequenceDiagramView::MIN_SIZE.y),
+            );
+            drawn_child_targetting
         }
-        draw_children!();
+        let drawn_child_targetting = draw_children(self, q, context, settings, canvas, tool);
 
         // Draw top left pentagon
         const PENTAGON_PADDING: f32 = 4.0;
@@ -2275,7 +2447,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                         }
                     }
 
-                    draw_children!();
+                    draw_children(self, q, context, settings, canvas, tool);
 
                     TargettingStatus::Drawn
                 }
@@ -3014,6 +3186,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
                             ));
                             model.name = name.clone();
                         }
+                        UmlSequencePropChange::ShowActivationsChange(b) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlSequencePropChange::ShowActivationsChange(self.show_activations),
+                            ));
+                            self.show_activations = *b;
+                        }
                         UmlSequencePropChange::CommentChange(comment) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
@@ -3158,6 +3337,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 
             temporaries: self.temporaries.clone(),
             bounds_rect: self.bounds_rect,
+            show_activations: self.show_activations,
         });
         tlc.insert(view_uuid, cloneish.clone().into());
         c.insert(*self.uuid, cloneish.clone().into());
@@ -5837,6 +6017,7 @@ pub fn new_umlsequence_message(
     lifecycle: UmlSequenceMessageLifecycleKind,
     is_return: bool,
     duration: f32,
+    activation_color: MGlobalColor,
     source: (ERef<UmlSequenceLifeline>, UmlSequenceElementView),
     target: (ERef<UmlSequenceLifeline>, UmlSequenceElementView),
 ) -> (ERef<UmlSequenceMessage>, ERef<UmlSequenceMessageView>) {
@@ -5851,11 +6032,13 @@ pub fn new_umlsequence_message(
         source.0,
         target.0,
     ));
-    let link_view = new_umlsequence_message_view(link_model.clone(), source.1, target.1);
+    let link_view =
+        new_umlsequence_message_view(link_model.clone(), activation_color, source.1, target.1);
     (link_model, link_view)
 }
 pub fn new_umlsequence_message_view(
     model: ERef<UmlSequenceMessage>,
+    activation_color: MGlobalColor,
     source: UmlSequenceElementView,
     target: UmlSequenceElementView,
 ) -> ERef<UmlSequenceMessageView> {
@@ -5865,6 +6048,7 @@ pub fn new_umlsequence_message_view(
         source,
         target,
         bounds_rect: egui::Rect::ZERO,
+        activation_color,
         temporaries: Default::default(),
     })
 }
@@ -5882,6 +6066,7 @@ pub struct UmlSequenceMessageView {
     target: UmlSequenceElementView,
 
     bounds_rect: egui::Rect,
+    activation_color: MGlobalColor,
     #[nh_context_serde(skip_and_default)]
     temporaries: UmlSequenceMessageTemporaries,
 }
@@ -6036,7 +6221,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
 
     fn show_properties(
         &mut self,
-        _drawing_context: &GlobalDrawingContext,
+        gdc: &GlobalDrawingContext,
         q: &<UmlSequenceDomain as Domain>::QueryableT<'_>,
         ui: &mut egui::Ui,
         commands: &mut Vec<
@@ -6127,6 +6312,16 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
                 UmlSequencePropChange::DurationChange(duration),
+            ));
+        }
+
+        ui.label("Activation color");
+        if let Some(new_color) =
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.activation_color)
+        {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlSequencePropChange::ColorChange((0, new_color).into()),
             ));
         }
 
@@ -6302,6 +6497,13 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
                         ));
                         model.comment = comment.clone();
                     }
+                    UmlSequencePropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            UmlSequencePropChange::ColorChange((0, self.activation_color).into()),
+                        ));
+                        self.activation_color = *color;
+                    }
                     _ => {}
                 }
             }
@@ -6423,6 +6625,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
             source,
             target,
             bounds_rect: self.bounds_rect,
+            activation_color: self.activation_color,
             temporaries: self.temporaries.clone(),
         });
         tlc.insert(view_uuid, cloneish.clone().into());
