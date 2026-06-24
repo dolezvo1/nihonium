@@ -358,25 +358,28 @@ impl ActivationsCounter {
                 self.current_counts.entry(source_uuid).or_insert(1);
                 self.open_activations.entry(source_uuid).or_default().push((
                     0,
-                    r.bounds_rect.min.y,
+                    r.temporaries.source_y,
                     r.activation_color,
                 ));
             }
-            let t = self.current_counts.entry(target_uuid).or_default();
+            let target_count = self.current_counts.entry(target_uuid).or_default();
             self.open_activations.entry(target_uuid).or_default().push((
-                *t,
-                r.bounds_rect.max.y,
+                *target_count,
+                r.temporaries.target_y,
                 r.activation_color,
             ));
-            *t += 1;
+            *target_count += 1;
         } else {
-            *self.current_counts.entry(source_uuid).or_default() -= 1;
+            let source_count = self.current_counts.entry(source_uuid).or_default();
+            if *source_count >= 1 {
+                *source_count -= 1;
+            }
             if let Some(a) = self.open_activations.entry(source_uuid).or_default().pop() {
                 self.closed_activations
-                    .push((source_uuid, a.0, a.1, r.bounds_rect.min.y, a.2));
+                    .push((source_uuid, a.0, a.1, r.temporaries.source_y, a.2));
             }
         }
-        self.last_message_y = r.bounds_rect.max.y;
+        self.last_message_y = r.temporaries.source_y.max(r.temporaries.target_y);
     }
 
     fn finish(mut self) -> impl Iterator<Item = (ViewUuid, usize, f32, f32, MGlobalColor)> {
@@ -387,6 +390,8 @@ impl ActivationsCounter {
                     .map(|e| (*open.0, e.0, e.1, self.last_message_y, e.2)),
             );
         }
+
+        self.closed_activations.sort_by_key(|e| e.1);
 
         self.closed_activations
             .into_iter()
@@ -6078,6 +6083,8 @@ struct UmlSequenceMessageTemporaries {
     source_uuids: Vec<ModelUuid>,
     target_uuids: Vec<ModelUuid>,
     state_invariant_in_curly_brackets: String,
+    source_y: f32,
+    target_y: f32,
 
     display_text: String,
     name_buffer: String,
@@ -6133,6 +6140,8 @@ impl UmlSequenceMessageView {
             self.bounds_rect = egui::Rect::from_two_pos(start, end);
             (start, end, start, end)
         };
+        self.temporaries.source_y = start.y;
+        self.temporaries.target_y = end.y;
 
         let end_intersect = self
             .temporaries
