@@ -23,9 +23,9 @@ use crate::common::views::multiconnection_view::{
 };
 use crate::common::views::package_view::PackageDragType;
 use crate::domains::umlsequence::umlsequence_models::{
-    HORIZONTALS_BUCKET, UmlSequenceCombinedFragmentKind, UmlSequenceCombinedFragmentSection,
-    UmlSequenceDiagramBoard, UmlSequenceMessageLifecycleKind, UmlSequenceMessageSynchronicityKind,
-    UmlSequenceRef, VERTICALS_BUCKET,
+    HORIZONTALS_BUCKET, UmlSequenceActivationBehaviour, UmlSequenceCombinedFragmentKind,
+    UmlSequenceCombinedFragmentSection, UmlSequenceDiagramBoard, UmlSequenceMessageLifecycleKind,
+    UmlSequenceMessageSynchronicityKind, UmlSequenceRef, VERTICALS_BUCKET,
 };
 use crate::{
     CustomModal, DefaultSettingsF, DeserializeControllerF, DeserializeSettingsF,
@@ -92,6 +92,7 @@ pub enum UmlSequencePropChange {
     CombinedFragmentKindChange(UmlSequenceCombinedFragmentKind),
     CombinedFragmentKindArgumentChange(Arc<String>),
     CombinedFragmentSectionGuardChange(Arc<String>),
+    ActivationsBehaviourChange(UmlSequenceActivationBehaviour),
 
     ColorChange(ColorChangeData),
     CommentChange(Arc<String>),
@@ -334,13 +335,114 @@ struct ActivationsCounter {
 impl ActivationsCounter {
     fn add_combined_fragment(&mut self, combined_fragment: &ERef<UmlSequenceCombinedFragmentView>) {
         let r = combined_fragment.read();
-        let old_state = self.current_counts.clone();
+
+        // Clone counts, close currently opened activations
+        let previous_counts = self.current_counts.clone();
+        let outside: HashMap<ViewUuid, Vec<_>> = self
+            .open_activations
+            .iter()
+            .filter(|e| !r.temporaries.spanned_lifelines.contains(e.0))
+            .map(|e| (*e.0, e.1.clone()))
+            .collect();
+        let mut inner_previous_open = HashMap::new();
+        for (v, o) in self
+            .open_activations
+            .iter_mut()
+            .filter(|e| r.temporaries.spanned_lifelines.contains(e.0))
+        {
+            let previous = std::mem::take(o);
+            for e in previous.iter() {
+                self.closed_activations
+                    .push((*v, e.0, e.1, r.bounds_rect.min.y, e.2));
+            }
+            inner_previous_open.insert(*v, previous);
+        }
+
+        // Call count_activations on child elements
+        let mut first_variant = None;
         for e in r.sections.iter() {
             let r2 = e.read();
+
+            self.current_counts = previous_counts.clone();
+            self.open_activations = outside
+                .iter()
+                .map(|e| (*e.0, e.1.clone()))
+                .chain(inner_previous_open.iter().map(|e| {
+                    (
+                        *e.0,
+                        e.1.iter()
+                            .map(|e| (e.0, r2.bounds_rect.min.y, e.2))
+                            .collect(),
+                    )
+                }))
+                .collect();
+
             for e in r2.horizontal_element_views.iter() {
                 e.count_activations(self);
             }
-            self.current_counts = old_state.clone();
+
+            if r.temporaries.end_behaviour_buffer
+                == UmlSequenceActivationBehaviour::ContinueFirstVariant
+                && first_variant.is_none()
+            {
+                first_variant = Some((self.current_counts.clone(), self.open_activations.clone()));
+            }
+
+            for (v, o) in self
+                .open_activations
+                .iter_mut()
+                .filter(|e| r.temporaries.spanned_lifelines.contains(e.0))
+            {
+                for e in o.drain(..) {
+                    self.closed_activations
+                        .push((*v, e.0, e.1, r2.bounds_rect.max.y, e.2));
+                }
+            }
+        }
+
+        // Set final state based on selected end_behaviour
+        match r.temporaries.end_behaviour_buffer {
+            UmlSequenceActivationBehaviour::ContinueFirstVariant => {
+                let (c, o) = first_variant.unwrap();
+                self.current_counts = c;
+                self.open_activations = o
+                    .into_iter()
+                    .map(|e| {
+                        if r.temporaries.spanned_lifelines.contains(&e.0) {
+                            (
+                                e.0,
+                                e.1.iter()
+                                    .map(|e| (e.0, r.bounds_rect.max.y, e.2))
+                                    .collect(),
+                            )
+                        } else {
+                            e
+                        }
+                    })
+                    .collect();
+            }
+            UmlSequenceActivationBehaviour::ResetToInitialState => {
+                self.current_counts = previous_counts;
+                self.open_activations = outside
+                    .iter()
+                    .map(|e| (*e.0, e.1.clone()))
+                    .chain(inner_previous_open.iter().map(|e| {
+                        (
+                            *e.0,
+                            e.1.iter()
+                                .map(|e| (e.0, r.bounds_rect.max.y, e.2))
+                                .collect(),
+                        )
+                    }))
+                    .collect();
+            }
+            UmlSequenceActivationBehaviour::TerminateActivations => {
+                self.current_counts = previous_counts
+                    .into_iter()
+                    .filter(|e| !r.temporaries.spanned_lifelines.contains(&e.0))
+                    .collect();
+                self.open_activations = outside;
+            }
         }
     }
 
@@ -3434,8 +3536,10 @@ struct UmlSequenceCombinedFragmentViewTemporaries {
     display_text: String,
     kind_buffer: UmlSequenceCombinedFragmentKind,
     kind_argument_buffer: String,
+    end_behaviour_buffer: UmlSequenceActivationBehaviour,
     comment_buffer: String,
 
+    spanned_lifelines: HashSet<ViewUuid>,
     highlight: canvas::Highlight,
     selected_direct_elements: HashSet<ViewUuid>,
 }
@@ -3503,6 +3607,10 @@ impl UmlSequenceCombinedFragmentView {
         tool: &Option<(egui::Pos2, &NaiveUmlSequenceTool)>,
     ) -> (TargettingStatus, egui::Rect) {
         let spanned_lifeline_views = self.spanned_lifeline_views(lifeline_views);
+        self.temporaries.spanned_lifelines = spanned_lifeline_views
+            .iter()
+            .map(|e| *e.read().uuid)
+            .collect();
         let span_x = (
             spanned_lifeline_views
                 .first()
@@ -3853,6 +3961,25 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
             ));
         }
 
+        ui.label("End behaviour:");
+        egui::ComboBox::from_id_salt("End behaviour:")
+            .selected_text(self.temporaries.end_behaviour_buffer.as_str())
+            .show_ui(ui, |ui| {
+                for e in UmlSequenceActivationBehaviour::VARIANTS {
+                    if ui
+                        .selectable_value(&mut self.temporaries.end_behaviour_buffer, e, e.as_str())
+                        .clicked()
+                    {
+                        commands.push(InsensitiveCommand::PropertyChange(
+                            q.selected_views(),
+                            UmlSequencePropChange::ActivationsBehaviourChange(
+                                self.temporaries.end_behaviour_buffer.clone(),
+                            ),
+                        ));
+                    }
+                }
+            });
+
         if ui.button("Add section").clicked() {
             commands.push(self.new_section_command());
         }
@@ -4190,6 +4317,15 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
                             ));
                             model.kind_argument = kind_argument.clone();
                         }
+                        UmlSequencePropChange::ActivationsBehaviourChange(ab) => {
+                            undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                                std::iter::once(*self.uuid).collect(),
+                                UmlSequencePropChange::ActivationsBehaviourChange(
+                                    model.end_behaviour.clone(),
+                                ),
+                            ));
+                            model.end_behaviour = ab.clone();
+                        }
                         UmlSequencePropChange::CommentChange(comment) => {
                             undo_accumulator.push(InsensitiveCommand::PropertyChange(
                                 std::iter::once(*self.uuid).collect(),
@@ -4213,6 +4349,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceCombinedFragmentVie
             combined_fragment_display_text(model.kind, &model.kind_argument);
         self.temporaries.kind_buffer = model.kind.clone();
         self.temporaries.kind_argument_buffer = (*model.kind_argument).clone();
+        self.temporaries.end_behaviour_buffer = model.end_behaviour.clone();
         self.temporaries.comment_buffer = (*model.comment).clone();
     }
 

@@ -156,6 +156,7 @@ pub fn deep_copy_diagram(
                     uuid: new_uuid,
                     kind: model.kind.clone(),
                     kind_argument: model.kind_argument.clone(),
+                    end_behaviour: model.end_behaviour.clone(),
                     horizontal_span: model.horizontal_span.clone(),
                     sections: model
                         .sections
@@ -1133,12 +1134,39 @@ impl UmlSequenceCombinedFragmentKind {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+pub enum UmlSequenceActivationBehaviour {
+    #[default]
+    ContinueFirstVariant,
+    ResetToInitialState,
+    TerminateActivations,
+    // ConvergingOtherwiseResetToInitialState,
+    // ConvergingOtherwiseTerminate,
+}
+
+impl UmlSequenceActivationBehaviour {
+    pub const VARIANTS: [Self; 3] = [
+        Self::ContinueFirstVariant,
+        Self::ResetToInitialState,
+        Self::TerminateActivations,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            UmlSequenceActivationBehaviour::ContinueFirstVariant => "Continue First Variant",
+            UmlSequenceActivationBehaviour::ResetToInitialState => "Reset to Initial State",
+            UmlSequenceActivationBehaviour::TerminateActivations => "Terminate Activations",
+        }
+    }
+}
+
 #[derive(nh_derive::NHContextSerialize, nh_derive::NHContextDeserialize)]
 #[nh_context_serde(is_entity)]
 pub struct UmlSequenceCombinedFragment {
     pub uuid: Arc<ModelUuid>,
     pub kind: UmlSequenceCombinedFragmentKind,
     pub kind_argument: Arc<String>,
+    pub end_behaviour: UmlSequenceActivationBehaviour,
 
     pub horizontal_span: HashSet<ModelUuid>,
     #[nh_context_serde(entity)]
@@ -1159,6 +1187,7 @@ impl UmlSequenceCombinedFragment {
             uuid: Arc::new(uuid),
             kind,
             kind_argument: Arc::new(kind_argument),
+            end_behaviour: UmlSequenceActivationBehaviour::ContinueFirstVariant,
             horizontal_span,
             sections,
             comment: Arc::new("".to_owned()),
@@ -1169,6 +1198,7 @@ impl UmlSequenceCombinedFragment {
             uuid: Arc::new(new_uuid),
             kind: self.kind.clone(),
             kind_argument: self.kind_argument.clone(),
+            end_behaviour: self.end_behaviour.clone(),
             horizontal_span: self.horizontal_span.clone(),
             sections: self.sections.clone(),
             comment: self.comment.clone(),
