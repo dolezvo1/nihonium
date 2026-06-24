@@ -1180,6 +1180,7 @@ impl UmlSequenceCombinedFragment {
         uuid: ModelUuid,
         kind: UmlSequenceCombinedFragmentKind,
         kind_argument: String,
+        end_behaviour: UmlSequenceActivationBehaviour,
         horizontal_span: HashSet<ModelUuid>,
         sections: Vec<ERef<UmlSequenceCombinedFragmentSection>>,
     ) -> Self {
@@ -1187,7 +1188,7 @@ impl UmlSequenceCombinedFragment {
             uuid: Arc::new(uuid),
             kind,
             kind_argument: Arc::new(kind_argument),
-            end_behaviour: UmlSequenceActivationBehaviour::ContinueFirstVariant,
+            end_behaviour,
             horizontal_span,
             sections,
             comment: Arc::new("".to_owned()),

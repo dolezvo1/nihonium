@@ -461,14 +461,14 @@ impl ActivationsCounter {
                 self.open_activations.entry(source_uuid).or_default().push((
                     0,
                     r.temporaries.source_y,
-                    r.activation_color,
+                    r.found_activation_color,
                 ));
             }
             let target_count = self.current_counts.entry(target_uuid).or_default();
             self.open_activations.entry(target_uuid).or_default().push((
                 *target_count,
                 r.temporaries.target_y,
-                r.activation_color,
+                r.new_activation_color,
             ));
             *target_count += 1;
         } else {
@@ -676,7 +676,14 @@ impl DiagramAdapter<UmlSequenceDomain> for UmlSequenceDiagramBoardAdapter {
                 else {
                     return Err([source_uuid, target_uuid].into_iter().collect());
                 };
-                new_umlsequence_message_view(inner.clone(), MGlobalColor::None, s, t).into()
+                new_umlsequence_message_view(
+                    inner.clone(),
+                    MGlobalColor::None,
+                    MGlobalColor::None,
+                    s,
+                    t,
+                )
+                .into()
             }
             UmlSequenceElement::Ref(inner) => new_umlsequence_ref_view(inner.clone()).into(),
             UmlSequenceElement::Comment(inner) => {
@@ -946,6 +953,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         false,
         0.0,
         MGlobalColor::None,
+        MGlobalColor::None,
         (user_model.clone(), user_view.clone().into()),
         (service1_model.clone(), service1_view.clone().into()),
     );
@@ -956,6 +964,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
         UmlSequenceMessageLifecycleKind::None,
         false,
         0.0,
+        MGlobalColor::None,
         MGlobalColor::None,
         (service1_model.clone(), service1_view.clone().into()),
         (service2_model.clone(), service2_view.clone().into()),
@@ -985,6 +994,7 @@ pub fn demo(no: u32) -> (ViewUuid, ERef<dyn DiagramController>) {
     let (combined_fragment_model, combined_fragment_view) = new_umlsequence_combinedfragment(
         UmlSequenceCombinedFragmentKind::Alt,
         "",
+        UmlSequenceActivationBehaviour::ContinueFirstVariant,
         [
             *user_model.read().uuid,
             *service1_model.read().uuid,
@@ -1087,6 +1097,7 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                 (
                     UmlSequenceToolStage::CombinedFragmentStart {
                         kind: UmlSequenceCombinedFragmentKind::Opt,
+                        end_behaviour: UmlSequenceActivationBehaviour::ContinueFirstVariant,
                     },
                     "Combined Fragment",
                 ),
@@ -1125,7 +1136,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                             is_return: false,
                             name: "".to_owned(),
                             duration: 0.0,
-                            activation_color: MGlobalColor::None,
+                            found_activation_color: MGlobalColor::None,
+                            new_activation_color: MGlobalColor::None,
                             state_invariant: "".to_owned(),
                         },
                     },
@@ -1138,7 +1150,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                             is_return: true,
                             name: "".to_owned(),
                             duration: 0.0,
-                            activation_color: MGlobalColor::None,
+                            found_activation_color: MGlobalColor::None,
+                            new_activation_color: MGlobalColor::None,
                             state_invariant: "".to_owned(),
                         },
                     },
@@ -1152,7 +1165,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                             is_return: false,
                             name: "".to_owned(),
                             duration: 0.0,
-                            activation_color: MGlobalColor::None,
+                            found_activation_color: MGlobalColor::None,
+                            new_activation_color: MGlobalColor::None,
                             state_invariant: "".to_owned(),
                         },
                     },
@@ -1166,7 +1180,8 @@ pub fn default_settings() -> Box<dyn DiagramSettings> {
                             is_return: false,
                             name: "".to_owned(),
                             duration: 0.0,
-                            activation_color: MGlobalColor::None,
+                            found_activation_color: MGlobalColor::None,
+                            new_activation_color: MGlobalColor::None,
                             state_invariant: "".to_owned(),
                         },
                     },
@@ -1228,11 +1243,21 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
             diagram_view.write().refresh_buffers();
             diagram_view.into()
         }
-        UmlSequenceToolStage::CombinedFragmentStart { kind } => {
+        UmlSequenceToolStage::CombinedFragmentStart {
+            kind,
+            end_behaviour,
+        } => {
             let combined_fragment_view = {
                 let section = new_umlsequence_combinedfragmentsection("no errors", Vec::new());
                 section.1.write().refresh_buffers();
-                new_umlsequence_combinedfragment(*kind, "", HashSet::new(), vec![section.into()]).1
+                new_umlsequence_combinedfragment(
+                    *kind,
+                    "",
+                    *end_behaviour,
+                    HashSet::new(),
+                    vec![section.into()],
+                )
+                .1
             };
             combined_fragment_view.write().refresh_buffers();
             combined_fragment_view.into()
@@ -1268,7 +1293,8 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
                     is_return,
                     name,
                     duration,
-                    activation_color,
+                    found_activation_color,
+                    new_activation_color,
                     state_invariant,
                 } => {
                     let message_view = new_umlsequence_message(
@@ -1278,7 +1304,8 @@ fn view_for_stage(s: &UmlSequenceToolStage) -> UmlSequenceElementView {
                         UmlSequenceMessageLifecycleKind::None,
                         *is_return,
                         *duration,
-                        *activation_color,
+                        *found_activation_color,
+                        *new_activation_color,
                         (d1.0, d1.1.into()),
                         (d2.0, d2.1.into()),
                     )
@@ -1349,13 +1376,22 @@ pub fn settings_function(
                 modified |= columns[1].labeled_text_edit_singleline("Label", name).changed();
 
                 match tool {
-                    UmlSequenceToolStage::CombinedFragmentStart { kind } => {
+                    UmlSequenceToolStage::CombinedFragmentStart { kind, end_behaviour } => {
                         columns[1].label("Kind:");
                         egui::ComboBox::from_id_salt("Kind:")
                             .selected_text(kind.as_str())
                             .show_ui(&mut columns[1], |ui| {
                                 for e in UmlSequenceCombinedFragmentKind::VARIANTS {
                                     modified |= ui.selectable_value(kind, e, e.as_str()).clicked();
+                                }
+                            });
+
+                        columns[1].label("End behaviour:");
+                        egui::ComboBox::from_id_salt("End behaviour:")
+                            .selected_text(end_behaviour.as_str())
+                            .show_ui(&mut columns[1], |ui| {
+                                for e in UmlSequenceActivationBehaviour::VARIANTS {
+                                    modified |= ui.selectable_value(end_behaviour, e, e.as_str()).clicked();
                                 }
                             });
                     }
@@ -1403,7 +1439,7 @@ pub fn settings_function(
                     }
                     UmlSequenceToolStage::LinkStart { link_type } => {
                         match link_type {
-                            LinkType::Message { synchronicity_kind, is_return, name, duration, activation_color, state_invariant } => {
+                            LinkType::Message { synchronicity_kind, is_return, name, duration, found_activation_color, new_activation_color, state_invariant } => {
                                 modified |= columns[1].labeled_text_edit_singleline("Name", name).changed();
 
                                 columns[1].label("Synchronicity:");
@@ -1418,13 +1454,23 @@ pub fn settings_function(
                                 modified |= columns[1].checkbox(is_return, "isReturn").changed();
                                 modified |= columns[1].add(egui::DragValue::new(duration).speed(1.0)).changed();
 
-                                columns[1].label("Activation color");
+                                columns[1].label("Found activation color");
                                 if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
                                     gdc,
                                     &mut columns[1],
-                                    activation_color,
+                                    found_activation_color,
                                 ) {
-                                    *activation_color = new_color;
+                                    *found_activation_color = new_color;
+                                    modified = true;
+                                }
+
+                                columns[1].label("New activation color");
+                                if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
+                                    gdc,
+                                    &mut columns[1],
+                                    new_activation_color,
+                                ) {
+                                    *new_activation_color = new_color;
                                     modified = true;
                                 }
 
@@ -1468,7 +1514,8 @@ pub enum LinkType {
         is_return: bool,
         name: String,
         duration: f32,
-        activation_color: MGlobalColor,
+        found_activation_color: MGlobalColor,
+        new_activation_color: MGlobalColor,
         state_invariant: String,
     },
 }
@@ -1479,6 +1526,7 @@ pub enum UmlSequenceToolStage {
     DiagramEnd,
     CombinedFragmentStart {
         kind: UmlSequenceCombinedFragmentKind,
+        end_behaviour: UmlSequenceActivationBehaviour,
     },
     CombinedFragmentEnd,
     Lifeline {
@@ -1512,6 +1560,7 @@ enum PartialUmlSequenceElement {
     },
     CombinedFragment {
         kind: UmlSequenceCombinedFragmentKind,
+        end_behaviour: UmlSequenceActivationBehaviour,
         source: ERef<UmlSequenceLifeline>,
         dest: Option<ERef<UmlSequenceLifeline>>,
     },
@@ -1718,11 +1767,15 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     self.event_lock = true;
                 }
                 (
-                    UmlSequenceToolStage::CombinedFragmentStart { kind },
+                    UmlSequenceToolStage::CombinedFragmentStart {
+                        kind,
+                        end_behaviour,
+                    },
                     PartialUmlSequenceElement::None,
                 ) => {
                     self.result = PartialUmlSequenceElement::CombinedFragment {
                         kind: *kind,
+                        end_behaviour: *end_behaviour,
                         source: inner,
                         dest: None,
                     };
@@ -1805,6 +1858,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
             }
             PartialUmlSequenceElement::CombinedFragment {
                 kind,
+                end_behaviour,
                 source,
                 dest: Some(dest),
                 ..
@@ -1827,6 +1881,7 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                     let cf_view = new_umlsequence_combinedfragment(
                         *kind,
                         "",
+                        *end_behaviour,
                         [source_uuid, target_uuid].into_iter().collect(),
                         vec![section],
                     )
@@ -1871,7 +1926,8 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                             is_return,
                             name,
                             duration,
-                            activation_color,
+                            found_activation_color,
+                            new_activation_color,
                             state_invariant,
                         } => new_umlsequence_message(
                             name,
@@ -1880,7 +1936,8 @@ impl Tool<UmlSequenceDomain> for NaiveUmlSequenceTool {
                             UmlSequenceMessageLifecycleKind::None,
                             *is_return,
                             *duration,
-                            *activation_color,
+                            *found_activation_color,
+                            *new_activation_color,
                             (source.clone(), source_view),
                             (dest.clone(), target_view),
                         )
@@ -3479,6 +3536,7 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceDiagramView {
 pub fn new_umlsequence_combinedfragment(
     kind: UmlSequenceCombinedFragmentKind,
     kind_argument: &str,
+    end_behaviour: UmlSequenceActivationBehaviour,
     horizontal_span: HashSet<ModelUuid>,
     sections: Vec<(
         ERef<UmlSequenceCombinedFragmentSection>,
@@ -3493,6 +3551,7 @@ pub fn new_umlsequence_combinedfragment(
         ModelUuid::now_v7().into(),
         kind,
         kind_argument.to_owned(),
+        end_behaviour,
         horizontal_span,
         section_models,
     ));
@@ -6159,7 +6218,8 @@ pub fn new_umlsequence_message(
     lifecycle: UmlSequenceMessageLifecycleKind,
     is_return: bool,
     duration: f32,
-    activation_color: MGlobalColor,
+    found_activation_color: MGlobalColor,
+    new_activation_color: MGlobalColor,
     source: (ERef<UmlSequenceLifeline>, UmlSequenceElementView),
     target: (ERef<UmlSequenceLifeline>, UmlSequenceElementView),
 ) -> (ERef<UmlSequenceMessage>, ERef<UmlSequenceMessageView>) {
@@ -6174,13 +6234,19 @@ pub fn new_umlsequence_message(
         source.0,
         target.0,
     ));
-    let link_view =
-        new_umlsequence_message_view(link_model.clone(), activation_color, source.1, target.1);
+    let link_view = new_umlsequence_message_view(
+        link_model.clone(),
+        found_activation_color,
+        new_activation_color,
+        source.1,
+        target.1,
+    );
     (link_model, link_view)
 }
 pub fn new_umlsequence_message_view(
     model: ERef<UmlSequenceMessage>,
-    activation_color: MGlobalColor,
+    found_activation_color: MGlobalColor,
+    new_activation_color: MGlobalColor,
     source: UmlSequenceElementView,
     target: UmlSequenceElementView,
 ) -> ERef<UmlSequenceMessageView> {
@@ -6190,7 +6256,8 @@ pub fn new_umlsequence_message_view(
         source,
         target,
         bounds_rect: egui::Rect::ZERO,
-        activation_color,
+        found_activation_color,
+        new_activation_color,
         temporaries: Default::default(),
     })
 }
@@ -6208,7 +6275,8 @@ pub struct UmlSequenceMessageView {
     target: UmlSequenceElementView,
 
     bounds_rect: egui::Rect,
-    activation_color: MGlobalColor,
+    found_activation_color: MGlobalColor,
+    new_activation_color: MGlobalColor,
     #[nh_context_serde(skip_and_default)]
     temporaries: UmlSequenceMessageTemporaries,
 }
@@ -6461,9 +6529,21 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
             ));
         }
 
-        ui.label("Activation color");
+        ui.label("Found activation color");
+        if let Some(new_color) = crate::common::controller::mglobalcolor_edit_button(
+            gdc,
+            ui,
+            &self.found_activation_color,
+        ) {
+            commands.push(InsensitiveCommand::PropertyChange(
+                q.selected_views(),
+                UmlSequencePropChange::ColorChange((2, new_color).into()),
+            ));
+        }
+
+        ui.label("New activation color");
         if let Some(new_color) =
-            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.activation_color)
+            crate::common::controller::mglobalcolor_edit_button(gdc, ui, &self.new_activation_color)
         {
             commands.push(InsensitiveCommand::PropertyChange(
                 q.selected_views(),
@@ -6646,9 +6726,20 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
                     UmlSequencePropChange::ColorChange(ColorChangeData { slot: 0, color }) => {
                         undo_accumulator.push(InsensitiveCommand::PropertyChange(
                             std::iter::once(*self.uuid).collect(),
-                            UmlSequencePropChange::ColorChange((0, self.activation_color).into()),
+                            UmlSequencePropChange::ColorChange(
+                                (0, self.new_activation_color).into(),
+                            ),
                         ));
-                        self.activation_color = *color;
+                        self.new_activation_color = *color;
+                    }
+                    UmlSequencePropChange::ColorChange(ColorChangeData { slot: 2, color }) => {
+                        undo_accumulator.push(InsensitiveCommand::PropertyChange(
+                            std::iter::once(*self.uuid).collect(),
+                            UmlSequencePropChange::ColorChange(
+                                (2, self.found_activation_color).into(),
+                            ),
+                        ));
+                        self.found_activation_color = *color;
                     }
                     _ => {}
                 }
@@ -6771,7 +6862,8 @@ impl ElementControllerGen2<UmlSequenceDomain> for UmlSequenceMessageView {
             source,
             target,
             bounds_rect: self.bounds_rect,
-            activation_color: self.activation_color,
+            found_activation_color: self.found_activation_color,
+            new_activation_color: self.new_activation_color,
             temporaries: self.temporaries.clone(),
         });
         tlc.insert(view_uuid, cloneish.clone().into());
